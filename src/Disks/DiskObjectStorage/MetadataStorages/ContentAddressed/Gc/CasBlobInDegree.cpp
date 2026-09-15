@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasWireVocab.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasBlobDigest.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasCodecUtil.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -40,11 +41,11 @@ const UInt128 kZeroSourceId{0};
 /// Streams a shard's prior source-edge run at O(one block) resident memory: chains the run SEGMENTS the
 /// caller resolved from the parent seal (`blob_target_runs` filtered to one shard) and exposes a one-row
 /// lookahead for the fold merge. The prior run carries
-/// BOTH surviving edges (`kEdgeActive`) AND the retired `kCondemned` sentinel rows at the zero source id,
+/// BOTH surviving edges (`RunMarker::Edge`) AND the retired `RunMarker::Condemned` sentinel rows at the zero source id,
 /// so the cursor stops at edges AND at condemned rows (exposing the type via `rowType`), while zero-marker
 /// sentinels are dropped on carry (per-generation, never carried forward). Row/key invariants are enforced
-/// while streaming: `kEdgeActive` never at `source_id = 0`; sentinel rows (`kZeroMarker` /
-/// `kCondemned`) ONLY at `source_id = 0`; at most one sentinel per blob; an unknown value byte or an empty
+/// while streaming: `RunMarker::Edge` never at `source_id = 0`; sentinel rows (`RunMarker::Zero` /
+/// `RunMarker::Condemned`) ONLY at `source_id = 0`; at most one sentinel per blob; an unknown value byte or an empty
 /// payload is `CORRUPTED_DATA`. Resolution uses the exact object references supplied by the caller, so a run
 /// sealed for generation G that physically lives under an older generation's key is reached
 /// without key construction. An empty `segments` is the fresh-pool / empty baseline. The row stream is
@@ -53,18 +54,18 @@ class PriorEdgeCursor
 {
 public:
     /// The key codec is stateless and self-describing, so a run may freely mix supported hash algorithms.
-    PriorEdgeCursor(Backend & backend_, const std::vector<RunRef> & segments_)
-        : backend(backend_), segments(segments_)
+    PriorEdgeCursor(CasOperation & op_, const std::vector<RunRef> & segments_)
+        : op(op_), segments(segments_)
     {
         advance();
     }
 
     bool valid() const { return has_current; }
     const String & key() const { return current_key; }
-    /// The value byte of the current row: `kEdgeActive` (a surviving edge) or `kCondemned` (a retired
+    /// The value byte of the current row: `RunMarker::Edge` (a surviving edge) or `RunMarker::Condemned` (a retired
     /// sentinel row). Zero markers are never surfaced (dropped on carry).
-    char rowType() const { return current_type; }
-    /// The decoded retired sentinel for the current row (only valid when `rowType() == kCondemned`).
+    RunMarker rowType() const { return current_type; }
+    /// The decoded retired sentinel for the current row (only valid when `rowType() == RunMarker::Condemned`).
     const CondemnedRow & condemnedRow() const { return current_condemned; }
 
     /// Advance to the next surviving edge OR retired sentinel, dropping zero markers, enforcing the
@@ -87,40 +88,37 @@ public:
                     SourceEdgeKeyCodec::parse(k, bh, sid);
                     if (p.empty())
                         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS source-edge run: empty row payload");
-                    const char v = p[0];
+                    const RunMarker v = runMarkerFromByte(p[0], "CAS source-edge run");
                     const bool sentinel_key = (sid == kZeroSourceId);
 
                     if (sentinel_key)
                     {
                         /// A sentinel key carries exactly one row per blob and never an edge.
-                        if (v == kEdgeActive)
+                        if (v == RunMarker::Edge)
                             throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "CAS source-edge run: active edge at the reserved sentinel source_id 0");
-                        if (v != kZeroMarker && v != kCondemned)
-                            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                                "CAS source-edge run: unknown sentinel row type 0x{:02x}", static_cast<uint8_t>(v));
                         if (have_sentinel_blob && sentinel_blob == bh)
                             throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "CAS source-edge run: duplicate sentinel row for one blob");
                         have_sentinel_blob = true;
                         sentinel_blob = bh;
-                        if (v == kZeroMarker)
+                        if (v == RunMarker::Zero)
                             continue;   // A zero marker is per-generation and is dropped on carry.
                         /// A retired sentinel: decode and surface it (settled at close-out, not an edge).
                         current_condemned = decodeCondemnedRow(p);
                         current_key = k;
-                        current_type = kCondemned;
+                        current_type = RunMarker::Condemned;
                         has_current = true;
                         return;
                     }
 
                     /// A non-sentinel key must carry a surviving edge and nothing else.
-                    if (v != kEdgeActive)
+                    if (v != RunMarker::Edge)
                         throw Exception(ErrorCodes::CORRUPTED_DATA,
                             "CAS source-edge run: sentinel row type 0x{:02x} at a non-sentinel key",
                             static_cast<uint8_t>(v));
                     current_key = k;
-                    current_type = kEdgeActive;
+                    current_type = RunMarker::Edge;
                     has_current = true;
                     return;
                 }
@@ -140,18 +138,18 @@ public:
             }
             /// Typed open validates the NDJSON header before any row is consumed. Each row carries its
             /// own algorithm byte, so no separate width gate is needed.
-            reader = openSourceEdgeRun(backend, segments[seg_idx].key);
+            reader = openSourceEdgeRun(op, segments[seg_idx].key);
         }
     }
 
 private:
-    Backend & backend;
+    CasOperation & op;
     const std::vector<RunRef> & segments;
 
     size_t seg_idx = 0;
     std::optional<SourceEdgeRunView> reader;
     String current_key;
-    char current_type = kEdgeActive;
+    RunMarker current_type = RunMarker::Edge;
     CondemnedRow current_condemned;
     bool has_current = false;
 
@@ -191,9 +189,9 @@ void assertValidSourceEdgeId(const UInt128 & source_id)
 String encodeCondemnedRow(const CondemnedRow & row)
 {
     String out;
-    out.push_back(kCondemned);
+    out.push_back(runMarkerByte(RunMarker::Condemned));
     out.push_back(static_cast<char>((row.delete_pending ? 1 : 0) | (row.marker_confirmed ? 2 : 0)));
-    out.push_back(static_cast<char>(row.token.type));
+    out.push_back(static_cast<char>(dialectByteFromWord(row.token.dialect, "condemned row")));
     auto beU64 = [&](uint64_t v) { for (int i = 7; i >= 0; --i) out += static_cast<char>((v >> (8 * i)) & 0xFF); };
     beU64(row.condemn_round);
     beU64(row.size);
@@ -209,7 +207,7 @@ CondemnedRow decodeCondemnedRow(std::string_view p)
 {
     /// [0]=0x02 [1]=flags [2]=token_type [3..10]=round [11..18]=size [19..20]=len [21..]=value
     constexpr size_t kFixed = 21;
-    if (p.size() < kFixed || p[0] != kCondemned)
+    if (p.size() < kFixed || runMarkerFromByte(p[0], "CAS condemned row") != RunMarker::Condemned)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS condemned row: malformed header");
     CondemnedRow row;
     const uint8_t flags = static_cast<uint8_t>(p[1]);
@@ -217,10 +215,7 @@ CondemnedRow decodeCondemnedRow(std::string_view p)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS condemned row: unknown flags 0x{:02x}", flags);
     row.delete_pending = flags & 1;
     row.marker_confirmed = flags & 2;
-    const uint8_t type = static_cast<uint8_t>(p[2]);
-    if (type < 1 || type > 3)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS condemned row: unknown token_type {}", type);
-    row.token.type = static_cast<TokenType>(type);
+    row.token.dialect = String(dialectWordFromByte(static_cast<uint8_t>(p[2]), "condemned row"));
     auto beU64 = [&](size_t off) { uint64_t v = 0; for (int i = 0; i < 8; ++i) v = (v << 8) | static_cast<uint8_t>(p[off + i]); return v; };
     row.condemn_round = beU64(3);
     row.size = beU64(11);
@@ -248,19 +243,16 @@ bool SourceEdgeRunView::next(String & key, String & payload)
     key = SourceEdgeKeyCodec::key(rec.ref, rec.source_id);
     switch (rec.marker)
     {
-        case kEdgeActive:
-        case kZeroMarker:
-            payload = String(1, rec.marker);
+        case RunMarker::Edge:
+        case RunMarker::Zero:
+            payload = String(1, runMarkerByte(rec.marker));
             break;
-        case kCondemned:
+        case RunMarker::Condemned:
             payload = encodeCondemnedRow(CondemnedRow{.delete_pending = rec.delete_pending,
                                                       .token = rec.token, .size = rec.size,
                                                       .condemn_round = rec.condemn_round,
                                                       .marker_confirmed = rec.marker_confirmed});
             break;
-        default:
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "CAS source-edge run: unknown row marker 0x{:02x}", static_cast<uint8_t>(rec.marker));
     }
     return true;
 }
@@ -280,14 +272,14 @@ SourceEdgeRunView openSourceEdgeRun(std::string_view bytes)
     return SourceEdgeRunView(std::make_unique<ReadBufferFromMemory>(bytes.data(), bytes.size()));
 }
 
-SourceEdgeRunView openSourceEdgeRun(Backend & backend, const String & key)
+SourceEdgeRunView openSourceEdgeRun(CasOperation & op, const String & key)
 {
-    /// Streaming: `getStream` is a forward-only read of the write-once run — nothing is
-    /// materialized whole (cas_run is object_cap = 0). Absent object => fail-closed.
-    auto sr = backend.getStream(key);
-    if (!sr)
+    /// Streaming: a forward-only read of the write-once run — nothing is materialized whole
+    /// (cas_run is object_cap = 0). Absent object => fail-closed.
+    auto stream = op.stream(key, Retry::standard());
+    if (!stream)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS source-edge run: object {} is absent", key);
-    return SourceEdgeRunView(std::move(sr->stream));
+    return SourceEdgeRunView(std::move(stream));
 }
 
 namespace
@@ -338,27 +330,39 @@ void SourceEdgeKeyCodec::parse(std::string_view key, BlobRef & ref, UInt128 & so
     source_id = u128FromBytesBE(String(key.substr(1 + digest_len, 16)), "src-edge run key source_id");
 }
 
-void putDeterministicArtifact(Backend & backend, const String & key, const String & bytes)
+void putDeterministicArtifact(CasOperation & op, const String & key, const String & bytes)
 {
-    if (backend.putIfAbsent(key, bytes).outcome == PutOutcome::PreconditionFailed)
+    WriteResult result = op.create(key, bytes, Retry::standard());
+    if (const auto * conflict = std::get_if<Conflict>(&result))
     {
-        const auto existing = backend.get(key);
-        if (!existing || existing->bytes != bytes)
+        /// Only something the resolve read actually OBSERVED can support a corruption verdict.
+        if (const auto * occupant = std::get_if<Object>(&conflict->seen))
+        {
+            if (occupant->bytes == bytes)
+                return;   /// our own deterministic replay; adopt (no-op).
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "CAS gc: deterministic artifact at {} occupied by divergent bytes (impossible under "
                 "correct operation; refusing to proceed)", key);
-        /// byte-equal => our own deterministic replay; adopt (no-op).
+        }
+        if (std::holds_alternative<ProvenAbsent>(conflict->seen))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "CAS gc: deterministic artifact at {} refused the write but reads as absent (impossible "
+                "under correct operation; refusing to proceed)", key);
+        /// Nothing was observed, so the key's state is unknown. Reporting that as corruption would be a
+        /// deterministic local failure, which nothing above this retries -- it falls through instead.
     }
+    const String what = "CAS gc: deterministic artifact at " + key;
+    orThrow(std::move(result), what);
 }
 
-void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
+void foldDeltasIntoGeneration(CasOperation & op, const Layout & layout,
                               const std::vector<RunRef> & prior_runs,
                               uint64_t new_generation, uint64_t attempt,
                               uint64_t shard,
                               std::vector<BlobDelta> scattered, std::vector<RunRef> & out_runs,
                               uint64_t current_round, uint64_t condemn_round,
-                              const std::function<std::optional<HeadResult>(const BlobRef &)> & head_blob,
-                              const std::function<std::optional<HeadResult>(const BlobRef &)> & peek_head,
+                              const BlobHeadFn & head_blob,
+                              const BlobHeadFn & peek_head,
                               const std::function<bool(const RetiredEntry &)> & confirm_condemned_marker,
                               RetiredMergeResult * out_retired,
                               bool suppress_destructive,
@@ -389,12 +393,12 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
             return a.source_id < b.source_id;
         });
 
-    PriorEdgeCursor cursor(backend, prior_runs);
+    PriorEdgeCursor cursor(op, prior_runs);
 
     DB::WriteBufferFromOwnString out;
     SourceEdgeRunWriter writer(out);   // sorted NDJSON; byte-deterministic for write-once adoption
 
-    // Streaming two-cursor merge over the prior run (surviving edges AND retired kCondemned
+    // Streaming two-cursor merge over the prior run (surviving edges AND retired RunMarker::Condemned
     // sentinel rows at the zero source id) and this round's edge deltas (by (blob_hash, source_id)). All
     // rows for one blob are adjacent in both inputs; the sentinel key (source_id 0) sorts first. We resolve
     // final presence per edge locally (idempotent: prior present + activate => present; any remove =>
@@ -427,7 +431,7 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
     ///   1. the round-paced floor: a blob condemned in round R cannot graduate before R+1, so a `+1`
     ///      that lands in the same round as the condemnation is always folded before any delete;
     ///   2. the exact-token delete: a writer that resurrected the blob replaced its incarnation, so a
-    ///      stale token's delete finds a TokenMismatch and removes nothing;
+    ///      stale entry's delete matches nothing and removes nothing;
     ///   3. THIS: the entry is settled against `indeg` recomputed by the merge that just ran, so an edge
     ///      folded after the condemnation but before the delete pass spares the blob outright --
     ///      `indeg > 0` wins over `delete_pending`, unconditionally and past the floor.
@@ -537,12 +541,12 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
             if (cur_edges == 0 && cur_touched && peek_head)
             {
                 if (const auto hr = peek_head(cur_blob);
-                    hr && hr->exists && hr->token != stale.token)
+                    hr && !stale.token.matches(hr->etag))
                 {
                     RetiredEntry fresh;
                     fresh.kind = ObjectKind::Blob;
                     fresh.ref = cur_blob;
-                    fresh.token = hr->token;
+                    fresh.token = PersistedEtag::capture(hr->etag);
                     fresh.size = hr->size;
                     fresh.condemn_round = condemn_round;
                     ReplacedEntry re;
@@ -560,35 +564,35 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
         /// incarnation token for the later exact-token delete; an absent object needs no entry.
         else if (cur_edges == 0 && cur_touched && head_blob)
         {
-            if (const auto hr = head_blob(cur_blob); hr && hr->exists)
+            if (const auto hr = head_blob(cur_blob); hr)
             {
                 RetiredEntry fresh;
                 fresh.kind = ObjectKind::Blob;
                 fresh.ref = cur_blob;
-                fresh.token = hr->token;
+                fresh.token = PersistedEtag::capture(hr->etag);
                 fresh.size = hr->size;
                 fresh.condemn_round = condemn_round;
                 rmr.still_retired.push_back(std::move(fresh));
             }
         }
 
-        /// Emit at most one sentinel row per blob: the `kCondemned` row when the
+        /// Emit at most one sentinel row per blob: the `RunMarker::Condemned` row when the
         /// blob is condemned/carried/graduated this pass (still_retired grew for it), else a per-generation
-        /// `kZeroMarker` when it transitioned to zero this pass but was not condemned (redelete-dropped or
+        /// `RunMarker::Zero` when it transitioned to zero this pass but was not condemned (redelete-dropped or
         /// absent-at-condemn). A blob with surviving edges (cur_edges > 0) emits neither — its edge rows
         /// were appended inline, and a condemned/zeroed blob has NO surviving edges, so appending the
         /// sentinel now (its key sorts first for the blob, and no edge rows precede it) keeps the run
-        /// sorted. `still_retired` therefore mirrors exactly the emitted `kCondemned` rows, in order.
+        /// sorted. `still_retired` therefore mirrors exactly the emitted `RunMarker::Condemned` rows, in order.
         if (rmr.still_retired.size() > retired_before)
         {
             const RetiredEntry & e = rmr.still_retired.back();
-            writer.append(SourceEdgeRecord{.ref = cur_blob, .source_id = kZeroSourceId, .marker = kCondemned,
+            writer.append(SourceEdgeRecord{.ref = cur_blob, .source_id = kZeroSourceId, .marker = RunMarker::Condemned,
                                            .delete_pending = e.delete_pending, .token = e.token,
                                            .size = e.size, .condemn_round = e.condemn_round,
                                            .marker_confirmed = e.marker_confirmed});
         }
         else if (cur_edges == 0 && cur_touched)
-            writer.append(SourceEdgeRecord{.ref = cur_blob, .source_id = kZeroSourceId, .marker = kZeroMarker});
+            writer.append(SourceEdgeRecord{.ref = cur_blob, .source_id = kZeroSourceId, .marker = RunMarker::Zero});
     };
     auto openBlobIfNeeded = [&](const BlobRef & b)
     {
@@ -622,9 +626,9 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
         openBlobIfNeeded(blob_ref);
 
         /// A retired sentinel row from the prior run: stash it for close-out settlement. It is not an edge
-        /// and NEVER a touch — a carried kCondemned row must not force a zero-marker or a peek_head HEAD
+        /// and NEVER a touch — a carried RunMarker::Condemned row must not force a zero-marker or a peek_head HEAD
         /// and never a touch. Deltas never key the zero source id, so no delta merges at this key.
-        if (from_prior && cursor.rowType() == kCondemned)
+        if (from_prior && cursor.rowType() == RunMarker::Condemned)
         {
             cur_condemned = cursor.condemnedRow();
             cursor.advance();
@@ -673,7 +677,7 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
 
         if (present)
         {
-            writer.append(SourceEdgeRecord{.ref = blob_ref, .source_id = source_id, .marker = kEdgeActive});
+            writer.append(SourceEdgeRecord{.ref = blob_ref, .source_id = source_id, .marker = RunMarker::Edge});
             ++cur_edges;
         }
     }
@@ -687,12 +691,12 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
     /// seal's RunRef.checksum and verified before any consumer acts on the run.
     const UInt128 run_checksum = sourceEdgeRunChecksum(run_bytes);
     const String run_key = layout.blobTargetRunKey(new_generation, attempt, shard, 0);
-    putDeterministicArtifact(backend, run_key, run_bytes);
+    putDeterministicArtifact(op, run_key, run_bytes);
     out_runs.push_back(RunRef{.key = run_key, .checksum = run_checksum,
-                              .shard = shard, .generation = new_generation});
+                              .shard = shard, .key_generation = new_generation});
 }
 
-std::vector<BlobCandidate> zeroInDegree(Backend & backend, const std::vector<RunRef> & runs)
+std::vector<BlobCandidate> zeroInDegree(CasOperation & op, const std::vector<RunRef> & runs)
 {
     std::vector<BlobCandidate> result;
     for (const RunRef & run : runs)
@@ -700,12 +704,12 @@ std::vector<BlobCandidate> zeroInDegree(Backend & backend, const std::vector<Run
         /// The caller passes the exact object key, so a run sealed
         /// for a later generation but physically living under an older key is reached directly. The run is
         /// streamed at O(one block) resident memory, never materialized whole. `openSourceEdgeRun` enforces
-        /// the run kind + key schema; `kCondemned` sentinel rows are skipped (only `kZeroMarker` counts).
-        SourceEdgeRunView r = openSourceEdgeRun(backend, run.key);
+        /// the run kind + key schema; `RunMarker::Condemned` sentinel rows are skipped (only `RunMarker::Zero` counts).
+        SourceEdgeRunView r = openSourceEdgeRun(op, run.key);
         String k;
         String p;
         while (r.next(k, p))
-            if (!p.empty() && p[0] == kZeroMarker)
+            if (!p.empty() && runMarkerFromByte(p[0], "CAS source-edge run") == RunMarker::Zero)
             {
                 BlobRef bh;
                 UInt128 sid;

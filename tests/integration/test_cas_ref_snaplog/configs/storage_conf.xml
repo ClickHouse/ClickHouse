@@ -8,6 +8,8 @@
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
                 <cas_server_root_id>itest-ref-snaplog</cas_server_root_id>
                 <endpoint>http://rustfs1:11121/test/cas_snaplog_data/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
@@ -22,6 +24,8 @@
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
                 <cas_server_root_id>itest-ref-snaplog</cas_server_root_id>
                 <endpoint>http://rustfs1:11121/test/cas_snaplog_data/</endpoint>
                 <access_key_id>clickhouse</access_key_id>

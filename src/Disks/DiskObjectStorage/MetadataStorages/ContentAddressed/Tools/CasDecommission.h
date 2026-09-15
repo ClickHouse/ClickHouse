@@ -48,8 +48,23 @@ struct DecommissionReport
 /// terminated slot as a resume anchor; other failures, including refusal to claim the member, propagate
 /// as exceptions. When set, `sink` receives `MemberDecommission` audit events for the run's begin,
 /// per-namespace, and end milestones.
+///
+/// `drain_now_fn`/`drain_sleep_fn`, when both set, replace the clock the drain's own request engine
+/// paces its retries on -- the engine this function opens is a standalone one over the instrumented
+/// backend, not one of `Pool`'s planes, so `Pool::setCasRetrySleepForTest` cannot reach it. A test
+/// driving a latched per-object fault to `Retry::standard()`'s own give-up needs this seam, or it pays
+/// the real 90-second deadline.
+///
+/// `drain_now_fn`/`drain_sleep_fn`, when BOTH set, also become the opened `Pool`'s own boot clock and
+/// retry sleep (`PoolConfig::boot_ms_fn`/`retry_sleep_fn`) whenever the caller left those fields unset:
+/// the mount lease's farewell deadline is bound to the boot clock, and `Pool::openForDecommission`'s own
+/// mount/farewell/GC planes are constructed with it too, so a caller that fakes only the standalone
+/// engine's clock must not end up comparing it against the real one, or -- worse -- against a plane that
+/// shares the frozen clock but still sleeps for real between retries.
 DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
                                           const String & victim_srid, const CasEventSink & sink = {},
-                                          const std::function<void()> & request_gc_round = {});
+                                          const std::function<void()> & request_gc_round = {},
+                                          const std::function<uint64_t()> & drain_now_fn = {},
+                                          const std::function<void(uint64_t)> & drain_sleep_fn = {});
 
 }

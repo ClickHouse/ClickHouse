@@ -66,10 +66,11 @@ void commitOnePart(ContentAddressedMetadataStorage & storage)
 /// into a NATURAL `IdentityLost`. Mirrors gtest_cas_forget.cpp / gtest_cas_lifecycle_condition.cpp.
 void deleteKeyExact(DB::Cas::Backend & backend, const String & key)
 {
-    const auto got = backend.get(key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(key, DB::Cas::Retry::standard());
     ASSERT_TRUE(got.has_value()) << "expected '" << key << "' to exist before deletion";
     if (got)
-        backend.deleteExact(key, got->token);
+        (*op).remove(key, got->etag, DB::Cas::Retry::standard());
 }
 
 }

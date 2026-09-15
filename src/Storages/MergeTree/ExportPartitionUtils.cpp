@@ -68,6 +68,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int THERE_IS_NO_COLUMN;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int FILE_ALREADY_EXISTS;
@@ -96,7 +97,8 @@ namespace Setting
 #if USE_AVRO
     extern const SettingsTimezone iceberg_partition_timezone;
 #endif
-    extern const SettingsMergeTreePartExportSchemaMismatchMode export_merge_tree_part_schema_mismatch_mode;
+    extern const SettingsMergeTreePartExportSchemaMatchMode export_merge_tree_part_schema_match_mode;
+    extern const SettingsBool export_merge_tree_part_ignore_extra_source_columns;
 }
 
 namespace FailPoints
@@ -125,6 +127,7 @@ namespace ExportPartitionUtils
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             ErrorCodes::ILLEGAL_COLUMN,
             ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+            ErrorCodes::THERE_IS_NO_COLUMN,
             ErrorCodes::INCOMPATIBLE_COLUMNS,
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
             ErrorCodes::NOT_IMPLEMENTED,
@@ -217,12 +220,16 @@ namespace ExportPartitionUtils
             context_copy->setSetting("output_format_parquet_row_group_size", *manifest.parquet_row_group_size);
         if (manifest.parquet_row_group_size_bytes)
             context_copy->setSetting("output_format_parquet_row_group_size_bytes", *manifest.parquet_row_group_size_bytes);
-        /// Manifests written before this setting existed have no value here; such tasks were always
-        /// scheduled under the old, strict column-count check, so an absent value must resolve to
-        /// `strict` regardless of the ambient context's setting (which may have since been changed).
+        /// Manifests written before these settings existed have no value here; such tasks were always
+        /// scheduled under the old, strict column-matching check, so an absent value must resolve to
+        /// `POSITION` / `false` regardless of the ambient context's settings (which may have
+        /// since been changed).
         context_copy->setSetting(
-            "export_merge_tree_part_schema_mismatch_mode",
-            String(magic_enum::enum_name(manifest.schema_mismatch_mode.value_or(MergeTreePartExportSchemaMismatchMode::strict))));
+            "export_merge_tree_part_schema_match_mode",
+            String(magic_enum::enum_name(manifest.schema_match_mode.value_or(MergeTreePartExportSchemaMatchMode::POSITION))));
+        context_copy->setSetting(
+            "export_merge_tree_part_ignore_extra_source_columns",
+            manifest.ignore_extra_source_columns.value_or(false));
 
         context_copy->setSetting("max_threads", manifest.max_threads);
         context_copy->setSetting("export_merge_tree_part_file_already_exists_policy", String(magic_enum::enum_name(manifest.file_already_exists_policy)));
@@ -920,23 +927,43 @@ namespace
             return true;
         }
 
+        void verifyExportColumnCastIsSafe(
+            const ColumnWithTypeAndName & source_column,
+            const ColumnWithTypeAndName & destination_column,
+            const StorageID & destination_storage_id)
+        {
+            if (canBeSafelyCast(source_column.type, destination_column.type))
+                return;
+
+            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Cannot export to {}: column '{}' requires a lossy cast from {} to {}, "
+                "which may change values. Set `export_merge_tree_part_allow_lossy_cast = 1` "
+                "to allow lossy casts during export.",
+                destination_storage_id.getFullTableName(),
+                destination_column.name,
+                source_column.type->getName(),
+                destination_column.type->getName());
+        }
+
         void verifyPartitionKeyColumn(
             const ColumnWithTypeAndName & source_column,
             const ColumnWithTypeAndName & destination_column,
             size_t position,
-            const StorageID & destination_storage_id)
+            const StorageID & destination_storage_id,
+            bool match_by_name)
         {
             if (source_column.name != destination_column.name)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot export to {}: partition key column '{}' is at position {} in the source "
                     "table, but the destination's column at that position is named '{}'. EXPORT "
-                    "PART/PARTITION matches columns by position, so partition key columns must be "
-                    "declared at the same position in both tables.",
+                    "PART/PARTITION {} so partition key columns must be declared {} in both tables.",
                     destination_storage_id.getFullTableName(),
                     source_column.name,
                     position,
-                    destination_column.name);
+                    destination_column.name,
+                    match_by_name ? "matches columns by name" : "matches columns by position",
+                    match_by_name ? "with the same name" : "at the same position");
 
             if (!haveSameTupleElementLayout(source_column.type, destination_column.type))
                 throw Exception(
@@ -949,6 +976,28 @@ namespace
                     source_column.type->getName(),
                     destination_column.type->getName());
         }
+    }
+
+    void checkExportSchemaColumnsCount(
+        size_t source_columns_count,
+        size_t destination_columns_count,
+        bool ignore_extra_source_columns)
+    {
+        if (source_columns_count < destination_columns_count)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "Number of columns doesn't match (source: {} and result: {}): "
+                "destination cannot have more columns than source",
+                source_columns_count,
+                destination_columns_count);
+
+        if (source_columns_count > destination_columns_count && !ignore_extra_source_columns)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "Number of columns doesn't match (source: {} and result: {}): "
+                "source has extra columns and the `export_merge_tree_part_ignore_extra_source_columns` setting is disabled",
+                source_columns_count,
+                destination_columns_count);
     }
 
     void verifyExportSchemaCastable(
@@ -968,31 +1017,31 @@ namespace
         auto source_columns = source_sample_block.getColumnsWithTypeAndName();
         const auto & destination_columns = destination_sample_block.getColumnsWithTypeAndName();
 
-        /// In `ignore_extra_source_columns_by_position` mode a source with more columns than the destination
-        /// is allowed: the extra trailing source columns (by position) are dropped, mirroring
-        /// the trimming `ExportPartTask::addExportConvertingActions` applies to the real data.
-        /// The reverse (destination has more columns than source) is always rejected below by
-        /// `makeConvertingActions`, in both modes.
-        const bool ignore_extra_source_columns_by_position =
-            context->getSettingsRef()[Setting::export_merge_tree_part_schema_mismatch_mode]
-                == MergeTreePartExportSchemaMismatchMode::ignore_extra_source_columns_by_position;
+        const auto schema_match_mode = context->getSettingsRef()[Setting::export_merge_tree_part_schema_match_mode].value;
+        const bool ignore_extra_source_columns = context->getSettingsRef()[Setting::export_merge_tree_part_ignore_extra_source_columns];
+        const bool src_has_extra_columns = source_columns.size() > destination_columns.size();
 
-        if (ignore_extra_source_columns_by_position && source_columns.size() > destination_columns.size())
+        checkExportSchemaColumnsCount(source_columns.size(), destination_columns.size(), ignore_extra_source_columns);
+
+        const ActionsDAG::MatchColumnsMode mode = schema_match_mode == MergeTreePartExportSchemaMatchMode::NAME
+            ? ActionsDAG::MatchColumnsMode::Name
+            : ActionsDAG::MatchColumnsMode::Position;
+
+        // makeConvertingActions with postitional mode requires equal columns count,
+        if (ActionsDAG::MatchColumnsMode::Position == mode && ignore_extra_source_columns && src_has_extra_columns)
         {
-            LOG_DEBUG(getLogger("ExportPartitionUtils"),
+            LOG_DEBUG(
+                getLogger("ExportPartitionUtils"),
                 "Source has {} columns while destination has {} columns, "
                 "the {} extra trailing source column(s) will be ignored",
-                source_columns.size(), destination_columns.size(),
+                source_columns.size(),
+                destination_columns.size(),
                 source_columns.size() - destination_columns.size());
 
             source_columns.resize(destination_columns.size());
         }
 
-        (void) ActionsDAG::makeConvertingActions(
-            source_columns,
-            destination_columns,
-            ActionsDAG::MatchColumnsMode::Position,
-            context);
+        (void)ActionsDAG::makeConvertingActions(source_columns, destination_columns, mode, context);
 
         const auto & source_columns_description = source_metadata->getColumns();
         /// Collect the top-level columns that own columns or subcolumns required by `PARTITION BY`.
@@ -1000,36 +1049,62 @@ namespace
         std::unordered_set<String> partition_key_owner_columns;
         for (const auto & column_or_subcolumn_name : source_metadata->getColumnsRequiredForPartitionKey())
         {
-            auto resolved = source_columns_description.tryGetColumnOrSubcolumn(
-                GetColumnsOptions::All, column_or_subcolumn_name);
+            auto resolved = source_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_or_subcolumn_name);
             const auto & column_name = resolved ? resolved->getNameInStorage() : column_or_subcolumn_name;
             partition_key_owner_columns.insert(column_name);
         }
 
         const bool allow_lossy_cast = context->getSettingsRef()[Setting::export_merge_tree_part_allow_lossy_cast];
 
-        const size_t num_columns = std::min(source_columns.size(), destination_columns.size());
-        for (size_t i = 0; i < num_columns; ++i)
+        switch (schema_match_mode)
         {
-            const auto & source_column = source_columns[i];
-            const auto & destination_column = destination_columns[i];
+            case MergeTreePartExportSchemaMatchMode::NAME: {
+                std::unordered_map<String, size_t> source_positions_by_name;
+                source_positions_by_name.reserve(source_columns.size());
+                for (size_t i = 0; i < source_columns.size(); ++i)
+                    source_positions_by_name.emplace(source_columns[i].name, i);
 
-            if (partition_key_owner_columns.contains(source_column.name))
-                verifyPartitionKeyColumn(source_column, destination_column, i, destination_storage_id);
+                for (const auto & destination_column : destination_columns)
+                {
+                    const auto source_it = source_positions_by_name.find(destination_column.name);
+                    if (source_it == source_positions_by_name.end())
+                        throw Exception(
+                            ErrorCodes::THERE_IS_NO_COLUMN, "Cannot find column `{}` in source stream", destination_column.name);
 
-            /// Lossy casts may silently change values, so reject them unless the user opts in.
-            if (allow_lossy_cast)
-                continue;
+                    const auto & source_column = source_columns[source_it->second];
 
-            if (!canBeSafelyCast(source_column.type, destination_column.type))
-                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
-                    "Cannot export to {}: column '{}' requires a lossy cast from {} to {}, "
-                    "which may change values. Set `export_merge_tree_part_allow_lossy_cast = 1` "
-                    "to allow lossy casts during export.",
-                    destination_storage_id.getFullTableName(),
-                    destination_column.name,
-                    source_column.type->getName(),
-                    destination_column.type->getName());
+                    if (partition_key_owner_columns.contains(destination_column.name))
+                        verifyPartitionKeyColumn(
+                            source_column,
+                            destination_column,
+                            source_it->second,
+                            destination_storage_id,
+                            /*match_by_name=*/true);
+
+                    /// Lossy casts may silently change values, so reject them unless the user opts in.
+                    if (!allow_lossy_cast)
+                        verifyExportColumnCastIsSafe(source_column, destination_column, destination_storage_id);
+                }
+                break;
+            }
+            case MergeTreePartExportSchemaMatchMode::POSITION: {
+                const size_t num_columns = std::min(source_columns.size(), destination_columns.size());
+                for (size_t i = 0; i < num_columns; ++i)
+                {
+                    if (partition_key_owner_columns.contains(source_columns[i].name))
+                        verifyPartitionKeyColumn(
+                            source_columns[i],
+                            destination_columns[i],
+                            i,
+                            destination_storage_id,
+                            /*match_by_name=*/false);
+
+                    /// Lossy casts may silently change values, so reject them unless the user opts in.
+                    if (!allow_lossy_cast)
+                        verifyExportColumnCastIsSafe(source_columns[i], destination_columns[i], destination_storage_id);
+                }
+                break;
+            }
         }
     }
 }

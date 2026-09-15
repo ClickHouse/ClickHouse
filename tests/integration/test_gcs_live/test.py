@@ -63,36 +63,35 @@ It asserts what a client can observe: that each operation SUCCEEDS against Googl
 non-CAS requests retain their ETag-based contract, that CAS records generations rather than ETags,
 and that each named body-publication action was actually selected. The Task 10 cases use a statement
 query id in `system.cas_log` and `system.query_log`, so unrelated background work cannot satisfy them.
-The older ordinary characterization still uses process-wide `system.events`; its limitations remain
-spelled out below rather than being silently hidden.
+The ordinary characterization does the same since the first live run; the section below records why
+process-wide `system.events` deltas were not acceptable evidence in this configuration.
 
-## OPEN QUESTION FOR WHOEVER FIRST RUNS THIS WITH CREDENTIALS
+## The process-wide counter hazard, and how the first live run settled it
 
 `system.events` counters are PROCESS-WIDE, and this configuration also holds several CAS disks whose
 control writers issue object-storage requests of their own. Their GC schedulers are stopped before the
-tests, but mount leases and other control work still exist. So every ordinary counter delta asserted here
-is only as sound as the assumption that no CAS activity moved that counter inside the measured window.
-Where that assumption fails, the assertion still passes — for a reason that has nothing to do with the
-statement it names.
+tests, but the mount-lease renewal keeps running: each renewal is a conditional overwrite of the lease
+object (`S3PutObject`), followed by a `get` (`S3GetObject`) when the outcome is unresolved; the one-time
+claim at mount issued a `head` and a `putIfAbsent` as well. A process-wide delta on `S3PutObject` or
+`S3GetObject` therefore cannot say which disk issued the request, and nothing rules out other control
+writers on other counters.
 
-This is an open question, not a known defect: which counters CAS can actually move during these
-windows is not determinable without a real run. It is written here rather than in a tracked item
-because the first run is when it matters and this docstring is what its reader will have in front of
-them. **On that run, check each counter individually instead of trusting a pass** — for any counter CAS
-can move, a green assertion is not evidence that the statement under test issued the operation.
+Settled on the first credentialed run (2026-09-02): the ordinary operation-set test attributes every
+counter it asserts to the statement that must have issued it, through `system.query_log.ProfileEvents`
+by query id, exactly as the publication scenarios already did. The delete shapes are proven by log
+lines filtered to this run's own key prefix rather than by a counter. Nothing in this file asserts a
+process-wide S3 request counter any more.
 
-One test is EXEMPT, and the reason is the template for clearing the others:
+The one exemption that never needed it:
 `test_default_gcs_client_parquet_metadata_cache_keys_on_the_ordinary_etag` uses
 `ParquetMetadataCacheMisses` and `ParquetMetadataCacheHits`, which only a Parquet read moves. No CAS
-disk can touch either, so those two deltas mean exactly what they say. Clearing a counter means showing
-that same thing about it — not observing it pass.
+disk can touch either, so those two deltas mean exactly what they say.
 
-One instance is already settled and serves as the pattern for the other direction. `S3ListObjects` was
-asserted here and has been removed: an ordinary MergeTree lifecycle on a local-metadata disk never lists, so it could not
-have been satisfied by this workload at all — but the CAS disks in this same configuration DO list, so
-a background collection round inside the window could have satisfied it anyway. That is exactly the
-failure mode above, and it is why "make something list somehow" would have produced a test passing for
-the wrong reason rather than a working one.
+`S3ListObjects` was asserted here once and has been removed: an ordinary MergeTree lifecycle on a
+local-metadata disk never lists, so it could not have been satisfied by this workload at all — but the
+CAS disks in this same configuration DO list, so a background collection round inside the window could
+have satisfied it anyway. "Make something list somehow" would have produced a test passing for the
+wrong reason rather than a working one.
 
 It does NOT assert the outbound header set — that `x-goog-if-generation-match` appears on the wire,
 that `x-amz-date` / `x-amz-content-sha256` / `x-amz-security-token` / `x-amz-api-version` are absent,
@@ -264,6 +263,8 @@ def _disk_xml(
             "                <cas_gc_interval_sec>3600</cas_gc_interval_sec>",
             "                <gcs_max_conditional_put_bytes>{}</gcs_max_conditional_put_bytes>".format(FORMER_CONDITIONAL_PUT_CAP),
             "                <cas_staging_backend>{}</cas_staging_backend>".format(staging_backend),
+            "                <http_keep_alive_timeout>30</http_keep_alive_timeout>",
+            "                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>",
         ]
     lines += [
         "                <endpoint>{}/{}/{}/{}/</endpoint>".format(GCS_ENDPOINT, _xml(bucket or BUCKET), _xml(PREFIX), _xml(subprefix)),
@@ -544,9 +545,13 @@ def _opaque_generation_evidence(node, query):
 def _cas_generation_domain(node, disk):
     """Whether this disk recorded generations and every recorded value belongs to the numeric domain."""
     __tracebackhide__ = True
+    # Only rows about an OBJECT carry an incarnation token. The part-build lifecycle events that carry
+    # a token at all (`build_start`, `precommit`, `build_publish`, `build_abort`) reuse the column for
+    # the 128-bit build id in hex and have `object_kind = 'none'`; seen on live GCS 2026-09-02, where
+    # they were the only non-numeric values and every manifest/blob token was a generation.
     count, all_numeric, _digests = _opaque_generation_evidence(
         node,
-        "SELECT DISTINCT token FROM system.cas_log WHERE disk_name = '{}' AND token != '' FORMAT TSV".format(disk),
+        "SELECT DISTINCT token FROM system.cas_log WHERE disk_name = '{}' AND token != '' AND object_kind != 'none' FORMAT TSV".format(disk),
     )
     return count > 0, all_numeric
 
@@ -751,9 +756,10 @@ requires_ambiguity_driver = pytest.mark.skipif(
 def test_default_gcs_client_accepts_the_ordinary_object_storage_operation_set(auth_mode, policy, path_fragment):
     """Every S3 operation an ordinary disk issues is accepted under either GCS client.
 
-    The `system.events` deltas are what make this non-vacuous: each named operation must have been
-    issued at least once, so a statement that quietly stopped reaching object storage — because a
-    default changed, or because a part stayed in memory — cannot leave the assertion true.
+    Per-statement `ProfileEvents` are what make this non-vacuous: each named operation must have been
+    issued by the statement that is supposed to issue it, so a statement that quietly stopped reaching
+    object storage — because a default changed, or because a part stayed in memory — cannot leave the
+    assertion true, and a CAS disk's lease renewal in the same process cannot satisfy it either.
 
     The statement-to-operation mapping is deliberately NOT pinned. Which statement produces a batch
     delete rather than singular ones is a ClickHouse implementation detail that moves between versions;
@@ -761,7 +767,7 @@ def test_default_gcs_client_accepts_the_ordinary_object_storage_operation_set(au
     test fail on refactors that say nothing about GCS.
 
     Object LISTING is not covered by THIS test — an ordinary MergeTree lifecycle on a local-metadata
-    disk never issues one, see the comment on `counters` below.
+    disk never issues one, see the `S3ListObjects` comment in the body.
     `test_default_gcs_client_accepts_an_object_listing` covers it on the same authenticated client
     through the table-engine path, which is a lister.
 
@@ -779,55 +785,63 @@ def test_default_gcs_client_accepts_the_ordinary_object_storage_operation_set(au
     # metadata directory and issue no S3 listing at all. An ordinary lifecycle on a local-metadata disk
     # never lists.
     #
-    # Worse than merely unsatisfiable, it would be unsound: `system.events` is process-wide, and the
-    # CAS disks in this same configuration DO list, so a background GC round landing inside the delta
-    # window could satisfy it for a reason that has nothing to do with this test's workload.
-    counters = [
-        "S3PutObject",
-        "S3GetObject",
-        "S3HeadObject",
-        "S3CopyObject",
-        "S3DeleteObjects",
-        "S3CreateMultipartUpload",
-        "S3UploadPart",
-        "S3CompleteMultipartUpload",
-    ]
-    before = _events(node, counters)
-
+    # Worse than merely unsatisfiable, a process-wide `system.events` delta on it would be unsound: the
+    # CAS disks in this same configuration DO list, so a background GC round landing inside the window
+    # could satisfy it for a reason that has nothing to do with this test's workload.
+    run_tag = "task10-ordinary-{}-{}".format(auth_mode, RUN_ID)
     table = _create(node, policy, "task10_plain_{}".format(auth_mode))
-
-    # A single-part PUT with custom metadata, then the HEAD that `s3_check_objects_after_upload`
-    # issues to verify it.
+    # A single-part PUT, then the HEAD that `s3_check_objects_after_upload`
+    # issues to verify it. Both are attributed to this INSERT.
+    put_query_id = run_tag + "-put"
     node.query(
         "INSERT INTO {} SELECT number, toString(number) FROM numbers(500)".format(table),
         settings={"s3_check_objects_after_upload": 1},
+        query_id=put_query_id,
     )
+    put_profile = _query_profile_events(node, put_query_id, ["S3PutObject", "S3HeadObject"])
+    assert put_profile["S3PutObject"] > 0, put_profile
+    assert put_profile["S3HeadObject"] > 0, put_profile
     # A multipart upload: a tiny single-part ceiling rather than a large body, so the run does not
     # depend on how large a default part happens to be.
+    multipart_query_id = run_tag + "-multipart"
     node.query(
         "INSERT INTO {} SELECT number, repeat('x', 4096) FROM numbers(500, 4000)".format(table),
         settings={
             "s3_min_upload_part_size": 5 * 1024 * 1024,
             "s3_max_single_part_upload_size": 1024,
         },
+        query_id=multipart_query_id,
     )
+    multipart_profile = _query_profile_events(
+        node, multipart_query_id, ["S3CreateMultipartUpload", "S3UploadPart", "S3CompleteMultipartUpload"]
+    )
+    for name, value in multipart_profile.items():
+        assert value > 0, "{} was never issued by the multipart INSERT: {}".format(name, multipart_profile)
     assert int(node.query("SELECT count() FROM {}".format(table))) == 4500
-    assert int(node.query("SELECT sum(id) FROM {}".format(table))) > 0
-
+    # A read of column data, attributed: `count()` alone can be answered from part metadata.
+    get_query_id = run_tag + "-get"
+    assert int(node.query("SELECT sum(id) FROM {}".format(table), query_id=get_query_id)) > 0
+    get_profile = _query_profile_events(node, get_query_id, ["S3GetObject"])
+    assert get_profile["S3GetObject"] > 0, get_profile
     # A server-side copy: moving a partition between the two volumes of one policy copies each object
     # and then deletes the source. This is the only statement here that reaches `CopyObject`.
-    node.query("ALTER TABLE {} MOVE PARTITION tuple() TO VOLUME 'cold'".format(table))
+    copy_query_id = run_tag + "-copy"
+    # Pinned synchronous: an asynchronous move runs on the background assignee, outside this query's
+    # thread group, and the copy would not be attributable to it.
+    node.query(
+        "ALTER TABLE {} MOVE PARTITION tuple() TO VOLUME 'cold'".format(table),
+        settings={"alter_move_to_space_execute_async": 0},
+        query_id=copy_query_id,
+    )
+    copy_profile = _query_profile_events(node, copy_query_id, ["S3CopyObject"])
+    assert copy_profile["S3CopyObject"] > 0, copy_profile
     assert int(node.query("SELECT count() FROM {}".format(table))) == 4500
-
-    # A merge (more reads and writes), then the deletes.
+    # A merge (more reads and writes), then the deletes. Part removal runs in the background, so the
+    # deletes are not attributable to a statement; the two shapes are proven from the log below, filtered
+    # to this run's own keys.
     node.query("OPTIMIZE TABLE {} FINAL".format(table))
     node.query("ALTER TABLE {} DROP PARTITION tuple()".format(table))
     assert int(node.query("SELECT count() FROM {}".format(table))) == 0
-
-    after = _events(node, counters)
-    for name in counters:
-        assert after[name] > before[name], "{} was never issued ({} -> {}), so GCS acceptance of it is unproven".format(name, before[name], after[name])
-
     # `S3DeleteObjects` counts the singular and batch forms together, so the counter alone cannot say
     # the batch form was accepted. The two paths log differently, which separates them:
     # `deleteFileFromS3` logs "Object with path <k> was removed from S3" and `deleteFilesFromS3` logs
@@ -881,11 +895,29 @@ def test_default_gcs_hmac_reports_a_typed_error_for_a_refused_request():
     rest of this group already exercises.
     """
     node = cluster.instances["node"]
-    table = _create(node, HMAC_ABSENT_BUCKET_DISK)
-    error = node.query_and_get_error("INSERT INTO {} SELECT number, toString(number) FROM numbers(10)".format(table))
-    # A parsed S3 error names the bucket problem. An unparsed one surfaces as a bare transport or
-    # timeout failure, which is what must not appear.
-    assert ("NoSuchBucket" in error) or ("S3_ERROR" in error) or ("ACCESS_DENIED" in error), error
+    table = "t_" + HMAC_ABSENT_BUCKET_DISK
+    node.query("DROP TABLE IF EXISTS {} SYNC".format(table))
+    # `MergeTreeData`'s constructor writes `format_version.txt` to the policy's first writable disk, so
+    # on a live endpoint the refusal already arrives at CREATE (seen on GCS 2026-09-02: `The specified
+    # bucket does not exist`). This disk sets `skip_access_check`, so no startup access check runs
+    # before that. `query_and_get_answer_with_error` does not raise on success, so the INSERT is
+    # reached only when CREATE was accepted.
+    _, error = node.query_and_get_answer_with_error(
+        """
+        CREATE TABLE {} (id Int64, data String)
+        ENGINE = MergeTree() ORDER BY id
+        SETTINGS storage_policy = '{}'
+        """.format(table, HMAC_ABSENT_BUCKET_DISK)
+    )
+    if not error.strip():
+        _, error = node.query_and_get_answer_with_error(
+            "INSERT INTO {} SELECT number, toString(number) FROM numbers(10)".format(table)
+        )
+    # A parsed S3 error names the bucket problem in the error document's own words. An unparsed one
+    # surfaces as a bare transport or timeout failure, which is what must not appear. The raw text is
+    # kept out of the assertion message: a signature-mismatch body echoes the credential scope.
+    parsed = ("NoSuchBucket" in error) or ("specified bucket does not exist" in error) or ("ACCESS_DENIED" in error)
+    assert parsed, "the refusal did not arrive as a parsed S3 error document (see the server log)"
 
 
 @pytest.mark.parametrize("auth_mode,named_collection", NAMED_COLLECTION_CASES)
@@ -956,13 +988,17 @@ def test_default_gcs_client_parquet_metadata_cache_keys_on_the_ordinary_etag(aut
     )
 
     before = _events(node, events)
+    # Both reads aggregate a COLUMN rather than `count()`: after the first read, `count()` is answered
+    # from the per-file row-count cache (`use_cache_for_count_from_files`) without opening the object,
+    # so the second read would never reach the Parquet metadata cache and could not hit it. Seen live
+    # on GCS 2026-09-02: the second `count()` logged neither a hit nor a miss.
     # First read: cold, so the metadata is fetched from the object and the key is minted.
-    assert int(node.query("SELECT count() FROM {}".format(table_function))) == 1000
+    assert int(node.query("SELECT sum(id) FROM {}".format(table_function))) == 499500
     after_cold = _events(node, events)
     assert after_cold["ParquetMetadataCacheMisses"] > before["ParquetMetadataCacheMisses"], "no Parquet metadata cache miss, so the read never reached the object and nothing below is meaningful"
 
     # Second read of the same unchanged object: the key must be rebuilt identically and hit.
-    assert int(node.query("SELECT count() FROM {}".format(table_function))) == 1000
+    assert int(node.query("SELECT sum(id) FROM {}".format(table_function))) == 499500
     after_warm = _events(node, events)
     assert after_warm["ParquetMetadataCacheHits"] > after_cold["ParquetMetadataCacheHits"], "the second read of an unchanged object missed the cache, so the key is not stable"
 

@@ -47,9 +47,9 @@ PoolPtr openTestPool(std::shared_ptr<InMemoryBackend> & out_backend)
 /// (condemn -> graduate -> delete) is in flight while this is true.
 bool anyRetiredPending(const PoolPtr & s)
 {
-    /// Retired-in-snapshot (T4): condemned state rides the adopted fold seal's kCondemned rows, not a
+    /// Condemned state rides the adopted fold seal's RunMarker::Condemned rows, not a
     /// separate retired list — reconstruct the in-flight set from the seal.
-    return DB::Cas::tests::anyCondemnedInSeal(s->backend(), s->layout());
+    return DB::Cas::tests::anyCondemnedInSeal(*s->poolBackendPtr(), s->layout());
 }
 
 /// Drive regular GC to a fixpoint. A condemned blob is not deleted in the round that folds its removal:
@@ -126,13 +126,15 @@ ManifestId publishOneBlobPart(
 /// HEADs the object key, never the Pool's manifest decode cache).
 bool blobPresent(const std::shared_ptr<InMemoryBackend> & b, const Layout & layout, const String & payload)
 {
-    return b->head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of(payload))})).exists;
+    DB::Cas::tests::OperationForTest op(*b);
+    return (*op).head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of(payload))}), Retry::once()).has_value();
 }
 
 /// Whether a manifest body object is present in the backend.
 bool manifestPresent(const std::shared_ptr<InMemoryBackend> & b, const Layout & layout, const ManifestId & id)
 {
-    return b->head(layout.manifestKey(id)).exists;
+    DB::Cas::tests::OperationForTest op(*b);
+    return (*op).head(layout.manifestKey(id), Retry::once()).has_value();
 }
 
 /// Replace the existing ref with partB through the real durable-precommit writer sequence. The
@@ -171,8 +173,11 @@ FsckReport displaceAndGc(
     /// Publish partB's full closure and atomically repoint the ref from partA to partB.
     const ManifestId part_b = publishPartBReplacement(s, ns, ref, "data-B", "mark-B");
 
-    EXPECT_TRUE(b->head(s->layout().manifestKey(part_a)).exists)
-        << "partA manifest body must still be present so GC can read its -1 edges at removal-fold";
+    {
+        DB::Cas::tests::OperationForTest op(*b);
+        EXPECT_TRUE((*op).head(s->layout().manifestKey(part_a), Retry::once()).has_value())
+            << "partA manifest body must still be present so GC can read its -1 edges at removal-fold";
+    }
 
     const auto resolved = s->resolveRef(ns, ref);
     EXPECT_TRUE(resolved.has_value());
@@ -314,8 +319,9 @@ TEST(CASGCLeak, ResurrectReplacedIncarnationReclaimed)
 
     /// 1. Publish ref r1 -> token A referenced; capture A.
     publishOneBlobPart(s, ns, "r1", P);
-    const HeadResult hA = b->head(s->layout().blobKey(idOf(P)));
-    ASSERT_TRUE(hA.exists);
+    DB::Cas::tests::OperationForTest op(*b);
+    const auto hA = (*op).head(s->layout().blobKey(idOf(P)), Retry::once());
+    ASSERT_TRUE(hA.has_value());
 
     /// 2. Drop r1 -> A dereferenced.
     s->dropRef(ns, "r1");
@@ -334,9 +340,9 @@ TEST(CASGCLeak, ResurrectReplacedIncarnationReclaimed)
     /// 4. RESURRECT: a fresh build dedup-hits P; putBlob sees A condemned -> re-uploads a DISTINCT
     /// incarnation B at the same content-addressed key (INV-1 revival-from-source).
     publishOneBlobPart(s, ns, "r2", P);
-    const HeadResult hB = b->head(s->layout().blobKey(idOf(P)));
-    ASSERT_TRUE(hB.exists);
-    ASSERT_NE(hB.token.value, hA.token.value) << "republication must mint a new incarnation token B";
+    const auto hB = (*op).head(s->layout().blobKey(idOf(P)), Retry::once());
+    ASSERT_TRUE(hB.has_value());
+    ASSERT_NE(hB->etag, hA->etag) << "republication must mint a new incarnation token B";
 
     /// 5. Drop r2 -> B dereferenced.
     s->dropRef(ns, "r2");
@@ -423,17 +429,18 @@ TEST(CASGCLeak, ResurrectReplacedTokenIsCondemnedInMeta)
 
     /// 1. Publish ref r1 -> token A referenced; capture A, then drop it and condemn via ONE GC round.
     publishOneBlobPart(s, ns, "r1", P);
-    const HeadResult hA = b->head(s->layout().blobKey(idOf(P)));
-    ASSERT_TRUE(hA.exists);
+    DB::Cas::tests::OperationForTest op(*b);
+    const auto hA = (*op).head(s->layout().blobKey(idOf(P)), Retry::once());
+    ASSERT_TRUE(hA.has_value());
     s->dropRef(ns, "r1");
     s->renewWatermarkOnce();   /// advance the floor so A is not spared as in-flight
     gc.runRegularRound();
 
     /// 2. RESURRECT: r2 dedup-hits P while A is condemned -> mints a fresh incarnation B.
     publishOneBlobPart(s, ns, "r2", P);
-    const HeadResult hB = b->head(s->layout().blobKey(idOf(P)));
-    ASSERT_TRUE(hB.exists);
-    ASSERT_NE(hB.token.value, hA.token.value) << "republication must mint a distinct incarnation";
+    const auto hB = (*op).head(s->layout().blobKey(idOf(P)), Retry::once());
+    ASSERT_TRUE(hB.has_value());
+    ASSERT_NE(hB->etag, hA->etag) << "republication must mint a distinct incarnation";
     s->dropRef(ns, "r2");
     s->renewWatermarkOnce();
 

@@ -1,5 +1,6 @@
 #include <mutex>
 #include <Storages/MergeTree/ExportPartTask.h>
+#include <Storages/MergeTree/ExportPartitionUtils.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/Context.h>
@@ -51,6 +52,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char export_part_pause_before_schema_validation[];
     /// Throw a non-retryable (denylisted) error from the part-export worker, so the whole
     /// export task transitions to FAILED immediately regardless of any timeout.
     extern const char export_part_non_retryable_throw[];
@@ -66,7 +68,8 @@ namespace Setting
     extern const SettingsUInt64 export_merge_tree_part_max_rows_per_file;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsString export_merge_tree_part_filename_pattern;
-    extern const SettingsMergeTreePartExportSchemaMismatchMode export_merge_tree_part_schema_mismatch_mode;
+    extern const SettingsMergeTreePartExportSchemaMatchMode export_merge_tree_part_schema_match_mode;
+    extern const SettingsBool export_merge_tree_part_ignore_extra_source_columns;
 }
 
 namespace
@@ -114,31 +117,36 @@ namespace
         }
     }
 
-    /// Mirrors `InterpreterInsertQuery::addInsertToSelectPipeline`: positional match,
-    /// destination header = `getSampleBlockNonMaterialized()`, all type bridging is done
-    /// by the CAST inside `makeConvertingActions`. No pre-validation, no per-column
-    /// lossy/non-lossy classification — restrictions are exactly what INSERT SELECT enforces.
-    ///
-    /// Exception: when `export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'`
-    /// and the source has more columns than the destination, the extra trailing source
-    /// columns (by position) are dropped by a preliminary projection step before the
-    /// positional convert, so `makeConvertingActions` always sees equal-sized inputs.
     void addExportConvertingActions(
         QueryPlan & plan_for_part,
         const IStorage & destination_storage,
         const ContextPtr & local_context)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::export_part_pause_before_schema_validation);
+
         const auto destination_metadata = destination_storage.getInMemoryMetadataPtr(local_context, false);
         const auto destination_header = destination_metadata->getSampleBlockNonMaterialized();
         const auto & destination_columns = destination_header.getColumnsWithTypeAndName();
 
-        const bool ignore_extra_source_columns_by_position =
-            local_context->getSettingsRef()[Setting::export_merge_tree_part_schema_mismatch_mode]
-                == MergeTreePartExportSchemaMismatchMode::ignore_extra_source_columns_by_position;
+        const auto schema_match_mode =
+            local_context->getSettingsRef()[Setting::export_merge_tree_part_schema_match_mode].value;
+        const bool ignore_extra_source_columns =
+            local_context->getSettingsRef()[Setting::export_merge_tree_part_ignore_extra_source_columns];
 
         auto source_columns = plan_for_part.getCurrentHeader()->getColumnsWithTypeAndName();
+        const bool src_has_extra_columns = source_columns.size() > destination_columns.size();
 
-        if (ignore_extra_source_columns_by_position && source_columns.size() > destination_columns.size())
+        ExportPartitionUtils::checkExportSchemaColumnsCount(
+            source_columns.size(),
+            destination_columns.size(),
+            ignore_extra_source_columns);
+
+        const ActionsDAG::MatchColumnsMode mode = schema_match_mode == MergeTreePartExportSchemaMatchMode::NAME
+            ? ActionsDAG::MatchColumnsMode::Name
+            : ActionsDAG::MatchColumnsMode::Position;
+
+        // makeConvertingActions with postitional mode requires equal columns count,
+        if (ActionsDAG::MatchColumnsMode::Position == mode && ignore_extra_source_columns && src_has_extra_columns)
         {
             LOG_DEBUG(getLogger("ExportPartTask"),
                 "Source has {} columns while destination has {} columns, "
@@ -170,7 +178,7 @@ namespace
         auto dag = ActionsDAG::makeConvertingActions(
             source_columns,
             destination_columns,
-            ActionsDAG::MatchColumnsMode::Position,
+            mode,
             local_context);
 
         auto expression_step = std::make_unique<ExpressionStep>(
@@ -308,7 +316,7 @@ bool ExportPartTask::executeStep()
             filename,
             block_with_partition_values,
             new_file_path_callback,
-            manifest.file_already_exists_policy == MergeTreePartExportManifest::FileAlreadyExistsPolicy::overwrite,
+            manifest.file_already_exists_policy,
             manifest.settings[Setting::export_merge_tree_part_max_bytes_per_file],
             manifest.settings[Setting::export_merge_tree_part_max_rows_per_file],
             manifest.iceberg_metadata_json,
@@ -354,8 +362,6 @@ bool ExportPartTask::executeStep()
         /// This is a hack that materializes the columns before the export so they can be exported to tables that have matching columns
         materializeSpecialColumns(plan_for_part.getCurrentHeader(), metadata_snapshot, local_context, plan_for_part);
 
-        /// Align the pipeline header with the destination's non-materialized sample block,
-        /// using the same `makeConvertingActions(Position)` call INSERT SELECT performs.
         addExportConvertingActions(plan_for_part, *destination_storage, local_context);
 
         QueryPlanOptimizationSettings optimization_settings(local_context);

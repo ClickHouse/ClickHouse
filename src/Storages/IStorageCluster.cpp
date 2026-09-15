@@ -3,10 +3,14 @@
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
@@ -15,7 +19,9 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Planner/Utils.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/narrowPipe.h>
@@ -24,6 +30,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -84,26 +91,80 @@ IStorageCluster::IStorageCluster(
 {
 }
 
+void ReadFromCluster::describeActions(FormatSettings & format_settings) const
+{
+    SourceStepWithFilter::describeActions(format_settings);
+    if (query_to_send)
+        format_settings.out << format_settings.detail_prefix << "Query: "
+                            << format({.ctx = getContext(), .query = *query_to_send}) << '\n';
+}
+
+namespace
+{
+
+/// Independent filter DAGs (wrap `WHERE`, then a later pushed FilterStep) cannot
+/// be `merge`d: that wires the second DAG through the first's boolean output.
+/// `mergeNodes` keeps both predicates, then `and` is the listing condition.
+ActionsDAG andListingFilterDAGs(ActionsDAG first, ActionsDAG second)
+{
+    if (first.getOutputs().empty())
+        return second;
+    if (second.getOutputs().empty())
+        return first;
+
+    const auto * first_filter = first.getOutputs().front();
+    ActionsDAG::NodeRawConstPtrs second_outputs;
+    first.mergeNodes(std::move(second), &second_outputs);
+    if (second_outputs.empty())
+        return first;
+
+    const auto * second_filter = second_outputs.front();
+    if (first_filter == second_filter)
+        return first;
+
+    FunctionOverloadResolverPtr func_and
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    const auto & and_node = first.addFunction(func_and, {first_filter, second_filter}, {});
+    first.getOutputs() = {&and_node};
+    first.removeUnusedActions();
+    return first;
+}
+
+}
+
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+    /// Empty later `applyFilters` (optimizer walk stops at JOIN) wipes
+    /// `filter_actions_dag` and must not drop wrap `WHERE`.
+    if (!filter_actions_dag)
+        return;
 
-    const ActionsDAG::Node * predicate = nullptr;
-    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
-    if (filter)
-        predicate = filter->getOutputs().at(0);
+    if (!listing_filter_dag)
+    {
+        listing_filter_dag = filter_actions_dag;
+    }
+    else if (listing_filter_dag->getHash() != filter_actions_dag->getHash())
+    {
+        listing_filter_dag = std::make_shared<const ActionsDAG>(
+            andListingFilterDAGs(listing_filter_dag->clone(), filter_actions_dag->clone()));
+    }
 
-    createExtension(predicate);
+    VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*listing_filter_dag, getContext());
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
+void ReadFromCluster::createExtension()
 {
     if (extension)
         return;
 
+    const ActionsDAG * filter = listing_filter_dag
+        ? listing_filter_dag.get()
+        : (filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get());
+    const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
     extension = storage->getTaskIteratorExtension(
         predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
+        filter,
         context,
         cluster,
         getStorageSnapshot()->metadata);
@@ -309,6 +370,11 @@ void IStorageCluster::updateQueryWithJoinToSendIfNeeded(
                 if (query_node.getWhere())
                     removeExpressionsThatDoNotDependOnTableIdentifiers(query_node.getWhere(), table_function_node, context);
             }
+
+            if (query_node.getPrewhere())
+                removeExpressionsThatAreUnsafeToDuplicate(query_node.getPrewhere(), context);
+            if (query_node.getWhere())
+                removeExpressionsThatAreUnsafeToDuplicate(query_node.getWhere(), context);
 
             query_node.getOrderByNode() = std::make_shared<ListNode>();
             query_node.getGroupByNode() = std::make_shared<ListNode>();
@@ -596,7 +662,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
-    createExtension(nullptr);
+    createExtension();
 
     ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
 

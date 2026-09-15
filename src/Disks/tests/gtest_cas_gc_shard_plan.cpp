@@ -129,6 +129,8 @@ TEST(CASGCShardReducer, MergesDeltasToInDegree)
 
     /// Reduce: each reducer merges its shard's deltas into generation 1 (prior = 0 = fresh).
     auto backend = std::make_shared<InMemoryBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout("p");
 
     ShardReducer r0(0, 2);
@@ -139,9 +141,9 @@ TEST(CASGCShardReducer, MergesDeltasToInDegree)
     EXPECT_TRUE(r1.owns(b2)) << "r1 must own b2";
     EXPECT_FALSE(r1.owns(b1)) << "r1 must not own b1";
 
-    const auto runs0 = r0.reduce(*backend, layout, /*prior_runs=*/{}, /*new_generation=*/1, /*attempt=*/0,
+    const auto runs0 = r0.reduce(op, layout, /*prior_runs=*/{}, /*new_generation=*/1, /*attempt=*/0,
                                  std::move(buckets[0]));
-    const auto runs1 = r1.reduce(*backend, layout, /*prior_runs=*/{}, /*new_generation=*/1, /*attempt=*/0,
+    const auto runs1 = r1.reduce(op, layout, /*prior_runs=*/{}, /*new_generation=*/1, /*attempt=*/0,
                                  std::move(buckets[1]));
 
     ASSERT_EQ(runs0.size(), 1u) << "shard-0 reduce must produce exactly one RunRef";
@@ -300,13 +302,15 @@ TEST(CASGCShardCoordinator, ShardedFoldRoutesDeltasToOwningShards)
         buckets[blobShard(d.ref, kGcShards)].push_back(d);
 
     auto backend = std::make_shared<InMemoryBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout("p");
 
     std::vector<std::vector<RunRef>> shard_runs(kGcShards);
     for (uint64_t shard = 0; shard < kGcShards; ++shard)
     {
         ShardReducer reducer{shard, kGcShards};
-        shard_runs[shard] = reducer.reduce(*backend, layout, /*prior_runs=*/{}, /*new_generation=*/1, /*attempt=*/0,
+        shard_runs[shard] = reducer.reduce(op, layout, /*prior_runs=*/{}, /*new_generation=*/1, /*attempt=*/0,
                                            std::move(buckets[shard]));
     }
 
@@ -459,6 +463,8 @@ TEST(CASGCShardTwoReplica, DisjointShardsConcurrentPerShardRuns)
     ASSERT_EQ(blobShard(b1, kGcShards), 1u) << "b1 must route to shard 1";
 
     auto backend = std::make_shared<InMemoryBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout("p");
 
     /// (a) DISJOINTNESS — verify `owns` predicate before any reduce.
@@ -485,18 +491,18 @@ TEST(CASGCShardTwoReplica, DisjointShardsConcurrentPerShardRuns)
     /// (b) PER-SHARD RUNS — drive both reducers.
     ///
     /// Run shard-0 reducer (simulates the shard-0 replica's work).
-    const auto runs0 = r0.reduce(*backend, layout, /*prior_runs=*/{}, kNewGen, kAttempt, std::move(bucket0));
+    const auto runs0 = r0.reduce(op, layout, /*prior_runs=*/{}, kNewGen, kAttempt, std::move(bucket0));
     ASSERT_FALSE(runs0.empty()) << "shard-0 reducer must produce at least one RunRef";
 
     /// Run shard-1 reducer (simulates the shard-1 replica's work, interleaved from the test thread).
-    const auto runs1 = r1.reduce(*backend, layout, /*prior_runs=*/{}, kNewGen, kAttempt, std::move(bucket1));
+    const auto runs1 = r1.reduce(op, layout, /*prior_runs=*/{}, kNewGen, kAttempt, std::move(bucket1));
     ASSERT_FALSE(runs1.empty()) << "shard-1 reducer must produce at least one RunRef";
 
     /// The blob-target runs for both shards are durably present (the reducer's write-once `putIfAbsent`),
     /// at disjoint object keys.
-    EXPECT_TRUE(backend->head(layout.blobTargetRunKey(kNewGen, kAttempt, /*shard=*/0, /*seq=*/0)).exists)
+    EXPECT_TRUE(op.head(layout.blobTargetRunKey(kNewGen, kAttempt, /*shard=*/0, /*seq=*/0), Retry::once()).has_value())
         << "shard-0 blob-target run must be durably written by r0.reduce";
-    EXPECT_TRUE(backend->head(layout.blobTargetRunKey(kNewGen, kAttempt, /*shard=*/1, /*seq=*/0)).exists)
+    EXPECT_TRUE(op.head(layout.blobTargetRunKey(kNewGen, kAttempt, /*shard=*/1, /*seq=*/0), Retry::once()).has_value())
         << "shard-1 blob-target run must be durably written by r1.reduce";
 
     /// (c) MERGED IN-DEGREE — the merged in-degrees across both shards equal the expected edge multiset.
@@ -553,18 +559,19 @@ TEST(CASGCShardRetireDrain, ReclaimsDroppableBlobOwnedByNonZeroShard)
     const ManifestId id0{ns, r0};
     const ManifestId id1{ns, r1};
 
+    OperationForTest verify_op(*backend);
     /// Local blobExists (the round-level helper is file-local to gtest_cas_gc_round.cpp).
     auto blobExists = [&](const UInt128 & hash)
     {
-        return backend->head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)})).exists;
+        return (*verify_op).head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)}), Retry::once()).has_value();
     };
     auto manifestExists = [&](const ManifestId & id)
     {
-        return backend->head(layout.manifestKey(id)).exists;
+        return (*verify_op).head(layout.manifestKey(id), Retry::once()).has_value();
     };
     /// Whether ANY gc-shard still holds an in-flight condemned entry (the ack-floor deletion pipeline is
-    /// in flight while this is true). Retired-in-snapshot (T4): reconstructed from the adopted fold seal's
-    /// kCondemned rows across all shards, not a separate retired list.
+    /// in flight while this is true). Condemned state is reconstructed from the adopted fold seal's
+    /// RunMarker::Condemned rows across all shards, not a separate retired list.
     auto anyRetiredPending = [&]
     {
         return anyCondemnedInSeal(*backend, layout);
@@ -602,7 +609,7 @@ TEST(CASGCShardRetireDrain, ReclaimsDroppableBlobOwnedByNonZeroShard)
 
     /// While both refs are live: each blob's in-degree is 1 in its OWNING shard's run, and nothing is
     /// collected (no-loss). Derive generation/attempt from gc/state — never hardcode.
-    const GcState live = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState live = decodeGcState((*verify_op).read(layout.gcStateKey(), Retry::once())->bytes);
     ASSERT_GT(live.snap_generation, 0u);
     ASSERT_EQ(live.gc_shards, kGcShards) << "the pool must be running with gc_shards=2";
     EXPECT_EQ(inDegreeInRuns(*backend, runsForShard(*backend, layout, /*shard=*/0), BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(blob_shard0)}), 1)

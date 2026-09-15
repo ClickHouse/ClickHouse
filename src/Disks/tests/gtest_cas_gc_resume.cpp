@@ -22,15 +22,16 @@ ManifestRef ref(uint64_t seq, uint64_t inst)
 }
 bool blobExists(InMemoryBackend & b, const Layout & layout, const UInt128 & hash)
 {
-    return b.head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)})).exists;
+    OperationForTest op(b);
+    return (*op).head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)}), Retry::once()).has_value();
 }
 
 /// Whether the CURRENT retired list (any gc-shard) still holds an entry.
 bool anyRetiredPending(const PoolPtr & s)
 {
-    /// Retired-in-snapshot (T4): condemned state rides the adopted fold seal's kCondemned rows, not a
+    /// Condemned state rides the adopted fold seal's RunMarker::Condemned rows, not a
     /// separate retired list — reconstruct the in-flight set from the seal.
-    return anyCondemnedInSeal(s->backend(), s->layout());
+    return anyCondemnedInSeal(*s->poolBackendPtr(), s->layout());
 }
 
 /// Drive regular GC to a fixpoint over the ACK-FLOOR round (renew the store's mount ack after each round;
@@ -52,31 +53,37 @@ size_t runGcToFixpoint(const PoolPtr & s, Gc & gc, size_t max_rounds = 64)
     return rounds;
 }
 
-/// A backend that denies ONCE the SINGLE round-commit `gc/state` CAS — the casPut that advances
-/// snap_generation (the one-pass round has exactly one such CAS; the lease-acquire CAS does not advance
-/// snap_generation). A denied round leaves only never-adopted attempt-scoped debris (fold seal / retired
-/// list under an attempt gc/state never adopted); a fresh-attempt rerun is idempotent.
+/// A backend that refuses ONCE the SINGLE round-commit `gc/state` write — the conditional write that
+/// advances snap_generation (the one-pass round has exactly one such write; the lease acquire/renew does
+/// not advance snap_generation). A refused round leaves only never-adopted attempt-scoped debris (a fold
+/// seal under an attempt gc/state never adopted); a fresh-attempt rerun is idempotent.
 class InterruptRoundCasBackend : public InMemoryBackend
 {
 public:
     explicit InterruptRoundCasBackend(String gc_state_key_) : gc_state_key(std::move(gc_state_key_)) {}
 
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected,
-                     const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        TransportAccess & access) override
     {
-        if (arm_interrupt && key == gc_state_key)
+        if (arm_interrupt && expected_value && key == gc_state_key)
         {
-            const auto stored = get(key);
-            const uint64_t stored_gen = stored ? decodeGcState(stored->bytes).snap_generation : 0;
-            const uint64_t next_gen = decodeGcState(bytes).snap_generation;
-            if (next_gen > stored_gen)
+            const auto stored = InMemoryBackend::read(key, access);
+            if (stored
+                && decodeGcState(bytes).snap_generation > decodeGcState(stored->bytes).snap_generation)
             {
-                arm_interrupt = false;   /// one-shot: only depose the first round-commit CAS
-                throw DB::Exception(DB::ErrorCodes::ABORTED,
-                    "test-injected: round-commit gc/state CAS denied (leader deposed mid-round)");
+                arm_interrupt = false;   /// one-shot: only depose the first round-commit write
+                /// A REFUSAL, not a throw: a thrown transport error is an ambiguity the engine settles
+                /// by an exact read and then reissues while the precondition it named is unmoved, so
+                /// the round would commit on the reissue. A refused precondition ends the write at
+                /// once. The object is moved too -- the same bytes under a fresh incarnation -- because
+                /// a store refuses only what changed; the CONTENT is deliberately left alone, so this
+                /// round's own lease and cursor are exactly what a deposed round leaves behind.
+                (void)InMemoryBackend::write(key, stored->bytes, stored->value, access);
+                return std::unexpected(RawConflict{});
             }
         }
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
     bool arm_interrupt = false;
@@ -139,7 +146,8 @@ TEST(CASGCReplay, DeposedRoundRerunsUnderFreshAttempt)
     Gc gc1(store, hexToU128("00000000000000000000000000000001"));
     runRegularRoundReclaiming(gc1);
     store->renewWatermarkOnce();
-    const auto after_fold = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    OperationForTest op(*backend);
+    const auto after_fold = decodeGcState((*op).read(store->layout().gcStateKey(), Retry::once())->bytes);
     ASSERT_EQ(after_fold.snap_attempt, after_fold.lease.seq);
     ASSERT_GT(after_fold.snap_generation, 0u);
 
@@ -151,7 +159,7 @@ TEST(CASGCReplay, DeposedRoundRerunsUnderFreshAttempt)
     EXPECT_THROW(runRegularRoundReclaiming(gc1), DB::Exception);
     backend->arm_interrupt = false;
 
-    const auto after_interrupt = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto after_interrupt = decodeGcState((*op).read(store->layout().gcStateKey(), Retry::once())->bytes);
     EXPECT_EQ(after_interrupt.snap_generation, after_fold.snap_generation)
         << "the denied round-commit CAS must NOT advance the adopted generation";
     EXPECT_EQ(after_interrupt.snap_attempt, after_fold.snap_attempt)
@@ -159,7 +167,7 @@ TEST(CASGCReplay, DeposedRoundRerunsUnderFreshAttempt)
     // The deposed round's fold seal is durable under its OWN (unadopted) attempt — unreferenced by gc/state.
     const uint64_t deposed_attempt = after_fold.lease.seq + 1;   // round 2 renewed the lease once
     const uint64_t deposed_gen = after_fold.snap_generation + 1;
-    EXPECT_TRUE(backend->head(store->layout().foldSealKey(deposed_gen, deposed_attempt)).exists)
+    EXPECT_TRUE((*op).head(store->layout().foldSealKey(deposed_gen, deposed_attempt), Retry::once()).has_value())
         << "the deposed round's fold seal is durable under its own unadopted attempt (harmless debris)";
 
     // A DIFFERENT leader takes over. The lease steal protocol observes the stalled lease twice before
@@ -174,7 +182,7 @@ TEST(CASGCReplay, DeposedRoundRerunsUnderFreshAttempt)
     EXPECT_NO_THROW(runGcToFixpoint(store, gc2));
     EXPECT_FALSE(blobExists(*backend, store->layout(), DB::UInt128(1)));
 
-    const auto after_drain = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto after_drain = decodeGcState((*op).read(store->layout().gcStateKey(), Retry::once())->bytes);
     EXPECT_GT(after_drain.snap_generation, after_fold.snap_generation) << "the round completed under gc2";
     EXPECT_NE(after_drain.snap_attempt, deposed_attempt) << "the drained round never adopted the deposed attempt";
 

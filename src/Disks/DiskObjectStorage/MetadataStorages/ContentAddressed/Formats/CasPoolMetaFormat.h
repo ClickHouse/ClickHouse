@@ -10,12 +10,13 @@
 namespace DB::Cas
 {
 
-class Backend;
+class CasOperation;
 class Layout;
 
 /// `_pool_meta` — the pool identity and the pool-wide constants that every reader and writer must
-/// agree on. The v3 text representation is a header line followed by one JSON body object:
-/// {"pid":"<32hex>","hln":<blob_header_len>,"mrg":<min_reader_generation>,"alg":"<algo-words>"}.
+/// agree on. The text representation is a header line followed by one JSON body object:
+/// {"pool_id":"<32hex>","blob_header_len":<blob_header_len>,"gc_shards":<gc_shards>,
+///  "min_reader_generation":<min_reader_generation>,"algos_used":["<algo-word>",...]}.
 ///
 /// The persisted object is authoritative after creation. On reopen, `createOrValidate` uses its
 /// `blob_header_len` and reader-generation floor rather than replacing them with local configuration;
@@ -37,7 +38,7 @@ struct PoolMeta
     /// because changing it would move the blob payload offset for existing objects; a new hash algorithm
     /// is rejected unless `allow_new` is set, and concurrent admission is retried from fresh metadata.
     ///
-    /// `allow_mint` (spec §2 [C4][D2]) gates the create-if-absent path: minting a fresh `_pool_meta` is a
+    /// `allow_mint` gates the create-if-absent path: minting a fresh `_pool_meta` is a
     /// consequential write that establishes a brand-new pool identity, so it is permitted ONLY on the
     /// writable startup path that has just passed the zero-write residual proof (`Pool::open`). Every
     /// non-bootstrap caller — a read-only/observe open, `openForDecommission` — passes `false`; an absent
@@ -49,25 +50,25 @@ struct PoolMeta
     /// pool-lifecycle entry point cannot silently re-arm the observe-mint footgun by omission. The two
     /// production callers pass it explicitly; only test minting sites opt in with `allow_mint=true`.
     static PoolMeta createOrValidate(
-        Backend &, const Layout &, uint64_t blob_header_len, uint64_t gc_shards,
+        CasOperation &, const Layout &, uint64_t blob_header_len, uint64_t gc_shards,
         BlobHashAlgo blob_hash_algo = BlobHashAlgo::CityHash128, bool allow_new = false,
         bool allow_mint = false);
 
     /// Convenience for single-shard callers. Production pool opening passes the configured value to
     /// the explicit overload above; this preserves compact single-shard codec/unit fixtures.
     static PoolMeta createOrValidate(
-        Backend & backend, const Layout & layout, uint64_t blob_header_len,
+        CasOperation & op, const Layout & layout, uint64_t blob_header_len,
         BlobHashAlgo blob_hash_algo = BlobHashAlgo::CityHash128, bool allow_new = false,
         bool allow_mint = false)
     {
         return createOrValidate(
-            backend, layout, blob_header_len, /*gc_shards=*/1, blob_hash_algo, allow_new, allow_mint);
+            op, layout, blob_header_len, /*gc_shards=*/1, blob_hash_algo, allow_new, allow_mint);
     }
 };
 
 /// Serializes valid pool metadata as the versioned `_pool_meta` text object. The output includes the
 /// format header, one JSON body line, and its terminating newline; it is suitable for a conditional
-/// backend write and preserves the sorted algorithm set as comma-separated vocabulary words.
+/// backend write and preserves the sorted algorithm set as a JSON array of vocabulary words.
 String encodePoolMeta(const PoolMeta &);
 
 /// Parses and validates a persisted `_pool_meta` object. Unknown JSON keys are tolerated for additive
@@ -76,11 +77,12 @@ String encodePoolMeta(const PoolMeta &);
 /// corruption or compatibility error code.
 PoolMeta decodePoolMeta(std::string_view);
 
-/// Checks the fixed blob-envelope size invariant. The length must be 8-byte aligned, at most 16 KiB,
-/// and at least 240 bytes: v3's mandatory envelope fields, framing, and newline consume 225 bytes at
-/// type maxima, while 240 leaves room for a diagnostic `ref`. The caller supplies the error code so
-/// persisted violations can be reported as `CORRUPTED_DATA` and bad creation arguments as
-/// `BAD_ARGUMENTS`.
+/// Checks the fixed blob-envelope size invariant: 8-byte aligned, at most 16 KiB, and at least
+/// `kMinBlobHeaderLen`. That floor and the worst case it must clear are derived once beside the
+/// envelope encoder, which also proves the relation at compile time — no number is restated here,
+/// because a second copy is exactly what a single owner exists to prevent. The caller supplies the
+/// error code so persisted violations can be reported as `CORRUPTED_DATA` and bad creation arguments
+/// as `BAD_ARGUMENTS`.
 void validatePoolBlobHeaderLen(uint64_t blob_header_len, int error_code, std::string_view what);
 
 /// Checks that every admitted hash algorithm is known, that the set is non-empty, and that its numeric

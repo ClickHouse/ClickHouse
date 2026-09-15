@@ -14,7 +14,7 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 
 ## Deletion vectors on cluster reads {#deletion-vectors-cluster}
 
-Iceberg v3 [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) are loaded on the **initiator** while it distributes tasks: for each data file the initiator reads the Puffin blob, validates it, materializes deleted row positions, and attaches the bitmap to the task sent to workers. Workers apply that bitmap when reading Parquet; they do not fetch or parse the Puffin file again for that path. See [Processing of tables with deleted rows](/sql-reference/table-functions/iceberg.md#deleted-rows) for format limits and caching.
+Iceberg v3 [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) are loaded on the **initiator** while it distributes tasks: for each data file the initiator reads the Puffin or Delta `.bin` object, validates the `deletion-vector-v1` envelope, materializes deleted row positions, and attaches the bitmap to the task sent to workers. Workers apply that bitmap when reading Parquet; they do not fetch or parse the deletion-vector file again for that path. See [Processing of tables with deleted rows](/sql-reference/table-functions/iceberg.md#deleted-rows) for format limits and caching.
 
 On wide tables with many deletion vectors, initiator-side decode and per-task bitmap serialization can become a bottleneck even when Parquet reads are well parallelized across the cluster.
 

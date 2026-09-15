@@ -47,6 +47,8 @@
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
+    M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
@@ -800,6 +802,10 @@ The server successfully detected this situation and will download merged part fr
     M(CASRefBatchedMutations, "Number of CAS ref mutations committed through the per-namespace batching queue. Growth indicates reference-write activity.", ValueType::Number) \
     M(CASRefBatchScopeCuts, "Number of CAS ref batches cut short by scope limits. Growing values indicate smaller batches and more write overhead.", ValueType::Number) \
     M(CASRefQueueWaitMicroseconds, "Total time CAS ref writers spent queued, in microseconds. A rising value indicates ref-write contention or backend latency.", ValueType::Microseconds) \
+    M(CASHotKeyQueueWaitMicroseconds, "Total time CAS writers of a shared key spent queued in the hot-key lane before holding it or leaving, in microseconds. A rising value with a flat write rate means the holder is slow, not the store.", ValueType::Microseconds) \
+    M(CASHotKeyCacheStarts, "Number of hot-key lane holds that started from the pool's last known object instead of a read.", ValueType::Number) \
+    M(CASHotKeyReadStarts, "Number of hot-key lane holds that started from a read of the key.", ValueType::Number) \
+    M(CASHotKeyCacheVerdictsReread, "Number of verdicts (a refusal or a decline) a hot-key lane decide rendered on a cached object and that were re-rendered on a fresh read instead of delivered.", ValueType::Number) \
     M(CASRefRecoveryRestarts, "Number of CAS ref-table recovery retries after a snapshot or log vanished during reading. A non-zero value indicates concurrent cleanup or backend inconsistency.", ValueType::Number) \
     M(CASRefRecoveryRetries, "Number of CAS ref-table recovery attempts retried after a transient object-store error before the table's load fails. A non-zero value indicates transient object-store disruption during table startup.", ValueType::Number) \
     M(CASRefAppendWedged, "Number of CAS ref-log append lanes that exhausted retries after an uncertain PUT. A non-zero value indicates ref-log progress may be stalled.", ValueType::Number) \
@@ -808,6 +814,11 @@ The server successfully detected this situation and will download merged part fr
     M(CASRefAppendDefiniteFailure, "Number of CAS ref-log appends rejected with certainty. A non-zero value indicates invalid requests or backend rejection requiring investigation.", ValueType::Number) \
     M(CASRefAppendSealRejected, "Number of CAS ref-log transactions conclusively rejected by a successor's epoch seal occupying the id they derived. This is the protocol working -- the writer was deposed and its operation was never acknowledged -- but a lane that keeps counting here is a writer that has lost its mount and does not yet know it.", ValueType::Number) \
     M(CASRefAppendOccupantUnreadable, "Number of CAS ref-log appends that met a DIFFERENT object at the id they derived and could not read it to tell a successor's epoch seal from a breach of mount write-exclusivity. The decision is deferred to the next attempt, which re-derives the same id. Sustained growth means a real breach may be going unreported: the loud interference path is only reached once the occupant can be read.", ValueType::Number) \
+    M(CASRelinkConfirmRefusedRefMutationInFlight, "Number of CAS fetch-by-relink confirms this server answered Unknown because a queued or in-flight ref-lane mutation names the asked-about ref or the whole namespace. Expected under write load; the receiver retries the fetch.", ValueType::Number) \
+    M(CASRelinkConfirmRefusedLaneWedged, "Number of CAS fetch-by-relink confirms answered Unknown because the namespace's ref lane holds an unresolved append (a wedge). Lasts until the next flush or a remount resolves it.", ValueType::Number) \
+    M(CASRelinkConfirmRefusedLaneBroken, "Number of CAS fetch-by-relink confirms answered Unknown because the namespace's ref lane is in NeedsRecovery, Closed or Faulted state, or is Writing with nothing carved. A growing value outside induced faults is a lane defect, not load.", ValueType::Number) \
+    M(CASRelinkConfirmRefusedStateLockBusy, "Number of CAS fetch-by-relink confirms answered Unknown because the ref table's state lock was held. Under write load the usual holder is the table's own append leader, arming or installing a chunk; otherwise a recovery, a listing or a snapshot publish. The confirm never waits for it.", ValueType::Number) \
+    M(CASRelinkConfirmRefusedMountCannotSpeak, "Number of CAS fetch-by-relink confirms answered Unknown because this mount cannot speak for the namespace: its ref table is unrecovered or mid-recovery, its catalog life was invalidated, its runtime was superseded by a remount, or its mount fence is no longer held. Neither a lane defect nor write load. A growing value means this writer is losing, or has already lost, its claim to the namespace.", ValueType::Number) \
     M(CASRefNeedsRecovery, "Number of CAS ref append lanes moved to `NeedsRecovery` because a known-durable transaction could not be installed. Such a lane refuses writes, snapshots, and confirmation until durable replay completes.", ValueType::Number) \
     M(CASRefSweepDeferred, "Number of stale-precommit sweeps deferred after a read-only failure. A non-zero value indicates cleanup is waiting for a later trigger.", ValueType::Number) \
     M(CASRefSweepRearmed, "Number of failed or partial stale-precommit sweeps scheduled for retry. Growing values indicate persistent cleanup or backend errors.", ValueType::Number) \
@@ -818,7 +829,7 @@ The server successfully detected this situation and will download merged part fr
     M(CASRefLogBodyGets, "Number of CAS ref-log bodies read and decoded during GC. Growth indicates more reference history to process.", ValueType::Number) \
     M(CASRefManifestBodyFoldGets, "Number of manifest bodies read while GC follows reference edges. High values indicate cache misses or many referenced manifests.", ValueType::Number) \
     M(CASRefEmittedEdges, "Number of reachability edges emitted while GC folds CAS reference history. Growth indicates more reference relationships to process.", ValueType::Number) \
-    M(CASRefCleanupObjectsDeleted, "Number of old CAS ref logs and snapshots deleted after safe coverage was confirmed. Growth indicates cleanup progress.", ValueType::Number) \
+    M(CASRefCleanupObjectsDeleted, "Number of old CAS ref logs and snapshots deleted after safe coverage was confirmed. Includes keys that were already absent, since a batch delete of write-once keys cannot tell the two apart. Growth indicates cleanup progress.", ValueType::Number) \
     M(CASRefSnapshotPutBytes, "Total bytes written to CAS ref-table snapshots. A high value indicates frequent or large snapshot publication.", ValueType::Bytes) \
     M(CASRefSnapshotTailLogs, "Number of CAS ref-log entries compacted into published snapshots. Growth indicates snapshot maintenance work.", ValueType::Number) \
     M(CASRefSnapshotPublishDispatched, "Number of background CAS ref-table snapshot publications started. High values indicate frequent threshold or read-triggered publishing.", ValueType::Number) \
@@ -869,6 +880,9 @@ The server successfully detected this situation and will download merged part fr
     M(CASGCGetStream,    "Number of streaming CAS GC GET requests. Grows with large collection or recovery reads.", ValueType::Number) \
     M(CASGCDelete,       "Number of CAS GC DELETE requests. Grows with successful cleanup attempts.", ValueType::Number) \
     M(CASGCList,         "Number of CAS GC LIST requests. Growing values indicate more collection enumeration.", ValueType::Number) \
+    M(CASGCReadAheadHit,    "Number of CAS GC fold reads and HEADs answered by the fold's read-ahead. Growth means the round's small-object round trips overlapped instead of serializing.", ValueType::Number) \
+    M(CASGCReadAheadMiss,   "Number of CAS GC fold reads and HEADs performed inline because nothing was hinted for the key. A large value against hits means a hint set is narrower than the walk.", ValueType::Number) \
+    M(CASGCReadAheadWasted, "Number of CAS GC read-ahead results fetched and never taken: a namespace held below its lookahead, or a HEAD candidate that kept an edge. Bounded by the read-ahead window per namespace.", ValueType::Number) \
     M(CASServerPut,      "Number of CAS server-object PUT requests. Grows with server metadata writes.", ValueType::Number) \
     M(CASServerPutDeduplicated, "Number of deduplicating CAS server-object PUT requests. Growth indicates reused server objects.", ValueType::Number) \
     M(CASServerOverwrite,"Number of CAS server-object overwrite requests. Growing values indicate repeated replacement writes.", ValueType::Number) \
@@ -908,6 +922,7 @@ The server successfully detected this situation and will download merged part fr
     M(CASMetaResurrectClean, "Number of condemned-body replacement paths that entered Clean metadata reconciliation. Counts the reason entry, not a guaranteed metadata reset.", ValueType::Number) \
     M(CASGCMetaOps, "Number of per-hash metadata operations executed by CAS GC. Growing values indicate more GC candidates or metadata work.", ValueType::Number) \
     M(CASGCEnumerationPages, "Number of CAS GC LIST pages fetched while enumerating the object universe. Growing values indicate a larger universe or more frequent scans.", ValueType::Number) \
+    M(CASBulkDeleteRequests, "Number of CAS batch delete requests: one DeleteObjects carrying up to 1000 write-once keys (manifest bodies, ref logs, ref snapshots). The per-key class counters (CASManifestDelete, CASRootDelete) say how many keys each request carried.", ValueType::Number) \
     M(CASGCRefWalkPlansBuilt, "Number of complete catalog-authoritative CAS ref walk plans constructed by ordinary GC and rebuild. A regular or rebuilding invocation that reaches the post-LIST catalog cut increments this exactly once, including a round that later defers.", ValueType::Number) \
     M(CASGCUnmatchedAdoptedParentLives, "Number of adopted-parent CAS ref-life rows dropped because the post-LIST catalog cut has no matching physical life. Each occurrence is inert for planning and suppression and is logged with its exact physical life id; a persistent nonzero rate indicates old generation state is outliving catalog removal.", ValueType::Number) \
     M(CASGCStuckRemovals, "Number of adopted CAS GC rounds that observed a Removing namespace at or beyond the diagnostic age threshold without terminal cleanup evidence. Incremented and warned every such round; diagnostic only, with no effect on folding, suppression, appends, or deletion.", ValueType::Number) \
@@ -927,6 +942,15 @@ The server successfully detected this situation and will download merged part fr
     M(CASConditionalWriteDefiniteFailure, "Number of CAS conditional writes rejected with certainty before applying. A non-zero value indicates invalid requests, oversized entities, or access denial.", ValueType::Number) \
     M(CASConditionalWriteUnresolved, "Number of CAS conditional writes with an unknown outcome after conflict, timeout, connection loss, or server error. A non-zero value indicates backend instability or state requiring resolution.", ValueType::Number) \
     M(CASConditionalWriteFenceLostPostWrite, "Number of CAS writes that succeeded but lost the final mount-fence check. A non-zero value indicates late responses after the mount lifecycle changed.", ValueType::Number) \
+    M(CASRequestAttempt, "Number of physical requests the CAS request contract started. Each one was admitted by the mount fence and reserved against the call's deadline before it was sent.", ValueType::Number) \
+    M(CASRequestReissue, "Number of CAS requests re-sent: after a jittered backoff for an ordinary failure, after a flat pause for a connect-failure hint, or at once with no pause at all for a first-attempt fuse. Growth means the object store is throttling, failing, or contended.", ValueType::Number) \
+    M(CASRequestConflictPause, "Number of clean lost races the CAS request contract repaid after a flat jitter instead of a growing backoff: the resolve read had settled the conflict and no transport fault preceded it.", ValueType::Number) \
+    M(CASRequestResolveRead, "Number of requests the CAS request contract made to settle a refused precondition or an ambiguous write: a body read, or a HEAD where the caller needs only presence. A connect-hinted attempt reissues without one.", ValueType::Number) \
+    M(CASRequestGaveUp, "Number of CAS writes that ended without a proven outcome, at a deadline, on a lost mount fence, or unresolved. A non-zero value means callers are being asked to retry later.", ValueType::Number) \
+    M(CASRequestRefused, "Number of CAS writes the store itself refused, proving they never applied: a malformed request, an entity too large, or an access or credential denial that no credential refresh was performed for, either because the disk has no refresh mechanism or because this write had already spent its one refresh.", ValueType::Number) \
+    M(CASRequestFenceLostPostWrite, "Number of CAS writes that were proven durable but lost the mount fence before the call could claim them. A non-zero value indicates late responses after the mount lifecycle changed.", ValueType::Number) \
+    M(CASRequestConnectFailureHint, "Number of CAS write attempts whose transport error named a failed connection (no free local port, refused or unreachable peer, connect timeout). Under a reissuing policy the engine reissues them after a flat pause without a settle read, when the deadline and the fence admit it. Growth means the server cannot open connections to the object store.", ValueType::Number) \
+    M(CASRequestFirstAttemptFuse, "Number of CAS control requests whose first HTTP attempt matched the adaptive first-attempt timeout; the engine reissues them at once as attempt 2 when the policy and the gates permit. Growth means the object store does not answer a fresh connection within the first-attempt timeout.", ValueType::Number) \
     M(CASMountRenewalAttempts, "Number of physical conditional renewal PUTs sent for CAS mount leases. This counts transport attempts, not logical renewals.", ValueType::Number) \
     M(CASMountRenewalRetries, "Number of physical conditional renewal PUTs sent after the first attempt of one logical CAS mount-lease renewal.", ValueType::Number) \
     M(CASMountRenewalResolved, "Number of CAS mount-lease renewals whose committed outcome was proved by an exact resolving GET.", ValueType::Number) \
@@ -946,7 +970,6 @@ The server successfully detected this situation and will download merged part fr
     M(CASRefRecoveryStragglerAdopted, "Number of straggler ref-log transactions a recovery compare-and-swap walk met at the slot it tried to seal and adopted, re-sealing at the new T+1. Non-zero means writes from a dying epoch were still materializing when recovery ran.", ValueType::Number) \
     M(CASRefRecoveryCancelled, "Number of CAS ref-table recovery attempts abandoned because a self-remount requested cancellation before re-arming the mount fence. Non-zero means remounts are overlapping recoveries; nothing is written or installed on this path.", ValueType::Number) \
     M(CASRefRecoveryStreamHole, "Number of times CAS ref-table recovery found a 404 BELOW a durable same-epoch witness -- a hole in a stream INV-1 makes dense. Restarted while the restart budget lasts (a racing cleanup is the innocent explanation), then reported as corruption. Any sustained non-zero value is data loss, not noise.", ValueType::Number) \
-    M(CASPartFolderValidateSkipped, "Number of CAS part-folder validation HEADs skipped by policy or a fresh retained view. High values reduce reads but can delay detecting external changes.", ValueType::Number) \
     M(CASBlobAdoptTrusted, "Number of CAS blob adoptions trusted through a durable manifest edge without per-file probes. Growth indicates manifest-based relinking.", ValueType::Number) \
     M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
     M(S3HeadObjectMicroseconds,  "Time of S3 API HeadObject execution.", ValueType::Microseconds) \
@@ -1072,6 +1095,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
+    M(FileSegmentWaitTimeouts, "Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)", ValueType::Number) \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache", ValueType::Microseconds) \
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
@@ -1680,6 +1704,8 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
+    M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
     \
     M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
     M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
@@ -1719,6 +1745,10 @@ The server successfully detected this situation and will download merged part fr
     M(DataLakeRestCatalogGetTableMetadataMicroseconds, "Total time of 'get table metadata' requests to Iceberg REST catalog.", ValueType::Microseconds) \
     M(DataLakeRestCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg REST catalog.", ValueType::Number) \
     M(DataLakeRestCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogAuthTokenCachedValid, "Number of requests to Iceberg REST catalog that reused a cached access token and did not fetch a new one.", ValueType::Number) \
+    M(DataLakeRestCatalogAuthTokenRetrieve, "Number of new access tokens fetched for Iceberg REST catalog (OAuth client-credentials or GCP metadata/ADC).", ValueType::Number) \
+    M(DataLakeRestCatalogAuthTokenRefreshedMicroseconds, "Total time spent fetching access tokens for Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogUnauthorized, "Number of Iceberg REST catalog HTTP requests retried with a new access token after HTTP 401 or 403.", ValueType::Number) \
     M(DataLakeRestCatalogCreateNamespace, "Number of 'create namespace' requests to Iceberg REST catalog.", ValueType::Number) \
     M(DataLakeRestCatalogCreateNamespaceMicroseconds, "Total time of 'create namespace' requests to Iceberg REST catalog.", ValueType::Microseconds) \
     M(DataLakeRestCatalogCreateTable, "Number of 'create table' requests to Iceberg REST catalog.", ValueType::Number) \
@@ -1758,6 +1788,7 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageClusterSentToNonMatchedReplica, "Number of tasks in ObjectStorageCluster request sent to non-matched replica.", ValueType::Number) \
     M(ObjectStorageClusterProcessedTasks, "Number of processed tasks in ObjectStorageCluster request.", ValueType::Number) \
     M(ObjectStorageClusterWaitingMicroseconds, "Time of waiting for tasks in ObjectStorageCluster request.", ValueType::Microseconds) \
+
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

@@ -24,7 +24,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")
 SHARED_BACKUP='shared_05024'
 B_BACKUP='own_b_05024'
-DISK_B='05024_cas_freeze_b'
+DISK_A="${CLICKHOUSE_DATABASE}_05024_cas_freeze_a"
+DISK_B="${CLICKHOUSE_DATABASE}_05024_cas_freeze_b"
+POOL_PATH="${CLICKHOUSE_DATABASE}_05024_cas_freeze_pool/"
 UNFREEZE_STRUCTURE='command_type String, partition_id String, part_name String, backup_name String, backup_path String, part_backup_path String'
 
 # `ALTER ... UNFREEZE` returns rows only under `alter_partition_verbose_result=1`; the default is off.
@@ -46,7 +48,7 @@ create_on_root() {
         metadata_type = cas,
         cas_server_root_id = '$2',
         name = '$3',
-        path = '05024_cas_freeze_pool/',
+        path = '${POOL_PATH}',
         cas_gc_enabled = 1,
         cas_gc_interval_sec = 100000);"
 }
@@ -77,14 +79,14 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05024_root_b',
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05024_root_b',
     name = '${DISK_B}',
-    path = '05024_cas_freeze_pool/',
+    path = '${POOL_PATH}',
     cas_gc_enabled = 1,
     cas_gc_interval_sec = 100000);"
 
 # Root A freezes, then releases the UUID. Its freeze must outlive both the table and a collection round.
-create_on_root t_cas_freeze_a 05024_root_a 05024_cas_freeze_a
+create_on_root t_cas_freeze_a "${CLICKHOUSE_DATABASE}_05024_root_a" "${DISK_A}"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_cas_freeze_a VALUES (1, 'a');"
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_cas_freeze_a FREEZE PARTITION 1 WITH NAME '${SHARED_BACKUP}';"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_cas_freeze_a;"
@@ -93,7 +95,7 @@ drain_gc
 # Root B reaches the SAME table path by reusing the UUID. Its own backup uses a distinct name: making
 # both roots publish the same ref would mix two independent CAS writer lifecycles before `UNFREEZE`
 # gets a chance to exercise the destructive lookup under test.
-create_on_root t_cas_freeze_b 05024_root_b "${DISK_B}"
+create_on_root t_cas_freeze_b "${CLICKHOUSE_DATABASE}_05024_root_b" "${DISK_B}"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_cas_freeze_b VALUES (1, 'b');"
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_cas_freeze_b FREEZE PARTITION 1 WITH NAME '${B_BACKUP}';"
 
@@ -115,10 +117,18 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_cas_freeze_b;"
 # (3) A's freeze must still be there. Recreate A's table on root A with the same UUID -- the freeze is
 # addressed by path, so the recreated table reaches its predecessor's snapshot -- and release it.
 # Pre-fix this prints nothing, because B's foreign unfreeze above already dropped the shared namespace.
-create_on_root t_cas_freeze_a 05024_root_a 05024_cas_freeze_a
+create_on_root t_cas_freeze_a "${CLICKHOUSE_DATABASE}_05024_root_a" "${DISK_A}"
 echo 'unfreeze_a'
 unfreeze_and_print t_cas_freeze_a "${SHARED_BACKUP}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_cas_freeze_a;"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_cas_freeze_anchor;"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'dropped_ok';"
+
+# FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, which would
+# stream that expected warning to stderr and be flagged as a failure. Suppress it for the FORGET calls.
+# Two independent disks were created (root A's and root B's); each needs its own FORGET.
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
+    --query "SYSTEM CAS FORGET '${DISK_A}'"
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
+    --query "SYSTEM CAS FORGET '${DISK_B}'"

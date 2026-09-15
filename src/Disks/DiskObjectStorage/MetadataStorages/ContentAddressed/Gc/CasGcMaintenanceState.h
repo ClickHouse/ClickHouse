@@ -1,5 +1,5 @@
 #pragma once
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcMaintenanceStateFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <optional>
@@ -12,18 +12,17 @@ struct GcMaintenanceReadResult
 {
     GcMaintenanceReadStatus status;
     std::optional<GcMaintenanceState> state;
-    std::optional<Token> token;
+    std::optional<Etag> etag;
     String diagnostic;
 };
-enum class GcMaintenanceCasOutcome : uint8_t { Committed, Conflict };
-struct GcMaintenanceCasResult
-{
-    GcMaintenanceCasOutcome outcome = GcMaintenanceCasOutcome::Conflict;
-    Token token;
-};
 
-GcMaintenanceReadResult readGcMaintenanceState(Backend & backend, const Layout & layout);
-GcMaintenanceCasResult casGcMaintenanceState(
-    Backend & backend, const Layout & layout, const std::optional<Token> & expected, const GcMaintenanceState & next);
+GcMaintenanceReadResult readGcMaintenanceState(CasOperation & op, const Layout & layout);
+/// `create`s the maintenance-state key on absence, `replace`s it when `expected` names the
+/// incarnation last observed. `policy` is named by the caller because a write issued from inside an
+/// already-failed step (a reset after a failed enumeration) must send at most one attempt rather than
+/// spend the round's remaining time retrying a write nothing downstream is waiting on.
+WriteResult casGcMaintenanceState(
+    CasOperation & op, const Layout & layout, const std::optional<Etag> & expected,
+    const GcMaintenanceState & next, const Retry & policy);
 
 }

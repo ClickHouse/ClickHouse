@@ -31,11 +31,11 @@ sequenceDiagram
     participant Snd as Sender
     participant S3 as Shared pool
 
-    R->>Snd: GET part, cas_pool_uuid = R's pool uuid, client_protocol_version = 11
+    R->>Snd: GET part, cas_pool_uuid = every pool of R's policy, client_protocol_version = 11
     Note over R: advertising 11 is a promise to confirm before promoting
     Snd->>Snd: same disk pool uuid? identity, never endpoint plus prefix
     Snd->>S3: resolve the offer once -- manifest bytes and confirm token from the SAME view
-    Snd-->>R: cookie cas_relink = part_manifest_v2, cookie cas_source_token = ..., body = manifest bytes
+    Snd-->>R: cookies cas_relink = part_manifest_v2, cas_source_token = ..., cas_pool_uuid = the matched pool -- body = manifest bytes
     Note over Snd: sender is fire-and-forget -- it releases the part here
 
     rect rgba(120,160,255,0.12)
@@ -63,7 +63,7 @@ sequenceDiagram
 
 | # | Gate | What it enforces |
 |---|---|---|
-| 1 | Pool identity | The receiver advertises `cas_pool_uuid`; the sender offers relink only if its own disk's pool uuid is **equal**. Matching by endpoint and prefix was tried and rejected — a minted pool uuid is the identity |
+| 1 | Pool identity | The receiver advertises `cas_pool_uuid` — the pool uuids of every content-addressed disk of its storage policy that is not read-only, as one list — and the sender offers relink only if its own disk's pool uuid is **in** it, naming that uuid in a `cas_pool_uuid` response cookie. Matching by endpoint and prefix was tried and rejected — a minted pool uuid is the identity |
 | 2 | Protocol version 11 | On the receiver side, advertising it is a promise to run the confirm round trip before promoting |
 | 3 | One resolution for two outputs | The manifest bytes and the confirm token come from the **same** view. Two separate calls would allow a repoint in between and hand the receiver a token naming a manifest whose entries it never adopted |
 | 4 | The receiver trusts nothing from the wire but the entry list | The sender's manifest id, namespace and payload digest are ignored; the target namespace and ref come from the receiver's own router, and manifest path hygiene is validated at decode |
@@ -76,6 +76,40 @@ receiver advertising its pool uuid, which stops the sender offering relink — s
 cannot be entered twice for one fetch. Byte-fetched files content-address and dedup on arrival
 anyway, so falling back never loses the dedup property, only the zero-byte-move property for that
 one fetch.
+
+## Where a relinked part lands {#relink-placement}
+
+The offer decides the disk. Once the sender has named the pool, the receiver places the part on the
+first disk of its storage policy that belongs to that pool, and reserves space there directly — ahead
+of everything the policy would otherwise consult: volume order, JBOD balancing,
+`max_data_part_size_bytes`, and `TTL ... TO DISK|VOLUME` move rules. A part that is already in the
+pool never travels as bytes merely because the policy would have put it somewhere else.
+
+A TTL rule is not ignored, it is deferred: the background mover sees a part that is not in its TTL
+destination and moves it there afterwards. The bytes then travel once, as a read from the pool on the
+receiver, and the sender is never loaded.
+
+Two things do not bend to the offer. A disk the caller supplied (zero-copy `MOVE` re-fetching a shared
+part onto the move's destination) is never overridden — a content-addressed disk cannot reach that path
+at all, since it does not support zero-copy replication. And a read-only disk is never a candidate: its
+pool is advertised only if some other disk of that pool in the policy is writable, and when none is, the
+sender streams bytes and the ordinary placement applies.
+
+A pool disk that is not live — its mount lease lost, its identity lost, or the storage shut down — is
+still the target. The relink's own write gate refuses it and the fetch fails; a replication-queue fetch
+is retried by the queue, while a manual `FETCH PART` or `FETCH PARTITION` reports the error to the user.
+The part is never quietly placed on another disk instead. This is the behaviour a single-disk
+content-addressed policy always had, and a mixed policy now shares it.
+
+The byte-fetch fallback after a relink that failed for a mechanism reason (a corrupted manifest, a
+body-absent precommit, a ref conflict) re-requests the bytes on the same pool disk, where they
+content-address and deduplicate against the pool — the placement outlives the relink. A manifest of a
+newer format generation is not degraded to bytes today (a tracked gap, `[relink-fallback-unknown-format-version]`
+in the backlog).
+
+During a rolling upgrade a sender that predates the pool-set advertise compares the whole `cas_pool_uuid`
+value with its own pool id, so a receiver whose policy holds several pools gets bytes from such a sender
+until it is upgraded; a receiver with one pool is unaffected, its advertise is byte-for-byte the old one.
 
 ## What actually seals "commit before release" {#relink-seal}
 
@@ -109,7 +143,8 @@ content, and that root can confirm its exact refs.
 
 `DETACH`, `ATTACH`, `delete_tmp_` cleanup, and merge-result renames all reduce to the same two
 moves: re-key any *staged* source into the destination, then `republishRef(src → dst)` for any
-*committed* source. `republishRef` re-reads the source manifest freshly, publishes an
+*committed* source. `republishRef` resolves the source ref freshly and reads its manifest through
+the manifest cache, publishes an
 equivalent-entry manifest under the destination ref — a **new** manifest id, with blobs untouched
 and adopted by evidence — then drops the source ref. A destination that already exists with
 identical entries just drops the source, an idempotent re-drive; one with different entries

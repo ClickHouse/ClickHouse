@@ -1,4 +1,5 @@
 #pragma once
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTable.h>
 #include <Common/Exception.h>
 #include <base/defines.h>
 #include <base/extended_types.h>
@@ -42,14 +43,23 @@ enum class BlobHashAlgo : uint8_t
     Sha256 = 3,
 };
 
+/// The `BlobHashAlgo` wire vocabulary (also the blob PATH SEGMENT, e.g.
+/// `<pool>/blobs/<algo>/<shard>/<hex>`); coverage is proven in `CasBlobDigest.cpp`.
+inline constexpr EnumWireTable<BlobHashAlgo, 3> kBlobHashAlgoWords{{{
+    {BlobHashAlgo::CityHash128, "ch128"},
+    {BlobHashAlgo::XXH3_128, "xxh3"},
+    {BlobHashAlgo::Sha256, "sha256"},
+}}};
+
 /// The blob PATH SEGMENT for `algo`, e.g. `<pool>/blobs/<algo>/<shard>/<hex>`: `"ch128"` | `"xxh3"` |
-/// `"sha256"`. Throws `BAD_ARGUMENTS` for an out-of-range enum value.
+/// `"sha256"`. Throws `LOGICAL_ERROR` for an out-of-range enum value.
 std::string_view blobHashAlgoName(BlobHashAlgo algo);
 
 /// Returns the digest byte width for `algo`: 16 for `CityHash128` and `XXH3_128`, or 32 for
 /// `Sha256`. This is also the width used by `Cas::codecFor(algo)`'s `DigestCodec`; callers must
-/// derive it from the algorithm rather than from pool state. Throws `BAD_ARGUMENTS` for an
-/// out-of-range enum value, preserving the fail-closed contract of `blobHashAlgoName`.
+/// derive it from the algorithm rather than from pool state. The functions over `BlobHashAlgo`
+/// intentionally use different defensive codes: this one throws `BAD_ARGUMENTS` for an out-of-range
+/// enum value, while `blobHashAlgoName` throws `LOGICAL_ERROR`.
 uint64_t blobHashLenFor(BlobHashAlgo algo);
 
 /// Parses the per-disk `blob_hash` CONFIG value: `"cityhash128"` | `"xxh3-128"` | `"sha256"`. Throws

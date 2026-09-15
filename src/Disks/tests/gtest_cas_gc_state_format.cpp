@@ -10,6 +10,8 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+CAS_BATTERY_COVERS(GcState);
+
 TEST(CASFormatBattery, GcState)
 {
     GcState s;
@@ -24,9 +26,11 @@ TEST(CASFormatBattery, GcState)
         [&] { return sealObject(FormatId::GcState, encodeGcState(s)); },
         [](std::string_view d) { decodeGcState(std::string(openObject(FormatId::GcState, d))); },
         currentFormatHeader("cas_gc_state") +
-        "{\"rnd\":\"4\",\"gcs\":1,\"sg\":\"9\",\"spt\":\"7\",\"sa\":\"3\",\"msc\":\"\","
-        "\"lo\":\"00000000000000000000000000000001\",\"ls\":\"12\"}\n"});
+        "{\"round\":\"4\",\"gc_shards\":1,\"snap_generation\":\"9\",\"snap_pruned_through\":\"7\",\"snap_attempt\":\"3\",\"manifest_sweep_cursor\":\"\","
+        "\"lease_owner\":\"00000000000000000000000000000001\",\"lease_seq\":\"12\"}\n"});
 }
+
+CAS_BATTERY_COVERS(GcHeartbeat);
 
 TEST(CASFormatBattery, GcHeartbeat)
 {
@@ -35,7 +39,7 @@ TEST(CASFormatBattery, GcHeartbeat)
         [&] { return sealObject(FormatId::GcHeartbeat, encodeGcHeartbeat(hb)); },
         [](std::string_view d) { decodeGcHeartbeat(std::string(openObject(FormatId::GcHeartbeat, d))); },
         currentFormatHeader("cas_gc_hb") +
-        "{\"by\":\"00000000000000000000000000000001\",\"seq\":\"1741\"}\n"});
+        "{\"owner\":\"00000000000000000000000000000001\",\"hb_seq\":\"1741\"}\n"});
 }
 
 /// ---------- field round-trips (migrated from gtest_cas_gc_formats.cpp, re-pointed at the text codec) ----------
@@ -83,11 +87,11 @@ TEST(CASGCStateFormat, DefaultsRoundTrip)
 
 TEST(CASGCStateFormat, RejectsZeroGcShards)
 {
-    /// `v:3` is deliberate and must NOT follow a future `G_BUILD` bump: any version <= G_BUILD passes
-    /// the header gate, which is the point — the BODY is what has to fail here.
-    const String bad = "{\"type\":\"cas_gc_state\",\"v\":3}\n"
-                       "{\"rnd\":\"0\",\"gcs\":0,\"sg\":\"0\",\"spt\":\"0\",\"sa\":\"0\",\"msc\":\"\","
-                       "\"lo\":\"00000000000000000000000000000000\",\"ls\":\"0\"}\n";
+    /// `v:1` is the baseline generation, so it always passes the header gate -- the BODY is what has
+    /// to fail here.
+    const String bad = "{\"type\":\"cas_gc_state\",\"v\":1}\n"
+                       "{\"round\":\"0\",\"gc_shards\":0,\"snap_generation\":\"0\",\"snap_pruned_through\":\"0\",\"snap_attempt\":\"0\",\"manifest_sweep_cursor\":\"\","
+                       "\"lease_owner\":\"00000000000000000000000000000000\",\"lease_seq\":\"0\"}\n";
     EXPECT_THROW(decodeGcState(bad), DB::Exception);
 }
 
@@ -123,13 +127,13 @@ TEST(CASGCStateFormatDeathTest, RejectsZeroGcShardsOnEncodeAborts)
 
 TEST(CASGCStateFormat, RejectsAbsentGcShards)
 {
-    /// An absent gcs key must fail closed (the writer always emits it) rather than silently defaulting
+    /// An absent gc_shards key must fail closed (the writer always emits it) rather than silently defaulting
     /// to the struct's gc_shards = 1 — a missing shard count means a corrupt object, not "use the floor".
-    /// `v:3` is deliberate and must NOT follow a future `G_BUILD` bump: any version <= G_BUILD passes
-    /// the header gate, which is the point — the BODY is what has to fail here.
-    const String bad = "{\"type\":\"cas_gc_state\",\"v\":3}\n"
-                       "{\"rnd\":\"0\",\"sg\":\"0\",\"spt\":\"0\",\"sa\":\"0\",\"msc\":\"\","
-                       "\"lo\":\"00000000000000000000000000000000\",\"ls\":\"0\"}\n";
+    /// `v:1` is the baseline generation, so it always passes the header gate -- the BODY is what has
+    /// to fail here.
+    const String bad = "{\"type\":\"cas_gc_state\",\"v\":1}\n"
+                       "{\"round\":\"0\",\"snap_generation\":\"0\",\"snap_pruned_through\":\"0\",\"snap_attempt\":\"0\",\"manifest_sweep_cursor\":\"\","
+                       "\"lease_owner\":\"00000000000000000000000000000000\",\"lease_seq\":\"0\"}\n";
     EXPECT_THROW(decodeGcState(bad), DB::Exception);
 }
 
@@ -157,9 +161,9 @@ TEST(CASGCHeartbeatFormat, RoundTripAndBoundaries)
 
 TEST(CASGCHeartbeatFormat, RejectsMissingIdentityFields)
 {
-    /// `v:3` is deliberate and must NOT follow a future `G_BUILD` bump: any version <= G_BUILD passes
-    /// the header gate, which is the point — the BODY is what has to fail here.
-    const String header = "{\"type\":\"cas_gc_hb\",\"v\":3}\n";
+    /// `v:1` is the baseline generation, so it always passes the header gate -- the BODY is what has
+    /// to fail here.
+    const String header = "{\"type\":\"cas_gc_hb\",\"v\":1}\n";
 
     const auto expectCorrupted = [](const String & data)
     {
@@ -174,6 +178,6 @@ TEST(CASGCHeartbeatFormat, RejectsMissingIdentityFields)
         }
     };
 
-    expectCorrupted(header + "{\"seq\":\"1741\"}\n");
-    expectCorrupted(header + "{\"by\":\"00000000000000000000000000000001\"}\n");
+    expectCorrupted(header + "{\"hb_seq\":\"1741\"}\n");
+    expectCorrupted(header + "{\"owner\":\"00000000000000000000000000000001\"}\n");
 }

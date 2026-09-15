@@ -37,7 +37,7 @@ public:
         const std::string & file_name,
         Block & block_with_partition_values,
         const std::function<void(const std::string &)> & new_file_path_callback,
-        bool overwrite_if_exists,
+        MergeTreePartExportFileAlreadyExistsPolicy file_already_exists_policy,
         std::size_t max_bytes_per_file,
         std::size_t max_rows_per_file,
         const std::optional<std::string> & iceberg_metadata_json_string,
@@ -93,6 +93,8 @@ public:
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 

@@ -4,10 +4,11 @@
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
 #include <base/types.h>
 
+#include <cstdint>
 #include <limits>
+#include <optional>
 #include <string_view>
 #include <vector>
-#include <optional>
 
 namespace DB
 {
@@ -43,6 +44,34 @@ void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t file_size, std:
 
 /// Iceberg deletion-vector-v1 envelope magic (`0xD1D33964`), shared with SQL `Puffin` decode.
 inline constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
+
+/// Puffin file magic (`PFA1`), shared with SQL `Puffin` decode.
+inline constexpr UInt8 PUFFIN_FILE_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
+
+enum class IcebergDeletionVectorContainer : uint8_t
+{
+    /// Classic Iceberg v3 Puffin (`PFA1` + JSON footer). Footer identity bind is required.
+    Puffin,
+    /// Spec-aligned `deletion-vector-v1` envelope at `content_offset` without a Puffin container
+    /// (Databricks / Delta `deletion_vector_*.bin`). Identity comes from the Iceberg manifest.
+    SliceOnly,
+};
+
+/// True when `header` is the 4-byte Puffin file magic `PFA1`.
+bool isPuffinFileMagic(const UInt8 * header);
+
+/// True when `header` (first 8 bytes of a blob) is a `deletion-vector-v1` envelope for `length`.
+/// Does not throw; used to distinguish Delta `.bin` slices from unknown files without catch-as-control-flow.
+bool isDeletionVectorV1Envelope(const UInt8 * header, Int64 length);
+
+/// Peek the object start: `PFA1` => Puffin; otherwise require a valid `deletion-vector-v1` envelope
+/// at (`content_offset`, `content_size_in_bytes`). Throws `BAD_ARGUMENTS` if neither matches.
+IcebergDeletionVectorContainer detectIcebergDeletionVectorContainer(
+    SeekableReadBuffer & file,
+    size_t file_size,
+    Int64 content_offset,
+    Int64 content_size_in_bytes,
+    std::string_view path);
 
 /// Fail closed before envelope peek / full allocate. Shared by SQL `Puffin` and Iceberg loaders.
 /// Order: cardinality ceiling, then length bounds (`length < 0`, absolute blob cap, min envelope).

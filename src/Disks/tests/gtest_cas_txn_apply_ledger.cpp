@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcShardPlan.h>
+#include <Disks/tests/cas_test_helpers.h>
 
 using namespace DB::Cas;
 
@@ -94,6 +95,7 @@ TEST(CASTxnApplyLedger, OnlyTheTransactionWhoseDeltasVanishedIsReported)
 TEST(CASTxnApplyLedger, ReducerMarksTheOrdinalOfEveryDeltaItConsumes)
 {
     InMemoryBackend backend;
+    DB::Cas::tests::OperationForTest operation(backend);
     Layout layout{"pool"};
 
     TxnApplyLedger ledger;
@@ -107,7 +109,7 @@ TEST(CASTxnApplyLedger, ReducerMarksTheOrdinalOfEveryDeltaItConsumes)
         {bh(2), s(1), /*remove*/false, routed},
     };
     std::vector<RunRef> runs;
-    foldDeltasIntoGeneration(backend, layout, /*prior_runs*/{}, /*new_generation*/1, /*attempt*/0,
+    foldDeltasIntoGeneration(*operation, layout, /*prior_runs*/{}, /*new_generation*/1, /*attempt*/0,
                              /*shard*/0, deltas, runs,
                              /*current_round*/0, /*condemn_round*/0, /*head_blob*/{}, /*peek_head*/{},
                              /*confirm_condemned_marker*/{}, /*out_retired*/nullptr,
@@ -135,6 +137,7 @@ TEST(CASTxnApplyLedger, ReducerMarksTheOrdinalOfEveryDeltaItConsumes)
 TEST(CASTxnApplyLedger, ReducerMarksAnUnmatchedRemovalDelta)
 {
     InMemoryBackend backend;
+    DB::Cas::tests::OperationForTest operation(backend);
     Layout layout{"pool"};
 
     TxnApplyLedger ledger;
@@ -146,7 +149,7 @@ TEST(CASTxnApplyLedger, ReducerMarksAnUnmatchedRemovalDelta)
     std::vector<BlobDelta> deltas{{bh(1), s(1), /*remove*/true, removal}};
     std::vector<RunRef> runs;
     RetiredMergeResult merged;
-    foldDeltasIntoGeneration(backend, layout, /*prior_runs*/{}, /*new_generation*/1, /*attempt*/0,
+    foldDeltasIntoGeneration(*operation, layout, /*prior_runs*/{}, /*new_generation*/1, /*attempt*/0,
                              /*shard*/0, deltas, runs,
                              /*current_round*/0, /*condemn_round*/0, /*head_blob*/{}, /*peek_head*/{},
                              /*confirm_condemned_marker*/{}, &merged,

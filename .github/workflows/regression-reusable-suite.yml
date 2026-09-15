@@ -93,6 +93,7 @@ jobs:
       build_sha: ${{ inputs.build_sha }}
       pr_number: ${{ github.event.number }}
       artifacts: builds
+      regression_args: ${{ inputs.regression_args }}
       # Args
       args: --test-to-end
         --no-colors

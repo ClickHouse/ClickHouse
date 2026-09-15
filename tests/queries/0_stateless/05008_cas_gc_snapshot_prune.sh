@@ -20,7 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DISK="05008_cas_gc_snapshot_prune"
+DISK="${CLICKHOUSE_DATABASE}_05008_cas_gc_snapshot_prune"
 
 # CA-over-LOCAL object storage emits a one-time <Warning> about emulated conditional operations on
 # mount; the .sh harness fails on ANY client stderr, so send only error+ logs to the client (real
@@ -75,3 +75,7 @@ FROM system.cas_gc_log
 WHERE disk_name LIKE '%${DISK}%' AND event_type = 'Finish'"
 
 $CLIENT -q "DROP TABLE t_ca_p9"
+
+# FORGET logs an operator WARNING; $CLIENT already runs at --send_logs_level=error, which excludes it.
+$CLIENT -q "SYSTEM CAS FORGET '${DISK}'" || {
+    echo "FORGET failed"; exit 1; }

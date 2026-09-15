@@ -5,11 +5,9 @@
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/ProfileEvents.h>
 #include <Poco/Exception.h>
-#include <Poco/Util/XMLConfiguration.h>
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <latch>
-#include <sstream>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -28,7 +26,6 @@ namespace DB::ErrorCodes
 namespace ProfileEvents
 {
 extern const Event CASRefRollbackBestEffortDropFailed;
-extern const Event CASPartFolderValidateSkipped;
 }
 
 using namespace DB;
@@ -64,48 +61,31 @@ Cas::ManifestId publishPart(const Cas::PoolPtr & store, const Cas::RootNamespace
 Cas::CachedPartFolderAccess::CacheParams cacheOn()
 {
     return {.cache_bytes = 64ULL << 20, .max_entries = 10000, .max_entry_bytes = 16ULL << 20,
-            .explain_enabled = true, .validate = {}};
-}
-
-/// Mirrors gtest_cas_s3_staging.cpp's helper of the same shape: the shape a real CAS disk config
-/// has under `storage_configuration.disks.<name>`, so `config_prefix = "disk"` reads exactly like
-/// the disk factory's `config_prefix`. Used to unit-test `parsePartFolderValidate` standalone.
-Poco::AutoPtr<Poco::Util::XMLConfiguration> configWithDiskSection(const std::string & inner_xml)
-{
-    std::istringstream xml_stream( // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        "<clickhouse><disk>" + inner_xml + "</disk></clickhouse>");
-    return new Poco::Util::XMLConfiguration(xml_stream);
+            .explain_enabled = true};
 }
 
 /// Every mutating backend op throws once armed — models a correlated backend outage during the
 /// transaction's compensating rollback (dropRef must append a removal, which mutates the backend).
+/// While armed, the store is unreachable for every mutation: a transport-class failure, so the request
+/// engine settles it by a read (which fails too) and reissues until the call's own retry window closes.
+/// A test arming it therefore drives the engine's clock, or pays that window in real time.
 class RollbackFaultBackend final : public Cas::InMemoryBackend
 {
 public:
     std::atomic<bool> armed{false};
 
-    Cas::PutResult putIfAbsent(const String & k, const String & b, const Cas::ObjectMeta & m) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             Cas::TransportAccess & access) override
     {
         failIfArmed();
-        return InMemoryBackend::putIfAbsent(k, b, m);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
-    Cas::PutResult putOverwrite(const String & k, const String & b, const Cas::Token & e, const Cas::ObjectMeta & m) override
+    RawRemoval remove(const String & key, const String & expected_value, Cas::TransportAccess & access) override
     {
         failIfArmed();
-        return InMemoryBackend::putOverwrite(k, b, e, m);
-    }
-
-    Cas::CasResult casPut(const String & k, const String & b, const std::optional<Cas::Token> & e, const Cas::ObjectMeta & m) override
-    {
-        failIfArmed();
-        return InMemoryBackend::casPut(k, b, e, m);
-    }
-
-    Cas::DeleteOutcome deleteExact(const String & k, const Cas::Token & t) override
-    {
-        failIfArmed();
-        return InMemoryBackend::deleteExact(k, t);
+        return InMemoryBackend::remove(key, expected_value, access);
     }
 
 private:
@@ -135,9 +115,12 @@ public:
     /// cleanup path ran its ref-log append at all, on a table where that append can no longer succeed.
     int matching_put_attempts = 0;
 
-    Cas::PutResult putIfAbsent(const String & key, const String & bytes, const Cas::ObjectMeta & meta) override
+    /// Sabotages the sole write primitive, so the fault fires whichever verb (`create`/`replace`) issued it.
+    std::expected<String, Cas::Backend::RawConflict> write(const String & key, const String & bytes,
+                                                            const std::optional<String> & expected_value,
+                                                            Cas::TransportAccess & access) override
     {
-        if (!fault_key_substr.empty() && key.find(fault_key_substr) != String::npos)
+        if (!expected_value && !fault_key_substr.empty() && key.find(fault_key_substr) != String::npos)
         {
             ++matching_put_attempts;
             if (skip > 0)
@@ -145,13 +128,13 @@ public:
             else if (fault_count > 0)
             {
                 --fault_count;
-                /// The 3-arg qualified call bypasses virtual dispatch entirely (unlike a 2-arg
-                /// convenience overload, which would re-enter this very override through the vtable).
-                InMemoryBackend::putIfAbsent(key, bytes + String("\x01_FOREIGN_DIFFERENT"), meta);
+                /// The qualified call bypasses virtual dispatch entirely (unlike a re-entrant call
+                /// through the vtable), landing a foreign object at the key before the response is lost.
+                InMemoryBackend::write(key, bytes + String("\x01_FOREIGN_DIFFERENT"), expected_value, access);
                 throw Poco::TimeoutException("PromoteConflictOnceBackend: a foreign different object landed; response lost");
             }
         }
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 };
 
@@ -170,9 +153,12 @@ public:
     int fault_count = 0;
     int matching_put_attempts = 0;
 
-    Cas::PutResult putIfAbsent(const String & key, const String & bytes, const Cas::ObjectMeta & meta) override
+    /// Sabotages the sole write primitive, so the fault fires whichever verb (`create`/`replace`) issued it.
+    std::expected<String, Cas::Backend::RawConflict> write(const String & key, const String & bytes,
+                                                            const std::optional<String> & expected_value,
+                                                            Cas::TransportAccess & access) override
     {
-        if (!fault_key_substr.empty() && key.find(fault_key_substr) != String::npos)
+        if (!expected_value && !fault_key_substr.empty() && key.find(fault_key_substr) != String::npos)
         {
             ++matching_put_attempts;
             if (skip > 0)
@@ -184,13 +170,13 @@ public:
                                       Aws::S3::S3Errors::UNKNOWN, "MalformedXML");
             }
         }
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 };
 
 }
 
-TEST(CASPartFolderAccess, RetainedHitSkipsManifestHead)
+TEST(CASPartFolderAccess, RetainedHitCostsNoRequest)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend);
@@ -201,14 +187,21 @@ TEST(CASPartFolderAccess, RetainedHitSkipsManifestHead)
     const Cas::PartRefKey key{ns, "part_1"};
     const String manifest_key = layout.manifestKey(id);
 
+    /// Cold build: warms the retained view and the decode cache. Excluded from the counts below so
+    /// they measure only the warm hits that follow.
+    ASSERT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);
+
     backend->resetCounts();
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 4; ++i)
         ASSERT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);
 
-    /// The one-GET goal (spec acceptance 4): ONE body GET, ONE mandatory HEAD (the cold build);
-    /// every subsequent CachedForLoad call is a validated hit — zero manifest ops.
-    EXPECT_EQ(backend->getCount(manifest_key), 1u);
-    EXPECT_EQ(backend->headCount(manifest_key), 1u);
+    /// A retained hit costs no request at all -- not merely no manifest GET on this key, but no
+    /// backend traffic of ANY kind (GET, HEAD, LIST, streamed GET) against ANY key.
+    EXPECT_EQ(backend->getCount(manifest_key), 0u);
+    EXPECT_EQ(backend->getTotal(), 0u);
+    EXPECT_EQ(backend->headTotal(), 0u);
+    EXPECT_EQ(backend->listTotal(), 0u);
+    EXPECT_EQ(backend->getStreamTotal(), 0u);
     EXPECT_TRUE(access.explain(key).retained);
     EXPECT_EQ(access.explain(key).last_decision,
               Cas::CachedPartFolderAccess::LastDecision::Hit);
@@ -224,7 +217,7 @@ TEST(CASPartFolderAccess, HitPathJournalEmptyAndCheapWhenExplainDisabled)
     /// per-disk explain mutex nor write a journal entry (B2).
     Cas::CachedPartFolderAccess access(store,
         {.cache_bytes = 64ULL << 20, .max_entries = 10000, .max_entry_bytes = 16ULL << 20,
-         .explain_enabled = false, .validate = {}});
+         .explain_enabled = false});
     const auto id = publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
     const Cas::PartRefKey key{ns, "part_1"};
     const String manifest_key = layout.manifestKey(id);
@@ -233,9 +226,8 @@ TEST(CASPartFolderAccess, HitPathJournalEmptyAndCheapWhenExplainDisabled)
     for (int i = 0; i < 5; ++i)
         ASSERT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);
 
-    /// Same request oracle as RetainedHitSkipsManifestHead — one cold build, then validated hits.
+    /// Same request oracle as RetainedHitCostsNoRequest — one cold build, then retained hits.
     EXPECT_EQ(backend->getCount(manifest_key), 1u);
-    EXPECT_EQ(backend->headCount(manifest_key), 1u);
     /// The journal is never written when disabled.
     EXPECT_EQ(access.explainJournalSizeForTest(), 0u);
     /// explain() still reports live retention truthfully, but the decision defaults to Miss (unwritten).
@@ -275,12 +267,11 @@ TEST(CASPartFolderAccess, GetViewFailsClosedOnMissingBody)
     const Cas::RootNamespace ns{"srv/t1"};
     const auto id = publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
 
-    /// Physically delete the live manifest body (a protocol violation) — every getView mode must
-    /// surface INV-NO-DANGLE as FILE_DOESNT_EXIST in Phase 2 (there is no retained view to hit).
-    /// Retention is off (the single-arg ctor below), so this is the `always` (default) part_folder_validate
-    /// mode under test regardless — the `never`/`age` skip is proven by the ValidateNever/ValidateAge
-    /// tests further down, which turn retention ON.
+    /// Physically delete the live manifest body (a protocol violation). Retention is off and the
+    /// decode cache is cold (promote reads the body through the backend, not the reader), so every
+    /// getView mode reaches the reader's miss path: one GET, no HEAD, FILE_DOESNT_EXIST.
     deleteManifestBody(*backend, layout, id);
+    backend->resetCounts();
 
     Cas::CachedPartFolderAccess access(store);
     const Cas::PartRefKey key{ns, "part_1"};
@@ -288,6 +279,7 @@ TEST(CASPartFolderAccess, GetViewFailsClosedOnMissingBody)
                            Cas::Freshness::ForceFresh,
                            Cas::Freshness::StrictValidate})
         expectThrowsCode(ErrorCodes::FILE_DOESNT_EXIST, [&] { access.getView(key, freshness); });
+    EXPECT_EQ(backend->headCount(layout.manifestKey(id)), 0u);
 }
 
 TEST(CASPartFolderAccess, WritePrimitivesRoundTrip)
@@ -420,14 +412,15 @@ TEST(CASPartFolderAccess, PublishEntriesAbandonsBuildOnPromoteFailure)
     /// fresh id to get past the foreign object would sort above it.
     String greatest_key;
     size_t foreign_objects = 0;
+    DB::Cas::tests::OperationForTest scan(*backend);
     for (String cursor;;)
     {
-        const Cas::ListPage page = backend->list(backend->fault_key_substr, cursor, 1000);
+        const Cas::ListPage page = (*scan).list(backend->fault_key_substr, cursor, 1000, Cas::Retry::standard());
         for (const auto & listed : page.keys)
         {
             if (listed.key > greatest_key)
                 greatest_key = listed.key;
-            const auto body = backend->get(listed.key);
+            const auto body = (*scan).read(listed.key, Cas::Retry::standard());
             if (body && body->bytes.find("_FOREIGN_DIFFERENT") != String::npos)
                 ++foreign_objects;
         }
@@ -437,7 +430,7 @@ TEST(CASPartFolderAccess, PublishEntriesAbandonsBuildOnPromoteFailure)
     }
     EXPECT_EQ(foreign_objects, 1u) << "the foreign object must still own the key it took";
     ASSERT_FALSE(greatest_key.empty());
-    const auto greatest_body = backend->get(greatest_key);
+    const auto greatest_body = (*scan).read(greatest_key, Cas::Retry::standard());
     ASSERT_TRUE(greatest_body.has_value());
     EXPECT_NE(greatest_body->bytes.find("_FOREIGN_DIFFERENT"), String::npos)
         << "the foreign occupant must still be the highest id in this table's stream: a log object above "
@@ -554,7 +547,10 @@ TEST(CASPartFolderAccess, PrepareThenAbortAppendsThePrecommitRemoval)
     /// The precommit BODY survives (delete-after-sealed-decrements) -- the removal queues GC's `-1`,
     /// it does not writer-delete the manifest. Mirrors
     /// `CASPartWriteTxn.AbandonAppendsPrecommitRemovalAndKeepsLivePrecommitBody`.
-    EXPECT_TRUE(backend->head(store->layout().manifestKey(id)).exists);
+    {
+        DB::Cas::tests::OperationForTest op(*backend);
+        EXPECT_TRUE((*op).head(store->layout().manifestKey(id), Cas::Retry::standard()).has_value());
+    }
 }
 
 /// A forgotten terminal must be impossible, not merely discouraged: `~PartWriteTxn` only retires the
@@ -678,7 +674,7 @@ TEST(CASPartFolderAccess, ExplainRecordsDecisions)
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend);
     const Cas::RootNamespace ns{"srv/t1"};
-    Cas::CachedPartFolderAccess access(store, {.explain_enabled = true, .validate = {}});
+    Cas::CachedPartFolderAccess access(store, {.explain_enabled = true});
     publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
     const Cas::PartRefKey key{ns, "part_1"};
 
@@ -717,11 +713,10 @@ TEST(CASPartFolderAccess, BaselineRequestCountsWithoutRetention)
     for (int i = 0; i < n; ++i)
         ASSERT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);
 
-    /// The Phase-3 baseline (retention off): one manifest-body GET (the decode cache absorbs the
-    /// rest) but a mandatory manifest HEAD per call. Phase 4's validated hits remove the HEADs;
-    /// this test pins the numbers Phase 4 improves.
+    /// Retention off: one manifest-body GET (the decode cache absorbs the rest) and no manifest
+    /// HEAD at all — a cached decode is served without a request.
     EXPECT_EQ(backend->getCount(manifest_key), 1u);
-    EXPECT_EQ(backend->headCount(manifest_key), static_cast<uint64_t>(n));
+    EXPECT_EQ(backend->headCount(manifest_key), 0u);
 }
 
 /// ==== Phase 4 (retention) semantics battery: spec §Testing acceptance criteria ====
@@ -767,7 +762,11 @@ TEST(CASPartFolderAccess, MismatchRebuildAfterRepublish)
     EXPECT_TRUE(access.explain(key).retained);
 }
 
-TEST(CASPartFolderAccess, ForceFreshFailsClosedWhileRetainedViewExists)
+/// The decode cache is keyed by id and an id names one content forever, so a warm reader serves
+/// `ForceFresh` from the immutable decode with no manifest request even after the body object is
+/// gone. A retained-view hit is not what is being tested here: `ForceFresh` bypasses the view cache
+/// and rebuilds the view from the pool's manifest cache.
+TEST(CASPartFolderAccess, ForceFreshServesImmutableDecodeWithoutManifestRequestsAfterBodyDeletion)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend);
@@ -776,178 +775,53 @@ TEST(CASPartFolderAccess, ForceFreshFailsClosedWhileRetainedViewExists)
     Cas::CachedPartFolderAccess access(store, cacheOn());
     const auto id = publishPart(store, ns, "part_1", {inlineEntry("f", "x")});
     const Cas::PartRefKey key{ns, "part_1"};
-
-    ASSERT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);   /// retained
-    deleteManifestBody(*backend, layout, id);   /// protocol violation: live body vanishes
-
-    /// Write-evidence and strict paths surface INV-NO-DANGLE immediately (mandatory HEAD)...
-    expectThrowsCode(ErrorCodes::FILE_DOESNT_EXIST,
-        [&] { access.getView(key, Cas::Freshness::ForceFresh); });
-    expectThrowsCode(ErrorCodes::FILE_DOESNT_EXIST,
-        [&] { access.getView(key, Cas::Freshness::StrictValidate); });
-
-    /// ...while a validated CachedForLoad hit still serves the immutable decode — the documented
-    /// residual delta (spec §Staleness Equivalence): detection deferred, never for write evidence.
-    EXPECT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);
-}
-
-/// ==== §3 (part_folder_validate): the ForceFresh body re-proof HEAD is configurable ====
-
-TEST(CASPartFolderAccess, ValidateNeverServesRetainedViewWithoutBodyHead)
-{
-    auto backend = std::make_shared<CountingBackend>();
-    auto store = openPoolForTest(backend);
-    const Cas::Layout layout("p");
-    const Cas::RootNamespace ns{"srv/t1"};
-    const auto id = publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
-
-    auto params = cacheOn();
-    params.validate = {Cas::PartFolderValidate::Mode::Never, 0};
-    Cas::CachedPartFolderAccess access(store, params);
-    const Cas::PartRefKey key{ns, "part_1"};
-
-    /// Prime the retained view (pays the HEAD once).
-    ASSERT_NE(access.getView(key, Cas::Freshness::ForceFresh), nullptr);
-    /// Body vanishes (a protocol violation the net would normally catch)...
-    deleteManifestBody(*backend, layout, id);
-    const auto skips_before = ProfileEvents::global_counters[ProfileEvents::CASPartFolderValidateSkipped].load();
-    /// ...but `never` serves the retained view, no HEAD, no throw.
-    EXPECT_NO_THROW(access.getView(key, Cas::Freshness::ForceFresh));
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASPartFolderValidateSkipped].load() - skips_before, 1);
-}
-
-TEST(CASPartFolderAccess, ValidateAlwaysStillHeadsEveryForceFresh)
-{
-    auto backend = std::make_shared<CountingBackend>();
-    auto store = openPoolForTest(backend);
-    const Cas::Layout layout("p");
-    const Cas::RootNamespace ns{"srv/t1"};
-    const auto id = publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
-
-    Cas::CachedPartFolderAccess access(store, cacheOn());   /// default = Always
-    const Cas::PartRefKey key{ns, "part_1"};
-    ASSERT_NE(access.getView(key, Cas::Freshness::ForceFresh), nullptr);
-    deleteManifestBody(*backend, layout, id);
-    /// `always` re-proves the body every ForceFresh — the deleted body surfaces as FILE_DOESNT_EXIST.
-    expectThrowsCode(ErrorCodes::FILE_DOESNT_EXIST,
-        [&] { access.getView(key, Cas::Freshness::ForceFresh); });
-}
-
-TEST(CASPartFolderAccess, ValidateAgeSkipsWithinWindowThenHeadsAfter)
-{
-    auto backend = std::make_shared<CountingBackend>();
-    auto store = openPoolForTest(backend);
-    const Cas::Layout layout("p");
-    const Cas::RootNamespace ns{"srv/t1"};
-    const auto id = publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
-
-    auto params = cacheOn();
-    params.validate = {Cas::PartFolderValidate::Mode::Age, /*age_seconds=*/5};
-    /// An injected clock (spec §3 TDD requirement): the SAME function stamps the retained view's
-    /// validated_at_ms (buildView) and drives the age-window comparison (getView), so the test controls
-    /// both sides of the comparison deterministically -- no real sleep.
-    std::atomic<uint64_t> fake_now_ms{1'000'000};
-    Cas::CachedPartFolderAccess access(store, params, [&] { return fake_now_ms.load(); });
-    const Cas::PartRefKey key{ns, "part_1"};
     const String manifest_key = layout.manifestKey(id);
 
-    /// Prime the retained view (pays the HEAD once) at fake_now_ms.
+    ASSERT_NE(access.getView(key, Cas::Freshness::ForceFresh), nullptr);   /// warms the decode cache
+    deleteManifestBody(*backend, layout, id);   /// protocol violation: live body vanishes
+    backend->resetCounts();
+
+    auto view = access.getView(key, Cas::Freshness::ForceFresh);
+    ASSERT_NE(view, nullptr);
+    EXPECT_NE(view->findFile("f"), nullptr);
+    EXPECT_EQ(backend->getCount(manifest_key), 0u);
+    EXPECT_EQ(backend->headCount(manifest_key), 0u);
+    EXPECT_EQ(access.explain(key).last_decision, Cas::CachedPartFolderAccess::LastDecision::ForceFreshRead);
+
+    /// `StrictValidate` serves the same immutable decode: an id names one content, so once the id is
+    /// resolved there is nothing stricter left to prove about the body. It bypasses retention, so its
+    /// recorded decision differs from the `ForceFresh` one above.
+    auto strict_view = access.getView(key, Cas::Freshness::StrictValidate);
+    ASSERT_NE(strict_view, nullptr);
+    EXPECT_EQ(strict_view->manifest().get(), view->manifest().get());
+    EXPECT_EQ(backend->getCount(manifest_key), 0u);
+    EXPECT_EQ(backend->headCount(manifest_key), 0u);
+    EXPECT_EQ(access.explain(key).last_decision, Cas::CachedPartFolderAccess::LastDecision::StrictBypass);
+}
+
+/// With the decode cache disabled a prior read leaves nothing behind, so the deleted body surfaces
+/// as FILE_DOESNT_EXIST in every mode: the miss path is the same fail-closed path a cold reader takes.
+TEST(CASPartFolderAccess, DeletedBodyFailsClosedInEveryModeWhenDecodeCacheDisabled)
+{
+    auto backend = std::make_shared<CountingBackend>();
+    auto store = DB::Cas::Pool::open(backend,
+        DB::Cas::PoolConfig{.pool_prefix = "p", .server_root_id = "test", .manifest_decode_cache_bytes = 0});
+    const Cas::Layout layout("p");
+    const Cas::RootNamespace ns{"srv/t1"};
+    Cas::CachedPartFolderAccess access(store);   /// retention off: every mode reaches the reader
+    const auto id = publishPart(store, ns, "part_1", {inlineEntry("f", "x")});
+    const Cas::PartRefKey key{ns, "part_1"};
+
     ASSERT_NE(access.getView(key, Cas::Freshness::ForceFresh), nullptr);
-    const uint64_t heads_after_prime = backend->headCount(manifest_key);
+    deleteManifestBody(*backend, layout, id);
+    backend->resetCounts();
 
-    /// +2s: still inside the 5s window — served from the retained view, no new HEAD.
-    fake_now_ms += 2000;
-    ASSERT_NE(access.getView(key, Cas::Freshness::ForceFresh), nullptr);
-    EXPECT_EQ(backend->headCount(manifest_key), heads_after_prime);
-
-    /// +6s from the ORIGINAL stamp (past the 5s window): re-proves the body via a fresh HEAD.
-    fake_now_ms += 4000;
-    ASSERT_NE(access.getView(key, Cas::Freshness::ForceFresh), nullptr);
-    EXPECT_GT(backend->headCount(manifest_key), heads_after_prime);
-}
-
-/// ==== §3: `parsePartFolderValidate` config parsing, standalone (mirrors CASS3Staging's
-/// parseStagingBackend coverage) -- review finding: std::stoull silently accepted a leading '-'
-/// (unsigned wraparound), so a malformed `age -5` never hit the parser's own fail-closed throw.
-/// These pin the fixed `std::from_chars`-based parsing directly, with no disk/store needed. ====
-
-TEST(CASPartFolderValidateParse, DefaultConfigParsesToAlways)
-{
-    /// No `part_folder_validate` key at all -- the byte-for-byte-pre-§3-behavior default.
-    auto config = configWithDiskSection("<scratch_path>/tmp/whatever</scratch_path>");
-    const auto v = ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk");
-    EXPECT_EQ(v.mode, Cas::PartFolderValidate::Mode::Always);
-}
-
-TEST(CASPartFolderValidateParse, ParsesAlways)
-{
-    auto config = configWithDiskSection("<part_folder_validate>always</part_folder_validate>");
-    const auto v = ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk");
-    EXPECT_EQ(v.mode, Cas::PartFolderValidate::Mode::Always);
-}
-
-TEST(CASPartFolderValidateParse, ParsesNever)
-{
-    auto config = configWithDiskSection("<part_folder_validate>never</part_folder_validate>");
-    const auto v = ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk");
-    EXPECT_EQ(v.mode, Cas::PartFolderValidate::Mode::Never);
-}
-
-TEST(CASPartFolderValidateParse, ParsesPositiveAge)
-{
-    auto config = configWithDiskSection("<part_folder_validate>age 5</part_folder_validate>");
-    const auto v = ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk");
-    EXPECT_EQ(v.mode, Cas::PartFolderValidate::Mode::Age);
-    EXPECT_EQ(v.age_seconds, 5u);
-}
-
-TEST(CASPartFolderValidateParse, AcceptsAgeZeroAsADegenerateButValidWindow)
-{
-    /// `age 0` is accepted, not rejected: it is a well-formed (if degenerate -- effectively an
-    /// almost-always-expired window) configuration, not malformed input. Only genuinely malformed
-    /// suffixes (negative, non-digit, empty, trailing garbage) fail closed below.
-    auto config = configWithDiskSection("<part_folder_validate>age 0</part_folder_validate>");
-    const auto v = ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk");
-    EXPECT_EQ(v.mode, Cas::PartFolderValidate::Mode::Age);
-    EXPECT_EQ(v.age_seconds, 0u);
-}
-
-TEST(CASPartFolderValidateParse, NegativeAgeThrows)
-{
-    /// The bug this regression-guards: std::stoull("-5") used to return 18446744073709551611
-    /// (unsigned wraparound) instead of rejecting the leading '-'.
-    auto config = configWithDiskSection("<part_folder_validate>age -5</part_folder_validate>");
-    expectThrowsCode(ErrorCodes::BAD_ARGUMENTS,
-        [&] { ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk"); });
-}
-
-TEST(CASPartFolderValidateParse, NonDigitAgeThrows)
-{
-    auto config = configWithDiskSection("<part_folder_validate>age abc</part_folder_validate>");
-    expectThrowsCode(ErrorCodes::BAD_ARGUMENTS,
-        [&] { ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk"); });
-}
-
-TEST(CASPartFolderValidateParse, TrailingGarbageAfterAgeThrows)
-{
-    auto config = configWithDiskSection("<part_folder_validate>age 5abc</part_folder_validate>");
-    expectThrowsCode(ErrorCodes::BAD_ARGUMENTS,
-        [&] { ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk"); });
-}
-
-TEST(CASPartFolderValidateParse, EmptyAgeSuffixThrows)
-{
-    auto config = configWithDiskSection("<part_folder_validate>age </part_folder_validate>");
-    expectThrowsCode(ErrorCodes::BAD_ARGUMENTS,
-        [&] { ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk"); });
-}
-
-TEST(CASPartFolderValidateParse, UnknownValueThrows)
-{
-    /// Fail-closed: an unrecognized value must NEVER silently become `never`/`always`.
-    auto config = configWithDiskSection("<part_folder_validate>sometimes</part_folder_validate>");
-    expectThrowsCode(ErrorCodes::BAD_ARGUMENTS,
-        [&] { ContentAddressedMetadataStorage::parsePartFolderValidate(*config, "disk"); });
+    for (auto freshness : {Cas::Freshness::CachedForLoad,
+                           Cas::Freshness::ForceFresh,
+                           Cas::Freshness::StrictValidate})
+        expectThrowsCode(ErrorCodes::FILE_DOESNT_EXIST, [&] { access.getView(key, freshness); });
+    EXPECT_EQ(backend->headCount(layout.manifestKey(id)), 0u);
+    EXPECT_EQ(backend->getCount(layout.manifestKey(id)), 3u);   /// one GET per attempt, nothing cached
 }
 
 TEST(CASPartFolderAccess, AbsenceIsNeverRetained)
@@ -983,13 +857,19 @@ TEST(CASPartFolderAccess, GetViewEmitsRefResolveOnlyOnRealResolveWork)
     publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
     const Cas::PartRefKey key{ns, "part_1"};
 
-    std::vector<Cas::CasEvent> seen;
-    store->setEventSink([&](const Cas::CasEvent & e) { seen.push_back(e); });
-    Cas::CachedPartFolderAccess access(store, cacheOn());   /// retention on, validate == Always (default)
+    /// Heap-owned, not a plain local: the Pool can outlive this stack frame (a background publish holds
+    /// `shared_from_this()`), so a by-reference capture of a local would dangle.
+    auto seen = std::make_shared<SharedEventLog>();
+    store->setEventSink([seen](const Cas::CasEvent & e)
+    {
+        seen->push(e);
+    });
+    Cas::CachedPartFolderAccess access(store, cacheOn());   /// retention on
 
     const auto refResolveCount = [&]
     {
-        return std::count_if(seen.begin(), seen.end(),
+        const std::vector<Cas::CasEvent> observed = seen->snapshot();
+        return std::count_if(observed.begin(), observed.end(),
             [](const Cas::CasEvent & e) { return e.type == Cas::CasEventType::RefResolve; });
     };
 
@@ -1003,8 +883,7 @@ TEST(CASPartFolderAccess, GetViewEmitsRefResolveOnlyOnRealResolveWork)
     ASSERT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);
     EXPECT_EQ(refResolveCount(), 1) << "a warm view-cache hit must not add a RefResolve row";
 
-    /// ForceFresh always re-proves the manifest body under the default Always validation policy, so
-    /// this is real resolve work again -> +1.
+    /// ForceFresh always bypasses the retained view, so this is real resolve work again -> +1.
     ASSERT_NE(access.getView(key, Cas::Freshness::ForceFresh), nullptr);
     EXPECT_EQ(refResolveCount(), 2);
 
@@ -1021,7 +900,7 @@ TEST(CASPartFolderAccess, OversizedViewServedNotRetained)
     Cas::CachedPartFolderAccess access(store,
         Cas::CachedPartFolderAccess::CacheParams{
             .cache_bytes = 64ULL << 20, .max_entries = 10000, .max_entry_bytes = 1,
-            .explain_enabled = true, .validate = {}});
+            .explain_enabled = true});
     const auto id = publishPart(store, ns, "part_1", {inlineEntry("f", "x")});
     const Cas::PartRefKey key{ns, "part_1"};
     const String manifest_key = layout.manifestKey(id);
@@ -1032,10 +911,17 @@ TEST(CASPartFolderAccess, OversizedViewServedNotRetained)
     EXPECT_EQ(access.explain(key).last_decision,
               Cas::CachedPartFolderAccess::LastDecision::OversizedBypass);
 
-    const uint64_t head_before = backend->headCount(manifest_key);
+    backend->resetCounts();
     auto view2 = access.getView(key, Cas::Freshness::CachedForLoad);
     ASSERT_NE(view2, nullptr);
-    EXPECT_GT(backend->headCount(manifest_key), head_before);   /// not retained: re-HEADs every call
+    /// Not retained: every call rebuilds the view (a new view object over the SAME shared decode) and
+    /// records the bypass again; the rebuild costs no manifest request because the decode is cached.
+    EXPECT_NE(view1.get(), view2.get());
+    EXPECT_EQ(view1->manifest().get(), view2->manifest().get());
+    EXPECT_EQ(access.explain(key).last_decision,
+              Cas::CachedPartFolderAccess::LastDecision::OversizedBypass);
+    EXPECT_EQ(backend->getCount(manifest_key), 0u);
+    EXPECT_EQ(backend->headCount(manifest_key), 0u);
     EXPECT_FALSE(access.explain(key).retained);
 }
 
@@ -1056,9 +942,10 @@ TEST(CASPartFolderAccess, DisabledModeKeepsBaseline)
     for (int i = 0; i < n; ++i)
         ASSERT_NE(access.getView(key, Cas::Freshness::CachedForLoad), nullptr);
 
-    /// Exactly the Phase-3 baseline: bytes=0 restores the no-retention call graph byte-for-byte.
+    /// bytes=0 restores the no-retention call graph: one body GET, then the decode cache serves every
+    /// rebuild with no manifest request.
     EXPECT_EQ(backend->getCount(manifest_key), 1u);
-    EXPECT_EQ(backend->headCount(manifest_key), static_cast<uint64_t>(n));
+    EXPECT_EQ(backend->headCount(manifest_key), 0u);
     EXPECT_FALSE(access.explain(key).retained);
 }
 
@@ -1133,6 +1020,9 @@ TEST(CASPartFolderAccess, BestEffortRollbackDropCountsAndSurvivesABackendOutage)
 {
     auto backend = std::make_shared<RollbackFaultBackend>();
     auto store = openPoolForTest(backend);
+    /// Both drops below give up only when their own retry window closes, so the engine's inter-attempt
+    /// sleeps are paid in virtual time rather than by sleeping out the operation deadline for real.
+    auto clock = Cas::tests::VirtualRetryClock::installOn(store);
     Cas::CachedPartFolderAccess access(store, cacheOn());
 
     const Cas::RootNamespace ns_a{"srv/ta"};
@@ -1150,29 +1040,10 @@ TEST(CASPartFolderAccess, BestEffortRollbackDropCountsAndSurvivesABackendOutage)
     access.dropRefBestEffort(Cas::PartRefKey{ns_b, "part_b"});
     const auto after = global_counters[ProfileEvents::CASRefRollbackBestEffortDropFailed].load();
     EXPECT_EQ(after, before + 1);
+    EXPECT_GT(clock->pauseCount(), 0u)
+        << "the give-up must be the call's own retry window, reached through the injected sleep";
 
     backend->armed = false;   /// let store teardown release its lease cleanly
-}
-
-namespace
-{
-
-/// A pool whose ref lane makes ONE attempt per append. That is what turns a single lost-response fault
-/// into a conclusive `Unresolved`: with retries allowed the controller's resolve-before-reissue would
-/// settle the ambiguity inside the same attempt and the lane would never wedge. Same budget shape, and
-/// the same reason, as `gtest_cas_ref_install_safety.cpp`'s `openPoolSingleAttempt`.
-Cas::PoolPtr openPoolSingleAttempt(const std::shared_ptr<Cas::InMemoryBackend> & backend)
-{
-    Cas::PoolConfig cfg{.pool_prefix = "p", .server_root_id = "test"};
-    Cas::CasRequestBudget budget;
-    budget.max_attempts = 1;
-    budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;   /// strictly above attempt_timeout_ms: equality is a wall-clock race (validateCasRequestBudget)
-    budget.lease_safety_margin_ms = 100;
-    cfg.cas_request_budget = budget;
-    return Cas::Pool::open(backend, cfg);
-}
-
 }
 
 /// Part B review, MAJOR 3a: a promote whose ref-log append did not resolve MUST NOT be reported as
@@ -1190,8 +1061,9 @@ Cas::PoolPtr openPoolSingleAttempt(const std::shared_ptr<Cas::InMemoryBackend> &
 /// whose append never resolved.
 TEST(CASPartFolderAccess, AnUnresolvedPromoteIsNotReportedAsDefinitelyNotCommitted)
 {
-    auto backend = std::make_shared<Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<Cas::tests::LatchedChunkFaultBackend>();
+    auto store = openPoolForTest(backend);
+    auto clock = Cas::tests::VirtualRetryClock::installOn(store);
     const Cas::RootNamespace ns{"srv/t1"};
     DB::Cas::tests::casAdmitRecoverableEntry(*backend, store->layout(), ns, store->liveWriterEpoch());
     Cas::CachedPartFolderAccess access(store, cacheOn());
@@ -1202,18 +1074,29 @@ TEST(CASPartFolderAccess, AnUnresolvedPromoteIsNotReportedAsDefinitelyNotCommitt
 
     /// The promotion's own ref-log object lands; only the acknowledgement, and the controller's
     /// verifying read, are lost. Scoped to this namespace's ref log so nothing else consumes the fault.
+    /// A COUNTED fault cannot produce an unresolved outcome: the request engine settles the ambiguity
+    /// by an exact read that would find the landed object and report `Committed` inside the very same
+    /// call. Both legs therefore stay LATCHED for the whole call, and `VirtualRetryClock` pays the
+    /// retry window in virtual time instead of real wall-clock.
     backend->fault_substr = store->layout().namespaceStreamPrefix(fixture::fixtureLife(ns)) + "_log/";
     backend->mode = Cas::tests::ChunkFaultBackend::Mode::LandedThenLost;
-    backend->fault_count = 1;
+    backend->latched = true;
     expectThrowsCode(ErrorCodes::NETWORK_ERROR, [&] { prepared.promote(); });
+    ASSERT_GT(clock->pauseCount(), 1u)
+        << "one attempt cannot exhaust the retry window: the fault must have outlasted every reissue";
 
     EXPECT_TRUE(prepared.commitIsUnresolved())
         << "a promote whose append may have landed must not be classified as a mechanism failure -- the "
            "receiver would fetch the bytes and publish the same part a second time";
 
     /// The hazard itself, stated as an assertion: the promote DID commit. Any further append into this
-    /// table resolves the wedge first, which is what makes the committed row visible.
+    /// table resolves the wedge first, which is what makes the committed row visible. Disarmed
+    /// COMPLETELY, because that flush must reach the store normally: a still-armed lost read would
+    /// fault the wedge's own settling read, and nothing would resolve.
+    backend->latched = false;
     backend->mode = Cas::tests::ChunkFaultBackend::Mode::None;
+    backend->fault_count = 0;
+    backend->fail_read_once_key.clear();
     access.prepareEntries({ns, "flush_driver"}, {inlineEntry("f", "two")}, Cas::ProvenanceOp::Insert).abort();
     EXPECT_TRUE(access.existsRef(key, Cas::Freshness::ForceFresh))
         << "the promotion object landed, so 'the promote failed' says nothing about the ref";
@@ -1237,8 +1120,15 @@ TEST(CASPartFolderAccess, APostCommitFailureLeavesTheHandleTerminal)
 
     auto prepared = access.prepareEntries(key, {inlineEntry("f", "one")}, Cas::ProvenanceOp::Insert);
 
-    std::vector<Cas::CasEvent> seen;
-    store->setEventSink([&](const Cas::CasEvent & e) { seen.push_back(e); });
+    /// Heap-owned, not a plain local: `setEventSink(nullptr)` below only stops FUTURE sink installs
+    /// from using this closure -- it does not guarantee an already-in-flight background call is not
+    /// still executing the old one -- and the Pool can outlive this stack frame regardless (a
+    /// background publish holds `shared_from_this()`).
+    auto seen = std::make_shared<SharedEventLog>();
+    store->setEventSink([seen](const Cas::CasEvent & e)
+    {
+        seen->push(e);
+    });
 
     /// `MEMORY_LIMIT_EXCEEDED` -- what a tracked allocation failure actually raises -- and deliberately
     /// not `LOGICAL_ERROR`, which aborts at construction in debug/sanitizer builds.
@@ -1260,12 +1150,13 @@ TEST(CASPartFolderAccess, APostCommitFailureLeavesTheHandleTerminal)
     /// abandoned an ALREADY PROMOTED build -- which succeeds, because a promoted build no longer owes a
     /// precommit removal -- and so ended up terminal too, by accident. What the abandon leaves behind is
     /// the audit trail of a publish that is reported as thrown away while its ref is committed.
-    const auto build_aborts = std::count_if(seen.begin(), seen.end(),
+    const std::vector<Cas::CasEvent> observed = seen->snapshot();
+    const auto build_aborts = std::count_if(observed.begin(), observed.end(),
         [](const Cas::CasEvent & e) { return e.type == Cas::CasEventType::BuildAbort; });
     EXPECT_EQ(build_aborts, 0)
         << "a build whose promote is DURABLE was abandoned by the failed-promote catch: the handle had "
            "not yet recorded the commit when the post-commit work threw";
-    EXPECT_EQ(std::count_if(seen.begin(), seen.end(),
+    EXPECT_EQ(std::count_if(observed.begin(), observed.end(),
         [](const Cas::CasEvent & e) { return e.type == Cas::CasEventType::BuildPublish; }), 1);
 }
 

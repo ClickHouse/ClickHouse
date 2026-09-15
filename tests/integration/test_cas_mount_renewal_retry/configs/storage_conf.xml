@@ -11,6 +11,8 @@
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
                 <cas_server_root_id>itest-cas-renewal</cas_server_root_id>
                 <!-- Keep signing/authentication on the normal RustFS path; the shared proxy only
                      changes the TCP destination and preserves the signed Host header. The compiled
@@ -19,6 +21,18 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <cas_gc_enabled>false</cas_gc_enabled>
+                <!-- Shortened (from the disk's production defaults) so a hard-restart test observes the
+                     token-stability wait within a bounded test timeout, while staying wide enough that a
+                     single physical attempt, however slow the CI host, cannot plausibly cross the
+                     lease TTL: TTL 10000ms, renew period 2000ms, attempt timeout 500ms, safety margin
+                     500ms. The frozen attempt-timeout cap is min(connect_timeout_ms=1000, 500) = 500, so
+                     the retry envelope (attempt + 2 * cap = 1500) stays well under the shortened TTL:
+                     1500 + 500 < 10000 and 2000 + 3000 + 500 < 10000 (validateCasRequestBudget's two
+                     inequalities). These constants are mirrored in test.py; keep both sides in sync. -->
+                <cas_mount_lease_ttl_ms>10000</cas_mount_lease_ttl_ms>
+                <cas_mount_renew_period_ms>2000</cas_mount_renew_period_ms>
+                <cas_attempt_timeout_ms>500</cas_attempt_timeout_ms>
+                <cas_lease_safety_margin_ms>500</cas_lease_safety_margin_ms>
             </disk_cas_renewal>
         </disks>
         <policies>

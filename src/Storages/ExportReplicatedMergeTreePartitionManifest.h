@@ -248,7 +248,8 @@ struct ExportReplicatedMergeTreePartitionManifest
     std::optional<UInt64> output_format_compression_level;
     std::optional<UInt64> parquet_row_group_size;
     std::optional<UInt64> parquet_row_group_size_bytes;
-    std::optional<MergeTreePartExportSchemaMismatchMode> schema_mismatch_mode;
+    std::optional<MergeTreePartExportSchemaMatchMode> schema_match_mode;
+    std::optional<bool> ignore_extra_source_columns;
 
     /// this is a controversial setting. As far as I can infer from the iceberg docs, the transforms are always UTC.
     /// this setting allows to specify different timezones. Since it is already implemented, we must respect it.
@@ -298,8 +299,10 @@ struct ExportReplicatedMergeTreePartitionManifest
             json.set("parquet_row_group_size_bytes", *parquet_row_group_size_bytes);
         if (iceberg_partition_timezone)
             json.set("iceberg_partition_timezone", *iceberg_partition_timezone);
-        if (schema_mismatch_mode)
-            json.set("schema_mismatch_mode", String(magic_enum::enum_name(*schema_mismatch_mode)));
+        if (schema_match_mode)
+            json.set("schema_match_mode", String(magic_enum::enum_name(*schema_match_mode)));
+        if (ignore_extra_source_columns)
+            json.set("ignore_extra_source_columns", *ignore_extra_source_columns);
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
         Poco::JSON::Stringifier::stringify(json, oss);
@@ -367,15 +370,20 @@ struct ExportReplicatedMergeTreePartitionManifest
         /// on upgrade. New tasks always persist the initiator's actual choice.
         manifest.allow_lossy_cast = json->has("allow_lossy_cast") ? json->getValue<bool>("allow_lossy_cast") : true;
 
-        /// Left unset (nullopt) for tasks created before this field existed - such tasks were
-        /// always scheduled under the old, strict column-count check (a mismatch could never
+        /// Left unset (nullopt) for tasks created before these fields existed - such tasks were
+        /// always scheduled under the old, strict column-matching check (a mismatch could never
         /// reach scheduling in the first place), so callers should treat an absent value as
-        /// `strict`.
-        if (json->has("schema_mismatch_mode"))
+        /// `POSITION` with `ignore_extra_source_columns = false`.
+        if (json->has("schema_match_mode"))
         {
-            const auto schema_mismatch_mode = magic_enum::enum_cast<MergeTreePartExportSchemaMismatchMode>(json->getValue<String>("schema_mismatch_mode"));
-            if (schema_mismatch_mode)
-                manifest.schema_mismatch_mode = schema_mismatch_mode;
+            const auto schema_match_mode = magic_enum::enum_cast<MergeTreePartExportSchemaMatchMode>(json->getValue<String>("schema_match_mode"));
+            if (schema_match_mode)
+                manifest.schema_match_mode = schema_match_mode;
+        }
+
+        if (json->has("ignore_extra_source_columns"))
+        {
+            manifest.ignore_extra_source_columns = json->getValue<bool>("ignore_extra_source_columns");
         }
 
         if (json->has("parquet_compression_method"))

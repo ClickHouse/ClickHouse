@@ -22,9 +22,9 @@ DISK_CA="disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '04292',
-    name = '04292_cas_mut',
-    path = '04292_cas_mut_pool/')"
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_04292',
+    name = '${CLICKHOUSE_DATABASE}_04292_cas_mut',
+    path = '${CLICKHOUSE_DATABASE}_04292_cas_mut_pool/')"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_ca    SYNC"
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_plain SYNC"
@@ -112,3 +112,9 @@ SELECT 'final_data_match',
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_ca    SYNC"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_plain SYNC"
+
+# FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, which would
+# stream that expected warning to stderr and be flagged as a failure. Suppress it for the FORGET call only.
+$CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal \
+    --query "SYSTEM CAS FORGET '${CLICKHOUSE_DATABASE}_04292_cas_mut'" || {
+    echo "FORGET failed"; exit 1; }

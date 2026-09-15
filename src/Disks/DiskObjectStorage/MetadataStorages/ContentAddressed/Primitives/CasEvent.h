@@ -54,9 +54,12 @@ enum class CasEventObjectKind { None, Blob, Manifest, Root, Snap };
 /// Pure-data event passed from the content-addressed core to the metadata-storage audit-log sink.
 /// Fields that do not apply to an event remain empty or zero. `reason` is mandatory for decisions
 /// and must explain why the operation took its outcome; `detail` carries structured facts needed
-/// to reconstruct the event without parsing the free-form reason. Hashes are lowercase hexadecimal,
-/// tokens identify object incarnations, and the numeric fields identify GC rounds, snapshot
-/// generations, or the manifest journal version as applicable.
+/// to reconstruct the event without parsing the free-form reason. Hashes are lowercase hexadecimal.
+/// `token` identifies an object incarnation on events about a stored object (`object_kind` is Blob or
+/// Manifest); the part-build lifecycle events that carry a token at all (`BuildStart`, `Precommit`,
+/// `BuildPublish`, `BuildAbort`) reuse it for the 128-bit build id in hex and leave `object_kind` at
+/// `None`. The numeric fields
+/// identify GC rounds, snapshot generations, or the manifest journal version as applicable.
 struct CasEvent
 {
     CasEventType type = CasEventType::BlobPut;
@@ -64,7 +67,7 @@ struct CasEvent
     String ref_name;            /// the ref name — a mutable directory handle, git-style (empty if N/A)
     CasEventObjectKind object_kind = CasEventObjectKind::None;
     String object_hash;         /// lowercase hex (empty if N/A)
-    String token;               /// incarnation token (empty if N/A)
+    String token;               /// incarnation token; the hex build id on build lifecycle events (empty if N/A)
     UInt64 round = 0;
     UInt64 gen = 0;
     UInt64 at_version = 0;

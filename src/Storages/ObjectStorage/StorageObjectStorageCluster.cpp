@@ -187,10 +187,20 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         validateSupportedColumns(columns, *configuration);
     configuration->check(context_);
 
+    const bool need_resolve_sample_path = context_->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->isDataLakeConfiguration()
+        && !configuration->getPartitionStrategy();
+
+    /// Mirror StorageObjectStorage: when the schema and format are already known, defer resolving
+    /// the hive partitioning sample path (which lists the object storage) to the first use of the
+    /// table, so that CREATE, ATTACH and server startup do not depend on the endpoint. The inner
+    /// pure_storage carries the same deferral and resolves it lazily on read.
+    const bool hive_partitioning_sample_path_deferred =
+        !is_table_function && need_resolve_sample_path && !need_resolve_columns_or_format;
+
     if (updated_configuration && sample_path.empty()
-            && context_->getSettingsRef()[Setting::use_hive_partitioning]
-            && !configuration->isDataLakeConfiguration()
-            && !configuration->getPartitionStrategy())
+            && need_resolve_sample_path
+            && !hive_partitioning_sample_path_deferred)
     {
         sample_path = getPathSample(context_);
     }
@@ -550,7 +560,13 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
+    {
+        /// Called before query analysis, so the hive partition columns are visible to the
+        /// triggering query. The deferred resolution lives in `pure_storage`, from which the
+        /// metadata of this storage is read, so resolving it there is enough.
+        pure_storage->updateExternalDynamicMetadataIfExists(query_context);
         return;
+    }
 
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
@@ -862,6 +878,11 @@ IDataLakeMetadata * StorageObjectStorageCluster::getExternalMetadata(ContextPtr 
     return configuration->getExternalMetadata();
 }
 
+std::shared_ptr<DataLake::ICatalog> StorageObjectStorageCluster::getCatalog() const
+{
+    return pure_storage->getCatalog();
+}
+
 void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
     if (getClusterName(context).empty())
@@ -1114,7 +1135,7 @@ SinkToStoragePtr StorageObjectStorageCluster::import(
     const std::string & file_name,
     Block & block_with_partition_values,
     const std::function<void(const std::string &)> & new_file_path_callback,
-    bool overwrite_if_exists,
+    MergeTreePartExportFileAlreadyExistsPolicy file_already_exists_policy,
     std::size_t max_bytes_per_file,
     std::size_t max_rows_per_file,
     const std::optional<std::string> & iceberg_metadata_json_string,
@@ -1126,7 +1147,7 @@ SinkToStoragePtr StorageObjectStorageCluster::import(
             file_name,
             block_with_partition_values,
             new_file_path_callback,
-            overwrite_if_exists,
+            file_already_exists_policy,
             max_bytes_per_file,
             max_rows_per_file,
             iceberg_metadata_json_string,
@@ -1136,7 +1157,7 @@ SinkToStoragePtr StorageObjectStorageCluster::import(
         file_name,
         block_with_partition_values,
         new_file_path_callback,
-        overwrite_if_exists,
+        file_already_exists_policy,
         max_bytes_per_file,
         max_rows_per_file,
         iceberg_metadata_json_string,

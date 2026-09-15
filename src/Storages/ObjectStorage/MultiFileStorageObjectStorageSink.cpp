@@ -1,6 +1,8 @@
 #include <Storages/ObjectStorage/MultiFileStorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
 #include <filesystem>
 
 namespace DB
@@ -9,6 +11,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_ALREADY_EXISTS;
+    extern const int CORRUPTED_DATA;
+}
+
+namespace
+{
+    /// The commit file lives in the same directory as the data files.
+    std::string commitFilePath(const std::string & base_path, const String & transaction_id)
+    {
+        return (std::filesystem::path(base_path).parent_path() / ("commit_" + transaction_id)).string();
+    }
 }
 
 MultiFileStorageObjectStorageSink::MultiFileStorageObjectStorageSink(
@@ -18,7 +30,7 @@ MultiFileStorageObjectStorageSink::MultiFileStorageObjectStorageSink(
     StorageObjectStorageConfigurationPtr configuration_,
     std::size_t max_bytes_per_file_,
     std::size_t max_rows_per_file_,
-    bool overwrite_if_exists_,
+    FileAlreadyExistsPolicy file_already_exists_policy_,
     const std::function<void(const std::string &)> & new_file_path_callback_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
@@ -26,16 +38,41 @@ MultiFileStorageObjectStorageSink::MultiFileStorageObjectStorageSink(
     : SinkToStorage(sample_block_),
     base_path(base_path_),
     transaction_id(transaction_id_),
+    commit_file_path(commitFilePath(base_path_, transaction_id_)),
     object_storage(object_storage_),
     configuration(configuration_),
     max_bytes_per_file(max_bytes_per_file_),
     max_rows_per_file(max_rows_per_file_),
-    overwrite_if_exists(overwrite_if_exists_),
+    file_already_exists_policy(file_already_exists_policy_),
     new_file_path_callback(new_file_path_callback_),
     format_settings(format_settings_),
     sample_block(sample_block_),
     context(context_)
 {
+    if (file_already_exists_policy != FileAlreadyExistsPolicy::overwrite)
+    {
+        if (auto committed_paths = tryReadCommittedPaths())
+        {
+            if (committed_paths->empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Commit file {} lists no data files", commit_file_path);
+
+            /// Report the whole committed set before throwing: a caller applying `skip` takes these
+            /// paths as the part's export result, so it needs every file and not just the first.
+            for (const auto & committed_path : *committed_paths)
+                new_file_path_callback(committed_path);
+
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Part was already exported as {} file(s), see commit file {}",
+                committed_paths->size(), commit_file_path);
+        }
+    }
+
+    /// No commit file: either a fresh export, or an attempt that died before finalizing every
+    /// file. `error` still reports the leftovers as a conflict, but `skip` has to rewrite them --
+    /// the files that attempt never reached carry rows no later attempt produces.
+    overwrite_data_files = file_already_exists_policy != FileAlreadyExistsPolicy::error;
+
     current_sink = createNewSink();
 }
 
@@ -72,15 +109,13 @@ std::shared_ptr<StorageObjectStorageSink> MultiFileStorageObjectStorageSink::cre
 {
     auto new_path = generateNewFilePath();
 
-    /// todo
-    /// sounds like bad design, but callers might decide to ignore the exception, and if we throw it before the callback
-    /// they will not be able to grab the file path.
-    /// maybe I should consider moving the file already exists policy in here?
+    /// The callback runs before the conflict check on purpose: under `error` the caller discards
+    /// the reported path along with the failure, and under the other policies this check is off.
     new_file_path_callback(new_path);
 
     file_paths.emplace_back(std::move(new_path));
 
-    if (!overwrite_if_exists && object_storage->exists(StoredObject(file_paths.back())))
+    if (!overwrite_data_files && object_storage->exists(StoredObject(file_paths.back())))
     {
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_paths.back());
     }
@@ -125,12 +160,32 @@ void MultiFileStorageObjectStorageSink::onFinish()
     commit();
 }
 
+std::optional<std::vector<std::string>> MultiFileStorageObjectStorageSink::tryReadCommittedPaths() const
+{
+    if (!object_storage->exists(StoredObject(commit_file_path)))
+        return {};
+
+    auto in = object_storage->readObject(StoredObject(commit_file_path), context->getReadSettings());
+
+    std::vector<std::string> committed_paths;
+    while (!in->eof())
+    {
+        String committed_path;
+        readStringUntilNewlineInto(committed_path, *in);
+        in->tryIgnore(1);
+        if (!committed_path.empty())
+            committed_paths.emplace_back(std::move(committed_path));
+    }
+
+    return committed_paths;
+}
+
 void MultiFileStorageObjectStorageSink::commit()
 {
-    /// the commit file path should be in the same directory as the data files
-    const auto commit_file_path = fs::path(base_path).parent_path() / ("commit_" + transaction_id);
-
-    if (!overwrite_if_exists && object_storage->exists(StoredObject(commit_file_path)))
+    /// The constructor already ruled out a pre-existing commit file for every policy but
+    /// `overwrite`, so seeing one here means another exporter committed this part while we wrote.
+    if (file_already_exists_policy != FileAlreadyExistsPolicy::overwrite
+        && object_storage->exists(StoredObject(commit_file_path)))
     {
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Commit file {} already exists, aborting {} export", commit_file_path, transaction_id);
     }

@@ -26,7 +26,7 @@
 ///   * absent at `expected`, no listed id above it  => the namespace's frontier this round (normal end)
 ///   * absent at `expected`, a listed id above it   => IMPOSSIBLE under contiguity: the store is lying
 ///                                                     or a durable record was lost. Hold the namespace
-///                                                     (classification 4), cursor unmoved.
+///                                                     (classification `Clamped`), cursor unmoved.
 ///
 /// Epochs are crossed ONLY by consuming the `EpochSeal` that closes an epoch (INV-2). The seal folds as
 /// an applied no-op (probe B2: `produced=false`), and the next epoch's start is `{E', 1}` -- reached
@@ -58,7 +58,8 @@ std::optional<RefCoverage> coverageOf(Backend & backend, const Layout & layout, 
     const UInt128 life_id = catalogLifeIdForTest(backend, layout, ns);
     for (uint64_t g = gen; ; --g)
     {
-        if (const auto got = backend.get(layout.foldSealKey(g, attempt)))
+        OperationForTest op(backend);
+        if (const auto got = (*op).read(layout.foldSealKey(g, attempt), Retry::once()))
         {
             const CasFoldSeal seal = decodeFoldSeal(got->bytes);
             const auto it = seal.ref_lives.find(life_id);
@@ -77,10 +78,10 @@ RefTxnId cursorOf(Backend & backend, const Layout & layout, const RootNamespace 
     return cov ? cov->last_folded_ref_id : RefTxnId{};
 }
 
-uint8_t classificationOf(Backend & backend, const Layout & layout, const RootNamespace & ns)
+CoverageClass classificationOf(Backend & backend, const Layout & layout, const RootNamespace & ns)
 {
     const auto cov = coverageOf(backend, layout, ns);
-    return cov ? cov->classification : 0;
+    return cov ? cov->classification : CoverageClass::Absent;
 }
 
 /// The `fold_ref_intake` phase metrics of the round `sched` runs -- the only place probe B1's two
@@ -135,7 +136,7 @@ TEST(CASGCArithmeticIntake, HintOmittingMiddleRecordsFoldsThroughUnnoticed)
     ASSERT_GT(backend->holesServed(), 0u) << "the hint hole was never actually served";
 
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{1, 5}));
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 2) << "a folded namespace is `changed`";
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Folded) << "a folded namespace is `changed`";
     for (uint64_t i = 1; i <= 5; ++i)
         EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(i)), 1)
             << "blob " << i << " lost its owner edge: its record was skipped because the hint omitted it";
@@ -166,13 +167,13 @@ TEST(CASGCArithmeticIntake, WalkEndsAtFrontierWithoutHold)
     ASSERT_TRUE(gc.runRegularRound().acquired_lease);
 
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{1, 3}));
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 2);
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Folded);
 
     /// A second round over an unchanged namespace pays exactly one exact GET, finds the same frontier,
     /// and neither advances nor holds.
     ASSERT_TRUE(gc.runRegularRound().acquired_lease);
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{1, 3}));
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 1) << "an unchanged namespace is `carried`";
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Unchanged) << "an unchanged namespace is `carried`";
 }
 
 /// ===================== EPOCHS ARE CROSSED ONLY BY CONSUMING A SEAL =====================
@@ -211,7 +212,7 @@ TEST(CASGCArithmeticIntake, SealCrossesEpochAndIsAppliedAsNoOp)
     ASSERT_GT(backend->holesServed(), 0u);
 
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{2, 2}));
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 2);
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Folded);
     for (uint64_t i = 1; i <= 4; ++i)
         EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(i)), 1) << "blob " << i;
 }
@@ -291,19 +292,19 @@ TEST(CASGCArithmeticIntake, CursorRestingOnSealCrossesInALaterRound)
 
     ASSERT_TRUE(gc.runRegularRound().acquired_lease);
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{2, 1}));
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 2);
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Folded);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(2)), 1);
 }
 
 /// ===================== IMPOSSIBLE SHAPES HOLD THE NAMESPACE =====================
 ///
 /// `{1,3}` is genuinely absent while `{1,4}` is present AND listed. Contiguity says that cannot happen,
-/// so whatever sits behind the gap may be an acked `+1`: the namespace is held at classification 4 with
-/// its cursor UNMOVED, rather than sealing past the gap.
+/// so whatever sits behind the gap may be an acked `+1`: the namespace is held at classification
+/// `Clamped` with its cursor UNMOVED, rather than sealing past the gap.
 ///
 /// Listing-driven intake folded `{1,4}` and sealed the cursor at it -- permanently, since a record below
 /// the cursor is never re-read.
-TEST(CASGCArithmeticIntake, GapBelowWitnessHoldsNamespaceAtClassificationFour)
+TEST(CASGCArithmeticIntake, GapBelowWitnessHoldsNamespaceAtClampedClassification)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPoolForTest(backend);
@@ -326,7 +327,7 @@ TEST(CASGCArithmeticIntake, GapBelowWitnessHoldsNamespaceAtClassificationFour)
 
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{1, 2}))
         << "the cursor must not advance past a gap";
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 4);
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Clamped);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(4)), 0)
         << "the record above the gap was not folded";
 }
@@ -357,7 +358,7 @@ TEST(CASGCArithmeticIntake, UnconsumedSealCrossingHoldsNamespace)
     ASSERT_TRUE(gc.runRegularRound().acquired_lease);
 
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{1, 1}));
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 4);
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Clamped);
     const auto coverage = coverageOf(*backend, layout, ns);
     ASSERT_TRUE(coverage && coverage->hold.has_value());
     EXPECT_EQ(coverage->hold->reason, HoldReason::UnconsumedSealCrossing);
@@ -395,7 +396,7 @@ TEST(CASGCArithmeticIntake, CrossingFromANonSealRecordIsRefusedEvenWhenTheChainM
 
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{1, 2}))
         << "epoch 1 was never sealed, so the cursor may not leave it";
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 4);
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Clamped);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(1)), 1) << "epoch 1's records still fold";
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(2)), 1);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(3)), 0)
@@ -415,15 +416,14 @@ TEST(CASGCArithmeticIntake, EpochStartThatAnswersOnlyEveryOtherReadHoldsInsteadO
     class AlternatingGetBackend : public InMemoryBackend
     {
     public:
-        using DB::Cas::Backend::get;
         String flaky;
         size_t reads = 0;
 
-        std::optional<GetResult> get(const String & key, Range range) override
+        std::optional<Raw> read(const String & key, TransportAccess & access) override
         {
             if (key == flaky && ++reads % 2 == 0)
                 return std::nullopt;
-            return InMemoryBackend::get(key, range);
+            return InMemoryBackend::read(key, access);
         }
     };
 
@@ -462,7 +462,7 @@ TEST(CASGCArithmeticIntake, EpochStartThatAnswersOnlyEveryOtherReadHoldsInsteadO
 
     EXPECT_EQ(cursorOf(*backend, layout, ns), (RefTxnId{1, 2}))
         << "the cursor stops on the seal it consumed and never enters the unstable epoch";
-    EXPECT_EQ(classificationOf(*backend, layout, ns), 4);
+    EXPECT_EQ(classificationOf(*backend, layout, ns), CoverageClass::Clamped);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(2)), 0);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(3)), 0)
         << "nothing above the unstable position may be folded either";
@@ -483,7 +483,10 @@ TEST(CASGCArithmeticIntake, CorruptBodyClampsOneNamespaceWhileAnotherFolds)
     const RootNamespace ns_b{"00/bb@cas@"};
 
     publishAt(*backend, layout, ns_a, RefTxnId{1, 1}, "ref_1", 1, DB::UInt128(1), /*birth=*/true);
-    backend->putIfAbsent(layout.refLogKey(fixture::fixtureLife(ns_a), RefTxnId{1, 2}), "this is not a cas_ref_log object");
+    {
+        OperationForTest op(*backend);
+        (*op).create(layout.refLogKey(fixture::fixtureLife(ns_a), RefTxnId{1, 2}), "this is not a cas_ref_log object", Retry::once());
+    }
     writeRecoverableCkptForRawFixture(*backend, layout, ns_a, RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 2},
@@ -505,11 +508,11 @@ TEST(CASGCArithmeticIntake, CorruptBodyClampsOneNamespaceWhileAnotherFolds)
     ASSERT_TRUE(gc.runRegularRound().acquired_lease);
 
     EXPECT_EQ(cursorOf(*backend, layout, ns_a), (RefTxnId{1, 1}));
-    EXPECT_EQ(classificationOf(*backend, layout, ns_a), 4);
+    EXPECT_EQ(classificationOf(*backend, layout, ns_a), CoverageClass::Clamped);
 
     EXPECT_EQ(cursorOf(*backend, layout, ns_b), (RefTxnId{1, 3}))
         << "a sibling namespace's corrupt body must not stop this one";
-    EXPECT_EQ(classificationOf(*backend, layout, ns_b), 2);
+    EXPECT_EQ(classificationOf(*backend, layout, ns_b), CoverageClass::Folded);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(11)), 1);
     EXPECT_EQ(inDegreeOf(*backend, layout, DB::UInt128(12)), 1);
 }
@@ -582,7 +585,7 @@ TEST(CASGCArithmeticIntake, WhollyOmittedNamespaceFoldsThroughAuthoritativeCheck
     const auto hidden_cov = coverageOf(*backend, layout, ns);
     ASSERT_TRUE(hidden_cov.has_value())
         << "the namespace is `Live` in the catalog, so it stays in the universe even fully hidden";
-    EXPECT_EQ(hidden_cov->classification, 2) << "the checkpoint's frontier is folded by exact key";
+    EXPECT_EQ(hidden_cov->classification, CoverageClass::Folded) << "the checkpoint's frontier is folded by exact key";
     EXPECT_EQ(hidden_cov->last_folded_ref_id, (RefTxnId{1, 3}));
 
     /// The store stops lying: the already folded namespace reappears.

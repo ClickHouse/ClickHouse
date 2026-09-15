@@ -6,6 +6,7 @@
 #include <base/hex.h>
 #include <base/itoa.h>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -59,20 +60,18 @@ public:
         append("\":");
     }
 
-    /// Same, for the prefixed key vocabulary ("o"/"n" + "me"/"mb"/"mo"/"bk"/"rn") — the
-    /// prefix and name are appended back to back, no composed temporary.
-    void key(std::string_view prefix, std::string_view name, bool & first)
-    {
-        appendChar(first ? '{' : ',');
-        first = false;
-        appendChar('"');
-        append(prefix);
-        append(name);
-        append("\":");
-    }
-
     /// Quoted JSON string with full escaping (bulk-run scan). Defined in CasTextFormat.cpp.
     void stringValue(std::string_view s);
+
+    /// A value from a wire VOCABULARY -- an enum table's word or a record tag. Those are drawn from
+    /// `[a-z0-9_]` by construction, so this writes the bytes as they are instead of running them
+    /// through the escaper's byte scan and state machine. Output is identical to `stringValue` for
+    /// every input the contract admits; a caller that passes an arbitrary string is the bug this
+    /// asserts against, and `writeWordField` is the only intended way in.
+    void wordValue(std::string_view word);
+
+    /// JSON array of canonical word strings, emitted without intermediate storage.
+    void wordArray(std::span<const std::string_view> words);
 
     void u64Number(uint64_t v)
     {
@@ -154,6 +153,75 @@ inline void writeIntText(uint64_t v, CasJsonWriter & out) { out.u64Number(v); }
 void writeHeaderLine(CasJsonWriter & out, FormatId id);
 void writeTrailerLine(CasJsonWriter & out, uint64_t n);
 
+/// A wire-key carrier for migrated writer call sites. Its explicit constructor makes a codec pass a
+/// named constant, while an inline `WireKey{"..."}` is deliberately loud. `WireKey` borrows its
+/// `string_view`; the referenced text must outlive the key, as with string literals and static constants.
+struct WireKey
+{
+    std::string_view text;
+
+    explicit constexpr WireKey(std::string_view text_) : text(text_) {}
+
+    friend constexpr bool operator==(std::string_view s, const WireKey & k) { return s == k.text; }
+};
+
+inline void writeKey(CasJsonWriter & out, WireKey key, bool & first)
+{
+    writeKey(out, key.text, first);
+}
+
+/// For a value that comes from a wire vocabulary (an enum table's word, a record tag). It is NOT
+/// interchangeable with `writeStringField`: this one promises its value needs no JSON escaping and
+/// skips the escaper accordingly, which is why an open string must never be routed through it.
+inline void writeWordField(CasJsonWriter & out, WireKey key, std::string_view word, bool & first)
+{
+    writeKey(out, key, first);
+    out.wordValue(word);
+}
+
+inline void writeWordArrayField(CasJsonWriter & out, WireKey key, std::span<const std::string_view> words, bool & first)
+{
+    writeKey(out, key, first);
+    out.wordArray(words);
+}
+
+inline void writeStringField(CasJsonWriter & out, WireKey key, std::string_view value, bool & first)
+{
+    writeKey(out, key, first);
+    writeStringValue(out, value);
+}
+
+inline void writeU64StringField(CasJsonWriter & out, WireKey key, uint64_t value, bool & first)
+{
+    writeKey(out, key, first);
+    writeU64StringValue(out, value);
+}
+
+inline void writeNumberField(CasJsonWriter & out, WireKey key, uint64_t value, bool & first)
+{
+    writeKey(out, key, first);
+    out.u64Number(value);
+}
+
+inline void writeHex128Field(CasJsonWriter & out, WireKey key, const UInt128 & value, bool & first)
+{
+    writeKey(out, key, first);
+    writeHex128Value(out, value);
+}
+
+inline void writeBoolField(CasJsonWriter & out, WireKey key, bool value, bool & first)
+{
+    writeKey(out, key, first);
+    writeBoolValue(out, value);
+}
+
+/// True iff `c` is one lowercase hexadecimal digit. Persisted CAS digests deliberately reject
+/// uppercase spellings so each digest has one canonical textual representation.
+constexpr bool isLowercaseHexChar(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+}
+
 /// Pull cursor over one canonical JSON object.
 ///
 /// The reader borrows the input buffer and records the object name for exception messages. It
@@ -167,12 +235,27 @@ class JsonObjectReader
 public:
     /// Consumes the opening `{`; throws `CORRUPTED_DATA` when the object does not start there.
     JsonObjectReader(ReadBuffer & in_, KeyStrictness strictness_, std::string_view what_);
+
+    /// An unbound reader, for a decoder that wants one reader outside its row loop and re-points it
+    /// per row. `reset` must be called before any read; nothing else is valid on it.
+    JsonObjectReader() = default;
+
+    /// Re-point an existing reader at another object, as the constructor would, but WITHOUT
+    /// releasing the buffers it has already grown. A stream decoder reads one object per row, and a
+    /// reader built fresh each time re-allocates its seen-key store and its value scratch on every
+    /// row; measured on the `cas_run` decode path, allocation accounting is about a fifth of all
+    /// instructions executed inside the decoder. Reusing one reader amortises that away. The
+    /// object-level state -- the key set and the position in the object -- is reset in full, so a
+    /// reused reader accepts and rejects exactly what a fresh one would.
+    void reset(ReadBuffer & in_, KeyStrictness strictness_, std::string_view what_);
     /// Advances to the next key; false when the closing '}' was consumed. The caller must
     /// consume the value (one read* / skipUnknown) before the next call. Duplicate keys are
     /// rejected with `CORRUPTED_DATA`.
     bool nextKey(String & key);
     /// Reads the value for the key returned by `nextKey` as a JSON string.
     String readString();
+    /// Reads the value for the key returned by `nextKey` as an array of JSON strings.
+    std::vector<String> readStringArray();
     /// Reads a quoted 32-character lowercase hexadecimal string as a `UInt128`.
     UInt128 readHex128();
     /// Reads a quoted decimal u64 string and rejects empty, trailing, or non-decimal text.
@@ -193,10 +276,16 @@ private:
     template <typename F>
     auto guarded(F && f);
 
-    ReadBuffer & in;
-    KeyStrictness strictness;
+    /// Reads one JSON string into `scratch` and returns a view of it, so a value that is parsed and
+    /// discarded -- a hex digest, a decimal counter -- costs no allocation once the scratch has
+    /// grown. The view is valid until the next read on this reader.
+    std::string_view readStringIntoScratch();
+
+    ReadBuffer * in = nullptr;
+    KeyStrictness strictness = KeyStrictness::Strict;
     String what;
     std::vector<String> seen_keys;
+    String scratch;
     bool first = true;
     bool done = false;
 };
@@ -218,6 +307,11 @@ TextHeader expectHeaderLine(ReadBuffer & in, FormatId id);
 std::optional<TextHeader> sniffHeaderLine(std::string_view bytes);
 /// Reads one line (excluding the '\n' terminator); CORRUPTED_DATA on missing terminator or a line
 /// longer than `line_cap`.
+/// Read one terminator-delimited line into `line`, replacing its contents and KEEPING its capacity,
+/// so a caller streaming many rows can reuse one scratch and stop allocating after the longest line.
+void readLineInto(ReadBuffer & in, String & line, uint64_t line_cap, std::string_view what);
+
+/// Allocating form, for callers that read a single line.
 String readLine(ReadBuffer & in, uint64_t line_cap, std::string_view what);
 
 /// Position of the next byte `stringValue` treats specially (control byte, '"', '\\', or the

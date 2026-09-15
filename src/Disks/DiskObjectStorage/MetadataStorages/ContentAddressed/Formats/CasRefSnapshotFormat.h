@@ -26,7 +26,7 @@ namespace DB::Cas
 /// published through the ordinary single-owner `putIfAbsentControlled` path, not a
 /// `putDeterministicArtifact` byte-adoption gate.
 
-/// In-memory ref-table lifecycle. Only `Live` is serializable as a generation-8 snapshot; terminal
+/// In-memory ref-table lifecycle. Only `Live` is serializable as a snapshot; terminal
 /// state lives in the removal log and fold evidence and has no snapshot DTO representation.
 enum class RefLifecycle : uint8_t
 {
@@ -47,7 +47,7 @@ struct RefCommittedRow
 
 /// The complete state of one namespace's ref table in one canonical snapshot object. `precommits`
 /// reuses `RefOwnerBinding` from `CasRefWireVocab.h`; every entry's `kind` must be `Precommit`.
-/// Generation 8 serializes only `Live` snapshots. Both row vectors must already be strictly sorted by
+/// A snapshot serializes only `Live` namespaces. Both row vectors must already be strictly sorted by
 /// their documented keys, because the codec
 /// validates and emits the caller-provided order rather than sorting it.
 struct RefTableSnapshot

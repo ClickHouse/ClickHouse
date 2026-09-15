@@ -1,64 +1,32 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPlainObjects.h>
 #include <Common/Exception.h>
 #include <algorithm>
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int ABORTED;
-}
-}
+#include <fmt/format.h>
 
 namespace DB::Cas
 {
 
-namespace
-{
-    constexpr size_t MAX_CAS_ATTEMPTS = 100;
-}
-
 void CasPlainObjects::casPutObject(const String & full_key, const String & bytes)
 {
-    /// The read determines whether this is a conditional create or replacement. The token is only
-    /// valid for the incarnation returned by that head, so a precondition failure means another
-    /// writer won the race and the loop must observe the new incarnation before trying again.
-    ///
-    /// SINGLE-APPENDER INVARIANT: `bytes` is frozen by the caller before this loop starts (see the
-    /// append-base note at `ContentAddressedTransaction::writeFile`'s Append branch); the loop only
-    /// re-reads the TOKEN on conflict, never the base content. This is correct only while nothing
-    /// concurrently appends to the same key — a losing retry would overwrite the winner's bytes with a
-    /// stale, pre-conflict payload (a lost update). Implement a real `casAppendObject` (re-reading the
-    /// base content, not just the token, inside the loop) before adding any concurrent appender.
-    ///
-    /// rev.7 [C2]: the fence generation captured at admission is re-checked immediately before EVERY
-    /// durable PUT below, not just the first attempt. A mismatch (the mount lease was lost, or re-armed
-    /// under a fresh incarnation, since admission) aborts with the typed transient error before the backend
-    /// is ever touched.
-    const uint64_t admitted_generation = fence_generation_fn();
-
-    for (size_t attempt = 0; attempt < MAX_CAS_ATTEMPTS; ++attempt)
-    {
-        HeadResult head = backend.head(full_key);
-        check_fence_or_throw_fn(admitted_generation);
-        if (!head.exists)
-        {
-            if (backend.putIfAbsent(full_key, bytes).outcome == PutOutcome::Done)
-                return;
-        }
-        else
-        {
-            if (backend.putOverwrite(full_key, bytes, head.token).outcome == PutOutcome::Done)
-                return;
-        }
-        /// `PreconditionFailed` means the observed state changed under us; re-head and retry.
-    }
-    throw Exception(ErrorCodes::ABORTED, "object CAS contention on '{}'", full_key);
+    /// SINGLE-APPENDER INVARIANT: `bytes` is frozen by the caller before this call (see the
+    /// append-base note at `ContentAddressedTransaction::writeFile`'s Append branch); `decide` below
+    /// always returns the same frozen bytes regardless of what it observes at the key. This is correct
+    /// only while nothing concurrently appends to the same key -- a losing retry would overwrite the
+    /// winner's bytes with a stale, pre-conflict payload (a lost update). Implement a real
+    /// `casAppendObject` (deciding from the current body, not just presence) before adding any
+    /// concurrent appender.
+    CasOperation op = requests.admit();
+    WriteResult result = op.readModifyWriteOnPresence(
+        full_key,
+        [&](const std::optional<Meta> &) -> std::optional<String> { return bytes; },
+        Retry::standard());
+    orThrow(std::move(result), fmt::format("object CAS write on '{}'", full_key));
 }
 
 std::optional<String> CasPlainObjects::casGetObject(const String & full_key)
 {
-    std::optional<GetResult> result = backend.get(full_key);
+    CasOperation op = requests.admit();
+    std::optional<Object> result = op.read(full_key, Retry::standard());
     if (!result)
         return std::nullopt;
     return result->bytes;
@@ -66,26 +34,11 @@ std::optional<String> CasPlainObjects::casGetObject(const String & full_key)
 
 void CasPlainObjects::casRemoveObject(const String & full_key)
 {
-    /// Delete only the incarnation observed by the preceding head. A token mismatch leaves the
-    /// replacement untouched and is retried against a fresh observation; absence is a successful
-    /// no-op.
-    ///
-    /// rev.7 [C2]: same fence-generation admission as `casPutObject` -- the admitted generation is
-    /// re-checked immediately before every durable delete.
-    const uint64_t admitted_generation = fence_generation_fn();
-
-    for (size_t attempt = 0; attempt < MAX_CAS_ATTEMPTS; ++attempt)
-    {
-        const HeadResult head = backend.head(full_key);
-        if (!head.exists)
-            return;
-        check_fence_or_throw_fn(admitted_generation);
-        const DeleteOutcome outcome = backend.deleteExact(full_key, head.token);
-        if (outcome.kind == DeleteOutcome::Kind::Deleted || outcome.kind == DeleteOutcome::Kind::NotFound)
-            return;
-        /// `TokenMismatch` means a concurrent rewrite; re-head and retry.
-    }
-    throw Exception(ErrorCodes::ABORTED, "object CAS contention on '{}' (runaway live-lock brake)", full_key);
+    /// `removeCurrent` re-heads and retries against a concurrent replacement itself, and reports
+    /// absence (its own no-op) the same way whether the key was never there or just vanished, so the
+    /// result carries nothing this caller acts on differently.
+    CasOperation op = requests.admit();
+    op.removeCurrent(full_key, Retry::standard());
 }
 
 void CasPlainObjects::putNamespaceFile(const NamespaceLifeId & life, const String & name, const String & bytes)
@@ -102,20 +55,14 @@ std::vector<String> CasPlainObjects::listNamespaceFiles(const NamespaceLifeId & 
 {
     const String prefix = layout.namespaceFilesPrefix(life);
     std::vector<String> names;
-    String cursor;
-    while (true)
+    CasOperation op = requests.admit();
+    op.forEachListedKey(prefix, [&](const ListedKey & entry)
     {
-        ListPage page = backend.list(prefix, cursor, /*limit*/ 1000);
-        for (const ListedKey & listed : page.keys)
-        {
-            /// Strip the storage prefix so callers receive the bare flat file name.
-            if (listed.key.starts_with(prefix))
-                names.push_back(listed.key.substr(prefix.size()));
-        }
-        if (page.next_cursor.empty())
-            break;
-        cursor = page.next_cursor;
-    }
+        /// Strip the storage prefix so callers receive the bare flat file name.
+        if (entry.key.starts_with(prefix))
+            names.push_back(entry.key.substr(prefix.size()));
+        return true;
+    }, Retry::standard());
     /// Backends are not required to return pages in the same order, so make the public result
     /// deterministic instead of relying on `InMemoryBackend` ordering.
     std::sort(names.begin(), names.end());
@@ -143,7 +90,8 @@ bool CasPlainObjects::mountpointObjectExists(const String & key)
     /// the `store` pool subdirectory traversed by `system.remote_data_paths`. The local backend
     /// treats a directory as not an object, so this returns false instead of attempting a body read
     /// that would raise a filesystem exception for a directory.
-    return backend.head(layout.mountpointObjectKey(key)).exists;
+    CasOperation op = requests.admit();
+    return op.head(layout.mountpointObjectKey(key), Retry::standard()).has_value();
 }
 
 void CasPlainObjects::removeMountpointObject(const String & key)

@@ -47,11 +47,13 @@ public:
 
 protected:
     DB::HTTPHeaderEntries getAuthHeaders(
+        const CatalogState & catalog_state,
         bool update_token,
         const String & method = {},
         const Poco::URI & url = {},
         const DB::HTTPHeaderEntries & extra_headers = {},
-        const String & body = {}) const override;
+        const String & body = {},
+        bool * used_cached_oauth_token = nullptr) const override;
 
 private:
     const String region;

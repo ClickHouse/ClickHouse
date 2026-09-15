@@ -15,14 +15,14 @@ namespace DB::Cas
 /// stable for the surrounding CAS protocol.
 ///
 ///   header line                 {"type":"cas_part_manifest","v":N}
-///   descriptor meta line         {"me","mb","mo"} (the ManifestRef, shared rendering with
-///                                refsnaplog, `CasWireVocab.h`) + "ns" (root namespace) + "pd"
+///   descriptor meta line         {"epoch","build","ord"} (the ManifestRef, shared rendering with
+///                                refsnaplog, `CasWireVocab.h`) + `root_namespace` + `payload_digest`
 ///                                (payload digest, 32 lowercase hex)
-///   one entry-record line each   {"p":path,"pm":placement-word, then either the Blob's
-///                                {"ha","h","sz"} or the Inline's {"il"}}, in canonical path order
+///   one entry-record line each   {"path":path,"place":placement-word, then either the Blob's
+///                                {"algo","digest","size"} or the Inline's {"size"}}, in canonical path order
 ///   trailer line                 {"n":entry-count}
 ///   PAYLOAD ZONE (raw, follows the trailer): for each Inline entry, in path order, a
-///                                `head -v`-style banner line `==> "<escaped path>" il=<n> <==\n`, then
+///                                `head -v`-style banner line `==> "<escaped path>" size=<n> <==\n`, then
 ///                                exactly `n` raw bytes, then `\n`. The path uses the same writer as
 ///                                the entry-record line, so decode can rebuild the banner byte-wise.
 ///                                Blob entries carry no
@@ -41,6 +41,12 @@ enum class EntryPlacement : uint8_t
     Inline = 1,   /// bytes embedded in `inline_bytes`
     Blob = 2,     /// bytes stored as a content-addressed blob at `blobKey`
 };
+
+/// Canonical wire word for one manifest entry placement.
+std::string_view entryPlacementToWireWord(EntryPlacement placement);
+
+/// Its fail-closed inverse: an unknown word is `CORRUPTED_DATA`.
+EntryPlacement entryPlacementFromWireWord(std::string_view w);
 
 /// One file entry inside a part manifest. `ref` is meaningful only for `Blob`; `inline_bytes` only
 /// for `Inline`. `blob_size` is the raw `Blob` byte count (0 for `Inline` — decode never fills it for

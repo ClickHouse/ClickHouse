@@ -158,11 +158,11 @@ private:
     bool committed = false;
     bool failed = false;
 
-    /// Memoizes, per (this transaction, ref), whether `unlinkFile` has already re-proven a committed
-    /// ref's manifest body `ForceFresh`. The MergeTree fast-removal path unlinks every file of a part
-    /// through ONE transaction right before `removeDirectory`: the first unlink's `ForceFresh` view
-    /// proves the body once; the rest of the burst reuse that proof (`Cas::Freshness::CachedForLoad`)
-    /// instead of paying one manifest-body HEAD per file. Cleared in `commit()`'s epilogue.
+    /// Memoizes, per (this transaction, ref), whether `unlinkFile` has already resolved a committed
+    /// ref `ForceFresh`. The MergeTree fast-removal path unlinks every file of a part through ONE
+    /// transaction right before `removeDirectory`: the first unlink resolves fresh and bypasses the
+    /// retained view; the rest of the burst reads the retained view (`Cas::Freshness::CachedForLoad`).
+    /// Cleared in `commit()`'s epilogue.
     std::unordered_set<String> force_fresh_validated_refs;
 
     /// Stage a content part file as a blob without recording a dependency proof, and add/replace its

@@ -40,13 +40,13 @@ bool ShardReducer::owns(const BlobRef & ref) const
     return blobShard(ref, gc_shards) == shard;
 }
 
-std::vector<RunRef> ShardReducer::reduce(Backend & backend, const Layout & layout,
+std::vector<RunRef> ShardReducer::reduce(CasOperation & op, const Layout & layout,
                                          const std::vector<RunRef> & prior_runs,
                                          uint64_t new_generation, uint64_t attempt,
                                          std::vector<BlobDelta> shard_deltas,
                                          uint64_t current_round, uint64_t condemn_round,
-                                         const std::function<std::optional<HeadResult>(const BlobRef &)> & head_blob,
-                                         const std::function<std::optional<HeadResult>(const BlobRef &)> & peek_head,
+                                         const BlobHeadFn & head_blob,
+                                         const BlobHeadFn & peek_head,
                                          const std::function<bool(const RetiredEntry &)> & confirm_condemned_marker,
                                          RetiredMergeResult * out_retired,
                                          bool suppress_destructive,
@@ -54,7 +54,7 @@ std::vector<RunRef> ShardReducer::reduce(Backend & backend, const Layout & layou
                                          GcRoundWorkBudget * work_budget) const
 {
     std::vector<RunRef> out_runs;
-    foldDeltasIntoGeneration(backend, layout, prior_runs, new_generation, attempt, shard,
+    foldDeltasIntoGeneration(op, layout, prior_runs, new_generation, attempt, shard,
                              std::move(shard_deltas), out_runs,
                              current_round, condemn_round, head_blob, peek_head,
                              confirm_condemned_marker, out_retired,

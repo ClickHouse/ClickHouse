@@ -24,12 +24,17 @@ void BackupCoordinationFileInfos::addFileInfos(BackupFileInfos && file_infos_, c
     file_infos.emplace(host_id_, std::move(file_infos_));
 }
 
-BackupFileInfos BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
+const BackupFileInfos & BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
 {
     prepare();
     auto it = file_infos.find(host_id_);
     if (it == file_infos.end())
-        return {};
+    {
+        static const BackupFileInfos empty;
+        return empty;
+    }
+    /// Safe to return by reference: after prepare() the per-host vectors are never mutated (addFileInfos() throws
+    /// once prepared), and file_infos_for_all_hosts already holds raw pointers into them.
     return it->second;
 }
 

@@ -30,9 +30,9 @@ namespace DB::Cas
 {
 
 CasManifestReader::CasManifestReader(
-    Backend & backend_, const Layout & layout_, const PoolMeta & meta_,
+    CasRequests & requests_, const Layout & layout_, const PoolMeta & meta_,
     const CasEventSink & event_sink_, size_t manifest_decode_cache_bytes)
-    : backend(backend_), layout(layout_), meta(meta_), event_sink(event_sink_)
+    : requests(requests_), layout(layout_), meta(meta_), event_sink(event_sink_)
 {
     if (manifest_decode_cache_bytes > 0)
         manifest_cache = std::make_unique<ManifestDecodeCache>(
@@ -40,30 +40,21 @@ CasManifestReader::CasManifestReader(
             manifest_decode_cache_bytes, /*max_count=*/16384, ManifestDecodeCache::DEFAULT_SIZE_RATIO);
 }
 
-size_t CasManifestReader::ManifestCacheKeyHash::operator()(const ManifestCacheKey & k) const
-{
-    /// Combine the manifest-id hash with the token's bytes + type. The token is part of the key so a
-    /// re-incarnation under the same id misses (the immutable bytes changed identity).
-    const size_t h1 = std::hash<ManifestId>{}(k.manifest_id);
-    const size_t h2 = std::hash<String>{}(k.token.value);
-    const size_t h3 = std::hash<uint8_t>{}(static_cast<uint8_t>(k.token.type));
-    size_t h = h1;
-    h ^= h2 + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-    h ^= h3 + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-    return h;
-}
-
 std::shared_ptr<const PartManifest> CasManifestReader::readManifestShared(const ManifestId & id)
 {
+    /// One id names one content forever (minted once, written once, only ever deleted), so a cached
+    /// decode is served without any request.
+    if (manifest_cache)
+        if (auto cached = manifest_cache->get(id))
+            return cached;
+
     /// A live reference naming a missing manifest body is a dangling-reference violation
     /// (`INV-NO-DANGLE`). Never substitute an empty manifest: callers must observe the missing object
-    /// as an exception.
+    /// as an exception. The `GET` alone carries the absence signal, so no `HEAD` precedes it.
     const String key = layout.manifestKey(id);
-
-    /// `HEAD` is mandatory even on a cache hit. It proves that the live reference still names an
-    /// existing object and supplies the token that identifies the immutable bytes being reused.
-    const HeadResult head = backend.head(key);
-    if (!head.exists)
+    CasOperation op = requests.admit();
+    std::optional<Object> object = op.read(key, Retry::standard());
+    if (!object)
     {
         if (event_sink)
         {
@@ -79,15 +70,6 @@ std::shared_ptr<const PartManifest> CasManifestReader::readManifestShared(const 
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
             "live ref names manifest at {} but its object is missing — INV-NO-DANGLE", key);
     }
-
-    if (manifest_cache)
-        if (auto cached = manifest_cache->get(ManifestCacheKey{.manifest_id = id, .token = head.token}))
-            return cached;
-
-    std::optional<GetResult> object = backend.get(key);
-    if (!object)
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-            "manifest at {} vanished between head and get — INV-NO-DANGLE", key);
     ProfileEvents::increment(ProfileEvents::CASPartFolderManifestGets);
 
     PartManifest body = decodePartManifest(openObject(FormatId::PartManifest, object->bytes));
@@ -132,7 +114,7 @@ std::shared_ptr<const PartManifest> CasManifestReader::readManifestShared(const 
 
     auto decoded = std::make_shared<PartManifest>(std::move(body));
     if (manifest_cache)
-        manifest_cache->set(ManifestCacheKey{.manifest_id = id, .token = head.token}, decoded);
+        manifest_cache->set(id, decoded);
     return decoded;
 }
 

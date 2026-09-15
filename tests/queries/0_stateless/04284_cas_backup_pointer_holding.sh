@@ -30,9 +30,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '04284',
-    name = '04284_cas_backup',
-    path = '04284_cas_backup_pool/');
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_04284',
+    name = '${CLICKHOUSE_DATABASE}_04284_cas_backup',
+    path = '${CLICKHOUSE_DATABASE}_04284_cas_backup_pool/');
 
 INSERT INTO t_cas_backup SELECT number, toString(number % 7) FROM numbers(1000);
 SELECT 'before', count(), sum(a), uniqExact(s) FROM t_cas_backup;
@@ -50,3 +50,10 @@ DROP TABLE IF EXISTS t_cas_restored;
 DROP TABLE t_cas_backup;
 SELECT 'dropped_ok';
 EOF
+
+# FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, which would
+# stream that expected warning to stderr and be flagged as a failure. Suppress it for the FORGET call only.
+# RESTORE re-created t_cas_restored on the same named pool ('${CLICKHOUSE_DATABASE}_04284_cas_backup'), so one FORGET covers it.
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
+    --query "SYSTEM CAS FORGET '${CLICKHOUSE_DATABASE}_04284_cas_backup'" || {
+    echo "FORGET failed"; exit 1; }

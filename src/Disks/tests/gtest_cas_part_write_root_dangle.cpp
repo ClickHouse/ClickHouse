@@ -62,7 +62,7 @@ ManifestEntry blobEntry(const String & name, const String & payload)
 /// public PartWriteTxn/Pool/Gc API (no snap injection):
 ///
 ///   PartWriteTxn A uploads blob P and publishes refA -> t1 -> { data.bin: P }. A is then RELEASED (dtor),
-///   retiring its build_seq so the GC watermark `min_active` advances PAST A. P now carries A's
+///   retiring its build_seq so the GC watermark `min_active_build_sequence` advances PAST A. P now carries A's
 ///   `cas_owner` and is no longer protected by any in-flight build.
 ///
 ///   PartWriteTxn B starts and ADOPTS the same blob P via tokenless evidence (adoptEvidence — the cross-node
@@ -83,7 +83,7 @@ TEST(CASPartWriteTxnRootDangle, SharedBlobSurvivesSourceDropDuringBuild)
     const String P = "shared-blob-payload-P";
 
     /// PartWriteTxn A: upload P, publish refA -> manifest -> { data.bin: P }, then release A so its build_seq
-    /// retires and min_active advances past it.
+    /// retires and min_active_build_sequence advances past it.
     {
         PartWriteInfo info;
         info.intended_ref = ns.string() + "/refA";
@@ -93,7 +93,7 @@ TEST(CASPartWriteTxnRootDangle, SharedBlobSurvivesSourceDropDuringBuild)
         a->putBlob(idOf(P), BlobSource::fromString(P));
         a->promote(ns, "refA", a->buildId(), id);
     }
-    s->renewWatermarkOnce();   /// A is gone; min_active now advances past A's build_seq
+    s->renewWatermarkOnce();   /// A is gone; min_active_build_sequence now advances past A's build_seq
 
     /// PartWriteTxn B: adopt the SAME blob P (cross-node adopt — tokenless evidence via adoptEvidence), assemble
     /// its manifest, and precommitAdd it. The precommit pins P's closure (fold +1 edge) for the build.
@@ -120,7 +120,8 @@ TEST(CASPartWriteTxnRootDangle, SharedBlobSurvivesSourceDropDuringBuild)
         << "B171: PartWriteTxn B's promote must succeed — the precommit should have kept P alive";
 
     /// The blob B references must still be present (no dangle), and refB must resolve.
-    ASSERT_TRUE(backend->head(s->layout().blobKey(idOf(P))).exists)
+    DB::Cas::tests::OperationForTest dangle_op(*backend);
+    ASSERT_TRUE((*dangle_op).head(s->layout().blobKey(idOf(P)), Retry::once()).has_value())
         << "B171-dangle: GC deleted the shared blob P that PartWriteTxn B adopted — its cas_owner was the "
         << "retired PartWriteTxn A and the stub precommit published no build-root edge, so inDeg(P) hit 0 "
         << "and the single content-delete site removed it. refB now dangles.";
@@ -145,7 +146,7 @@ TEST(CASPartWriteTxnRootDangle, PrematureReclaimCommitFailsClosed)
     const RootNamespace ns{"test/tbl"};
     const String P = "shared-blob-payload-P-reclaim";
 
-    /// PartWriteTxn A: upload P, publish refA -> manifest, retire A so min_active advances past it.
+    /// PartWriteTxn A: upload P, publish refA -> manifest, retire A so min_active_build_sequence advances past it.
     {
         PartWriteInfo info;
         info.intended_ref = ns.string() + "/refA";
@@ -173,18 +174,19 @@ TEST(CASPartWriteTxnRootDangle, PrematureReclaimCommitFailsClosed)
     /// RAW removal append would collide with the writer's own `RefTxnId` sequence allocation on the next
     /// flush; the property under test is the COMMIT gate's fail-closed behavior against a missing
     /// dependency, not the reclaim mechanics -- so we go straight to the reclaimed state.)
+    DB::Cas::tests::OperationForTest reclaim_op(*backend);
     {
         const String pkey = s->layout().blobKey(idOf(P));
-        const HeadResult h = backend->head(pkey);
-        ASSERT_TRUE(h.exists) << "P must be present before the simulated reclaim";
-        ASSERT_EQ(backend->deleteExact(pkey, h.token).kind, DeleteOutcome::Kind::Deleted);
+        const auto h = (*reclaim_op).head(pkey, Retry::once());
+        ASSERT_TRUE(h.has_value()) << "P must be present before the simulated reclaim";
+        ASSERT_EQ((*reclaim_op).remove(pkey, h->etag, Retry::once()), Removal::Removed);
     }
     /// Drop the source ref too (the state a real premature reclaim leaves: P unprotected and gone).
     s->dropRef(ns, "refA");
     s->renewWatermarkOnce();
 
     /// The shared blob must be GONE (the premature reclaim collected it).
-    ASSERT_FALSE(backend->head(s->layout().blobKey(idOf(P))).exists)
+    ASSERT_FALSE((*reclaim_op).head(s->layout().blobKey(idOf(P)), Retry::once()).has_value())
         << "premature-reclaim setup invalid: P should have been collected after losing its precommit";
 
     /// §4 manifest-trust (test name is legacy — B171 INV-COMMIT-FAILCLOSED for an ADOPTED leaf now moves to
@@ -199,7 +201,7 @@ TEST(CASPartWriteTxnRootDangle, PrematureReclaimCommitFailsClosed)
         << "§4: an adopted leaf is trusted at promote — a missing dependency is not re-observed here";
 
     /// Trust never fabricates the missing blob (it never touches P); refB IS committed (naming absent P).
-    ASSERT_FALSE(backend->head(s->layout().blobKey(idOf(P))).exists)
+    ASSERT_FALSE((*reclaim_op).head(s->layout().blobKey(idOf(P)), Retry::once()).has_value())
         << "trust never fabricates the missing blob — P stays absent";
     ASSERT_TRUE(s->resolveRef(ns, "refB").has_value())
         << "§4: refB commits under trust (the D4 trade-off); the dangle is caught by fsck, below";
@@ -232,7 +234,7 @@ TEST(CASPartWriteTxnRoot, LivePrecommitNotReclaimed)
     const String Q = "live-build-blob-payload-Q";
 
     /// PartWriteTxn B stays ALIVE: upload Q, assemble, precommitAdd — and we DO NOT retire its seq. So
-    /// `min_active <= build_seq` (B is in-flight) and the watermark keeps a live, advancing seq.
+    /// `min_active_build_sequence <= build_seq` (B is in-flight) and the watermark keeps a live, advancing seq.
     PartWriteInfo binfo;
     binfo.intended_ref = ns.string() + "/refLive";
     auto b = s->beginPartWrite(binfo);
@@ -240,14 +242,15 @@ TEST(CASPartWriteTxnRoot, LivePrecommitNotReclaimed)
     b->precommitAdd(ns, "refLive", t);
     b->putBlob(idOf(Q), BlobSource::fromString(Q));
     s->renewWatermarkOnce();
-    ASSERT_LE(s->minActive(), b->buildSeq()) << "precondition: B must be in-flight (min_active <= seq)";
+    ASSERT_LE(s->minActive(), b->buildSeq()) << "precondition: B must be in-flight (min_active_build_sequence <= seq)";
 
     /// GC to fixpoint while B is live.
     Gc gc(s, u128Of("gc-b8-live"));
     runGcToFixpoint(gc);
 
     /// Q must still be present (the live precommit's +1 edge pins it across GC).
-    ASSERT_TRUE(backend->head(s->layout().blobKey(idOf(Q))).exists)
+    DB::Cas::tests::OperationForTest live_op(*backend);
+    ASSERT_TRUE((*live_op).head(s->layout().blobKey(idOf(Q)), Retry::once()).has_value())
         << "B8 conservatism: the live precommit must keep its blob alive across GC";
 
     /// B can still commit (the precommit is intact).

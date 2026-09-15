@@ -52,11 +52,10 @@ struct CommitOutcome
     bool created = false;
 };
 
-/// Read-freshness policy at the part-folder access boundary. The
-/// mutable-read-vs-write-evidence distinction is carried by the METHOD, not a fourth value:
-/// mutable per-part reads call `resolve` (no manifest involved); write-path source reads call
-/// `getView`, which under ForceFresh always re-proves the manifest body (mandatory HEAD in
-/// `readManifestShared` — a fresh ref resolve alone proves ref currency, NOT body existence).
+/// Read-freshness policy at the part-folder access boundary. The mutable-read-vs-write-evidence
+/// distinction is carried by the METHOD, not a fourth value: mutable per-part reads call `resolve`
+/// (no manifest involved); write-path source reads call `getView`, which under ForceFresh always
+/// resolves fresh and bypasses the retained view.
 enum class Freshness
 {
     CachedForLoad,   /// repeated load-window reads; stale-tolerant resolve (allow_stale=true)
@@ -79,15 +78,12 @@ public:
     /// must be non-null and its entries must be strictly ascending by canonical path; this is the
     /// ordering required by the binary-search and range-scan helpers.
     PartFolderView(PartRefKey key_, Cas::ManifestId manifest_id_, uint64_t manifest_size_,
-                   std::shared_ptr<const Cas::PartManifest> manifest_, uint64_t validated_at_ms_);
+                   std::shared_ptr<const Cas::PartManifest> manifest_);
 
-    /// Joins a fresh `Resolved` with its validated shared decode. `validated_at_ms` is supplied by
-    /// the caller after `readManifestShared` has proven the manifest body with a HEAD. Keeping the
-    /// timestamp outside this helper lets `CachedPartFolderAccess` use one injectable clock for both
-    /// the stamp and its age-window comparison.
+    /// Joins a fresh `Resolved` with its validated shared decode.
     static std::shared_ptr<const PartFolderView> make(
         PartRefKey key, const Cas::Resolved & resolved,
-        std::shared_ptr<const Cas::PartManifest> manifest, uint64_t validated_at_ms);
+        std::shared_ptr<const Cas::PartManifest> manifest);
 
     /// Recognizes a projection directory by its last path component, `.proj` or `.tmp_proj`, and
     /// returns the corresponding in-tree prefix. The input is the routed file path; unrelated paths
@@ -97,10 +93,6 @@ public:
     const PartRefKey & refKey() const { return key; }
     const Cas::ManifestId & manifestId() const { return manifest_id; }
     const std::shared_ptr<const Cas::PartManifest> & manifest() const { return manifest_body; }
-    /// The wall-clock ms at which this view's manifest body was last proven live by a HEAD. A
-    /// refresh that changes only ref metadata carries the original stamp forward because it did not
-    /// re-prove the body.
-    uint64_t validatedAtMs() const { return validated_at_ms; }
 
     /// Finds an entry by canonical path using the manifest's sorted-entry invariant.
     const Cas::ManifestEntry * findFile(const String & path) const;
@@ -122,7 +114,6 @@ private:
     Cas::ManifestId manifest_id;
     uint64_t manifest_size = 0;
     std::shared_ptr<const Cas::PartManifest> manifest_body;
-    uint64_t validated_at_ms = 0;
 };
 
 }
@@ -131,17 +122,6 @@ namespace DB::Cas { class PartWriteTxn; }
 
 namespace DB::Cas
 {
-
-/// Controls whether `ForceFresh` must re-prove the manifest body on every access. `Always` (the default)
-/// preserves the fail-closed body check; `Age` and `Never` may serve a retained view after a fresh ref
-/// resolve when its manifest ID matches. A ref resolve proves ref currency, but not that the manifest
-/// body still exists, so these modes trade that additional check for a bounded performance optimization.
-struct PartFolderValidate
-{
-    enum class Mode : uint8_t { Always, Age, Never };
-    Mode mode = Mode::Always;
-    uint64_t age_seconds = 0;    /// only meaningful for Mode::Age
-};
 
 class CachedPartFolderAccess;
 
@@ -237,8 +217,6 @@ public:
         /// path takes a per-disk global mutex and allocates on EVERY read. Off by default so the read
         /// hit path never pays for it; the disk factory / tests turn it on when they consult `explain`.
         bool explain_enabled = false;
-        /// The `ForceFresh` manifest-body re-proof policy. `Always` is the fail-closed default.
-        PartFolderValidate validate;
     };
 
     /// `CacheParams params_ = {}` cannot be a default argument here — Clang's complete-class-
@@ -247,16 +225,12 @@ public:
     /// argument written inside the class body is evaluated too early. Two overloads sidestep it; the
     /// single-arg form default-constructs `CacheParams` (retention disabled) out-of-line.
     explicit CachedPartFolderAccess(Cas::PoolPtr store_);
-    /// `now_ms_fn_`: wall-clock ms, injected (tests) for the age-window comparison AND the
-    /// retained view's `validated_at_ms` stamp -- the SAME function drives both, so a test controls
-    /// each side of the comparison exactly. Defaults to `std::chrono::system_clock` (mirrors
-    /// `Cas::Gc`'s `now_ms_fn` convention) when empty.
-    CachedPartFolderAccess(Cas::PoolPtr store_, CacheParams params_, std::function<uint64_t()> now_ms_fn_ = {});
+    CachedPartFolderAccess(Cas::PoolPtr store_, CacheParams params_);
 
     /// Resolves the ref and, when present, reads and validates its manifest into an immutable view.
-    /// `nullptr` means the ref is absent. Strict validation and the default `ForceFresh` policy reach
-    /// `readManifestShared`'s mandatory HEAD because a fresh ref resolve alone does not prove that the
-    /// manifest body still exists.
+    /// `nullptr` means the ref is absent. `ForceFresh` and `StrictValidate` bypass the retained view
+    /// and read through the pool's manifest cache; a manifest is immutable per id, so a retained view
+    /// can be stale only by naming a different manifest id, which the fresh resolve detects.
     std::shared_ptr<const PartFolderView> getView(const PartRefKey & key, Freshness freshness) const;
 
     /// Ref-only resolution (per-part reads, part-dir existence, publish stamps): no
@@ -364,9 +338,6 @@ public:
 private:
     Cas::PoolPtr store;
     CacheParams params;
-    /// Wall-clock milliseconds; see the constructor comment. `std::function::operator` is const, so this is
-    /// callable from const methods (`getView`, `buildView`) without a `mutable` qualifier.
-    std::function<uint64_t()> now_ms_fn;
 
     /// Supplies the conservative encoded-manifest weight used by `CacheBase` for eviction decisions.
     struct ViewWeight
@@ -384,7 +355,7 @@ private:
     mutable std::unordered_map<String, std::shared_future<std::shared_ptr<const PartFolderView>>> inflight;
 
     /// Reads a manifest and constructs a view. Cold `CachedForLoad` builds are single-flight per key;
-    /// fresh modes perform their own read so each call retains its validation guarantee.
+    /// fresh modes perform their own read.
     std::shared_ptr<const PartFolderView> buildView(
         const PartRefKey & key, const Cas::Resolved & resolved, Freshness freshness) const;
     /// Removes a retained view and records the invalidation for diagnostics.

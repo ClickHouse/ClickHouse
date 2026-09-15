@@ -59,13 +59,17 @@ struct OrphanFixture
         /// exercising the independent sweep-deletion premise.
         casAdmitRecoverableEntry(*backend, store->layout(), ns);
         writeManifestRaw(*backend, store->layout(), ns, orphan, {blobEntryFor("a", DB::UInt128(1))});
-        /// min_active 6 > build_sequence 5: the durable watermark fact makes the prefix ELIGIBLE, which
+        /// min_active_build_sequence 6 > build_sequence 5: the durable watermark fact makes the prefix ELIGIBLE, which
         /// is the half the premise sits on top of.
-        setWatermarkMinActive(*backend, store->layout(), kServerRoot, kBuildEpoch, /*min_active*/6);
+        setWatermarkMinActive(*backend, store->layout(), kServerRoot, kBuildEpoch, /*min_active_build_sequence*/6);
     }
 
     String orphanKey() const { return store->layout().manifestKey(ManifestId{ns, orphan}); }
-    bool orphanExists() const { return backend->head(orphanKey()).exists; }
+    bool orphanExists() const
+    {
+        OperationForTest op(*backend);
+        return (*op).head(orphanKey(), Retry::once()).has_value();
+    }
 };
 
 /// The same admissible orphan shape as `OrphanFixture`, but without its legal manifest write: the
@@ -81,11 +85,15 @@ struct UndecodableOrphanFixture
     {
         store = openPoolForTest(backend);
         casAdmitRecoverableEntry(*backend, store->layout(), ns);
-        setWatermarkMinActive(*backend, store->layout(), kServerRoot, kBuildEpoch, /*min_active*/6);
+        setWatermarkMinActive(*backend, store->layout(), kServerRoot, kBuildEpoch, /*min_active_build_sequence*/6);
     }
 
     String orphanKey() const { return store->layout().manifestKey(ManifestId{ns, orphan}); }
-    bool orphanExists() const { return backend->head(orphanKey()).exists; }
+    bool orphanExists() const
+    {
+        OperationForTest op(*backend);
+        return (*op).head(orphanKey(), Retry::once()).has_value();
+    }
 };
 
 }
@@ -179,7 +187,7 @@ TEST(CASSweepDeletionPremise, AnUnconsumedTailRemovalRetainsItsTarget)
 
     NamespaceFoldView view;
     RefCoverage cov;
-    cov.classification = 2;
+    cov.classification = CoverageClass::Folded;
     cov.last_folded_ref_id = RefTxnId{kBuildEpoch + 1, 1};   /// rule (1) satisfied
     view.coverage = cov;
     view.tail_removal_targets.insert(key);
@@ -239,10 +247,11 @@ TEST(CASSweepDeletionPremise, AnUndecodableManifestDoesNotWedgeTheCursorPage)
     const size_t at = bytes.find("==> \"a.txt\"");
     ASSERT_NE(at, String::npos) << "no banner line to corrupt -- the entry must be Inline, not Blob";
     bytes[at + 5] = 'X';   /// Inside the quoted path, same length, so no other offset shifts.
-    const PutResult put = f.backend->putIfAbsent(f.orphanKey(), sealObject(FormatId::PartManifest, bytes));
-    /// `putIfAbsent` over an existing key writes nothing and reports `PreconditionFailed`, so a
-    /// silently legal body would make every assertion below pass against the wrong object.
-    ASSERT_EQ(put.outcome, PutOutcome::Done) << "the poison body was not the one planted";
+    OperationForTest poison_op(*f.backend);
+    const WriteResult put = (*poison_op).create(f.orphanKey(), sealObject(FormatId::PartManifest, bytes), Retry::once());
+    /// `create` over an existing key writes nothing and reports a `Conflict`, so a silently legal body
+    /// would make every assertion below pass against the wrong object.
+    ASSERT_TRUE(std::holds_alternative<Committed>(put)) << "the poison body was not the one planted";
 
     const ManifestId legal = writeManifestRaw(
         *f.backend, f.store->layout(), f.ns, ref(5, 0xCD), {blobEntryFor("b", DB::UInt128(2))});
@@ -262,7 +271,7 @@ TEST(CASSweepDeletionPremise, AnUndecodableManifestDoesNotWedgeTheCursorPage)
     /// keys remain, so a moved-cursor assertion fails after a correct fix, not before it.
     EXPECT_TRUE(result.wrapped);
     /// And the strong form: the object beyond the poison key was still decided this page.
-    EXPECT_FALSE(f.backend->head(legal_key).exists)
+    EXPECT_FALSE((*poison_op).head(legal_key, Retry::once()).has_value())
         << "the sweep stopped at the poison key instead of walking past it";
 }
 
@@ -318,7 +327,7 @@ TEST(CASSweepDeletionPremise, DistinctRetainReasonsLandInDistinctCounters)
                        .retry_count = 1, .next_retry_round = 4};
     seedFoldCursorForTest(*backend, layout, ns_b, RefTxnId{kBuildEpoch + 1, 8}, hold);
 
-    setWatermarkMinActive(*backend, layout, kServerRoot, kBuildEpoch, /*min_active*/6);
+    setWatermarkMinActive(*backend, layout, kServerRoot, kBuildEpoch, /*min_active_build_sequence*/6);
 
     const ManifestSweepResult result = sweepManifestCursorPageForTest(*store, "", /*list_budget*/100, /*delete_budget*/10);
 
@@ -377,8 +386,9 @@ TEST(CASSweepDeletionPremise, AnExhaustedDeleteBudgetRetainsAndDoesNotStepOverTh
         << "the cursor must not have stepped over the candidates the exhausted budget left undecided";
 
     size_t surviving = 0;
+    OperationForTest survive_op(*f.backend);
     for (const ManifestRef & r : {f.orphan, second, third})
-        if (f.backend->head(f.store->layout().manifestKey(ManifestId{f.ns, r})).exists)
+        if ((*survive_op).head(f.store->layout().manifestKey(ManifestId{f.ns, r}), Retry::once()).has_value())
             ++surviving;
     EXPECT_EQ(surviving, 0u);
 }
@@ -403,9 +413,9 @@ TEST(CASSweepDeletionPremise, RecoveryWorkBudgetRetainsAndConvergesWithoutWedgin
     /// takes the fresh-`_ckpt` `putIfAbsent` path instead of `advanceRecoverableCkptForRawFixture`'s
     /// monotonic-advance-from-existing-value path (which throws on a null `committed_through`).
     casAdmitEntry(*backend, layout, ns);
-    setWatermarkMinActive(*backend, layout, kServerRoot, kBuildEpoch, /*min_active*/1000);
+    setWatermarkMinActive(*backend, layout, kServerRoot, kBuildEpoch, /*min_active_build_sequence*/1000);
 
-    /// Six orphan candidates, all eligible (build_sequence << min_active), none owned by any ref.
+    /// Six orphan candidates, all eligible (build_sequence << min_active_build_sequence), none owned by any ref.
     constexpr int kCandidates = 6;
     for (int i = 1; i <= kCandidates; ++i)
         writeManifestRaw(*backend, layout, ns, ref(i, 1),
@@ -457,8 +467,9 @@ TEST(CASSweepDeletionPremise, RecoveryWorkBudgetRetainsAndConvergesWithoutWedgin
     EXPECT_EQ(total_skipped, static_cast<uint64_t>(kCandidates))
         << "every one of the six candidates was decided (skipped), none silently dropped from the page";
     EXPECT_GE(total_retained_work_budget, 1u);
+    OperationForTest survive_op(*backend);
     for (int i = 1; i <= kCandidates; ++i)
-        EXPECT_TRUE(backend->head(layout.manifestKey(ManifestId{ns, ref(i, 1)})).exists)
+        EXPECT_TRUE((*survive_op).head(layout.manifestKey(ManifestId{ns, ref(i, 1)}), Retry::once()).has_value())
             << "candidate " << i << " must survive: it was never proven safe to delete";
 }
 
@@ -484,7 +495,7 @@ TEST(CASSweepDeletionPremise, NamespaceWorkBudgetCapsDistinctViewsPerPage)
     /// at all (`_ckpt.committed_through` unset), so absent the namespace cap BOTH would delete.
     seedFoldCursorForTest(*backend, layout, ns_a, RefTxnId{kBuildEpoch + 1, 1});
     seedFoldCursorForTest(*backend, layout, ns_b, RefTxnId{kBuildEpoch + 1, 1});
-    setWatermarkMinActive(*backend, layout, kServerRoot, kBuildEpoch, /*min_active*/6);
+    setWatermarkMinActive(*backend, layout, kServerRoot, kBuildEpoch, /*min_active_build_sequence*/6);
 
     GcRoundWorkBudget budget;
     budget.max_sweep_namespaces = 1;
@@ -497,8 +508,9 @@ TEST(CASSweepDeletionPremise, NamespaceWorkBudgetCapsDistinctViewsPerPage)
     EXPECT_EQ(budget.sweep_namespaces_used, 1u);
 
     size_t surviving = 0;
+    OperationForTest survive_op(*backend);
     for (const auto & p : std::vector<std::pair<RootNamespace, ManifestRef>>{{ns_a, ref_a}, {ns_b, ref_b}})
-        if (backend->head(layout.manifestKey(ManifestId{p.first, p.second})).exists)
+        if ((*survive_op).head(layout.manifestKey(ManifestId{p.first, p.second}), Retry::once()).has_value())
             ++surviving;
     EXPECT_EQ(surviving, 1u) << "exactly one candidate remains -- the one whose namespace had no budget left";
 }

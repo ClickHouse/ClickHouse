@@ -4,6 +4,8 @@
 #include <limits>
 #include <algorithm>
 
+#include <magic_enum.hpp>
+
 using namespace DB::Cas;
 
 namespace DB::ErrorCodes { extern const int CORRUPTED_DATA; extern const int LOGICAL_ERROR; }
@@ -15,8 +17,8 @@ CasFoldSeal sampleFoldSeal()
     CasFoldSeal seal;
     seal.generation = 7;
     seal.parent_generation = 6;
-    seal.ref_lives[UInt128{1}].coverage = RefCoverage{.classification = 2, .last_folded_ref_id = RefTxnId{3, 4}};
-    seal.ref_lives[UInt128{2}].coverage = RefCoverage{.classification = 1};
+    seal.ref_lives[UInt128{1}].coverage = RefCoverage{.classification = CoverageClass::Folded, .last_folded_ref_id = RefTxnId{3, 4}};
+    seal.ref_lives[UInt128{2}].coverage = RefCoverage{.classification = CoverageClass::Unchanged};
     seal.blob_target_runs.push_back(RunRef{.key = "gc/gen/7/blob_target/0/0", .checksum = UInt128(0xABCDEF)});
     return seal;
 }
@@ -29,23 +31,25 @@ void eraseRequiredField(String & encoded, std::string_view field)
 }
 }
 
+CAS_BATTERY_COVERS(FoldSeal);
+
 TEST(CASFormatBattery, FoldSeal)
 {
     CasFoldSeal seal;
     seal.generation = 5;
     seal.parent_generation = 4;
-    seal.ref_lives[UInt128{1}].coverage = RefCoverage{.classification = 2, .last_folded_ref_id = RefTxnId{7, 11}};
-    seal.blob_target_runs.push_back(RunRef{.key = "r0", .checksum = UInt128(0x0f), .shard = 0, .generation = 5});
+    seal.ref_lives[UInt128{1}].coverage = RefCoverage{.classification = CoverageClass::Folded, .last_folded_ref_id = RefTxnId{7, 11}};
+    seal.blob_target_runs.push_back(RunRef{.key = "r0", .checksum = UInt128(0x0f), .shard = 0, .key_generation = 5});
     seal.condemned_summary[0] = CondemnedSummary{.condemned_total = 3, .pending_total = 1,
                                                  .oldest_nonpending_condemn_round = 4};
     runFormatBattery({FormatId::FoldSeal,
         [&] { return sealObject(FormatId::FoldSeal, encodeFoldSeal(seal)); },
         [](std::string_view s) { decodeFoldSeal(std::string(openObject(FormatId::FoldSeal, s))); },
         currentFormatHeader("cas_fold_seal") +
-        "{\"g\":\"5\",\"pg\":\"4\"}\n"
-        "{\"k\":\"rfl\",\"life\":\"00000000000000000000000000000001\",\"cls\":2,\"lfe\":\"7\",\"lfs\":\"11\"}\n"
-        "{\"k\":\"btr\",\"key\":\"r0\",\"ck\":\"0000000000000000000000000000000f\",\"shard\":0,\"gen\":\"5\"}\n"
-        "{\"k\":\"cnd\",\"shard\":0,\"ct\":3,\"pt\":1,\"ocr\":\"4\"}\n"
+        "{\"generation\":\"5\",\"parent_generation\":\"4\"}\n"
+        "{\"kind\":\"ref_life\",\"life\":\"00000000000000000000000000000001\",\"class\":\"folded\",\"fold_epoch\":\"7\",\"fold_seq\":\"11\"}\n"
+        "{\"kind\":\"blob_run\",\"key\":\"r0\",\"checksum\":\"0000000000000000000000000000000f\",\"shard\":0,\"key_generation\":\"5\"}\n"
+        "{\"kind\":\"condemned\",\"shard\":0,\"condemned\":3,\"pending\":1,\"oldest_round\":\"4\"}\n"
         "{\"n\":3}\n"});
 }
 
@@ -57,7 +61,7 @@ TEST(CASFoldSealFormat, RoundTripsAllFields)
     EXPECT_EQ(out.generation, in.generation);
     EXPECT_EQ(out.parent_generation, in.parent_generation);
     ASSERT_EQ(out.ref_lives.size(), in.ref_lives.size());
-    EXPECT_EQ(out.ref_lives.at(UInt128{1}).coverage.classification, 2);
+    EXPECT_EQ(out.ref_lives.at(UInt128{1}).coverage.classification, CoverageClass::Folded);
     EXPECT_EQ(out.ref_lives.at(UInt128{1}).coverage.last_folded_ref_id, (RefTxnId{3, 4}));
     ASSERT_EQ(out.blob_target_runs.size(), 1u);
     EXPECT_EQ(out.blob_target_runs[0].key, "gc/gen/7/blob_target/0/0");
@@ -72,8 +76,8 @@ TEST(CASFoldSealFormat, AuthoritativeDecodeRejectsTwoBlobTargetRunsForOneShard)
     seal.generation = 7;
     seal.parent_generation = 6;
     seal.blob_target_runs = {
-        RunRef{.key = layout.blobTargetRunKey(7, 1, 0, 0), .checksum = UInt128{1}, .shard = 0, .generation = 7},
-        RunRef{.key = layout.blobTargetRunKey(7, 2, 0, 0), .checksum = UInt128{2}, .shard = 0, .generation = 7},
+        RunRef{.key = layout.blobTargetRunKey(7, 1, 0, 0), .checksum = UInt128{1}, .shard = 0, .key_generation = 7},
+        RunRef{.key = layout.blobTargetRunKey(7, 2, 0, 0), .checksum = UInt128{2}, .shard = 0, .key_generation = 7},
     };
     seal.condemned_summary[0] = CondemnedSummary{};
 
@@ -88,8 +92,8 @@ TEST(CASFoldSealFormatDeathTest, ProducerValidationRejectsMalformedSealBeforePut
     const Layout layout("p");
     CasFoldSeal seal;
     seal.blob_target_runs = {
-        RunRef{.key = layout.blobTargetRunKey(7, 1, 0, 0), .checksum = UInt128{1}, .shard = 0, .generation = 7},
-        RunRef{.key = layout.blobTargetRunKey(7, 2, 0, 0), .checksum = UInt128{2}, .shard = 0, .generation = 7}};
+        RunRef{.key = layout.blobTargetRunKey(7, 1, 0, 0), .checksum = UInt128{1}, .shard = 0, .key_generation = 7},
+        RunRef{.key = layout.blobTargetRunKey(7, 2, 0, 0), .checksum = UInt128{2}, .shard = 0, .key_generation = 7}};
     seal.condemned_summary[0] = CondemnedSummary{};
     EXPECT_DEATH({ validateFoldSealForWrite(seal, layout, 1); }, "duplicate blob-target shard");
 }
@@ -99,8 +103,8 @@ TEST(CASFoldSealFormat, ProducerValidationRejectsMalformedSealBeforePut)
     const Layout layout("p");
     CasFoldSeal seal;
     seal.blob_target_runs = {
-        RunRef{.key = layout.blobTargetRunKey(7, 1, 0, 0), .checksum = UInt128{1}, .shard = 0, .generation = 7},
-        RunRef{.key = layout.blobTargetRunKey(7, 2, 0, 0), .checksum = UInt128{2}, .shard = 0, .generation = 7}};
+        RunRef{.key = layout.blobTargetRunKey(7, 1, 0, 0), .checksum = UInt128{1}, .shard = 0, .key_generation = 7},
+        RunRef{.key = layout.blobTargetRunKey(7, 2, 0, 0), .checksum = UInt128{2}, .shard = 0, .key_generation = 7}};
     seal.condemned_summary[0] = CondemnedSummary{};
     cas_battery_detail::expectCode(DB::ErrorCodes::LOGICAL_ERROR,
         [&] { validateFoldSealForWrite(seal, layout, 1); }, "duplicate blob-target shard");
@@ -117,17 +121,17 @@ TEST(CASFoldSealFormat, AuthoritativeDecodeRequiresEveryBlobTargetAndSummaryFiel
         .key = layout.blobTargetRunKey(7, 1, 0, 0),
         .checksum = UInt128{1},
         .shard = 0,
-        .generation = 7});
+        .key_generation = 7});
     seal.condemned_summary[0] = CondemnedSummary{};
     const String valid = encodeFoldSeal(seal);
 
     for (const std::string_view field : {
         R"(,"key":"p/gc/gen/7/attempt/1/blob_target/0/0")",
-        R"(,"ck":"00000000000000000000000000000001")",
-        R"(,"gen":"7")",
-        ",\"ct\":0",
-        ",\"pt\":0",
-        R"(,"ocr":"18446744073709551615")"})
+        R"(,"checksum":"00000000000000000000000000000001")",
+        R"(,"key_generation":"7")",
+        ",\"condemned\":0",
+        ",\"pending\":0",
+        R"(,"oldest_round":"18446744073709551615")"})
     {
         String malformed = valid;
         eraseRequiredField(malformed, field);
@@ -136,19 +140,19 @@ TEST(CASFoldSealFormat, AuthoritativeDecodeRequiresEveryBlobTargetAndSummaryFiel
     }
 
     /// `shard` occurs once on each row; remove each occurrence independently.
-    String missing_btr_shard = valid;
-    eraseRequiredField(missing_btr_shard, ",\"shard\":0");
+    String missing_blob_run_shard = valid;
+    eraseRequiredField(missing_blob_run_shard, ",\"shard\":0");
     cas_battery_detail::expectCode(DB::ErrorCodes::CORRUPTED_DATA,
-        [&] { decodeFoldSeal(missing_btr_shard, layout, 1); }, "missing");
+        [&] { decodeFoldSeal(missing_blob_run_shard, layout, 1); }, "missing");
 
-    String missing_cnd_shard = valid;
-    const size_t first_shard = missing_cnd_shard.find(",\"shard\":0");
+    String missing_condemned_shard = valid;
+    const size_t first_shard = missing_condemned_shard.find(",\"shard\":0");
     ASSERT_NE(first_shard, String::npos);
-    const size_t second_shard = missing_cnd_shard.find(",\"shard\":0", first_shard + 1);
+    const size_t second_shard = missing_condemned_shard.find(",\"shard\":0", first_shard + 1);
     ASSERT_NE(second_shard, String::npos);
-    missing_cnd_shard.erase(second_shard, std::string_view(",\"shard\":0").size());
+    missing_condemned_shard.erase(second_shard, std::string_view(",\"shard\":0").size());
     cas_battery_detail::expectCode(DB::ErrorCodes::CORRUPTED_DATA,
-        [&] { decodeFoldSeal(missing_cnd_shard, layout, 1); }, "missing");
+        [&] { decodeFoldSeal(missing_condemned_shard, layout, 1); }, "missing");
 }
 
 TEST(CASFoldSealFormat, AuthoritativeDecodeRejectsNoncanonicalRowsAndIncompleteSummaryDomain)
@@ -161,7 +165,7 @@ TEST(CASFoldSealFormat, AuthoritativeDecodeRejectsNoncanonicalRowsAndIncompleteS
         .key = layout.blobTargetRunKey(7, 1, 1, 0),
         .checksum = UInt128{1},
         .shard = 1,
-        .generation = 7});
+        .key_generation = 7});
     seal.condemned_summary[0] = CondemnedSummary{};
 
     cas_battery_detail::expectCode(DB::ErrorCodes::CORRUPTED_DATA,
@@ -239,7 +243,7 @@ TEST(CASFoldSeal, RejectsEmptyAndBadMagic)
 TEST(CASFoldSeal, CoverageRecordsEveryCatalogLife)
 {
     CasFoldSeal in = sampleFoldSeal();
-    in.ref_lives[UInt128{3}].coverage = RefCoverage{.classification = 0};
+    in.ref_lives[UInt128{3}].coverage = RefCoverage{.classification = CoverageClass::Absent};
     const CasFoldSeal out = decodeFoldSeal(encodeFoldSeal(in));
     EXPECT_TRUE(out.ref_lives.contains(UInt128{3}));
     EXPECT_EQ(out.ref_lives.size(), 3u);
@@ -252,9 +256,9 @@ TEST(CASFoldSeal, FoldSealCondemnedSummaryRoundTrips)
     CasFoldSeal s;
     s.generation = 9;
     s.parent_generation = 8;
-    s.ref_lives[UInt128{1}].coverage = RefCoverage{.classification = 2};
+    s.ref_lives[UInt128{1}].coverage = RefCoverage{.classification = CoverageClass::Folded};
     s.blob_target_runs.push_back(RunRef{.key = "gc/gen/9/blob_target/0/0", .checksum = UInt128(0x77),
-                                        .shard = 0, .generation = 9});
+                                        .shard = 0, .key_generation = 9});
     s.condemned_summary[0] = CondemnedSummary{.condemned_total = 3, .pending_total = 1,
                                               .oldest_nonpending_condemn_round = 5};
     s.condemned_summary[1] = CondemnedSummary{};   /// explicit zero entry (totality over gc_shards)
@@ -281,7 +285,7 @@ TEST(CASFoldSealFormat, UnifiedRefLifeRowRoundTripsCoverageHoldAndCleanupEvidenc
     const UInt128 life_id{0x1234};
     seal.ref_lives.emplace(life_id, RefLifeFoldState{
         .coverage = RefCoverage{
-            .classification = 4,
+            .classification = CoverageClass::Clamped,
             .last_folded_ref_id = RefTxnId{3, 4},
             .hold = RefHold{
                 .reason = HoldReason::ManifestBodyMissing,
@@ -291,36 +295,59 @@ TEST(CASFoldSealFormat, UnifiedRefLifeRowRoundTripsCoverageHoldAndCleanupEvidenc
         .cleanup_evidence = RefCleanupEvidence{.remove_txn_id = RefTxnId{9, 10}}});
 
     const String expected = currentFormatHeader("cas_fold_seal") +
-        "{\"g\":\"8\",\"pg\":\"7\"}\n"
-        "{\"k\":\"rfl\",\"life\":\"00000000000000000000000000001234\",\"cls\":4,"
-        "\"lfe\":\"3\",\"lfs\":\"4\",\"hr\":\"manifest_body_missing\",\"hpe\":\"5\","
-        "\"hps\":\"6\",\"hrc\":7,\"hnr\":\"8\",\"rte\":\"9\",\"rts\":\"10\"}\n"
+        "{\"generation\":\"8\",\"parent_generation\":\"7\"}\n"
+        "{\"kind\":\"ref_life\",\"life\":\"00000000000000000000000000001234\",\"class\":\"clamped\","
+        "\"fold_epoch\":\"3\",\"fold_seq\":\"4\",\"hold_reason\":\"manifest_body_missing\",\"hold_epoch\":\"5\","
+        "\"hold_seq\":\"6\",\"retries\":7,\"retry_round\":\"8\",\"remove_epoch\":\"9\",\"remove_seq\":\"10\"}\n"
         "{\"n\":1}\n";
 
     EXPECT_EQ(encodeFoldSeal(seal), expected);
     EXPECT_EQ(decodeFoldSeal(expected), seal);
 }
 
-/// Mutation caught: accepting the generation-6 split coverage collection would leave a second
-/// namespace-keyed source of lifecycle work in a generation-7 process.
+/// Closed-set pin: `CoverageClass` and `HoldReason`
+/// each walked through `magic_enum::enum_values`, which is what proves the renderer and the parser
+/// consult the SAME table: a table entry missing altogether is already a build error at the
+/// coverage assert, but two delegates drifting onto different tables is not.
+TEST(CASFoldSealFormat, ClosedSetPinsCoverageClassAndHoldReasonWords)
+{
+    EXPECT_EQ(coverageClassToWord(CoverageClass::Absent), "absent");
+    EXPECT_EQ(coverageClassToWord(CoverageClass::Unchanged), "unchanged");
+    EXPECT_EQ(coverageClassToWord(CoverageClass::Folded), "folded");
+    EXPECT_EQ(coverageClassToWord(CoverageClass::Clamped), "clamped");
+    for (const auto c : magic_enum::enum_values<CoverageClass>())
+        EXPECT_EQ(coverageClassFromWord(coverageClassToWord(c)), c);
+
+    EXPECT_EQ(holdReasonToWord(HoldReason::GapBelowWitness), "gap_below_witness");
+    EXPECT_EQ(holdReasonToWord(HoldReason::UnconsumedSealCrossing), "unconsumed_seal_crossing");
+    EXPECT_EQ(holdReasonToWord(HoldReason::WitnessDisappeared), "witness_disappeared");
+    EXPECT_EQ(holdReasonToWord(HoldReason::BodyUndecodable), "body_undecodable");
+    EXPECT_EQ(holdReasonToWord(HoldReason::ManifestBodyMissing), "manifest_body_missing");
+    EXPECT_EQ(holdReasonToWord(HoldReason::CheckpointUndecodable), "checkpoint_undecodable");
+    for (const auto r : magic_enum::enum_values<HoldReason>())
+        EXPECT_EQ(holdReasonFromWord(holdReasonToWord(r)), r);
+}
+
+/// Mutation caught: accepting the retired split coverage-collection kind would revive a second
+/// namespace-keyed source of lifecycle work alongside the unified per-life row.
 TEST(CASFoldSealFormat, UnifiedCodecRejectsLegacyCoverageRecord)
 {
     const String old =
-        "{\"type\":\"cas_fold_seal\",\"v\":7}\n"
-        "{\"g\":\"8\",\"pg\":\"7\"}\n"
-        "{\"k\":\"cov\",\"key\":\"name/0\",\"cls\":2,\"lfe\":\"3\",\"lfs\":\"4\"}\n"
+        "{\"type\":\"cas_fold_seal\",\"v\":1}\n"
+        "{\"generation\":\"8\",\"parent_generation\":\"7\"}\n"
+        "{\"kind\":\"cov\",\"key\":\"name/0\",\"class\":\"folded\",\"fold_epoch\":\"3\",\"fold_seq\":\"4\"}\n"
         "{\"n\":1}\n";
     cas_battery_detail::expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeFoldSeal(old); }, "legacy coverage");
 }
 
-/// Mutation caught: accepting the generation-6 cleanup-item state would restore the independent
-/// marker-driven `Pending`/`Completed` handshake.
+/// Mutation caught: accepting the retired cleanup-item kind would restore the independent
+/// marker-driven `Pending`/`Completed` handshake the unified row replaced.
 TEST(CASFoldSealFormat, UnifiedCodecRejectsLegacyNamespaceCleanupRecord)
 {
     const String old =
-        "{\"type\":\"cas_fold_seal\",\"v\":7}\n"
-        "{\"g\":\"8\",\"pg\":\"7\"}\n"
-        "{\"k\":\"nsc\",\"ns\":\"name\",\"rte\":\"3\",\"rts\":\"4\",\"st\":\"completed\"}\n"
+        "{\"type\":\"cas_fold_seal\",\"v\":1}\n"
+        "{\"generation\":\"8\",\"parent_generation\":\"7\"}\n"
+        "{\"kind\":\"nsc\",\"ns\":\"name\",\"remove_epoch\":\"3\",\"remove_seq\":\"4\",\"st\":\"completed\"}\n"
         "{\"n\":1}\n";
     cas_battery_detail::expectCode(
         DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeFoldSeal(old); }, "legacy namespace cleanup");

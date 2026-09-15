@@ -13,7 +13,7 @@ namespace DB::Cas
 
 /// Text codec for `cas_ref_log`, the immutable object stored at `_log/<txn_id>`. Each object contains
 /// exactly one committed transaction: its namespace, transaction id, and the batch of `RefOp`s applied
-/// by that commit. The body has a header, a meta line `{"ns","we","rs",["!pse","!pss"]}`, one JSON
+/// by that commit. The body has a header, a meta line `{"namespace","txn_epoch","txn_seq",["!prev_epoch","!prev_seq"]}`, one JSON
 /// record per op, and a `{"n":count}` trailer. Records are emitted in the transaction's stored order
 /// and contain no codec-generated timestamps, so encoding the same value is byte-identical. This
 /// determinism is a property of the representation, not an adoption gate: ref commits use
@@ -21,7 +21,7 @@ namespace DB::Cas
 /// returned text.
 ///
 /// `RefOpKind::EpochSeal` closes an epoch transition in-band (spec INV-2): a seal transaction contains
-/// exactly that one op, and the meta line's optional `prev_epoch_seal` (wire fields `!pse`/`!pss`,
+/// exactly that one op, and the meta line's optional `prev_epoch_seal` (wire fields `!prev_epoch`/`!prev_seq`,
 /// CRITICAL -- an unrecognized `!`-key fails closed with `UNKNOWN_FORMAT_VERSION` rather than being
 /// silently skipped, since dropping it would lose INV-2's chain evidence while still passing the
 /// structural grammar) chains to the transaction id of the seal that closed the PRECEDING epoch, and
@@ -40,6 +40,13 @@ enum class RefOpKind : uint8_t
     RemoveNamespace = 4,
     EpochSeal = 5,
 };
+
+/// Convert a ref-log operation discriminator to its canonical wire word. Throws `LOGICAL_ERROR` if
+/// `kind` is not represented by this format.
+std::string_view refOpKindToWireWord(RefOpKind kind);
+
+/// Its fail-closed inverse: an unknown word is `CORRUPTED_DATA`.
+RefOpKind refOpKindFromWireWord(std::string_view w);
 
 /// One operation inside a `RefLogTxn`. Only the fields documented next to `kind` are meaningful for
 /// that kind, and the codec never reads or writes the others. `OwnerTransition` optionally removes
@@ -173,5 +180,23 @@ void validateEpochSealGrammarStructural(const RefLogTxn & txn);
 /// function's). Callers own `life_epoch`: the apply layer and the writer-side encode call sites that
 /// mint a sequence-1 transaction. Throws CORRUPTED_DATA on violation.
 void validateEpochSealGrammarContextual(const RefLogTxn & txn, uint64_t life_epoch);
+
+/// The three identity fields of a `cas_ref_log` meta line, read WITHOUT trusting the object: this is
+/// the anomaly diagnostic's view of an object found at a key it should not occupy, so the body is not
+/// expected to match that key's identity.
+struct RefLogMetaPeek
+{
+    String ns;
+    uint64_t writer_epoch = 0;
+    uint64_t ref_sequence = 0;
+};
+
+/// Best-effort identification of a sealed `cas_ref_log` object: opens it, skips the header line, and
+/// reads the meta line's three identity fields. Never validates the header version, never reads past
+/// the meta line, and answers `nullopt` for anything it cannot read -- truncation, garbage, a
+/// different format, or a meta line missing one of the three. It lives HERE, beside the key
+/// constants, because a caller that spelled those keys itself would silently stop matching the first
+/// time they are renamed, and this reader has no output an ordinary test would miss.
+std::optional<RefLogMetaPeek> peekRefLogMeta(const String & sealed_bytes);
 
 }

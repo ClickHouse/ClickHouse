@@ -1,6 +1,6 @@
 ---
-description: 'This engine provides a read-only integration with existing Apache Iceberg
-  tables in Amazon S3, Azure, HDFS and locally stored tables.'
+description: 'This engine provides a read-only data integration with existing Apache Iceberg
+  tables in Amazon S3, Azure, HDFS and locally stored tables, plus experimental metadata-maintenance writes.'
 sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
@@ -16,7 +16,7 @@ The Iceberg Table Engine is available but may have limitations. ClickHouse wasn'
 For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
-This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
+This engine provides a read-only *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
 ## Create table {#create-table}
 
@@ -125,25 +125,42 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
+## Manifest file compaction {#manifest-compaction}
+
+Over time, frequent writes to an Iceberg table can accumulate a large number of small manifest files in the current snapshot's manifest list. A long manifest list slows down query planning, because every manifest file has to be read to discover the data files. ClickHouse can compact these manifest files into fewer, larger ones using the `OPTIMIZE TABLE ... MANIFEST` statement:
+
+```sql
+OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compaction = 1;
+```
+
+This produces a new snapshot (a `replace` operation) that references the same data files through a consolidated set of manifest files. No data files are rewritten and no rows are added, deleted, or deduplicated — only the manifest layer is rearranged.
+
+### Requirements and behavior {#manifest-compaction-behavior}
+
+- The feature is experimental and gated behind the `allow_experimental_iceberg_compaction` setting. The statement throws an exception if the setting is not enabled.
+- Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `30`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
+- `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg tables. Running it against any other table engine throws an exception.
+- `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg format-version 2 tables. Running it against a format-version 1 table throws an exception, and so does running it against a format-version 3 table, because the v3 row-lineage `first_row_id` metadata is not yet round-tripped through the manifest rewrite.
+
 ## Processing of tables with deleted rows {#deleted-rows}
 
 ClickHouse supports reading Iceberg tables that use the following deletion methods:
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) stored in Puffin files (Iceberg v3, read-only)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (Iceberg v3, read-only), stored either in Puffin files or in Delta-style `deletion_vector_*.bin` files using the same `deletion-vector-v1` envelope at the manifest `content_offset` / `content_size_in_bytes`
 
 The following limitations apply to deletion vectors:
 
-- Only `deletion-vector-v1` Puffin blobs are supported
+- Only `deletion-vector-v1` blobs are supported (Puffin container or Delta `.bin` slice)
 - Data files must be in Parquet format
 - Column-scoped deletion vectors (user column ids in puffin `fields`) are not supported. Writers may set `fields` to `[]` or to the Iceberg reserved `_pos` id (`2147483645`) for file-scoped deletion vectors.
 - Writing deletion vectors is not supported
 - `DELETE` / `UPDATE` mutations on Iceberg format version 3+ tables are rejected (writers must not add position-delete files)
 
-Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. Parsed footers for coalesced multi-DV Puffin files are memoized with that cache (same identity: storage, path, `etag`) so slices share one footer parse; the memo shares `puffin_files_cache_size` / max-entry limits and is dropped when the cache is disabled (`puffin_files_cache_size=0`) or cleared. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
+Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the deletion-vector object has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the object. Parsed footers for coalesced multi-DV Puffin files are memoized with that cache (same identity: storage, path, `etag`) so slices share one footer parse; Delta `.bin` files have no Puffin footer and skip that memo. The memo shares `puffin_files_cache_size` / max-entry limits and is dropped when the cache is disabled (`puffin_files_cache_size=0`) or cleared. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
 
-For [`icebergCluster`](/sql-reference/table-functions/icebergCluster.md) (and `object_storage_cluster`), the initiator loads and materializes each data file's deletion vector while distributing tasks, then sends the resulting row bitmap to workers with the task. Workers apply the bitmap; they do not re-read the Puffin blob for that path. On wide v3 tables this can make the initiator a serialization point for deletion-vector I/O and decode.
+For [`icebergCluster`](/sql-reference/table-functions/icebergCluster.md) (and `object_storage_cluster`), the initiator loads and materializes each data file's deletion vector while distributing tasks, then sends the resulting row bitmap to workers with the task. Workers apply the bitmap; they do not re-read the Puffin or `.bin` object for that path. On wide v3 tables this can make the initiator a serialization point for deletion-vector I/O and decode.
 
 ### Basic usage {#basic-usage}
  ```sql

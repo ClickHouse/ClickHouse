@@ -23,9 +23,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05003',
-    name = '05003_cas_freeze',
-    path = '05003_cas_freeze_pool/');"
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05003',
+    name = '${CLICKHOUSE_DATABASE}_05003_cas_freeze',
+    path = '${CLICKHOUSE_DATABASE}_05003_cas_freeze_pool/');"
 
 # Two partitions: k=1 (will be frozen then dropped) and k=2 (must survive untouched).
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_cas_freeze;"
@@ -36,7 +36,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES t_cas_freeze;"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'live_before_freeze', k, count() FROM t_cas_freeze GROUP BY k ORDER BY k;"
 
 # Freeze only partition 1. The shadow ref becomes an independent GC root on the CA disk.
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_cas_freeze FREEZE PARTITION 1 WITH NAME 'backup_05003';"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_cas_freeze FREEZE PARTITION 1 WITH NAME 'backup_${CLICKHOUSE_DATABASE}_05003';"
 
 ${CLICKHOUSE_CLIENT} --query "
 SELECT 'is_frozen', count() FROM system.parts
@@ -53,10 +53,17 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'live_after_drop', k, count() FROM t_cas_fr
 # proving it survived the DROP PARTITION as an independent shadow ref.
 # SYSTEM UNFREEZE does not accept a FORMAT clause; default output is TSV, piped through
 # clickhouse-local to filter to deterministic columns (backup_path/part_backup_path are
-# absolute paths; command_type/partition_id/part_name/backup_name are stable).
-${CLICKHOUSE_CLIENT} --query "SYSTEM UNFREEZE WITH NAME 'backup_05003';" \
+# absolute paths; command_type/partition_id/part_name are stable, and backup_name is
+# normalized below since it embeds the per-run database name).
+${CLICKHOUSE_CLIENT} --query "SYSTEM UNFREEZE WITH NAME 'backup_${CLICKHOUSE_DATABASE}_05003';" \
   | ${CLICKHOUSE_LOCAL} --structure "$UNFREEZE_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, replaceOne(backup_name, '${CLICKHOUSE_DATABASE}', 'db') AS backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_cas_freeze;"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'dropped_ok';"
+
+# FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, which would
+# stream that expected warning to stderr and be flagged as a failure. Suppress it for the FORGET call only.
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
+    --query "SYSTEM CAS FORGET '${CLICKHOUSE_DATABASE}_05003_cas_freeze'" || {
+    echo "FORGET failed"; exit 1; }

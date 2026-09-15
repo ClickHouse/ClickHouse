@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasWireVocab.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasCodecUtil.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTableAsserts.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <city.h>
@@ -22,41 +23,37 @@ namespace DB::Cas
 namespace
 {
 
-std::string_view placementToWord(EntryPlacement p)
+namespace PartManifestWire
 {
-    switch (p)
-    {
-        case EntryPlacement::Inline: return "inline";
-        case EntryPlacement::Blob:   return "blob";
-    }
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: unknown placement {}", static_cast<int>(p));
+    constexpr WireKey ns{"namespace"};
+    constexpr WireKey payload_digest{"payload_digest"};
+    constexpr WireKey path{"path"};
+    constexpr WireKey place{"place"};
+    constexpr WireKey size{"size"};
 }
 
-EntryPlacement placementFromWord(std::string_view w)
-{
-    if (w == "inline") return EntryPlacement::Inline;
-    if (w == "blob")   return EntryPlacement::Blob;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: unknown placement '{}'", w);
-}
+constexpr EnumWireTable<EntryPlacement, 2> kEntryPlacementWords{{{
+    {EntryPlacement::Inline, "inline"},
+    {EntryPlacement::Blob, "blob"},
+}}};
 
-/// One entry-record line: {"p","pm", then either the Blob's "ha"/"h"/"sz" or the Inline's "il"}.
+static_assert(casEnumTableCoversEnum<kEntryPlacementWords, EntryPlacement>());
+
+/// One entry-record line: `path`/`place`, followed by either `algo`/`digest`/`size` for a Blob or
+/// `size` for Inline bytes.
 void writeEntryRecord(CasJsonWriter & out, const ManifestEntry & e)
 {
     bool first = true;
-    writeKey(out, "p", first);
-    writeStringValue(out, e.path);
-    writeKey(out, "pm", first);
-    writeStringValue(out, placementToWord(e.placement));
+    writeStringField(out, PartManifestWire::path, e.path, first);
+    writeWordField(out, PartManifestWire::place, entryPlacementToWireWord(e.placement), first);
     if (e.placement == EntryPlacement::Blob)
     {
-        writeBlobRefFields(out, first, e.ref);   /// ha + h
-        writeKey(out, "sz", first);
-        writeIntText(e.blob_size, out);
+        writeBlobRefFields(out, first, e.ref);   /// algo + digest
+        writeNumberField(out, PartManifestWire::size, e.blob_size, first);
     }
     else
     {
-        writeKey(out, "il", first);
-        writeIntText(e.inline_bytes.size(), out);
+        writeNumberField(out, PartManifestWire::size, e.inline_bytes.size(), first);
     }
     closeObject(out, first);
     writeChar('\n', out);
@@ -72,12 +69,22 @@ String bannerFor(std::string_view path, uint64_t n)
     CasJsonWriter w(path.size() + 32);
     w.append("==> ");
     w.stringValue(path);
-    w.append(" il=");
+    w.append(" size=");
     w.u64Number(n);
     w.append(" <==");
     return std::move(w).take();
 }
 
+}
+
+std::string_view entryPlacementToWireWord(EntryPlacement placement)
+{
+    return kEntryPlacementWords.toWord(placement, "PartManifest: EntryPlacement");
+}
+
+EntryPlacement entryPlacementFromWireWord(std::string_view w)
+{
+    return kEntryPlacementWords.fromWord(w, "PartManifest: EntryPlacement");
 }
 
 String encodePartManifest(const PartManifest & m)
@@ -97,15 +104,13 @@ String encodePartManifest(const PartManifest & m)
     CasJsonWriter out(256);
     writeHeaderLine(out, FormatId::PartManifest);
 
-    /// descriptor meta line: ManifestRef (me/mb/mo, shared rendering with refsnaplog) + root
+    /// descriptor meta line: ManifestRef (epoch/build/ord, shared rendering with refsnaplog) + root
     /// namespace + payload digest.
     {
         bool first = true;
-        writeManifestRefFields(out, first, "", m.ref);
-        writeKey(out, "ns", first);
-        writeStringValue(out, m.root_namespace_id.string());
-        writeKey(out, "pd", first);
-        writeHex128Value(out, m.payload_digest);
+        writeManifestRefFields(out, first, kBareManifestRefKeys, m.ref);
+        writeStringField(out, PartManifestWire::ns, m.root_namespace_id.string(), first);
+        writeHex128Field(out, PartManifestWire::payload_digest, m.payload_digest, first);
         closeObject(out, first);
         writeChar('\n', out);
     }
@@ -144,43 +149,44 @@ PartManifest decodePartManifest(std::string_view data)
         const String meta = readLine(in, line_cap, "cas_part_manifest");
         ReadBufferFromMemory mm(meta.data(), meta.size());
         JsonObjectReader r(mm, KeyStrictness::Tolerant, "cas_part_manifest");
-        std::optional<uint64_t> me;
-        std::optional<uint64_t> mb;
-        std::optional<uint64_t> mo;
+        ManifestRefFields fields;
         std::optional<String> ns;
         std::optional<UInt128> pd;
         String key;
         while (r.nextKey(key))
         {
-            if (key == "me") me = r.readU64String();
-            else if (key == "mb") mb = r.readU64String();
-            else if (key == "mo") mo = r.readU64Number();
-            else if (key == "ns") ns = r.readString();
-            else if (key == "pd") pd = r.readHex128();
+            if (matchManifestRefFields(key, r, kBareManifestRefKeys, fields)) {}
+            else if (key == PartManifestWire::ns) ns = r.readString();
+            else if (key == PartManifestWire::payload_digest) pd = r.readHex128();
             else r.skipUnknown(key);
         }
-        if (!me || !mb || !mo)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: descriptor missing me/mb/mo");
         if (!ns)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: descriptor missing ns");
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: descriptor missing namespace");
         if (!pd)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: descriptor missing pd");
-        m.ref = manifestRefFromFields(*me, *mb, *mo, "PartManifest", "descriptor");
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: descriptor missing payload_digest");
+        m.ref = fields.buildRef("PartManifest", "descriptor");
         m.root_namespace_id = RootNamespace(*ns);
         m.payload_digest = *pd;
         if (!mm.eof())
             throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: junk after descriptor line");
     }
 
-    /// entry record lines, until the trailer. Inline entries remember their declared `il` length so
+    /// entry record lines, until the trailer. Inline entries remember their declared `size` so
     /// the payload zone below can read exactly that many raw bytes back into `inline_bytes`.
     /// Index-aligned with `m.entries` (Blob entries push an unused 0 placeholder).
     std::vector<uint64_t> inline_lens;
+    String blob_ref_what;   /// reused across Blob entries so the error context does not allocate per row
+    /// One line scratch and one reader for the whole loop: a decoder that rebuilds them per
+    /// row pays an allocation per row for the seen-key store and the line, which profiling put
+    /// at about a fifth of the instructions executed inside a row.
+    String row_line;
+    JsonObjectReader row_reader;
     while (true)
     {
-        const String line = readLine(in, line_cap, "cas_part_manifest");
-        ReadBufferFromMemory l(line.data(), line.size());
-        JsonObjectReader r(l, KeyStrictness::Tolerant, "cas_part_manifest");
+        readLineInto(in, row_line, line_cap, "cas_part_manifest");
+        ReadBufferFromMemory l(row_line.data(), row_line.size());
+        row_reader.reset(l, KeyStrictness::Tolerant, "cas_part_manifest");
+        JsonObjectReader & r = row_reader;
         String key;
         if (!r.nextKey(key))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: empty line");
@@ -198,8 +204,8 @@ PartManifest decodePartManifest(std::string_view data)
             break;
         }
 
-        if (key != "p")
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: record must start with \"p\"");
+        if (key != PartManifestWire::path)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: record must start with \"path\"");
         ManifestEntry e;
         e.path = r.readString();
 
@@ -218,48 +224,37 @@ PartManifest decodePartManifest(std::string_view data)
         }
 
         std::optional<String> pm;
-        std::optional<String> ha;
-        std::optional<String> h;
-        std::optional<uint64_t> sz;
-        std::optional<uint64_t> il;
+        BlobRefFields blob_ref;
+        std::optional<uint64_t> size;
         while (r.nextKey(key))
         {
-            if (key == "pm") pm = r.readString();
-            else if (key == "ha") ha = r.readString();
-            else if (key == "h") h = r.readString();
-            else if (key == "sz") sz = r.readU64Number();
-            else if (key == "il") il = r.readU64Number();
+            if (key == PartManifestWire::place) pm = r.readString();
+            else if (matchBlobRefFields(key, r, blob_ref)) {}
+            else if (key == PartManifestWire::size) size = r.readU64Number();
             else r.skipUnknown(key);
         }
         if (!l.eof())
             throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: junk after record");
         if (!pm)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: entry '{}' missing pm", e.path);
-        e.placement = placementFromWord(*pm);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: entry '{}' missing place", e.path);
+        e.placement = entryPlacementFromWireWord(*pm);
 
         if (e.placement == EntryPlacement::Blob)
         {
-            if (!ha || !h || !sz)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: blob entry '{}' missing ha/h/sz", e.path);
-            const BlobHashAlgo algo = blobHashAlgoFromWord(*ha, "PartManifest entry");
-            /// Validate the digest width before calling `fromHex`. A width mismatch otherwise
-            /// produces `BAD_ARGUMENTS` instead of the `CORRUPTED_DATA` required for malformed
-            /// serialized input, allowing an invalid manifest to escape the decoder's fail-closed
-            /// error contract.
-            const uint64_t expected_hex_len = blobHashLenFor(algo) * 2;
-            if (h->size() != expected_hex_len)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "PartManifest: entry '{}' digest hex width {} does not match algo width {}",
-                    e.path, h->size(), expected_hex_len);
-            e.ref = BlobRef{algo, codecFor(algo).fromHex(*h)};
-            e.blob_size = *sz;
+            if (!size)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: blob entry '{}' missing size", e.path);
+            blob_ref_what.assign("PartManifest entry '");
+            blob_ref_what += e.path;
+            blob_ref_what += '\'';
+            e.ref = blob_ref.build(blob_ref_what);
+            e.blob_size = *size;
             inline_lens.push_back(0);   /// unused for Blob; keeps inline_lens index-aligned with entries
         }
         else
         {
-            if (!il)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: inline entry '{}' missing il", e.path);
-            inline_lens.push_back(*il);   /// bytes filled from the payload zone below
+            if (!size)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "PartManifest: inline entry '{}' missing size", e.path);
+            inline_lens.push_back(*size);   /// bytes filled from the payload zone below
         }
 
         /// Canonical ascending-order and no-duplicate-path enforcement: compare only against the
@@ -277,7 +272,7 @@ PartManifest decodePartManifest(std::string_view data)
     }
 
     /// payload zone: for each Inline entry, in the same order it appeared above, a banner line then
-    /// exactly `il` raw bytes then a terminating '\n'.
+    /// exactly `size` raw bytes then a terminating '\n'.
     for (size_t i = 0; i < m.entries.size(); ++i)
     {
         if (m.entries[i].placement != EntryPlacement::Inline)

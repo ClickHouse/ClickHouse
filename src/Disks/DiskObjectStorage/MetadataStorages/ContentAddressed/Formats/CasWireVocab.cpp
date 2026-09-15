@@ -1,7 +1,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasWireVocab.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasCodecUtil.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTableAsserts.h>
 #include <Common/Exception.h>
+#include <base/hex.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -14,74 +17,62 @@ namespace ErrorCodes
 namespace DB::Cas
 {
 
-std::string_view tokenTypeToWord(TokenType t)
+static_assert(casEnumTableCoversEnum<kTokenTypeWords, Dialect>());
+static_assert(casEnumTableCoversEnum<kObjectKindWords, ObjectKind>());
+
+std::string_view dialectWordFromString(std::string_view w, std::string_view what)
 {
-    switch (t)
-    {
-        case TokenType::ETag:       return "etag";
-        case TokenType::Generation: return "generation";
-        case TokenType::Emulated:   return "emulated";
-    }
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS wire: unknown TokenType {}", static_cast<int>(t));
+    /// Parse then re-render, so what a record carries is the table's own spelling rather than the
+    /// caller's copy of it.
+    return kTokenTypeWords.toWord(kTokenTypeWords.fromWord(w, what), what);
 }
 
-TokenType tokenTypeFromWord(std::string_view w, std::string_view what)
+uint8_t dialectByteFromWord(std::string_view w, std::string_view what)
 {
-    if (w == "etag")       return TokenType::ETag;
-    if (w == "generation") return TokenType::Generation;
-    if (w == "emulated")   return TokenType::Emulated;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: unknown token type '{}'", what, w);
+    return static_cast<uint8_t>(kTokenTypeWords.fromWord(w, what));
+}
+
+std::string_view dialectWordFromByte(uint8_t byte, std::string_view what)
+{
+    for (const auto & entry : kTokenTypeWords.entries)
+        if (static_cast<uint8_t>(entry.value) == byte)
+            return entry.word;
+    /// The byte comes off persisted media, so an unknown one is malformed data, not a caller bug.
+    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: unknown dialect byte {}", what, byte);
 }
 
 BlobHashAlgo blobHashAlgoFromWord(std::string_view w, std::string_view what)
 {
-    if (w == "ch128")  return BlobHashAlgo::CityHash128;
-    if (w == "xxh3")   return BlobHashAlgo::XXH3_128;
-    if (w == "sha256") return BlobHashAlgo::Sha256;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: unknown blob hash algo '{}'", what, w);
+    return kBlobHashAlgoWords.fromWord(w, what);
 }
 
 std::string_view objectKindToWord(ObjectKind k)
 {
-    switch (k)
-    {
-        case ObjectKind::Blob: return "blob";
-    }
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS wire: unknown ObjectKind {}", static_cast<int>(k));
+    return kObjectKindWords.toWord(k, "CAS wire: ObjectKind");
 }
 
 ObjectKind objectKindFromWord(std::string_view w, std::string_view what)
 {
-    if (w == "blob") return ObjectKind::Blob;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: unknown object kind '{}'", what, w);
+    return kObjectKindWords.fromWord(w, what);
 }
 
-void writeTokenFields(CasJsonWriter & out, bool & first, const Token & t)
+void writeTokenFields(CasJsonWriter & out, bool & first, const PersistedEtag & inc)
 {
-    writeKey(out, "tt", first);
-    writeStringValue(out, tokenTypeToWord(t.type));
-    writeKey(out, "tv", first);
-    writeStringValue(out, t.value);
+    writeStringField(out, SharedWire::token_type, dialectWordFromString(inc.dialect, "wire: dialect"), first);
+    writeStringField(out, SharedWire::token, inc.value, first);
 }
 
 void writeBlobRefFields(CasJsonWriter & out, bool & first, const BlobRef & r)
 {
-    writeKey(out, "ha", first);
-    writeStringValue(out, blobHashAlgoName(r.algo));
-    writeKey(out, "h", first);
-    writeStringValue(out, codecFor(r.algo).toHex(r.digest));
+    writeStringField(out, SharedWire::algo, blobHashAlgoName(r.algo), first);
+    writeStringField(out, SharedWire::digest, codecFor(r.algo).toHex(r.digest), first);
 }
 
-void writeManifestRefFields(CasJsonWriter & out, bool & first, std::string_view prefix, const ManifestRef & r)
+void writeManifestRefFields(CasJsonWriter & out, bool & first, const ManifestRefWireKeys & keys, const ManifestRef & r)
 {
-    /// Unlike the WriteBuffer overload, the two-part key() form appends the prefix and name back
-    /// to back with no composed String(prefix) + "..." temporary.
-    out.key(prefix, "me", first);
-    out.u64StringValue(r.writer_epoch);
-    out.key(prefix, "mb", first);
-    out.u64StringValue(r.build_sequence);
-    out.key(prefix, "mo", first);
-    out.u64Number(r.manifest_ordinal);
+    writeU64StringField(out, keys.epoch, r.writer_epoch, first);
+    writeU64StringField(out, keys.build, r.build_sequence, first);
+    writeNumberField(out, keys.ord, r.manifest_ordinal, first);
 }
 
 ManifestRef manifestRefFromFields(uint64_t writer_epoch, uint64_t build_sequence, uint64_t manifest_ordinal,
@@ -98,6 +89,40 @@ ManifestRef manifestRefFromFields(uint64_t writer_epoch, uint64_t build_sequence
     r.manifest_ordinal = static_cast<uint32_t>(manifest_ordinal);
     checkManifestRef(r, caller, what);
     return r;
+}
+
+ManifestRef ManifestRefFields::buildRef(std::string_view what, std::string_view context) const
+{
+    if (!epoch || !build || !ord)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: {} manifest_ref missing epoch/build/ord", what, context);
+    return manifestRefFromFields(*epoch, *build, *ord, what, context);
+}
+
+BlobRef BlobRefFields::build(std::string_view what) const
+{
+    if (!algo_word || !digest_hex)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: blob ref missing algo/digest", what);
+    const BlobHashAlgo algo = blobHashAlgoFromWord(*algo_word, what);
+    /// Validate the digest width before calling `fromHex`. A width mismatch otherwise produces
+    /// `BAD_ARGUMENTS` instead of the `CORRUPTED_DATA` required for malformed serialized input,
+    /// allowing an invalid record to escape the decoder's fail-closed error contract.
+    const uint64_t expected_hex_len = blobHashLenFor(algo) * 2;
+    if (digest_hex->size() != expected_hex_len)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "CAS {}: digest hex width {} does not match algo width {}", what, digest_hex->size(), expected_hex_len);
+    /// Same fence, same reason as the width check above: a right-width but non-lowercase-hex digest
+    /// must also surface as CORRUPTED_DATA rather than `DigestCodec::fromHex`'s BAD_ARGUMENTS. Mirrors
+    /// `JsonObjectReader::readHex128`'s lowercase-hex predicate.
+    if (std::any_of(digest_hex->begin(), digest_hex->end(), [](char c) { return !isLowercaseHexChar(c); }))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: digest is not lowercase hex, got '{}'", what, *digest_hex);
+    return BlobRef{algo, codecFor(algo).fromHex(*digest_hex)};
+}
+
+PersistedEtag TokenFields::build(std::string_view what) const
+{
+    if (!type_word || !value)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: token missing token_type/token", what);
+    return PersistedEtag{String(dialectWordFromString(*type_word, what)), *value};
 }
 
 }

@@ -55,8 +55,6 @@ const RootNamespace kNsB{"00/zz@cas@"};
 class CatalogChangesOnSecondReadBackend : public CountingBackend
 {
 public:
-    using Backend::get;
-
     void armCatalogMutation(const String & key)
     {
         catalog_key = key;
@@ -66,9 +64,9 @@ public:
 
     size_t catalogReads() const { return catalog_reads; }
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
-        auto got = CountingBackend::get(key, range);
+        auto got = CountingBackend::read(key, access);
         if (!armed || key != catalog_key)
             return got;
 
@@ -78,11 +76,9 @@ public:
         if (!got)
             throw std::runtime_error("catalog mutation fixture: second catalog read found absence");
 
-        const PutResult put = CountingBackend::putOverwrite(
-            key, encodeRefCatalog(RefCatalog{}), got->token, {});
-        if (put.outcome != PutOutcome::Done)
+        if (!CountingBackend::write(key, encodeRefCatalog(RefCatalog{}), got->value, access))
             throw std::runtime_error("catalog mutation fixture: catalog rewrite conflicted");
-        return CountingBackend::get(key, range);
+        return CountingBackend::read(key, access);
     }
 
 private:
@@ -96,24 +92,37 @@ BlobRef blobRefOf(const DB::UInt128 & hash)
     return BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)};
 }
 
-bool blobPresent(Backend & backend, const Layout & layout, const DB::UInt128 & hash)
+std::optional<DB::Cas::Object> readOf(Backend & backend, const String & key)
 {
-    return backend.head(layout.blobKey(blobRefOf(hash))).exists;
+    OperationForTest op(backend);
+    return (*op).read(key, Retry::standard());
 }
 
-/// Whether ANY run the newest fold seal references carries a `kCondemned` row for `hash`. This is where
+bool headExists(Backend & backend, const String & key)
+{
+    OperationForTest op(backend);
+    return (*op).head(key, Retry::standard()).has_value();
+}
+
+bool blobPresent(Backend & backend, const Layout & layout, const DB::UInt128 & hash)
+{
+    return headExists(backend, layout.blobKey(blobRefOf(hash)));
+}
+
+/// Whether ANY run the newest fold seal references carries a `RunMarker::Condemned` row for `hash`. This is where
 /// a rebuild used to put its zero-edge condemnations, so "nothing was condemned" is checked HERE rather
 /// than by watching for a deletion several rounds later.
 bool condemnedInSealedRuns(Backend & backend, const Layout & layout, const DB::UInt128 & hash)
 {
-    const GcState st = decodeGcState(backend.get(layout.gcStateKey())->bytes);
-    const auto sealed = backend.get(layout.foldSealKey(st.snap_generation, st.snap_attempt));
+    DB::Cas::tests::OperationForTest operation(backend);
+    const GcState st = decodeGcState((*operation).read(layout.gcStateKey(), Retry::standard())->bytes);
+    const auto sealed = (*operation).read(layout.foldSealKey(st.snap_generation, st.snap_attempt), Retry::standard());
     if (!sealed)
         return false;
     const CasFoldSeal seal = decodeFoldSeal(sealed->bytes);
     for (const RunRef & r : seal.blob_target_runs)
     {
-        auto reader = openSourceEdgeRun(backend, r.key);
+        auto reader = openSourceEdgeRun(*operation, r.key);
         String k;
         String p;
         while (reader.next(k, p))
@@ -121,7 +130,7 @@ bool condemnedInSealedRuns(Backend & backend, const Layout & layout, const DB::U
             BlobRef ref;
             UInt128 sid;
             SourceEdgeKeyCodec::parse(k, ref, sid);
-            if (p.empty() || p[0] != kCondemned)
+            if (p.empty() || runMarkerFromByte(p[0], "CAS test source-edge run") != RunMarker::Condemned)
                 continue;
             if (ref.digest.toU128() == hash)
                 return true;
@@ -159,7 +168,7 @@ RefTableState stateAfter(Backend & backend, const Layout & layout, const RootNam
     RefReplayBuilder builder(std::nullopt);
     for (const RefTxnId & id : ids)
     {
-        const auto got = backend.get(layout.refLogKey(fixture::fixtureLife(ns), id));
+        const auto got = readOf(backend, layout.refLogKey(fixture::fixtureLife(ns), id));
         if (!got)
             throw std::runtime_error("stateAfter: fixture log " + std::to_string(id.writer_epoch) + "-"
                                      + std::to_string(id.ref_sequence) + " is missing");
@@ -223,8 +232,8 @@ TEST(CASRebuildCondemnNothing, HiddenLiveManifestBlobIsNotCondemned)
     backend->hide(hidden_manifest);
 
     /// Precondition: both objects really are durable and really are hidden.
-    ASSERT_TRUE(backend->get(layout.refLogKey(fixture::fixtureLife(kNsA), RefTxnId{1, 2})).has_value());
-    ASSERT_TRUE(backend->get(hidden_manifest).has_value());
+    ASSERT_TRUE(readOf(*backend, layout.refLogKey(fixture::fixtureLife(kNsA), RefTxnId{1, 2})).has_value());
+    ASSERT_TRUE(readOf(*backend, hidden_manifest).has_value());
 
     Gc gc(store, kGc);
     const RebuildReport rep = gc.rebuildBaseline(/*force=*/true);
@@ -270,8 +279,8 @@ TEST(CASRebuildCondemnNothing, OrphanBlobIsRetainedNotCondemned)
     ASSERT_TRUE(rep.performed) << rep.refusal;
 
     EXPECT_FALSE(condemnedInSealedRuns(*backend, layout, DB::UInt128(2)));
-    const GcState st = decodeGcState(backend->get(layout.gcStateKey())->bytes);
-    const CasFoldSeal seal = decodeFoldSeal(backend->get(layout.foldSealKey(st.snap_generation, st.snap_attempt))->bytes);
+    const GcState st = decodeGcState(readOf(*backend, layout.gcStateKey())->bytes);
+    const CasFoldSeal seal = decodeFoldSeal(readOf(*backend, layout.foldSealKey(st.snap_generation, st.snap_attempt))->bytes);
     ASSERT_TRUE(seal.condemned_summary.contains(0)) << "the summary stays TOTAL over gc_shards";
     EXPECT_EQ(seal.condemned_summary.at(0).condemned_total, 0u) << "a rebuild condemns nothing";
 
@@ -302,7 +311,10 @@ TEST(CASRebuildCondemnNothing, NonCanonicalLifeKeyDoesNotAbortTheRebuild)
     /// Hand-built: no helper can mint this shape any more.
     const String noncanonical_life =
         layout.casRefsPrefix() + kNsA.string() + "/_log/" + renderRefTxnId(RefTxnId{1, 1}) + ".zst";
-    ASSERT_EQ(backend->putIfAbsent(noncanonical_life, "garbage").outcome, PutOutcome::Done);
+    {
+        OperationForTest op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(noncanonical_life, "garbage", Retry::standard())));
+    }
 
     Gc gc(store, kGc);
     RebuildReport rep;
@@ -338,19 +350,23 @@ TEST(CASRebuildCondemnNothing, NestedLifelessKeyUnderTheLifePrefixDoesNotAbortTh
     Gc gc(store, kGc);
     ASSERT_TRUE(gc.runRegularRound().acquired_lease);
     {
-        const auto got = backend->get(layout.gcStateKey());
+        const auto got = readOf(*backend, layout.gcStateKey());
         ASSERT_TRUE(got.has_value());
         GcState st = decodeGcState(got->bytes);
         st.snap_generation = 0;
-        ASSERT_EQ(backend->putOverwrite(layout.gcStateKey(), encodeGcState(st), got->token).outcome,
-                  PutOutcome::Done);
+        OperationForTest op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>(
+            (*op).replace(layout.gcStateKey(), encodeGcState(st), got->etag, Retry::standard())));
     }
 
     /// Hand-built, and planted AFTER the round so the round itself is clean: one segment too deep under
     /// the life prefix, so the segment where the incarnation belongs holds `x`. No helper mints this.
     const String nested = layout.namespaceStreamPrefix(fixture::fixtureLife(kNsA))
         + "x/_log/" + renderRefTxnId(RefTxnId{1, 1}) + ".zst";
-    ASSERT_EQ(backend->putIfAbsent(nested, "garbage").outcome, PutOutcome::Done);
+    {
+        OperationForTest op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(nested, "garbage", Retry::standard())));
+    }
 
     RebuildReport rep;
     ASSERT_NO_THROW(rep = gc.rebuildBaseline(/*force=*/false))
@@ -379,12 +395,13 @@ TEST(CASRebuildCondemnNothing, OneCatalogCutDrivesHealthCheckAndRebuild)
     Gc gc(store, kGc);
     ASSERT_TRUE(gc.runRegularRound().acquired_lease);
     {
-        const auto got = backend->get(layout.gcStateKey());
+        const auto got = readOf(*backend, layout.gcStateKey());
         ASSERT_TRUE(got);
         GcState state = decodeGcState(got->bytes);
         state.snap_generation = 0;
-        ASSERT_EQ(backend->putOverwrite(
-            layout.gcStateKey(), encodeGcState(state), got->token).outcome, PutOutcome::Done);
+        OperationForTest op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>(
+            (*op).replace(layout.gcStateKey(), encodeGcState(state), got->etag, Retry::standard())));
     }
 
     backend->armCatalogMutation(layout.refCatalogKey());
@@ -419,7 +436,7 @@ TEST(CASRebuildCondemnNothing, CarriesHoldsVerbatimWhileCondemningNothing)
     const RefHold planted{.reason = HoldReason::GapBelowWitness, .offending_position = RefTxnId{4, 9},
                           .retry_count = 17, .next_retry_round = 23};
     {
-        const GcState adopted = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+        const GcState adopted = decodeGcState(readOf(*backend, layout.gcStateKey())->bytes);
         seedFoldCursorForTest(*backend, layout, kNsA, RefTxnId{1, 1}, planted,
                               adopted.snap_generation, adopted.snap_attempt);
     }
@@ -427,11 +444,11 @@ TEST(CASRebuildCondemnNothing, CarriesHoldsVerbatimWhileCondemningNothing)
     const RebuildReport rep = gc.rebuildBaseline(/*force=*/true);
     ASSERT_TRUE(rep.performed) << rep.refusal;
 
-    const GcState st = decodeGcState(backend->get(layout.gcStateKey())->bytes);
-    const CasFoldSeal seal = decodeFoldSeal(backend->get(layout.foldSealKey(st.snap_generation, st.snap_attempt))->bytes);
+    const GcState st = decodeGcState(readOf(*backend, layout.gcStateKey())->bytes);
+    const CasFoldSeal seal = decodeFoldSeal(readOf(*backend, layout.foldSealKey(st.snap_generation, st.snap_attempt))->bytes);
     const auto it = seal.ref_lives.find(catalogLifeIdForTest(*backend, layout, kNsA));
     ASSERT_NE(it, seal.ref_lives.end());
-    EXPECT_EQ(it->second.coverage.classification, 4);
+    EXPECT_EQ(it->second.coverage.classification, CoverageClass::Clamped);
     ASSERT_TRUE(it->second.coverage.hold.has_value());
     EXPECT_EQ(*it->second.coverage.hold, planted)
         << "a rebuild retried nothing, so it rewrites nothing about the hold";
@@ -483,9 +500,10 @@ TEST(CASRebuildCondemnNothingFsck, MidChainHoleBelowAWitnessIsChainBroken)
 
     /// Punch the hole: {1,2} is gone while {1,3} stays durable and listed.
     const String holed = layout.refLogKey(fixture::fixtureLife(kNsA), RefTxnId{1, 2});
-    const HeadResult h = backend->head(holed);
-    ASSERT_TRUE(h.exists);
-    backend->deleteExact(holed, h.token);
+    OperationForTest hole_op(*backend);
+    const auto h = (*hole_op).head(holed, Retry::standard());
+    ASSERT_TRUE(h.has_value());
+    ASSERT_EQ((*hole_op).remove(holed, h->etag, Retry::standard()), Removal::Removed);
 
     FsckReport rep;
     ASSERT_NO_THROW(rep = runFsck(*store, /*detail=*/true))
@@ -619,9 +637,10 @@ TEST(CASRebuildCondemnNothingFsck, OneBadNamespaceDoesNotAbortTheAudit)
                  RefCkpt{.life_epoch = 1, .committed_through = RefTxnId{1, 3},
                          .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt});
     const String holed = layout.refLogKey(fixture::fixtureLife(kNsA), RefTxnId{1, 2});
-    const HeadResult h = backend->head(holed);
-    ASSERT_TRUE(h.exists);
-    backend->deleteExact(holed, h.token);
+    OperationForTest hole_op(*backend);
+    const auto h = (*hole_op).head(holed, Retry::standard());
+    ASSERT_TRUE(h.has_value());
+    ASSERT_EQ((*hole_op).remove(holed, h->etag, Retry::standard()), Removal::Removed);
 
     publishAt(*backend, layout, kNsB, RefTxnId{1, 1}, "ref_z", 1, DB::UInt128(9), /*birth=*/true);
     writeCkptRaw(*backend, layout, kNsB,

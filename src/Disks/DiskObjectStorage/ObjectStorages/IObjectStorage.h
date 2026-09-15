@@ -272,6 +272,17 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const;
 
+    /// Same, under a chosen control-request context (retry profile, one attempt's timeout and connect
+    /// cap, and the caller's own attempt number -- see `ObjectStorageControlRequest`). A storage that
+    /// cannot execute the profile must refuse: a caller that asked for one attempt has its own
+    /// deadline, and a transparently retried request would outlive it.
+    virtual ObjectStorageIteratorPtr iterate(
+        const std::string & path_prefix,
+        size_t max_keys,
+        bool with_tags,
+        const std::optional<std::string> & start_after,
+        const ObjectStorageControlRequest & request) const;
+
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
 
@@ -285,6 +296,10 @@ public:
     {
         return tryGetObjectMetadata(path, with_tags);
     }
+
+    /// Same, under a chosen control-request context; see the note on `iterate`.
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadataWithNativeToken(
+        const std::string & path, bool with_tags, const ObjectStorageControlRequest & request) const;
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -351,6 +366,19 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Conditional (token-exact) object removal is not implemented for {} object storage", getName());
     }
+
+    /// Same, under a chosen control-request context; see the note on `iterate`.
+    virtual ConditionalRemoveResult removeObjectIfTokenMatches(
+        const StoredObject & object, const std::string & etag, const ObjectStorageControlRequest & request);
+
+    /// Removes every object in ONE request with no per-key precondition; an absent object is success.
+    /// Content-addressed callers use it for write-once keys only, at most 1000 per call. Throws on a
+    /// request-level failure and on any per-key error other than "not found", naming the failed keys.
+    /// Same context note as `iterate`: the default forwards a Default-profile request to
+    /// `removeObjectsIfExist` and refuses a SingleAttempt one, so a backend without a real batch
+    /// delete still needs to override this for SingleAttempt to behave correctly under that profile.
+    virtual void removeObjectsIfExistUnderProfile(
+        const StoredObjects & objects, const ObjectStorageControlRequest & request);
 
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
@@ -427,8 +455,9 @@ public:
     virtual void pinConditionalOpsGenerationDialect(bool /*expect_generation_tokens*/) {}
 
     /// Whether the underlying bucket has object versioning enabled; nullopt when unknown or not
-    /// applicable. Used by the CAS capability probe to fail closed on GCS: on a versioned bucket
-    /// a token-exact DELETE archives a noncurrent generation instead of reclaiming storage.
+    /// applicable. Used by the CAS capability probe on GCS: a bucket verified as versioned refuses
+    /// the mount (a token-exact DELETE there archives a noncurrent generation instead of reclaiming
+    /// storage), an unknown answer is logged and tolerated.
     virtual std::optional<bool> isBucketVersioningEnabled() const { return std::nullopt; }
 
     /// True when this object storage can execute writes under the given retry profile.

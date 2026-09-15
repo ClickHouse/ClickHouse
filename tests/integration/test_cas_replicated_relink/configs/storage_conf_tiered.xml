@@ -1,0 +1,32 @@
+<clickhouse>
+    <!-- Loaded by node2 only. Two policies over disks defined elsewhere (`default` is the image's local
+         disk; `disk_cas_shared` / `disk_cas_other` come from storage_conf.xml / storage_conf_other_pool.xml).
+         Both exist to put the pool's disk where the storage policy would NOT choose it on its own:
+         `cas_tiered` puts the local volume FIRST, so an ordinary reservation lands on `default`;
+         `cas_two_pools` puts the OTHER pool first, so a first-CA-disk advertise names the wrong pool.
+         A relink onto `disk_cas_shared` under either policy is therefore a forced placement. -->
+    <storage_configuration>
+        <policies>
+            <cas_tiered>
+                <volumes>
+                    <hot>
+                        <disk>default</disk>
+                    </hot>
+                    <cold>
+                        <disk>disk_cas_shared</disk>
+                    </cold>
+                </volumes>
+            </cas_tiered>
+            <cas_two_pools>
+                <volumes>
+                    <first>
+                        <disk>disk_cas_other</disk>
+                    </first>
+                    <second>
+                        <disk>disk_cas_shared</disk>
+                    </second>
+                </volumes>
+            </cas_two_pools>
+        </policies>
+    </storage_configuration>
+</clickhouse>

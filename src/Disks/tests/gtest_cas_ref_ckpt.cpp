@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "config.h"
+#include "cas_format_test_battery.h"
 
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
@@ -17,10 +18,14 @@
 
 #include <Poco/Exception.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <expected>
 #include <functional>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -85,23 +90,13 @@ RefTxnId publishRef(const PoolPtr & store, const RootNamespace & ns, const Strin
         RootMutationOrigin::Writer, RootMutationKind::Publish);
 }
 
-/// A fence that never refuses, for the tests whose subject is not the fence.
-const std::function<void(uint64_t)> ALWAYS_ADMITTED = [](uint64_t) {};
-
-/// A deadline far enough out that only the test's own contention decides the outcome. The clock is
-/// frozen (a constant `now`), which is what makes every non-exhaustion test independent of wall time.
-CkptDeadline generousDeadline()
-{
-    return CkptDeadline{[] { return uint64_t{1000}; }, 60000};
-}
-
 /// Reads `life`'s `_ckpt` and returns its body, or a default-constructed one after failing the
 /// current test when the object is absent. Every assertion below goes through this rather than
 /// dereferencing the optional directly: a bare `->` on a disengaged optional ABORTS the whole test
 /// binary, so one regression would take every later suite's result with it instead of failing a test.
-RefCkpt readCkptOrFail(Backend & backend, const Layout & layout, const NamespaceLifeId & life)
+RefCkpt readCkptOrFail(CasOperation & op, const Layout & layout, const NamespaceLifeId & life)
 {
-    const std::optional<CkptSample> sample = readCkpt(backend, layout, life);
+    const std::optional<CkptSample> sample = readCkpt(op, layout, life);
     if (!sample)
     {
         ADD_FAILURE() << "expected a _ckpt for namespace '" << life.ns.string() << "', found none";
@@ -110,16 +105,16 @@ RefCkpt readCkptOrFail(Backend & backend, const Layout & layout, const Namespace
     return sample->ckpt;
 }
 
-/// Stage B (Task 4-C): the incarnation `store`'s production birth wiring minted for `ns`, learned back
+/// Stage B: the incarnation `store`'s production birth wiring minted for `ns`, learned back
 /// from the catalog exactly as a real reader would (`NamespaceLifeId::fromCatalogEntry`) -- once a real
 /// `Pool`/`CasRefLedger` has opened the table, its ref-layer objects are no longer keyed at the
 /// Stage-A sentinel, so every test below that drives the REAL append lane must ask the catalog what
 /// incarnation it minted rather than assume the sentinel. Fails the current test (rather than
 /// dereferencing a disengaged optional) if the catalog carries no entry for `ns` -- e.g. called before
 /// the namespace's first append.
-NamespaceLifeId liveLifeOrFail(Backend & backend, const Layout & layout, const RootNamespace & ns)
+NamespaceLifeId liveLifeOrFail(CasOperation & op, const Layout & layout, const RootNamespace & ns)
 {
-    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
     for (const CatalogEntry & entry : snap.catalog.entries)
         if (entry.ns.string() == ns.string())
             return NamespaceLifeId::fromCatalogEntry(entry.ns, entry.incarnation);
@@ -129,47 +124,53 @@ NamespaceLifeId liveLifeOrFail(Backend & backend, const Layout & layout, const R
 
 /// Replaces the whole body of one key, minting a new incarnation -- how a test installs a deliberately
 /// malformed or concurrently-advanced object.
-void overwriteObject(Backend & backend, const String & key, const String & bytes)
+void overwriteObject(CasOperation & op, const String & key, const String & bytes)
 {
-    const HeadResult h = backend.head(key);
-    ASSERT_TRUE(h.exists) << "overwriteObject expects " << key << " to exist";
-    ASSERT_EQ(backend.putOverwrite(key, bytes, h.token).outcome, PutOutcome::Done);
+    const WriteResult result = op.readModifyWrite(key,
+        [&bytes](const std::optional<Object> & current) -> std::optional<String>
+        {
+            EXPECT_TRUE(current.has_value()) << "overwriteObject expects the key to exist";
+            return bytes;
+        },
+        Retry::standard());
+    ASSERT_TRUE(std::holds_alternative<Committed>(result));
 }
 
-/// Runs `on_get` right after every `get` of `watched_key` -- the deterministic way to act inside
-/// another component's read-then-write window without a sleep or a second thread. The hook is a public
-/// member rather than a constructor argument so it can be installed AFTER the backend exists (every
-/// interesting hook writes through that same backend) and only once the test's setup writes are done.
-class GetHookBackend : public CountingBackend
+/// Per-key counts of the WRITE primitive. `CountingBackend` counts reads, heads and lists per key but
+/// only totals for writes, and its legacy per-verb counters never see a caller that speaks the
+/// primitives -- which every writer below does.
+class WriteCountingBackend : public CountingBackend
 {
 public:
-    using CountingBackend::get;
-
-    explicit GetHookBackend(String watched_key_) : watched_key(std::move(watched_key_)) {}
-
-    /// Stage B (Task 4-C): a test that must watch a namespace's `_ckpt` key can no longer compute it
-    /// before the pool exists -- the real incarnation is minted only once the namespace's first open
-    /// resolves it, which requires the pool (and so this backend) to already be constructed. Lets a
-    /// test retarget the watch once it has learned the real key, strictly before arming `on_get`.
-    void setWatchedKey(String watched_key_) { watched_key = std::move(watched_key_); }
-
-    std::function<void()> on_get;
-
-    std::optional<GetResult> get(const String & key, Range range) override
+    uint64_t writes(const String & key) const
     {
-        auto result = CountingBackend::get(key, range);
-        if (key == watched_key && on_get)
-            on_get();
-        return result;
+        std::lock_guard lock(write_count_mutex);
+        const auto it = write_counts.find(key);
+        return it == write_counts.end() ? 0 : it->second;
+    }
+
+    std::expected<String, DB::Cas::Backend::RawConflict> write(const String & key, const String & bytes,
+                                                               const std::optional<String> & expected_value,
+                                                               DB::Cas::TransportAccess & access) override
+    {
+        {
+            std::lock_guard lock(write_count_mutex);
+            ++write_counts[key];
+        }
+        return CountingBackend::write(key, bytes, expected_value, access);
     }
 
 private:
-    String watched_key;
+    mutable std::mutex write_count_mutex;
+    std::map<String, uint64_t> write_counts;
 };
 
-/// Records the exact `_ckpt` recovery protocol and injects an ambiguous CAS response. The fault is
-/// armed only after fixture setup, so the journal contains solely the operation under test.
-class AmbiguousCkptBackend : public CountingBackend
+/// The two PRIMITIVES `publishCkpt` speaks, instrumented: the exact request sequence against one
+/// watched key, and the two shapes an ambiguous response has -- the store applied the write and then
+/// lost the answer, or it never applied it. Hooks are public members rather than constructor arguments
+/// so they can be installed AFTER the backend exists (every interesting hook writes through that same
+/// backend) and only once the test's setup writes are done.
+class CkptProbeBackend : public WriteCountingBackend
 {
 public:
     enum class Fault : uint8_t
@@ -180,72 +181,83 @@ public:
         AlwaysThrowWithoutCommit,
     };
 
-    using CountingBackend::casPut;
-    using CountingBackend::get;
-
     String watched_key;
     Fault fault = Fault::None;
+    /// Written over this call's own committed attempt, so the resolve read finds a WINNER rather than
+    /// the bytes the attempt sent.
     String dominating_bytes;
-    bool fail_resolution_get = false;
-    std::function<void()> after_ambiguous_cas;
-    std::function<void()> before_resolution_get;
-    std::function<void()> after_resolution_get;
+    bool fail_reads_after_the_first = false;
+    std::function<void()> after_write;
+    std::function<void()> after_read;
     std::vector<String> journal;
+    /// How many reads `fail_reads_after_the_first` actually made throw, so a test can assert the fault
+    /// really fired rather than infer it from the journal's shape alone.
+    size_t read_fault_hits = 0;
+
+    /// A test that must watch a namespace's `_ckpt` key cannot compute it before the pool exists --
+    /// the real incarnation is minted only once the namespace's first open resolves it. So the watch
+    /// is retargeted once the test has learned the real key, strictly before arming any hook.
+    void watch(String key)
+    {
+        watched_key = std::move(key);
+        watched_reads = 0;
+        journal.clear();
+        read_fault_hits = 0;
+    }
 
     void arm(const String & key, Fault fault_)
     {
-        watched_key = key;
+        watch(key);
         fault = fault_;
-        watched_get_count = 0;
-        journal.clear();
     }
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<DB::Cas::Backend::Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
         if (key != watched_key)
-            return CountingBackend::get(key, range);
+            return WriteCountingBackend::read(key, access);
 
-        journal.push_back("GET");
-        ++watched_get_count;
-        if (watched_get_count >= 2 && before_resolution_get)
-            before_resolution_get();
-        if (watched_get_count == 2 && fail_resolution_get)
-            throw Poco::TimeoutException("AmbiguousCkptBackend: exact-read response lost");
-        auto result = CountingBackend::get(key, range);
-        if (watched_get_count >= 2 && after_resolution_get)
-            after_resolution_get();
+        journal.push_back("READ");
+        ++watched_reads;
+        if (watched_reads >= 2 && fail_reads_after_the_first)
+        {
+            ++read_fault_hits;
+            throw Poco::TimeoutException("CkptProbeBackend: read response lost");
+        }
+        auto result = WriteCountingBackend::read(key, access);
+        if (after_read)
+            after_read();
         return result;
     }
 
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected,
-                     const ObjectMeta & meta) override
+    std::expected<String, DB::Cas::Backend::RawConflict> write(const String & key, const String & bytes,
+                                                               const std::optional<String> & expected_value,
+                                                               DB::Cas::TransportAccess & access) override
     {
         if (key != watched_key)
-            return CountingBackend::casPut(key, bytes, expected, meta);
+            return WriteCountingBackend::write(key, bytes, expected_value, access);
 
-        journal.push_back("CAS");
-        if (fault == Fault::None)
-            return CountingBackend::casPut(key, bytes, expected, meta);
+        journal.push_back("WRITE");
         const Fault this_fault = fault;
         if (fault != Fault::AlwaysThrowWithoutCommit)
             fault = Fault::None;
+        if (this_fault == Fault::None)
+            return WriteCountingBackend::write(key, bytes, expected_value, access);
+
         if (this_fault == Fault::CommitThenThrow)
         {
-            const CasResult result = CountingBackend::casPut(key, bytes, expected, meta);
-            if (result.outcome == CasOutcome::Committed && !dominating_bytes.empty())
-            {
-                const HeadResult head_result = CountingBackend::head(key);
-                EXPECT_EQ(CountingBackend::putOverwrite(key, dominating_bytes, head_result.token).outcome,
-                          PutOutcome::Done);
-            }
+            const auto committed = WriteCountingBackend::write(key, bytes, expected_value, access);
+            /// The winner's replacement is not journalled: it is not an attempt of the call under test.
+            if (committed.has_value() && !dominating_bytes.empty())
+                EXPECT_TRUE(WriteCountingBackend::write(key, dominating_bytes,
+                                                        std::optional<String>{*committed}, access).has_value());
         }
-        if (after_ambiguous_cas)
-            after_ambiguous_cas();
-        throw Poco::TimeoutException("AmbiguousCkptBackend: CAS response lost");
+        if (after_write)
+            after_write();
+        throw Poco::TimeoutException("CkptProbeBackend: write response lost");
     }
 
 private:
-    size_t watched_get_count = 0;
+    size_t watched_reads = 0;
 };
 
 }
@@ -275,12 +287,27 @@ TEST(CASRefCheckpoint, CommittedThroughHasCanonicalExactWireEncoding)
                        .committed_through = RefTxnId{9, 11},
                        .checkpoint_snapshot_id = RefTxnId{9, 10},
                        .last_epoch_seal = RefTxnId{8, 12}};
-    const String expected = R"({"type":"cas_ref_ckpt","v":10}
-{"le":"7","cte":"9","cts":"11","cse":"9","css":"10","lse":"8","lss":"12"}
+    const String expected = R"({"type":"cas_ref_ckpt","v":1}
+{"life_epoch":"7","committed_epoch":"9","committed_seq":"11","snapshot_epoch":"9","snapshot_seq":"10","seal_epoch":"8","seal_seq":"12"}
 )";
 
     EXPECT_EQ(encodeRefCkpt(ckpt), expected);
     EXPECT_EQ(decodeRefCkpt(expected), ckpt);
+}
+
+CAS_BATTERY_COVERS(RefCkpt);
+
+TEST(CASFormatBattery, RefCkpt)
+{
+    RefCkpt ckpt{.life_epoch = std::optional<uint64_t>{7},
+                 .committed_through = RefTxnId{9, 11},
+                 .checkpoint_snapshot_id = RefTxnId{9, 10},
+                 .last_epoch_seal = RefTxnId{8, 12}};
+    runFormatBattery({FormatId::RefCkpt,
+        [&] { return sealObject(FormatId::RefCkpt, encodeRefCkpt(ckpt)); },
+        [](std::string_view s) { decodeRefCkpt(std::string(openObject(FormatId::RefCkpt, s))); },
+        currentFormatHeader("cas_ref_ckpt") +
+        "{\"life_epoch\":\"7\",\"committed_epoch\":\"9\",\"committed_seq\":\"11\",\"snapshot_epoch\":\"9\",\"snapshot_seq\":\"10\",\"seal_epoch\":\"8\",\"seal_seq\":\"12\"}\n"});
 }
 
 /// `last_epoch_seal` is chain evidence, not an arbitrary lower bound. It either names the frontier
@@ -307,9 +334,9 @@ TEST(CASRefCheckpoint, CodecRejectsIncoherentCommittedFrontierAndSealEpochs)
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { encodeRefCkpt(unsealed_non_genesis); });
 
     String malformed = encodeRefCkpt(valid);
-    const size_t cte = malformed.find(R"("cte":"8")");
-    ASSERT_NE(cte, String::npos);
-    malformed.replace(cte, String{R"("cte":"8")"}.size(), R"("cte":"10")");
+    const size_t committed_epoch = malformed.find(R"("committed_epoch":"8")");
+    ASSERT_NE(committed_epoch, String::npos);
+    malformed.replace(committed_epoch, String{R"("committed_epoch":"8")"}.size(), R"("committed_epoch":"10")");
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(malformed); });
 }
 
@@ -331,13 +358,30 @@ TEST(CASRefCheckpoint, RejectsAnUnknownKey)
     expectThrowsCode(DB::ErrorCodes::UNKNOWN_FORMAT_VERSION, [&] { decodeRefCkpt(with_critical); });
 }
 
+/// Replacing the abbreviated key is a format cut, not an alias. Treating it as an optional partial
+/// pair would make an old writer's checkpoint appear to have no committed frontier.
+TEST(CASRefCheckpoint, RejectsOldCommittedEpochKeyRatherThanAliasingIt)
+{
+    /// The values are chosen so ALIASING would be harmless: the spliced `"cte":"9"` re-assigns the
+    /// epoch the object already carries, leaving a valid checkpoint. A reader that honoured the old
+    /// spelling would therefore DECODE, and this test fails; only the strict unknown-key rejection
+    /// makes it throw. Values under which aliasing corrupts the object would let the invariant
+    /// checker throw the same code and hide the alias.
+    String with_old_key = encodeRefCkpt(RefCkpt{.life_epoch = std::optional<uint64_t>{9},
+                                                .committed_through = RefTxnId{9, 1},
+                                                .checkpoint_snapshot_id = RefTxnId{9, 1},
+                                                .last_epoch_seal = std::nullopt});
+    with_old_key.replace(with_old_key.rfind('}'), 1, R"(,"cte":"9"})");
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(with_old_key); });
+}
+
 /// A duplicate key has no single meaning, so it can never be resolved by a reader's preference.
 TEST(CASRefCheckpoint, RejectsADuplicateKey)
 {
     const String good = encodeRefCkpt(RefCkpt{.life_epoch = std::optional<uint64_t>{7}, .checkpoint_snapshot_id = std::nullopt,
                                               .last_epoch_seal = std::nullopt});
     String duplicated = good;
-    duplicated.replace(duplicated.rfind('}'), 1, R"(,"le":"9"})");
+    duplicated.replace(duplicated.rfind('}'), 1, R"(,"life_epoch":"9"})");
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(duplicated); });
 }
 
@@ -361,13 +405,13 @@ TEST(CASRefCheckpoint, RejectsTruncation)
     const String empty_body = good.substr(0, good.find('\n') + 1) + "{}\n";
     EXPECT_EQ(decodeRefCkpt(empty_body), RefCkpt{});
 
-    const String half_pair = good.substr(0, good.find('\n') + 1) + R"({"le":"7","cse":"1"})" + "\n";
+    const String half_pair = good.substr(0, good.find('\n') + 1) + R"({"life_epoch":"7","snapshot_epoch":"1"})" + "\n";
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(half_pair); });
 
-    const String other_half = good.substr(0, good.find('\n') + 1) + R"({"le":"7","lss":"2"})" + "\n";
+    const String other_half = good.substr(0, good.find('\n') + 1) + R"({"life_epoch":"7","seal_seq":"2"})" + "\n";
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(other_half); });
 
-    const String frontier_half = good.substr(0, good.find('\n') + 1) + R"({"le":"7","cte":"1"})" + "\n";
+    const String frontier_half = good.substr(0, good.find('\n') + 1) + R"({"life_epoch":"7","committed_epoch":"1"})" + "\n";
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(frontier_half); });
 }
 
@@ -398,9 +442,9 @@ TEST(CASRefCheckpoint, RejectsInvalidFieldsOnEncodeAndOnDecode)
     const String header = encodeRefCkpt(RefCkpt{.life_epoch = std::optional<uint64_t>{7}, .checkpoint_snapshot_id = std::nullopt,
                                                 .last_epoch_seal = std::nullopt});
     const String prefix = header.substr(0, header.find('\n') + 1);
-    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(prefix + R"({"le":"0"})" + "\n"); });
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefCkpt(prefix + R"({"life_epoch":"0"})" + "\n"); });
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA,
-        [&] { decodeRefCkpt(prefix + R"({"le":"7","cse":"1","css":"0"})" + "\n"); });
+        [&] { decodeRefCkpt(prefix + R"({"life_epoch":"7","snapshot_epoch":"1","snapshot_seq":"0"})" + "\n"); });
 }
 
 /// The registry row is part of the contract: Control/Strict decides how the decoder treats unknown
@@ -529,14 +573,15 @@ TEST(CASRefCheckpoint, MergeTakesThePerFieldSemanticMaximum)
 TEST(CASRefCheckpoint, CreatesTheObjectWhenItIsAbsent)
 {
     auto backend = std::make_shared<CountingBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const RootNamespace ns{"srv1/ckpt_create"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(ns);
     const RefCkpt birth{.life_epoch = std::optional<uint64_t>{5}, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
 
-    EXPECT_EQ(publishCkpt(*backend, layout, life, birth, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    const auto sample = readCkpt(*backend, layout, life);
+    EXPECT_EQ(publishCkpt(op, layout, life, birth), CkptPublishOutcome::Published);
+    const auto sample = readCkpt(op, layout, life);
     ASSERT_TRUE(sample.has_value());
     EXPECT_EQ(sample->ckpt, birth);
 }
@@ -549,23 +594,23 @@ TEST(CASRefCheckpoint, CreatesTheObjectWhenItIsAbsent)
 TEST(CASRefCheckpoint, EachWriterCreatesWithOnlyWhatItKnowsAndTheOtherFieldsMergeInLater)
 {
     auto backend = std::make_shared<CountingBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const RootNamespace ns{"srv1/ckpt_partial_create"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(ns);
     const RefCkpt publisher{.life_epoch = std::nullopt, .committed_through = ID_1_1, .checkpoint_snapshot_id = ID_1_1, .last_epoch_seal = std::nullopt};
 
-    ASSERT_EQ(publishCkpt(*backend, layout, life, publisher, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    const auto created = readCkpt(*backend, layout, life);
+    ASSERT_EQ(publishCkpt(op, layout, life, publisher), CkptPublishOutcome::Published);
+    const auto created = readCkpt(op, layout, life);
     ASSERT_TRUE(created.has_value());
     EXPECT_EQ(created->ckpt.checkpoint_snapshot_id, ID_1_1);
     EXPECT_FALSE(created->ckpt.life_epoch.has_value()) << "the publisher must not invent a genesis epoch";
 
     const RefCkpt birth{.life_epoch = std::optional<uint64_t>{1}, .checkpoint_snapshot_id = std::nullopt,
                         .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(publishCkpt(*backend, layout, life, birth, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    const auto completed = readCkpt(*backend, layout, life);
+    ASSERT_EQ(publishCkpt(op, layout, life, birth), CkptPublishOutcome::Published);
+    const auto completed = readCkpt(op, layout, life);
     ASSERT_TRUE(completed.has_value());
     EXPECT_EQ(completed->ckpt.life_epoch, 1u);
     EXPECT_EQ(completed->ckpt.checkpoint_snapshot_id, ID_1_1) << "and must not lose the checkpoint on the way in";
@@ -573,8 +618,8 @@ TEST(CASRefCheckpoint, EachWriterCreatesWithOnlyWhatItKnowsAndTheOtherFieldsMerg
 
 /// The conflict path is the whole reason the algorithm re-READS instead of retrying its bytes: the
 /// winner's field must survive the loser's retry. Here a concurrent writer advances the seal between
-/// our read and our CAS; our retry must merge onto the new body, not overwrite it.
-TEST(CASRefCheckpoint, TokenConflictRereadsAndMergesOntoTheWinner)
+/// our read and our write; our retry must merge onto the new body, not overwrite it.
+TEST(CASRefCheckpoint, AConflictRereadsAndMergesOntoTheWinner)
 {
     const Layout layout{"p"};
     const RootNamespace ns{"srv1/ckpt_conflict"};
@@ -582,96 +627,112 @@ TEST(CASRefCheckpoint, TokenConflictRereadsAndMergesOntoTheWinner)
     const String key = layout.refCkptKey(life);
     const RefCkpt base{.life_epoch = std::optional<uint64_t>{1}, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
 
-    auto backend = std::make_shared<GetHookBackend>(key);
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
+    auto backend = std::make_shared<CkptProbeBackend>();
+    DB::Cas::tests::FakeClock clock;
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    requests.setNowFnForTest(clock.nowFn());
+    requests.setSleepFnForTest(clock.sleepFn());
+    CasOperation op = requests.admit();
+    CasOperation sealer_op = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(sealer_op.create(key, encodeRefCkpt(base), Retry::standard())));
+    backend->watch(key);
 
-    /// The concurrent sealer lands exactly ONCE, immediately after our first read -- so our first CAS
-    /// carries a token that is no longer current, and our retry has to merge onto its body.
+    /// The concurrent sealer lands exactly ONCE, immediately after our first read -- so our first
+    /// write carries a precondition that is no longer current, and our retry has to merge onto its
+    /// body. It writes on its OWN operation: the interference is a different actor, not a reentrant
+    /// call of the one under test.
     bool interfered = false;
-    backend->on_get = [&]
+    backend->after_read = [&]
     {
         if (interfered)
             return;
         interfered = true;
         const RefCkpt sealer{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_2_1, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = ID_2_1};
-        const HeadResult h = backend->head(key);
-        ASSERT_EQ(backend->putOverwrite(key, encodeRefCkpt(mergeCkpt(base, sealer)), h.token).outcome,
-                  PutOutcome::Done);
+        overwriteObject(sealer_op, key, encodeRefCkpt(mergeCkpt(base, sealer)));
     };
 
     const RefCkpt publisher{.life_epoch = std::nullopt, .committed_through = ID_1_2, .checkpoint_snapshot_id = ID_1_2, .last_epoch_seal = std::nullopt};
-    EXPECT_EQ(publishCkpt(*backend, layout, life, publisher, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
+    EXPECT_EQ(publishCkpt(op, layout, life, publisher), CkptPublishOutcome::Published);
 
-    const auto sample = readCkpt(*backend, layout, life);
+    backend->after_read = nullptr;
+    const auto sample = readCkpt(op, layout, life);
     ASSERT_TRUE(sample.has_value());
     EXPECT_EQ(sample->ckpt.checkpoint_snapshot_id, ID_1_2) << "our own contribution must land";
     EXPECT_EQ(sample->ckpt.last_epoch_seal, ID_2_1)
         << "the concurrent writer's seal must survive our retry -- a retry that reused the body read "
            "before the conflict would silently drop it (TLC `_sab_sealclobbersbase`)";
     EXPECT_EQ(sample->ckpt.life_epoch, 1u);
-    EXPECT_GE(backend->casPutCount(key), 2u) << "the first CAS must have been rejected, not skipped";
+    EXPECT_GE(std::count(backend->journal.begin(), backend->journal.end(), String{"WRITE"}), 2)
+        << "the first write must have been refused, not skipped";
 }
 
 /// A contribution that adds nothing issues NO write. This is a correctness property, not a saving:
-/// both writers publish on every snapshot and every seal, and a no-op write would mint a fresh token
-/// each time, turning every other writer's in-flight CAS into a conflict for identical bytes.
+/// both writers publish on every snapshot and every seal, and a no-op write would mint a fresh
+/// incarnation each time, turning every other writer's in-flight write into a conflict for identical
+/// bytes.
 TEST(CASRefCheckpoint, AnIdenticalMergedBodyIssuesNoWrite)
 {
-    auto backend = std::make_shared<CountingBackend>();
+    auto backend = std::make_shared<CkptProbeBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const RootNamespace ns{"srv1/ckpt_noop"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(ns);
     const String key = layout.refCkptKey(life);
     const RefCkpt full{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_2_1, .checkpoint_snapshot_id = ID_1_2, .last_epoch_seal = ID_2_1};
 
-    ASSERT_EQ(publishCkpt(*backend, layout, life, full, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    const uint64_t writes_after_create = backend->casPutCount(key);
-    const Token token_after_create = backend->head(key).token;
+    ASSERT_EQ(publishCkpt(op, layout, life, full), CkptPublishOutcome::Published);
+    const uint64_t writes_after_create = backend->writes(key);
+    const auto meta_after_create = op.head(key, Retry::standard());
+    ASSERT_TRUE(meta_after_create.has_value());
 
     /// The same contribution again, and a strictly OLDER one: neither adds anything.
-    EXPECT_EQ(publishCkpt(*backend, layout, life, full, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::IdenticalSkip);
+    EXPECT_EQ(publishCkpt(op, layout, life, full), CkptPublishOutcome::IdenticalSkip);
     const RefCkpt older{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_1_1, .checkpoint_snapshot_id = ID_1_1, .last_epoch_seal = std::nullopt};
-    EXPECT_EQ(publishCkpt(*backend, layout, life, older, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::IdenticalSkip);
+    EXPECT_EQ(publishCkpt(op, layout, life, older), CkptPublishOutcome::IdenticalSkip);
 
-    EXPECT_EQ(backend->casPutCount(key), writes_after_create) << "a skip must issue no CAS at all";
-    EXPECT_EQ(backend->head(key).token, token_after_create) << "and must not mint a new incarnation";
+    EXPECT_EQ(backend->writes(key), writes_after_create) << "a skip must issue no write at all";
+    const auto meta_after_skips = op.head(key, Retry::standard());
+    ASSERT_TRUE(meta_after_skips.has_value());
+    EXPECT_EQ(meta_after_skips->etag, meta_after_create->etag)
+        << "and must not mint a new incarnation";
 }
 
-/// The fence is re-checked AFTER the read and BEFORE the write, on every attempt. A generation that
-/// moved means this writer's lease incarnation is gone, so its merged body is stale even if the fence
-/// is live again under a fresh incarnation.
-TEST(CASRefCheckpoint, AFenceBumpBetweenTheReadAndTheCasWritesNothing)
+/// Admission is re-checked AFTER the read and BEFORE the write. A writer whose admission was lost in
+/// that window has a stale merged body, so its write must never be sent.
+TEST(CASRefCheckpoint, AnAdmissionLossBetweenTheReadAndTheWriteWritesNothing)
 {
-    auto backend = std::make_shared<CountingBackend>();
     const Layout layout{"p"};
     const RootNamespace ns{"srv1/ckpt_fenced"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(ns);
     const String key = layout.refCkptKey(life);
-    const RefCkpt base{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_1_1, .checkpoint_snapshot_id = ID_1_1, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(publishCkpt(*backend, layout, life, base, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    const Token token_before = backend->head(key).token;
-    const uint64_t writes_before = backend->casPutCount(key);
 
-    /// The callback the pool wires from `CasMountRuntime::checkFenceOrThrow`: it throws when the
-    /// generation moved since admission. Mirrors the real site's class (the transient, upstream-retryable
-    /// one) so the stub cannot drift into testing a shape production never produces.
-    const auto moved_fence = [](uint64_t admitted)
-    {
-        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR,
-            "fence generation moved since admission ({})", admitted);
-    };
+    auto backend = std::make_shared<CkptProbeBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    bool admitted = true;
+    CasOperation op = requests.admit([&admitted] { return admitted; });
+    CasOperation reader = requests.admit();
+
+    const RefCkpt base{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_1_1, .checkpoint_snapshot_id = ID_1_1, .last_epoch_seal = std::nullopt};
+    ASSERT_EQ(publishCkpt(op, layout, life, base), CkptPublishOutcome::Published);
+    const auto meta_before = reader.head(key, Retry::standard());
+    ASSERT_TRUE(meta_before.has_value());
+
+    /// Armed only now, so the loss lands inside the publish's own read-then-write window rather than
+    /// before it began.
+    backend->watch(key);
+    backend->after_read = [&admitted] { admitted = false; };
+    const uint64_t writes_before = backend->writes(key);
 
     const RefCkpt advance{.life_epoch = std::nullopt, .committed_through = ID_1_2, .checkpoint_snapshot_id = ID_1_2, .last_epoch_seal = std::nullopt};
-    EXPECT_EQ(publishCkpt(*backend, layout, life, advance, 1, moved_fence, generousDeadline()),
-              CkptPublishOutcome::FencedOut);
-    EXPECT_EQ(backend->casPutCount(key), writes_before) << "the check precedes the CAS, so nothing is sent";
-    EXPECT_EQ(backend->head(key).token, token_before);
-    EXPECT_EQ(readCkptOrFail(*backend, layout, life), base);
+    EXPECT_EQ(publishCkpt(op, layout, life, advance), CkptPublishOutcome::FencedOut);
+    backend->after_read = nullptr;
+
+    EXPECT_EQ(backend->writes(key), writes_before) << "the check precedes the write, so nothing is sent";
+    const auto meta_after = reader.head(key, Retry::standard());
+    ASSERT_TRUE(meta_after.has_value());
+    EXPECT_EQ(meta_after->etag, meta_before->etag);
+    EXPECT_EQ(readCkptOrFail(reader, layout, life), base);
 }
 
 /// Persistent contention fails CLOSED and says so. There is no partial state to clean up -- every
@@ -685,32 +746,48 @@ TEST(CASRefCheckpoint, AnExhaustedDeadlineUnderPersistentConflictThrowsRetryLate
     const String key = layout.refCkptKey(life);
     const RefCkpt base{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_1_1, .checkpoint_snapshot_id = ID_1_1, .last_epoch_seal = std::nullopt};
 
-    auto backend = std::make_shared<GetHookBackend>(key);
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
+    auto backend = std::make_shared<CkptProbeBackend>();
+    DB::Cas::tests::FakeClock clock;
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    requests.setNowFnForTest(clock.nowFn());
+    requests.setSleepFnForTest(clock.sleepFn());
+    CasOperation op = requests.admit();
+    CasOperation setup = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(setup.create(key, encodeRefCkpt(base), Retry::standard())));
+    backend->watch(key);
 
-    /// Every read is followed by a rewrite of the SAME body under a fresh incarnation, so the token this
-    /// call holds is always stale and every CAS it issues conflicts. The clock advances one step per
-    /// read, so the DEADLINE is what ends the loop -- deterministically, with no sleeping and well
-    /// before the live-lock brake.
-    uint64_t now = 0;
-    backend->on_get = [&]
+    /// Every read is followed by a rewrite of the SAME body under a fresh incarnation, so the
+    /// precondition this call holds is always stale and every write it issues is refused. Only the
+    /// policy's deadline can end the loop, and the injected clock reaches it without sleeping.
+    ///
+    /// `overwriteObject` itself reads `key` (its own `readModifyWrite`'s precondition read), which
+    /// would re-enter this very hook -- unlike the concurrent-actor fixtures elsewhere in this file,
+    /// this rewrite is not a one-shot: it must keep firing on every OUTER read, so a plain one-shot
+    /// latch would silently stop the persistent conflict after the first attempt. Guard only the
+    /// reentrant call instead.
+    bool rewriting = false;
+    backend->after_read = [&]
     {
-        ++now;
-        const HeadResult h = backend->head(key);
-        if (h.exists)
-            backend->putOverwrite(key, encodeRefCkpt(base), h.token);
+        if (rewriting)
+            return;
+        rewriting = true;
+        overwriteObject(setup, key, encodeRefCkpt(base));
+        rewriting = false;
     };
 
     const RefCkpt advance{.life_epoch = std::nullopt, .committed_through = ID_1_2, .checkpoint_snapshot_id = ID_1_2, .last_epoch_seal = std::nullopt};
-    expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR,
-        [&] { publishCkpt(*backend, layout, life, advance, 1, ALWAYS_ADMITTED, CkptDeadline{[&] { return now; }, 5}); });
-    EXPECT_EQ(readCkptOrFail(*backend, layout, life), base) << "no partial state: every attempt either "
-                                                             "committed the complete merged body or wrote nothing";
+    expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { publishCkpt(op, layout, life, advance); });
+    backend->after_read = nullptr;
+    EXPECT_FALSE(clock.sleeps.empty()) << "the loop must back off between attempts, not spin";
+    EXPECT_EQ(readCkptOrFail(setup, layout, life), base) << "no partial state: every attempt either "
+                                                            "committed the complete merged body or wrote nothing";
 }
 
-TEST(CASRefCheckpoint, AmbiguousCommittedCasIsResolvedByOneExactReadWithoutBlindRetry)
+TEST(CASRefCheckpoint, AnAmbiguousCommittedWriteIsResolvedByOneExactReadWithoutBlindRetry)
 {
-    auto backend = std::make_shared<AmbiguousCkptBackend>();
+    auto backend = std::make_shared<CkptProbeBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(RootNamespace{"srv1/ckpt_ambiguous_committed"});
     const String key = layout.refCkptKey(life);
@@ -718,18 +795,23 @@ TEST(CASRefCheckpoint, AmbiguousCommittedCasIsResolvedByOneExactReadWithoutBlind
                        .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
     const RefCkpt contribution{.life_epoch = std::nullopt, .committed_through = ID_1_2,
                                .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
-    backend->arm(key, AmbiguousCkptBackend::Fault::CommitThenThrow);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key, encodeRefCkpt(base), Retry::standard())));
+    backend->arm(key, CkptProbeBackend::Fault::CommitThenThrow);
 
-    EXPECT_EQ(publishCkpt(*backend, layout, life, contribution, 7, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS", "GET"}));
-    EXPECT_EQ(readCkptOrFail(*backend, layout, life).committed_through, ID_1_2);
+    EXPECT_EQ(publishCkpt(op, layout, life, contribution), CkptPublishOutcome::Published);
+    EXPECT_EQ(backend->journal, (std::vector<String>{"READ", "WRITE", "READ"}));
+    backend->watched_key.clear();
+    EXPECT_EQ(readCkptOrFail(op, layout, life).committed_through, ID_1_2);
 }
 
-TEST(CASRefCheckpoint, AmbiguousUncommittedCasRetriesAgainstTheExactReadToken)
+TEST(CASRefCheckpoint, AnAmbiguousUncommittedWriteRetriesAgainstTheExactRead)
 {
-    auto backend = std::make_shared<AmbiguousCkptBackend>();
+    auto backend = std::make_shared<CkptProbeBackend>();
+    DB::Cas::tests::FakeClock clock;
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    requests.setNowFnForTest(clock.nowFn());
+    requests.setSleepFnForTest(clock.sleepFn());
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(RootNamespace{"srv1/ckpt_ambiguous_retry"});
     const String key = layout.refCkptKey(life);
@@ -737,18 +819,26 @@ TEST(CASRefCheckpoint, AmbiguousUncommittedCasRetriesAgainstTheExactReadToken)
                        .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
     const RefCkpt contribution{.life_epoch = std::nullopt, .committed_through = ID_1_2,
                                .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
-    backend->arm(key, AmbiguousCkptBackend::Fault::ThrowWithoutCommit);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key, encodeRefCkpt(base), Retry::standard())));
+    backend->arm(key, CkptProbeBackend::Fault::ThrowWithoutCommit);
 
-    EXPECT_EQ(publishCkpt(*backend, layout, life, contribution, 7, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS", "GET", "CAS"}));
-    EXPECT_EQ(readCkptOrFail(*backend, layout, life).committed_through, ID_1_2);
+    EXPECT_EQ(publishCkpt(op, layout, life, contribution), CkptPublishOutcome::Published);
+    EXPECT_EQ(backend->journal, (std::vector<String>{"READ", "WRITE", "READ", "WRITE"}));
+    backend->watched_key.clear();
+    EXPECT_EQ(readCkptOrFail(op, layout, life).committed_through, ID_1_2);
 }
 
-TEST(CASRefCheckpoint, AmbiguousCasAcceptsAValidDominatingDurableFrontier)
+/// The durable body a winner left behind already dominates this contribution, so nothing more is owed.
+/// The verdict is `Published` rather than `IdenticalSkip` because an attempt of THIS call was sent:
+/// `IdenticalSkip` promises no write was issued, and that promise has to stay true.
+TEST(CASRefCheckpoint, AnAmbiguousWriteAcceptsAValidDominatingDurableFrontier)
 {
-    auto backend = std::make_shared<AmbiguousCkptBackend>();
+    auto backend = std::make_shared<CkptProbeBackend>();
+    DB::Cas::tests::FakeClock clock;
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    requests.setNowFnForTest(clock.nowFn());
+    requests.setSleepFnForTest(clock.sleepFn());
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(RootNamespace{"srv1/ckpt_ambiguous_dominating"});
     const String key = layout.refCkptKey(life);
@@ -758,122 +848,166 @@ TEST(CASRefCheckpoint, AmbiguousCasAcceptsAValidDominatingDurableFrontier)
                                .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
     const RefCkpt dominating{.life_epoch = 1, .committed_through = ID_2_1,
                              .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = ID_2_1};
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key, encodeRefCkpt(base), Retry::standard())));
     backend->dominating_bytes = encodeRefCkpt(dominating);
-    backend->arm(key, AmbiguousCkptBackend::Fault::CommitThenThrow);
+    backend->arm(key, CkptProbeBackend::Fault::CommitThenThrow);
 
-    EXPECT_EQ(publishCkpt(*backend, layout, life, contribution, 7, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS", "GET"}));
-    EXPECT_EQ(readCkptOrFail(*backend, layout, life), dominating);
+    EXPECT_EQ(publishCkpt(op, layout, life, contribution), CkptPublishOutcome::Published);
+    EXPECT_EQ(backend->journal, (std::vector<String>{"READ", "WRITE", "READ"}));
+    backend->watched_key.clear();
+    EXPECT_EQ(readCkptOrFail(op, layout, life), dominating);
 }
 
-TEST(CASRefCheckpoint, FailedExactReadAfterAmbiguousCasFailsClosedWithoutAnotherCas)
+/// A resolve read that never answers leaves the attempt unproven, and the call must neither report it
+/// committed nor send a second attempt on top of it. The engine reissues -- that is its contract -- but
+/// every reissue is preceded by its own exact read.
+TEST(CASRefCheckpoint, AFailedResolveReadNeverReportsACommitAndNeverSkipsTheRead)
 {
-    auto backend = std::make_shared<AmbiguousCkptBackend>();
+    auto backend = std::make_shared<CkptProbeBackend>();
+    DB::Cas::tests::FakeClock clock;
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    requests.setNowFnForTest(clock.nowFn());
+    requests.setSleepFnForTest(clock.sleepFn());
+    CasOperation op = requests.admit();
+    CasOperation reader = requests.admit();
     const Layout layout{"p"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(RootNamespace{"srv1/ckpt_ambiguous_read_failed"});
     const String key = layout.refCkptKey(life);
     const RefCkpt base{.life_epoch = 1, .committed_through = ID_1_1,
                        .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
-    backend->fail_resolution_get = true;
-    backend->arm(key, AmbiguousCkptBackend::Fault::ThrowWithoutCommit);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key, encodeRefCkpt(base), Retry::standard())));
+    backend->arm(key, CkptProbeBackend::Fault::AlwaysThrowWithoutCommit);
+    backend->fail_reads_after_the_first = true;
 
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&]
     {
-        publishCkpt(*backend, layout, life, RefCkpt{.life_epoch = std::nullopt, .committed_through = ID_1_2,
-                    .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}, 7,
-                    ALWAYS_ADMITTED, generousDeadline());
+        publishCkpt(op, layout, life, RefCkpt{.life_epoch = std::nullopt, .committed_through = ID_1_2,
+                    .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt});
     });
-    EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS", "GET"}));
-    EXPECT_EQ(readCkptOrFail(*backend, layout, life), base);
+    /// `{READ, WRITE}` alone would satisfy "no adjacent writes" and "at least one write" without the
+    /// resolving read ever having been attempted, let alone failed. Pin that at least one read follows
+    /// the write, that the fault double actually fired on every one of them (a resolving read is itself
+    /// retried against the policy deadline, so several follow, not just one), and that no reissue was
+    /// sent while every resolution read fails.
+    ASSERT_GE(backend->journal.size(), 3u);
+    EXPECT_EQ(backend->journal.front(), "READ") << "the baseline read of the current state";
+    EXPECT_EQ(backend->journal[1], "WRITE") << "the attempt that never committed";
+    const size_t resolve_reads = backend->journal.size() - 2;
+    EXPECT_TRUE(std::all_of(backend->journal.begin() + 2, backend->journal.end(),
+                            [](const String & verb) { return verb == "READ"; }))
+        << "no reissue can be sent while every resolution read fails, so nothing after the write is a WRITE";
+    EXPECT_EQ(backend->read_fault_hits, resolve_reads)
+        << "every read after the baseline failed -- the fault double actually fired on all of them, not just "
+        << "the first";
+    EXPECT_EQ(std::count(backend->journal.begin(), backend->journal.end(), String{"WRITE"}), 1)
+        << "no reissue can be sent while every resolution read fails";
+    backend->watched_key.clear();
+    backend->fail_reads_after_the_first = false;
+    EXPECT_EQ(readCkptOrFail(reader, layout, life), base);
 }
 
-TEST(CASRefCheckpoint, FenceMovementAroundAmbiguityResolutionMakesTheExactReadInert)
+/// Admission lost while the ambiguous write was in flight: the exact read that would settle it is
+/// refused before it starts, so the call reports `FencedOut` and claims nothing about the object.
+TEST(CASRefCheckpoint, AdmissionLostWithTheAmbiguousWritePreventsItsResolveRead)
 {
-    for (const bool move_before_read : {true, false})
-    {
-        auto backend = std::make_shared<AmbiguousCkptBackend>();
-        const Layout layout{"p"};
-        const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(
-            RootNamespace{move_before_read ? "srv1/ckpt_fence_before_resolution" : "srv1/ckpt_fence_after_resolution"});
-        const String key = layout.refCkptKey(life);
-        const RefCkpt base{.life_epoch = 1, .committed_through = ID_1_1,
-                           .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-        ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
-        bool admitted = true;
-        const auto move_fence = [&] { admitted = false; };
-        if (move_before_read)
-            backend->before_resolution_get = move_fence;
-        else
-            backend->after_resolution_get = move_fence;
-        backend->arm(key, AmbiguousCkptBackend::Fault::CommitThenThrow);
-
-        const auto check_admission = [&](uint64_t)
-        {
-            if (!admitted)
-                throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "fence moved");
-        };
-        EXPECT_EQ(publishCkpt(*backend, layout, life,
-                              RefCkpt{.life_epoch = std::nullopt, .committed_through = ID_1_2,
-                                      .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}, 7,
-                              check_admission, generousDeadline()), CkptPublishOutcome::FencedOut);
-        EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS", "GET"}));
-    }
-}
-
-TEST(CASRefCheckpoint, AdmissionLostWithTheAmbiguousCasPreventsItsResolutionGet)
-{
-    auto backend = std::make_shared<AmbiguousCkptBackend>();
+    auto backend = std::make_shared<CkptProbeBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    bool admitted = true;
+    CasOperation op = requests.admit([&admitted] { return admitted; });
+    CasOperation reader = requests.admit();
     const Layout layout{"p"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(
         RootNamespace{"srv1/ckpt_admission_lost_before_resolution"});
     const String key = layout.refCkptKey(life);
     const RefCkpt base{.life_epoch = 1, .committed_through = ID_1_1,
                        .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
+    ASSERT_TRUE(std::holds_alternative<Committed>(reader.create(key, encodeRefCkpt(base), Retry::standard())));
 
-    bool admitted = true;
-    backend->after_ambiguous_cas = [&] { admitted = false; };
-    backend->arm(key, AmbiguousCkptBackend::Fault::CommitThenThrow);
-    const auto admit_request = [&]
-    {
-        if (!admitted)
-            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "admission withdrawn");
-    };
+    backend->after_write = [&admitted] { admitted = false; };
+    backend->arm(key, CkptProbeBackend::Fault::CommitThenThrow);
 
-    EXPECT_EQ(publishCkpt(*backend, layout, life,
+    EXPECT_EQ(publishCkpt(op, layout, life,
                           RefCkpt{.life_epoch = std::nullopt, .committed_through = ID_1_2,
-                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt},
-                          7, ALWAYS_ADMITTED, generousDeadline(), admit_request), CkptPublishOutcome::FencedOut);
-    EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS"}))
-        << "publishCkpt started its ambiguity-resolution GET after admission was withdrawn";
+                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}),
+              CkptPublishOutcome::FencedOut);
+    EXPECT_EQ(backend->journal, (std::vector<String>{"READ", "WRITE"}))
+        << "the resolve read started after admission was withdrawn";
 }
 
-TEST(CASRefCheckpoint, ContinuedAmbiguityStopsAtTheDeadlineAndNeverIssuesConsecutiveCasAttempts)
+/// Admission lost AFTER the resolve read proved the attempt durable: the object may well carry this
+/// contribution, but a call whose admission is gone must never claim it.
+TEST(CASRefCheckpoint, AdmissionLostAfterTheResolveReadStillRefusesToClaimTheCommit)
 {
-    auto backend = std::make_shared<AmbiguousCkptBackend>();
+    auto backend = std::make_shared<CkptProbeBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    bool admitted = true;
+    CasOperation op = requests.admit([&admitted] { return admitted; });
+    CasOperation reader = requests.admit();
     const Layout layout{"p"};
-    const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(RootNamespace{"srv1/ckpt_ambiguity_deadline"});
+    const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(RootNamespace{"srv1/ckpt_fence_after_resolution"});
     const String key = layout.refCkptKey(life);
     const RefCkpt base{.life_epoch = 1, .committed_through = ID_1_1,
                        .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
-    uint64_t now = 0;
-    backend->after_resolution_get = [&] { ++now; };
-    backend->arm(key, AmbiguousCkptBackend::Fault::AlwaysThrowWithoutCommit);
+    ASSERT_TRUE(std::holds_alternative<Committed>(reader.create(key, encodeRefCkpt(base), Retry::standard())));
 
-    expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&]
+    backend->arm(key, CkptProbeBackend::Fault::CommitThenThrow);
+    /// The SECOND read is the resolve read; withdrawing after the first would refuse the write instead
+    /// and never reach the point this test is about.
+    size_t reads = 0;
+    backend->after_read = [&]
     {
-        publishCkpt(*backend, layout, life,
-                    RefCkpt{.life_epoch = std::nullopt, .committed_through = ID_1_2,
-                            .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt},
-                    7, ALWAYS_ADMITTED, CkptDeadline{[&] { return now; }, 3});
-    });
-    EXPECT_EQ(backend->journal,
-              (std::vector<String>{"GET", "CAS", "GET", "CAS", "GET", "CAS", "GET"}));
-    EXPECT_EQ(readCkptOrFail(*backend, layout, life), base);
+        if (++reads == 2)
+            admitted = false;
+    };
+
+    EXPECT_EQ(publishCkpt(op, layout, life,
+                          RefCkpt{.life_epoch = std::nullopt, .committed_through = ID_1_2,
+                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}),
+              CkptPublishOutcome::FencedOut);
+    EXPECT_EQ(backend->journal, (std::vector<String>{"READ", "WRITE", "READ"}));
+}
+
+/// Both verdicts `publishCkpt` reaches WITHOUT writing consult admission before they speak, and both
+/// answer `FencedOut` when it is gone. A writer the fence is about to refuse landed nothing anywhere:
+/// telling it `IdenticalSkip` would claim its contribution is already durable, and telling it
+/// `CORRUPTED_DATA` would turn a transient control signal into a permanent verdict on the namespace.
+TEST(CASRefCheckpoint, DeclineTimeVerdictsReadAdmitted)
+{
+    const Layout layout{"p"};
+    for (const bool decreasing : {false, true})
+    {
+        auto backend = std::make_shared<CkptProbeBackend>();
+        CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+        bool admitted = true;
+        CasOperation op = requests.admit([&admitted] { return admitted; });
+        CasOperation reader = requests.admit();
+        const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(
+            RootNamespace{decreasing ? "srv1/ckpt_decline_decrease" : "srv1/ckpt_decline_identical"});
+        const String key = layout.refCkptKey(life);
+        /// A genesis epoch of 2 with the frontier in that same epoch: `checkRefCkptInvariants` refuses
+        /// a `committed_through` preceding `life_epoch`, so the durable body a decrease is measured
+        /// against has to be one the format would actually store.
+        const RefCkpt durable{.life_epoch = std::optional<uint64_t>{2}, .committed_through = ID_2_1,
+                              .checkpoint_snapshot_id = ID_2_1, .last_epoch_seal = std::nullopt};
+        ASSERT_EQ(publishCkpt(reader, layout, life, durable), CkptPublishOutcome::Published);
+        const uint64_t writes_before = backend->writes(key);
+
+        /// Admission survives the read and is gone by the time the verdict is reached -- the exact
+        /// window in which the answer must be `FencedOut` and nothing else.
+        backend->watch(key);
+        backend->after_read = [&admitted] { admitted = false; };
+        const RefCkpt contribution = decreasing
+            ? RefCkpt{.life_epoch = std::optional<uint64_t>{1}, .checkpoint_snapshot_id = std::nullopt,
+                      .last_epoch_seal = std::nullopt}
+            : durable;
+        EXPECT_EQ(publishCkpt(op, layout, life, contribution), CkptPublishOutcome::FencedOut)
+            << (decreasing ? "a superseded epoch from an unadmitted writer is not corruption"
+                           : "an identical body from an unadmitted writer is not a skip");
+        backend->after_read = nullptr;
+
+        EXPECT_EQ(backend->writes(key), writes_before) << "neither verdict may write";
+        EXPECT_EQ(readCkptOrFail(reader, layout, life), durable);
+    }
 }
 
 /// A `_ckpt` that does not decode is NEVER overwritten. It is the only record of recovery's base and
@@ -882,33 +1016,50 @@ TEST(CASRefCheckpoint, ContinuedAmbiguityStopsAtTheDeadlineAndNeverIssuesConsecu
 TEST(CASRefCheckpoint, ACorruptCheckpointIsNeverOverwritten)
 {
     auto backend = std::make_shared<CountingBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const RootNamespace ns{"srv1/ckpt_corrupt"};
     const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(ns);
     const String key = layout.refCkptKey(life);
-    ASSERT_EQ(publishCkpt(*backend, layout, life,
-                          RefCkpt{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_1_2, .checkpoint_snapshot_id = ID_1_2, .last_epoch_seal = std::nullopt},
-                          1, ALWAYS_ADMITTED, generousDeadline()), CkptPublishOutcome::Published);
+    ASSERT_EQ(publishCkpt(op, layout, life,
+                          RefCkpt{.life_epoch = std::optional<uint64_t>{1}, .committed_through = ID_1_2, .checkpoint_snapshot_id = ID_1_2, .last_epoch_seal = std::nullopt}),
+              CkptPublishOutcome::Published);
 
     const String garbage = "not a cas object\n";
-    overwriteObject(*backend, key, garbage);
+    overwriteObject(op, key, garbage);
 
     const RefCkpt birth{.life_epoch = std::optional<uint64_t>{5}, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA,
-        [&] { publishCkpt(*backend, layout, life, birth, 1, ALWAYS_ADMITTED, generousDeadline()); });
-    EXPECT_EQ(backend->get(key)->bytes, garbage) << "corruption must be surfaced, never laundered into a "
-                                                    "well-formed object";
+        [&] { publishCkpt(op, layout, life, birth); });
+    const auto still_there = op.read(key, Retry::standard());
+    ASSERT_TRUE(still_there.has_value());
+    EXPECT_EQ(still_there->bytes, garbage) << "corruption must be surfaced, never laundered into a "
+                                              "well-formed object";
 }
 
 /// ---------------------------------------------------------------------------------------------
 /// The reader-side rules Task 6 and the cleanup call sites consume
 /// ---------------------------------------------------------------------------------------------
 
-/// INV-4's three-way revalidation of a base that turned out to be missing.
-TEST(CASRefCheckpoint, AMissingSampledBaseRestartsOnAnAdvancedTokenAndIsCorruptionOnAnUnchangedOne)
+/// INV-4's three-way revalidation of a base that turned out to be missing. The two incarnations come
+/// from real reads of the same key across a rewrite, because an incarnation exists only as something a
+/// request observed.
+TEST(CASRefCheckpoint, AMissingSampledBaseRestartsOnAnAdvancedIncarnationAndIsCorruptionOnAnUnchangedOne)
 {
-    const Token sampled{"t1", TokenType::Emulated};
-    const Token advanced{"t2", TokenType::Emulated};
+    auto backend = std::make_shared<CountingBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const String key = "p/ckpt_incarnations";
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key, "first", Retry::standard())));
+    const auto first = op.read(key, Retry::standard());
+    ASSERT_TRUE(first.has_value());
+    overwriteObject(op, key, "second");
+    const auto second = op.read(key, Retry::standard());
+    ASSERT_TRUE(second.has_value());
+    const Etag sampled = first->etag;
+    const Etag advanced = second->etag;
+    ASSERT_FALSE(sampled == advanced) << "the rewrite must mint a different incarnation";
 
     EXPECT_EQ(classifyMissingSampledBase(sampled, advanced), MissingBaseVerdict::RestartRecovery)
         << "cleanup legitimately moved the checkpoint while we read; restart from the newer base";
@@ -941,18 +1092,20 @@ TEST(CASRefCheckpoint, NamespaceBirthCreatesTheCheckpointCarryingItsLifeEpoch)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const RootNamespace ns{"srv1/ckpt_birth"};
 
-    /// Stage B (Task 4-C): the catalog carries no entry for `ns` before its first open, and the
+    /// Stage B: the catalog carries no entry for `ns` before its first open, and the
     /// namespace's real incarnation does not exist to name a key with yet -- the pre-birth analog of
     /// "nothing exists" is "nothing is even NAMED", checked at the catalog rather than at a key this
     /// test cannot yet compute.
-    EXPECT_TRUE(CasRefCatalog::read(*backend, store->layout()).catalog.entries.empty())
+    EXPECT_TRUE(CasRefCatalog::read(op, store->layout()).catalog.entries.empty())
         << "nothing exists before the birth";
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{store->writerEpoch(), 1}));
 
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
-    const auto sample = readCkpt(*backend, store->layout(), life);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
+    const auto sample = readCkpt(op, store->layout(), life);
     ASSERT_TRUE(sample.has_value()) << "spec §3 creates the _ckpt before the namespace becomes Live";
     EXPECT_EQ(sample->ckpt.life_epoch, store->writerEpoch());
     EXPECT_FALSE(sample->ckpt.checkpoint_snapshot_id.has_value()) << "a newborn namespace has no base yet";
@@ -964,25 +1117,27 @@ TEST(CASRefCheckpoint, ACommittedSnapshotPublishAdvancesTheCheckpoint)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const uint64_t epoch = store->writerEpoch();
     const RootNamespace ns{"srv1/ckpt_publish"};
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{epoch, 1}));
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
-    ASSERT_FALSE(readCkptOrFail(*backend, store->layout(), life).checkpoint_snapshot_id.has_value());
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
+    ASSERT_FALSE(readCkptOrFail(op, store->layout(), life).checkpoint_snapshot_id.has_value());
 
     ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
     const auto published = store->newestPublishedSnapshotIdForTest(ns);
     ASSERT_TRUE(published.has_value());
 
-    const auto sample = readCkpt(*backend, store->layout(), life);
+    const auto sample = readCkpt(op, store->layout(), life);
     ASSERT_TRUE(sample.has_value());
     EXPECT_EQ(sample->ckpt.checkpoint_snapshot_id, published);
     EXPECT_EQ(sample->ckpt.life_epoch, epoch) << "the publisher contributes nothing about life_epoch, so "
                                                  "the merge must preserve what the birth wrote";
     /// And the snapshot body it names really is there -- the checkpoint may never point at a key that
     /// does not exist, which is the premise the missing-base rule reasons from.
-    EXPECT_TRUE(backend->head(store->layout().refSnapshotKey(life, *published)).exists);
+    EXPECT_TRUE(op.head(store->layout().refSnapshotKey(life, *published), Retry::standard()).has_value());
 }
 
 /// The body-PUT/cleanup/`_ckpt` race, decided by the ORDER of the two writes: cleanup planned in the
@@ -992,18 +1147,20 @@ TEST(CASRefCheckpoint, CleanupPlannedBetweenTheBodyPutAndTheCkptCasCannotDeleteT
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const uint64_t epoch = store->writerEpoch();
     const RootNamespace ns{"srv1/ckpt_race"};
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{epoch, 1}));
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
     ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
     const RefTxnId first_snapshot = *store->newestPublishedSnapshotIdForTest(ns);
 
     ASSERT_EQ(publishRef(store, ns, "ref_2", 2), (RefTxnId{epoch, 2}));
     /// The checkpoint a cleanup pass sampled BEFORE the second publication -- the stale reading the
     /// race hands it.
-    const std::optional<RefTxnId> stale_checkpoint = readCkptOrFail(*backend, store->layout(), life).checkpoint_snapshot_id;
+    const std::optional<RefTxnId> stale_checkpoint = readCkptOrFail(op, store->layout(), life).checkpoint_snapshot_id;
     ASSERT_EQ(stale_checkpoint, first_snapshot);
 
     ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
@@ -1015,7 +1172,7 @@ TEST(CASRefCheckpoint, CleanupPlannedBetweenTheBodyPutAndTheCkptCasCannotDeleteT
     EXPECT_FALSE(snapshotDeletableUnderCkpt(second_snapshot, stale_checkpoint));
     EXPECT_FALSE(snapshotDeletableUnderCkpt(first_snapshot, stale_checkpoint));
     /// Once the checkpoint is re-read, the older snapshot becomes reclaimable and the base does not.
-    const std::optional<RefTxnId> fresh_checkpoint = readCkptOrFail(*backend, store->layout(), life).checkpoint_snapshot_id;
+    const std::optional<RefTxnId> fresh_checkpoint = readCkptOrFail(op, store->layout(), life).checkpoint_snapshot_id;
     EXPECT_TRUE(snapshotDeletableUnderCkpt(first_snapshot, fresh_checkpoint));
     EXPECT_FALSE(snapshotDeletableUnderCkpt(second_snapshot, fresh_checkpoint));
 }
@@ -1024,35 +1181,39 @@ TEST(CASRefCheckpoint, CleanupPlannedBetweenTheBodyPutAndTheCkptCasCannotDeleteT
 /// published, and a publisher with nothing above its newest snapshot touches it at all.
 TEST(CASRefCheckpoint, TheCheckpointIsWrittenOncePerPublicationAndNotOnIdleAttempts)
 {
-    auto backend = std::make_shared<CountingBackend>();
+    auto backend = std::make_shared<WriteCountingBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const uint64_t epoch = store->writerEpoch();
     const RootNamespace ns{"srv1/ckpt_republish"};
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{epoch, 1}));
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
     const String key = store->layout().refCkptKey(life);
-    const uint64_t writes_after_birth = backend->casPutCount(key);
+    const uint64_t writes_after_birth = backend->writes(key);
     EXPECT_EQ(writes_after_birth, 2u)
         << "birth publishes `life_epoch` before its log, then the durable log's committed frontier";
 
     ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
-    EXPECT_EQ(backend->casPutCount(key), writes_after_birth + 1) << "one publication, one checkpoint CAS";
-    const uint64_t writes_after_publish = backend->casPutCount(key);
-    const auto after_publish = readCkpt(*backend, store->layout(), life);
+    EXPECT_EQ(backend->writes(key), writes_after_birth + 1) << "one publication, one checkpoint write";
+    const uint64_t writes_after_publish = backend->writes(key);
+    const auto after_publish = readCkpt(op, store->layout(), life);
     ASSERT_TRUE(after_publish.has_value());
 
     /// Nothing was appended since, so there is nothing above the newest snapshot: the publisher declines
     /// before it reaches the checkpoint at all, and repeating the attempt changes nothing.
     EXPECT_FALSE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
     EXPECT_FALSE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
-    EXPECT_EQ(backend->casPutCount(key), writes_after_publish);
-    EXPECT_EQ(readCkptOrFail(*backend, store->layout(), life), after_publish->ckpt);
+    EXPECT_EQ(backend->writes(key), writes_after_publish);
+    EXPECT_EQ(readCkptOrFail(op, store->layout(), life), after_publish->ckpt);
 }
 
 TEST(CASRefCheckpoint, SnapshotPublisherRefusesEpochSealCandidateWithoutAnyWrite)
 {
-    auto backend = std::make_shared<CountingBackend>();
+    auto backend = std::make_shared<WriteCountingBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const RootNamespace ns{"srv1/no_snapshot_at_seal"};
     uint64_t predecessor_epoch = 0;
     {
@@ -1066,19 +1227,19 @@ TEST(CASRefCheckpoint, SnapshotPublisherRefusesEpochSealCandidateWithoutAnyWrite
     ASSERT_EQ(store->listRefs(ns).size(), 1u) << "recovery must close the predecessor epoch before publishing";
 
     const RefTxnId seal_id{predecessor_epoch, 2};
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
     const String snapshot_key = store->layout().refSnapshotKey(life, seal_id);
     const String ckpt_key = store->layout().refCkptKey(life);
     ASSERT_EQ(store->lastEpochSealForTest(ns), std::make_optional(seal_id));
-    ASSERT_EQ(readCkptOrFail(*backend, store->layout(), life).committed_through, std::make_optional(seal_id));
-    const uint64_t snapshot_puts_before = backend->putCount(snapshot_key);
-    const uint64_t ckpt_cas_before = backend->casPutCount(ckpt_key);
+    ASSERT_EQ(readCkptOrFail(op, store->layout(), life).committed_through, std::make_optional(seal_id));
+    const uint64_t snapshot_writes_before = backend->writes(snapshot_key);
+    const uint64_t ckpt_writes_before = backend->writes(ckpt_key);
 
     /// Recovery installed the epoch seal as the runtime's greatest applied transaction. The publisher
     /// must decline it without reaching either durable write.
     EXPECT_FALSE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
-    EXPECT_EQ(backend->putCount(snapshot_key), snapshot_puts_before);
-    EXPECT_EQ(backend->casPutCount(ckpt_key), ckpt_cas_before);
+    EXPECT_EQ(backend->writes(snapshot_key), snapshot_writes_before);
+    EXPECT_EQ(backend->writes(ckpt_key), ckpt_writes_before);
 
     /// Once an ordinary transaction advances the candidate beyond the seal, normal publication resumes.
     ASSERT_EQ(publishRef(store, ns, "ref_2", 2), (RefTxnId{store->writerEpoch(), 1}));
@@ -1088,17 +1249,19 @@ TEST(CASRefCheckpoint, SnapshotPublisherRefusesEpochSealCandidateWithoutAnyWrite
 /// Publication replays a `NeedsRecovery` lane before it captures a snapshot and advances `_ckpt`.
 TEST(CASRefCheckpoint, NeedsRecoveryReplaysBeforeCheckpointAdvance)
 {
-    auto backend = std::make_shared<CountingBackend>();
+    auto backend = std::make_shared<WriteCountingBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const RootNamespace ns{"srv1/ckpt_poisoned"};
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{store->writerEpoch(), 1}));
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
     const String key = store->layout().refCkptKey(life);
-    const auto before = readCkpt(*backend, store->layout(), life);
+    const auto before = readCkpt(op, store->layout(), life);
     ASSERT_TRUE(before.has_value());
     ASSERT_FALSE(before->ckpt.checkpoint_snapshot_id.has_value());
-    const uint64_t writes_before = backend->casPutCount(key);
+    const uint64_t writes_before = backend->writes(key);
 
     /// Enter `NeedsRecovery`: an install throws after its transaction is
     /// durable, leaving this cached table missing a transaction the log contains.
@@ -1121,9 +1284,9 @@ TEST(CASRefCheckpoint, NeedsRecoveryReplaysBeforeCheckpointAdvance)
     EXPECT_TRUE(store->resolveRef(ns, "ref_2", /*allow_stale=*/false).has_value())
         << "the stranded transaction is durable; the re-derivation must have applied it";
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
-    EXPECT_GT(backend->casPutCount(key), writes_before)
+    EXPECT_GT(backend->writes(key), writes_before)
         << "and the checkpoint advances -- truthfully, over a snapshot that is not missing anything";
-    EXPECT_TRUE(readCkptOrFail(*backend, store->layout(), life).checkpoint_snapshot_id.has_value());
+    EXPECT_TRUE(readCkptOrFail(op, store->layout(), life).checkpoint_snapshot_id.has_value());
 
 }
 
@@ -1136,26 +1299,27 @@ TEST(CASRefCheckpoint, APublishFencedOutMidAttemptDoesNotAdvanceTheCheckpoint)
 
     /// The watched key cannot be computed yet -- the real incarnation is minted only once the pool
     /// exists and this namespace's first open resolves it (`setWatchedKey` below, once it has).
-    auto backend = std::make_shared<GetHookBackend>("");
+    auto backend = std::make_shared<CkptProbeBackend>();
     DB::Cas::tests::seedPoolMetaForRestart(*backend);
     PoolPtr store = Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{store->writerEpoch(), 1}));
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
     const String ckpt_key = store->layout().refCkptKey(life);
-    backend->setWatchedKey(ckpt_key);
-
-    const auto before = readCkpt(*backend, store->layout(), life);
+    const auto before = readCkpt(op, store->layout(), life);
     ASSERT_TRUE(before.has_value());
     ASSERT_FALSE(before->ckpt.checkpoint_snapshot_id.has_value());
-    const uint64_t writes_before = backend->casPutCount(ckpt_key);
+    const uint64_t writes_before = backend->writes(ckpt_key);
+    backend->watch(ckpt_key);
 
     /// Arm only after the precondition read above. The next watched `_ckpt` read is therefore the one
     /// inside this publish's read-then-CAS window, after the attempt captured its immutable runtime
     /// generation. Arming before `readCkpt` would stale the runtime before the operation began and test
     /// entry admission instead of the intended mid-attempt recheck.
     bool hook_fired = false;
-    backend->on_get = [&]
+    backend->after_read = [&]
     {
         if (hook_fired)
             return;
@@ -1165,16 +1329,16 @@ TEST(CASRefCheckpoint, APublishFencedOutMidAttemptDoesNotAdvanceTheCheckpoint)
 
     EXPECT_FALSE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns))
         << "a publish whose checkpoint could not be advanced must not report success";
-    EXPECT_TRUE(hook_fired) << "the checkpoint read-then-CAS seam was never exercised";
-    backend->on_get = nullptr;
-    EXPECT_EQ(backend->casPutCount(ckpt_key), writes_before) << "nothing may be sent after the fence moved";
-    EXPECT_FALSE(readCkptOrFail(*backend, store->layout(), life).checkpoint_snapshot_id.has_value());
+    EXPECT_TRUE(hook_fired) << "the checkpoint read-then-write seam was never exercised";
+    backend->after_read = nullptr;
+    EXPECT_EQ(backend->writes(ckpt_key), writes_before) << "nothing may be sent after the fence moved";
+    EXPECT_FALSE(readCkptOrFail(op, store->layout(), life).checkpoint_snapshot_id.has_value());
     EXPECT_FALSE(store->newestPublishedSnapshotIdForTest(ns).has_value())
         << "the snapshot must not be adopted as the newest while its checkpoint is unpublished";
 }
 
 /// ===================================================================================
-/// Equivalence fences for the `prepareRefChunk` extraction (Stage B `{#extract-prepare-ref-chunk}`)
+/// Equivalence fences for the `prepareRefChunk` extraction
 /// ===================================================================================
 ///
 /// An extraction is only safe to review if something pins what crosses its boundary. These three
@@ -1191,18 +1355,20 @@ TEST(CASRefCheckpoint, CommitRefChunkDurableBytesUnchangedByExtraction)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const RootNamespace ns{"test/golden@cas@"};
 
     const RefTxnId id = publishRef(store, ns, "gold_ref", 7);
     ASSERT_EQ(id.writer_epoch, 1u);
     ASSERT_EQ(id.ref_sequence, 1u);
 
-    /// The KEY carries the namespace incarnation, so its life segment is rendered rather than pasted
-    /// (Task 1c re-keys it); every other segment is literal. Stage B (Task 4-C): the incarnation is now
-    /// a REAL, randomly minted catalog value rather than the Stage-A sentinel, so it is learned back
+    /// The KEY carries the namespace incarnation, so its life segment is rendered rather than pasted;
+    /// every other segment is literal. Stage B: the incarnation is now a REAL, randomly minted catalog
+    /// value rather than the Stage-A sentinel, so it is learned back
     /// from the catalog (`liveLifeOrFail`) rather than pasted as a literal -- the shape assertion below
     /// is unaffected, since it names every OTHER segment literally and renders this one dynamically.
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
     const String key = store->layout().refLogKey(life, id);
     EXPECT_EQ(key, "p/cas/ns/stream/" + renderIncarnation(life.incarnation)
                    + "/_log/0000000000000001-0000000000000001.zst")
@@ -1211,26 +1377,21 @@ TEST(CASRefCheckpoint, CommitRefChunkDurableBytesUnchangedByExtraction)
     /// The BODY is checked as exact length plus a 128-bit SipHash of it -- not literally byte for byte,
     /// but any change that survives both is a 128-bit collision at a fixed length, which is the trade for
     /// keeping the assertion readable. It is a function of `{format generation, ns, id, ops,
-    /// chain_link}` only -- no incarnation reaches it. Generation 10 changed the shared format header;
-    /// the plaintext discriminator below removes only that change and pins every remaining byte to the
-    /// generation-9 fixture before accepting the new deterministic compressed size and hash.
-    const auto got = backend->get(key);
+    /// chain_link}` only -- no incarnation reaches it.
+    const auto got = op.read(key, Retry::standard());
     ASSERT_TRUE(got.has_value()) << "the birth chunk must be durable at its canonical key";
-    String as_generation_9 = openObject(FormatId::RefLog, got->bytes);
-    const String generation_10_header = R"({"type":"cas_ref_log","v":10})";
-    ASSERT_TRUE(as_generation_9.starts_with(generation_10_header));
-    as_generation_9.replace(0, generation_10_header.size(), R"({"type":"cas_ref_log","v":9})");
-    EXPECT_EQ(as_generation_9, R"({"type":"cas_ref_log","v":9}
-{"ns":"test/golden@cas@","we":"1","rs":"1"}
+    const String plaintext = openObject(FormatId::RefLog, got->bytes);
+    EXPECT_EQ(plaintext, R"({"type":"cas_ref_log","v":1}
+{"namespace":"test/golden@cas@","txn_epoch":"1","txn_seq":"1"}
 {"op":"namespace_birth"}
-{"op":"owner_transition","nbk":"precommit","nrn":"gold_ref","nme":"1","nmb":"7","nmo":1}
-{"op":"owner_transition","obk":"precommit","orn":"gold_ref","ome":"1","omb":"7","omo":1,"nbk":"committed","nrn":"gold_ref","nme":"1","nmb":"7","nmo":1}
+{"op":"owner_transition","new_kind":"precommit","new_ref":"gold_ref","new_epoch":"1","new_build":"7","new_ord":1}
+{"op":"owner_transition","old_kind":"precommit","old_ref":"gold_ref","old_epoch":"1","old_build":"7","old_ord":1,"new_kind":"committed","new_ref":"gold_ref","new_epoch":"1","new_build":"7","new_ord":1}
 {"n":3}
-)") << "generation 10 must change only the self-describing header of this ref-log fixture";
-    EXPECT_EQ(got->bytes.size(), 179u) << "the sealed ref-log body changed size";
+)") << "the sealed ref-log plaintext changed";
+    EXPECT_EQ(got->bytes.size(), 206u) << "the sealed ref-log body changed size";
     SipHash body_hash;
     body_hash.update(got->bytes.data(), got->bytes.size());
-    EXPECT_EQ(getHexUIntLowercase(body_hash.get128()), "ada75a83638e933c98d731183a46b7b7")
+    EXPECT_EQ(getHexUIntLowercase(body_hash.get128()), "21c275ad44a6b47a4d6c389c0d71bb34")
         << "the sealed ref-log body changed content -- preparation must seal the same bytes it sealed "
            "before the extraction";
 }
@@ -1246,24 +1407,26 @@ TEST(CASRefCheckpoint, CommitRefChunkDurableBytesUnchangedByExtraction)
 /// need a sequence-recording backend to pin.
 TEST(CASRefCheckpoint, AppendRequestCountUnchangedByExtraction)
 {
-    auto backend = std::make_shared<CountingBackend>();
+    auto backend = std::make_shared<WriteCountingBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const RootNamespace ns{"test/req@cas@"};
 
     const RefTxnId id = publishRef(store, ns, "req_ref", 1);
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
     const String log_key = store->layout().refLogKey(life, id);
     const String ckpt_key = store->layout().refCkptKey(life);
 
-    EXPECT_EQ(backend->putCount(log_key), 1u) << "exactly one write-once PUT per committed chunk";
-    /// ONE GET, not zero, since Stage B (Task 4-C): `resolveNamespaceLife`'s `completeCreation` call
+    EXPECT_EQ(backend->writes(log_key), 1u) << "exactly one write-once request per committed chunk";
+    /// ONE GET, not zero, since Stage B: `resolveNamespaceLife`'s `completeCreation` call
     /// publishes this life's `_ckpt.life_epoch` BEFORE the birth chunk is prepared, so this table's
     /// OWN recovery walk (also inside this `appendRefOps`, ahead of the commit) grounds itself at the
     /// genesis position `_ckpt` now names and confirms it absent by exact key -- which is `log_key`
     /// itself, the position the birth chunk is about to occupy. That GET precedes the Committed PUT;
     /// the PUT itself still owes no read-back.
-    EXPECT_EQ(backend->getCount(log_key), 1u) << "one grounding probe from recovery, before the birth PUT";
-    EXPECT_EQ(backend->casPutCount(ckpt_key), 2u)
+    EXPECT_EQ(backend->getCount(log_key), 1u) << "one grounding probe from recovery, before the birth write";
+    EXPECT_EQ(backend->writes(ckpt_key), 2u)
         << "the birth contributes `life_epoch` before its log and `committed_through` after the durable "
            "log; these are two different ordering obligations, not a duplicate publication";
 }
@@ -1298,6 +1461,8 @@ TEST(CASRefCheckpoint, PostDurableInstallRegionStillEnteredAfterExtraction)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPool(backend);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const RootNamespace ns{"test/region@cas@"};
 
     unsigned probe_hits = 0;
@@ -1308,6 +1473,6 @@ TEST(CASRefCheckpoint, PostDurableInstallRegionStillEnteredAfterExtraction)
     EXPECT_GT(probe_hits, 0u)
         << "no probe-instrumented post-durable install region was entered on a committing append -- "
            "the `Committed` install arm was not reached at all";
-    const NamespaceLifeId life = liveLifeOrFail(*backend, store->layout(), ns);
-    EXPECT_TRUE(backend->get(store->layout().refLogKey(life, id)).has_value());
+    const NamespaceLifeId life = liveLifeOrFail(op, store->layout(), ns);
+    EXPECT_TRUE(op.read(store->layout().refLogKey(life, id), Retry::standard()).has_value());
 }

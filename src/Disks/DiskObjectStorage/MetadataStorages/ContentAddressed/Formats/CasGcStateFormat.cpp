@@ -16,6 +16,24 @@ namespace ErrorCodes
 namespace DB::Cas
 {
 
+namespace GcStateWire
+{
+    constexpr WireKey round{"round"};
+    constexpr WireKey gc_shards{"gc_shards"};
+    constexpr WireKey snap_generation{"snap_generation"};
+    constexpr WireKey snap_pruned_through{"snap_pruned_through"};
+    constexpr WireKey snap_attempt{"snap_attempt"};
+    constexpr WireKey manifest_sweep_cursor{"manifest_sweep_cursor"};
+    constexpr WireKey lease_owner{"lease_owner"};
+    constexpr WireKey lease_seq{"lease_seq"};
+}
+
+namespace GcHeartbeatWire
+{
+    constexpr WireKey owner{"owner"};
+    constexpr WireKey hb_seq{"hb_seq"};
+}
+
 String encodeGcState(const GcState & state)
 {
     if (state.gc_shards < 1)
@@ -23,14 +41,14 @@ String encodeGcState(const GcState & state)
     CasJsonWriter out(256);
     writeHeaderLine(out, FormatId::GcState);
     bool first = true;
-    writeKey(out, "rnd", first); writeU64StringValue(out, state.round);
-    writeKey(out, "gcs", first); writeIntText(state.gc_shards, out);
-    writeKey(out, "sg", first);  writeU64StringValue(out, state.snap_generation);
-    writeKey(out, "spt", first); writeU64StringValue(out, state.snap_pruned_through);
-    writeKey(out, "sa", first);  writeU64StringValue(out, state.snap_attempt);
-    writeKey(out, "msc", first); writeStringValue(out, state.manifest_sweep_cursor);
-    writeKey(out, "lo", first);  writeHex128Value(out, state.lease.owner);
-    writeKey(out, "ls", first);  writeU64StringValue(out, state.lease.seq);
+    writeU64StringField(out, GcStateWire::round, state.round, first);
+    writeNumberField(out, GcStateWire::gc_shards, state.gc_shards, first);
+    writeU64StringField(out, GcStateWire::snap_generation, state.snap_generation, first);
+    writeU64StringField(out, GcStateWire::snap_pruned_through, state.snap_pruned_through, first);
+    writeU64StringField(out, GcStateWire::snap_attempt, state.snap_attempt, first);
+    writeStringField(out, GcStateWire::manifest_sweep_cursor, state.manifest_sweep_cursor, first);
+    writeHex128Field(out, GcStateWire::lease_owner, state.lease.owner, first);
+    writeU64StringField(out, GcStateWire::lease_seq, state.lease.seq, first);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -49,20 +67,32 @@ GcState decodeGcState(std::string_view data)
     String key;
     while (r.nextKey(key))
     {
-        if (key == "rnd") state.round = r.readU64String();
-        else if (key == "gcs") { state.gc_shards = r.readU64Number(); saw_gcs = true; }
-        else if (key == "sg") state.snap_generation = r.readU64String();
-        else if (key == "spt") state.snap_pruned_through = r.readU64String();
-        else if (key == "sa") state.snap_attempt = r.readU64String();
-        else if (key == "msc") state.manifest_sweep_cursor = r.readString();
-        else if (key == "lo") state.lease.owner = r.readHex128();
-        else if (key == "ls") state.lease.seq = r.readU64String();
-        else r.skipUnknown(key);
+        if (key == GcStateWire::round)
+            state.round = r.readU64String();
+        else if (key == GcStateWire::gc_shards)
+        {
+            state.gc_shards = r.readU64Number();
+            saw_gcs = true;
+        }
+        else if (key == GcStateWire::snap_generation)
+            state.snap_generation = r.readU64String();
+        else if (key == GcStateWire::snap_pruned_through)
+            state.snap_pruned_through = r.readU64String();
+        else if (key == GcStateWire::snap_attempt)
+            state.snap_attempt = r.readU64String();
+        else if (key == GcStateWire::manifest_sweep_cursor)
+            state.manifest_sweep_cursor = r.readString();
+        else if (key == GcStateWire::lease_owner)
+            state.lease.owner = r.readHex128();
+        else if (key == GcStateWire::lease_seq)
+            state.lease.seq = r.readU64String();
+        else
+            r.skipUnknown(key);
     }
-    /// Fail closed on an absent gcs: the writer always emits it, so a missing key means a corrupt object.
+    /// Fail closed on an absent gc_shards: the writer always emits it, so a missing key means a corrupt object.
     /// Do NOT silently keep the struct default (1) — that would hide corruption (no-fallback principle).
     if (!saw_gcs)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS gc/state: missing gcs");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS gc/state: missing gc_shards");
     if (state.gc_shards == 0)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS gc/state: gc_shards must be >= 1");
     if (!body_in.eof() || !in.eof())
@@ -75,8 +105,8 @@ String encodeGcHeartbeat(const GcHeartbeat & hb)
     CasJsonWriter out(256);
     writeHeaderLine(out, FormatId::GcHeartbeat);
     bool first = true;
-    writeKey(out, "by", first);  writeHex128Value(out, hb.owner);
-    writeKey(out, "seq", first); writeU64StringValue(out, hb.hb_seq);
+    writeHex128Field(out, GcHeartbeatWire::owner, hb.owner, first);
+    writeU64StringField(out, GcHeartbeatWire::hb_seq, hb.hb_seq, first);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -96,12 +126,12 @@ GcHeartbeat decodeGcHeartbeat(std::string_view data)
     String key;
     while (r.nextKey(key))
     {
-        if (key == "by")
+        if (key == GcHeartbeatWire::owner)
         {
             hb.owner = r.readHex128();
             saw_by = true;
         }
-        else if (key == "seq")
+        else if (key == GcHeartbeatWire::hb_seq)
         {
             hb.hb_seq = r.readU64String();
             saw_seq = true;

@@ -32,7 +32,8 @@ void deleteFileFromS3(
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const String & local_path_for_blob_storage_log = {},
     size_t file_size_for_blob_storage_log = 0,
-    std::optional<ProfileEvents::Event> profile_event = std::nullopt);
+    std::optional<ProfileEvents::Event> profile_event = std::nullopt,
+    size_t attempt_seed = 0);
 
 /// Deletes multiple files from S3 using batch requests when it's possible.
 void deleteFilesFromS3(

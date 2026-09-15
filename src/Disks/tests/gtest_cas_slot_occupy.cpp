@@ -2,16 +2,16 @@
 
 #include "config.h"
 
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/Exception.h>
 #include <Poco/Exception.h>
 
+#include <variant>
+
 using namespace DB::Cas;
 using DB::Cas::tests::CountingBackend;
-using DB::Cas::tests::ChunkFaultBackend;
-using DB::Cas::tests::LandedButAckLostOnceBackend;
 
 namespace DB::ErrorCodes
 {
@@ -19,244 +19,254 @@ namespace DB::ErrorCodes
 }
 
 /// ================================================================================================
-/// Task 2 (2026-07-28 CAS ref-chain Stage A streams, spec INV-2): CasRequestController::slotOccupy --
-/// the dedicated RAW slot-occupy primitive every seal writer and wedge retry uses. ONE conditional
-/// create; on conflict, ONE raw exact GET of the occupant -- NEVER retries internally, NEVER lists,
-/// and NEVER composes putIfAbsentControlled (which retries the same (key, bytes) internally) or
-/// resolveByExactGet (which compares against an expected body and throws CORRUPTED_DATA on a
-/// mismatch) [codex finding 3]. Adjudicating whether an Occupied occupant is "mine" is entirely the
-/// CALLER's job (Task 4/6, the CaCasMountCore `mine` contract) -- these tests only pin the
-/// primitive's own three-way outcome and its op-count contract (Created=1, Occupied=2,
-/// Unresolved<=2 backend ops).
+/// The ref lane's slot occupy: ONE conditional create of a write-once ref-log key, `Retry::once()`,
+/// on an operation the caller resumed under the generation its transaction was admitted at. It is
+/// what every epoch-seal writer and every wedge retry issues, so these tests pin the shape those two
+/// callers depend on -- the four alternatives and the request count behind each -- rather than the
+/// engine's general write contract, which `gtest_cas_requests.cpp` owns.
+///
+/// Adjudicating whether a conflicting occupant is "mine" is entirely the CALLER's job (the
+/// `CaCasMountCore` `mine` contract: byte equality, never a shape or generation match); nothing here
+/// compares bytes for meaning.
 /// ================================================================================================
 
 namespace
 {
 
 /// Deletes the key the INSTANT its own conditional create conflicts, modelling "the occupant that
-/// caused the conflict vanished before slotOccupy's single resolve GET" -- a race a real backend can
-/// produce (e.g. GC reclaiming an already-condemned object) that the primitive must survive by
-/// reporting Unresolved, NEVER a fabricated Created.
+/// caused the conflict vanished before the settling read" -- a race a real backend can produce (e.g.
+/// GC reclaiming an already-condemned object) that the call must survive by reporting what it saw,
+/// never a fabricated commit.
 class VanishOnConflictBackend : public CountingBackend
 {
 public:
-    using CountingBackend::putIfAbsent;
-
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
+    std::expected<String, DB::Cas::Backend::RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        DB::Cas::TransportAccess & access) override
     {
-        PutResult result = CountingBackend::putIfAbsent(key, bytes, meta);
-        if (result.outcome == PutOutcome::PreconditionFailed)
+        auto result = CountingBackend::write(key, bytes, expected_value, access);
+        if (!result.has_value())
         {
-            const HeadResult h = head(key);
-            if (h.exists)
-                deleteExact(key, h.token);
+            if (const auto meta = CountingBackend::head(key, access))
+                CountingBackend::remove(key, meta->value, access);
         }
         return result;
     }
 };
 
-/// Throws a deterministic LOCAL failure (BAD_ARGUMENTS, in isDeterministicLocalFailure's set) on the
-/// first putIfAbsent -- models a backend-level programming bug, distinct from ChunkFaultBackend's
-/// Mode::Definite below, which is a whitelisted SYNCHRONOUS REJECTION
-/// (classifyConditionalWriteResult's DefiniteFailure). slotOccupy must rethrow both, unchanged, never
-/// folding either into Unresolved (SlotOccupyResult::Kind has no DefiniteFailure member to carry it).
+/// Throws a deterministic LOCAL failure (`BAD_ARGUMENTS`, in `isDeterministicLocalFailure`'s set) on
+/// the first write -- a backend-level programming bug, distinct from a whitelisted synchronous
+/// rejection, which the store gives as an answer and the engine reports as `Refused`.
 class LocalFailureOnceBackend : public CountingBackend
 {
 public:
-    using CountingBackend::putIfAbsent;
     bool fail_once = true;
 
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
+    std::expected<String, DB::Cas::Backend::RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        DB::Cas::TransportAccess & access) override
     {
         if (fail_once)
         {
             fail_once = false;
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "scripted deterministic local failure");
         }
-        return CountingBackend::putIfAbsent(key, bytes, meta);
+        return CountingBackend::write(key, bytes, expected_value, access);
     }
 };
 
-/// (`LandedButAckLostOnceBackend` -- "the write LANDS, then the ack is lost" -- was lifted into
-/// `cas_test_helpers.h` for Task 4, whose wedge-adoption tests need the identical seam through a whole
-/// Pool. Its `key_substr` defaults to empty, which is exactly this file's original behaviour: fault the
-/// first `putIfAbsent` of any key.)
-/// Delegates the FIRST putIfAbsent for a key to CountingBackend -- so the write actually LANDS -- and
-/// only THEN throws an ambiguous exception, modelling "our own PUT committed but its response was lost"
-/// (the Task-4 adoption input: plan's "Occupied + bytes == wedge.bytes -> an earlier attempt landed ->
-/// adopt"). Distinct from InMemoryBackend::injectAmbiguousPutIfAbsent, which never touches the store at
-/// all -- that hook models an attempt that did NOT land; this one models an attempt that DID.
-/// One-shot per backend instance: review finding I2 asked specifically for a ~10-line local backend rather than
-/// reusing ChunkFaultBackend::Mode::LandedThenLost, which also arms a one-shot lost-GET fault that would
-/// obscure whether slotOccupy's OWN immediate resolve (not just a later caller's retry) is correct too.
+/// Withdraws the caller's liveness the instant a conditional create conflicts, so the settling read
+/// is the first request the operation is no longer admitted for.
+class WithdrawAdmissionOnConflictBackend : public CountingBackend
+{
+public:
+    bool live = true;
+
+    std::expected<String, DB::Cas::Backend::RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        DB::Cas::TransportAccess & access) override
+    {
+        auto result = CountingBackend::write(key, bytes, expected_value, access);
+        if (!result.has_value())
+            live = false;
+        return result;
+    }
+};
+
+/// The occupant a conflict names, or null when the result is not a conflict that observed one.
+const Object * conflictObject(const WriteResult & result)
+{
+    const auto * conflict = std::get_if<Conflict>(&result);
+    return conflict ? std::get_if<Object>(&conflict->seen) : nullptr;
+}
 
 }
 
-/// ---- Step 1 required scenarios ----
-
-TEST(CASSlotOccupy, AbsentKeyCreatesWithOneOp)
+TEST(CASSlotOccupy, AbsentKeyCommitsWithOneRequest)
 {
     auto backend = std::make_shared<CountingBackend>();
-    CasRequestController controller(backend, CasRequestBudget{});
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit();
 
-    const auto result = controller.slotOccupy("k", "payload", [] { return true; });
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Created);
-    EXPECT_TRUE(result.occupant_bytes.empty());
-    EXPECT_TRUE(result.occupant_token.empty()) << "occupant_token is Occupied-only; must stay default on Created";
-    EXPECT_EQ(result.unresolved_reason, CasUnresolvedReason::NotUnresolved);
+    const WriteResult result = op.create("k", "payload", Retry::once());
+    const auto * committed = std::get_if<Committed>(&result);
+    ASSERT_TRUE(committed != nullptr);
+    EXPECT_EQ(committed->attempts_sent, 1u);
+    EXPECT_FALSE(committed->resolved_by_read) << "an unambiguous create is proven by its own response";
 
-    EXPECT_EQ(backend->putCount("k"), 1u);
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getCount("k"), 0u);
     EXPECT_EQ(backend->headCount("k"), 0u);
 
-    const auto landed = backend->get("k");
+    CasOperation reader = requests.admit();
+    const auto landed = reader.read("k", Retry::once());
     ASSERT_TRUE(landed.has_value());
     EXPECT_EQ(landed->bytes, "payload");
 }
 
-TEST(CASSlotOccupy, PreExistingKeyOccupiedWithExactBytesAndTokenTwoOps)
+TEST(CASSlotOccupy, PreExistingKeyConflictsWithExactBytesAndIncarnationInTwoRequests)
 {
     auto backend = std::make_shared<CountingBackend>();
-    const PutResult seeded = backend->putIfAbsent("k", "occupant-bytes");
-    ASSERT_EQ(seeded.outcome, PutOutcome::Done);
+    CasRequests requests(backend, Fence::open());
+
+    CasOperation seeder = requests.admit();
+    const WriteResult seeded = seeder.create("k", "occupant-bytes", Retry::once());
+    const auto * seeded_committed = std::get_if<Committed>(&seeded);
+    ASSERT_TRUE(seeded_committed != nullptr);
+    const Etag seeded_incarnation = seeded_committed->etag;
     backend->resetCounts();
 
-    CasRequestController controller(backend, CasRequestBudget{});
-    const auto result = controller.slotOccupy("k", "my-attempt-bytes", [] { return true; });
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Occupied);
-    EXPECT_EQ(result.occupant_bytes, "occupant-bytes");
-    EXPECT_EQ(result.occupant_token, seeded.token);
+    CasOperation op = requests.admit();
+    const WriteResult result = op.create("k", "my-attempt-bytes", Retry::once());
+    const Object * occupant = conflictObject(result);
+    ASSERT_TRUE(occupant != nullptr) << "the settling read must have named the occupant";
+    EXPECT_EQ(occupant->bytes, "occupant-bytes");
+    EXPECT_EQ(occupant->etag, seeded_incarnation);
 
-    EXPECT_EQ(backend->putCount("k"), 1u);
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getCount("k"), 1u);
-    EXPECT_EQ(backend->headCount("k"), 0u) << "exactly PUT+GET -- a HEAD-then-GET implementation must fail this";
+    EXPECT_EQ(backend->headCount("k"), 0u)
+        << "exactly one write and one settling read -- a HEAD-then-read implementation must fail this";
 
-    /// A conflict never overwrites or appends -- the pre-existing object is untouched.
-    const auto current = backend->get("k");
+    CasOperation reader = requests.admit();
+    const auto current = reader.read("k", Retry::once());
     ASSERT_TRUE(current.has_value());
-    EXPECT_EQ(current->bytes, "occupant-bytes");
+    EXPECT_EQ(current->bytes, "occupant-bytes") << "a conflict never overwrites or appends";
 }
 
-TEST(CASSlotOccupy, InjectedAmbiguousPutResolvesUnresolvedWhenGetFindsNothing)
+TEST(CASSlotOccupy, AmbiguousWriteThatLandedNothingGivesUpHavingSentOne)
 {
     auto backend = std::make_shared<CountingBackend>();
-    backend->injectAmbiguousPutIfAbsent("k");
+    backend->injectAmbiguousWrite("k");
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit();
 
-    CasRequestController controller(backend, CasRequestBudget{});
-    const auto result = controller.slotOccupy("k", "payload", [] { return true; });
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Unresolved);
-    /// An attempt WAS sent (the ambiguous PUT itself) -- this is never the pre-attempt NoAttemptSent
-    /// case. Of the existing CasUnresolvedReason values, AttemptsExhausted is the one documented as
-    /// "the genuine case the 'retry budget exhausted' wording describes" -- exactly this call's single
-    /// (and only) attempt having nothing left to give once its resolve GET came up empty.
-    EXPECT_EQ(result.unresolved_reason, CasUnresolvedReason::AttemptsExhausted);
-    EXPECT_FALSE(unresolvedProvesNothingWasSent(result.unresolved_reason));
+    const WriteResult result = op.create("k", "payload", Retry::once());
+    const auto * gave_up = std::get_if<GaveUp>(&result);
+    ASSERT_TRUE(gave_up != nullptr);
+    EXPECT_EQ(gave_up->why, GaveUp::Why::Unresolved);
+    EXPECT_TRUE(gave_up->sent_any) << "the ambiguous attempt itself was sent -- this is never the pre-attempt case";
+    EXPECT_TRUE(std::holds_alternative<ProvenAbsent>(gave_up->last_seen));
 
-    EXPECT_EQ(backend->putCount("k"), 1u);
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getCount("k"), 1u);
-    EXPECT_FALSE(backend->head("k").exists) << "the injected fault must not actually create anything";
+    CasOperation reader = requests.admit();
+    EXPECT_FALSE(reader.head("k", Retry::once()).has_value()) << "the injected fault must not create anything";
 }
 
-TEST(CASSlotOccupy, ConflictThenVanishResolvesUnresolved)
+TEST(CASSlotOccupy, ConflictThenVanishGivesUpRatherThanFabricatingACommit)
 {
     auto backend = std::make_shared<VanishOnConflictBackend>();
-    const auto seeded = backend->putIfAbsent("k", "occupant-bytes");
-    ASSERT_EQ(seeded.outcome, PutOutcome::Done);
+    CasRequests requests(backend, Fence::open());
+
+    CasOperation seeder = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(seeder.create("k", "occupant-bytes", Retry::once())));
     backend->resetCounts();
 
-    CasRequestController controller(backend, CasRequestBudget{});
-    const auto result = controller.slotOccupy("k", "my-attempt-bytes", [] { return true; });
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Unresolved);
-    EXPECT_EQ(result.unresolved_reason, CasUnresolvedReason::AttemptsExhausted);
+    CasOperation op = requests.admit();
+    const WriteResult result = op.create("k", "my-attempt-bytes", Retry::once());
+    /// Nothing of ours was ever ambiguous, so an absence settles the call as a conflict against an
+    /// occupant that is no longer there -- never as a commit.
+    const auto * conflict = std::get_if<Conflict>(&result);
+    ASSERT_TRUE(conflict != nullptr);
+    EXPECT_TRUE(std::holds_alternative<ProvenAbsent>(conflict->seen));
 
-    EXPECT_EQ(backend->putCount("k"), 1u);
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getCount("k"), 1u);
-    /// No headCount assertion here (unlike the sibling Occupied test above): VanishOnConflictBackend's
-    /// OWN fixture issues a HEAD internally (to fetch the token before deleteExact) -- that HEAD belongs
-    /// to the test's vanish mechanism, not to slotOccupy, so asserting headCount==0 would be wrong, not
-    /// stronger. slotOccupy itself never calls head(); only put+get are its own ops.
-    EXPECT_FALSE(backend->head("k").exists) << "the occupant vanished between the conflict and the resolve GET";
 }
 
-TEST(CASSlotOccupy, FenceFlipMidCallRefusesPreAttemptNeverLiesCreated)
+TEST(CASSlotOccupy, LivenessRefusalBeforeTheAttemptSendsNothing)
 {
     auto backend = std::make_shared<CountingBackend>();
-    CasRequestController controller(backend, CasRequestBudget{});
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit([] { return false; });
 
-    const auto result = controller.slotOccupy("k", "payload", [] { return false; });
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Unresolved);
-    /// The pre-attempt reason: fence_ok refused before anything was sent to the backend.
-    EXPECT_EQ(result.unresolved_reason, CasUnresolvedReason::NoAttemptSent);
-    EXPECT_TRUE(unresolvedProvesNothingWasSent(result.unresolved_reason));
+    const WriteResult result = op.create("k", "payload", Retry::once());
+    const auto * gave_up = std::get_if<GaveUp>(&result);
+    ASSERT_TRUE(gave_up != nullptr);
+    EXPECT_EQ(gave_up->why, GaveUp::Why::FenceLost);
+    EXPECT_FALSE(gave_up->sent_any) << "the whole point: the key is provably unwritten";
 
-    EXPECT_EQ(backend->putTotal(), 0u);
+    EXPECT_EQ(backend->writeTotal(), 0u);
     EXPECT_EQ(backend->getTotal(), 0u);
-    EXPECT_FALSE(backend->head("k").exists) << "never a lie of Created -- the key must be untouched";
+    CasRequests open_requests(backend, Fence::open());
+    CasOperation reader = open_requests.admit();
+    EXPECT_FALSE(reader.head("k", Retry::once()).has_value()) << "never a lie of committed -- the key must be untouched";
 }
 
-/// ---- Bonus coverage: the deadline pre-gate (the OTHER half of "fence/deadline-gated"), and the two
-/// rethrow paths this primitive shares with its sibling controlled ops.  ----
-
-/// The deadline gate is the SAME pre-attempt refusal as the fence gate above -- a fake clock proves it
-/// fires from elapsed time alone, with a fence that always says yes.
-TEST(CASSlotOccupy, OperationDeadlineExhaustedRefusesPreAttempt)
+/// The deadline is the OTHER pre-attempt refusal: a fake clock proves it fires from elapsed time
+/// alone, under a fence that always says yes.
+TEST(CASSlotOccupy, ExhaustedPolicyDeadlineRefusesBeforeTheAttempt)
 {
     auto backend = std::make_shared<CountingBackend>();
     uint64_t clock = 0;
-    auto now_ms = [&clock]() -> uint64_t { const uint64_t t = clock; clock += 1000; return t; };
+    CasRequests requests(backend, Fence::open(),
+                         [&clock]() -> uint64_t { const uint64_t t = clock; clock += 1000; return t; });
+    requests.setAttemptReservationForTest(50);
+    CasOperation op = requests.admit();
 
-    CasRequestBudget budget;
-    budget.attempt_timeout_ms = 50;
-    budget.operation_deadline_ms = 500;   /// entry now_ms()==0 -> deadline_ms=500; the gate's OWN
-                                           /// now_ms() call then returns 1000 -> 1000+50 > 500 -> refuse
-    CasRequestController controller(backend, budget, now_ms);
-
-    const auto result = controller.slotOccupy("k", "payload", [] { return true; });
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Unresolved);
-    EXPECT_EQ(result.unresolved_reason, CasUnresolvedReason::NoAttemptSent);
-    EXPECT_EQ(backend->putTotal(), 0u);
-    EXPECT_EQ(backend->getTotal(), 0u) << "zero ops total -- the deadline gate must refuse before any I/O, same as the fence gate";
+    /// Entry `now_ms()` is 0, so the bound is 500; the loop's own `now_ms()` then reads 1000.
+    const WriteResult result = op.create("k", "payload", Retry::within(500));
+    const auto * gave_up = std::get_if<GaveUp>(&result);
+    ASSERT_TRUE(gave_up != nullptr);
+    EXPECT_EQ(gave_up->why, GaveUp::Why::Deadline);
+    EXPECT_FALSE(gave_up->sent_any);
+    EXPECT_EQ(backend->writeTotal(), 0u);
+    EXPECT_EQ(backend->getTotal(), 0u)
+        << "zero requests -- the deadline refuses before any I/O, exactly as the liveness gate does";
 }
 
-/// A whitelisted synchronous rejection (classifyConditionalWriteResult's DefiniteFailure) PROVES the
-/// request was never applied -- slotOccupy must surface it unchanged rather than resolving or folding
-/// it into Unresolved. Guarded to USE_AWS_S3 builds ONLY [review M6]: DefiniteFailure classification is
-/// structurally unreachable without it (classifyConditionalWriteResult's whitelist is entirely inside
-/// its own `#if USE_AWS_S3`), so on a no-S3 build ChunkFaultBackend::Mode::Definite instead throws a
-/// plain CORRUPTED_DATA DB::Exception -- which is in isDeterministicLocalFailure's set, meaning this
-/// test would silently exercise the SAME slotOccupy branch as DeterministicLocalFailurePropagatesWithoutResolve
-/// below rather than the DefiniteFailure branch it claims to cover. Better a visibly-absent test on that
-/// config than a passing one that isn't testing what its name says.
+/// A whitelisted synchronous rejection PROVES the request was never applied, so the engine reports it
+/// as a value and settles nothing by reading. Guarded to `USE_AWS_S3` builds ONLY: the classification
+/// lives entirely inside `isDefinitelyRefusedWrite`'s own `#if USE_AWS_S3`, so without it this would
+/// silently exercise the ambiguity path instead of the refusal it names.
 #if USE_AWS_S3
-TEST(CASSlotOccupy, DefiniteFailurePropagatesWithoutResolve)
+TEST(CASSlotOccupy, DefiniteStoreRefusalIsAValueAndSettlesNothing)
 {
-    auto backend = std::make_shared<ChunkFaultBackend>();
-    backend->fault_substr = "k";
-    backend->mode = ChunkFaultBackend::Mode::Definite;
-    backend->fault_count = 1;
+    auto backend = std::make_shared<CountingBackend>();
+    backend->failNextWriteWith("k", std::make_exception_ptr(
+        DB::S3Exception("simulated malformed request", Aws::S3::S3Errors::UNKNOWN, "MalformedXML")));
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit();
 
-    CasRequestController controller(backend, CasRequestBudget{});
-    EXPECT_THROW(controller.slotOccupy("k", "payload", [] { return true; }), DB::Exception);
-    /// ChunkFaultBackend's fault check throws BEFORE delegating to CountingBackend::putIfAbsent, so
-    /// putCount stays 0 on this path -- fault_count reaching 0 is this backend's own proof the (one)
-    /// attempt was made and consumed the fault.
-    EXPECT_EQ(backend->fault_count, 0);
-    EXPECT_EQ(backend->getCount("k"), 0u) << "a whitelisted definite rejection must never trigger a resolve GET";
+    const WriteResult result = op.create("k", "payload", Retry::once());
+    EXPECT_TRUE(std::holds_alternative<Refused>(result));
+    EXPECT_EQ(backend->getCount("k"), 0u) << "a proven refusal must never trigger a settling read";
 }
 #endif
 
-/// A deterministic LOCAL failure (isDeterministicLocalFailure's set) is the OTHER rethrow path --
-/// distinct from DefiniteFailure above, and checked first in the implementation, so it needs its own
-/// backend-level fault to prove both branches are wired, not just one masking the other.
-TEST(CASSlotOccupy, DeterministicLocalFailurePropagatesWithoutResolve)
+/// A deterministic LOCAL failure is the one thing the write surface still reports by exception:
+/// reissuing only replays it, and folding it into an outcome would bury the root cause.
+TEST(CASSlotOccupy, DeterministicLocalFailurePropagatesWithoutSettling)
 {
     auto backend = std::make_shared<LocalFailureOnceBackend>();
-    CasRequestController controller(backend, CasRequestBudget{});
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit();
 
     bool threw = false;
     try
     {
-        controller.slotOccupy("k", "payload", [] { return true; });
+        op.create("k", "payload", Retry::once());
     }
     catch (const DB::Exception & e)
     {
@@ -264,95 +274,83 @@ TEST(CASSlotOccupy, DeterministicLocalFailurePropagatesWithoutResolve)
         EXPECT_EQ(e.code(), DB::ErrorCodes::BAD_ARGUMENTS) << "the ORIGINAL exception must propagate unchanged";
     }
     EXPECT_TRUE(threw) << "a deterministic local failure must propagate, never return an outcome";
-    /// LocalFailureOnceBackend throws BEFORE delegating to CountingBackend::putIfAbsent (same shape as
-    /// ChunkFaultBackend above), so putCount stays 0 here too -- fail_once flipping is this backend's
-    /// own proof the attempt was made.
     EXPECT_FALSE(backend->fail_once);
     EXPECT_EQ(backend->getCount("k"), 0u);
 }
 
-/// ---- Fix round 1 (review findings I1, I2): the two gaps the reviewer required landed before Task 4
-/// consumes this primitive. Both guard the design decisions the review approved -- see
-/// task-2-review.md concern (a) and finding I2's Task-4-adoption note. ----
-
-/// I1: pins the single-`fence_ok`-call `Created` design (concern (a)) so a future contributor cannot
-/// silently "fix the inconsistency" by re-adding the sibling ops' post-write fence recheck. That change
-/// would break Task 4's old-generation-retry semantics (resolveWedgeOnce deliberately calls slotOccupy under
-/// the wedge's ORIGINAL admitted_fence_generation, and relies on ITS OWN post-I/O checkFenceOrThrow,
-/// not a second internal check here, to decide whether the result is still relevant). A counting
-/// fence_ok that only answers true on its FIRST call: if slotOccupy ever called it again after the
-/// write landed, this test would see Unresolved instead of Created, OR (if the outcome happened to
-/// still read Created some other way) the call-count assertion below would catch the extra invocation
-/// either way.
-TEST(CASSlotOccupy, CreatedNeverRechecksFenceAfterTheWrite)
+/// A commit whose admission was withdrawn while it was in flight is reported as unresolved, never as
+/// committed: the object may well exist, and the caller has to resolve the key rather than act on a
+/// claim made under an incarnation it no longer holds. This is the OPPOSITE of the retired
+/// slot-occupy primitive's single-pre-attempt-check contract, and it is what lets the ref lane's
+/// wedge stay wedged instead of installing against a fence it has already lost.
+TEST(CASSlotOccupy, AdmissionLostAfterTheWriteIsNeverReportedCommitted)
 {
     auto backend = std::make_shared<CountingBackend>();
-    CasRequestController controller(backend, CasRequestBudget{});
+    bool live = true;
+    backend->onWriteCommitted("k", [&live] { live = false; });
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit([&live] { return live; });
 
-    int fence_calls = 0;
-    const auto fence_ok = [&fence_calls]
-    {
-        ++fence_calls;
-        return fence_calls == 1;
-    };
+    const WriteResult result = op.create("k", "payload", Retry::once());
+    const auto * gave_up = std::get_if<GaveUp>(&result);
+    ASSERT_TRUE(gave_up != nullptr);
+    EXPECT_EQ(gave_up->why, GaveUp::Why::FenceLost);
+    EXPECT_TRUE(gave_up->sent_any) << "the write was sent, and it landed -- the caller must resolve the key";
 
-    const auto result = controller.slotOccupy("k", "payload", fence_ok);
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Created);
-    EXPECT_EQ(fence_calls, 1) << "slotOccupy must call fence_ok() exactly ONCE (pre-attempt only) -- "
-                                 "a post-write recheck would falsely report Unresolved here (fence_calls's "
-                                 "SECOND answer is false) and would break Task 4's old-generation-retry design";
+    /// The object IS durable; only the claim about it is refused.
+    CasRequests open_requests(backend, Fence::open());
+    CasOperation reader = open_requests.admit();
+    const auto landed = reader.read("k", Retry::once());
+    ASSERT_TRUE(landed.has_value());
+    EXPECT_EQ(landed->bytes, "payload");
 }
 
-/// A conflict needs a second backend request to resolve its occupant. Admission may disappear while
-/// the conditional create is in flight; in that case the resolver must fail closed before starting
-/// the `GET`, while preserving the one-check `Created` contract above.
-TEST(CASSlotOccupy, AdmissionLostAfterConflictPreventsTheResolveGet)
+/// A conflict needs a second request to name its occupant. Admission may disappear while the
+/// conditional create is in flight; the settling read must then not start at all.
+TEST(CASSlotOccupy, AdmissionLostAfterAConflictPreventsTheSettlingRead)
 {
-    auto backend = std::make_shared<CountingBackend>();
-    ASSERT_EQ(backend->putIfAbsent("k", "existing").outcome, PutOutcome::Done);
-    CasRequestController controller(backend, CasRequestBudget{});
+    auto backend = std::make_shared<WithdrawAdmissionOnConflictBackend>();
+    CasRequests seed_requests(backend, Fence::open());
+    CasOperation seeder = seed_requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(seeder.create("k", "existing", Retry::once())));
+    backend->resetCounts();
 
-    int admission_checks = 0;
-    const auto admitted = [&admission_checks]
-    {
-        ++admission_checks;
-        return admission_checks == 1;
-    };
-
-    const auto result = controller.slotOccupy("k", "attempt", admitted);
-    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Unresolved);
-    EXPECT_EQ(admission_checks, 2);
-    EXPECT_EQ(backend->putCount("k"), 2u);
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit([&backend] { return backend->live; });
+    const WriteResult result = op.create("k", "attempt", Retry::once());
+    const auto * gave_up = std::get_if<GaveUp>(&result);
+    ASSERT_TRUE(gave_up != nullptr);
+    EXPECT_EQ(gave_up->why, GaveUp::Why::FenceLost);
+    EXPECT_TRUE(gave_up->sent_any);
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getCount("k"), 0u)
-        << "slotOccupy started its ambiguity-resolution GET after admission was withdrawn";
+        << "the settling read started after admission was withdrawn";
 }
 
-/// I2: proves Occupied is reachable for an occupant that is OUR OWN earlier ambiguous write, not only
-/// for a foreign pre-seeded one (PreExistingKeyOccupiedWithExactBytesAndTokenTwoOps above always seeds
-/// via a plain, unambiguous putIfAbsent). This is the exact input shape Task 4's resolveWedgeOnce
-/// adjudicates: "Occupied + bytes == wedge.bytes -> an earlier attempt landed -> adopt" (plan :329).
-TEST(CASSlotOccupy, OwnLandedAmbiguousWriteObservedAsOccupiedOnRetry)
+/// The wedge-adoption input shape: an earlier ambiguous attempt of the SAME key and bytes landed, and
+/// a later flush issues a fresh create for it. The first call settles it by reading its own bytes; the
+/// second sees them as an ordinary occupant, which is what the lane's `mine` adjudication consumes.
+TEST(CASSlotOccupy, OwnLandedAmbiguousWriteIsObservedOnTheNextAttempt)
 {
-    auto backend = std::make_shared<LandedButAckLostOnceBackend>();
-    CasRequestController controller(backend, CasRequestBudget{});
+    auto backend = std::make_shared<CountingBackend>();
+    backend->injectAmbiguousLandedWrite("k");
+    CasRequests requests(backend, Fence::open());
 
-    /// Call 1 -- the original attempt: the PUT's own response is lost, but the write DID commit, and
-    /// THIS call's own resolve GET (unfaulted) observes it immediately -- Occupied with OUR bytes,
-    /// proving the same-call resolve path works for a landed ambiguous write, not only a foreign one.
-    const auto first = controller.slotOccupy("k", "my-bytes", [] { return true; });
-    EXPECT_EQ(first.kind, SlotOccupyResult::Kind::Occupied);
-    EXPECT_EQ(first.occupant_bytes, "my-bytes");
-    EXPECT_EQ(backend->putCount("k"), 1u);
+    CasOperation first_op = requests.admit();
+    const WriteResult first = first_op.create("k", "my-bytes", Retry::once());
+    const auto * committed = std::get_if<Committed>(&first);
+    ASSERT_TRUE(committed != nullptr) << "the write landed; the settling read proves it";
+    EXPECT_TRUE(committed->resolved_by_read);
+    const Etag landed_incarnation = committed->etag;
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getCount("k"), 1u);
 
-    /// Call 2 -- Task 4's resolveWedgeOnce pattern: a LATER caller's flush resolving the SAME logical
-    /// attempt via a FRESH slotOccupy call. The fault is already consumed (one-shot), so this PUT
-    /// conflicts cleanly (PreconditionFailed) and the resolve GET observes OUR OWN earlier bytes again --
-    /// the exact adoption input Task 4 is built on, and the SAME incarnation both calls saw.
-    const auto second = controller.slotOccupy("k", "my-bytes", [] { return true; });
-    EXPECT_EQ(second.kind, SlotOccupyResult::Kind::Occupied);
-    EXPECT_EQ(second.occupant_bytes, "my-bytes");
-    EXPECT_EQ(second.occupant_token, first.occupant_token) << "both calls must observe the SAME landed incarnation";
-    EXPECT_EQ(backend->putCount("k"), 2u);
+    CasOperation second_op = requests.admit();
+    const WriteResult second = second_op.create("k", "my-bytes", Retry::once());
+    const Object * occupant = conflictObject(second);
+    ASSERT_TRUE(occupant != nullptr);
+    EXPECT_EQ(occupant->bytes, "my-bytes");
+    EXPECT_EQ(occupant->etag, landed_incarnation) << "both calls must observe the SAME landed incarnation";
+    EXPECT_EQ(backend->writeTotal(), 2u);
     EXPECT_EQ(backend->getCount("k"), 2u);
 }

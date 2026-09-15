@@ -9,6 +9,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.h>
 #include "cas_test_helpers.h"
+#include "config.h"
+#if USE_AWS_S3
+#include <IO/S3Common.h>
+#endif
 
 #include <algorithm>
 #include <filesystem>
@@ -52,7 +56,7 @@ public:
         pending_mutation = std::move(mutation);
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
         std::function<void()> to_run;
         {
@@ -65,7 +69,7 @@ public:
         }
         if (to_run)
             to_run();
-        return InMemoryBackend::list(prefix, cursor, limit);
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 
 private:
@@ -90,7 +94,7 @@ public:
         pending_mutation = std::move(mutation);
     }
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
         std::function<void()> to_run;
         {
@@ -103,7 +107,7 @@ public:
         }
         if (to_run)
             to_run();
-        return InMemoryBackend::get(key, range);
+        return InMemoryBackend::read(key, access);
     }
 
 private:
@@ -131,9 +135,9 @@ public:
         mode = mode_;
     }
 
-    ListPage list(const String & listed_prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & listed_prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
-        ListPage page = InMemoryBackend::list(listed_prefix, cursor, limit);
+        RawListPage page = InMemoryBackend::list(listed_prefix, cursor, limit, access);
         if (listed_prefix != prefix)
             return page;
         if (mode == FsckListingMode::Empty)
@@ -150,8 +154,12 @@ private:
     FsckListingMode mode = FsckListingMode::Full;
 };
 
+#if USE_AWS_S3
 /// Fail one exact GET without disturbing LIST or any other object read. This keeps the checkpoint
 /// authority stable while proving that fsck distinguishes a transport failure from durable corruption.
+/// An access denial is the class the request engine surfaces on the first attempt instead of reissuing
+/// (`InMemoryBackend::refreshCredentials` answers false by default), so the failure needs no retry
+/// budget and the caller sees the injected message unchanged.
 class FailExactGetBackend : public InMemoryBackend
 {
 public:
@@ -160,16 +168,17 @@ public:
         key = std::move(key_);
     }
 
-    std::optional<GetResult> get(const String & requested_key, Range range) override
+    std::optional<Raw> read(const String & requested_key, TransportAccess & access) override
     {
         if (requested_key == key)
-            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected exact GET failure");
-        return InMemoryBackend::get(requested_key, range);
+            throw DB::S3Exception("injected access denial on exact GET", Aws::S3::S3Errors::ACCESS_DENIED);
+        return InMemoryBackend::read(requested_key, access);
     }
 
 private:
     String key;
 };
+#endif
 
 /// Publish the exact `_ckpt` authority an ordinary Live test life would have after its first committed
 /// record. Raw ref-log helpers deliberately do not do this: several protocol tests need malformed or
@@ -177,7 +186,9 @@ private:
 /// explicit instead of accidentally borrowing the legacy LIST-only recovery rule.
 void writeFsckCheckpoint(Backend & backend, const Layout & layout, const RootNamespace & ns, RefTxnId committed_through)
 {
-    const CasRefCatalog::Snapshot cut = CasRefCatalog::read(backend, layout);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const CasRefCatalog::Snapshot cut = CasRefCatalog::read(op, layout);
     const auto it = std::find_if(cut.catalog.entries.begin(), cut.catalog.entries.end(),
         [&](const CatalogEntry & entry) { return entry.ns == ns; });
     ASSERT_NE(it, cut.catalog.entries.end());
@@ -188,23 +199,25 @@ void writeFsckCheckpoint(Backend & backend, const Layout & layout, const RootNam
         .committed_through = committed_through,
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt});
-    const HeadResult current = backend.head(key);
-    const PutResult put = current.exists
-        ? backend.putOverwrite(key, body, current.token)
-        : backend.putIfAbsent(key, body);
-    ASSERT_EQ(put.outcome, PutOutcome::Done);
+    const auto current = op.head(key, Retry::once());
+    const WriteResult put = current
+        ? op.replace(key, body, current->etag, Retry::once())
+        : op.create(key, body, Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(put));
 }
 
 void writeFsckCheckpointWithBase(
     Backend & backend, const Layout & layout, const RootNamespace & ns, RefTxnId base,
     std::optional<RefTxnId> last_epoch_seal = std::nullopt)
 {
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(backend, layout, ns);
-    ASSERT_EQ(backend.putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = base,
         .checkpoint_snapshot_id = base,
-        .last_epoch_seal = last_epoch_seal})).outcome, PutOutcome::Done);
+        .last_epoch_seal = last_epoch_seal}), Retry::once())));
 }
 
 void expectCheckpointBaseVerdict(
@@ -231,7 +244,9 @@ void expectCheckpointBaseVerdict(
 /// its catalog cut, precisely the competing-cut mutation that fsck must not splice into its verdict.
 void replaceCatalogLife(Backend & backend, const Layout & layout, const RootNamespace & ns, UInt128 incarnation)
 {
-    CasRefCatalog::Snapshot current = CasRefCatalog::read(backend, layout);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    CasRefCatalog::Snapshot current = CasRefCatalog::read(op, layout);
     const auto it = std::find_if(current.catalog.entries.begin(), current.catalog.entries.end(),
         [&](const CatalogEntry & entry) { return entry.ns == ns; });
     ASSERT_NE(it, current.catalog.entries.end());
@@ -239,9 +254,9 @@ void replaceCatalogLife(Backend & backend, const Layout & layout, const RootName
     it->state = NsState::Live;
     it->creator.reset();
     it->removal_started_round.reset();
-    ASSERT_TRUE(current.token.has_value());
-    ASSERT_EQ(backend.putOverwrite(layout.refCatalogKey(), encodeRefCatalog(current.catalog), *current.token).outcome,
-        PutOutcome::Done);
+    ASSERT_TRUE(current.etag.has_value());
+    ASSERT_TRUE(std::holds_alternative<Committed>(
+        op.replace(layout.refCatalogKey(), encodeRefCatalog(current.catalog), *current.etag, Retry::standard())));
 }
 
 FsckReport runFsckWithListingMode(FsckListingMode mode, std::string_view suffix)
@@ -262,7 +277,9 @@ FsckReport runFsckWithListingMode(FsckListingMode mode, std::string_view suffix)
     const uint64_t frontier = publishCommittedTransition(*backend, layout, ns, "tbl", r1, r2);
     writeFsckCheckpoint(*backend, layout, ns, RefTxnId{1, frontier});
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     backend->distort(layout.namespaceStreamPrefix(life), mode);
     return runFsck(*store, /*detail=*/true);
 }
@@ -323,14 +340,16 @@ FsckReport runCheckpointBaseFsckWithListingMode(
     writeRefSnapshotRaw(*backend, layout, snapshotOf(base_state, ns.string()));
     writeFsckCheckpointWithBase(*backend, layout, ns, base);
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     if (corrupt_exact_base)
     {
         const String base_snapshot_key = layout.refSnapshotKey(life, base);
-        const HeadResult head = backend->head(base_snapshot_key);
-        EXPECT_TRUE(head.exists);
-        if (head.exists)
-            EXPECT_EQ(backend->deleteExact(base_snapshot_key, head.token).kind, DeleteOutcome::Kind::Deleted);
+        const auto head = op.head(base_snapshot_key, Retry::once());
+        EXPECT_TRUE(head.has_value());
+        if (head)
+            EXPECT_EQ(op.remove(base_snapshot_key, head->etag, Retry::once()), Removal::Removed);
     }
     else
     {
@@ -421,7 +440,10 @@ TEST(CASFsck, LifelessKeyIsRecordedAndTheHealthyNamespaceIsStillReported)
     /// Hand-built: no helper can mint the un-incarnated shape any more.
     const String lifeless = store->layout().casRefsPrefix() + ns.string() + "/_log/"
         + renderRefTxnId(RefTxnId{1, 1}) + ".zst";
-    ASSERT_EQ(backend->putIfAbsent(lifeless, "garbage").outcome, PutOutcome::Done);
+    {
+        OperationForTest op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(lifeless, "garbage", Retry::once())));
+    }
 
     FsckReport rep;
     ASSERT_NO_THROW(rep = runFsck(*store, /*detail*/true))
@@ -464,15 +486,16 @@ TEST(CASFsck, CanonicalDeadLifeResidueIsJanitorPendingNotHardFinding)
     /// protocol this fixture is not driving), so inject the post-deletion catalog snapshot directly,
     /// mirroring `DuplicateLifeIdIsReportedWhileAnUnrelatedUniqueNamespaceStillProgresses` below.
     {
-        CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(*backend, store->layout());
+        CasOperation op = store->openRequests().admit();
+        CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(op, store->layout());
         const auto it = std::find_if(snapshot.catalog.entries.begin(), snapshot.catalog.entries.end(),
             [&](const CatalogEntry & entry) { return entry.ns == ns; });
         ASSERT_NE(it, snapshot.catalog.entries.end());
         snapshot.catalog.entries.erase(it);
-        const auto catalog_head = backend->head(store->layout().refCatalogKey());
-        ASSERT_TRUE(catalog_head.exists);
-        ASSERT_EQ(backend->putOverwrite(store->layout().refCatalogKey(), encodeRefCatalog(snapshot.catalog),
-            catalog_head.token).outcome, PutOutcome::Done);
+        const auto catalog_head = op.head(store->layout().refCatalogKey(), Retry::once());
+        ASSERT_TRUE(catalog_head.has_value());
+        ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(store->layout().refCatalogKey(), encodeRefCatalog(snapshot.catalog),
+            catalog_head->etag, Retry::once())));
     }
 
     FsckReport rep;
@@ -502,13 +525,17 @@ class AdmitLifeAfterNamespaceListingBackend : public InMemoryBackend
 public:
     explicit AdmitLifeAfterNamespaceListingBackend(NamespaceLifeId life_) : protected_life(std::move(life_)) {}
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
-        ListPage page = InMemoryBackend::list(prefix, cursor, limit);
+        RawListPage page = InMemoryBackend::list(prefix, cursor, limit, access);
         if (!published && prefix.ends_with("/cas/ns/"))
         {
             published = true;
-            CasRefCatalog::casAdmitEntry(*this, Layout("p"), /*gc_shards*/1,
+            /// The base call above has already released the backend's lock, so admitting through this
+            /// same backend from here cannot deadlock.
+            CasRequests requests = DB::Cas::tests::openRequestsForTest(*this);
+            CasOperation op = requests.admit();
+            CasRefCatalog::casAdmitEntry(op, Layout("p"), /*gc_shards*/1,
                 CatalogEntry{.ns = protected_life.ns, .state = NsState::Live,
                     .incarnation = protected_life.incarnation});
         }
@@ -530,8 +557,11 @@ TEST(CASFsck, LifeAdmittedBetweenNamespaceListingAndLaterCutIsNotResidue)
     /// The physical object exists before the listing runs, exactly as a legitimate late admission would
     /// leave it: written only after `casAdmitEntry` above, but here pre-seeded since the injected
     /// backend admits the CATALOG row, not the physical file, on the list callback.
-    ASSERT_EQ(backend->putIfAbsent(store->layout().namespaceFilesPrefix(life) + "format_version.txt", "1\n").outcome,
-        PutOutcome::Done);
+    {
+        OperationForTest op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>(
+            (*op).create(store->layout().namespaceFilesPrefix(life) + "format_version.txt", "1\n", Retry::once())));
+    }
 
     FsckReport rep;
     ASSERT_NO_THROW(rep = runFsck(*store, /*detail*/true));
@@ -558,7 +588,10 @@ TEST(CASFsck, MalformedNamespaceTreeShapesStayHardFindings)
     {
         auto backend = std::make_shared<InMemoryBackend>();
         auto store = openPoolForTest(backend);
-        ASSERT_EQ(backend->putIfAbsent(c.key, "garbage").outcome, PutOutcome::Done) << c.description;
+        {
+            OperationForTest op(*backend);
+            ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(c.key, "garbage", Retry::once()))) << c.description;
+        }
 
         FsckReport rep;
         ASSERT_NO_THROW(rep = runFsck(*store, /*detail*/true)) << c.description;
@@ -583,7 +616,9 @@ TEST(CASFsck, DuplicateLifeIdIsReportedWhileAnUnrelatedUniqueNamespaceStillProgr
     const uint64_t sequence = publishCommittedTransition(*backend, layout, unique_ns, "tbl", std::nullopt, r);
     writeFsckCheckpoint(*backend, layout, unique_ns, RefTxnId{1, sequence});
 
-    CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(*backend, layout);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(op, layout);
     snapshot.catalog.entries.push_back(CatalogEntry{
         .ns = RootNamespace{"bad/a"}, .state = NsState::Live, .incarnation = UInt128{777}});
     snapshot.catalog.entries.push_back(CatalogEntry{
@@ -593,10 +628,9 @@ TEST(CASFsck, DuplicateLifeIdIsReportedWhileAnUnrelatedUniqueNamespaceStillProgr
         .removal_started_round = 1});
     std::sort(snapshot.catalog.entries.begin(), snapshot.catalog.entries.end(),
         [](const CatalogEntry & lhs, const CatalogEntry & rhs) { return lhs.ns.string() < rhs.ns.string(); });
-    const auto catalog_head = backend->head(layout.refCatalogKey());
-    ASSERT_TRUE(catalog_head.exists);
-    ASSERT_EQ(backend->putOverwrite(layout.refCatalogKey(), encodeRefCatalog(snapshot.catalog), catalog_head.token).outcome,
-        PutOutcome::Done);
+    const auto catalog_head = op.head(layout.refCatalogKey(), Retry::once());
+    ASSERT_TRUE(catalog_head.has_value());
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(layout.refCatalogKey(), encodeRefCatalog(snapshot.catalog), catalog_head->etag, Retry::once())));
 
     FsckReport report;
     ASSERT_NO_THROW(report = runFsck(*store, /*detail=*/true));
@@ -625,10 +659,11 @@ TEST(CASFsck, AmbiguousLifeUnderAPhysicalKeyIsRecordedNotAborted)
     writeFsckCheckpoint(*backend, layout, unique_ns, RefTxnId{1, sequence});
 
     const NamespaceLifeId duplicated_life = NamespaceLifeId::fromCatalogEntry(RootNamespace{"bad/a"}, UInt128{777});
-    ASSERT_EQ(backend->putIfAbsent(layout.namespaceFilesPrefix(duplicated_life) + "format_version.txt", "1\n").outcome,
-        PutOutcome::Done);
-
-    CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(*backend, layout);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(
+        op.create(layout.namespaceFilesPrefix(duplicated_life) + "format_version.txt", "1\n", Retry::once())));
+    CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(op, layout);
     snapshot.catalog.entries.push_back(CatalogEntry{
         .ns = RootNamespace{"bad/a"}, .state = NsState::Live, .incarnation = UInt128{777}});
     snapshot.catalog.entries.push_back(CatalogEntry{
@@ -638,10 +673,9 @@ TEST(CASFsck, AmbiguousLifeUnderAPhysicalKeyIsRecordedNotAborted)
         .removal_started_round = 1});
     std::sort(snapshot.catalog.entries.begin(), snapshot.catalog.entries.end(),
         [](const CatalogEntry & lhs, const CatalogEntry & rhs) { return lhs.ns.string() < rhs.ns.string(); });
-    const auto catalog_head = backend->head(layout.refCatalogKey());
-    ASSERT_TRUE(catalog_head.exists);
-    ASSERT_EQ(backend->putOverwrite(layout.refCatalogKey(), encodeRefCatalog(snapshot.catalog), catalog_head.token).outcome,
-        PutOutcome::Done);
+    const auto catalog_head = op.head(layout.refCatalogKey(), Retry::once());
+    ASSERT_TRUE(catalog_head.has_value());
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(layout.refCatalogKey(), encodeRefCatalog(snapshot.catalog), catalog_head->etag, Retry::once())));
 
     FsckReport report;
     ASSERT_NO_THROW(report = runFsck(*store, /*detail=*/true))
@@ -805,24 +839,26 @@ TEST(CASFsckAuthority, MissingBurnedEpochSealIsChainBroken)
         .ns = ns.string(), .txn_id = RefTxnId{1, 2}, .ops = {seal},
         .prev_epoch_seal = std::nullopt});
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     /// The codec now rejects this skip. Deposit its old on-disk corruption shape by changing only the
     /// fixed-width epoch token of an otherwise encodable body, so fsck still proves that a missing
     /// intermediate epoch is reported rather than treated as a sparse legal transition.
     String skipped_bytes = encodeRefLogTxn(RefLogTxn{
         .ns = ns.string(), .txn_id = RefTxnId{7, 1}, .ops = {}, .prev_epoch_seal = RefTxnId{6, 1}});
-    const String old_epoch_token = R"("!pse":"6")";
+    const String old_epoch_token = R"("!prev_epoch":"6")";
     const auto old_epoch = skipped_bytes.find(old_epoch_token);
     ASSERT_NE(old_epoch, String::npos);
-    skipped_bytes.replace(old_epoch, old_epoch_token.size(), R"("!pse":"1")");
-    ASSERT_EQ(backend->putIfAbsent(layout.refLogKey(life, RefTxnId{7, 1}),
-        sealObject(FormatId::RefLog, skipped_bytes)).outcome, PutOutcome::Done);
+    skipped_bytes.replace(old_epoch, old_epoch_token.size(), R"("!prev_epoch":"1")");
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.refLogKey(life, RefTxnId{7, 1}),
+        sealObject(FormatId::RefLog, skipped_bytes), Retry::once())));
 
-    ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{7, 1},
         .checkpoint_snapshot_id = std::nullopt,
-        .last_epoch_seal = RefTxnId{6, 1}})).outcome, PutOutcome::Done);
+        .last_epoch_seal = RefTxnId{6, 1}}), Retry::once())));
 
     const FsckReport report = runFsck(*store, /*detail=*/true);
     EXPECT_EQ(report.chain_broken, 1u);
@@ -842,7 +878,9 @@ TEST(CASFsckAuthority, MissingCheckpointBaseLogIsChainBroken)
     fixture::admitLive(*backend, layout, ns);
 
     const RefTxnId base{1, 1};
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     writeFsckCheckpointWithBase(*backend, layout, ns, base);
 
     const FsckReport report = runFsck(*store, /*detail=*/true);
@@ -862,7 +900,9 @@ TEST(CASFsckAuthority, MissingCheckpointBaseSnapshotIsChainBroken)
     fixture::admitLive(*backend, layout, ns);
 
     const RefTxnId base{1, 1};
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     fixture::writeRefLogRaw(*backend, layout, RefLogTxn{
         .ns = ns.string(), .txn_id = base, .ops = {namespaceBirthOp()}, .prev_epoch_seal = std::nullopt});
     writeFsckCheckpointWithBase(*backend, layout, ns, base);
@@ -907,12 +947,14 @@ TEST(CASFsckAuthority, CheckpointSnapshotAtOlderEpochSealIsChainBroken)
     applyRefLogTxn(through_seal, seal_txn);
     writeRefSnapshotRaw(*backend, layout, snapshotOf(through_seal, ns.string()));
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
-    ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{2, 1},
         .checkpoint_snapshot_id = RefTxnId{1, 2},
-        .last_epoch_seal = RefTxnId{2, 1}})).outcome, PutOutcome::Done);
+        .last_epoch_seal = RefTxnId{2, 1}}), Retry::once())));
 
     const FsckReport report = runFsck(*store, /*detail=*/true);
     EXPECT_EQ(report.ref_records_walked, 0u)
@@ -922,8 +964,11 @@ TEST(CASFsckAuthority, CheckpointSnapshotAtOlderEpochSealIsChainBroken)
         "names an EpochSeal, not a snapshot base");
 }
 
-/// An unstable transport failure while exact-reading the same valid checkpoint base proves neither
-/// presence nor absence. It remains the honest third answer and must not become a hard finding.
+#if USE_AWS_S3
+/// A transport failure while exact-reading the same valid checkpoint base proves neither presence nor
+/// absence. It remains the honest third answer and must not become a hard finding. The fault is armed
+/// as an access denial so it surfaces on the read's first attempt (see `FailExactGetBackend`), which
+/// keeps this test's cost at one request instead of a run through `Retry::standard()`'s deadline.
 TEST(CASFsckAuthority, CheckpointBaseTransportFailureIsUnchecked)
 {
     auto backend = std::make_shared<FailExactGetBackend>();
@@ -933,7 +978,9 @@ TEST(CASFsckAuthority, CheckpointBaseTransportFailureIsUnchecked)
     fixture::admitLive(*backend, layout, ns);
 
     const RefTxnId base{1, 1};
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     fixture::writeRefLogRaw(*backend, layout, RefLogTxn{
         .ns = ns.string(), .txn_id = base, .ops = {namespaceBirthOp()}, .prev_epoch_seal = std::nullopt});
     RefTableState state;
@@ -946,8 +993,9 @@ TEST(CASFsckAuthority, CheckpointBaseTransportFailureIsUnchecked)
     const FsckReport report = runFsck(*store, /*detail=*/true);
     EXPECT_EQ(report.ref_records_walked, 0u);
     expectCheckpointBaseVerdict(
-        report, layout.refSnapshotKey(life, base), FsckClass::Unchecked, "injected exact GET failure");
+        report, layout.refSnapshotKey(life, base), FsckClass::Unchecked, "injected access denial on exact GET");
 }
+#endif
 
 /// The sampled checkpoint is immutable input, but cleanup may advance `_ckpt` after that sample and
 /// retire its old base before fsck exact-reads it. The miss is then authority instability, not evidence
@@ -962,18 +1010,21 @@ TEST(CASFsckAuthority, CheckpointBaseVanishingAfterAuthorityAdvanceIsUnchecked)
     fixture::admitLive(*backend, layout, ns);
 
     const RefTxnId old_base{1, 1};
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     writeFsckCheckpointWithBase(*backend, layout, ns, old_base);
     backend->armOnFirstGet(layout.refLogKey(life, old_base), [&]
     {
         const String ckpt_key = layout.refCkptKey(life);
-        const HeadResult head = backend->head(ckpt_key);
-        ASSERT_TRUE(head.exists);
-        ASSERT_EQ(backend->putOverwrite(ckpt_key, encodeRefCkpt(RefCkpt{
+        OperationForTest nested_op(*backend);
+        const auto head = (*nested_op).head(ckpt_key, Retry::once());
+        ASSERT_TRUE(head.has_value());
+        ASSERT_TRUE(std::holds_alternative<Committed>((*nested_op).replace(ckpt_key, encodeRefCkpt(RefCkpt{
             .life_epoch = 1,
             .committed_through = std::nullopt,
             .checkpoint_snapshot_id = std::nullopt,
-            .last_epoch_seal = std::nullopt}), head.token).outcome, PutOutcome::Done);
+            .last_epoch_seal = std::nullopt}), head->etag, Retry::once())));
     });
 
     const FsckReport report = runFsck(*store, /*detail=*/true);
@@ -1347,9 +1398,10 @@ TEST(CASFsck, PhantomDanglingFromRepublishedRefIsReresolvedAway)
         writeFsckCheckpoint(*backend, store->layout(), ns, RefTxnId{1, repoint_sequence});
 
         const String old_key = store->layout().blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(h1)});
-        const HeadResult head = backend->head(old_key);
-        ASSERT_TRUE(head.exists);
-        backend->deleteExact(old_key, head.token);   /// legitimate GC delete of the now-unreferenced blob
+        OperationForTest nested_op(*backend);
+        const auto head = (*nested_op).head(old_key, Retry::once());
+        ASSERT_TRUE(head.has_value());
+        (*nested_op).remove(old_key, head->etag, Retry::once());   /// legitimate GC delete of the now-unreferenced blob
     });
 
     const FsckReport rep = runFsck(*store, /*detail*/true);
@@ -1380,9 +1432,10 @@ TEST(CASFsck, PhantomDanglingFromDroppedRefIsReresolvedAway)
         writeFsckCheckpoint(*backend, store->layout(), ns, RefTxnId{1, drop_sequence});
 
         const String old_key = store->layout().blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(h1)});
-        const HeadResult head = backend->head(old_key);
-        ASSERT_TRUE(head.exists);
-        backend->deleteExact(old_key, head.token);   /// legitimate GC delete after the drop folds
+        OperationForTest nested_op(*backend);
+        const auto head = (*nested_op).head(old_key, Retry::once());
+        ASSERT_TRUE(head.has_value());
+        (*nested_op).remove(old_key, head->etag, Retry::once());   /// legitimate GC delete after the drop folds
     });
 
     const FsckReport rep = runFsck(*store, /*detail*/true);
@@ -1407,9 +1460,10 @@ TEST(CASFsck, RealDanglingStillCaughtAfterReresolve)
     writeFsckCheckpoint(*backend, store->layout(), ns, RefTxnId{1, sequence});
 
     const String key = store->layout().blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(h)});
-    const HeadResult head = backend->head(key);
-    ASSERT_TRUE(head.exists);
-    backend->deleteExact(key, head.token);   /// genuine loss — the ref is UNCHANGED, still names this blob
+    OperationForTest op(*backend);
+    const auto head = (*op).head(key, Retry::once());
+    ASSERT_TRUE(head.has_value());
+    (*op).remove(key, head->etag, Retry::once());   /// genuine loss — the ref is UNCHANGED, still names this blob
 
     const FsckReport rep = runFsck(*store, /*detail*/true);
     EXPECT_EQ(rep.dangling, 1u);
@@ -1447,9 +1501,10 @@ TEST(CASFsck, PhantomDanglingManifestFromRepublishedRefIsReresolvedAway)
             *backend, store->layout(), ns, "tbl", r1, r2);   /// re-publish
         writeFsckCheckpoint(*backend, store->layout(), ns, RefTxnId{1, repoint_sequence});
 
-        const HeadResult head = backend->head(m1_key);
-        ASSERT_TRUE(head.exists);
-        backend->deleteExact(m1_key, head.token);   /// legitimate GC delete of the superseded manifest
+        OperationForTest nested_op(*backend);
+        const auto head = (*nested_op).head(m1_key, Retry::once());
+        ASSERT_TRUE(head.has_value());
+        (*nested_op).remove(m1_key, head->etag, Retry::once());   /// legitimate GC delete of the superseded manifest
     });
 
     const FsckReport rep = runFsck(*store, /*detail*/true);

@@ -49,6 +49,29 @@ namespace DB::ErrorCodes
 namespace
 {
 
+/// ---- Small raw-fixture request-engine wrappers shared by the tests below ----
+
+/// The durable object at `key`, or `nullopt`.
+std::optional<DB::Cas::Object> readAt(DB::Cas::Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).read(key, DB::Cas::Retry::once());
+}
+
+/// Unconditional create of a fresh key (the fixture's own setup, never a real conflict).
+void createAt(DB::Cas::Backend & backend, const String & key, const String & bytes)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    EXPECT_TRUE(std::holds_alternative<DB::Cas::Committed>((*op).create(key, bytes, DB::Cas::Retry::once())));
+}
+
+/// The current metadata at `key`, or `nullopt`.
+std::optional<DB::Cas::Meta> headAt(DB::Cas::Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).head(key, DB::Cas::Retry::once());
+}
+
 /// Build a `Poco::Util::XMLConfiguration` with `inner_xml` nested under a `<disk>` element (mirrors
 /// the shape a real CAS disk config has under `storage_configuration.disks.<name>`, so
 /// `config_prefix = "disk"` reads exactly like the disk factory's `config_prefix`).
@@ -156,25 +179,24 @@ public:
 
     std::vector<CopyCall> copy_calls;
 
-    void publishBlob(const DB::Cas::BlobPublishRequest & request) override
+    void publish(const DB::Cas::BlobPublishRequest & request, DB::Cas::TransportAccess & access) override
     {
         if (const auto * copy = std::get_if<DB::Cas::VerbatimStagedBlobPublication>(&request.publication))
             copy_calls.push_back({copy->object_key, request.destination_key, true});
         else
             copy_calls.push_back({String{}, request.destination_key, false});
-        DB::Cas::InMemoryBackend::publishBlob(request);
+        DB::Cas::InMemoryBackend::publish(request, access);
     }
 
-    /// Every key read as a stream, with a count. Republishing opens its source with `getStream`, so
+    /// Every key read as a stream, with a count. Republishing opens its source with `stream`, so
     /// this counts exactly those reads -- and deliberately not the materializing
-    /// `get`, which the assertions themselves use to inspect bodies.
+    /// `read`, which the assertions themselves use to inspect bodies.
     std::map<String, size_t> reads_of;
 
-    using DB::Cas::InMemoryBackend::getStream;
-    std::optional<DB::Cas::GetStreamResult> getStream(const String & key, DB::Cas::Range range) override
+    std::unique_ptr<DB::ReadBuffer> stream(const String & key, DB::Cas::TransportAccess & access) override
     {
         ++reads_of[key];
-        return DB::Cas::InMemoryBackend::getStream(key, range);
+        return DB::Cas::InMemoryBackend::stream(key, access);
     }
 
 
@@ -202,32 +224,33 @@ public:
 
     explicit EtagFaithfulPublicationBackend(FaultScript script_) : script(script_) {}
 
-    DB::Cas::HeadResult head(const String & key) override
+    std::optional<DB::Cas::Backend::RawMeta> head(const String & key, DB::Cas::TransportAccess & access) override
     {
-        DB::Cas::HeadResult result = DB::Cas::InMemoryBackend::head(key);
-        if (result.exists && isBlobBodyKey(key))
+        std::optional<DB::Cas::Backend::RawMeta> result = DB::Cas::InMemoryBackend::head(key, access);
+        if (result && isBlobBodyKey(key))
         {
-            const auto body = DB::Cas::InMemoryBackend::get(key);
+            const auto body = DB::Cas::InMemoryBackend::read(key, access);
             chassert(body.has_value());
-            result.token = DB::Cas::Token{sipHash128String(body->bytes), DB::Cas::TokenType::ETag};
+            result->value = sipHash128String(body->bytes);
         }
         return result;
     }
 
-    DB::Cas::DeleteOutcome deleteExact(const String & key, const DB::Cas::Token & token) override
+    DB::Cas::Backend::RawRemoval remove(const String & key, const String & expected_value,
+                                        DB::Cas::TransportAccess & access) override
     {
         if (!isBlobBodyKey(key))
-            return DB::Cas::InMemoryBackend::deleteExact(key, token);
+            return DB::Cas::InMemoryBackend::remove(key, expected_value, access);
 
-        const DB::Cas::HeadResult current = head(key);
-        if (!current.exists)
-            return DB::Cas::DeleteOutcome{.kind = DB::Cas::DeleteOutcome::Kind::NotFound};
-        if (current.token != token)
-            return DB::Cas::DeleteOutcome{.kind = DB::Cas::DeleteOutcome::Kind::TokenMismatch};
-        return DB::Cas::InMemoryBackend::deleteExact(key, DB::Cas::InMemoryBackend::head(key).token);
+        const auto current = head(key, access);
+        if (!current)
+            return DB::Cas::Backend::RawRemoval::Gone;
+        if (current->value != expected_value)
+            return DB::Cas::Backend::RawRemoval::Mismatch;
+        return DB::Cas::InMemoryBackend::remove(key, DB::Cas::InMemoryBackend::head(key, access)->value, access);
     }
 
-    void publishBlob(const DB::Cas::BlobPublishRequest & request) override
+    void publish(const DB::Cas::BlobPublishRequest & request, DB::Cas::TransportAccess & access) override
     {
         const bool is_copy = std::holds_alternative<DB::Cas::VerbatimStagedBlobPublication>(request.publication);
         if (is_copy)
@@ -241,24 +264,35 @@ public:
                 || (script == FaultScript::FirstCondemnedStreamLandsThenDeleted && !is_copy)))
         {
             fault_fired = true;
-            DB::Cas::InMemoryBackend::publishBlob(request);
-            queued_delete_token = head(request.destination_key).token;
+            DB::Cas::InMemoryBackend::publish(request, access);
+            queued_delete_token = head(request.destination_key, access)->value;
+            /// The test wants to replay this exact captured value later as a delete precondition, to
+            /// prove a retag defeats it. `Etag` is never constructible from a raw string, so the only
+            /// way to hold a replayable one is to mint it -- through a nested admitted operation, over
+            /// this same backend instance -- at the exact moment the raw value above was observed.
+            {
+                DB::Cas::tests::OperationForTest mint_op(*this);
+                const auto meta = (*mint_op).head(request.destination_key, DB::Cas::Retry::once());
+                if (meta)
+                    queued_delete_etag = meta->etag;
+            }
 
             if (script != FaultScript::CopyLandsThenCondemned)
-                first_delete = deleteExact(request.destination_key, queued_delete_token);
+                first_delete = remove(request.destination_key, queued_delete_token, access);
 
             throw Poco::TimeoutException("ETag-faithful staged publication response lost");
         }
 
-        DB::Cas::InMemoryBackend::publishBlob(request);
+        DB::Cas::InMemoryBackend::publish(request, access);
     }
 
     FaultScript script;
     bool fault_fired = false;
     size_t copy_publications = 0;
     size_t streaming_publications = 0;
-    DB::Cas::Token queued_delete_token;
-    DB::Cas::DeleteOutcome first_delete;
+    String queued_delete_token;
+    std::optional<DB::Cas::Etag> queued_delete_etag;
+    DB::Cas::Backend::RawRemoval first_delete{};
 
 private:
     static bool isBlobBodyKey(const String & key)
@@ -301,12 +335,13 @@ DB::Cas::BlobSource reReadableStagedSource(
     source.server_side_copy_from = staging_key;
     source.open = [backend, staging_key, header_len]() -> std::unique_ptr<DB::ReadBuffer>
     {
-        auto staged = backend->getStream(staging_key);
+        DB::Cas::tests::OperationForTest op(backend);
+        auto staged = (*op).stream(staging_key, DB::Cas::Retry::standard());
         if (!staged)
             throw DB::Exception(DB::ErrorCodes::FILE_DOESNT_EXIST, "staging object {} is absent", staging_key);
 
         String encoded_header(header_len, '\0');
-        staged->stream->readStrict(encoded_header.data(), encoded_header.size());
+        staged->readStrict(encoded_header.data(), encoded_header.size());
         const DB::Cas::EnvelopeHeader decoded
             = DB::Cas::decodeEnvelopeHeader(encoded_header, encoded_header.size(), DB::Cas::ObjectKind::Blob);
         if (decoded.header_len != header_len)
@@ -316,7 +351,7 @@ DB::Cas::BlobSource reReadableStagedSource(
                 staging_key,
                 decoded.header_len,
                 header_len);
-        return std::move(staged->stream);
+        return staged;
     };
     return source;
 }
@@ -341,7 +376,7 @@ TEST(CASS3Staging, StagedCopyCondemnedRetryRetagsBeforeQueuedDelete)
     const DB::Cas::BlobRef ref = DB::Cas::tests::idOf(payload);
     const String staging_key = "p/staging/mount1/etag-condemned.tmp";
     const String staging_bytes = stagedBytes(store->poolMeta().blob_header_len, payload, DB::UInt128{101});
-    backend->putIfAbsent(staging_key, staging_bytes);
+    createAt(*backend, staging_key, staging_bytes);
     DB::Cas::tests::writeMetaClean(*backend, store->layout(), DB::Cas::tests::u128Of(payload), payload.size());
     DB::Cas::tests::condemnMeta(*backend, store->layout(), DB::Cas::tests::u128Of(payload), 31);
     auto build = precommittedBuildFor(
@@ -354,10 +389,13 @@ TEST(CASS3Staging, StagedCopyCondemnedRetryRetagsBeforeQueuedDelete)
 
     EXPECT_EQ(backend->copy_publications, 1u);
     EXPECT_EQ(backend->streaming_publications, 1u);
-    EXPECT_EQ(
-        backend->deleteExact(store->layout().blobKey(ref), backend->queued_delete_token).kind,
-        DB::Cas::DeleteOutcome::Kind::TokenMismatch);
-    const auto current = backend->get(store->layout().blobKey(ref));
+    ASSERT_TRUE(backend->queued_delete_etag.has_value());
+    {
+        DB::Cas::tests::OperationForTest op(*backend);
+        EXPECT_EQ((*op).remove(store->layout().blobKey(ref), *backend->queued_delete_etag, DB::Cas::Retry::once()),
+                  DB::Cas::Removal::Mismatch);
+    }
+    const auto current = readAt(*backend, store->layout().blobKey(ref));
     ASSERT_TRUE(current.has_value());
     EXPECT_NE(current->bytes, staging_bytes);
     EXPECT_EQ(current->bytes.substr(store->poolMeta().blob_header_len), payload);
@@ -373,7 +411,7 @@ TEST(CASS3Staging, StagedCopyDeletedBeforeAbsentRetryRetagsBeforeQueuedDelete)
     const DB::Cas::BlobRef ref = DB::Cas::tests::idOf(payload);
     const String staging_key = "p/staging/mount1/etag-deleted.tmp";
     const String staging_bytes = stagedBytes(store->poolMeta().blob_header_len, payload, DB::UInt128{202});
-    backend->putIfAbsent(staging_key, staging_bytes);
+    createAt(*backend, staging_key, staging_bytes);
     auto build = precommittedBuildFor(
         store, DB::Cas::RootNamespace{"srv1/etag-deleted"}, "part",
         DB::Cas::tests::u128Of(payload), payload.size());
@@ -382,15 +420,18 @@ TEST(CASS3Staging, StagedCopyDeletedBeforeAbsentRetryRetagsBeforeQueuedDelete)
         ref,
         reReadableStagedSource(backend, staging_key, payload.size(), store->poolMeta().blob_header_len));
 
-    EXPECT_EQ(backend->first_delete.kind, DB::Cas::DeleteOutcome::Kind::Deleted);
+    EXPECT_EQ(backend->first_delete, DB::Cas::Backend::RawRemoval::Removed);
     EXPECT_EQ(backend->copy_publications, 1u)
         << "the absent retry must not copy the original staged envelope again";
     EXPECT_EQ(backend->streaming_publications, 1u);
-    EXPECT_EQ(
-        backend->deleteExact(store->layout().blobKey(ref), backend->queued_delete_token).kind,
-        DB::Cas::DeleteOutcome::Kind::TokenMismatch)
-        << "the second queued exact delete for the copied ETag must miss the retagged replacement";
-    const auto current = backend->get(store->layout().blobKey(ref));
+    ASSERT_TRUE(backend->queued_delete_etag.has_value());
+    {
+        DB::Cas::tests::OperationForTest op(*backend);
+        EXPECT_EQ((*op).remove(store->layout().blobKey(ref), *backend->queued_delete_etag, DB::Cas::Retry::once()),
+                  DB::Cas::Removal::Mismatch)
+            << "the second queued exact delete for the copied ETag must miss the retagged replacement";
+    }
+    const auto current = readAt(*backend, store->layout().blobKey(ref));
     ASSERT_TRUE(current.has_value());
     EXPECT_NE(current->bytes, staging_bytes);
     EXPECT_EQ(current->bytes.substr(store->poolMeta().blob_header_len), payload);
@@ -406,11 +447,17 @@ TEST(CASS3Staging, FirstCondemnedAttemptThenAbsentRetryNeverRecopies)
     const DB::Cas::BlobRef ref = DB::Cas::tests::idOf(payload);
     const String staging_key = "p/staging/mount1/etag-first-condemned.tmp";
     const String staging_bytes = stagedBytes(store->poolMeta().blob_header_len, payload, DB::UInt128{303});
-    backend->putIfAbsent(staging_key, staging_bytes);
-    backend->putIfAbsent(store->layout().blobKey(ref), staging_bytes);
+    createAt(*backend, staging_key, staging_bytes);
+    createAt(*backend, store->layout().blobKey(ref), staging_bytes);
     DB::Cas::tests::writeMetaClean(*backend, store->layout(), DB::Cas::tests::u128Of(payload), payload.size());
     DB::Cas::tests::condemnMeta(*backend, store->layout(), DB::Cas::tests::u128Of(payload), 37);
-    const DB::Cas::Token original_staged_etag = backend->head(store->layout().blobKey(ref)).token;
+    /// Captured through a real admitted operation, so it is a genuinely replayable `Etag` -- never
+    /// constructible from a bare raw value -- for the later mismatch check below.
+    DB::Cas::Etag original_staged_etag = [&]
+    {
+        DB::Cas::tests::OperationForTest op(*backend);
+        return (*op).head(store->layout().blobKey(ref), DB::Cas::Retry::once())->etag;
+    }();
     auto build = precommittedBuildFor(
         store, DB::Cas::RootNamespace{"srv1/etag-first-condemned"}, "part",
         DB::Cas::tests::u128Of(payload), payload.size());
@@ -419,14 +466,16 @@ TEST(CASS3Staging, FirstCondemnedAttemptThenAbsentRetryNeverRecopies)
         ref,
         reReadableStagedSource(backend, staging_key, payload.size(), store->poolMeta().blob_header_len));
 
-    EXPECT_EQ(backend->first_delete.kind, DB::Cas::DeleteOutcome::Kind::Deleted);
+    EXPECT_EQ(backend->first_delete, DB::Cas::Backend::RawRemoval::Removed);
     EXPECT_EQ(backend->copy_publications, 0u)
         << "a first condemned publication and every later absent retry must stream, never copy";
     EXPECT_EQ(backend->streaming_publications, 2u);
-    EXPECT_EQ(
-        backend->deleteExact(store->layout().blobKey(ref), original_staged_etag).kind,
-        DB::Cas::DeleteOutcome::Kind::TokenMismatch);
-    const auto current = backend->get(store->layout().blobKey(ref));
+    {
+        DB::Cas::tests::OperationForTest op(*backend);
+        EXPECT_EQ((*op).remove(store->layout().blobKey(ref), original_staged_etag, DB::Cas::Retry::once()),
+                  DB::Cas::Removal::Mismatch);
+    }
+    const auto current = readAt(*backend, store->layout().blobKey(ref));
     ASSERT_TRUE(current.has_value());
     EXPECT_NE(current->bytes, staging_bytes);
     EXPECT_EQ(current->bytes.substr(store->poolMeta().blob_header_len), payload);
@@ -603,7 +652,7 @@ TEST(CASS3Staging, PromoteViaServerSideCopyCreatesFreshBlobMaterializedProof)
     const std::string staging_key = "p/staging/mount1/aaa.tmp";
     const std::string staging_bytes = stagedBytes(
         store->poolMeta().blob_header_len, payload, DB::UInt128{0xA});
-    backend->putIfAbsent(staging_key, staging_bytes);
+    createAt(*backend, staging_key, staging_bytes);
 
     auto build = precommittedBuildFor(store, ns, ref, hash, payload.size());
     const DB::Cas::PutBlobResult bref = build->putBlob(
@@ -619,13 +668,13 @@ TEST(CASS3Staging, PromoteViaServerSideCopyCreatesFreshBlobMaterializedProof)
 
     /// Successful publication records materialized evidence; the backend still owns the destination token.
     EXPECT_EQ(build->dependencyProof(blob_id), DB::Cas::BlobDependencyProof::Materialized);
-    const DB::Cas::HeadResult hr = backend->head(blob_key);
-    ASSERT_TRUE(hr.exists);
-    EXPECT_FALSE(hr.token.empty());
+    const auto hr = headAt(*backend, blob_key);
+    ASSERT_TRUE(hr.has_value());
+    EXPECT_FALSE(DB::Cas::PersistedEtag::capture(hr->etag).value.empty());
     EXPECT_EQ(bref.size, payload.size());
 
     /// The promoted blob body IS the staging bytes (server-side copy moved them verbatim).
-    const auto got = backend->get(blob_key);
+    const auto got = readAt(*backend, blob_key);
     ASSERT_TRUE(got.has_value());
     EXPECT_EQ(got->bytes, staging_bytes);
 }
@@ -643,17 +692,19 @@ TEST(CASS3Staging, PromoteOverExistingCleanBlobAdoptsAndNeverOverwrites)
     const DB::Cas::BlobRef blob_id{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(hash)};
     const std::string blob_key = store->layout().blobKey(blob_id);
     const std::string staging_key = "p/staging/mount1/bbb.tmp";
-    backend->putIfAbsent(
+    createAt(
+        *backend,
         staging_key,
         stagedBytes(store->poolMeta().blob_header_len, payload, DB::UInt128{0xB}));
 
     /// A pre-existing, well-formed, CLEAN blob (envelope + payload) already at the content key.
-    backend->putIfAbsent(
+    createAt(
+        *backend,
         blob_key,
         stagedBytes(store->poolMeta().blob_header_len, payload, DB::UInt128{0xBB}));
     DB::Cas::tests::writeMetaClean(*backend, store->layout(), hash, payload.size());
-    const DB::Cas::HeadResult before = backend->head(blob_key);
-    ASSERT_TRUE(before.exists);
+    const auto before = headAt(*backend, blob_key);
+    ASSERT_TRUE(before.has_value());
 
     auto build = precommittedBuildFor(store, ns, ref, hash, payload.size());
     build->putBlob(
@@ -665,8 +716,9 @@ TEST(CASS3Staging, PromoteOverExistingCleanBlobAdoptsAndNeverOverwrites)
     EXPECT_EQ(backend->streamingPublicationCount(), 0u);
 
     /// The existing incarnation is untouched: same token, same bytes.
-    const DB::Cas::HeadResult after = backend->head(blob_key);
-    EXPECT_EQ(after.token, before.token);
+    const auto after = headAt(*backend, blob_key);
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(after->etag, before->etag);
 
     /// Observing the existing incarnation records materialized evidence without retaining its token.
     EXPECT_EQ(build->dependencyProof(blob_id), DB::Cas::BlobDependencyProof::Materialized);
@@ -699,16 +751,16 @@ TEST(CASS3Staging, PublishOverCondemnedBlobUsesFreshTagNotVerbatim)
         staging_h, static_cast<uint32_t>(store->poolMeta().blob_header_len));
     ASSERT_EQ(staging_header.size(), store->poolMeta().blob_header_len);
     const std::string staging_bytes = staging_header + payload;
-    backend->putIfAbsent(staging_key, staging_bytes);
+    createAt(*backend, staging_key, staging_bytes);
 
     /// Seed the condemned blob body = EXACTLY what a verbatim promote of this staging object would have
     /// produced (the writer's OWN create, later observed condemned). This is the adversarial shape: a
     /// verbatim republication WOULD reproduce these identical bytes ⇒ identical ETag ⇒ collision.
-    backend->putIfAbsent(blob_key, staging_bytes);
+    createAt(*backend, blob_key, staging_bytes);
     DB::Cas::tests::writeMetaClean(*backend, store->layout(), hash, /*size=*/payload.size());
     DB::Cas::tests::condemnMeta(*backend, store->layout(), hash, /*condemn_round=*/5);
-    const DB::Cas::HeadResult before = backend->head(blob_key);
-    ASSERT_TRUE(before.exists);
+    const auto before = headAt(*backend, blob_key);
+    ASSERT_TRUE(before.has_value());
 
     auto build = precommittedBuildFor(store, ns, ref, hash, payload.size());
     build->putBlob(
@@ -727,11 +779,11 @@ TEST(CASS3Staging, PublishOverCondemnedBlobUsesFreshTagNotVerbatim)
     EXPECT_EQ(backend->streamingPublicationCount(), 1u);
 
     /// The incarnation token is REFRESHED (a fresh incarnation displaced the condemned one).
-    const DB::Cas::HeadResult after = backend->head(blob_key);
-    EXPECT_NE(after.token, before.token);
-    ASSERT_TRUE(after.exists);
+    const auto after = headAt(*backend, blob_key);
+    ASSERT_TRUE(after.has_value());
+    EXPECT_NE(after->etag, before->etag);
 
-    const auto got = backend->get(blob_key);
+    const auto got = readAt(*backend, blob_key);
     ASSERT_TRUE(got.has_value());
     const uint64_t header_len = store->poolMeta().blob_header_len;
 
@@ -914,12 +966,31 @@ TEST(CASStagingSweeper, RemovesOnlyObjectsUnderGivenMountPrefix)
 /// nested `staging/` under `blobs/` (or vice versa) would violate.
 TEST(CASS3Staging, GcBlobDiscoveryPrefixExcludesStagingObjects)
 {
-    const DB::Cas::Layout layout("p");
-    const std::string blobs_prefix = layout.blobsPrefix();
-    const std::string staging_prefix = "p/staging/mountA/";
+    /// The REAL staging prefix, from the accessor every writer actually mints staging keys through
+    /// (`ContentAddressedMetadataStorage::stagingKeyPrefix`) -- not a hand-copied literal that a
+    /// staging-side rename would leave silently stale.
+    auto object_storage = makeFakeNativeCopyStorage(/*native_only_copy_supported=*/true);
+    auto metadata_storage = makeS3StagingMetadataStorageForTest(object_storage, "mountA");
+    metadata_storage->startup();
+    const std::string physical_root = object_storage->getCommonKeyPrefix();
+    const std::string full_staging_prefix = metadata_storage->stagingKeyPrefix();
+    ASSERT_TRUE(full_staging_prefix.starts_with(physical_root))
+        << full_staging_prefix << " vs root " << physical_root;
+    /// Strip the physical object-storage root (and the '/' `physicalKey` joins it to the pool key
+    /// with): `Layout` (below) is root-agnostic, and comparing a physically-rooted key against a bare
+    /// `Layout` key would pass for the wrong reason (both simply fail to share the unrelated root, not
+    /// because the pool-relative prefixes are disjoint).
+    std::string staging_prefix = full_staging_prefix.substr(physical_root.size());
+    if (!staging_prefix.empty() && staging_prefix.front() == '/')
+        staging_prefix.erase(0, 1);
+    staging_prefix += "/";
     const std::string staging_key = staging_prefix + "aaa.tmp";
 
-    EXPECT_EQ(blobs_prefix, "p/blobs/");
+    const DB::Cas::Layout layout(metadata_storage->poolForTest()->poolConfig().pool_prefix);
+    const std::string blobs_prefix = layout.blobsPrefix();
+
+    EXPECT_EQ(staging_prefix, "pool/staging/mountA/") << "sanity: the accessor's own shape";
+    EXPECT_EQ(blobs_prefix, "pool/blobs/");
     EXPECT_FALSE(staging_prefix.starts_with(blobs_prefix));
     EXPECT_FALSE(blobs_prefix.starts_with(staging_prefix));
     EXPECT_FALSE(staging_key.starts_with(blobs_prefix));
@@ -933,7 +1004,7 @@ namespace
 /// A `LocalObjectStorage` that reports the GCS generation dialect
 /// (`conditionalOpsUseGenerationTokens() == true`) and a non-`Local` `getType()`, so
 /// `ContentAddressedMetadataStorage::openPoolView` builds its backend in `Mode::Native` with
-/// `native_token_type == TokenType::Generation`. The fake also advertises native copy so generation
+/// `native_token_type == Dialect::Generation`. The fake also advertises native copy so generation
 /// token mode can exercise explicit S3 staging without endpoint/provider heuristics.
 ///
 /// Holds every object entirely in memory, keyed by the BARE CAS key exactly as `Backend` hands it to
@@ -1035,6 +1106,47 @@ public:
         return tryGetObjectMetadata(path, with_tags);
     }
 
+    /// This fake advertises every retry profile, and an in-memory store has no retry behaviour to
+    /// vary, so the profile-aware overloads simply forward. A storage that claimed the capability
+    /// without implementing them would refuse every control-plane request of a writable mount.
+    std::optional<DB::ObjectMetadata> tryGetObjectMetadataWithNativeToken(
+        const std::string & path, bool with_tags, const DB::ObjectStorageControlRequest &) const override
+    {
+        return tryGetObjectMetadata(path, with_tags);
+    }
+
+    DB::ObjectStorageIteratorPtr iterate(
+        const std::string & path_prefix, size_t max_keys, bool with_tags, const std::optional<std::string> & start_after,
+        const DB::ObjectStorageControlRequest &) const override
+    {
+        return DB::LocalObjectStorage::iterate(path_prefix, max_keys, with_tags, start_after);
+    }
+
+    DB::ConditionalRemoveResult removeObjectIfTokenMatches(
+        const DB::StoredObject & object, const std::string & etag, const DB::ObjectStorageControlRequest &) override
+    {
+        return removeObjectIfTokenMatches(object, etag);
+    }
+    using DB::LocalObjectStorage::removeObjectIfTokenMatches;
+
+    /// A real S3 GET answers with the object's incarnation, which is what the backend reads its
+    /// bytes AND its generation from in one request. Quoted, the way the SDK's ETag field carries a
+    /// generation across the HTTP boundary.
+    DB::SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata(
+        const DB::StoredObject & object, const DB::ReadSettings &, size_t, std::optional<size_t>) const override
+    {
+        std::lock_guard lock(mutex);
+        auto it = objects.find(object.remote_path);
+        if (it == objects.end())
+            throw DB::S3Exception("FakeGenerationObjectStorage: object does not exist",
+                                   Aws::S3::S3Errors::RESOURCE_NOT_FOUND);
+        DB::SmallObjectDataWithMetadata result;
+        result.data = it->second.bytes;
+        result.metadata.size_bytes = it->second.bytes.size();
+        result.metadata.etag = "\"" + std::to_string(it->second.generation) + "\"";
+        return result;
+    }
+
     void removeObjectIfExists(const DB::StoredObject & object) override
     {
         std::lock_guard lock(mutex);
@@ -1092,8 +1204,10 @@ public:
     /// Checks the write-once/exact-token precondition against the current generation and, on success,
     /// stores `bytes` and mints the next generation. Throws an `S3Exception` naming `PreconditionFailed`
     /// on a lost condition -- the one signal `finalizeConditionalWrite` classifies as
-    /// `PutOutcome::PreconditionFailed` rather than an ordinary failure.
-    void commitConditionalWrite(const std::string & key, const std::string & bytes,
+    /// `ConditionalWriteOutcome::PreconditionLost` rather than an ordinary failure.
+    /// Returns the generation it minted, the way a real store returns it in the write response: the
+    /// backend attributes the write to that generation and nothing reads it back.
+    uint64_t commitConditionalWrite(const std::string & key, const std::string & bytes,
                                  const std::string & if_none_match, const std::string & if_match)
     {
         std::lock_guard lock(mutex);
@@ -1106,7 +1220,9 @@ public:
             throw DB::S3Exception("FakeGenerationObjectStorage: if-match precondition failed",
                                    Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed");
 
-        objects[key] = Entry{bytes, next_generation++};
+        const uint64_t generation = next_generation++;
+        objects[key] = Entry{bytes, generation};
+        return generation;
     }
 
 private:
@@ -1132,6 +1248,10 @@ private:
         void sync() override {}
         std::string getFileName() const override { return key; }
 
+        /// The write response's own incarnation, quoted the way the SDK's ETag field carries a GCS
+        /// generation across the HTTP boundary -- the backend is what strips that transport syntax.
+        std::optional<std::string> getResultObjectETag() const override { return committed_generation; }
+
     protected:
         void nextImpl() override
         {
@@ -1143,7 +1263,7 @@ private:
         void finalizeImpl() override
         {
             next();
-            storage.commitConditionalWrite(key, buffered, if_none_match, if_match);
+            committed_generation = "\"" + std::to_string(storage.commitConditionalWrite(key, buffered, if_none_match, if_match)) + "\"";
         }
 
     private:
@@ -1152,6 +1272,7 @@ private:
         std::string if_none_match;
         std::string if_match;
         std::string buffered;
+        std::optional<std::string> committed_generation;
     };
 
     mutable std::mutex mutex;
@@ -1173,6 +1294,27 @@ std::shared_ptr<FakeGenerationObjectStorage> makeFakeGenerationObjectStorageForT
     return std::make_shared<FakeGenerationObjectStorage>(std::move(settings));
 }
 
+}
+
+/// A store whose iterator does not page (the fallback `IObjectStorage::iterate` lists `max_keys` keys
+/// once and ends) must still let a page-sized list report that more keys follow. A page that ended
+/// exactly at the limit with an empty cursor would read as the end of the prefix, and the startup
+/// residual check would then take a prefix of debris plus residue for an empty one.
+TEST(CASS3Staging, ListPageOverANonPagingStoreStillReportsMoreKeys)
+{
+    auto object_storage = makeFakeGenerationObjectStorageForTest();
+    auto backend = std::make_shared<DB::Cas::ObjectStorageBackend>(object_storage, DB::Cas::ObjectStorageBackend::Mode::Native);
+    for (int i = 0; i < 40; ++i)
+        createAt(*backend, fmt::format("p/list/{:03}", i), "x");
+
+    DB::Cas::tests::OperationForTest op(*backend);
+    const DB::Cas::ListPage first = (*op).list("p/list/", "", 32, DB::Cas::Retry::once());
+    EXPECT_EQ(first.keys.size(), 32u);
+    ASSERT_FALSE(first.next_cursor.empty()) << "a full page over a non-paging store must still say there is more";
+
+    const DB::Cas::ListPage rest = (*op).list("p/list/", first.next_cursor, 32, DB::Cas::Retry::once());
+    EXPECT_EQ(rest.keys.size(), 8u);
+    EXPECT_TRUE(rest.next_cursor.empty());
 }
 
 TEST(CASS3Staging, GenerationBackendMayUseNativeOnlyCopy)

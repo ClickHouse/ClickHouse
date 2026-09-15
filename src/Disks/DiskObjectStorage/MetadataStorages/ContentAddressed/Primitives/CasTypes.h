@@ -245,24 +245,11 @@ namespace DB::Cas
 {
 
 /// How a backend identifies one physical incarnation of an object key.
-enum class TokenType : uint8_t
+enum class Dialect : uint8_t
 {
     ETag = 1,        /// S3-family / Azure
     Generation = 2,  /// GCS (binding deferred; fail-closed until probed)
     Emulated = 3,    /// test backends (in-memory fake, Local emulation)
-};
-
-/// A backend-native incarnation token. Opaque to every CAS caller and sent back to the backend
-/// EXACTLY as held here. The backend owns the one conversion between its transport representation and
-/// this value — see `ObjectStorageBackend::normalizeTokenValue`, which removes the quoting the GCS
-/// generation picks up from riding the SDK's ETag field.
-struct Token
-{
-    String value;
-    TokenType type = TokenType::ETag;
-
-    bool empty() const { return value.empty(); }
-    bool operator==(const Token &) const = default;
 };
 
 /// The ordered ref-transaction identifier. A successful writer mount establishes a strictly newer

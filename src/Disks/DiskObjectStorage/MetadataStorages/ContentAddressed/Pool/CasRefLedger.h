@@ -1,6 +1,8 @@
 #pragma once
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestBudget.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasWriteResult.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
@@ -37,11 +39,14 @@ enum class ResolveAudit : uint8_t { Emit, Deferred };
 /// there is no independent apply marker or durable-id floor whose combinations form a second,
 /// implicit state machine.
 ///
-/// `Ready` is the only state that admits a new append or certifies a cached row. `Writing` owns the
+/// `Ready` is the state that admits a new append. A cached row is certified (`confirmExactRef`) in
+/// `Ready` and in `Writing` alike, and in both only while no queued or carved mutation names that row's
+/// ref -- a `Ready` lane with such a mutation queued refuses too. `Writing` owns the
 /// exact attempt before its first possible send. `Wedged` owns that same attempt after an ambiguous
-/// result. `NeedsRecovery` means a transaction is known durable but cannot be installed in this cache;
-/// it is a hard write and certification fence until replay completes. `Closed` records a successor's
-/// epoch seal, and `Faulted` records foreign or internally inconsistent durable state.
+/// result and certifies nothing. `NeedsRecovery` means a transaction is known durable but cannot be
+/// installed in this cache; it is a hard write and certification fence until replay completes. `Closed`
+/// records a successor's epoch seal, and `Faulted` records foreign or internally inconsistent durable
+/// state.
 enum class RefLaneState : uint8_t
 {
     Ready,
@@ -57,7 +62,9 @@ enum class RefLaneState : uint8_t
 /// `Yes` is the only answer that AUTHORIZES anything, so it is the only one that must be earned: it is
 /// returned exclusively when every rule of the lane snapshot holds. `Unknown` is the catch-all for
 /// every ambiguity, and it is the answer this primitive is biased towards: a cold, evicted, recovering,
-/// busy or non-`Ready` table answers `Unknown` rather than doing any work to find out.
+/// busy, fenced-out, wedged or otherwise broken table answers `Unknown` rather than doing any work to
+/// find out, and so does a table with a queued or in-flight mutation of the asked-about ref (or of the
+/// whole namespace); a mutation of another ref does not refuse.
 ///
 /// `No` means "this runtime's committed row for that ref is not the manifest you asked about" -- and
 /// nothing more. It is NOT a proof of the negative about the durable table, because the mount fence is
@@ -84,7 +91,9 @@ class CasRefLedger
 {
 public:
     CasRefLedger(
-        BackendPtr backend_ptr,
+        /// The mount plane. Every request this ledger makes is admitted on it, so a ref-lane write and
+        /// a mount-lease renewal are measured against the same fence and the same clock.
+        CasRequests & mount_requests_,
         const Layout & layout_,
         RefLedgerConfig config_,
         const CasEventSink & event_sink_,
@@ -95,23 +104,19 @@ public:
         /// unlike the mount-state functions below, because it is a fixed identity for this ledger's
         /// whole lifetime (mirrors `CasMountRuntime`'s own by-value `server_root_id`).
         String server_root_id_,
-        /// Monotonic mount clock used by the retry controller; it may be empty when the controller's
-        /// default clock is appropriate.
-        std::function<uint64_t()> controller_boot_ms_fn,
         /// Callbacks into mount and watermark state owned by `Pool`, bound for this ledger's lifetime:
         std::function<uint64_t()> live_epoch_fn_,
         std::function<bool()> fence_ok_fn_,
-        /// The two fence-GENERATION primitives (`CasMountRuntime::fenceGeneration`/`checkFenceOrThrow`),
-        /// injected exactly as `CasPlainObjects` takes them. `fence_ok_fn` above answers "may this mount
-        /// write AT ALL, right now"; these two answer the different question an append lane must ask
-        /// across an I/O window: "is this still the SAME mount incarnation that admitted the transaction
-        /// I am about to act on?" A wedge captures the generation at admission and presents it back on
-        /// every later retry and before every install, so a result that returns after a fence loss or a
-        /// re-arm is inert for the superseded runtime instead of installing a stale view (spec §3,
-        /// "the mount-fence generation is captured at admission and required on every slot-occupy and
-        /// install").
+        /// The fence-GENERATION primitive (`CasMountRuntime::fenceGeneration`), injected exactly as
+        /// `CasPlainObjects` takes it. `fence_ok_fn` above answers "may this mount write AT ALL, right
+        /// now"; this answers the different question an append lane must ask across an I/O window: "is
+        /// this still the SAME mount incarnation that admitted the transaction I am about to act on?" A
+        /// wedge captures the generation at admission and presents it back -- through `mount_requests`,
+        /// by resuming an operation under it -- on every later retry and before every install, so a
+        /// result that returns after a fence loss or a re-arm is inert for the superseded runtime instead
+        /// of installing a stale view: the generation is captured at admission and required on every
+        /// slot-occupy and install.
         std::function<uint64_t()> fence_generation_fn_,
-        std::function<void(uint64_t)> check_fence_or_throw_,
         std::function<uint64_t()> boot_ms_now_fn_,
         std::function<bool()> may_mutate_,
         std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference_,
@@ -154,7 +159,8 @@ public:
     /// receiver drives, so it must never be able to make this writer do work.
     ///
     /// The rules are evaluated as one snapshot spanning both lane mutexes, in this order: table warm
-    /// and resident; lane state `Ready`; exact committed-row equality; mount fence live last. Every
+    /// and resident; lane state `Ready` or `Writing`, with no queued or carved mutation whose
+    /// `MutationScope` covers the ref; exact committed-row equality; mount fence live last. Every
     /// ambiguity answers `Unknown` -- see `ConfirmAnswer`, and the .cpp for why the order and the
     /// two-mutex hold are what make a `Yes` a linearization point rather than a guess.
     ConfirmAnswer confirmExactRef(const RootNamespace & ns, const String & ref_name,
@@ -282,26 +288,18 @@ public:
     /// mutation can appear after shutdown has taken its snapshot.
     bool drainRefLanesForShutdown(uint64_t wait_budget_ms);
 
-    /// Performs a staged conditional create through the ledger's retry controller and append-fence
-    /// predicate. Callers do not access either dependency directly, so every attempt observes the same
-    /// mount admission rule.
-    CasWriteOutcome stagingPutIfAbsent(std::string_view key, std::string_view bytes, Token * out_token);
-
-    /// Same retry/fence policy as `stagingPutIfAbsent`, for a MUTABLE If-Match overwrite whose bytes
-    /// are deterministic (safe for GET-based resolution).
-    CasOverwriteResult stagingConditionalOverwrite(std::string_view key, std::string_view bytes, const Token & expected);
-
-    /// Same retry/fence policy as `stagingPutIfAbsent`, for a MUTABLE marker where an existing
-    /// DIFFERENT value at the key is a normal Conflict outcome, not corruption (see
-    /// `CasRequestController::putIfAbsentControlledMutable`).
-    CasOverwriteResult stagingPutIfAbsentMutable(std::string_view key, std::string_view bytes);
+    /// A staged conditional create on the mount plane. Callers reach the store only through these, so
+    /// every attempt observes the same mount admission rule. `Conflict` names what occupies the key; a
+    /// caller whose key is content-addressed decides for itself whether a different occupant is
+    /// corruption.
+    WriteResult stagingPutIfAbsent(const String & key, const String & bytes);
 
     /// Hooks required by `EventEmitter`: events are delivered to the injected sink when one is present.
     bool hasEventSink() const noexcept { return static_cast<bool>(event_sink); }
     void emitEvent(CasEvent && e) const { if (event_sink) event_sink(std::move(e)); }
 
-    /// Replaces the retry controller's delay seam for deterministic tests; production callers leave it
-    /// untouched.
+    /// Replaces the mount plane's inter-attempt delay seam for deterministic tests; production callers
+    /// leave it untouched.
     void setCasRetrySleepForTest(std::function<void(uint64_t)> sleep_fn);
 
     /// Replaces only ref-table recovery's token-aware retry delay seam for deterministic tests.
@@ -401,6 +399,12 @@ public:
     /// `install_region_probe_for_test`).
     void setInstallRegionProbeForTest(std::function<void()> probe) { install_region_probe_for_test = std::move(probe); }
 
+    /// Installs a probe at `ensureRefTableRecovered`'s step 8 -- the LAST admission recheck before a
+    /// materialized recovery result installs, after the final authority read and O(N) materialization
+    /// have already run. A test pausing here and then latching a stop token observes whether that stop
+    /// is honored before install (see `recovery_install_probe_for_test`).
+    void setRecoveryInstallProbeForTest(std::function<void()> probe) { recovery_install_probe_for_test = std::move(probe); }
+
     /// Installs the pre-tenure fault seam (see `ref_pre_tenure_hook_for_test`).
     void setRefPreTenureHookForTest(std::function<void()> hook) { ref_pre_tenure_hook_for_test = std::move(hook); }
 
@@ -479,6 +483,30 @@ public:
         std::lock_guard<std::mutex> g(ref_queue_mutex);
         const auto it = ref_name_slots.find(ns.string());
         return it != ref_name_slots.end() && it->second.current->leader_active;
+    }
+
+    /// Returns the number of items carved by the current tenure and not yet released by its exit guard.
+    /// Under the queue mutex, like `refQueuePendingForTest`.
+    size_t refCarvedForTest(const RootNamespace & ns)
+    {
+        std::lock_guard<std::mutex> g(ref_queue_mutex);
+        const auto it = ref_name_slots.find(ns.string());
+        return it == ref_name_slots.end() ? 0 : it->second.current->carved.size();
+    }
+
+    /// Returns whether the `carved` entry for `ref_name` (if any) is already completed. Lets a test
+    /// PROVE an earlier chunk's item is done rather than infer it from carve-hook ordering. Under the
+    /// queue mutex, like `refCarvedForTest`; `done` itself is guarded by the same mutex.
+    bool refCarvedItemDoneForTest(const RootNamespace & ns, const String & ref_name)
+    {
+        std::lock_guard<std::mutex> g(ref_queue_mutex);
+        const auto it = ref_name_slots.find(ns.string());
+        if (it == ref_name_slots.end())
+            return false;
+        for (const auto & item : it->second.current->carved)
+            if (item->scope.kind == MutationScope::Kind::Ref && item->scope.ref_name == ref_name)
+                return item->done;
+        return false;
     }
 
     /// Returns the number of callers currently waiting for `ns` recovery under its state mutex.
@@ -600,10 +628,10 @@ public:
         String bytes;
         /// `CasMountRuntime::fenceGeneration()` as read at this transaction's ADMISSION -- the same
         /// critical section that snapshotted the state and derived the id, i.e. one atomic reading of
-        /// "what this attempt was allowed to do". Every later `slotOccupy` retry is gated on THIS value
-        /// (never the current one), and every install is preceded by presenting it back through
-        /// `checkFenceOrThrow`: a retry admitted under a dead incarnation must send nothing, and a
-        /// result that returns after a fence bump/re-arm must install nothing.
+        /// "what this attempt was allowed to do". Every later retry of this attempt is admitted by
+        /// resuming an operation under THIS value (never the current one), and every install is
+        /// preceded by presenting it back: a retry admitted under a dead incarnation must send
+        /// nothing, and a result that returns after a fence bump/re-arm must install nothing.
         uint64_t admitted_fence_generation = 0;
     };
 
@@ -667,7 +695,7 @@ public:
 private:
     /// Injected storage and mount environment. The member order is part of construction/destruction
     /// behavior because the callbacks and references are used by the runtime owned below.
-    Backend & backend;
+    CasRequests & mount_requests;
     const Layout & layout;
     RefLedgerConfig config;
     const CasEventSink & event_sink;
@@ -678,7 +706,6 @@ private:
     std::function<uint64_t()> live_epoch_fn;
     std::function<bool()> fence_ok_fn;
     std::function<uint64_t()> fence_generation_fn;
-    std::function<void(uint64_t)> check_fence_or_throw;
     std::function<uint64_t()> boot_ms_now_fn;
     std::function<bool()> may_mutate;
     std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference;
@@ -712,10 +739,10 @@ private:
 
     /// One coherent decoded `RefTableState` and append runtime for a namespace. It is recovered lazily
     /// and evicted only as a whole. `state_mutex` is separate from
-    /// `ref_queue_mutex` (which only ever guards `pending`/`leader_active`) so a reader (resolveRef/
+    /// `ref_queue_mutex` (which only ever guards `pending`/`carved`/`leader_active`) so a reader (resolveRef/
     /// listRefs) can observe `state` without contending with the flush leader's network round trip --
     /// the leader only holds `state_mutex` for the brief copy-out-before-validate and the
-    /// apply-after-commit steps, never for the `putIfAbsentControlled` call itself.
+    /// apply-after-commit steps, never for the durable write itself.
     struct RefTableRuntime
     {
         /// An allocator can reuse an evicted predecessor's address for its successor. This monotone id
@@ -844,6 +871,18 @@ private:
         uint64_t publish_backoff_ms = 0;
 
         std::deque<std::shared_ptr<RefMutationItem>> pending;    /// guarded by ref_queue_mutex
+        /// The current tenure's carved items, from the carve (`flushRefBatch`'s PUBLISH phase) to the
+        /// tenure's exit guard (`completeOwnedItemsAndReleaseLeadership`), both under `ref_queue_mutex`.
+        /// The carve pops an item out of `pending`, so `pending` alone cannot show a mutation between
+        /// carve and install -- the window in which its transaction may be durable while the committed
+        /// row still lags it. The mirror makes that item visible, under the same mutex, to a reader
+        /// (such as `confirmExactRef`) that holds only the runtime. An item is completed by its chunk's
+        /// install or earlier by an error, often long before the exit guard; the mirror keeps it
+        /// regardless.
+        /// Over-inclusive on purpose: an installed item and an item that failed validation before any
+        /// send both stay here until the exit guard; that is one tenure of over-refusal for their refs,
+        /// never an under-refusal.
+        std::vector<std::shared_ptr<RefMutationItem>> carved;     /// guarded by ref_queue_mutex
         bool leader_active = false;                               /// guarded by ref_queue_mutex
         /// Set before the exact `Live -> Removing` catalog CAS and retained until that life is deleted.
         /// New positive mutations check it in the same queue critical section as admission; the one
@@ -958,13 +997,6 @@ private:
         return rt.state.nextTxnId(live_epoch_fn());
     }
 
-    /// The CAS-owned retry controller this Pool's ref-log writer path uses for every conditional
-    /// log/snapshot `PUT` and uncertain-result resolution. It is also shared by the part-manifest
-    /// write and mutable freshness-meta writes. The controller is stateless per call (immutable
-    /// budget/clock/sleep — the sleep fn mutates only through the test-only seam, before traffic), so
-    /// concurrent lanes and builds use the one instance safely.
-    std::unique_ptr<CasRequestController> ref_request_controller;
-
     /// Test-only hook called before a compatible append batch is carved; null in production.
     std::function<void()> ref_pre_carve_hook_for_test;
 
@@ -988,6 +1020,8 @@ private:
     /// otherwise non-throwing regions. A test that installs a throwing probe must therefore disarm it
     /// after the region it targets, or every later install throws too. Null in production.
     std::function<void()> install_region_probe_for_test;
+    /// See `setRecoveryInstallProbeForTest`. Null in production.
+    std::function<void()> recovery_install_probe_for_test;
     std::function<void()> append_after_runtime_capture_hook_for_test;
     std::function<void()> read_before_state_lock_hook_for_test;
     std::function<void()> readable_catalog_after_observation_hook_for_test;
@@ -1047,9 +1081,10 @@ private:
     /// Every `createNamespace`/`completeCreation`/`reconcileStaleCreator` outcome that writes nothing
     /// (`FencedOut`, `Superseded`, a reconciled entry, `EntryChanged`) re-reads the catalog and loops;
     /// `CreatorFenceStillLive` throws the retry-later class, which this function's caller (the transient
-    /// retry loop) or a higher one re-drives. Bounded against a pathological duel between two openers;
-    /// each primitive this loop calls has its OWN bounded retry against the catalog's single object, so
-    /// this bound is only against THIS loop's re-read cycle.
+    /// retry loop) or a higher one re-drives. One `Retry` is frozen before the loop and shared by every
+    /// read and every protocol call it makes, so the whole resolution ends within one standard window;
+    /// a re-read forced by a competing actor is paced by a jittered sleep, and an iteration cap is the
+    /// secondary bound.
     NamespaceLifeId resolveNamespaceLife(
         const RootNamespace & ns, uint64_t admitted_generation, uint64_t live_epoch,
         bool * lifecycle_refusal = nullptr);
@@ -1060,8 +1095,8 @@ private:
     /// cleanup could account for. Everything terminal throws.
     ///
     /// `admitted_generation` is the ONE fence generation this whole recovery was admitted under: the
-    /// walk presents it to every `slotOccupy` and to the `_ckpt` CAS, and the caller presents the same
-    /// value once more immediately before installing.
+    /// walk resumes its operation under it, so every request the walk makes is measured against it, and
+    /// the caller presents the same value once more immediately before installing.
     /// `retained_attempt` is copied under `state_mutex` before the unlocked walk. It is evidence from
     /// this runtime's admitted writer, not a second recovery authority: only the exact slot it names
     /// is compared byte-for-byte, and a successor seal remains the existing conclusive-loss case.
@@ -1079,8 +1114,7 @@ private:
     /// independently disqualify it. Throws; remount cancellation raises the retry-later class and
     /// LATCHES through `cancelled` so the caller's transient loop does not re-drive it.
     ///
-    /// The FENCE is deliberately absent: it gates the three sites that spend it (every `slotOccupy`, the
-    /// `_ckpt` CAS, the install), not every read. See the definition for why.
+    /// The FENCE is deliberately absent: the walk's own operation carries it. See the definition.
     void checkRecoveryStillAdmitted(
         const RootNamespace & ns, RefTableRuntime & rt, bool & cancelled,
         const std::optional<DetachedStopToken> & token = std::nullopt) const;
@@ -1108,9 +1142,10 @@ private:
     /// and apply-after-commit ordering -- the LIVE state is still only ever advanced once the object is
     /// durable; `commitRefChunk`'s pre-`PUT` apply targets a private candidate that nothing else can
     /// observe. Every item it carves out of `pending` is appended to
-    /// `owned_items` (the leader's responsibility set) at the moment it is carved. When a batch's total
-    /// op count exceeds `ref_txn_max_ops`, the validation loop emits SEVERAL ref-log transactions in one
-    /// tenure via `commitRefChunk` -- each a complete commit boundary.
+    /// `owned_items` (the leader's responsibility set) and to `rt->carved` (the confirm-visible mirror,
+    /// see `RefTableRuntime::carved`) at the moment it is carved. When a batch's total op count exceeds
+    /// `ref_txn_max_ops`, the validation loop emits SEVERAL ref-log transactions in one tenure via
+    /// `commitRefChunk` -- each a complete commit boundary.
     void flushRefBatch(const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt,
                        std::vector<std::shared_ptr<RefMutationItem>> & owned_items);
 
@@ -1130,8 +1165,8 @@ private:
     };
 
     /// ONE bounded resolution attempt for `rt`'s outstanding wedge (spec INV-1's every-attempt rule):
-    /// at most one `slotOccupy(wedge.key, wedge.bytes, ...)` per calling flush, gated on the wedge's
-    /// ORIGINAL `admitted_fence_generation` rather than the current one. There is deliberately NO
+    /// at most one conditional create of the wedge's exact key and bytes per calling flush, admitted by
+    /// resuming under the wedge's ORIGINAL `admitted_fence_generation` rather than the current one. There is deliberately NO
     /// background retry thread and no deadline-resetting loop: a permanently quiet wedged namespace
     /// waits for its next caller or for a remount, which is acceptable precisely because the wedged
     /// operation was never acknowledged.
@@ -1143,8 +1178,8 @@ private:
     /// "absent", which is not a rejection: the earlier ambiguous attempt could still land afterwards.
     ///
     /// Post-I/O recheck: the outcome is adjudicated on an I/O result, so before ANY action follows from
-    /// it (adopt, acknowledge, unwedge, fail the survivors) this re-acquires `state_mutex`, presents
-    /// `admitted_fence_generation` back through `checkFenceOrThrow`, and compares the full wedge
+    /// it (adopt, acknowledge, unwedge, fail the survivors) this re-acquires `state_mutex`, compares
+    /// `admitted_fence_generation` against the fence's CURRENT generation, and compares the full wedge
     /// identity against what is still installed. A result that returns after a fence bump/re-arm, or
     /// after the wedge it belonged to was replaced, is INERT for this runtime.
     WedgeResolutionResult resolveWedgeOnce(
@@ -1179,10 +1214,12 @@ private:
 
     /// Leadership-exit guard for `appendRefOps`: under `ref_queue_mutex`, completes every still-unfinished
     /// item this leader owned (with `flush_exception` when unwinding, or a fail-closed `LOGICAL_ERROR`
-    /// otherwise), removes each owned item from `pending` so no future leader can carve it, and releases
-    /// leadership (`leader_active = false` + `cv.notify_all`). On the normal path every owned item is
-    /// already `done`, so only the leadership release has effect. This is the single authority that
-    /// resets `leader_active` on any exit from the leader loop.
+    /// otherwise), removes each owned item from `pending` so no future leader can carve it, clears
+    /// `rt->carved` (the confirm-visible mirror, now that every carved item's fate -- installed or a
+    /// recorded lane failure -- no longer needs to be seen), and releases leadership
+    /// (`leader_active = false` + `cv.notify_all`). On the normal path every owned item is already
+    /// `done`, so only the leadership release and the mirror clear have effect. This is the single
+    /// authority that resets `leader_active` on any exit from the leader loop.
     void completeOwnedItemsAndReleaseLeadership(
         const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt,
         const std::vector<std::shared_ptr<RefMutationItem>> & owned_items,
@@ -1212,10 +1249,15 @@ private:
     ///   - `runRecoveryWalkOnce` contributes `last_epoch_seal` once its own CAS-walk minted or adopted
     ///     one -- it is the only writer that mints seals, so it is the only writer that can record
     ///     where the chain now ends.
-    CkptPublishOutcome publishCkptContribution(const NamespaceLifeId & life, const RefCkpt & contribution,
-                                               uint64_t admitted_generation,
-                                               const std::function<void(uint64_t)> & check_admission,
-                                               const std::function<void()> & admit_request = {});
+    CkptPublishOutcome publishCkptContribution(CasOperation & op, const NamespaceLifeId & life,
+                                               const RefCkpt & contribution);
+
+    /// The verdict points that guard a DECISION rather than a request: the engine refuses a request on
+    /// its own, but a result already in hand must not be acted on once `op` has stopped being admitted.
+    /// `op.admitted()` folds every reason together -- a moved mount incarnation, a lease with too little
+    /// time left, or a caller-supplied liveness term that has since gone false -- because none of them
+    /// leaves the caller anything more specific to act on than "this admission no longer holds".
+    void refuseUnlessAdmitted(const CasOperation & op, std::string_view what) const;
 
     /// Common candidate predicate for scheduler admission and execution after capture. Caller holds
     /// `rt.state_mutex`; an epoch seal is not state-bearing and cannot be snapshotted.

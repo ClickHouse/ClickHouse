@@ -13,7 +13,8 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsMergeTreePartExportSchemaMismatchMode export_merge_tree_part_schema_mismatch_mode;
+    extern const SettingsMergeTreePartExportSchemaMatchMode export_merge_tree_part_schema_match_mode;
+    extern const SettingsBool export_merge_tree_part_ignore_extra_source_columns;
 }
 
 namespace
@@ -114,60 +115,109 @@ TEST_F(ExportPartitionOrderingTest, IterationOrderMatchesCreateTime)
 }
 
 
-TEST_F(ExportPartitionManifestBackCompatTest, MissingSchemaMismatchModeParsesAsNullopt)
+TEST_F(ExportPartitionManifestBackCompatTest, MissingSchemaMatchModeParsesAsNullopt)
 {
     auto manifest = makeValidManifest();
-    manifest.schema_mismatch_mode = MergeTreePartExportSchemaMismatchMode::ignore_extra_source_columns_by_position;
+    manifest.schema_match_mode = MergeTreePartExportSchemaMatchMode::NAME;
 
     Poco::JSON::Parser parser;
     auto json = parser.parse(manifest.toJsonString()).extract<Poco::JSON::Object::Ptr>();
-    json->remove("schema_mismatch_mode");
+    json->remove("schema_match_mode");
     std::ostringstream oss;
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
 
     auto parsed = ExportReplicatedMergeTreePartitionManifest::fromJsonString(oss.str());
-    EXPECT_FALSE(parsed.schema_mismatch_mode.has_value());
+    EXPECT_FALSE(parsed.schema_match_mode.has_value());
 }
 
-TEST_F(ExportPartitionManifestBackCompatTest, SchemaMismatchModeRoundTripsForEveryValue)
+TEST_F(ExportPartitionManifestBackCompatTest, SchemaMatchModeRoundTripsForEveryValue)
 {
-    for (const auto value : magic_enum::enum_values<MergeTreePartExportSchemaMismatchMode>())
+    for (const auto value : magic_enum::enum_values<MergeTreePartExportSchemaMatchMode>())
     {
         auto manifest = makeValidManifest();
-        manifest.schema_mismatch_mode = value;
+        manifest.schema_match_mode = value;
 
         auto parsed = ExportReplicatedMergeTreePartitionManifest::fromJsonString(manifest.toJsonString());
 
-        ASSERT_TRUE(parsed.schema_mismatch_mode.has_value()) << "value=" << magic_enum::enum_name(value);
-        EXPECT_EQ(*parsed.schema_mismatch_mode, value) << "value=" << magic_enum::enum_name(value);
+        ASSERT_TRUE(parsed.schema_match_mode.has_value()) << "value=" << magic_enum::enum_name(value);
+        EXPECT_EQ(*parsed.schema_match_mode, value) << "value=" << magic_enum::enum_name(value);
     }
 }
 
-TEST_F(ExportPartitionManifestBackCompatTest, MissingSchemaMismatchModeFallsBackToStrictInWorkerContext)
+TEST_F(ExportPartitionManifestBackCompatTest, MissingIgnoreExtraSourceColumnsParsesAsNullopt)
 {
     auto manifest = makeValidManifest();
-    ASSERT_FALSE(manifest.schema_mismatch_mode.has_value());
+    manifest.ignore_extra_source_columns = true;
+
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(manifest.toJsonString()).extract<Poco::JSON::Object::Ptr>();
+    json->remove("ignore_extra_source_columns");
+    std::ostringstream oss;
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+
+    auto parsed = ExportReplicatedMergeTreePartitionManifest::fromJsonString(oss.str());
+    EXPECT_FALSE(parsed.ignore_extra_source_columns.has_value());
+}
+
+TEST_F(ExportPartitionManifestBackCompatTest, IgnoreExtraSourceColumnsRoundTripsForEveryValue)
+{
+    for (const bool value : {false, true})
+    {
+        auto manifest = makeValidManifest();
+        manifest.ignore_extra_source_columns = value;
+
+        auto parsed = ExportReplicatedMergeTreePartitionManifest::fromJsonString(manifest.toJsonString());
+
+        ASSERT_TRUE(parsed.ignore_extra_source_columns.has_value()) << "value=" << value;
+        EXPECT_EQ(*parsed.ignore_extra_source_columns, value) << "value=" << value;
+    }
+}
+
+TEST_F(ExportPartitionManifestBackCompatTest, MissingSchemaMatchSettingsFallBackToDefaultsInWorkerContext)
+{
+    auto manifest = makeValidManifest();
+    ASSERT_FALSE(manifest.schema_match_mode.has_value());
+    ASSERT_FALSE(manifest.ignore_extra_source_columns.has_value());
 
     auto worker_context = ExportPartitionUtils::getContextCopyWithTaskSettings(getContext().context, manifest);
 
     EXPECT_EQ(
-        worker_context->getSettingsRef()[Setting::export_merge_tree_part_schema_mismatch_mode].value,
-        MergeTreePartExportSchemaMismatchMode::strict);
+        worker_context->getSettingsRef()[Setting::export_merge_tree_part_schema_match_mode].value,
+        MergeTreePartExportSchemaMatchMode::POSITION);
+    EXPECT_EQ(
+        worker_context->getSettingsRef()[Setting::export_merge_tree_part_ignore_extra_source_columns].value,
+        false);
 }
 
-TEST_F(ExportPartitionManifestBackCompatTest, SchemaMismatchModeAppliedToWorkerContextForEveryValue)
+TEST_F(ExportPartitionManifestBackCompatTest, SchemaMatchModeAppliedToWorkerContextForEveryValue)
 {
-    for (const auto value : magic_enum::enum_values<MergeTreePartExportSchemaMismatchMode>())
+    for (const auto value : magic_enum::enum_values<MergeTreePartExportSchemaMatchMode>())
     {
         auto manifest = makeValidManifest();
-        manifest.schema_mismatch_mode = value;
+        manifest.schema_match_mode = value;
 
         auto worker_context = ExportPartitionUtils::getContextCopyWithTaskSettings(getContext().context, manifest);
 
         EXPECT_EQ(
-            worker_context->getSettingsRef()[Setting::export_merge_tree_part_schema_mismatch_mode].value,
+            worker_context->getSettingsRef()[Setting::export_merge_tree_part_schema_match_mode].value,
             value) << "value=" << magic_enum::enum_name(value);
+    }
+}
+
+TEST_F(ExportPartitionManifestBackCompatTest, IgnoreExtraSourceColumnsAppliedToWorkerContextForEveryValue)
+{
+    for (const bool value : {false, true})
+    {
+        auto manifest = makeValidManifest();
+        manifest.ignore_extra_source_columns = value;
+
+        auto worker_context = ExportPartitionUtils::getContextCopyWithTaskSettings(getContext().context, manifest);
+
+        EXPECT_EQ(
+            worker_context->getSettingsRef()[Setting::export_merge_tree_part_ignore_extra_source_columns].value,
+            value) << "value=" << value;
     }
 }
 

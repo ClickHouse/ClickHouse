@@ -8,6 +8,8 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <base/arithmeticOverflow.h>
+#include <base/defines.h>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <cstring>
@@ -107,25 +109,126 @@ void checkDeletionVectorBlobReadLimits(Int64 length, std::optional<UInt64> expec
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
 }
 
-void validateDeletionVectorEnvelope(const UInt8 * header, Int64 length)
+bool isPuffinFileMagic(const UInt8 * header)
 {
+    return std::memcmp(header, PUFFIN_FILE_MAGIC, sizeof(PUFFIN_FILE_MAGIC)) == 0;
+}
+
+bool isDeletionVectorV1Envelope(const UInt8 * header, Int64 length)
+{
+    if (length < 12)
+        return false;
+
     const UInt32 combined_length = readBigEndianUInt32(header);
     if (std::memcmp(header + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
+        return false;
 
     if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+        return false;
 
     UInt64 expected_blob_size = 0;
     if (common::addOverflow(static_cast<UInt64>(combined_length), UInt64{8}, expected_blob_size))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+        return false;
 
-    if (static_cast<UInt64>(length) != expected_blob_size)
+    return static_cast<UInt64>(length) == expected_blob_size;
+}
+
+void validateDeletionVectorEnvelope(const UInt8 * header, Int64 length)
+{
+    if (!isDeletionVectorV1Envelope(header, length))
+    {
+        const UInt32 combined_length = readBigEndianUInt32(header);
+        if (std::memcmp(header + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
+
+        if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
+        UInt64 expected_blob_size = 0;
+        if (common::addOverflow(static_cast<UInt64>(combined_length), UInt64{8}, expected_blob_size))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Deletion vector blob size {} does not match combined length {}",
             length,
             combined_length);
+    }
+}
+
+namespace
+{
+
+String formatFourBytesHex(const UInt8 * bytes)
+{
+    return fmt::format(
+        "{:02X} {:02X} {:02X} {:02X}",
+        static_cast<unsigned>(bytes[0]),
+        static_cast<unsigned>(bytes[1]),
+        static_cast<unsigned>(bytes[2]),
+        static_cast<unsigned>(bytes[3]));
+}
+
+[[noreturn]] void throwUnknownDeletionVectorContainer(
+    std::string_view path, const UInt8 * header, Int64 content_offset)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Deletion vector file '{}' is neither a Puffin container (header magic {}, expected PFA1) "
+        "nor a deletion-vector-v1 / Delta .bin envelope at offset {}",
+        path,
+        formatFourBytesHex(header),
+        content_offset);
+}
+
+}
+
+IcebergDeletionVectorContainer detectIcebergDeletionVectorContainer(
+    SeekableReadBuffer & file,
+    size_t file_size,
+    Int64 content_offset,
+    Int64 content_size_in_bytes,
+    std::string_view path)
+{
+    checkDeletionVectorBlobReadLimits(content_size_in_bytes, /*expected_cardinality=*/std::nullopt);
+    validatePuffinBlobBounds(content_offset, content_size_in_bytes, file_size, "Deletion vector");
+
+    if (file_size < PUFFIN_MAGIC_SIZE)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector file '{}' is neither a Puffin container (file size {} is smaller than PFA1) "
+            "nor a deletion-vector-v1 / Delta .bin envelope at offset {}",
+            path,
+            file_size,
+            content_offset);
+    }
+
+    file.seek(0, SEEK_SET);
+    UInt8 header[PUFFIN_MAGIC_SIZE];
+    file.readStrict(reinterpret_cast<char *>(header), sizeof(header));
+
+    if (isPuffinFileMagic(header))
+        return IcebergDeletionVectorContainer::Puffin;
+
+    Int64 envelope_end = 0;
+    const bool envelope_header_in_bounds
+        = !common::addOverflow(content_offset, static_cast<Int64>(8), envelope_end)
+        && envelope_end >= 0
+        && static_cast<UInt64>(envelope_end) <= file_size
+        && content_offset >= 0;
+
+    if (envelope_header_in_bounds)
+    {
+        file.seek(content_offset, SEEK_SET);
+        UInt8 envelope[8];
+        file.readStrict(reinterpret_cast<char *>(envelope), sizeof(envelope));
+        if (isDeletionVectorV1Envelope(envelope, content_size_in_bytes))
+            return IcebergDeletionVectorContainer::SliceOnly;
+    }
+
+    throwUnknownDeletionVectorContainer(path, header, content_offset);
+    UNREACHABLE();
 }
 
 std::vector<UInt64> deserializeDeletionVectorV1Blob(std::string_view blob_bytes, std::optional<UInt64> expected_cardinality)

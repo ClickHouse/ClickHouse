@@ -93,7 +93,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
-Poco::Dynamic::Var getAvroType(DataTypePtr type);
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
 Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type);
 
 /// Converts a ClickHouse PARTITION BY AST into the corresponding Iceberg partition-spec JSON object.

@@ -19,9 +19,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05015',
-    name = '05015_cas_reject_fake_transaction',
-    path = '05015_cas_reject_fake_transaction_pool/',
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05015',
+    name = '${CLICKHOUSE_DATABASE}_05015_cas_reject_fake_transaction',
+    path = '${CLICKHOUSE_DATABASE}_05015_cas_reject_fake_transaction_pool/',
     use_fake_transaction = 1);
 " 2>&1 | grep -cm1 "use_fake_transaction. cannot be enabled for metadata type"
 

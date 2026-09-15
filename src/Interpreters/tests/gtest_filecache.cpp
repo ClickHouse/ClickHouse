@@ -8,6 +8,8 @@
 
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <thread>
 
 #include <Core/ServerUUID.h>
@@ -23,6 +25,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
@@ -43,7 +46,10 @@
 #include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/BoundedReadBuffer.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -2712,4 +2718,385 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
+}
+
+namespace
+{
+
+/// Behaves like a remote reader (e.g. `ReadBufferFromS3`): supports right-bounded reads (so
+/// `getRemoteReadBuffer` uses it as is, without wrapping) and reports the remote object's metadata.
+class FakeRemoteReadBuffer : public BoundedReadBuffer
+{
+public:
+    explicit FakeRemoteReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) {}
+
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override
+    {
+        return RemoteFileMetadata{.size = static_cast<size_t>(fs::file_size(getFileName())), .last_modification_time = 0};
+    }
+};
+
+/// The query scope required for reading through the cache (a query id and a query context bound to
+/// the current thread).
+struct TestQueryScope
+{
+    explicit TestQueryScope(const std::string & query_id = "query_id")
+    {
+        ServerUUID::setRandomForUnitTests();
+
+        Poco::XML::DOMParser dom_parser;
+        std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+        Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+        getMutableContext().context->setConfig(config);
+
+        query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        chassert(&DB::CurrentThread::get() == &thread_status);
+        query_scope = DB::QueryScope::create(query_context);
+    }
+
+    DB::ThreadStatus thread_status;
+    ContextMutablePtr query_context;
+    DB::QueryScope query_scope;
+};
+
+void writeSourceFile(const std::string & path, const std::string & data)
+{
+    WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE);
+    wb.write(data.data(), data.size());
+    wb.next();
+    wb.finalize();
+}
+
+std::string makeSourceData(size_t size)
+{
+    std::string data(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = 'a' + i % 26;
+    return data;
+}
+
+}
+
+/// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a
+/// prefetch in flight: the callers must not race on consuming it.
+TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtWithPrefetch)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const std::string data = makeSourceData(300);
+    std::string file_path = fs::current_path() / "test_concurrent_read_big_at";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 16;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("concurrent_read_big_at", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+
+    ThreadPoolRemoteFSReader remote_fs_reader(4, 0);
+
+    constexpr size_t num_threads = 4;
+    constexpr size_t num_iterations = 100;
+    /// Smaller than the file, so the prefetch is usually still in flight when the reads run.
+    constexpr size_t buffer_size = 64;
+
+    for (size_t iteration = 0; iteration < num_iterations; ++iteration)
+    {
+        auto cached_buffer = std::make_unique<CachedOnDiskReadBufferFromFile>(
+            file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
+            read_settings.filesystem_cache_settings, buffer_size, buffer_size,
+            "test", data.size(), false, false, std::nullopt, nullptr);
+
+        AsynchronousBoundedReadBuffer read_buffer(
+            std::move(cached_buffer), remote_fs_reader, buffer_size,
+            /* min_bytes_for_seek */ 0, Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+
+        read_buffer.prefetch(Priority{0});
+
+        std::atomic<size_t> ready{0};
+        std::array<std::string, num_threads> errors;
+        std::vector<std::thread> threads;
+
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            threads.emplace_back([&, t]
+            {
+                /// Barrier, to maximize the chance that the readBigAt calls overlap.
+                ready.fetch_add(1);
+                while (ready.load() < num_threads)
+                    ;
+
+                try
+                {
+                    /// Threads read different, partially overlapping ranges.
+                    const size_t offset = (t < 2) ? 10 * (t + 1) : 50 * t;
+                    const size_t count = 150;
+                    std::string buf(count, 0);
+                    size_t total = 0;
+                    while (total < count)
+                    {
+                        size_t read = read_buffer.readBigAt(buf.data() + total, count - total, offset + total, nullptr);
+                        if (read == 0)
+                            break;
+                        total += read;
+                    }
+                    if (total != count)
+                        errors[t] = fmt::format("short read: {} instead of {}", total, count);
+                    else if (memcmp(buf.data(), data.data() + offset, count) != 0)
+                        errors[t] = "read data does not match file contents";
+                }
+                catch (...)
+                {
+                    errors[t] = getCurrentExceptionMessage(true);
+                }
+            });
+        }
+
+        for (auto & thread : threads)
+            thread.join();
+
+        for (size_t t = 0; t < num_threads; ++t)
+            ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
+    }
+}
+
+/// Concurrent readBigAt calls on a cached buffer constructed with unknown file size: they race
+/// on the lazy initialization of file_size (tryGetFileSize), which must be synchronized.
+TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const std::string data = makeSourceData(300);
+    std::string file_path = fs::current_path() / "test_concurrent_read_big_at_unknown_size";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 16;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("concurrent_read_big_at_unknown_size", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+
+    constexpr size_t num_threads = 4;
+    constexpr size_t num_iterations = 100;
+
+    for (size_t iteration = 0; iteration < num_iterations; ++iteration)
+    {
+        /// Zero size is treated as unknown: the first readBigAt calls resolve it lazily.
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
+            read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+            "test", /* file_size */ 0, false, false, std::nullopt, nullptr);
+
+        std::atomic<size_t> ready{0};
+        std::array<std::string, num_threads> errors;
+        std::vector<std::thread> threads;
+
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            threads.emplace_back([&, t]
+            {
+                /// Barrier, to maximize the chance that the readBigAt calls overlap.
+                ready.fetch_add(1);
+                while (ready.load() < num_threads)
+                    ;
+
+                try
+                {
+                    const size_t offset = 50 * t;
+                    const size_t count = 150;
+                    std::string buf(count, 0);
+                    size_t total = 0;
+                    while (total < count)
+                    {
+                        size_t read = cached_buffer->readBigAt(buf.data() + total, count - total, offset + total, nullptr);
+                        if (read == 0)
+                            break;
+                        total += read;
+                    }
+                    if (total != count)
+                        errors[t] = fmt::format("short read: {} instead of {}", total, count);
+                    else if (memcmp(buf.data(), data.data() + offset, count) != 0)
+                        errors[t] = "read data does not match file contents";
+                }
+                catch (...)
+                {
+                    errors[t] = getCurrentExceptionMessage(true);
+                }
+            });
+        }
+
+        for (auto & thread : threads)
+            thread.join();
+
+        for (size_t t = 0; t < num_threads; ++t)
+            ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
+    }
+}
+
+TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
+{
+    /// Regression for STID 4192-71db: a holder for some query_id decides it is the last one and
+    /// releases its query context, but a concurrent holder for the same query_id revives the
+    /// context first. The release must then be a no-op: the revived context must survive (so the
+    /// per-query download limit keeps being enforced for the rest of the query) and a later release
+    /// of the revived context must not fail with "Attempt to release query context that does not exist".
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_revive";
+    FilesystemCacheSettings cache_settings;
+    cache_settings.max_download_size_per_query = 1024;
+
+    /// holder1 takes the context; query_map and holder1 both reference it (use_count == 2).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_TRUE(context1 != nullptr);
+    ASSERT_EQ(context1.use_count(), 2);
+
+    /// holder2 revives the same context before holder1 releases (getOrSetQueryContext returns the
+    /// existing entry). Now query_map, holder1 and holder2 all reference it (use_count == 3).
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// holder1 releases. The map still maps query_id to the live context and another holder is
+    /// alive, so the entry must be kept (no erase, no throw) and nothing is handed back for
+    /// destruction.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_EQ(doomed1, nullptr);
+    context1.reset();
+
+    /// Enforcement is preserved: the revived context is still discoverable.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), context2.get());
+    }
+
+    /// holder2 is now the last holder; releasing it actually removes the entry, once, and hands the
+    /// orphaned context back so it is destroyed by the caller outside the cache lock.
+    const auto * context2_raw = context2.get();
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+    ASSERT_EQ(doomed2.get(), context2_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+    context2.reset();
+
+    /// After full release the context is gone.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
+}
+
+TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
+{
+    /// Regression for #109508: two holders for the same query_id release "at the same time".
+    /// A query with parallel read streams has several holders (each CachedOnDiskReadBufferFromFile
+    /// creates its own), so use_count is > 2. If the last-holder decision reads use_count before this
+    /// holder drops its own reference (or drops it outside the lock), both releasers observe the shared
+    /// count, both skip the erase, and after both drop their reference only the map entry remains and is
+    /// never removed. That orphans query_map[query_id] for the lifetime of the cache and lets a later
+    /// query reusing the same query_id pick up stale per-query limit state. The fix drops each holder's
+    /// reference under the lock and erases once the map entry is the sole owner.
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_concurrent_release";
+    FilesystemCacheSettings cache_settings;
+    cache_settings.max_download_size_per_query = 1024;
+
+    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// Keep a raw pointer to assert which release actually surrenders the context for destruction.
+    const auto * context_raw = context1.get();
+
+    /// Both holders decide to release while both are still alive (the interleaving that leaks): each
+    /// removeQueryContext drops that holder's reference under the lock. The first keeps the entry (one
+    /// holder still alive) and returns nullptr; the second erases it and returns the now-orphaned
+    /// context so the caller destroys it after the cache lock is released. Neither throws.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+
+    /// removeQueryContext resets each passed reference, so both are already null here.
+    ASSERT_EQ(context1, nullptr);
+    ASSERT_EQ(context2, nullptr);
+
+    /// Only the last release hands the context back for out-of-lock destruction; the earlier one
+    /// returns nullptr because another holder was still alive.
+    ASSERT_EQ(doomed1, nullptr);
+    ASSERT_EQ(doomed2.get(), context_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+
+    /// The entry must be gone: with the pre-fix logic both releases skipped the erase and the entry
+    /// leaked, so tryGetQueryContext would still find it.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
 }

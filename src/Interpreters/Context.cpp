@@ -103,6 +103,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -285,6 +286,10 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -300,6 +305,7 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
     extern const SettingsBool filesystem_cache_allow_background_download;
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
@@ -1518,12 +1524,27 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        if (storage.second)
+        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
+        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
+        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
+        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
+        ///    table was dropped and recreated), or
+        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
+        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
+        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
+        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
+        ///    refers to the old table that is about to be dropped, but the cache would still hand out
+        ///    the new (now live) table - so dropping by the temporary name would shut down the live
+        ///    table instead and break it (e.g. detaching a materialized view from its source), or
+        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
+        ///    (a same-name replacement); returning it would silently substitute the wrong table
+        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
+        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
+        if (storage.second
+            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
+            && (!id.hasUUID() || it->uuid == id.uuid))
             return storage;
 
-        /// The table was cached but no longer exists by its UUID
-        /// (e.g. refreshable materialized view's inner table was dropped and recreated).
-        /// Remove the stale entry and fall through to a fresh lookup by name.
         shard.set.erase(it);
     }
 
@@ -2341,10 +2362,10 @@ ClassifierPtr Context::getWorkloadClassifier() const
     return classifier;
 }
 
-void Context::releaseWorkloadResources() const
+void Context::releaseQuerySlot() const
 {
     if (auto elem = getProcessListElementSafe())
-        elem->releaseWorkloadResources();
+        elem->releaseQuerySlot();
 }
 
 String Context::getMergeWorkload() const
@@ -3336,6 +3357,12 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+}
+
+void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -6171,12 +6198,12 @@ void Context::startClusterDiscovery()
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
+    ClusterDiscovery * discovery_to_update = nullptr;
+    ClusterDiscovery * discovery_just_created_ptr = nullptr;
+    std::unique_ptr<ClusterDiscovery> discovery_to_disable;
+    bool clusters_changed = false;
     {
         std::lock_guard lock(shared->clusters_mutex);
-        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
-        {
-            shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
-        }
 
         /// Do not update clusters if this part of config wasn't changed.
         /// Note: clusters_config must be checked for null separately from clusters, because
@@ -6184,19 +6211,76 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         /// shared->clusters using the fallback getConfigRef() without setting shared->clusters_config.
         /// If setClustersConfig() then runs before the config reloader stores its ConfigurationPtr,
         /// dereferencing shared->clusters_config would throw Poco::NullPointerException.
-        if (shared->clusters && shared->clusters_config && isSameConfiguration(*config, *shared->clusters_config, config_name))
-            return;
+        ///
+        /// Still start a discovery object created after server start when only the allow-flag
+        /// flipped (remote_servers subtree unchanged) — otherwise the worker never runs.
+        /// The reverse transition (allow 1 -> 0) must tear discovery down even when remote_servers
+        /// is unchanged; otherwise the worker stays registered until restart.
+        const bool remote_servers_unchanged
+            = shared->clusters && shared->clusters_config
+            && isSameConfiguration(*config, *shared->clusters_config, config_name);
 
-        auto old_clusters_config = shared->clusters_config;
-        shared->clusters_config = config;
+        const bool discovery_enabled
+            = ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery;
 
-        if (!shared->clusters)
-            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
-        else
-            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+        /// Validate discovery before creating the object or committing Clusters so a bad reload
+        /// cannot leave clusters_config advanced while discovery stays on the previous view.
+        /// Also validate when allow is turned off: an existing ClusterDiscovery is still updated.
+        if (!remote_servers_unchanged && (discovery_enabled || shared->cluster_discovery))
+            ClusterDiscovery::validateConfig(*config, getGlobalContext(), config_name);
 
-        ++shared->clusters_version;
+        bool discovery_just_created = false;
+        if (discovery_enabled)
+        {
+            if (!shared->cluster_discovery)
+            {
+                shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+                discovery_just_created = true;
+            }
+        }
+        else if (shared->cluster_discovery)
+        {
+            discovery_to_disable = std::move(shared->cluster_discovery);
+        }
+
+        if (!remote_servers_unchanged)
+        {
+            auto old_clusters_config = shared->clusters_config;
+            shared->clusters_config = config;
+
+            if (!shared->clusters)
+                shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+            else
+                shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+
+            if (shared->cluster_discovery && !discovery_just_created)
+                discovery_to_update = shared->cluster_discovery.get();
+
+            ++shared->clusters_version;
+            clusters_changed = true;
+        }
+
+        /// Constructor already applied config. Start outside this lock if the server is ready;
+        /// otherwise programs/server/Server.cpp calls startClusterDiscovery() after listen.
+        if (discovery_just_created)
+            discovery_just_created_ptr = shared->cluster_discovery.get();
     }
+
+    /// Tear down outside clusters_mutex: joins the worker and may touch ZooKeeper.
+    if (discovery_to_disable)
+        discovery_to_disable->disableAndShutdown();
+
+    /// Apply discovery updates outside clusters_mutex: may start the worker and touch ZooKeeper.
+    if (discovery_to_update)
+        discovery_to_update->updateFromConfig(*config, config_name);
+
+    /// Re-check server readiness without clusters_mutex (isServerCompletelyStarted takes shared->mutex).
+    if (discovery_just_created_ptr && getApplicationType() == ApplicationType::SERVER && isServerCompletelyStarted())
+        discovery_just_created_ptr->start();
+
+    /// Avoid DDL host-id refresh / log noise when remote_servers (and discovery) did not change.
+    /// Still notify when discovery was just created or disabled (e.g. allow-flag-only reload).
+    if (clusters_changed || discovery_to_update || discovery_just_created_ptr || discovery_to_disable)
     {
         SharedLockGuard lock(shared->mutex);
         if (shared->ddl_worker)
@@ -8060,6 +8144,8 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_settings.wait_for_concurrent_download_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_wait_for_concurrent_download_timeout_milliseconds];
     res.filesystem_cache_settings.allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
     res.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
@@ -8252,6 +8338,24 @@ ReverseLookupCache & Context::getReverseLookupCache() const
             ReverseLookupCache::DEFAULT_SIZE_RATIO);
     }
     return *query_context->reverse_lookup_cache;
+}
+
+AIQuotaTrackerPtr Context::getAIQuotaTracker() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_quota_tracker)
+    {
+        query_context->ai_quota_tracker = std::make_shared<AIQuotaTracker>(
+            settings_ref[Setting::ai_function_max_input_tokens_per_query],
+            settings_ref[Setting::ai_function_max_output_tokens_per_query],
+            settings_ref[Setting::ai_function_max_api_calls_per_query],
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+    }
+    return query_context->ai_quota_tracker;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

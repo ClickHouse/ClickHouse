@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasInspect.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobMeta.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasBlobEnvelopeFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasBlobMetaFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcStateFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFoldSealFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
@@ -8,7 +9,9 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCkptFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefLogFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefSnapshotFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefWireVocab.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasWireVocab.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Common/Exception.h>
@@ -126,20 +129,10 @@ String renderRefTxnIdObj(const RefTxnId & id)
         .str();
 }
 
-String refOwnerKindName(RefOwnerKind k)
-{
-    switch (k)
-    {
-        case RefOwnerKind::Committed: return "Committed";
-        case RefOwnerKind::Precommit: return "Precommit";
-    }
-    return "Unknown";
-}
-
 String renderRefOwnerBinding(const RefOwnerBinding & b)
 {
     return JsonObj()
-        .add("kind", jsonEscape(refOwnerKindName(b.kind)))
+        .add("kind", jsonEscape(refOwnerKindToWord(b.kind)))
         .add("ref_name", jsonEscape(b.ref_name))
         .add("manifest_ref", renderManifestRef(b.manifest_ref))
         .str();
@@ -175,7 +168,7 @@ String renderRefTableSnapshot(const RefTableSnapshot & s)
         .str();
 }
 
-/// The namespace's checkpoint (spec INV-4). Every field is optional and each absence means something
+/// The namespace's checkpoint. Every field is optional and each absence means something
 /// different an operator needs to see: no `life_epoch` means no writer that knew this namespace's
 /// genesis epoch has written here yet, no `committed_through` means the life has no committed
 /// transaction, no `checkpoint_snapshot_id` means recovery has no snapshot base, and no
@@ -196,23 +189,10 @@ String renderRefCkpt(const RootNamespace & ns, const RefCkpt & c)
         .str();
 }
 
-String refOpKindName(RefOpKind k)
-{
-    switch (k)
-    {
-        case RefOpKind::NamespaceBirth: return "NamespaceBirth";
-        case RefOpKind::OwnerTransition: return "OwnerTransition";
-        case RefOpKind::SetPublishedAt: return "SetPublishedAt";
-        case RefOpKind::RemoveNamespace: return "RemoveNamespace";
-        case RefOpKind::EpochSeal: return "EpochSeal";
-    }
-    return "Unknown";
-}
-
 String renderRefOp(const RefOp & op)
 {
     return JsonObj()
-        .add("kind", jsonEscape(refOpKindName(op.kind)))
+        .add("kind", jsonEscape(refOpKindToWireWord(op.kind)))
         .add("old_binding", op.old_binding ? renderRefOwnerBinding(*op.old_binding) : "null")
         .add("new_binding", op.new_binding ? renderRefOwnerBinding(*op.new_binding) : "null")
         .add("ref_name", jsonEscape(op.ref_name))
@@ -237,16 +217,6 @@ String renderRefLogTxn(const RefLogTxn & t)
         .str();
 }
 
-String placementName(EntryPlacement p)
-{
-    switch (p)
-    {
-        case EntryPlacement::Inline: return "Inline";
-        case EntryPlacement::Blob: return "Blob";
-    }
-    return "Unknown";
-}
-
 /// `inline_bytes` renders as its LENGTH only, not its content — an inline file's bytes are payload
 /// data, not part-manifest identity, and may be arbitrarily large / non-UTF8.
 String renderManifestEntry(const ManifestEntry & e)
@@ -256,7 +226,7 @@ String renderManifestEntry(const ManifestEntry & e)
     /// digest widths, and each entry's own `ref.algo` determines its width.
     return JsonObj()
         .add("path", jsonEscape(e.path))
-        .add("placement", jsonEscape(placementName(e.placement)))
+        .add("placement", jsonEscape(entryPlacementToWireWord(e.placement)))
         .add("blob", jsonEscape(blobIdOf(e.ref)))
         .add("blob_size", jsonUInt(e.blob_size))
         .add("inline_bytes_size", jsonUInt(e.inline_bytes.size()))
@@ -288,7 +258,7 @@ String renderMountLease(const MountLease & m)
         .add("started_at_ms", jsonUInt(m.started_at_ms))
         .add("seq", jsonUInt(m.seq))
         .add("expires_at_ms", jsonUInt(m.expires_at_ms))
-        .add("min_active", jsonUInt(m.min_active))
+        .add("min_active_build_sequence", jsonUInt(m.min_active_build_sequence))
         .add("gc_fenced", jsonBool(m.gc_fenced))
         .add("write_attempt_id", jsonHex(m.write_attempt_id))
         .str();
@@ -315,34 +285,15 @@ String renderGcState(const GcState & s)
         .str();
 }
 
-String tokenTypeName(TokenType t)
-{
-    switch (t)
-    {
-        case TokenType::ETag:       return "ETag";
-        case TokenType::Generation: return "Generation";
-        case TokenType::Emulated:   return "Emulated";
-    }
-    return "Unknown";
-}
-
-/// `Token::value` is an opaque backend-native string (e.g. an S3 ETag) — NOT a 128-bit hash — so it
-/// renders verbatim (escaped), not hex-converted; `type` names which backend family minted it.
-String renderToken(const Token & t)
+/// A recorded incarnation's value is an opaque backend-native string (e.g. an S3 ETag) — NOT a
+/// 128-bit hash — so it renders verbatim (escaped), not hex-converted; `type` is the dialect word,
+/// naming which backend family minted it.
+String renderPersistedEtag(const PersistedEtag & inc)
 {
     return JsonObj()
-        .add("value", jsonEscape(t.value))
-        .add("type", jsonEscape(tokenTypeName(t.type)))
+        .add("value", jsonEscape(inc.value))
+        .add("type", jsonEscape(inc.dialect))
         .str();
-}
-
-String objectKindName(ObjectKind k)
-{
-    switch (k)
-    {
-        case ObjectKind::Blob: return "Blob";
-    }
-    return "Unknown";
 }
 
 String renderRunRef(const RunRef & r)
@@ -351,14 +302,14 @@ String renderRunRef(const RunRef & r)
         .add("key", jsonEscape(r.key))
         .add("checksum", jsonHex(r.checksum))
         .add("shard", jsonUInt(r.shard))
-        .add("generation", jsonUInt(r.generation))
+        .add("generation", jsonUInt(r.key_generation))
         .str();
 }
 
 String renderRefCoverage(const RefCoverage & c)
 {
     return JsonObj()
-        .add("classification", jsonUInt(c.classification))
+        .add("classification", jsonEscape(coverageClassToWord(c.classification)))
         .add("last_folded_ref_id", renderRefTxnIdObj(c.last_folded_ref_id))
         .str();
 }
@@ -379,7 +330,7 @@ String renderFoldSeal(const CasFoldSeal & seal)
     for (const auto & r : seal.blob_target_runs)
         blob_target_runs.push_back(renderRunRef(r));
 
-    /// A fold seal carries per-GC-shard totals for `kCondemned` rows in its source runs. Render the
+    /// A fold seal carries per-GC-shard totals for `RunMarker::Condemned` rows in its source runs. Render the
     /// summary from the seal itself; the older separate retired-reference object is no longer part
     /// of the current layout.
     JsonObj condemned_summary;
@@ -399,38 +350,14 @@ String renderFoldSeal(const CasFoldSeal & seal)
         .str();
 }
 
-String provenanceOpName(ProvenanceOp op)
-{
-    switch (op)
-    {
-        case ProvenanceOp::Other:    return "Other";
-        case ProvenanceOp::Insert:   return "Insert";
-        case ProvenanceOp::Merge:    return "Merge";
-        case ProvenanceOp::Mutation: return "Mutation";
-        case ProvenanceOp::Attach:   return "Attach";
-        case ProvenanceOp::Repack:   return "Repack";
-    }
-    return "Unknown";
-}
-
 String renderProvenance(const Provenance & p)
 {
     return JsonObj()
         .add("created_at_ms", jsonUInt(p.created_at_ms))
         .add("creator_server_id", jsonHex(p.creator_server_id))
         .add("ch_version", jsonUInt(p.ch_version))
-        .add("op", jsonEscape(provenanceOpName(p.op)))
+        .add("op", jsonEscape(provenanceOpToWireWord(p.op)))
         .str();
-}
-
-String metaStateName(MetaState s)
-{
-    switch (s)
-    {
-        case MetaState::Clean:     return "clean";
-        case MetaState::Condemned: return "condemned";
-    }
-    return "unknown";
 }
 
 /// The per-hash `.meta` descriptor is the blob body's sibling and records its freshness state
@@ -441,7 +368,7 @@ String renderBlobMeta(const BlobMeta & m)
     return JsonObj()
         .add("object", jsonEscape("blob_meta"))
         .add("version", jsonUInt(m.version))
-        .add("state", jsonEscape(metaStateName(m.state)))
+        .add("state", jsonEscape(metaStateToWireWord(m.state)))
         .add("condemn_round", jsonUInt(m.condemn_round))
         .add("size", jsonUInt(m.size))
         .str();
@@ -450,9 +377,9 @@ String renderBlobMeta(const BlobMeta & m)
 String renderEnvelopeHeader(const EnvelopeHeader & h)
 {
     return JsonObj()
-        .add("kind", jsonEscape(objectKindName(h.kind)))
+        .add("kind", jsonEscape(objectKindToWord(h.kind)))
         /// The blob identity is carried by the object key, so the envelope keeps only the provenance
-        /// fields needed for forensics (`ch` and `bld`) together with its compatibility version.
+        /// fields needed for forensics (`chver` and `build`) together with its compatibility version.
         .add("compatibility_version", jsonUInt(h.compatibility_version))
         .add("incarnation_tag", jsonHex(h.incarnation_tag))
         .add("build_id", jsonHex(h.build_id))
@@ -462,25 +389,19 @@ String renderEnvelopeHeader(const EnvelopeHeader & h)
         .str();
 }
 
-/// The word vocabulary a row's marker byte renders as, matching the `cas_run` NDJSON's own `"m"` field
-/// words (`CasRecordStreamFormat.cpp`'s private `markerToWord`) so cas-inspect speaks the same vocabulary
+/// The word vocabulary a row's marker byte renders as, matching the `cas_run` NDJSON's own `mark` field
+/// words (`runMarkerToWireWord`) so cas-inspect speaks the same vocabulary
 /// as the on-disk format rather than inventing a second one.
-String sourceEdgeRowKindName(char marker)
+String sourceEdgeRowKindName(RunMarker marker)
 {
-    switch (marker)
-    {
-        case kEdgeActive: return "edge";
-        case kZeroMarker: return "zero";
-        case kCondemned:  return "condemned";
-        default: return "unknown";
-    }
+    return String(runMarkerToWireWord(marker));
 }
 
 String renderCondemnedRow(const CondemnedRow & r)
 {
     return JsonObj()
         .add("delete_pending", jsonBool(r.delete_pending))
-        .add("token", renderToken(r.token))
+        .add("token", renderPersistedEtag(r.token))
         .add("size", jsonUInt(r.size))
         .add("condemn_round", jsonUInt(r.condemn_round))
         .add("marker_confirmed", jsonBool(r.marker_confirmed))
@@ -514,7 +435,7 @@ String renderBlobTargetRun(const ParsedBlobTargetRunKey & parsed, std::string_vi
         if (payload.empty())
             throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
                 "cas-inspect: source-edge run row for blob {} has an empty payload", blobIdOf(ref));
-        const char marker = payload[0];
+        const RunMarker marker = runMarkerFromByte(payload[0], "cas-inspect: source-edge run row");
 
         distinct_blobs.insert(ref);
         JsonObj row;
@@ -527,20 +448,16 @@ String renderBlobTargetRun(const ParsedBlobTargetRunKey & parsed, std::string_vi
 
         switch (marker)
         {
-            case kEdgeActive:
+            case RunMarker::Edge:
                 ++edge_count;
                 break;
-            case kZeroMarker:
+            case RunMarker::Zero:
                 ++zero_marker_count;
                 break;
-            case kCondemned:
+            case RunMarker::Condemned:
                 ++condemned_count;
                 row.add("condemned", renderCondemnedRow(decodeCondemnedRow(payload)));   // CORRUPTED_DATA on malformed (fail-closed)
                 break;
-            default:
-                throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
-                    "cas-inspect: source-edge run row for blob {} has an unknown marker 0x{:02x}",
-                    blobIdOf(ref), static_cast<uint8_t>(marker));
         }
         rows.push_back(row.str());
     }

@@ -1,0 +1,12 @@
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_reload_cluster>
+            <discovery>
+                <path>/clickhouse/discovery/test_reload_cluster</path>
+                <user>user1</user>
+                <password>password123</password>
+            </discovery>
+        </test_reload_cluster>
+    </remote_servers>
+</clickhouse>

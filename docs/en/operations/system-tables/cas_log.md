@@ -25,13 +25,13 @@ specified (it is enabled by default in the shipped `config.xml`).
 - `event_date` ([Date](/sql-reference/data-types/date)) — Event date.
 - `event_time` ([DateTime](/sql-reference/data-types/datetime)) — Event time.
 - `event_time_microseconds` ([DateTime64(6)](/sql-reference/data-types/datetime64)) — Event time with microseconds precision.
-- `event_type` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — The CAS decision/event, e.g. `blob_put`, `blob_reuse_adopt`, `root_remove`, `indegree_zero`, `gc_retire_decision`, `gc_recheck_verdict`, `blob_delete`, `dangling_access`, `corrupt_dangle`.
+- `event_type` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — The CAS decision/event, e.g. `blob_put`, `blob_reuse_adopt`, `root_remove`, `indegree_zero`, `gc_retire_decision`, `gc_recheck_verdict`, `blob_delete`, `dangling_access`, `corrupt_dangle`, `watermark_renew`, `mount_remount`.
 - `disk_name` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — The content-addressed disk / pool the event belongs to.
 - `namespace` ([String](/sql-reference/data-types/string)) — `roots/<namespace>` (server/table); empty if not applicable.
 - `ref_name` ([String](/sql-reference/data-types/string)) — Part name / ref the event concerns; empty if not applicable.
 - `object_kind` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — One of `none`, `blob`, `manifest`, `root`, `snapshot`.
 - `object_hash` ([String](/sql-reference/data-types/string)) — Content hash (lowercase hex) of the object; empty if not applicable.
-- `token` ([String](/sql-reference/data-types/string)) — Incarnation token (`ETag`) involved; empty if not applicable.
+- `token` ([String](/sql-reference/data-types/string)) — On events about a stored object, the incarnation involved, rendered uniformly as `<dialect>:<value>` (e.g. `etag:"a1b2c3"` on S3-compatible stores, `generation:1234` on GCS); the part-build lifecycle events reuse the column for the 128-bit build id in hex; empty if not applicable.
 - `round` ([UInt64](/sql-reference/data-types/int-uint)) — GC round (`0` if not applicable).
 - `generation` ([UInt64](/sql-reference/data-types/int-uint)) — GC snapshot generation (`0` if not applicable).
 - `at_version` ([UInt64](/sql-reference/data-types/int-uint)) — Manifest `shard_version` of the driving journal record (`0` if not applicable).
@@ -39,7 +39,7 @@ specified (it is enabled by default in the shipped `config.xml`).
 - `reason` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Human-readable rationale for the decision. Templated across rows, so it is `LowCardinality`.
 - `thread_id` ([UInt64](/sql-reference/data-types/int-uint)) — OS thread that emitted the event.
 - `query_id` ([String](/sql-reference/data-types/string)) — Query id for correlation with [`system.query_log`](/operations/system-tables/query_log); empty if not applicable.
-- `detail` ([Map(LowCardinality(String), String)](/sql-reference/data-types/map)) — Structured event-specific facts, e.g. `condemn_round`, `superseded_token`, `code`, `site`.
+- `detail` ([Map(LowCardinality(String), String)](/sql-reference/data-types/map)) — Structured event-specific facts, e.g. `condemn_round`, `superseded_token`, `code`, `site`, or — on `watermark_renew` — `attempts_sent` and `classification`; see [debugging](/antalya/cas/operations/debugging#trace-renewal-remount) for the mount-renewal detail keys.
 
 ## Example {#example}
 

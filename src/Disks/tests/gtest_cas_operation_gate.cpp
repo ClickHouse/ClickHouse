@@ -113,13 +113,14 @@ const std::string kSrid = "test";
 /// gtest_cas_lifecycle_condition.cpp's helper.
 void fenceOutMount(DB::Cas::Backend & backend, const String & mount_key)
 {
-    const auto got = backend.get(mount_key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(mount_key, DB::Cas::Retry::standard());
     ASSERT_TRUE(got.has_value());
     DB::Cas::MountLease m = DB::Cas::decodeMountLease(got->bytes);
     m.gc_fenced = true;
     m.seq += 1;
-    ASSERT_EQ(backend.putOverwrite(mount_key, DB::Cas::encodeMountLease(m), got->token).outcome,
-              DB::Cas::PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(
+        (*op).replace(mount_key, DB::Cas::encodeMountLease(m), got->etag, DB::Cas::Retry::standard())));
 }
 
 }
@@ -420,7 +421,7 @@ TEST(CASOperationGate, RemoveThrowsDuringTransientAndDrainsAfterRecovery)
         << "the gap message must name the transient (auto-recovering) condition: " << gap_msg;
 
     /// The lease is restored: the disk self-remounts a fresh incarnation and auto-recovers to Live.
-    fenceOutMount(pool->backend(), pool->layout().mountKey(kSrid));
+    fenceOutMount(*pool->poolBackendPtr(), pool->layout().mountKey(kSrid));
     ASSERT_TRUE(pool->tryRemountOnce()) << "the self-remount must reclaim a fresh incarnation";
     ASSERT_EQ(pool->lifecycle(), PoolLifecycle::Live) << "the pool must auto-recover to Live";
 

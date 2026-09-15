@@ -17,7 +17,7 @@
 /// (Live) or READ-ONLY pool, an enumeration about to answer EMPTY at a table root must first CONFIRM the
 /// pool identity object (`_pool_meta`) exists with an AUTHORITATIVE, UNCACHED probe -- because "empty" at a
 /// table root is exactly what a silently-erased backing looks like, and a read-only pool has no
-/// keeper/lease/observer to catch that erasure any other way. These tests build a real
+/// renewer/lease/observer to catch that erasure any other way. These tests build a real
 /// `ContentAddressedMetadataStorage` over a Local object storage (the gtest_cas_operation_gate.cpp harness)
 /// and exercise the rule across the six cells the brief enumerates.
 

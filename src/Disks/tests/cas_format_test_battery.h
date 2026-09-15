@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <fmt/format.h>
 #include <functional>
+#include <set>
 
 namespace DB::ErrorCodes
 {
@@ -28,12 +29,19 @@ struct FormatBatteryCase
     std::function<String(std::string_view)> make_future_version = {};
 };
 
-/// Canonical object headers track the current compatibility generation. The type remains an
-/// explicit test literal at every call site, so a registry/type mismatch cannot be hidden by a
-/// self-derived expectation.
+/// The canonical object header, spelled literally.
+///
+/// The version is the LITERAL 1, not `currentCompatibilityVersion()`. Deriving it from production
+/// was the defect: encoder output and expected bytes would then move together across a generation
+/// bump, and a golden that tracks the code it is meant to pin cannot fail. The type was already a
+/// literal at every call site for the same reason; the version had been left behind.
+///
+/// A future generation bump is therefore SUPPOSED to break every test that uses this. That is the
+/// point: the new bytes get read, agreed to, and written down, rather than being adopted silently.
+/// `HeaderVersionIsTheLiteralThisBatteryPins` below fails first and says so.
 inline String currentFormatHeader(std::string_view type)
 {
-    return fmt::format("{{\"type\":\"{}\",\"v\":{}}}\n", type, DB::Cas::currentCompatibilityVersion());
+    return fmt::format("{{\"type\":\"{}\",\"v\":1}}\n", type);
 }
 
 namespace cas_battery_detail
@@ -52,6 +60,23 @@ void expectCode(int code, F && f, const String & context)
     }
 }
 }
+
+namespace DB::Cas::tests
+{
+inline std::set<FormatId> & batteryCoveredIds()
+{
+    static std::set<FormatId> ids;
+    return ids;
+}
+
+struct BatteryCoverageRegistrar
+{
+    explicit BatteryCoverageRegistrar(FormatId id) { batteryCoveredIds().insert(id); }
+};
+}
+
+#define CAS_BATTERY_COVERS(format_id) \
+    static const DB::Cas::tests::BatteryCoverageRegistrar battery_covers_##format_id{DB::Cas::FormatId::format_id}
 
 inline void runFormatBattery(const FormatBatteryCase & c)
 {

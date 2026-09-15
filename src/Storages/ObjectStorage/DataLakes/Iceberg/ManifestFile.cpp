@@ -92,7 +92,7 @@ void requireDirectReferencedDataFileForPuffinDeletionVector(
     {
         throw DB::Exception(
             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Puffin deletion vector entry in manifest file '{}' is missing referenced_data_file",
+            "Deletion vector entry in manifest file '{}' is missing referenced_data_file",
             manifest_file_path);
     }
 }

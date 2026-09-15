@@ -56,7 +56,9 @@ literal string, as above, is enough; on a replicated cluster where every replica
 disk's `endpoint` already uses, giving each replica a distinct subtree from one template.
 
 **S3 endpoint variant.** Swap `object_storage_type` to `s3` and add the usual object-storage
-connection keys; nothing else in this config changes:
+connection keys, plus `http_keep_alive_timeout` and `http_keep_alive_max_requests` — see
+[recommended keep-alive settings](/antalya/cas/configuration#recommended-keep-alive-settings) for
+why; nothing else in this config changes:
 
 ```xml
 <cas>
@@ -67,6 +69,8 @@ connection keys; nothing else in this config changes:
     <endpoint>https://bucket.s3.amazonaws.com/cas/</endpoint>
     <access_key_id>...</access_key_id>
     <secret_access_key>...</secret_access_key>
+    <http_keep_alive_timeout>30</http_keep_alive_timeout>
+    <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
 </cas>
 ```
 

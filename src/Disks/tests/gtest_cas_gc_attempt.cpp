@@ -47,16 +47,17 @@ ManifestRef ref(const String &, uint64_t seq, uint64_t inst)
 /// Whether a blob's body object is present in the backend (HEADs the object key directly).
 bool blobExists(InMemoryBackend & b, const Layout & layout, const UInt128 & hash)
 {
-    return b.head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)})).exists;
+    OperationForTest op(b);
+    return (*op).head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)}), Retry::once()).has_value();
 }
 
 /// Whether the CURRENT retired list (any gc-shard) still holds an entry — the ack-floor deletion pipeline
 /// is in flight while this is true.
 bool anyRetiredPending(const PoolPtr & s)
 {
-    /// Retired-in-snapshot (T4): condemned state rides the adopted fold seal's kCondemned rows, not a
+    /// Condemned state rides the adopted fold seal's RunMarker::Condemned rows, not a
     /// separate retired list — reconstruct the in-flight set from the seal.
-    return anyCondemnedInSeal(s->backend(), s->layout());
+    return anyCondemnedInSeal(*s->poolBackendPtr(), s->layout());
 }
 
 /// Drive regular GC to a fixpoint over the ACK-FLOOR round (advancing the store's own mount ack after each
@@ -79,30 +80,36 @@ size_t runGcToFixpoint(const PoolPtr & s, Gc & gc, size_t max_rounds = 64)
     return rounds;
 }
 
-/// A backend that throws ONCE on the SINGLE round-commit `gc/state` CAS — the casPut that advances
-/// snap_generation (the one-pass round has exactly one such CAS; the lease-acquire CAS does not advance
-/// snap_generation, so "advances snap_generation" uniquely picks the round commit).
+/// A backend that refuses ONCE the SINGLE round-commit `gc/state` write — the conditional write that
+/// advances snap_generation (the one-pass round has exactly one such write; the lease acquire/renew does
+/// not advance snap_generation, so "advances snap_generation" uniquely picks the round commit).
 class InterruptRoundCasBackend : public InMemoryBackend
 {
 public:
     explicit InterruptRoundCasBackend(String gc_state_key_) : gc_state_key(std::move(gc_state_key_)) {}
 
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected,
-                     const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        TransportAccess & access) override
     {
-        if (arm_interrupt && key == gc_state_key)
+        if (arm_interrupt && expected_value && key == gc_state_key)
         {
-            const auto stored = get(key);
-            const uint64_t stored_gen = stored ? decodeGcState(stored->bytes).snap_generation : 0;
-            const uint64_t next_gen = decodeGcState(bytes).snap_generation;
-            if (next_gen > stored_gen)
+            const auto stored = InMemoryBackend::read(key, access);
+            if (stored
+                && decodeGcState(bytes).snap_generation > decodeGcState(stored->bytes).snap_generation)
             {
-                arm_interrupt = false;   /// one-shot: only depose the first round-commit CAS
-                throw DB::Exception(DB::ErrorCodes::ABORTED,
-                    "test-injected: round-commit gc/state CAS denied (leader deposed mid-round; lease lost)");
+                arm_interrupt = false;   /// one-shot: only depose the first round-commit write
+                /// A REFUSAL, not a throw: a thrown transport error is an ambiguity the engine settles
+                /// by an exact read and then reissues while the precondition it named is unmoved, so
+                /// the round would commit on the reissue. A refused precondition ends the write at
+                /// once. The object is moved too -- the same bytes under a fresh incarnation -- because
+                /// a store refuses only what changed; the CONTENT is deliberately left alone, so this
+                /// round's own lease and cursor are exactly what a deposed round leaves behind.
+                (void)InMemoryBackend::write(key, stored->bytes, stored->value, access);
+                return std::unexpected(RawConflict{});
             }
         }
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
     bool arm_interrupt = false;
@@ -129,12 +136,13 @@ TEST(CASGCAttempt, DeposedFoldAttemptDoesNotWedge)
     publishCommittedTransition(*backend, store->layout(), ns, "tbl", std::nullopt, r);
 
     Gc gc(store, kGcA);
+    OperationForTest raw_op(*backend);
 
     // Round 1 (honest): fold the +1 so the blob is pinned in the in-degree generation, and adopt the
     // first (snap_generation, snap_attempt).
     runRegularRoundReclaiming(gc);
     EXPECT_EQ(inDegreeOf(*backend, store->layout(), DB::UInt128(1)), 1) << "blob pinned by the committed ref";
-    const auto after_fold = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto after_fold = decodeGcState((*raw_op).read(store->layout().gcStateKey(), Retry::once())->bytes);
     ASSERT_EQ(after_fold.snap_attempt, after_fold.lease.seq);
     ASSERT_GT(after_fold.snap_generation, 0u);
 
@@ -149,7 +157,7 @@ TEST(CASGCAttempt, DeposedFoldAttemptDoesNotWedge)
     EXPECT_ANY_THROW(runRegularRoundReclaiming(gc));   // ABORTED: round-commit CAS denied
     backend->arm_interrupt = false;
 
-    const auto after_deposed = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto after_deposed = decodeGcState((*raw_op).read(store->layout().gcStateKey(), Retry::once())->bytes);
     EXPECT_EQ(after_deposed.snap_generation, after_fold.snap_generation)
         << "the denied round-commit CAS must NOT advance the adopted generation";
     EXPECT_EQ(after_deposed.snap_attempt, after_fold.snap_attempt)
@@ -164,9 +172,9 @@ TEST(CASGCAttempt, DeposedFoldAttemptDoesNotWedge)
     const uint64_t a1 = after_fold.lease.seq + 1;       // round 2 renewed the lease => seq bumped once
     const uint64_t g_f = after_fold.snap_generation + 1;  // the generation the deposed fold minted
     EXPECT_NE(a1, after_deposed.snap_attempt) << "the deposed attempt must differ from the adopted one";
-    EXPECT_TRUE(backend->head(store->layout().foldSealKey(g_f, a1)).exists)
+    EXPECT_TRUE((*raw_op).head(store->layout().foldSealKey(g_f, a1), Retry::once()).has_value())
         << "the deposed leader's fold seal is durable under its own (unadopted) attempt a1";
-    EXPECT_FALSE(backend->head(store->layout().foldSealKey(g_f, after_deposed.snap_attempt)).exists)
+    EXPECT_FALSE((*raw_op).head(store->layout().foldSealKey(g_f, after_deposed.snap_attempt), Retry::once()).has_value())
         << "no fold seal exists under the still-adopted attempt at the deposed fold generation (orphan is invisible)";
 
     // An HONEST GC to a fixpoint (CAS now allowed). The KEY property: with attempt-scoping this SUCCEEDS —
@@ -183,7 +191,7 @@ TEST(CASGCAttempt, DeposedFoldAttemptDoesNotWedge)
 
     // GC advanced past the deposed attempt: the adopted (snap_generation, snap_attempt) moved on, and the
     // adopted attempt is a fresh one (never the deposed a1).
-    const auto after_drain = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto after_drain = decodeGcState((*raw_op).read(store->layout().gcStateKey(), Retry::once())->bytes);
     EXPECT_GT(after_drain.snap_generation, after_fold.snap_generation) << "completion advanced the generation";
     EXPECT_NE(after_drain.snap_attempt, a1) << "the drained round never adopted the deposed attempt a1";
 }

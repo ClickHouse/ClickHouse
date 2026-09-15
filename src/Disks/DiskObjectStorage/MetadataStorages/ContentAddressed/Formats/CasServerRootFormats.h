@@ -17,7 +17,7 @@ namespace DB::Cas
 /// The owner object permanently binds a configured `server_root_id` to one server UUID. The epoch
 /// object stores the next writer epoch and is CAS-bumped so an epoch is never reused after a
 /// restart or supersession. The mount object is the expirable liveness lease for one writer
-/// incarnation; its `min_active` value carries the GC acknowledgement floor, while `gc_fenced` is a
+/// incarnation; its `min_active_build_sequence` value carries the GC acknowledgement floor, while `gc_fenced` is a
 /// terminal fence-out marker for that incarnation.
 
 /// Permanent identity anchor for one configured server root. It is created with put-if-absent, never
@@ -42,7 +42,7 @@ struct ServerEpoch
 
 /// The current liveness lease for one `(server_uuid, writer_epoch)` writer incarnation. The pool
 /// layer renews and replaces this object with CAS/overwrite operations, and GC may fence an expired
-/// lease by setting `gc_fenced`; a fenced incarnation must not resume writing. `min_active` is the
+/// lease by setting `gc_fenced`; a fenced incarnation must not resume writing. `min_active_build_sequence` is the
 /// merged GC acknowledgement floor, with `UINT64_MAX` marking a clean farewell (retired lease).
 struct MountLease
 {
@@ -53,7 +53,7 @@ struct MountLease
     uint64_t started_at_ms = 0;
     uint64_t seq = 0;
     uint64_t expires_at_ms = 0;
-    uint64_t min_active = 0;   /// UINT64_MAX = retired (farewell)
+    uint64_t min_active_build_sequence = 0;   /// UINT64_MAX = retired (farewell)
     bool gc_fenced = false;    /// GC fence-out of an expired lease; terminal
     /// One holder-originated body identity. Every physical retry of that one logical write reuses
     /// it; a GC fence copies the observed value while every successor holder body mints a new one.
@@ -66,9 +66,9 @@ struct MountLease
 /// decisions belong to the caller that coordinates the server-root object.
 String encodeOwner(const OwnerObject & o);
 
-/// Decode an owner anchor, requiring its `su` field, tolerating an absent optional `rt` retirement
+/// Decode an owner anchor, requiring its `server_uuid` field, tolerating an absent optional `retired_at_ms` retirement
 /// timestamp, and rejecting bytes after the body line. Unknown JSON fields are skipped for
-/// forward-compatible reads; malformed input, a missing `su`, and trailing data throw
+/// forward-compatible reads; malformed input, a missing `server_uuid`, and trailing data throw
 /// `CORRUPTED_DATA`.
 OwnerObject decodeOwner(std::string_view data);
 
@@ -77,13 +77,13 @@ OwnerObject decodeOwner(std::string_view data);
 /// codec.
 String encodeServerEpoch(const ServerEpoch & e);
 
-/// Decode the epoch counter, requiring its `nwe` field and rejecting bytes after the body line.
-/// Unknown JSON fields are skipped for forward-compatible reads; malformed input, a missing `nwe`,
+/// Decode the epoch counter, requiring its `next_writer_epoch` field and rejecting bytes after the body line.
+/// Unknown JSON fields are skipped for forward-compatible reads; malformed input, a missing `next_writer_epoch`,
 /// and trailing data throw `CORRUPTED_DATA`.
 ServerEpoch decodeServerEpoch(std::string_view data);
 
 /// Encode the complete mount-lease body as canonical text with the `cas_mount_lease` header and a
-/// final newline. This preserves full-range `uint64_t` values such as `min_active` as decimal JSON
+/// final newline. This preserves full-range `uint64_t` values such as `min_active_build_sequence` as decimal JSON
 /// strings and writes `gc_fenced` as a JSON boolean; lease renewal, fencing, and token checks remain
 /// in the caller.
 String encodeMountLease(const MountLease & m);

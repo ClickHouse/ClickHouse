@@ -6,15 +6,32 @@
 namespace DB::Cas
 {
 
-NamespaceJanitorResult NamespaceJanitor::runOnePage(
-    bool suppress_deletes, const std::function<bool()> & fence_held)
+namespace
+{
+
+/// The legacy `casPut` this write replaces reported a definite conflict as a value (never a failure to
+/// this caller) and reported a store failure -- a refusal, an exhausted policy -- by throwing. Only
+/// `Refused`/`GaveUp` are the alternatives a thrown exception used to carry, so only those propagate;
+/// `Committed`/`Declined`/`Conflict` stay silent exactly as they did before.
+void throwOnRefusedOrGaveUp(WriteResult && result, std::string_view what)
+{
+    if (std::holds_alternative<Refused>(result) || std::holds_alternative<GaveUp>(result))
+        (void)orThrow(std::move(result), what);
+}
+
+}
+
+NamespaceJanitorResult NamespaceJanitor::runOnePage(bool suppress_deletes, Liveness liveness)
 {
     NamespaceJanitorResult result;
-    const GcMaintenanceReadResult progress = readGcMaintenanceState(backend, layout);
+    CasOperation op = requests.admit(std::move(liveness));
+    const GcMaintenanceReadResult progress = readGcMaintenanceState(op, layout);
     if (progress.status == GcMaintenanceReadStatus::Corrupt)
     {
         result.anomalies.push_back(progress.diagnostic);
-        (void)casGcMaintenanceState(backend, layout, progress.token, GcMaintenanceState{});
+        throwOnRefusedOrGaveUp(
+            casGcMaintenanceState(op, layout, progress.etag, GcMaintenanceState{}, Retry::standard()),
+            "CAS namespace janitor: corrupt maintenance-state reset");
         return result;
     }
 
@@ -22,17 +39,17 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(
     ListPage page;
     try
     {
-        page = backend.list(layout.namespaceRootPrefix(), cursor, page_budget);
+        page = op.list(layout.namespaceRootPrefix(), cursor, page_budget, Retry::standard());
     }
     catch (...)
     {
-        (void)casGcMaintenanceState(backend, layout, progress.token, GcMaintenanceState{});
+        (void)casGcMaintenanceState(op, layout, progress.etag, GcMaintenanceState{}, Retry::once());
         throw;
     }
     result.pages = 1;
     result.keys = page.keys.size();
 
-    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(op, layout);
     bool ambiguous = false;
     try
     {
@@ -45,10 +62,13 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(
     }
     /// A valid page is complete only when the round had deletion authority for every dead-life
     /// candidate on it. Advancing while the global gate is closed can phase-lock a dead page onto
-    /// every suppressed round and a different page onto every bounded forced fold. Ambiguous cuts and
-    /// observed fence loss have the same shape: retain the old cursor so an authoritative round
-    /// retries the exact page. Malformed keys, absent objects and token mismatches are final per-key
-    /// outcomes and therefore do not by themselves prevent progress.
+    /// every suppressed round and a different page onto every bounded forced fold. An ambiguous cut
+    /// retains the old cursor so an authoritative round retries the exact page; a lost liveness sample
+    /// only reaches this retained-cursor path when it is caught between the two `op.admitted()` checks
+    /// below -- a sample lost earlier throws out of a read verb (the maintenance read, the list, or a
+    /// HEAD) before this line is ever reached, ending the page by exception instead. Malformed keys,
+    /// absent objects and token mismatches are final per-key outcomes and therefore do not by
+    /// themselves prevent progress.
     bool page_decided = !ambiguous && !suppress_deletes;
 
     for (const ListedKey & listed : page.keys)
@@ -83,15 +103,15 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(
         if (ambiguous || suppress_deletes || catalog_cut.life_index.resolve(*life_id))
             continue;
 
-        std::optional<Token> token = listed.token;
-        if (!token)
+        std::optional<Etag> etag = listed.etag;
+        if (!etag)
         {
             try
             {
-                const HeadResult current = backend.head(listed.key);
-                if (!current.exists)
+                const std::optional<Meta> current = op.head(listed.key, Retry::standard());
+                if (!current)
                     continue;
-                token = current.token;
+                etag = current->etag;
             }
             catch (const std::exception & e)
             {
@@ -101,14 +121,14 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(
                 continue;
             }
         }
-        if (!fence_held())
+        if (!op.admitted())
         {
             page_decided = false;
             break;
         }
         try
         {
-            if (backend.deleteExact(listed.key, *token).kind == DeleteOutcome::Kind::Deleted)
+            if (op.remove(listed.key, *etag, Retry::standard()) == Removal::Removed)
                 ++result.deleted;
         }
         catch (const std::exception & e)
@@ -122,7 +142,7 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(
     /// Recheck even when the page had no dead candidate. A tenure that observes fence loss after LIST
     /// or after the last exact delete must not publish progress. Loss after this check may still race
     /// with the leak-only maintenance CAS; already completed exact deletes remain safe to repeat.
-    if (page_decided && !fence_held())
+    if (page_decided && !op.admitted())
         page_decided = false;
 
     if (page_decided)
@@ -130,7 +150,9 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(
         const GcMaintenanceState next{.janitor_cursor = page.next_cursor};
         try
         {
-            (void)casGcMaintenanceState(backend, layout, progress.token, next);
+            const WriteResult published = casGcMaintenanceState(op, layout, progress.etag, next, Retry::standard());
+            if (std::holds_alternative<Refused>(published) || std::holds_alternative<GaveUp>(published))
+                result.anomalies.push_back("cursor publication did not commit");
         }
         catch (const std::exception & e)
         {

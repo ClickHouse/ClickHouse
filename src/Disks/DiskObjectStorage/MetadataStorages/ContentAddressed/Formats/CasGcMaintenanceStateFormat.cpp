@@ -13,6 +13,11 @@ namespace DB::ErrorCodes
 namespace DB::Cas
 {
 
+namespace GcMaintenanceWire
+{
+    constexpr WireKey janitor_cursor{"janitor_cursor"};
+}
+
 String encodeGcMaintenanceState(const GcMaintenanceState & state)
 {
     if (state.janitor_cursor.size() > kMaxGcMaintenanceCursorBytes)
@@ -22,8 +27,7 @@ String encodeGcMaintenanceState(const GcMaintenanceState & state)
     CasJsonWriter out;
     writeHeaderLine(out, FormatId::GcMaintenanceState);
     bool first = true;
-    writeKey(out, "cur", first);
-    writeStringValue(out, state.janitor_cursor);
+    writeStringField(out, GcMaintenanceWire::janitor_cursor, state.janitor_cursor, first);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -46,7 +50,7 @@ GcMaintenanceState decodeGcMaintenanceState(std::string_view data)
     String key;
     while (reader.nextKey(key))
     {
-        if (key == "cur")
+        if (key == GcMaintenanceWire::janitor_cursor)
         {
             result.janitor_cursor = reader.readString();
             has_cursor = true;
@@ -55,7 +59,7 @@ GcMaintenanceState decodeGcMaintenanceState(std::string_view data)
             reader.skipUnknown(key);
     }
     if (!has_cursor)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS gc maintenance state: missing cur");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS gc maintenance state: missing janitor_cursor");
     if (!body_in.eof() || !in.eof())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS gc maintenance state: trailing bytes");
     if (result.janitor_cursor.size() > kMaxGcMaintenanceCursorBytes)

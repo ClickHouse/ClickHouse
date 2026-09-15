@@ -2,15 +2,20 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <functional>
 #include <memory>
+#include <variant>
 
 using namespace DB::Cas;
 
-/// Parameterized contract suite: every case creates a fresh backend from the factory,
-/// then exercises the Backend seam generically (no InMemoryBackend-specific calls).
-/// Fault-injection-only features are excluded — those are InMemory-specific tests.
+using DB::Cas::tests::expectBytes;
+using DB::Cas::tests::openRequestsForTest;
+
+/// Parameterized contract suite: every case creates a fresh backend from the factory, then exercises
+/// the seam generically through `CasRequests`/`CasOperation` over an open fence (no InMemoryBackend-
+/// specific calls). Fault-injection-only features are excluded -- those are InMemory-specific tests.
 class CASBackendContract : public ::testing::TestWithParam<std::function<BackendPtr()>>
 {
 };
@@ -18,135 +23,173 @@ class CASBackendContract : public ::testing::TestWithParam<std::function<Backend
 TEST_P(CASBackendContract, PutIfAbsentAndGet)
 {
     auto b = GetParam()();
-    const auto put = b->putIfAbsent("k", "v1");
-    const Token t1 = put.token;
-    EXPECT_EQ(put.outcome, PutOutcome::Done);
-    EXPECT_FALSE(t1.empty());
-    EXPECT_EQ(b->putIfAbsent("k", "clobber").outcome, PutOutcome::PreconditionFailed);
-    auto g = b->get("k");
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    const auto put = op.create("k", "v1", Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(put));
+    const Etag t1 = std::get<Committed>(put).etag;
+    EXPECT_TRUE(std::holds_alternative<Conflict>(op.create("k", "clobber", Retry::once())));
+    auto g = op.read("k", Retry::once());
     ASSERT_TRUE(g.has_value());
     EXPECT_EQ(g->bytes, "v1");
-    EXPECT_EQ(g->token, t1);
-    EXPECT_FALSE(b->get("absent").has_value());
+    EXPECT_EQ(g->etag, t1);
+    EXPECT_FALSE(op.read("absent", Retry::once()).has_value());
 }
 
+/// A wrong-but-REAL precondition, since `Etag` has no public constructor any more: overwriting the key
+/// once legitimately mints a second incarnation, which makes the FIRST one genuinely stale for this
+/// same key -- a value the engine accepts as a precondition (unlike a fabricated one) but refuses as
+/// the wrong one, because the object has already moved past it.
 TEST_P(CASBackendContract, OverwriteIsTokenExactAndMintsFreshToken)
 {
     auto b = GetParam()();
-    const Token t1 = b->putIfAbsent("k", "v1").token;
-    EXPECT_EQ(b->putOverwrite("k", "v2", Token{"wrong", TokenType::Emulated}).outcome, PutOutcome::PreconditionFailed);
-    EXPECT_EQ(b->get("k")->bytes, "v1");                       // untouched on mismatch
-    const auto overwrite = b->putOverwrite("k", "v2", t1);
-    EXPECT_EQ(overwrite.outcome, PutOutcome::Done);
-    EXPECT_NE(overwrite.token, t1);                            // tokens never repeat
-    EXPECT_EQ(b->get("k")->bytes, "v2");
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    const auto created = op.create("k", "v1", Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(created));
+    const Etag t1 = std::get<Committed>(created).etag;
+    const auto warmup = op.replace("k", "v1b", t1, Retry::once());   // mints a second incarnation, so t1 goes stale
+    ASSERT_TRUE(std::holds_alternative<Committed>(warmup));
+    const Etag t2 = std::get<Committed>(warmup).etag;
+
+    EXPECT_TRUE(std::holds_alternative<Conflict>(op.replace("k", "v2", t1, Retry::once())));
+    expectBytes(b, "k", "v1b");                                 // untouched on mismatch
+
+    const auto overwrite = op.replace("k", "v2", t2, Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(overwrite));
+    EXPECT_NE(std::get<Committed>(overwrite).etag, t2);  // etags never repeat
+    expectBytes(b, "k", "v2");
 }
 
 TEST_P(CASBackendContract, CasPutCreateAndSwap)
 {
     auto b = GetParam()();
-    const auto create = b->casPut("m", "s1", std::nullopt);
-    const Token t1 = create.token;
-    EXPECT_EQ(create.outcome, CasOutcome::Committed);                              // create-if-absent
-    EXPECT_EQ(b->casPut("m", "s1x", std::nullopt).outcome, CasOutcome::Conflict);  // exists now
-    EXPECT_EQ(b->casPut("m", "s2", Token{"stale", TokenType::Emulated}).outcome, CasOutcome::Conflict);
-    EXPECT_EQ(b->get("m")->bytes, "s1");
-    EXPECT_EQ(b->casPut("m", "s2", t1).outcome, CasOutcome::Committed);
-    EXPECT_EQ(b->get("m")->bytes, "s2");
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    const auto create = op.create("m", "s1", Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(create));                     // create-if-absent
+    const Etag t1 = std::get<Committed>(create).etag;
+    EXPECT_TRUE(std::holds_alternative<Conflict>(op.create("m", "s1x", Retry::once())));   // exists now
+
+    /// Mint a second real incarnation so `t1` becomes a genuinely stale (never fabricated) wrong swap.
+    const auto warmup = op.replace("m", "s1y", t1, Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(warmup));
+    const Etag t2 = std::get<Committed>(warmup).etag;
+    EXPECT_TRUE(std::holds_alternative<Conflict>(op.replace("m", "s2", t1, Retry::once())));
+    expectBytes(b, "m", "s1y");
+
+    EXPECT_TRUE(std::holds_alternative<Committed>(op.replace("m", "s2", t2, Retry::once())));
+    expectBytes(b, "m", "s2");
 }
 
 TEST_P(CASBackendContract, DeleteExactnessAndSurvival)
 {
     auto b = GetParam()();
-    const Token t1 = b->putIfAbsent("k", "v1").token;
-    auto d1 = b->deleteExact("k", Token{"wrong", TokenType::Emulated});
-    EXPECT_EQ(d1.kind, DeleteOutcome::Kind::TokenMismatch);
-    EXPECT_TRUE(b->get("k").has_value());                      // SURVIVES wrong-token delete
-    auto d2 = b->deleteExact("k", t1);
-    EXPECT_EQ(d2.kind, DeleteOutcome::Kind::Deleted);
-    EXPECT_FALSE(d2.created_delete_marker);
-    EXPECT_FALSE(b->get("k").has_value());
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    const auto created = op.create("k", "v1", Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(created));
+    const Etag t1 = std::get<Committed>(created).etag;
+
+    /// A real but stale incarnation, minted by a legitimate overwrite (see the comment on
+    /// `OverwriteIsTokenExactAndMintsFreshToken`).
+    const auto warmup = op.replace("k", "v1b", t1, Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(warmup));
+    const Etag t2 = std::get<Committed>(warmup).etag;
+
+    EXPECT_EQ(op.remove("k", t1, Retry::once()), Removal::Mismatch);
+    EXPECT_TRUE(op.read("k", Retry::once()).has_value());       // SURVIVES wrong-incarnation delete
+    EXPECT_EQ(op.remove("k", t2, Retry::once()), Removal::Removed);
+    EXPECT_FALSE(op.read("k", Retry::once()).has_value());
 }
 
 TEST_P(CASBackendContract, DeleteNotFound)
 {
     auto b = GetParam()();
-    const Token t1 = b->putIfAbsent("k", "v1").token;
-    b->deleteExact("k", t1);
-    EXPECT_EQ(b->deleteExact("k", t1).kind, DeleteOutcome::Kind::NotFound);
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    const auto created = op.create("k", "v1", Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(created));
+    const Etag t1 = std::get<Committed>(created).etag;
+    EXPECT_EQ(op.remove("k", t1, Retry::once()), Removal::Removed);
+    EXPECT_EQ(op.remove("k", t1, Retry::once()), Removal::Gone);
 }
 
-TEST_P(CASBackendContract, RangeGet)
-{
-    auto b = GetParam()();
-    b->putIfAbsent("k", "0123456789");
-    Range r;
-    r.offset = 2;
-    r.length = 3u;
-    EXPECT_EQ(b->get("k", r)->bytes, "234");
-}
+/// `Range` had no primitive read counterpart even before this migration -- `op.read` takes no range
+/// argument at all, so a non-whole window is refused by the TYPE, not by a runtime NOT_IMPLEMENTED
+/// throw. The property (the whole read still serves) is what `ReadAfterWrite` below already pins.
 
 TEST_P(CASBackendContract, Head)
 {
     auto b = GetParam()();
-    b->putIfAbsent("k", "hello");
-    auto h = b->head("k");
-    EXPECT_TRUE(h.exists);
-    EXPECT_EQ(h.size, 5u);
-    EXPECT_FALSE(h.token.empty());
-    auto h2 = b->head("missing");
-    EXPECT_FALSE(h2.exists);
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create("k", "hello", Retry::once())));
+    auto h = op.head("k", Retry::once());
+    ASSERT_TRUE(h.has_value());
+    EXPECT_EQ(h->size, 5u);
+    auto h2 = op.head("missing", Retry::once());
+    EXPECT_FALSE(h2.has_value());
 }
 
 TEST_P(CASBackendContract, ListPagination)
 {
     auto b = GetParam()();
-    b->putIfAbsent("p/a", "0123456789");
-    b->putIfAbsent("p/b", "xy");
-    b->putIfAbsent("q/c", "z");
-    auto page = b->list("p/", "", 10);
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create("p/a", "0123456789", Retry::once())));
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create("p/b", "xy", Retry::once())));
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create("q/c", "z", Retry::once())));
+    auto page = op.list("p/", "", 10, Retry::once());
     ASSERT_EQ(page.keys.size(), 2u);                          // sorted, prefix-scoped
     EXPECT_EQ(page.keys[0].key, "p/a");
     EXPECT_EQ(page.keys[1].key, "p/b");
     EXPECT_TRUE(page.next_cursor.empty());
-    auto page1 = b->list("p/", "", 1);                        // pagination
+    auto page1 = op.list("p/", "", 1, Retry::once());         // pagination
     EXPECT_EQ(page1.keys.size(), 1u);
     EXPECT_EQ(page1.keys[0].key, "p/a");
     EXPECT_EQ(page1.next_cursor, "p/a");
     EXPECT_FALSE(page1.next_cursor.empty());
-    auto page2 = b->list("p/", page1.next_cursor, 1);
+    auto page2 = op.list("p/", page1.next_cursor, 1, Retry::once());
     EXPECT_EQ(page2.keys[0].key, "p/b");
 }
 
 TEST_P(CASBackendContract, ReadAfterWrite)
 {
     auto b = GetParam()();
-    const Token t1 = b->putIfAbsent("rw", "payload").token;
-    auto g = b->get("rw");
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    const auto created = op.create("rw", "payload", Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(created));
+    const Etag t1 = std::get<Committed>(created).etag;
+    auto g = op.read("rw", Retry::once());
     ASSERT_TRUE(g.has_value());
     EXPECT_EQ(g->bytes, "payload");
-    EXPECT_EQ(g->token, t1);
-    auto h = b->head("rw");
-    EXPECT_TRUE(h.exists);
-    EXPECT_EQ(h.token, t1);
+    EXPECT_EQ(g->etag, t1);
+    auto h = op.head("rw", Retry::once());
+    ASSERT_TRUE(h.has_value());
+    EXPECT_EQ(h->etag, t1);
 }
 
-/// After an object is created then deleted (key absent again), BOTH conditional updates against a stale
-/// token must be rejected with the object still absent — a token-conditional update can never recreate a
-/// missing key. For the Native S3 adapter this pins the 404-on-If-Match -> PreconditionFailed/Conflict
-/// mapping; for every backend it pins that absence is not a write opportunity for a stale token.
+/// After an object is created then deleted (key absent again), a conditional update against the
+/// incarnation it held while alive must be rejected with the object still absent -- an
+/// incarnation-conditional update can never recreate a missing key. For the Native S3 adapter this
+/// pins the 404-on-If-Match -> Conflict mapping; for every backend it pins that absence is not a write
+/// opportunity for a since-deleted incarnation. The legacy `putOverwrite` and `casPut(expected)`
+/// verbs this test used to drive separately both reach this SAME primitive (`replace`) now.
 TEST_P(CASBackendContract, OverwriteAndCasOnMissingKey)
 {
     auto b = GetParam()();
-    const Token t1 = b->putIfAbsent("k", "v1").token;
-    EXPECT_EQ(b->deleteExact("k", t1).kind, DeleteOutcome::Kind::Deleted);
-    ASSERT_FALSE(b->get("k").has_value());                     // key is absent
+    auto requests = openRequestsForTest(b);
+    auto op = requests.admit();
+    const auto created = op.create("k", "v1", Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(created));
+    const Etag t1 = std::get<Committed>(created).etag;
+    EXPECT_EQ(op.remove("k", t1, Retry::once()), Removal::Removed);
+    ASSERT_FALSE(op.read("k", Retry::once()).has_value());     // key is absent
 
-    EXPECT_EQ(b->putOverwrite("k", "v2", t1).outcome, PutOutcome::PreconditionFailed);
-    EXPECT_FALSE(b->get("k").has_value());                     // still absent
-
-    EXPECT_EQ(b->casPut("k", "v2", t1).outcome, CasOutcome::Conflict);
-    EXPECT_FALSE(b->get("k").has_value());                     // still absent
+    EXPECT_TRUE(std::holds_alternative<Conflict>(op.replace("k", "v2", t1, Retry::once())));
+    EXPECT_FALSE(op.read("k", Retry::once()).has_value());     // still absent
 }
 
 INSTANTIATE_TEST_SUITE_P(CASInMemory, CASBackendContract,

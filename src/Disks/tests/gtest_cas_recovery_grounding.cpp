@@ -47,18 +47,23 @@ public:
 
     size_t list_calls = 0;
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    /// On the transport primitive, not the legacy verb: every enumeration a `CasOperation` makes
+    /// reaches the store through this, so a distortion left on the verb would never fire and the
+    /// `list_calls` assertions would read zero whatever recovery did.
+    DB::Cas::Backend::RawListPage list(const String & prefix, const String & cursor, size_t limit,
+                                       DB::Cas::TransportAccess & access) override
     {
         ++list_calls;
-        ListPage page = CountingBackend::list(prefix, cursor, limit);
+        DB::Cas::Backend::RawListPage page = CountingBackend::list(prefix, cursor, limit, access);
         if (mode == ListingMode::Empty)
             page.keys.clear();
         else if (mode == ListingMode::Partial)
         {
-            page.keys.erase(std::remove_if(page.keys.begin(), page.keys.end(), [](const ListedKey & key)
-            {
-                return key.key.find("/_log/") != String::npos;
-            }), page.keys.end());
+            page.keys.erase(std::remove_if(page.keys.begin(), page.keys.end(),
+                [](const DB::Cas::Backend::RawListedKey & key)
+                {
+                    return key.key.find("/_log/") != String::npos;
+                }), page.keys.end());
         }
         else if (mode == ListingMode::Reordered)
             std::reverse(page.keys.begin(), page.keys.end());
@@ -112,14 +117,16 @@ void seedAuthoritativeStream(Backend & backend, const Layout & layout, const Roo
     applyRefLogTxn(snapshot_state, first_txn);
     writeRefSnapshotRaw(backend, layout, snapshotOf(snapshot_state, ns.string()));
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(backend, layout, ns);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     const RefCkpt authority{
         .life_epoch = 1,
         .committed_through = committed_through,
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = committed_through.writer_epoch > 1
             ? std::optional<RefTxnId>{RefTxnId{1, 2}} : std::nullopt};
-    backend.putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(authority));
+    (void)op.create(layout.refCkptKey(life), encodeRefCkpt(authority), Retry::standard());
 }
 
 /// This is deliberately caller-side plumbing, not a convenience overload in `CasRefProtocol`: production
@@ -127,7 +134,9 @@ void seedAuthoritativeStream(Backend & backend, const Layout & layout, const Roo
 /// The API under test receives those exact values and performs no catalog or checkpoint resolution itself.
 RecoveredRefTable recoverFromCurrentCatalogCut(Backend & backend, const Layout & layout, const RootNamespace & ns)
 {
-    const CasRefCatalog::Snapshot cut = CasRefCatalog::read(backend, layout);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const CasRefCatalog::Snapshot cut = CasRefCatalog::read(op, layout);
     std::optional<CatalogEntry> entry;
     for (const CatalogEntry & candidate : cut.catalog.entries)
     {
@@ -141,10 +150,10 @@ RecoveredRefTable recoverFromCurrentCatalogCut(Backend & backend, const Layout &
     if (entry)
     {
         const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(entry->ns, entry->incarnation);
-        if (const std::optional<CkptSample> sample = readCkpt(backend, layout, life))
+        if (const std::optional<CkptSample> sample = readCkpt(op, layout, life))
             checkpoint = sample->ckpt;
     }
-    return recoverRefTableDetailedFromAuthority(backend, layout, entry, checkpoint);
+    return recoverRefTableDetailedFromAuthority(op, layout, entry, checkpoint);
 }
 
 CatalogEntry catalog(NsState state)
@@ -269,9 +278,9 @@ TEST(CASRecoveryGrounding, RejectsLifeEpochAboveCommittedFrontierOnDecodeAndGrou
 {
     const RefCkpt invalid = ckpt(2, RefTxnId{1, 5});
     String encoded = encodeRefCkpt(ckpt(1, RefTxnId{1, 5}));
-    const size_t life_epoch = encoded.find(R"("le":"1")");
+    const size_t life_epoch = encoded.find(R"("life_epoch":"1")");
     ASSERT_NE(life_epoch, String::npos);
-    encoded.replace(life_epoch, String{R"("le":"1")"}.size(), R"("le":"2")");
+    encoded.replace(life_epoch, String{R"("life_epoch":"1")"}.size(), R"("life_epoch":"2")");
 
     expectCode([&] { (void)decodeRefCkpt(encoded); }, DB::ErrorCodes::CORRUPTED_DATA);
     expectCode([&] { (void)chooseRecoveryGrounding(catalog(NsState::Live), invalid); },
@@ -295,11 +304,13 @@ TEST(CASRecoveryGrounding, RecoveryIsEquivalentUnderFullEmptyPartialAndReordered
     for (const ListingMode mode : {ListingMode::Full, ListingMode::Empty, ListingMode::Partial, ListingMode::Reordered})
     {
         auto backend = std::make_shared<RecoveryListingBackend>(mode);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         const Layout layout("p");
         const RootNamespace ns{"srv1/list_equivalence"};
         const RefTxnId frontier{2, 1};
         seedAuthoritativeStream(*backend, layout, ns, frontier);
-        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
         backend->resetCounts();
         backend->list_calls = 0;
 
@@ -344,39 +355,48 @@ TEST(CASRecoveryGrounding, CatalogLifecycleAndCheckpointAreMandatoryForReadOnlyR
 
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         DB::Cas::tests::fixture::writeRefLogRaw(*backend, layout, txn(ns, {1, 1}, {namespaceBirthOp()}));
         expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::CORRUPTED_DATA);
     }
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         CasRefCatalog::casAdmitEntry(
-            *backend, layout, 1, CatalogEntry{.ns = ns, .state = NsState::Live, .incarnation = 8});
+            catalog_op, layout, 1, CatalogEntry{.ns = ns, .state = NsState::Live, .incarnation = 8});
         expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::CORRUPTED_DATA);
     }
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         const CatalogEntry live{.ns = ns, .state = NsState::Live, .incarnation = 9};
-        CasRefCatalog::casAdmitEntry(*backend, layout, 1, live);
+        CasRefCatalog::casAdmitEntry(catalog_op, layout, 1, live);
         const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(live.ns, live.incarnation);
-        ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), "not a sealed checkpoint").outcome,
-                  PutOutcome::Done);
+        ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.create(layout.refCkptKey(life), "not a sealed checkpoint", Retry::once())));
         expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::CORRUPTED_DATA);
     }
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         CatalogEntry creating{.ns = ns, .state = NsState::Creating, .incarnation = 7,
             .creator = CreatorFence{"srv1", 1, 1}};
-        CasRefCatalog::casAdmitEntry(*backend, layout, 1, creating);
-        backend->putIfAbsent(layout.refCkptKey(NamespaceLifeId::fromCatalogEntry(creating.ns, creating.incarnation)),
+        CasRefCatalog::casAdmitEntry(catalog_op, layout, 1, creating);
+        catalog_op.create(layout.refCkptKey(NamespaceLifeId::fromCatalogEntry(creating.ns, creating.incarnation)),
             encodeRefCkpt(RefCkpt{.life_epoch = 1, .committed_through = RefTxnId{1, 1},
-                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}));
+                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}), Retry::once());
         expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::INVALID_STATE);
     }
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
-        backend->putIfAbsent(layout.refCkptKey(DB::Cas::tests::fixture::fixtureLife(ns)),
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
+        catalog_op.create(layout.refCkptKey(DB::Cas::tests::fixture::fixtureLife(ns)),
             encodeRefCkpt(RefCkpt{.life_epoch = 1, .committed_through = RefTxnId{1, 1},
-                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}));
+                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt}), Retry::once());
         expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::INVALID_STATE);
     }
 }
@@ -393,30 +413,36 @@ TEST(CASRecoveryGrounding, NonrecoverableAuthorityPerformsNoBackendRecoveryIo)
 
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         backend->resetCounts();
         const CatalogEntry creating{
             .ns = ns, .state = NsState::Creating, .incarnation = 1, .creator = CreatorFence{"srv1", 1, 1}};
         expectCode(
-            [&] { (void)recoverRefTableDetailedFromAuthority(*backend, layout, creating, valid_ckpt); },
+            [&] { (void)recoverRefTableDetailedFromAuthority(catalog_op, layout, creating, valid_ckpt); },
             DB::ErrorCodes::INVALID_STATE);
         EXPECT_EQ(backend->list_calls, 0u);
         EXPECT_EQ(backend->getTotal(), 0u);
     }
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         backend->resetCounts();
         const CatalogEntry live{.ns = ns, .state = NsState::Live, .incarnation = 2};
         expectCode(
-            [&] { (void)recoverRefTableDetailedFromAuthority(*backend, layout, live, std::nullopt); },
+            [&] { (void)recoverRefTableDetailedFromAuthority(catalog_op, layout, live, std::nullopt); },
             DB::ErrorCodes::CORRUPTED_DATA);
         EXPECT_EQ(backend->list_calls, 0u);
         EXPECT_EQ(backend->getTotal(), 0u);
     }
     {
         auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         backend->resetCounts();
         expectCode(
-            [&] { (void)recoverRefTableDetailedFromAuthority(*backend, layout, std::nullopt, valid_ckpt); },
+            [&] { (void)recoverRefTableDetailedFromAuthority(catalog_op, layout, std::nullopt, valid_ckpt); },
             DB::ErrorCodes::INVALID_STATE);
         EXPECT_EQ(backend->list_calls, 0u);
         EXPECT_EQ(backend->getTotal(), 0u);
@@ -426,6 +452,8 @@ TEST(CASRecoveryGrounding, NonrecoverableAuthorityPerformsNoBackendRecoveryIo)
 TEST(CASRecoveryGrounding, ReadOnlyRecoveryNeverAdoptsFPlusOne)
 {
     auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
     const Layout layout("p");
     const RootNamespace ns{"srv1/read_only_excludes_f_plus_one"};
     seedAuthoritativeStream(*backend, layout, ns, RefTxnId{1, 1}, /*include_f_plus_one=*/true);
@@ -444,10 +472,12 @@ TEST(CASRecoveryGrounding, ForgedWellFormedListedSnapshotIsUnobservedAndRecovery
     for (const ListingMode mode : {ListingMode::Full, ListingMode::Empty, ListingMode::Partial, ListingMode::Reordered})
     {
         auto backend = std::make_shared<RecoveryListingBackend>(mode);
+        CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation catalog_op = catalog_requests.admit();
         const Layout layout("p");
         const RootNamespace ns{"srv1/forged_listed_snapshot"};
         seedAuthoritativeStream(*backend, layout, ns, RefTxnId{1, 1}, /*include_f_plus_one=*/true);
-        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
 
         RefTableState forged_state;
         std::vector<RefOp> birth{namespaceBirthOp()};
@@ -475,6 +505,8 @@ TEST(CASRecoveryGrounding, ForgedWellFormedListedSnapshotIsUnobservedAndRecovery
 TEST(CASRecoveryGrounding, SemanticallyMalformedCheckpointSnapshotIsCorruptionAfterExactRead)
 {
     auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Empty);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
     const Layout layout("p");
     const RootNamespace ns{"srv1/semantically_malformed_checkpoint"};
     const ManifestRef manifest{1, 1, 1};
@@ -488,13 +520,13 @@ TEST(CASRecoveryGrounding, SemanticallyMalformedCheckpointSnapshotIsCorruptionAf
     malformed.precommits.push_back(RefOwnerBinding{RefOwnerKind::Precommit, "precommit", manifest});
     writeRefSnapshotRaw(*backend, layout, malformed);
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
     const String snapshot_key = layout.refSnapshotKey(life, {1, 1});
-    ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
+    ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.create(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 1},
         .checkpoint_snapshot_id = RefTxnId{1, 1},
-        .last_epoch_seal = std::nullopt})).outcome, PutOutcome::Done);
+        .last_epoch_seal = std::nullopt}), Retry::once())));
 
     backend->resetCounts();
     try
@@ -514,11 +546,13 @@ TEST(CASRecoveryGrounding, SemanticallyMalformedCheckpointSnapshotIsCorruptionAf
 TEST(CASRecoveryGrounding, CheckpointSnapshotEqualToLastEpochSealIsRejectedBeforeReadingItsLog)
 {
     auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
     const Layout layout("p");
     const RootNamespace ns{"srv1/checkpoint_base_seal"};
     /// The checkpoint directly contradicts itself: its sole snapshot base names its terminal seal.
     seedAuthoritativeStream(*backend, layout, ns, RefTxnId{1, 2});
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
 
     RefTableState through_seal;
     std::vector<RefOp> birth{namespaceBirthOp()};
@@ -530,14 +564,14 @@ TEST(CASRecoveryGrounding, CheckpointSnapshotEqualToLastEpochSealIsRejectedBefor
     applyRefLogTxn(through_seal, txn(ns, {1, 2}, {std::move(seal)}));
     writeRefSnapshotRaw(*backend, layout, snapshotOf(through_seal, ns.string()));
 
-    const CkptSample before = *readCkpt(*backend, layout, life);
+    const CkptSample before = *readCkpt(catalog_op, layout, life);
     const RefCkpt with_sealed_base{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 2},
         .checkpoint_snapshot_id = RefTxnId{1, 2},
         .last_epoch_seal = RefTxnId{1, 2}};
-    ASSERT_EQ(backend->casPut(layout.refCkptKey(life), encodeRefCkpt(with_sealed_base), before.token).outcome,
-              CasOutcome::Committed);
+    ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.replace(
+        layout.refCkptKey(life), encodeRefCkpt(with_sealed_base), before.etag, Retry::standard())));
 
     backend->resetCounts();
     expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::CORRUPTED_DATA);
@@ -554,6 +588,8 @@ TEST(CASRecoveryGrounding, CheckpointSnapshotEqualToLastEpochSealIsRejectedBefor
 TEST(CASRecoveryGrounding, SameEpochFrontierAfterDecodedEpochSealIsCorruption)
 {
     auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
     const Layout layout("p");
     const RootNamespace ns{"srv1/frontier_after_seal"};
 
@@ -562,16 +598,16 @@ TEST(CASRecoveryGrounding, SameEpochFrontierAfterDecodedEpochSealIsCorruption)
     seal.kind = RefOpKind::EpochSeal;
     DB::Cas::tests::fixture::writeRefLogRaw(*backend, layout, txn(ns, {1, 2}, {std::move(seal)}));
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
     String malformed_ckpt = encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 2},
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = RefTxnId{1, 2}});
-    const size_t frontier_sequence = malformed_ckpt.find(R"("cts":"2")");
+    const size_t frontier_sequence = malformed_ckpt.find(R"("committed_seq":"2")");
     ASSERT_NE(frontier_sequence, String::npos);
-    malformed_ckpt.replace(frontier_sequence, String{R"("cts":"2")"}.size(), R"("cts":"3")");
-    ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), malformed_ckpt).outcome, PutOutcome::Done);
+    malformed_ckpt.replace(frontier_sequence, String{R"("committed_seq":"2")"}.size(), R"("committed_seq":"3")");
+    ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.create(layout.refCkptKey(life), malformed_ckpt, Retry::once())));
 
     expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::CORRUPTED_DATA);
 }
@@ -579,10 +615,12 @@ TEST(CASRecoveryGrounding, SameEpochFrontierAfterDecodedEpochSealIsCorruption)
 TEST(CASRecoveryGrounding, OlderCheckpointSnapshotAtSealIsCorruption)
 {
     auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
     const Layout layout("p");
     const RootNamespace ns{"srv1/older_checkpoint_base_seal"};
     seedAuthoritativeStream(*backend, layout, ns, RefTxnId{2, 1});
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
 
     RefOp second_seal;
     second_seal.kind = RefOpKind::EpochSeal;
@@ -600,14 +638,14 @@ TEST(CASRecoveryGrounding, OlderCheckpointSnapshotAtSealIsCorruption)
     applyRefLogTxn(through_first_seal, txn(ns, {1, 2}, {std::move(first_seal)}));
     writeRefSnapshotRaw(*backend, layout, snapshotOf(through_first_seal, ns.string()));
 
-    const CkptSample before = *readCkpt(*backend, layout, life);
+    const CkptSample before = *readCkpt(catalog_op, layout, life);
     const RefCkpt with_old_sealed_base{
         .life_epoch = 1,
         .committed_through = RefTxnId{3, 1},
         .checkpoint_snapshot_id = RefTxnId{1, 2},
         .last_epoch_seal = RefTxnId{2, 2}};
-    ASSERT_EQ(backend->casPut(layout.refCkptKey(life), encodeRefCkpt(with_old_sealed_base), before.token).outcome,
-              CasOutcome::Committed);
+    ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.replace(
+        layout.refCkptKey(life), encodeRefCkpt(with_old_sealed_base), before.etag, Retry::standard())));
 
     backend->resetCounts();
     expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::CORRUPTED_DATA);
@@ -620,6 +658,8 @@ TEST(CASRecoveryGrounding, OlderCheckpointSnapshotAtSealIsCorruption)
 TEST(CASRecoveryGrounding, TerminalGapBelowFrontierIsCorruptionNotARebirth)
 {
     auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
     const Layout layout("p");
     const RootNamespace ns{"srv1/terminal_gap"};
     const RefLogTxn birth = txn(ns, {1, 1}, {namespaceBirthOp()});
@@ -629,16 +669,16 @@ TEST(CASRecoveryGrounding, TerminalGapBelowFrontierIsCorruptionNotARebirth)
     DB::Cas::tests::fixture::writeRefLogRaw(*backend, layout, txn(ns, {1, 2}, {std::move(remove)}));
     DB::Cas::tests::fixture::writeRefLogRaw(*backend, layout, txn(ns, {2, 1}, {namespaceBirthOp()}));
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
     String malformed_ckpt = encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 1},
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt});
-    const size_t frontier_epoch = malformed_ckpt.find(R"("cte":"1")");
+    const size_t frontier_epoch = malformed_ckpt.find(R"("committed_epoch":"1")");
     ASSERT_NE(frontier_epoch, String::npos);
-    malformed_ckpt.replace(frontier_epoch, String{R"("cte":"1")"}.size(), R"("cte":"2")");
-    ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), malformed_ckpt).outcome, PutOutcome::Done);
+    malformed_ckpt.replace(frontier_epoch, String{R"("committed_epoch":"1")"}.size(), R"("committed_epoch":"2")");
+    ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.create(layout.refCkptKey(life), malformed_ckpt, Retry::once())));
 
     expectCode([&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); }, DB::ErrorCodes::CORRUPTED_DATA);
 }
@@ -646,6 +686,8 @@ TEST(CASRecoveryGrounding, TerminalGapBelowFrontierIsCorruptionNotARebirth)
 TEST(CASRecoveryGrounding, LaterEpochCheckpointBaseRequiresItsContextualBacklink)
 {
     auto backend = std::make_shared<RecoveryListingBackend>(ListingMode::Full);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
     const Layout layout("p");
     const RefTxnId seal_id{1, 2};
     const RefTxnId base_id{2, 1};
@@ -659,12 +701,12 @@ TEST(CASRecoveryGrounding, LaterEpochCheckpointBaseRequiresItsContextualBacklink
         DB::Cas::tests::fixture::writeRefLogRaw(*backend, layout, txn(ns, base_id, {}, backlink));
         writeRefSnapshotRaw(*backend, layout, minimalLiveSnapshot(ns.string(), base_id));
 
-        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
-        ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
+        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
+        ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.create(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
             .life_epoch = 1,
             .committed_through = base_id,
             .checkpoint_snapshot_id = base_id,
-            .last_epoch_seal = seal_id})).outcome, PutOutcome::Done);
+            .last_epoch_seal = seal_id}), Retry::once())));
 
         expectCode(
             [&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); },
@@ -682,12 +724,12 @@ TEST(CASRecoveryGrounding, LaterEpochCheckpointBaseRequiresItsContextualBacklink
         DB::Cas::tests::fixture::writeRefLogRaw(*backend, layout, txn(ns, base_id, {}, seal_id));
         writeRefSnapshotRaw(*backend, layout, minimalLiveSnapshot(ns.string(), base_id));
 
-        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
-        ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
+        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns);
+        ASSERT_TRUE(std::holds_alternative<Committed>(catalog_op.create(layout.refCkptKey(life), encodeRefCkpt(RefCkpt{
             .life_epoch = 1,
             .committed_through = base_id,
             .checkpoint_snapshot_id = base_id,
-            .last_epoch_seal = seal_id})).outcome, PutOutcome::Done);
+            .last_epoch_seal = seal_id}), Retry::once())));
 
         expectCode(
             [&] { (void)recoverFromCurrentCatalogCut(*backend, layout, ns); },

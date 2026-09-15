@@ -48,11 +48,17 @@ public:
         if (!ca->isReadOnly())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "cas-inspect: open the CA disk read-only");
 
-        const auto got = ca->store()->backend().get(key);
+        /// `store()` hands back a snapshot of the pool pointer; `openRequests()`/`layout()` return
+        /// references into that Pool object. Keeping the shared_ptr alive for the whole operation,
+        /// rather than letting each `store()` call's temporary expire, is what keeps those references
+        /// valid and pins both calls to the SAME pool if a concurrent remount swaps it out from under `ca`.
+        const Cas::PoolPtr pool = ca->store();
+        Cas::CasOperation op = pool->openRequests().admit();
+        const auto got = op.read(key, Cas::Retry::standard());
         if (!got)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "cas-inspect: key '{}' does not exist", key);
 
-        const Cas::Layout & layout = ca->store()->layout();
+        const Cas::Layout & layout = pool->layout();
         std::optional<Cas::NamespaceLifeId> resolved_life;
         std::optional<Cas::NamespaceLifePhysicalId> life_id;
         if (const auto parsed = layout.parseRefObjectKey(key))
@@ -61,7 +67,7 @@ public:
             life_id = *parsed_ckpt;
         if (life_id)
         {
-            const Cas::CasRefCatalog::Snapshot cut = Cas::CasRefCatalog::read(ca->store()->backend(), layout);
+            const Cas::CasRefCatalog::Snapshot cut = Cas::CasRefCatalog::read(op, layout);
             resolved_life = cut.life_index.resolve(*life_id);
         }
 

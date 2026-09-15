@@ -11,6 +11,7 @@
 #include "cas_test_helpers.h"
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -34,8 +35,8 @@
 /// anyway -- while a genuinely absent expected id is a durable HOLD, never a silent skip.
 ///
 /// This file is that claim stated end to end, against a store that lies exactly the way the real one
-/// did. `setListOmissions` names the omitted keys; `get`/`head`/`putIfAbsent`/`casPut`/`deleteExact`
-/// keep serving them honestly. Each test below asserts the lie changed NOTHING -- not the folded
+/// did. `setListOmissions` names the omitted keys; every other primitive keeps serving them honestly.
+/// Each test below asserts the lie changed NOTHING -- not the folded
 /// edges, not the cursor, not the recovered table, not fsck's verdict -- and the arms that are about
 /// reclamation additionally assert that reclamation still happens, so "nothing was deleted" can never
 /// pass for "the lie was harmless".
@@ -62,6 +63,12 @@ using LiarBackend = HintHoleBackendOn<CountingBackend>;
 String blobKeyOf(const Layout & layout, const DB::UInt128 & hash)
 {
     return layout.blobKey(legacyMetaTestRef(hash));
+}
+
+bool headExists(Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).head(key, Retry::standard()).has_value();
 }
 
 /// The sealed fold cursor for `ns` as a full `RefTxnId`. Every fixture here writes ids inside writer
@@ -254,6 +261,19 @@ TEST(CASListLiarEndToEnd, RecoveryUnderTheSameLieReconstructsExactlyTheTruth)
     auto lying = openRecoveryPool(lying_backend);
     const std::map<String, String> recovered = refsOf(lying, ns);
 
+    /// Recovery reads every record by exact key and asks no listing what to read next, and an existing
+    /// pool reopens on the exact read of `_pool_meta` alone -- so nothing above ever LISTed the stream.
+    /// That is the point, but it also means the lie has to be PROVEN in effect here, or the comparison
+    /// below would pass against a store that hid nothing.
+    {
+        DB::Cas::tests::OperationForTest op(*lying_backend);
+        std::set<String> listed;
+        (*op).forEachListedKey(layout.namespaceStreamPrefix(fixture::fixtureLife(ns)),
+                               [&](const ListedKey & key) { listed.insert(key.key); return true; },
+                               Retry::standard());
+        for (const String & hidden : hiddenMiddleOf(layout, ns))
+            ASSERT_FALSE(listed.contains(hidden)) << "the store was told to hide " << hidden << " and did not";
+    }
     ASSERT_GT(lying_backend->holesServed(), 0u)
         << "the omission was never actually served -- the test would pass vacuously";
     EXPECT_EQ(truth.size(), 5u) << "the oracle itself must see all five published refs";
@@ -311,7 +331,7 @@ TEST(CASListLiarEndToEnd, AHiddenPlusOneKeepsItsBlobWhenAVisibleMinusOneLandsLat
         runRegularRoundReclaiming(gc);
         store->renewWatermarkOnce();
     }
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, shared)).exists)
+    EXPECT_TRUE(headExists(*backend, blobKeyOf(layout, shared)))
         << "a blob a live ref still names was DELETED -- the hidden `+1` was never folded";
     EXPECT_EQ(backend->deleteCount(blobKeyOf(layout, shared)), 0u)
         << "not merely still present: the delete was never even attempted";
@@ -362,13 +382,13 @@ TEST(CASListLiarEndToEnd, AHiddenMinusOneIsStillFoldedSoTheBlobIsActuallyReclaim
     EXPECT_EQ(sealedCursorOf(*backend, layout, ns), (RefTxnId{1, 3}));
     EXPECT_EQ(inDegreeOf(*backend, layout, released), 0)
         << "the hidden `-1` must be folded: nothing owns this blob any more";
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, released)).exists)
+    EXPECT_TRUE(headExists(*backend, blobKeyOf(layout, released)))
         << "round pacing: the round that CONDEMNS never also deletes";
 
     store->renewWatermarkOnce();
     EXPECT_TRUE(runRoundsUntilAbsent(store, gc, *backend, layout, released))
         << "the blob was never reclaimed -- the hidden `-1` left it pinned by a phantom owner";
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, unrelated)).exists)
+    EXPECT_TRUE(headExists(*backend, blobKeyOf(layout, unrelated)))
         << "and the still-owned blob is untouched";
 }
 
@@ -460,7 +480,7 @@ TEST(CASListLiarEndToEnd, AHiddenNamespacesBirthIsFoundByExactKeyAndSavesTheBlob
     ASSERT_TRUE(evidence.saw_fold) << "no round folded, so none published a gate verdict";
     ASSERT_GT(backend->holesServed(), 0u)
         << "the omission was never actually served -- the test would pass vacuously";
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists)
+    EXPECT_TRUE(headExists(*backend, blobKeyOf(layout, blob)))
         << "the blob a hidden namespace still owns must survive";
     EXPECT_EQ(backend->deleteCount(blobKeyOf(layout, blob)), 0u)
         << "not merely still present: the blob must never even be offered for deletion";
@@ -528,7 +548,7 @@ TEST(CASListLiarEndToEnd, TheSameBlobDrainsOnceHiddenGenuinelyProvesItsOwnFronti
 
     ASSERT_GT(backend->holesServed(), 0u)
         << "the omission was never actually served -- the test would pass vacuously";
-    EXPECT_FALSE(backend->head(blobKeyOf(layout, blob)).exists)
+    EXPECT_FALSE(headExists(*backend, blobKeyOf(layout, blob)))
         << "both namespaces genuinely proved their frontier and the blob is genuinely unreferenced -- "
            "the round must still be able to reclaim it";
 }

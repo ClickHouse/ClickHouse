@@ -132,7 +132,8 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
+    return name == other.name
+        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
 }
 
 namespace
@@ -255,6 +256,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
+
+    /// The name is used unescaped as a directory name (`getDirectoryName`) inside a part directory,
+    /// so a '/' in it would address files outside of the part and outside of the data directory.
+    if (projection_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection name ({}) cannot contain '/'", projection_definition->name);
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
@@ -783,7 +789,7 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ProjectionsDescription ProjectionsDescription::parse(

@@ -221,6 +221,11 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
     }
 }
 
+}
+
+namespace
+{
+
 /** Storages can rely that filters that for storage will be available for analysis before
   * getQueryProcessingStage method will be called.
   *
@@ -390,6 +395,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     return res;
 }
 
+}
+
 FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options, const ActionsDAG * post_filter)
 {
     if (select_query_options.only_analyze)
@@ -410,6 +417,9 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter);
 }
+
+namespace
+{
 
 /// Extend lifetime of query context, storages, and table locks
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)

@@ -9,9 +9,11 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
@@ -516,6 +518,22 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
+/// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
+/// minimum number of bytes that can hold every value of the declared precision. One bit of that
+/// space is taken by the sign, hence `8 * bytes - 1`.
+static size_t icebergDecimalRequiredBytes(UInt32 precision)
+{
+    UInt256 max_value = 1;
+    for (UInt32 i = 0; i < precision; ++i)
+        max_value *= 10;
+    max_value -= 1;
+
+    size_t bytes = 1;
+    while (bytes < sizeof(UInt256) && (max_value >> (8 * bytes - 1)) != 0)
+        ++bytes;
+    return bytes;
+}
+
 /// Returns type and required
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
@@ -561,11 +579,14 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
         {
-            auto precision = getDecimalPrecision(*type);
+            /// The Iceberg spec caps `decimal(P, S)` at precision 38, while ClickHouse `Decimal256` goes up to 76.
+            /// A wider precision has no Iceberg representation, so refuse it instead of writing metadata that
+            /// other engines reject.
+            const UInt32 precision = getDecimalPrecision(*type);
             if (precision > 38)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Iceberg decimal type supports precision up to 38, got {}", precision);
-            return {"decimal(" + std::to_string(precision) + ", " + std::to_string(getDecimalScale(*type)) + ")", true};
+            return {fmt::format("decimal({}, {})", precision, getDecimalScale(*type)), true};
         }
         case TypeIndex::Tuple:
         {
@@ -634,7 +655,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type)
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())
     {
@@ -650,7 +671,6 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
         case TypeIndex::Time:
             return "long";
         case TypeIndex::Time64:
@@ -661,6 +681,17 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
         }
+        case TypeIndex::DateTime64:
+        {
+            if (getDecimalScale(*type) != 6)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+            Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
+            timestamp_type->set("type", "long");
+            timestamp_type->set("logicalType", "timestamp-micros");
+            timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
+            return timestamp_type;
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -668,6 +699,25 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::String:
         case TypeIndex::UUID:
             return "string";
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            const UInt32 precision = getDecimalPrecision(*type);
+            const UInt32 scale = getDecimalScale(*type);
+
+            Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
+            decimal_type->set("type", "fixed");
+            decimal_type->set("size", icebergDecimalRequiredBytes(precision));
+            /// `fixed` is a named Avro type, so the name must be unique within the manifest schema:
+            /// two partition fields of the same decimal shape must not both define `decimal_P_S`.
+            decimal_type->set("name", fmt::format("decimal_{}_{}_{}", precision, scale, field_id));
+            decimal_type->set("logicalType", "decimal");
+            decimal_type->set("precision", precision);
+            decimal_type->set("scale", scale);
+            return decimal_type;
+        }
         case TypeIndex::Nullable:
         {
             /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
@@ -676,7 +726,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
             union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType()));
+            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
             return union_array;
         }
         default:

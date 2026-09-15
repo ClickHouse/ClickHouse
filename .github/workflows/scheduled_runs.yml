@@ -1,9 +1,8 @@
-name: Scheduled Altinity Stable Builds
+name: Scheduled Altinity Builds
 
 on:
   schedule:
     - cron: '0 0 * * 6' #Weekly run for stable versions 
-    - cron: '0 0 * * *' #Daily run for antalya versions
   # Make sure that any changes to this file is actually tested with PRs
   pull_request:
     types:
@@ -19,9 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         branch: 
-          - antalya
+          - antalya-26.6
+          - antalya-26.3
+          - antalya-25.8
     name: ${{ matrix.branch }}
-    if: github.event.schedule != '0 0 * * 6'
     runs-on: ubuntu-latest
     steps:
      - name: Run ${{ matrix.branch }} workflow
@@ -39,9 +39,10 @@ jobs:
       fail-fast: false
       matrix:
         branch: 
-          - customizations/24.8.14
+          - stable-26.3
+          - stable-25.8
+          - releases/24.8.14
     name: ${{ matrix.branch }}
-    if: github.event.schedule != '0 0 * * *'
     runs-on: ubuntu-latest
     steps:
      - name: Run ${{ matrix.branch }} workflow

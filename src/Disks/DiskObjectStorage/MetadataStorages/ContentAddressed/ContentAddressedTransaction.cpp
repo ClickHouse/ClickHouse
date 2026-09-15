@@ -113,7 +113,7 @@ ContentAddressedTransaction::~ContentAddressedTransaction()
     /// backstop for aborted/exception-unwound transactions whose publishStaging never ran.
     cleanupPendingTempFiles();
 
-    /// An uncommitted transaction's uploads become min_active-spared debris: abandon every
+    /// An uncommitted transaction's uploads become min_active_build_sequence-spared debris: abandon every
     /// still-open PartWriteTxn so its build_seq is retired. This replaces the former pin machinery.
     if (committed)
         return;
@@ -289,7 +289,8 @@ void ContentAddressedTransaction::uploadPendingBlobs(PartStaging & st)
             const uint64_t payload_size = pb.size;
             source.open = [store, staging_key, header_len, payload_size]() -> std::unique_ptr<ReadBuffer>
             {
-                auto staged = store->backend().getStream(staging_key);
+                Cas::CasOperation op = store->mountRequests().admit();
+                auto staged = op.stream(staging_key, Cas::Retry::standard());
                 if (!staged)
                     throw Exception(
                         ErrorCodes::FILE_DOESNT_EXIST,
@@ -297,7 +298,7 @@ void ContentAddressedTransaction::uploadPendingBlobs(PartStaging & st)
                         staging_key);
 
                 String encoded_header(header_len, '\0');
-                staged->stream->readStrict(encoded_header.data(), encoded_header.size());
+                staged->readStrict(encoded_header.data(), encoded_header.size());
                 const Cas::EnvelopeHeader decoded = Cas::decodeEnvelopeHeader(
                     encoded_header,
                     header_len + payload_size,
@@ -309,7 +310,7 @@ void ContentAddressedTransaction::uploadPendingBlobs(PartStaging & st)
                         staging_key,
                         decoded.header_len,
                         header_len);
-                return std::move(staged->stream);
+                return staged;
             };
         }
         else
@@ -759,8 +760,8 @@ std::string ContentAddressedTransaction::buildS3StagingBlobHeader(
     header.kind = Cas::ObjectKind::Blob;
     header.incarnation_tag = (static_cast<UInt128>(thread_local_rng()) << 64) | thread_local_rng();
     header.build_id = 0;   /// not known at stream time; diagnostic-only (not read by GC/read paths)
-    /// ch = the real ClickHouse VERSION_INTEGER (diagnostic-only; consistent with `PartWriteTxn::buildHeader`).
-    /// The v3 envelope drops hash_algo/domain_id/writer_version, so forensics ride on ch + bld.
+    /// `chver` = the real ClickHouse VERSION_INTEGER (diagnostic-only; consistent with `PartWriteTxn::buildHeader`).
+    /// The envelope drops hash_algo/domain_id/writer_version, so forensics ride on `chver` + `build`.
     header.provenance = Cas::Provenance{
         /*created_at_ms*/ 0, cfg.server_id, VERSION_INTEGER, Cas::ProvenanceOp::Other};
     header.intended_ref = route.ns.string() + "/" + route.ref;
@@ -906,10 +907,13 @@ std::unique_ptr<WriteBufferFromFileBase> ContentAddressedTransaction::writeFile(
             /// buffer writes this header first, UNHASHED and excluded from the reported size, so the
             /// content key stays the pool's hash of `payload` and `blob_size` stays the payload size.
             std::string envelope_header = buildS3StagingBlobHeader(*r);
-            /// rev.7 [C2]: capture the fence generation now, re-checked immediately before the durable
-            /// `sink->finalize()` in `finalizeImpl` (the streaming upload becomes durable there).
+            /// The staged upload becomes durable in `sink->finalize()`, outside this request contract by
+            /// design, so its admission is re-checked there through the callback below, against the
+            /// generation captured HERE. `admit().generation()` reads a plain value off a temporary
+            /// `CasOperation` that does not outlive this statement -- it names the fence generation at
+            /// THIS instant, not a live operation the two calls share.
             const Cas::PoolPtr pool = metadata_storage.store();
-            const uint64_t admitted_generation = pool->fenceGeneration();
+            const uint64_t admitted_generation = pool->mountRequests().admit().generation();
             return std::make_unique<Cas::CaContentWriteBuffer>(
                 std::move(object_sink),
                 staging_key,
@@ -1208,8 +1212,9 @@ void ContentAddressedTransaction::createHardLink(const std::string & path_from, 
 
     /// Carry forward from the COMMITTED source part: read the source manifest, find the named entry,
     /// record a TOKENLESS W-EVIDENCE dep for its blob (no HEAD before precommit; promote re-proves it).
-    /// ForceFresh getView == resolveRef(allow_stale=false) + readManifestShared, so this is the same
-    /// request pattern as before, now instrumented via the facade.
+    /// ForceFresh getView == resolveRef(allow_stale=false) + readManifestShared; the decode is served
+    /// from the manifest cache when warm, so a burst of hardlinks from one source part costs no
+    /// manifest request after the first.
     auto view = metadata_storage.partAccess()->getView(src->refKey(), Cas::Freshness::ForceFresh);
     if (!view)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
@@ -1615,9 +1620,9 @@ void ContentAddressedTransaction::unlinkFile(const std::string & path, bool if_e
         std::erase_if(st.entries, [&](const Cas::ManifestEntry & e) { return e.path == r->file; });
         if (!staged_here)
         {
-            /// One mandatory body-HEAD per (transaction, ref), not per file: the MergeTree fast-removal
-            /// path unlinks every file of the part through THIS transaction right before removeDirectory.
-            /// The first unlink re-proves the body ForceFresh; the rest of the burst reuses that proof.
+            /// One fresh resolve per (transaction, ref), not per file: the MergeTree fast-removal path
+            /// unlinks every file of the part through THIS transaction right before removeDirectory.
+            /// The first unlink resolves ForceFresh; the rest of the burst reads the retained view.
             const String memo_key = r->refKey().cacheKey();
             const bool already_proven = force_fresh_validated_refs.contains(memo_key);
             const auto view = metadata_storage.partAccess()->getView(

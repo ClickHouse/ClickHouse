@@ -160,7 +160,7 @@ namespace
 /// Fixture for the `CasCommitRollback` suite: wraps a real `ContentAddressedMetadataStorage` and
 /// drives ordinary `ContentAddressedTransaction`s through disk paths, so the fault seams under test
 /// (`ContentAddressedMetadataStorage::armPromoteFailureForTest`/`setAfterPromoteHookForTest`, the
-/// minimal test-only hooks this task adds) fire from the SAME `publishStaging` call path production
+/// minimal test-only hooks) fire from the SAME `publishStaging` call path production
 /// `commit()` uses -- unlike `CaWiringFixture` above, which pokes the bare pool primitives directly.
 /// Every part in one fixture instance shares ONE fixed table uuid (and therefore one `RootNamespace`),
 /// matching every test's single `fx.ns()`.

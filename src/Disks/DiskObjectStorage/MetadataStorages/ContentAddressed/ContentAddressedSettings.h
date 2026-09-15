@@ -11,15 +11,11 @@ namespace Poco { namespace Util { class AbstractConfiguration; } } // NOLINT(cpp
 
 namespace DB::Cas
 {
-/// Forward declared to keep this header light: the full definitions live in
-/// `ContentAddressedMetadataStorage.h` (`StagingBackend`) and `Parts/PartFolderAccess.h`
-/// (`PartFolderValidate`), which are heavy and — in `ContentAddressedMetadataStorage.h`'s
-/// case — will itself include this header once the metadata storage is rewired onto it.
-/// Both are legal opaque declarations: `StagingBackend` fixes no explicit underlying type
-/// (matching its definition, which leaves it as the implicit `int`), and `PartFolderValidate`
-/// is only ever used here as an incomplete-type function return, never stored by value.
+/// Forward declared to keep this header light: the full definition lives in
+/// `ContentAddressedMetadataStorage.h`, which is heavy and will itself include this header once the
+/// metadata storage is rewired onto it. A legal opaque declaration: `StagingBackend` fixes no
+/// explicit underlying type, matching its definition.
 enum class StagingBackend;
-struct PartFolderValidate;
 }
 
 namespace DB
@@ -72,8 +68,8 @@ struct ContentAddressedSettings
     /// Fail-closed checks: `gc_interval_sec` and `gc_shards` must both be >= 1; `server_root_id` must
     /// be present (an ABSENT key throws a typed `NO_ELEMENTS_IN_CONFIG`, distinct from a
     /// PRESENT-but-invalid value, which throws `Cas::validateServerRootId`'s `BAD_ARGUMENTS`); and the
-    /// three enum-valued string settings (`blob_hash`, `staging_backend`, `part_folder_validate`) must
-    /// parse. The parsed enum values are cached for the typed accessors below.
+    /// two enum-valued string settings (`blob_hash`, `staging_backend`) must parse. The parsed enum
+    /// values are cached for the typed accessors below.
     void validate();
 
     /// Typed accessors for the enum-valued string settings, parsed and cached by `validate`.
@@ -83,11 +79,10 @@ struct ContentAddressedSettings
     /// only; the two scopes are deliberately distinct.
     bool skipAccessCheck() const;
     Cas::StagingBackend stagingBackend() const;
-    Cas::PartFolderValidate partFolderValidate() const;
 
 private:
     /// The parsed enum values live inside `impl` (defined in the .cpp, where the forward-declared
-    /// `Cas::StagingBackend` / `Cas::PartFolderValidate` types are complete), not as members here.
+    /// `Cas::StagingBackend` type is complete), not as members here.
     std::unique_ptr<ContentAddressedSettingsImpl> impl;
 };
 

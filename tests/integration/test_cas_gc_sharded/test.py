@@ -122,13 +122,13 @@ def get_rustfs_object(key):
 
 
 # `gc/state`'s wire format is a plain JSON-like text object (CasGcStateFormat.cpp), not a binary
-# blob: the two fields this test needs are literally spelled `"sg":"<digits>"` (snap_generation)
-# and `"sa":"<digits>"` (snap_attempt) in the object bytes, so a direct regex read is exact without
+# blob: the two fields this test needs are literally spelled `"snap_generation":"<digits>"`
+# and `"snap_attempt":"<digits>"` in the object bytes, so a direct regex read is exact without
 # needing the C++ decoder. This mirrors the production reader that resolves "the adopted seal"
 # (Gc/CasOrphanManifestSweep.cpp): read gc/state, take (snap_generation, snap_attempt), then look up
 # that exact fold seal -- the only two-hop lookup that names one authoritative adopted pair.
-_SNAP_GENERATION_RE = re.compile(r'"sg":"(\d+)"')
-_SNAP_ATTEMPT_RE = re.compile(r'"sa":"(\d+)"')
+_SNAP_GENERATION_RE = re.compile(r'"snap_generation":"(\d+)"')
+_SNAP_ATTEMPT_RE = re.compile(r'"snap_attempt":"(\d+)"')
 
 
 def read_adopted_generation_and_attempt():
@@ -144,7 +144,13 @@ def read_adopted_generation_and_attempt():
     sg_match = _SNAP_GENERATION_RE.search(text)
     sa_match = _SNAP_ATTEMPT_RE.search(text)
     if not sg_match or not sa_match:
-        return None
+        # A `gc/state` that exists but does not spell both fields is a wire-format change this
+        # reader has not followed, NOT "nothing adopted yet" -- say so instead of returning the
+        # absent-sentinel, which would poll to a timeout and blame the server.
+        raise AssertionError(
+            "gc/state exists but neither snap_generation nor snap_attempt could be read from it; "
+            "the object's key spelling changed and this regex reader is stale: " + text[:400]
+        )
     generation = int(sg_match.group(1))
     if generation == 0:
         return None

@@ -16,7 +16,7 @@ class Layout;
 /// The byte bound every namespace name admitted into `ref_catalog` must satisfy (spec INV-3:
 /// "namespace names get a byte bound"). It keeps the catalog's operator-visible row and line grammar
 /// bounded, and both directions of the codec enforce it. Logical namespace bytes do NOT enter
-/// predicate (2): fold-seal `rfl` rows are keyed only by the fixed-width opaque life id.
+/// predicate (2): fold-seal `ref_life` rows are keyed only by the fixed-width opaque life id.
 constexpr size_t kMaxNamespaceBytes = 512;
 
 /// One namespace's catalog lifecycle state (spec INV-3, §3). `Creating` blocks publication and
@@ -44,7 +44,7 @@ std::string_view nsStateToWord(NsState s);
 /// Inverse of `nsStateToWord`; throws `CORRUPTED_DATA` for anything but the three registered words.
 NsState nsStateFromWord(std::string_view w);
 
-/// The fence identity of the mounted writer CREATING one namespace (spec §3): the server root plus
+/// The fence identity of the mounted writer CREATING one namespace: the server root plus
 /// the writer epoch and admission fence generation captured at the moment `Creating` was minted. It
 /// is what a reconciler compares against `CasServerRoot`'s liveness/fence machinery before a stalled
 /// `Creating` entry may be CAS-reconciled away (INV-3: "stalled creators occupy entries until
@@ -92,7 +92,7 @@ struct RefCatalog
     bool operator==(const RefCatalog &) const = default;
 };
 
-/// Encodes `catalog` as the canonical `cas_ref_catalog` text object: a header line, one "ent" record
+/// Encodes `catalog` as the canonical `cas_ref_catalog` text object: a header line, one "entry" record
 /// per entry in canonical (ns-sorted) order, and a record-count trailer -- the same tagged-record
 /// container `encodeFoldSeal` uses. Enforces the FULL strict grammar on the way out: canonical order
 /// and no duplicate namespace, a non-empty namespace within the `kMaxNamespaceBytes` bound, nonzero
@@ -103,8 +103,8 @@ struct RefCatalog
 /// instead) -- but deliberately does NOT enforce the whole-object cap itself: that predicate must
 /// name the namespace under admission, which only a caller of `checkCatalogAdmission` knows.
 ///
-/// These bytes go to and come from the backend DIRECTLY, exactly like `cas_ref_ckpt`: the Pool-side
-/// `CasRefCatalog::read`/`casUpdateImpl` (`Pool/CasRefCatalog.cpp`) bypass `sealObject`/`openObject`,
+/// These bytes go to and come from the backend DIRECTLY: the catalog read and update paths bypass
+/// `sealObject`/`openObject`,
 /// which are the identity under this class's `CompressionPolicy::Never` and would add nothing. A
 /// policy flip to `Always` therefore breaks this silently -- and is caught, because `storedSuffix`
 /// would stop being empty and the registry test asserting `storedSuffix(FormatId::RefCatalog) == ""`
@@ -144,7 +144,7 @@ uint64_t widestCondemnedSummaryReservationBytes(uint64_t gc_shards);
 
 /// PRE-PUT GATE, predicate (2) of INV-3's additive admission. Reserves the widest fixed frame, one
 /// widest ref-life row per candidate catalog entry, and one widest blob-target plus condemned-summary
-/// row per authoritative GC shard. The `btr` multiplier follows the authoritative fold-seal grammar:
+/// row per authoritative GC shard. The `blob_run` multiplier follows the authoritative fold-seal grammar:
 /// at most one canonical sequence-0 run is legal for each shard. Equality is accepted; refuses
 /// (`LIMIT_EXCEEDED`, naming `ns`) one entry over. Every multiplication and addition saturates, so an
 /// unreachable-in-practice count can never wrap into something that reads as "fits".

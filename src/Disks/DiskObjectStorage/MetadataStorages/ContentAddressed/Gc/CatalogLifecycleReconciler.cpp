@@ -1,5 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CatalogLifecycleReconciler.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 
 #include <Common/Exception.h>
 #include <fmt/format.h>
@@ -18,14 +18,10 @@ namespace DB::Cas
 {
 
 CatalogLifecycleReconciler::CatalogLifecycleReconciler(
-    Backend & backend_, const Layout & layout_, const CasFoldSeal & adopted_parent_,
-    uint64_t admitted_generation_,
-    std::function<CasRefCatalog::LeaderFenceStatus(uint64_t)> check_fence_)
-    : backend(backend_)
+    CasOperation & op_, const Layout & layout_, const CasFoldSeal & adopted_parent_)
+    : op(op_)
     , layout(layout_)
     , adopted_parent(adopted_parent_)
-    , admitted_generation(admitted_generation_)
-    , check_fence(std::move(check_fence_))
 {
 }
 
@@ -62,7 +58,8 @@ CatalogResolution CatalogLifecycleReconciler::resolveExactRow(
     return CatalogResolution::ExactRowStillPresent;
 }
 
-CatalogLifecycleReconcileResult CatalogLifecycleReconciler::reconcile()
+CatalogLifecycleReconcileResult CatalogLifecycleReconciler::reconcile(
+    const std::function<void()> & refresh_authority)
 {
     CatalogLifecycleReconcileResult result{
         .authority_status = AuthorityStatus::Authoritative,
@@ -70,14 +67,19 @@ CatalogLifecycleReconcileResult CatalogLifecycleReconciler::reconcile()
         .retired_lives = {},
         .final_catalog_cut = std::nullopt,
         .deleted = 0};
-    CasRefCatalog::Snapshot catalog = CasRefCatalog::read(backend, layout);
+    CasRefCatalog::Snapshot catalog = CasRefCatalog::read(op, layout);
 
     for (;;)
     {
         const std::optional<CatalogEntry> eligible = selectEligible(catalog);
         if (!eligible)
         {
-            if (check_fence(admitted_generation) == CasRefCatalog::LeaderFenceStatus::Moved)
+            /// The verdict gets its own refresh, not just each erase: a deposition landing after the
+            /// last erase is invisible to the reading that erase took, so without this the drain hands
+            /// a deposed leader `Authoritative` and the round only learns better at its `gc/state`
+            /// commit -- after a ref walk and a fold seal it never had the authority to build.
+            refresh_authority();
+            if (!op.admitted())
             {
                 result.authority_status = AuthorityStatus::FencedOut;
                 return result;
@@ -89,8 +91,7 @@ CatalogLifecycleReconcileResult CatalogLifecycleReconciler::reconcile()
 
         CasRefCatalog::CompletedRemovingDeleteResult delete_result
             = CasRefCatalog::deleteCompletedRemovingAtSnapshot(
-                backend, layout, std::move(catalog), *eligible, adopted_parent,
-                admitted_generation, check_fence);
+                op, layout, std::move(catalog), *eligible, adopted_parent, refresh_authority);
         if (!delete_result.catalog_snapshot)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "CAS catalog lifecycle reconciliation returned no catalog resolution snapshot");

@@ -46,9 +46,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", true, false, "Fixed a bug in the analyzer where FINAL on the left-most table of a JOIN was incorrectly applied to the other joined tables as well. previous_value=true so `compatibility` with versions before 26.6 restores the old behavior."},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the new analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
             {"input_format_parquet_prefetch_memory_fraction", 0.6, 0.6, "New setting to tune the Parquet reader split of the column-data memory budget between compressed read-ahead and decode."},
             {"input_format_parquet_decode_thread_fraction", 0.375, 0.375, "New setting to tune the Parquet reader share of the parsing thread pool given to column decoding."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
@@ -99,10 +101,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
             {"export_merge_tree_partition_task_timeout_seconds", "3600", "86400", "Increase default value to make it more realistic"},
             {"export_merge_tree_part_allow_lossy_cast", false, false, "New setting to gate lossy casts in EXPORT PART/PARTITION behind explicit acknowledgment"},
-            {"export_merge_tree_part_schema_mismatch_mode", "strict", "strict", "New setting to allow EXPORT PART/EXPORT PARTITION when the source table has more columns than the destination"},
+            {"export_merge_tree_part_schema_match_mode", "POSITION", "POSITION", "New setting to control how EXPORT PART/EXPORT PARTITION matches source columns to destination columns"},
+            {"export_merge_tree_part_ignore_extra_source_columns", false, false, "New setting to allow EXPORT PART/EXPORT PARTITION when the source table has columns absent from the destination"},
             {"export_merge_tree_partition_retry_initial_backoff_seconds", 5, 5, "New setting for exponential back-off between failed part export retries in an export partition task"},
             {"export_merge_tree_partition_retry_max_backoff_seconds", 300, 300, "New setting capping the exponential back-off between failed part export retries in an export partition task"},
             {"export_merge_tree_partition_max_retries", 3, 3, "Obsolete and ignored: export partition tasks now retry retryable failures until the task timeout and fail immediately on non-retryable errors, instead of using a fixed retry budget"},
+            {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
+            {"throw_on_hive_partitioning_resolution_failure", false, false, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage. Disabled here to keep the pre-existing behavior of running without the Hive partition columns, and enabled by default from 26.8."},
+            {"statistics_max_set_size_for_exact_selectivity_estimation", 0, 10000, "New setting to bound the cost of estimating the selectivity of `IN` with a large set: above the limit the estimator uses the size of the set and its bounding range instead of the exact ranges. Before 26.8 the estimation was uncapped, so the previous value is 0 (no limit) and `compatibility` with an earlier version restores the exact ranges for sets of any size."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
@@ -215,6 +221,18 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
+        });
+        addSettingsChanges(settings_changes_history, "26.3.1.20001.altinityantalya",
+        {
+            {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
+            {"export_merge_tree_partition_task_timeout_seconds", "3600", "86400", "Increase default value to make it more realistic"},
+            {"export_merge_tree_part_allow_lossy_cast", false, false, "New setting to gate lossy casts in EXPORT PART/PARTITION behind explicit acknowledgment"},
+            {"export_merge_tree_part_schema_match_mode", "POSITION", "POSITION", "New setting to control how EXPORT PART/EXPORT PARTITION matches source columns to destination columns"},
+            {"export_merge_tree_part_ignore_extra_source_columns", false, false, "New setting to allow EXPORT PART/EXPORT PARTITION when the source table has columns absent from the destination"},
+            {"export_merge_tree_partition_retry_initial_backoff_seconds", 5, 5, "New setting for exponential back-off between failed part export retries in an export partition task"},
+            {"export_merge_tree_partition_retry_max_backoff_seconds", 300, 300, "New setting capping the exponential back-off between failed part export retries in an export partition task"},
+            {"export_merge_tree_partition_max_retries", 3, 3, "Obsolete and ignored: export partition tasks now retry retryable failures until the task timeout and fail immediately on non-retryable errors, instead of using a fixed retry budget"},
+            {"allow_experimental_database_s3_tables", false, false, "New setting to enable experimental database S3 tables (AWS Iceberg REST catalog)."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -1340,6 +1358,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
             {"text_index_posting_list_codec", "none", "none", "New setting"},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"text_index_serialization_version", "v0_initial", "v1_with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'v0_initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
             {"shared_merge_tree_inactive_replica_cutoff_seconds", 0, 0, "New setting which controls for how long an inactive replica is taken into account by the background cleanup (0 means two ZooKeeper session timeouts)"},

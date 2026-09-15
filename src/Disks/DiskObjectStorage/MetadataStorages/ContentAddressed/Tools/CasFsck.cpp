@@ -1,4 +1,4 @@
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasFsck.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcStateFormat.h>
@@ -51,13 +51,13 @@ void checkDeadline(const Deadline & deadline, std::string_view phase)
             "fsck: exceeded the deadline during '{}' — run against a QUIESCED pool or raise --timeout.", phase);
 }
 
-void listAll(Backend & backend, const String & prefix, std::unordered_map<String, uint64_t> & out,
+void listAll(CasOperation & op, const String & prefix, std::unordered_map<String, uint64_t> & out,
              const FsckProgress & on_progress, const Deadline & deadline, std::string_view phase)
 {
     static constexpr size_t kPageLimit = 1000;
     uint64_t pages = 0;
     size_t count_in_page = 0;
-    forEachListedKey(backend, prefix, [&](const ListedKey & k)
+    op.forEachListedKey(prefix, [&](const ListedKey & k)
     {
         out[k.key] = k.size;
         if (++count_in_page == kPageLimit)
@@ -68,8 +68,9 @@ void listAll(Backend & backend, const String & prefix, std::unordered_map<String
             if (on_progress && pages % PROGRESS_PAGES == 0)
                 on_progress(phase, out.size(), pages);
         }
-    }, kPageLimit);
-    /// The walk's `backend.list` lands at least once even for an empty/undersized final page --
+        return true;
+    }, Retry::standard(), kPageLimit);
+    /// The walk's own list lands at least once even for an empty/undersized final page --
     /// check it here, mirroring the original per-page loop (deadline checked after every physical page).
     if (count_in_page > 0 || pages == 0)
     {
@@ -124,12 +125,12 @@ using RecordRecoveryUnchecked = std::function<void(const RootNamespace &, const 
 /// without admitting a competing rebirth. A missing or unreadable checkpoint cannot prove that an
 /// old owner went away, so the caller records lost coverage and keeps the conservative verdict.
 std::optional<RefTableState> recoverLateRefTable(
-    Backend & backend, const Layout & layout, const FsckRecoveryAuthority & authority,
+    CasOperation & op, const Layout & layout, const FsckRecoveryAuthority & authority,
     const RecordRecoveryUnchecked & record_unchecked)
 {
     try
     {
-        const std::optional<CkptSample> sampled = readCkpt(backend, layout, authority.life);
+        const std::optional<CkptSample> sampled = readCkpt(op, layout, authority.life);
         if (!sampled)
         {
             record_unchecked(authority.life.ns, layout.refCkptKey(authority.life),
@@ -137,7 +138,7 @@ std::optional<RefTableState> recoverLateRefTable(
             return std::nullopt;
         }
         return recoverRefTableDetailedFromAuthority(
-            backend, layout, authority.catalog_entry, sampled->ckpt).state;
+            op, layout, authority.catalog_entry, sampled->ckpt).state;
     }
     catch (const Exception & e)
     {
@@ -153,7 +154,7 @@ std::optional<RefTableState> recoverLateRefTable(
     }
 }
 
-bool blobStillReferenced(Pool & store, const Layout & layout,
+bool blobStillReferenced(CasOperation & op, Pool & store, const Layout & layout,
                           const FsckRecoveryAuthorities & authorities, const String & bkey,
                           const std::vector<String> & labels, const Deadline & deadline,
                           const RecordRecoveryUnchecked & record_unchecked)
@@ -181,7 +182,7 @@ bool blobStillReferenced(Pool & store, const Layout & layout,
             }
             const RootNamespace rns{ns_part};
             const std::optional<RefTableState> table = recoverLateRefTable(
-                store.backend(), layout, authority_it->second, record_unchecked);
+                op, layout, authority_it->second, record_unchecked);
             if (!table)
                 return true;
             const auto rit = table->getCommitted().find(ref_name);
@@ -205,7 +206,7 @@ bool blobStillReferenced(Pool & store, const Layout & layout,
 }
 
 /// The manifest sibling of the `blobStillReferenced` recheck above. The ref-walk captures each committed
-/// `(ref_name -> manifest_ref)` from a FRESH per-namespace recovery, but the `backend.get(mkey)` that
+/// `(ref_name -> manifest_ref)` from a FRESH per-namespace recovery, but the read of `mkey` that
 /// confirms the manifest body runs LATER in the same (possibly long) namespace loop. A ref republished to
 /// a DIFFERENT manifest — or DROPPED — in that window, combined with a legitimate GC delete of the OLD
 /// manifest body, makes the stale captured row look like a committed ref over a missing manifest (a
@@ -217,7 +218,7 @@ bool blobStillReferenced(Pool & store, const Layout & layout,
 /// but a same-life checkpoint advance must be visible. Fails CLOSED on any ambiguity (a throw, a corrupt
 /// table): treated as "still referenced", the original conservative verdict — the fix can only SHRINK
 /// false positives, never hide a real loss.
-bool manifestStillReferenced(Backend & backend, const Layout & layout, const RootNamespace & ns,
+bool manifestStillReferenced(CasOperation & op, const Layout & layout, const RootNamespace & ns,
                              const FsckRecoveryAuthorities & authorities, const String & ref_name,
                              const String & mkey, const Deadline & deadline,
                              const RecordRecoveryUnchecked & record_unchecked)
@@ -233,7 +234,7 @@ bool manifestStillReferenced(Backend & backend, const Layout & layout, const Roo
             return true;   /// no original Live/Removing authority -- fail closed
         }
         const std::optional<RefTableState> table = recoverLateRefTable(
-            backend, layout, authority_it->second, record_unchecked);
+            op, layout, authority_it->second, record_unchecked);
         if (!table)
             return true;
         const auto rit = table->getCommitted().find(ref_name);
@@ -308,7 +309,7 @@ struct NsVerdicts
 /// `{life_epoch, 1}`) through that inclusive frontier. A missing required id is therefore a proven hole;
 /// no above-hole listing witness is needed. An epoch seal advances directly to the next epoch's first id,
 /// exactly as authoritative read-only recovery does.
-void checkRefStream(Backend & backend, const Layout & layout, const NamespaceLifeId & life,
+void checkRefStream(CasOperation & op, const Layout & layout, const NamespaceLifeId & life,
                     const CatalogEntry & catalog_entry, const std::optional<CkptSample> & checkpoint_sample,
                     const Deadline & deadline, FsckReport & report, NsVerdicts & verdicts)
 {
@@ -323,7 +324,7 @@ void checkRefStream(Backend & backend, const Layout & layout, const NamespaceLif
         {
             /// Even when the base IS the frontier and there is no replay tail, a checkpoint may not
             /// turn an `EpochSeal` into a state snapshot by naming a same-id `_snap`.
-            (void)readCheckpointSnapshotBase(backend, layout, life, *checkpoint);
+            (void)readCheckpointSnapshotBase(op, layout, life, *checkpoint);
         }
         catch (const Exception & e)
         {
@@ -343,8 +344,8 @@ void checkRefStream(Backend & backend, const Layout & layout, const NamespaceLif
             checkDeadline(deadline, "checkpoint-base authority revalidation");
             try
             {
-                const std::optional<CkptSample> current = readCkpt(backend, layout, life);
-                if (!current || !checkpoint_sample || current->token != checkpoint_sample->token)
+                const std::optional<CkptSample> current = readCkpt(op, layout, life);
+                if (!current || !checkpoint_sample || current->etag != checkpoint_sample->etag)
                 {
                     verdicts.recordUnchecked(report, ns, key,
                         note + "; checkpoint authority changed while validating its snapshot base");
@@ -375,7 +376,7 @@ void checkRefStream(Backend & backend, const Layout & layout, const NamespaceLif
     while (expected <= *grounding.committed_through)
     {
         checkDeadline(deadline, "ref stream");
-        const auto got = backend.get(layout.refLogKey(life, expected));
+        const auto got = op.read(layout.refLogKey(life, expected), Retry::standard());
         if (!got)
         {
             verdicts.recordChainBroken(report, ns, layout.refLogKey(life, expected),
@@ -424,7 +425,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                   const String & namespace_prefix, FsckReport & report)
 {
     const Layout & layout = store.layout();
-    Backend & backend = store.backend();
+    CasOperation op = store.openRequests().admit();
     /// Path-derived per-object algorithm parsing: every listed blob-tree key -- across every
     /// admitted algo, not just the pool's node-local write algo -- is classified via
     /// `Layout::parseBlobKey`, which derives the `BlobRef` from the key's OWN `<algo>` path segment
@@ -479,7 +480,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
     /// attribution (its physical keys may exist) but is never recovered: only Live/Removing rows have a
     /// durable publication frontier. A diagnostic records duplicate ids and keeps walking unrelated
     /// unique lives.
-    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(op, layout);
     struct FsckWalkLife
     {
         NamespaceLifeId life;
@@ -525,7 +526,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
         };
         std::vector<CanonicalNamespaceKey> canonical_candidates;
 
-        forEachListedKey(backend, layout.namespaceRootPrefix(), [&](const ListedKey & listed)
+        op.forEachListedKey(layout.namespaceRootPrefix(), [&](const ListedKey & listed)
         {
             std::optional<NamespaceLifePhysicalId> physical_id;
             try
@@ -539,7 +540,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                 else
                 {
                     recordLifelessKeys(NamespaceListing{{}, {{listed.key, "unrecognized key under the namespace ownership tree"}}});
-                    return;
+                    return true;
                 }
             }
             catch (const Exception & e)
@@ -547,14 +548,15 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                 if (e.code() != ErrorCodes::CORRUPTED_DATA)
                     throw;
                 recordLifelessKeys(NamespaceListing{{}, {{listed.key, e.message()}}});
-                return;
+                return true;
             }
             canonical_candidates.push_back(CanonicalNamespaceKey{listed.key, listed.size, *physical_id});
-        });
+            return true;
+        }, Retry::standard());
 
         /// The post-observation cut. All three catalog states -- `Creating`, `Live`, `Removing` --
         /// protect a life for this purpose; only a life absent from every one of them is residue.
-        const CasRefCatalog::Snapshot post_listing_cut = CasRefCatalog::read(backend, layout);
+        const CasRefCatalog::Snapshot post_listing_cut = CasRefCatalog::read(op, layout);
         std::unordered_set<UInt128> pending_lives;
         for (const CanonicalNamespaceKey & candidate : canonical_candidates)
         {
@@ -615,7 +617,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
             /// One materialized `_ckpt` body is part of this namespace's frozen audit authority. The
             /// recovery API receives exactly these bytes; `checkRefStream` receives the same decoded
             /// value, so the two legs cannot quietly choose different frontiers after a concurrent CAS.
-            const std::optional<CkptSample> checkpoint_sample = readCkpt(backend, layout, life);
+            const std::optional<CkptSample> checkpoint_sample = readCkpt(op, layout, life);
             const std::optional<RefCkpt> checkpoint
                 = checkpoint_sample ? std::optional<RefCkpt>{checkpoint_sample->ckpt} : std::nullopt;
             const auto [authority_it, inserted] = recovery_authorities.emplace(
@@ -627,12 +629,12 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
             /// it (`chain-broken`) rather than the downstream `CORRUPTED_DATA` the replay below would
             /// raise about the same hole.
             checkRefStream(
-                backend, layout, life, walk_life.catalog_entry, checkpoint_sample, deadline, report, verdicts);
+                op, layout, life, walk_life.catalog_entry, checkpoint_sample, deadline, report, verdicts);
 
             /// This recovery's finite range comes from the original catalog row and exact `_ckpt`, never
             /// from a stream listing, a self-resolved name, or an F+1 probe.
             const RefTableState table = recoverRefTableDetailedFromAuthority(
-                backend, layout, authority_it->second.catalog_entry, authority_it->second.checkpoint).state;
+                op, layout, authority_it->second.catalog_entry, authority_it->second.checkpoint).state;
             for (const auto [ref_name, row] : table.getCommitted())
             {
                 const ManifestId id{ns, row.manifest_ref};
@@ -640,7 +642,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                 owned_manifest_keys.insert(mkey);
                 const String label = ns_str + "/" + ref_name;
 
-                const auto got = backend.get(mkey);
+                const auto got = op.read(mkey, Retry::standard());
                 if (!got)
                 {
                     /// A committed ref naming a missing manifest body would be an INV-NO-DANGLE violation —
@@ -651,8 +653,8 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                     /// plus a fresh checkpoint from its physical life. Count the dangle ONLY when the exact
                     /// object is HEAD-absent AND that life still names THIS exact manifest — otherwise it is
                     /// LIST/GET lag or a phantom stale-row, never a loss.
-                    if (!backend.head(mkey).exists
-                        && manifestStillReferenced(backend, layout, ns, recovery_authorities, ref_name, mkey,
+                    if (!op.head(mkey, Retry::standard())
+                        && manifestStillReferenced(op, layout, ns, recovery_authorities, ref_name, mkey,
                             deadline, record_recovery_unchecked))
                     {
                         ++report.dangling;
@@ -725,7 +727,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
     /// misread as an unreferenced blob and fall into the dangling/pending/unaccounted pipeline
     /// below), and a body must never be misread as a `.meta`.
     std::unordered_map<String, uint64_t> present_all;
-    listAll(backend, layout.blobsPrefix(), present_all, on_progress, deadline, "listing blobs");
+    listAll(op, layout.blobsPrefix(), present_all, on_progress, deadline, "listing blobs");
     std::unordered_map<String, uint64_t> present_blobs;
     std::unordered_set<BlobRef, BlobRefHash> present_meta_hashes;
     present_blobs.reserve(present_all.size());
@@ -751,12 +753,11 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
         uint64_t size = exists ? it->second : 0;
         if (!exists)
         {
-            const HeadResult h = backend.head(bkey);
-            if (h.exists)
+            if (const std::optional<Meta> h = op.head(bkey, Retry::standard()))
             {
                 exists = true;
-                size = h.size;
-                report.physical_bytes += h.size;
+                size = h->size;
+                report.physical_bytes += h->size;
             }
         }
 
@@ -766,7 +767,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
             /// Before declaring a loss, re-resolve the referencing refs from the original audit
             /// authority. A later rebirth must not replace the old owner while this verdict is being
             /// decided.
-            const bool still_referenced = blobStillReferenced(store, layout, recovery_authorities, bkey,
+            const bool still_referenced = blobStillReferenced(op, store, layout, recovery_authorities, bkey,
                 lit != blob_labels.end() ? lit->second : std::vector<String>{}, deadline,
                 record_recovery_unchecked);
             if (!still_referenced)
@@ -800,7 +801,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
     /// The NON-SENTINEL source edges the snapshot still holds on each unreferenced blob, collected in
     /// `detail` mode only. `in_run_hashes` alone answers "does GC still see this blob at all"; the
     /// stale-edge cross-check below needs the edge IDENTITIES so it can ask whether their source
-    /// manifests still exist. Sentinel rows (`source_id == 0` — `kZeroMarker`/`kCondemned`) are not
+    /// manifests still exist. Sentinel rows (`source_id == 0` — `RunMarker::Zero`/`RunMarker::Condemned`) are not
     /// edges and are excluded.
     std::unordered_map<BlobRef, std::vector<UInt128>, BlobRefHash> unref_edge_sources;
     bool have_gc_state = false;
@@ -814,15 +815,15 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
 
     if (!unref_hashes.empty())
     {
-        if (const auto state_got = backend.get(layout.gcStateKey()))
+        if (const auto state_got = op.read(layout.gcStateKey(), Retry::standard()))
         {
             have_gc_state = true;
             const GcState gc_state = decodeGcState(state_got->bytes);
             /// The adopted fold seal names the snapshot runs; resolution is by ref, never by key
             /// construction. Every row whose hash is in our candidate set marks "known to GC" —
             /// edges still counted (drop unfolded), an explicit zero-marker mid-pipeline, or a
-            /// `kCondemned` sentinel row that carries the condemned state (retired-in-snapshot):
-            /// the `kCondemned` rows feed `retired_by_hash` (the `PendingGc` classification) in the
+            /// `RunMarker::Condemned` sentinel row that carries the condemned state (retired-in-snapshot):
+            /// the `RunMarker::Condemned` rows feed `retired_by_hash` (the `PendingGc` classification) in the
             /// SAME pass, replacing the removed `retired_refs`/`decodeRetiredSet` loop.
             ///
             /// These sets are keyed by the full `BlobRef`, not a narrowed digest. The run's own
@@ -830,7 +831,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
             /// the full identity parsed from the listed blob key. This is required for mixed-algorithm
             /// pools: a 64-hex digest must not be truncated or compared as though it used the pool's
             /// local write algorithm, or its true GC state could be hidden as `Unaccounted`.
-            if (const auto seal_got = backend.get(layout.foldSealKey(gc_state.snap_generation, gc_state.snap_attempt)))
+            if (const auto seal_got = op.read(layout.foldSealKey(gc_state.snap_generation, gc_state.snap_attempt), Retry::standard()))
             {
                 uint64_t rows = 0;
                 for (const RunRef & run : decodeFoldSeal(seal_got->bytes, gc_state.snap_generation).blob_target_runs)
@@ -839,7 +840,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                     /// Typed open: the source-edge run reader goes through openSourceEdgeRun (the NDJSON
                     /// header gates type == cas_run + kind == source_edge). Fsck keys off the row's hash
                     /// (the record's own algo-prefixed key, never from pool meta).
-                    SourceEdgeRunView reader = openSourceEdgeRun(backend, run.key);
+                    SourceEdgeRunView reader = openSourceEdgeRun(op, run.key);
                     String key;
                     String payload;
                     while (reader.next(key, payload))
@@ -852,7 +853,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                             in_run_hashes.insert(ref);
                             if (detail && source_id != UInt128{0})
                                 unref_edge_sources[ref].push_back(source_id);
-                            if (!payload.empty() && payload[0] == kCondemned)
+                            if (!payload.empty() && runMarkerFromByte(payload[0], "CAS source-edge run") == RunMarker::Condemned)
                             {
                                 const CondemnedRow row = decodeCondemnedRow(payload);
                                 RetiredEntry e;
@@ -911,7 +912,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
         {
             const RootNamespace ns{ns_str};
             std::unordered_map<String, uint64_t> manifest_bodies;
-            listAll(backend, layout.manifestNamespacePrefix(ns), manifest_bodies, on_progress, deadline,
+            listAll(op, layout.manifestNamespacePrefix(ns), manifest_bodies, on_progress, deadline,
                     "listing manifests for the stale-edge check");
             for (const auto & [mkey, _] : manifest_bodies)
             {
@@ -919,9 +920,9 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                 const std::optional<ManifestId> id = layout.parseManifestKey(mkey);
                 if (!id)
                     continue;   /// foreign/malformed key under `manifests/` — contributes no source edge
-                const auto got = backend.get(mkey);
+                const auto got = op.read(mkey, Retry::standard());
                 if (!got)
-                    continue;   /// gone between the LIST and the GET — genuinely not a live source
+                    continue;   /// gone between the LIST and the read — genuinely not a live source
                 try
                 {
                     const PartManifest body = decodePartManifest(openObject(FormatId::PartManifest, got->bytes));
@@ -954,11 +955,14 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
 
         FsckClass cls = FsckClass::Unaccounted;
         String note;
-        if (const auto rit = retired_by_hash.find(hash); rit != retired_by_hash.end()
-            && backend.head(bkey).token == rit->second.token)
+        const auto rit = retired_by_hash.find(hash);
+        /// HEAD only for a hash the snapshot actually retired, so an unretired blob still costs no request.
+        const std::optional<Meta> retired_head
+            = rit != retired_by_hash.end() ? op.head(bkey, Retry::standard()) : std::nullopt;
+        if (retired_head && rit->second.token.matches(retired_head->etag))
         {
-            /// The PRESENT incarnation is the condemned one — deletion is scheduled. A token
-            /// mismatch means the listed entry belongs to a displaced older incarnation and says
+            /// The PRESENT incarnation is the condemned one — deletion is scheduled. A mismatch
+            /// means the listed entry belongs to a displaced older incarnation and says
             /// nothing about this object; fall through to the snapshot check.
             cls = FsckClass::PendingGc;
             note = rit->second.delete_pending
@@ -1053,13 +1057,13 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
         for (const String & bkey : reachable_blobs)
         {
             checkDeadline(deadline, "head-checking scoped blobs");
-            const HeadResult h = backend.head(bkey);
+            const std::optional<Meta> h = op.head(bkey, Retry::standard());
             const auto lit = blob_labels.find(bkey);
-            bool exists = h.exists;
+            const bool exists = h.has_value();
             if (!exists)
             {
                 /// Use the same HEAD-absent re-resolve as the global-mode loop above.
-                const bool still_referenced = blobStillReferenced(store, layout, recovery_authorities, bkey,
+                const bool still_referenced = blobStillReferenced(op, store, layout, recovery_authorities, bkey,
                     lit != blob_labels.end() ? lit->second : std::vector<String>{}, deadline,
                     record_recovery_unchecked);
                 if (!still_referenced)
@@ -1068,7 +1072,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
             if (exists)
             {
                 ++report.reachable;
-                report.physical_bytes += h.size;
+                report.physical_bytes += h->size;
             }
             else
                 ++report.dangling;
@@ -1077,7 +1081,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
                 FsckObject o;
                 o.key = bkey;
                 o.kind = ObjectKind::Blob;
-                o.size = exists ? h.size : 0;
+                o.size = exists ? h->size : 0;
                 o.cls = exists ? FsckClass::Reachable : FsckClass::Dangling;
                 if (detail && lit != blob_labels.end())
                     o.reachable_from = lit->second;
@@ -1096,7 +1100,7 @@ void runFsckImpl(Pool & store, bool detail, const FsckProgress & on_progress, co
         const RootNamespace ns{ns_str};
         const String manifests_prefix = layout.manifestNamespacePrefix(ns);
         std::unordered_map<String, uint64_t> manifest_bodies;
-        listAll(backend, manifests_prefix, manifest_bodies, on_progress, deadline, "listing manifests");
+        listAll(op, manifests_prefix, manifest_bodies, on_progress, deadline, "listing manifests");
         for (const auto & [mkey, sz] : manifest_bodies)
         {
             if (owned_manifest_keys.contains(mkey))

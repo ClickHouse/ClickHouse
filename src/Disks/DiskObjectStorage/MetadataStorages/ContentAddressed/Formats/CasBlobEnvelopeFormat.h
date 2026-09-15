@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
 #include <base/types.h>
@@ -32,6 +33,20 @@ enum class ProvenanceOp : uint8_t
     Repack = 5,
 };
 
+/// Returns the persisted wire word for a validated provenance operation.
+/// The largest descriptor `encodeEnvelopeHeader` can ever produce before the diagnostic `ref` gets any
+/// budget: every mandatory field at its type maximum, the longest provenance word, the `ref` framing
+/// with empty quotes, the closing brace and the trailing newline. A `static_assert` beside its
+/// definition proves it fits under `kMinBlobHeaderLen`; this declaration exists so the boundary test
+/// can confirm the SAME number against bytes the encoder actually produced, which is the half a
+/// compile-time proof cannot do — an understated formula satisfies the assert quite happily.
+extern const size_t mandatory_descriptor_worst_case;
+
+std::string_view provenanceOpToWireWord(ProvenanceOp op);
+
+/// Its fail-closed inverse: an unknown word is `CORRUPTED_DATA`.
+ProvenanceOp provenanceOpFromWireWord(std::string_view w);
+
 /// Optional diagnostic metadata recorded with an envelope. The fields identify when and where the
 /// incarnation was created, the ClickHouse build that wrote it, and the operation that produced it;
 /// none of them participates in object identity or a protocol decision.
@@ -55,19 +70,20 @@ struct Provenance
 /// algorithm and digest are already present in the object key and manifest reference, `domain_id` had
 /// no validating consumer, and `header_hash` had no consumer once the CityHash64 check left the
 /// envelope. Writer forensics are represented
-/// by `ch` and `bld`, so a separate `writer_version` is unnecessary. The `v` field is the sole format
-/// compatibility gate; a reader rejects a version it does not understand before interpreting the body.
+/// by `chver` and `build`, so a separate `writer_version` is unnecessary. The `v` field is the sole
+/// format compatibility gate; a reader rejects a version it does not understand before interpreting
+/// the body.
 struct EnvelopeHeader
 {
     ObjectKind kind = ObjectKind::Blob;
     /// Set by decode from the header `v`; encode stamps `currentCompatibilityVersion`. A reader
     /// fails closed (UNKNOWN_FORMAT_VERSION) when `v` exceeds what this build understands.
     uint32_t compatibility_version = 0;
-    UInt128 incarnation_tag{};              /// `tag`
-    UInt128 build_id{};                     /// `bld`
-    std::optional<Provenance> provenance;   /// `ts` / `by` / `op` / `ch`
-    std::optional<String> intended_ref;     /// `ref` (diagnostic; truncated on encode to fit the header)
-    uint32_t header_len = 0;                /// filled by encode/decode = blob_header_len (payload offset)
+    UInt128 incarnation_tag{};                /// `tag`
+    UInt128 build_id{};                       /// `build`
+    std::optional<Provenance> provenance;     /// `time_ms` / `creator` / `op` / `chver`
+    std::optional<String> intended_ref;       /// `ref` (diagnostic; truncated on encode to fit the header)
+    uint32_t header_len = 0;                  /// filled by encode/decode = blob_header_len (payload offset)
     /// Test-only knob: emit an unknown `!`-critical key. Decoding the resulting header must fail
     /// closed with `UNKNOWN_FORMAT_VERSION`, exercising the compatibility rule for critical extensions.
     bool emit_unknown_critical_key = false;
@@ -78,7 +94,14 @@ struct EnvelopeHeader
 /// diagnostic `ref` is the only truncatable field and is shortened, never dropped, when necessary to
 /// preserve the fixed layout. The header is built without payload bytes, so an upload can stage the
 /// header before the payload is streamed.
-String encodeEnvelopeHeader(EnvelopeHeader & header, uint32_t blob_header_len);
+/// `version_override` exists for one caller: the boundary test that has to see what the descriptor
+/// costs at the WIDEST version the budget reserves room for. The budget is sized for a ten-digit
+/// version; production has only ever written a one-digit one, so a test that encodes at the current
+/// version and adds the missing digits arithmetically never sends the boundary through the encoder
+/// at all -- it re-derives the formula it is supposed to be checking. Production passes nothing and
+/// gets `currentCompatibilityVersion()`.
+String encodeEnvelopeHeader(EnvelopeHeader & header, uint32_t blob_header_len,
+                            std::optional<uint32_t> version_override = {});
 
 /// Parses and validates the JSON descriptor, its expected `type`, and its compatibility version.
 /// Derives `header_len` from the terminating '\n' and requires every preceding byte in the pad zone to

@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefLogFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasCodecUtil.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTableAsserts.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <algorithm>
@@ -20,28 +21,27 @@ namespace DB::Cas
 namespace
 {
 
-std::string_view opKindToWord(RefOpKind k)
+namespace RefLogWire
 {
-    switch (k)
-    {
-        case RefOpKind::NamespaceBirth:  return "namespace_birth";
-        case RefOpKind::OwnerTransition: return "owner_transition";
-        case RefOpKind::SetPublishedAt:  return "set_published_at";
-        case RefOpKind::RemoveNamespace: return "remove_namespace";
-        case RefOpKind::EpochSeal:       return "epoch_seal";
-    }
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: unknown op kind {}", static_cast<uint8_t>(k));
+    constexpr WireKey ns{"namespace"};
+    constexpr WireKey txn_epoch{"txn_epoch"};
+    constexpr WireKey txn_seq{"txn_seq"};
+    constexpr WireKey prev_epoch{"!prev_epoch"};
+    constexpr WireKey prev_seq{"!prev_seq"};
+    constexpr WireKey op{"op"};
+    constexpr WireKey ref{"ref"};
+    constexpr WireKey published_ms{"published_ms"};
 }
 
-RefOpKind opKindFromWord(std::string_view w)
-{
-    if (w == "namespace_birth")   return RefOpKind::NamespaceBirth;
-    if (w == "owner_transition")  return RefOpKind::OwnerTransition;
-    if (w == "set_published_at")  return RefOpKind::SetPublishedAt;
-    if (w == "remove_namespace")  return RefOpKind::RemoveNamespace;
-    if (w == "epoch_seal")        return RefOpKind::EpochSeal;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: unknown op kind '{}'", w);
-}
+constexpr EnumWireTable<RefOpKind, 5> kRefOpWords{{{
+    {RefOpKind::NamespaceBirth, "namespace_birth"},
+    {RefOpKind::OwnerTransition, "owner_transition"},
+    {RefOpKind::SetPublishedAt, "set_published_at"},
+    {RefOpKind::RemoveNamespace, "remove_namespace"},
+    {RefOpKind::EpochSeal, "epoch_seal"},
+}}};
+
+static_assert(casEnumTableCoversEnum<kRefOpWords, RefOpKind>());
 
 /// Byte budget over the encoded text. A removal-class transaction uses the larger complete-table
 /// budget and has neither an op-count nor a per-op cap; normal transactions are bounded by
@@ -69,22 +69,10 @@ void checkBudget(const std::vector<RefOp> & ops, size_t encoded_bytes)
     }
 }
 
-void writeBindingFields(CasJsonWriter & out, bool & first, std::string_view prefix, const RefOwnerBinding & b)
-{
-    checkCanonicalRefName(b.ref_name, "RefLogTxn", "owner binding ref_name");
-    checkManifestRef(b.manifest_ref, "RefLogTxn", "owner binding manifest_ref");
-    out.key(prefix, "bk", first);
-    writeStringValue(out, refOwnerKindToWord(b.kind));
-    out.key(prefix, "rn", first);
-    writeStringValue(out, b.ref_name);
-    writeManifestRefFields(out, first, prefix, b.manifest_ref);
-}
-
 void writeOp(CasJsonWriter & out, const RefOp & op)
 {
     bool first = true;
-    writeKey(out, "op", first);
-    writeStringValue(out, opKindToWord(op.kind));
+    writeWordField(out, RefLogWire::op, refOpKindToWireWord(op.kind), first);
     switch (op.kind)
     {
         case RefOpKind::NamespaceBirth:
@@ -93,78 +81,59 @@ void writeOp(CasJsonWriter & out, const RefOp & op)
             break;
         case RefOpKind::OwnerTransition:
             if (op.old_binding)
-                writeBindingFields(out, first, "o", *op.old_binding);
+                writeBindingFields(out, first, kOldBindingKeys, *op.old_binding);
             if (op.new_binding)
-                writeBindingFields(out, first, "n", *op.new_binding);
+                writeBindingFields(out, first, kNewBindingKeys, *op.new_binding);
             break;
         case RefOpKind::SetPublishedAt:
             checkCanonicalRefName(op.ref_name, "RefLogTxn", "set_published_at ref_name");
             checkManifestRef(op.expected_manifest_ref, "RefLogTxn", "set_published_at manifest_ref");
-            writeKey(out, "rn", first);
-            writeStringValue(out, op.ref_name);
-            writeManifestRefFields(out, first, "", op.expected_manifest_ref);
-            writeKey(out, "ts", first);
-            writeIntText(op.published_at_ms, out);
+            writeStringField(out, RefLogWire::ref, op.ref_name, first);
+            writeManifestRefFields(out, first, kBareManifestRefKeys, op.expected_manifest_ref);
+            writeNumberField(out, RefLogWire::published_ms, op.published_at_ms, first);
             break;
     }
     closeObject(out, first);
     writeChar('\n', out);
 }
 
-/// Collector for a ManifestRef's three flat fields under an optional prefix.
-struct ManifestFields
-{
-    std::optional<uint64_t> me;
-    std::optional<uint64_t> mb;
-    std::optional<uint64_t> mo;
-
-    bool any() const { return me || mb || mo; }
-    ManifestRef build(std::string_view what) const
-    {
-        if (!me || !mb || !mo)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: {} manifest_ref missing me/mb/mo", what);
-        return manifestRefFromFields(*me, *mb, *mo, "RefLogTxn", what);
-    }
-};
-
 /// Collector for one binding (old/new) under a prefix.
 struct BindingFields
 {
-    std::optional<String> bk;
-    std::optional<String> rn;
-    ManifestFields mf;
+    std::optional<String> kind;
+    std::optional<String> ref;
+    ManifestRefFields manifest_fields;
 
-    bool any() const { return bk || rn || mf.any(); }
+    bool any() const { return kind || ref || manifest_fields.any(); }
     RefOwnerBinding build(std::string_view what) const
     {
-        if (!bk || !rn)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: {} binding missing bk/rn", what);
+        if (!kind || !ref)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: {} binding missing kind/ref", what);
         RefOwnerBinding b;
-        b.kind = refOwnerKindFromWord(*bk, "RefLogTxn owner binding");
-        b.ref_name = *rn;
+        b.kind = refOwnerKindFromWord(*kind, "RefLogTxn owner binding");
+        b.ref_name = *ref;
         checkCanonicalRefName(b.ref_name, "RefLogTxn", "owner binding ref_name");
-        b.manifest_ref = mf.build(what);
+        b.manifest_ref = manifest_fields.buildRef("RefLogTxn", what);
         return b;
     }
 };
 
-/// The log transaction's header-object meta line (ns + txn_id + the optional `prev_epoch_seal`
+/// The log transaction's header-object meta line (`namespace` + txn_id + the optional `prev_epoch_seal`
 /// chain). Shared by `encodeRefLogTxn` and `removalFramingSize` so the two never disagree by a byte;
 /// `removalFramingSize` always passes `std::nullopt` -- a removal transaction is never a sequence-1
-/// epoch-transition record. Additive: the `"!pse"`/`"!pss"` pair is emitted only when
+/// epoch-transition record. Additive: the `"!prev_epoch"`/`"!prev_seq"` pair is emitted only when
 /// `prev_epoch_seal` is set, so a body without it is byte-identical to the pre-EpochSeal wire shape.
 /// `!`-prefixed: `prev_epoch_seal` is INV-2 chain evidence, not cosmetic metadata -- a decoder that
 /// doesn't understand it must refuse the object rather than silently drop the chain link while
 /// otherwise passing the structural grammar (`JsonObjectReader::skipUnknown` rejects any unrecognized
-/// `!`-key with `UNKNOWN_FORMAT_VERSION`, tolerant or not; see task-1 review finding M4).
+/// `!`-key with `UNKNOWN_FORMAT_VERSION`, tolerant or not).
 void writeLogMeta(CasJsonWriter & out, const String & ns, const RefTxnId & txn_id, const std::optional<RefTxnId> & prev_epoch_seal)
 {
     bool first = true;
-    writeKey(out, "ns", first);
-    writeStringValue(out, ns);
-    writeRefTxnIdFields(out, first, "we", "rs", txn_id);
+    writeStringField(out, RefLogWire::ns, ns, first);
+    writeRefTxnIdFields(out, first, RefLogWire::txn_epoch, RefLogWire::txn_seq, txn_id);
     if (prev_epoch_seal)
-        writeRefTxnIdFields(out, first, "!pse", "!pss", *prev_epoch_seal);
+        writeRefTxnIdFields(out, first, RefLogWire::prev_epoch, RefLogWire::prev_seq, *prev_epoch_seal);
     closeObject(out, first);
     writeChar('\n', out);
 }
@@ -175,9 +144,9 @@ RefOp readOpRecord(JsonObjectReader & r, RefOpKind kind)
     op.kind = kind;
 
     /// set_published_at fields
-    std::optional<String> sp_rn;
-    ManifestFields sp_mf;
-    std::optional<uint64_t> sp_ts;
+    std::optional<String> sp_ref;
+    ManifestRefFields sp_manifest_fields;
+    std::optional<uint64_t> sp_published_ms;
     /// owner_transition bindings
     BindingFields ob;
     BindingFields nb;
@@ -185,24 +154,30 @@ RefOp readOpRecord(JsonObjectReader & r, RefOpKind kind)
     String key;
     while (r.nextKey(key))
     {
-        if (key == "rn") sp_rn = r.readString();
-        else if (key == "me") sp_mf.me = r.readU64String();
-        else if (key == "mb") sp_mf.mb = r.readU64String();
-        else if (key == "mo") sp_mf.mo = r.readU64Number();
-        else if (key == "ts") sp_ts = r.readU64Number();
-        else if (key == "obk") ob.bk = r.readString();
-        else if (key == "orn") ob.rn = r.readString();
-        else if (key == "ome") ob.mf.me = r.readU64String();
-        else if (key == "omb") ob.mf.mb = r.readU64String();
-        else if (key == "omo") ob.mf.mo = r.readU64Number();
-        else if (key == "nbk") nb.bk = r.readString();
-        else if (key == "nrn") nb.rn = r.readString();
-        else if (key == "nme") nb.mf.me = r.readU64String();
-        else if (key == "nmb") nb.mf.mb = r.readU64String();
-        else if (key == "nmo") nb.mf.mo = r.readU64Number();
+        if (key == RefLogWire::ref)
+            sp_ref = r.readString();
+        else if (matchManifestRefFields(key, r, kBareManifestRefKeys, sp_manifest_fields))
+        {
+        }
+        else if (key == RefLogWire::published_ms)
+            sp_published_ms = r.readU64Number();
+        else if (key == kOldBindingKeys.kind)
+            ob.kind = r.readString();
+        else if (key == kOldBindingKeys.ref)
+            ob.ref = r.readString();
+        else if (matchManifestRefFields(key, r, kOldBindingKeys.manifest, ob.manifest_fields))
+        {
+        }
+        else if (key == kNewBindingKeys.kind)
+            nb.kind = r.readString();
+        else if (key == kNewBindingKeys.ref)
+            nb.ref = r.readString();
+        else if (matchManifestRefFields(key, r, kNewBindingKeys.manifest, nb.manifest_fields))
+        {
+        }
         else if (key == "pl")
-            /// `"pl"` (payload) was removed from the op wire in stage-1 T12 (the `set_payload` op became
-            /// `set_published_at`). The retired op WORD is already rejected by `opKindFromWord`, but this
+            /// `"pl"` (payload) was removed from the op wire when the `set_payload` op became
+            /// `set_published_at`. The retired op WORD is already rejected by `refOpKindFromWireWord`, but this
             /// generic reader reads field keys before switching on kind, so a `"pl"` field paired with a
             /// still-recognized op word would otherwise be `skipUnknown`'d. It is a KNOWN-removed field,
             /// not a genuinely-unknown one -- reject it explicitly rather than silently discard it.
@@ -224,17 +199,27 @@ RefOp readOpRecord(JsonObjectReader & r, RefOpKind kind)
                 op.new_binding = nb.build("new");
             break;
         case RefOpKind::SetPublishedAt:
-            if (!sp_rn || !sp_ts)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: set_published_at missing rn/ts");
-            op.ref_name = *sp_rn;
+            if (!sp_ref || !sp_published_ms)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: set_published_at missing ref/published_ms");
+            op.ref_name = *sp_ref;
             checkCanonicalRefName(op.ref_name, "RefLogTxn", "set_published_at ref_name");
-            op.expected_manifest_ref = sp_mf.build("set_published_at manifest_ref");
-            op.published_at_ms = *sp_ts;
+            op.expected_manifest_ref = sp_manifest_fields.buildRef("RefLogTxn", "set_published_at");
+            op.published_at_ms = *sp_published_ms;
             break;
     }
     return op;
 }
 
+}
+
+std::string_view refOpKindToWireWord(RefOpKind kind)
+{
+    return kRefOpWords.toWord(kind, "RefLogTxn");
+}
+
+RefOpKind refOpKindFromWireWord(std::string_view w)
+{
+    return kRefOpWords.fromWord(w, "RefLogTxn");
 }
 
 bool refLogTxnIsEpochSeal(const RefLogTxn & txn)
@@ -325,29 +310,44 @@ RefLogTxn decodeRefLogTxn(std::string_view data, const String & expected_ns, con
         ReadBufferFromMemory m(line.data(), line.size());
         JsonObjectReader r(m, KeyStrictness::Tolerant, "cas_ref_log");
         bool saw_ns = false;
-        bool saw_we = false;
-        bool saw_rs = false;
-        std::optional<uint64_t> pse;
-        std::optional<uint64_t> pss;
+        bool saw_txn_epoch = false;
+        bool saw_txn_seq = false;
+        std::optional<uint64_t> prev_epoch;
+        std::optional<uint64_t> prev_seq;
         String key;
         while (r.nextKey(key))
         {
-            if (key == "ns") { txn.ns = r.readString(); saw_ns = true; }
-            else if (key == "we") { txn.txn_id.writer_epoch = r.readU64String(); saw_we = true; }
-            else if (key == "rs") { txn.txn_id.ref_sequence = r.readU64String(); saw_rs = true; }
-            else if (key == "!pse") pse = r.readU64String();
-            else if (key == "!pss") pss = r.readU64String();
-            else r.skipUnknown(key);
+            if (key == RefLogWire::ns)
+            {
+                txn.ns = r.readString();
+                saw_ns = true;
+            }
+            else if (key == RefLogWire::txn_epoch)
+            {
+                txn.txn_id.writer_epoch = r.readU64String();
+                saw_txn_epoch = true;
+            }
+            else if (key == RefLogWire::txn_seq)
+            {
+                txn.txn_id.ref_sequence = r.readU64String();
+                saw_txn_seq = true;
+            }
+            else if (key == RefLogWire::prev_epoch)
+                prev_epoch = r.readU64String();
+            else if (key == RefLogWire::prev_seq)
+                prev_seq = r.readU64String();
+            else
+                r.skipUnknown(key);
         }
-        if (!saw_ns || !saw_we || !saw_rs)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: meta line missing ns/we/rs");
-        /// Both-or-neither: `nextKey` already rejects a repeated "!pse"/"!pss" (duplicate-key check), so
+        if (!saw_ns || !saw_txn_epoch || !saw_txn_seq)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: meta line missing namespace/txn_epoch/txn_seq");
+        /// Both-or-neither: `nextKey` already rejects a repeated "!prev_epoch"/"!prev_seq" (duplicate-key check), so
         /// this only guards against a body carrying exactly one of the pair.
-        if (pse || pss)
+        if (prev_epoch || prev_seq)
         {
-            if (!pse || !pss)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: prev_epoch_seal needs both !pse and !pss");
-            txn.prev_epoch_seal = RefTxnId{*pse, *pss};
+            if (!prev_epoch || !prev_seq)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: prev_epoch_seal needs both !prev_epoch and !prev_seq");
+            txn.prev_epoch_seal = RefTxnId{*prev_epoch, *prev_seq};
         }
         if (!m.eof())
             throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: junk after meta line");
@@ -365,11 +365,16 @@ RefLogTxn decodeRefLogTxn(std::string_view data, const String & expected_ns, con
             expected_ns, expected_txn_id.writer_epoch, expected_txn_id.ref_sequence);
 
     /// op record lines, until the trailer
+    /// One line scratch and one reader for the whole loop, as the other row decoders do:
+    /// rebuilding them per row costs an allocation per row for the seen-key store and the line.
+    String row_line;
+    JsonObjectReader row_reader;
     while (true)
     {
-        const String line = readLine(in, line_cap, "cas_ref_log");
-        ReadBufferFromMemory l(line.data(), line.size());
-        JsonObjectReader r(l, KeyStrictness::Tolerant, "cas_ref_log");
+        readLineInto(in, row_line, line_cap, "cas_ref_log");
+        ReadBufferFromMemory l(row_line.data(), row_line.size());
+        row_reader.reset(l, KeyStrictness::Tolerant, "cas_ref_log");
+        JsonObjectReader & r = row_reader;
         String key;
         if (!r.nextKey(key))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: empty line");
@@ -385,9 +390,9 @@ RefLogTxn decodeRefLogTxn(std::string_view data, const String & expected_ns, con
                     "RefLogTxn: trailer count {} != {} ops", n, txn.ops.size());
             break;
         }
-        if (key != "op")
+        if (key != RefLogWire::op)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: record must start with \"op\"");
-        const RefOpKind kind = opKindFromWord(r.readString());
+        const RefOpKind kind = refOpKindFromWireWord(r.readString());
         txn.ops.push_back(readOpRecord(r, kind));
         if (!l.eof())
             throw Exception(ErrorCodes::CORRUPTED_DATA, "RefLogTxn: junk after op record");
@@ -438,6 +443,43 @@ size_t removalFramingSize(const String & ns, const RefTxnId & txn_id, uint64_t o
     writeOp(out, remove_op);
     writeTrailerLine(out, op_count);
     return out.size();
+}
+
+std::optional<RefLogMetaPeek> peekRefLogMeta(const String & sealed_bytes)
+{
+    try
+    {
+        const String text = openObject(FormatId::RefLog, sealed_bytes);
+        ReadBufferFromMemory in(text.data(), text.size());
+        const uint64_t line_cap = traitsFor(FormatId::RefLog).line_cap;
+        readLine(in, line_cap, "cas_ref_log");   /// header line -- skipped, the version is not judged here
+        const String meta = readLine(in, line_cap, "cas_ref_log");
+        ReadBufferFromMemory m(meta.data(), meta.size());
+        JsonObjectReader r(m, KeyStrictness::Tolerant, "cas_ref_log");
+        RefLogMetaPeek peek;
+        bool saw_ns = false;
+        bool saw_epoch = false;
+        bool saw_seq = false;
+        String key;
+        while (r.nextKey(key))
+        {
+            if (key == RefLogWire::ns) { peek.ns = r.readString(); saw_ns = true; }
+            else if (key == RefLogWire::txn_epoch) { peek.writer_epoch = r.readU64String(); saw_epoch = true; }
+            else if (key == RefLogWire::txn_seq) { peek.ref_sequence = r.readU64String(); saw_seq = true; }
+            else r.skipUnknown(key);
+        }
+        if (!saw_ns || !saw_epoch || !saw_seq)
+            return std::nullopt;
+        return peek;
+    }
+    catch (...)
+    {
+        /// Deliberately total: a diagnostic that throws while explaining an anomaly replaces the
+        /// anomaly's report with its own. A seal-linked txn reaches here too -- its `!`-prefixed chain
+        /// keys make the tolerant reader refuse the line -- and answering `nullopt` is correct: this
+        /// peek identifies a writer, it does not certify an object.
+        return std::nullopt;
+    }
 }
 
 }

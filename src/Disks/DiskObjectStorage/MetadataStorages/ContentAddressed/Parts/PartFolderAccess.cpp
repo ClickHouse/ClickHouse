@@ -29,7 +29,6 @@ namespace ProfileEvents
     extern const Event CASPartFolderViewOversizedBypasses;
     extern const Event CASPartFolderViewInvalidations;
     extern const Event CASRefRollbackBestEffortDropFailed;
-    extern const Event CASPartFolderValidateSkipped;
     extern const Event CASRefRepoint;
 }
 
@@ -43,12 +42,11 @@ namespace DB::Cas
 {
 
 PartFolderView::PartFolderView(PartRefKey key_, Cas::ManifestId manifest_id_, uint64_t manifest_size_,
-                               std::shared_ptr<const Cas::PartManifest> manifest_, uint64_t validated_at_ms_)
+                               std::shared_ptr<const Cas::PartManifest> manifest_)
     : key(std::move(key_))
     , manifest_id(std::move(manifest_id_))
     , manifest_size(manifest_size_)
     , manifest_body(std::move(manifest_))
-    , validated_at_ms(validated_at_ms_)
 {
     chassert(manifest_body);
     /// The binary-search contract: entries must be strictly ascending by `path` (sorted and unique) —
@@ -62,12 +60,10 @@ PartFolderView::PartFolderView(PartRefKey key_, Cas::ManifestId manifest_id_, ui
 }
 
 std::shared_ptr<const PartFolderView> PartFolderView::make(
-    PartRefKey key, const Cas::Resolved & resolved, std::shared_ptr<const Cas::PartManifest> manifest,
-    uint64_t validated_at_ms)
+    PartRefKey key, const Cas::Resolved & resolved, std::shared_ptr<const Cas::PartManifest> manifest)
 {
     return std::make_shared<const PartFolderView>(
-        std::move(key), resolved.manifest_id, resolved.manifest_size,
-        std::move(manifest), validated_at_ms);
+        std::move(key), resolved.manifest_id, resolved.manifest_size, std::move(manifest));
 }
 
 std::optional<std::string> PartFolderView::projectionDirPrefix(const std::string & file)
@@ -145,11 +141,9 @@ CachedPartFolderAccess::CachedPartFolderAccess(Cas::PoolPtr store_)
 {
 }
 
-CachedPartFolderAccess::CachedPartFolderAccess(Cas::PoolPtr store_, CacheParams params_, std::function<uint64_t()> now_ms_fn_)
-    : store(std::move(store_)), params(params_), now_ms_fn(std::move(now_ms_fn_))
+CachedPartFolderAccess::CachedPartFolderAccess(Cas::PoolPtr store_, CacheParams params_)
+    : store(std::move(store_)), params(params_)
 {
-    if (!now_ms_fn)
-        now_ms_fn = []() -> uint64_t { return timeInMilliseconds(std::chrono::system_clock::now()); };
     if (params.cache_bytes > 0)
         view_cache = std::make_unique<ViewCache>(
             "LRU", CurrentMetrics::CASPartFolderCacheBytes, CurrentMetrics::CASPartFolderCacheEntries,
@@ -171,8 +165,7 @@ CachedPartFolderAccess::getView(const PartRefKey & key, Freshness freshness) con
     const String cache_key = key.cacheKey();
 
     /// Retained views serve `CachedForLoad` directly only after their manifest ID matches the fresh
-    /// resolve. `ForceFresh` must re-prove the manifest body unless the configured validation policy
-    /// explicitly permits a recent retained view; a fresh ref resolve proves ref currency, not body existence.
+    /// resolve. `ForceFresh` and `StrictValidate` always rebuild from the pool's manifest cache.
     if (freshness == Freshness::CachedForLoad && view_cache)
     {
         if (auto cached = view_cache->get(cache_key))
@@ -187,28 +180,6 @@ CachedPartFolderAccess::getView(const PartRefKey & key, Freshness freshness) con
             }
             ProfileEvents::increment(ProfileEvents::CASPartFolderViewValidationMismatches);
             /// Rebuild below; the stale entry is superseded by the new view when retention is enabled.
-        }
-    }
-
-    /// With a non-`Always` validation policy, `ForceFresh` may serve a retained view without another
-    /// body HEAD when its manifest ID still matches and its validation timestamp is within the age
-    /// policy. `StrictValidate` bypasses retention. A manifest-ID mismatch always rebuilds, because all
-    /// part content is represented by the manifest.
-    if (freshness == Freshness::ForceFresh && view_cache && params.validate.mode != PartFolderValidate::Mode::Always)
-    {
-        if (auto cached = view_cache->get(cache_key);
-            cached && cached->manifestId() == resolved->manifest_id)
-        {
-            const bool fresh_enough = params.validate.mode == PartFolderValidate::Mode::Never
-                || (now_ms_fn() - cached->validatedAtMs()) < params.validate.age_seconds * 1000ULL;
-            if (fresh_enough)
-            {
-                ProfileEvents::increment(ProfileEvents::CASPartFolderViewHits);
-                ProfileEvents::increment(ProfileEvents::CASPartFolderValidateSkipped);
-                recordDecision(cache_key, LastDecision::Hit, cached.get(), /*retained=*/true);
-                emitResolveEvent(key, *resolved);
-                return cached;
-            }
         }
     }
 
@@ -264,10 +235,10 @@ void CachedPartFolderAccess::emitResolveEvent(const PartRefKey & key, const Cas:
 std::shared_ptr<const PartFolderView> CachedPartFolderAccess::buildView(
     const PartRefKey & key, const Cas::Resolved & resolved, Freshness freshness) const
 {
-    /// Fresh modes do not coalesce: each `ForceFresh`/`StrictValidate` call owns its mandatory HEAD.
-    /// Only cold `CachedForLoad` builds use single-flight.
+    /// Fresh modes do not coalesce: each `ForceFresh`/`StrictValidate` call owns its own read (a cache
+    /// hit costs no request). Only cold `CachedForLoad` builds use single-flight.
     if (freshness != Freshness::CachedForLoad)
-        return PartFolderView::make(key, resolved, store->readManifestShared(resolved.manifest_id), now_ms_fn());
+        return PartFolderView::make(key, resolved, store->readManifestShared(resolved.manifest_id));
 
     std::promise<std::shared_ptr<const PartFolderView>> promise;
     std::shared_future<std::shared_ptr<const PartFolderView>> future;
@@ -292,7 +263,7 @@ std::shared_ptr<const PartFolderView> CachedPartFolderAccess::buildView(
     });
     try
     {
-        auto view = PartFolderView::make(key, resolved, store->readManifestShared(resolved.manifest_id), now_ms_fn());
+        auto view = PartFolderView::make(key, resolved, store->readManifestShared(resolved.manifest_id));
         promise.set_value(view);
         return view;
     }
@@ -505,9 +476,10 @@ Cas::CommitOutcome CachedPartFolderAccess::publishEntries(const PartRefKey & dst
 
 bool CachedPartFolderAccess::republishRef(const PartRefKey & src, const PartRefKey & dst)
 {
-    /// Content addressing has no rename, so move a committed ref by reading the source body freshly,
-    /// publishing equivalent entries at the destination, and then dropping the source. The source
-    /// body is re-proved and is never taken from a retained view.
+    /// Content addressing has no rename, so move a committed ref by reading the source manifest
+    /// through the pool's manifest cache after a fresh ref resolve, publishing equivalent entries at
+    /// the destination, and then dropping the source. The source blobs are adopted by evidence of the
+    /// live source edge, never re-probed; the decode is never taken from a retained view.
     auto resolved = store->resolveRef(src.ns, src.ref);
     if (!resolved)
         return false;

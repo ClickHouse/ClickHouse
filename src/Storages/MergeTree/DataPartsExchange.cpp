@@ -7,6 +7,7 @@
 #include <Disks/createVolume.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedExchange.h>
+#include <Storages/MergeTree/DataPartsExchangeCasRouting.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Formats/NativeWriter.h>
 #include <IO/HTTPCommon.h>
@@ -54,6 +55,9 @@ namespace FailPoints
     /// neither is reachable from configuration, so an integration test cannot produce them any other way.
     extern const char cas_relink_receiver_force_mechanism_failure[];
     extern const char cas_relink_receiver_pause_before_confirm[];
+    /// Stands in for a sender that predates the `cas_pool_uuid` response cookie: the offer is made
+    /// without naming the pool, and the receiver has to fall back on "the single advertised pool".
+    extern const char cas_relink_sender_omit_pool_cookie[];
 }
 
 namespace MergeTreeSetting
@@ -72,7 +76,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int INSECURE_PATH;
     extern const int LOGICAL_ERROR;
-    extern const int NETWORK_ERROR;
+    extern const int NO_REPLICA_HAS_PART;
     extern const int S3_ERROR;
     extern const int ZERO_COPY_REPLICATION_ERROR;
 }
@@ -101,7 +105,7 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS = 9;
 /// 10 is a version peers still advertise, and deleting the record of what it meant would leave the next
 /// reader unable to tell what an incoming 10 promises (a relink it will NOT confirm).
 [[maybe_unused]] constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_CA_RELINK = 10;
-/// CAS replication, publish-then-confirm (spec §wire-protocol). A relink offer is now accompanied by a
+/// CAS replication, publish-then-confirm. A relink offer is now accompanied by a
 /// source token, and the endpoint answers a second, part-less request that asks whether that token is
 /// still exactly what the sender's ref names. A server advertising this version serves the confirm
 /// action; a receiver advertising it must confirm before it promotes.
@@ -112,22 +116,24 @@ std::string getEndpointId(const std::string & node_id)
     return "DataPartsExchange:" + node_id;
 }
 
-/// CAS replication 2b. The receiver advertises its target pool's identity under this request param so
-/// the sender can decide whether a fetch-by-relink (same pool) is possible.
+/// CAS replication 2b. The receiver advertises the pool ids of its candidate content-addressed disks
+/// under this request param (one id, or several joined with ", ", see `encodeCasPoolAdvertise`) so the
+/// sender can decide whether a fetch-by-relink (same pool) is possible. On the offer the same name is a
+/// response cookie naming the pool the sender matched.
 constexpr auto CA_POOL_UUID_PARAM = "cas_pool_uuid";
 /// Set on the response when the sender chose the relink path; the receiver then reads the relink payload
 /// (the opaque encoded PartManifest body — self-contained, see part_manifest_v2 below) instead of the
 /// byte stream.
 constexpr auto CA_RELINK_COOKIE = "cas_relink";
-/// All-tree task 7: the manifest is now self-contained (uuid.txt/metadata_version.txt are ordinary
-/// manifest entries, task 6), so the wire payload dropped its trailing metadata_version field (the
+/// The manifest is now self-contained (uuid.txt/metadata_version.txt are ordinary
+/// manifest entries), so the wire payload dropped its trailing metadata_version field (the
 /// manifest bytes are now the ONLY field). Bumped from `part_manifest_v1` so a mixed-build pair (old
 /// sender, new receiver) does not try to parse the old two-field payload under the new one-field shape
 /// — the receiver rejects a cookie value it does not recognize and falls back to a byte fetch instead
 /// of desyncing on the wire format.
 constexpr auto CA_RELINK_COOKIE_VALUE = "part_manifest_v2";
 
-/// CAS fetch-by-relink, publish-then-confirm (spec §wire-protocol). Three names make up the second
+/// CAS fetch-by-relink, publish-then-confirm. Three names make up the second
 /// request of the handshake.
 ///
 /// The request parameter both selects the confirm action and carries its only argument: the opaque
@@ -154,7 +160,7 @@ constexpr auto CA_CONFIRM_ANSWER_UNPROVEN = "unproven";
 
 /// Resolve a disk to the content-addressed exchange facade, or nullptr if the disk is not CA. The
 /// cast targets the purpose-built INTERFACE (IContentAddressedExchange), never the concrete
-/// metadata-storage class (M-W design section 4). Used by both the relink sender (the part's
+/// metadata-storage class. Used by both the relink sender (the part's
 /// disk) and the relink receiver (the target disk).
 IContentAddressedExchange * tryGetContentAddressedExchange(const DiskPtr & disk)
 {
@@ -217,7 +223,7 @@ CasConfirmAnswer Service::resolveContentAddressedConfirm(
     const String & part_name,
     const String & manifest_ref_text) const
 {
-    /// CAS fetch-by-relink, publish-then-confirm (spec §confirm-primitive). The receiver's own `+1` is
+    /// CAS fetch-by-relink, publish-then-confirm. The receiver's own `+1` is
     /// already durable when this runs; a `Yes` is what authorizes it to promote a part whose blobs are
     /// protected only by THIS server's committed binding of that exact manifest. Every field below comes
     /// from a remote peer, so nothing here is trusted beyond being used as a lookup key.
@@ -227,31 +233,32 @@ CasConfirmAnswer Service::resolveContentAddressedConfirm(
     /// Routing. A pool UUID identifies the shared pool, not the mount: every server root writing into it
     /// reports the same one, so the namespace's owner decides which instance may answer. EXACTLY one
     /// match is required — zero means this table has no such disk, several mean the question is
-    /// ambiguous, and both are `Unknown` rather than a guess.
-    const IContentAddressedExchange * matched = nullptr;
-    DiskPtr matched_disk;
+    /// ambiguous, and both are `Unknown` rather than a guess. A cache disk over a content-addressed disk
+    /// shares the base disk's exchange object, so the two are one mount and count once.
+    std::vector<CasConfirmRoutingCandidate> routing;
+    Disks routing_disks;
     for (const auto & disk : data.getDisks())
     {
         const auto * ca_meta = tryGetContentAddressedExchange(disk);
-        if (!ca_meta || ca_meta->getPoolUUID() != pool_uuid || !ca_meta->ownsNamespace(server_root_id, root_namespace))
+        if (!ca_meta)
             continue;
-        if (matched)
-            return CasConfirmAnswer::Unknown;
-        matched = ca_meta;
-        matched_disk = disk;
+        routing.push_back({ca_meta, ca_meta->getPoolUUID(), ca_meta->ownsNamespace(server_root_id, root_namespace)});
+        routing_disks.push_back(disk);
     }
-    if (!matched)
+    const auto routed = resolveConfirmRoutingCandidate(routing, pool_uuid);
+    if (!routed)
         return CasConfirmAnswer::Unknown;
+    const IContentAddressedExchange * matched = tryGetContentAddressedExchange(routing_disks[*routed]);
 
-    /// Gate 0 — the part-anchored fast filter. It is an AVAILABILITY filter and never a proof (spec
-    /// §confirm-primitive, demoted in rev.5): `rollbackDeletingParts` puts a part back to `Outdated`
+    /// Gate 0 — the part-anchored fast filter. It is an AVAILABILITY filter and never a proof:
+    /// `rollbackDeletingParts` puts a part back to `Outdated`
     /// after a failed filesystem removal, and the in-memory part path is deliberately not updated by a
     /// `delete_tmp_*` rename, so an `Active`/`Outdated` part object authorizes nothing. What it buys is
     /// a cheap `No` that costs no ledger work; every `Yes` is earned by gate 1 alone.
     ///
     /// `Deleting` is excluded by the state filter, an unknown name yields no part at all, and a part of
-    /// this name living on ANOTHER disk is rejected explicitly — `MOVE ... TO DISK` leaves a same-name
-    /// `Active` part behind on the destination disk, and only the instance the token routed to may be
+    /// this name living on ANOTHER mount is rejected explicitly — `MOVE ... TO DISK` leaves a same-name
+    /// `Active` part behind on the destination disk, and only the mount the token routed to may be
     /// the one the confirm is about. The parts set is read under its own lock, which
     /// `getPartIfExists` takes and releases, and the part reference is dropped before any ledger lock.
     {
@@ -260,7 +267,14 @@ CasConfirmAnswer Service::resolveContentAddressedConfirm(
             return CasConfirmAnswer::Unknown;
         const auto part = data.getPartIfExists(
             *part_info, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
-        if (!part || part->getDataPartStorage().getDiskName() != matched_disk->getName())
+        if (!part)
+            return CasConfirmAnswer::No;
+        /// Compared by mount, not by disk name: a base disk and its cache wrapper are two names for one
+        /// exchange object, and a part living on either of them is a part of the mount the token routed
+        /// to. A different mount (a distinct exchange object) is the "another disk" this gate rejects.
+        const auto * part_exchange = tryGetContentAddressedExchange(
+            data.getStoragePolicy()->tryGetDiskByName(part->getDataPartStorage().getDiskName()));
+        if (part_exchange != matched)
             return CasConfirmAnswer::No;
     }
 
@@ -301,7 +315,7 @@ void Service::answerContentAddressedConfirm(const String & token_text, HTTPServe
 
 void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
-    /// CAS fetch-by-relink, publish-then-confirm (spec §wire-protocol): the second request of the
+    /// CAS fetch-by-relink, publish-then-confirm: the second request of the
     /// handshake, dispatched before `part` is required because a confirm carries none — the part name
     /// is inside the token. Authentication parity with the fetch is inherent: the shared handler
     /// authenticates before it dispatches to any endpoint.
@@ -388,9 +402,9 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
             writeBinary(projections.size(), out);
         }
 
-        /// CAS replication 2b — fetch-by-relink (spec §4). If the part is on a content-addressed disk and
-        /// the receiver advertised a `cas_pool_uuid` equal to THIS server's own pool_uuid
-        /// (same shared pool), send only the part's content id + the mutable header — no file bytes — so
+        /// CAS replication — fetch-by-relink. If the part is on a content-addressed disk and
+        /// the pool of the disk this part sits on is among the pools the receiver advertised in
+        /// `cas_pool_uuid`, send only the part's content id + the mutable header — no file bytes — so
         /// the receiver can "fetch" by publishing its own ref to the blobs already in the shared pool.
         /// Strictly gated on a matching pool_uuid: a non-CA part, a CA part on a different pool, or a
         /// receiver without the capability all fall through to the unchanged byte path below.
@@ -404,26 +418,39 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_CA_CONFIRM
             && part->getDataPartStorage().isContentAddressed())
         {
-            const String receiver_pool_uuid = parse<String>(params.get(CA_POOL_UUID_PARAM, ""));
+            /// The receiver advertises every pool its storage policy has a writable content-addressed
+            /// disk for, as one list; this server's decision stays local — is the pool of the disk THIS
+            /// part sits on among them. The matched pool goes back as a cookie so a receiver with several
+            /// pools can place the part on that pool's disk instead of guessing which disk the offer is for.
+            const Strings receiver_pools = decodeCasPoolAdvertise(parse<String>(params.get(CA_POOL_UUID_PARAM, "")));
             DiskPtr part_disk = data.getStoragePolicy()->tryGetDiskByName(part->getDataPartStorage().getDiskName());
             auto * ca_meta = tryGetContentAddressedExchange(part_disk);
-            if (ca_meta && !receiver_pool_uuid.empty() && receiver_pool_uuid == ca_meta->getPoolUUID())
+            const String matched_pool = ca_meta ? ca_meta->getPoolUUID() : String{};
+            if (ca_meta && !matched_pool.empty()
+                && std::find(receiver_pools.begin(), receiver_pools.end(), matched_pool) != receiver_pools.end())
             {
                 auto offer = ca_meta->getRelinkOffer(part->getDataPartStorage().getRelativePath());
                 if (offer)
                 {
                     LOG_DEBUG(log, "Sending part {} by relink (content-addressed, shared pool {}), manifest payload {} bytes",
-                        part_name, receiver_pool_uuid, offer->manifest_bytes.size());
+                        part_name, matched_pool, offer->manifest_bytes.size());
                     response.addCookie({CA_RELINK_COOKIE, CA_RELINK_COOKIE_VALUE});
-                    /// The source token for the confirm request the receiver makes before it promotes
-                    /// (spec §wire-protocol). It always accompanies the offer, and its ABSENCE is what
+                    /// The source token for the confirm request the receiver makes before it promotes.
+                    /// It always accompanies the offer, and its ABSENCE is what
                     /// tells a confirm-capable receiver that this sender predates the handshake.
                     response.addCookie({CA_CONFIRM_TOKEN_COOKIE, offer->confirm_token});
-                    /// The relink payload (B7 part_manifest_v2, all-tree task 7): the opaque encoded
+                    /// Which of the advertised pools this offer is for. A receiver with one pool does not
+                    /// need it (an offer can only be for that pool); the failpoint stands in for a sender
+                    /// that predates the cookie.
+                    bool omit_pool_cookie = false;
+                    fiu_do_on(FailPoints::cas_relink_sender_omit_pool_cookie, { omit_pool_cookie = true; });
+                    if (!omit_pool_cookie)
+                        response.addCookie({CA_POOL_UUID_PARAM, matched_pool});
+                    /// The relink payload (`part_manifest_v2`): the opaque encoded
                     /// PartManifest body (the receiver decodes it, ignores the sender identity, and
                     /// stages its OWN local manifest over the shared-pool blobs; the legacy part_id wire
                     /// field carries it). Self-contained: uuid.txt/metadata_version.txt are ordinary
-                    /// manifest entries now (task 6), so no separate mutable-header field is sent.
+                    /// manifest entries now, so no separate mutable-header field is sent.
                     writeStringBinary(offer->manifest_bytes, out);
                     data.addLastSentPart(part->info);
                     return;
@@ -690,11 +717,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (disk)
         LOG_TRACE(log, "Will fetch to disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
 
-    /// CAS replication 2b — fetch-by-relink (spec §4). Advertise this replica's target content-addressed
-    /// pool identity so a same-pool sender can relink instead of streaming bytes. The target disk is the
-    /// provided one if it is CA, else the first CA disk among the table's disks. A non-CA fetch adds
-    /// nothing here and is byte-for-byte unchanged.
-    /// Gated on `allow_ca_relink` alone (B66b). That flag is the RECURSION BRAKE and nothing else: not
+    /// CAS fetch-by-relink: advertise the content-addressed pools this fetch may land in, so a sender
+    /// holding the part in one of them relinks instead of streaming bytes. With a caller-supplied disk
+    /// that is its pool alone (the disk is the caller's contract and is never overridden); otherwise it
+    /// is every content-addressed disk of the table's storage policy that is not read-only, in policy
+    /// order. The sender names the pool it matched in a response cookie, and the reservation below then
+    /// goes to THAT pool's disk — ahead of the policy's volume order and of any TTL move rule, because a
+    /// part that is already in the pool must never travel as bytes merely because the policy would have
+    /// put it elsewhere (the mover carries it to a TTL destination afterwards). A pool disk that is not
+    /// live is still the target: the relink's own write gate refuses it, the fetch fails and the queue
+    /// retries — never a quiet landing on another disk. A non-CA fetch adds nothing here.
+    /// Gated on `allow_ca_relink` alone. That flag is the RECURSION BRAKE and nothing else: not
     /// advertising is what makes the sender stream bytes, so every same-sender byte re-request below
     /// clears it, and a persistent relink-mechanism failure therefore costs exactly one relink attempt.
     /// The gate used to be `try_zero_copy && !to_detached`, and BOTH halves were accidents of that same
@@ -702,26 +735,34 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     /// because the relink path staged at the ACTIVE part path and ignored `to_detached`. `to_detached`
     /// is now a parameter of `relinkPartToDisk` (it stages under the `detached/` parent), and
     /// `try_zero_copy` goes back to meaning real zero-copy only.
-    String advertised_pool_uuid;
+    Strings advertised_pools;
+    std::vector<CasRelinkCandidate> ca_candidates;
+    Disks ca_candidate_disks;
     if (allow_ca_relink)
     {
-        if (auto * ca_meta = tryGetContentAddressedExchange(disk))
+        if (disk)
         {
-            advertised_pool_uuid = ca_meta->getPoolUUID();
-            uri.addQueryParameter(CA_POOL_UUID_PARAM, advertised_pool_uuid);
+            if (auto * ca_meta = tryGetContentAddressedExchange(disk))
+                advertised_pools.push_back(ca_meta->getPoolUUID());
         }
-        else if (!disk)
+        else
         {
             for (const auto & data_disk : data.getDisks())
             {
-                if (auto * ca_disk_meta = tryGetContentAddressedExchange(data_disk))
-                {
-                    advertised_pool_uuid = ca_disk_meta->getPoolUUID();
-                    uri.addQueryParameter(CA_POOL_UUID_PARAM, advertised_pool_uuid);
-                    break;
-                }
+                auto * ca_disk_meta = tryGetContentAddressedExchange(data_disk);
+                if (!ca_disk_meta)
+                    continue;
+                ca_candidates.push_back({data_disk->getName(), ca_disk_meta->getPoolUUID(), data_disk->isReadOnly()});
+                ca_candidate_disks.push_back(data_disk);
+                if (!data_disk->isReadOnly())
+                    advertised_pools.push_back(ca_disk_meta->getPoolUUID());
             }
         }
+        const String advertise = encodeCasPoolAdvertise(advertised_pools);
+        if (!advertise.empty())
+            uri.addQueryParameter(CA_POOL_UUID_PARAM, advertise);
+        /// The deduplicated form is what "the single advertised pool" is measured against below.
+        advertised_pools = decodeCasPoolAdvertise(advertise);
     }
 
     Strings capability;
@@ -786,6 +827,24 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
 
+    /// The relink offer, if any, is already visible: response cookies arrive with the headers, before any
+    /// body field is consumed. Resolve the forced disk NOW, so the reservation below goes to it and the
+    /// body reads keep their order. `offered_pool` is what the relink block later checks the chosen disk
+    /// against; with a caller-supplied disk there is nothing to force and that check is all there is.
+    const String ca_relink = parse<String>(in->getResponseCookie(CA_RELINK_COOKIE, ""));
+    String offered_pool;
+    DiskPtr forced_ca_disk;
+    if (!ca_relink.empty())
+    {
+        const String offered_pool_cookie = parse<String>(in->getResponseCookie(CA_POOL_UUID_PARAM, ""));
+        auto choice = chooseForcedCaDisk(
+            static_cast<bool>(disk), ca_candidates, ca_candidate_disks, advertised_pools, offered_pool_cookie, part_name, log);
+        offered_pool = std::move(choice.offered_pool);
+        /// From here on the target is decided: every `!disk` reservation branch below is skipped.
+        if (choice.disk)
+            disk = forced_ca_disk = choice.disk;
+    }
+
     DiskPtr preffered_disk = disk;
 
     if (!preffered_disk)
@@ -805,6 +864,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
         readBinary(sum_files_size, *in);
+
+        if (forced_ca_disk)
+        {
+            /// An object-storage disk reports no capacity, so this cannot decline for space; if it ever
+            /// does, the loud NOT_ENOUGH_SPACE is the right outcome — the part is not re-placed elsewhere.
+            reservation = MergeTreeData::reserveSpace(sum_files_size, forced_ca_disk);
+        }
 
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
@@ -878,21 +944,21 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
         readBinary(projections, *in);
 
-    /// CAS replication 2b — fetch-by-relink (spec §4; B7 part_manifest_v2, all-tree task 7). The sender
-    /// chose to relink: it sent only the part's encoded PartManifest body, no file bytes. Build the part
-    /// by staging this server's OWN local manifest over the blobs already in the shared pool (adopt-by-hash
-    /// -> revalidate -> promote inside adoptPartFromManifest) — self-contained since task 6 routed
-    /// uuid.txt/metadata_version.txt through the content path, so there is no separate mutable header to
+    /// CAS replication — fetch-by-relink (`part_manifest_v2`). The sender
+    /// chose to relink: it sent only the part's encoded PartManifest body, no file bytes, and the
+    /// reservation above already went to the offered pool's disk. Build the part by staging this
+    /// server's OWN local manifest over the blobs already in the shared pool (adopt-by-hash -> revalidate
+    /// -> promote inside adoptPartFromManifest) — self-contained because uuid.txt and
+    /// metadata_version.txt travel through the content path, so there is no separate mutable header to
     /// reconstruct. If the relink is not possible (blob missing/condemned — a transient or a
     /// genuinely-different pool the cheap pre-filter let through, or a mixed-build pair offering an
     /// unrecognized cookie value), fall back to a normal byte fetch by re-requesting WITHOUT relink.
-    String ca_relink = parse<String>(in->getResponseCookie(CA_RELINK_COOKIE, ""));
     if (!ca_relink.empty())
     {
         /// Re-request without the relink capability: pass the SAME (CA) disk but disable zero-copy/relink
         /// so the sender streams bytes; on CA the downloaded files content-address and dedup.
         ///
-        /// THE RECURSION BRAKE (B66b). `allow_ca_relink=false` is what bounds this: the re-request does
+        /// THE RECURSION BRAKE. `allow_ca_relink=false` is what bounds this: the re-request does
         /// not advertise the pool identity, so the sender cannot offer relink again, so this lambda
         /// cannot be reached a second time for the same fetch. Before relink had its own capability the
         /// brake was implicit in `try_zero_copy=false`; with the two decoupled it has to be spelled out,
@@ -901,9 +967,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         /// and recurses without bound. The failures it actually bounds are the ones that leave the CA
         /// disk resolved and matching: a mixed build offering an unrecognized cookie value, a sender that
         /// predates the confirm handshake, an undecodable manifest, a local ref conflict. (The
-        /// reservation-outside-the-pool exit below is bounded twice over — it re-requests with the
-        /// non-CA disk it resolved, which cannot advertise anything either way — so do not read that one
-        /// as evidence that the brake is redundant.)
+        /// no-disk-takes-it exit below is bounded twice over — it re-requests with the disk the ordinary
+        /// reservation resolved, which is outside the pool and cannot advertise it — so do not read that
+        /// one as evidence that the brake is redundant.)
         auto fall_back_to_byte_fetch = [&]
         {
             temporary_directory_lock = {};
@@ -923,12 +989,20 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             return fall_back_to_byte_fetch();
         }
 
+        /// The disk is the forced one, so this holds by construction; it stays a real exit rather than
+        /// an assertion because it is also how an offer for a pool this policy has no disk for (no forced
+        /// disk, ordinary reservation) and a caller-supplied disk outside the pool leave the relink path.
         auto * chosen_ca = tryGetContentAddressedExchange(disk);
-        if (!chosen_ca || chosen_ca->getPoolUUID() != advertised_pool_uuid)
+        if (!chosen_ca || offered_pool.empty() || chosen_ca->getPoolUUID() != offered_pool)
         {
-            LOG_INFO(log, "Part {} was offered by relink for content-addressed pool '{}', but reservation landed "
-                "outside the advertised pool on disk {} (chosen pool: '{}'); falling back to a byte fetch",
-                part_name, advertised_pool_uuid, disk->getName(), chosen_ca ? chosen_ca->getPoolUUID() : "<none>");
+            if (offered_pool.empty())
+                LOG_INFO(log, "Part {} was offered by relink, but the offer does not name one of the {} advertised "
+                    "content-addressed pool(s) (cookie '{}'); falling back to a byte fetch onto disk {}",
+                    part_name, advertised_pools.size(), parse<String>(in->getResponseCookie(CA_POOL_UUID_PARAM, "")), disk->getName());
+            else
+                LOG_INFO(log, "Part {} was offered by relink for content-addressed pool '{}', but no disk of this table's "
+                    "storage policy takes it (chosen disk {}, pool '{}'); falling back to a byte fetch",
+                    part_name, offered_pool, disk->getName(), chosen_ca ? chosen_ca->getPoolUUID() : "<none>");
             return fall_back_to_byte_fetch();
         }
 
@@ -936,7 +1010,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         readStringBinary(sender_manifest_bytes, *in);
         assertEOF(*in);
 
-        /// Publish-then-confirm (spec §core-idea) happens inside `relinkPartToDisk`, including the second
+        /// Publish-then-confirm happens inside `relinkPartToDisk`, including the second
         /// interserver request; the token cookie is the sender's offer identity and is opaque here. A
         /// `nullptr` means the mechanism cannot work but the sender still has the part, so the byte
         /// re-request below is sound; a THROW means the source did not prove the binding, and the whole
@@ -1314,8 +1388,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 /// 3. THE CONFIRM DID NOT PROVE THE SOURCE: an `unproven` answer, an absent answer cookie, a transport
 ///    failure, a timeout. All one outcome, deliberately (`CasConfirmAnswer`: only `yes` authorizes).
 ///    `+1`: durable, then released by `abort`. Action: THROW a locally generated retry-later
-///    `NETWORK_ERROR` naming the source and the part -- never `nullptr`, because a byte re-request goes
-///    back to the very source whose state is in doubt.
+///    `NO_REPLICA_HAS_PART` naming the source and the part -- never `nullptr`, because a byte
+///    re-request goes back to the very source whose state is in doubt. That code, deliberately:
+///    both queue executors (`processQueueEntry`, `ReplicatedMergeMutateTaskBase::executeStep`)
+///    demote it to INFO with no stack trace -- a refusal is the designed outcome of racing a source
+///    whose ref moved on, not a network fault, and logging it as an error invites exactly that
+///    misdiagnosis -- yet, unlike `ABORTED`, it still records the exception on the queue entry, so a
+///    refusal storm stays visible in `system.replication_queue`. It is also the one fetch-transient
+///    code the stateless corpus already tolerates in `part_log` checks (e.g. `02265_column_ttl`).
 ///    Lose a part? No -- the queue stores the exception, backs off, and re-executes the entry, which
 ///    recomputes the source and the covering-part discovery. The fetch is postponed, not dropped.
 ///    Double-promote? No -- `abort` appends the exact precommit removal and no committed ref exists.
@@ -1339,7 +1419,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 ///    `+1`: still owed -- the handle attempts its abandon, which is REJECTED by the state machine if
 ///    the promote in fact landed (a promoted binding is no longer a precommit), so no committed ref is
 ///    ever undone here.
-///    Action: THROW the retry-later `NETWORK_ERROR`, as row 3 -- returning `nullptr` is the one thing
+///    Action: THROW the retry-later `NO_REPLICA_HAS_PART`, as row 3 -- returning `nullptr` is the
+///    one thing
 ///    that must not happen, because a byte fetch would publish the part a SECOND time over a relink
 ///    that may already be committed.
 ///    Lose a part? No -- retry-later, as row 3. Double-promote? No -- nothing is published on this exit.
@@ -1357,7 +1438,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 /// the source itself. `adoptPartFromManifest` used to collapse the two by catching every `Exception`
 /// and returning `false`.
 ///
-/// B66b — WHAT CHANGES WHEN THE TARGET IS `detached/`. Every row above still holds, and the two columns
+/// WHAT CHANGES WHEN THE TARGET IS `detached/`. Every row above still holds, and the two columns
 /// that matter are unchanged in every one of them, but two rows hold for a DIFFERENT reason and that
 /// difference is worth stating rather than rediscovering:
 ///
@@ -1380,11 +1461,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 /// keeps a failed detached relink from ever being visible as a live part: the abandoned precommit and
 /// the abandoned staging directory both live in the detached ref space.
 ///
-/// What a `yes` does NOT prove: `CaRelinkConfirmCore.tla` config `_sab_holeylist` shows that with every
-/// confirm rule intact and one incomplete listing page permitted, `ConfirmedRelinkNeverDangles` still
-/// breaks (BACKLOG `{#list-as-journal-dataloss-2026-07-25}`). A confirmed relink is therefore NOT proven
-/// dangle-free; a `yes` means only "the source still holds exactly this manifest right now", which is
-/// what closes the codex-6 handoff window and nothing more.
+/// What a `yes` does NOT prove: formal modelling of this protocol found that even with every confirm
+/// rule intact, one incomplete storage LIST page during a GC fold is enough to let a confirmed relink's
+/// blobs be reclaimed anyway. A confirmed relink is therefore NOT proven dangle-free; a `yes` means only
+/// "the source still holds exactly this manifest right now", which closes the window between this
+/// receiver's publish and the source's answer, and nothing more.
 MergeTreeData::MutableDataPartPtr Fetcher::relinkPartToDisk(
     const String & part_name,
     const String & tmp_prefix,
@@ -1435,7 +1516,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::relinkPartToDisk(
     });
 
     /// Stage under the tmp-fetch dir OF THE TARGET PARENT — the table dir, or `TABLE/detached` when
-    /// the caller asked for a detached fetch (B66b). The parent is composed exactly as
+    /// the caller asked for a detached fetch. The parent is composed exactly as
     /// `downloadPartToDisk` composes it, so the two fetch paths put a part in the same place and the
     /// caller's finalization is unchanged: `renameTempPartAndReplace`'s moveDirectory(tmp-fetch_<part>
     /// -> <part>) for the active path, `renameTo(detached/<part>)` for the detached one. Both are ref
@@ -1454,16 +1535,16 @@ MergeTreeData::MutableDataPartPtr Fetcher::relinkPartToDisk(
     LOG_DEBUG(log, "Relinking part {} (staged as {}) onto content-addressed disk {} from a {}-byte transferred manifest.",
         part_name, part_path, disk->getName(), sender_manifest_bytes.size());
 
-    /// T1 — PUBLISH. Adopt-from-manifest and precommit, stopping short of the promote (B7
-    /// part_manifest_v2, all-tree task 7): the receiver decodes the transferred body and stages its OWN
+    /// T1 — PUBLISH. Adopt-from-manifest and precommit, stopping short of the promote (`part_manifest_v2`):
+    /// the receiver decodes the transferred body and stages its OWN
     /// local manifest over the shared-pool blobs (adopt-by-hash). Self-contained:
-    /// uuid.txt/metadata_version.txt are ordinary entries in the transferred manifest (task 6), so there
+    /// uuid.txt/metadata_version.txt are ordinary entries in the transferred manifest, so there
     /// is no sidecar to reconstruct. Trust boundary is the interserver channel, as for a normal part
     /// fetch — see `prepareAdoptFromManifest`.
     ///
     /// The order is the whole protocol. This `+1` must be DURABLE before the source is asked anything,
     /// because the question "do you still hold it?" only excludes a later removal if the receiver's own
-    /// reference is already in the ref log when that removal is appended (spec §correctness). Asking
+    /// reference is already in the ref log when that removal is appended. Asking
     /// first and publishing after would prove nothing about the interval in between. What it does NOT
     /// establish is that every subsequent GC fold OBSERVES that reference -- see "What a `yes` does NOT
     /// prove" above; ordering is necessary here, not sufficient.
@@ -1485,10 +1566,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::relinkPartToDisk(
 
     /// Test-only, and this is the ONE seam worth injecting on the whole path: it opens the window the
     /// protocol exists to make safe. The receiver's `+1` is durable and its release is armed, and the
-    /// source has not been asked anything yet, so a test that holds the fetch here can do to the source
-    /// exactly what codex-6 described — merge the part away, run GC to fixpoint — and then observe both
-    /// halves of the contract: the source's blobs survive the round (this receiver's binding protects
-    /// them) and the confirm that follows refuses to authorize a promote (the binding it named is gone).
+    /// source has not been asked anything yet, so a test that holds the fetch here can merge the part
+    /// away on the source and run GC to fixpoint, then observe both halves of the contract: the source's
+    /// blobs survive the round (this receiver's binding protects them) and the confirm that follows
+    /// refuses to authorize a promote (the binding it named is gone).
     FailPointInjection::pauseFailPoint(FailPoints::cas_relink_receiver_pause_before_confirm);
 
     /// T2 — CONFIRM. One read-only interserver question, aimed at the endpoint copied out of the fetch
@@ -1544,9 +1625,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::relinkPartToDisk(
     {
         /// Taxonomy row 3. Locally generated on purpose — nothing here is the source's error to report —
         /// and thrown rather than returned, because the one recovery that is NOT sound after this is a
-        /// byte re-request to the same source. `NETWORK_ERROR` puts it in the retry-later class, so the
-        /// queue stores it, backs off, and re-selects on re-execution.
-        throw Exception(ErrorCodes::NETWORK_ERROR,
+        /// byte re-request to the same source. `NO_REPLICA_HAS_PART` puts it in the retry-later class
+        /// (the queue stores it, backs off, and re-selects on re-execution) and both queue executors
+        /// demote it to INFO without a stack trace -- see the taxonomy, row 3, for why this refusal is
+        /// an ordinary outcome rather than a fault.
+        throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
             "Source {} did not prove it still holds the manifest it offered for part {} by relink; "
             "the relink is abandoned and the fetch will be retried later",
             fetch_uri.getHost(), part_name);
@@ -1565,7 +1648,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::relinkPartToDisk(
             /// second time over a relink that may already be committed. Thrown in the retry-later class
             /// instead, exactly as an unproven confirm is (row 3) -- the queue stores it, backs off, and
             /// re-executes, by which time the ref lane has resolved the ambiguity one way or the other.
-            throw Exception(ErrorCodes::NETWORK_ERROR,
+            throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
                 "Relink of part {} from {} could not be resolved: the promotion may or may not have "
                 "committed, so the bytes must NOT be fetched; the fetch will be retried later",
                 part_name, fetch_uri.getHost());

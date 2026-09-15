@@ -12,10 +12,12 @@
 #include <Common/ProfileEvents.h>
 #include "cas_test_helpers.h"
 
+#include <Poco/Exception.h>
 #include <Poco/StreamChannel.h>
 
 #include <algorithm>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -32,10 +34,9 @@ namespace DB::ErrorCodes
 ///
 /// Reachability is a property of the WHOLE POOL. A blob is unreferenced only if no namespace anywhere
 /// owns an edge to it, so a round that deletes one is asserting something about every namespace at
-/// once -- including the ones it never looked at. Task 7 made the per-namespace half of that assertion
-/// cheap and exact: one `GET` at the cursor's arithmetic successor, absent means end-of-stream. Task 8
-/// made a namespace that could NOT be walked say so durably. What neither can supply is the SET those
-/// proofs have to cover, and that is what this task is about.
+/// once -- including the ones it never looked at. A `GET` at the cursor's arithmetic successor makes
+/// the per-namespace proof cheap and exact, and a namespace that cannot be walked reports that fact
+/// durably. Neither supplies the SET those proofs have to cover.
 ///
 /// So the gate has three terms, and a round destroys only when all three are clear:
 ///
@@ -74,6 +75,13 @@ namespace
 
 const UInt128 kGc = hexToU128("00000000000000000000000000000001");
 
+/// The `CASCatalogLifecycleReconciler` suites hand their operation a liveness that reads a local bool
+/// directly, and `DrainRaceBackend::afterReadOf` moves that bool at an exact request boundary -- so
+/// nothing is cached behind a read and there is nothing for a refresh to re-read. Named rather than an
+/// inline no-op because the argument is mandatory, precisely so that erasing without a refresh has to
+/// be said out loud.
+void noAuthorityRefresh() {}
+
 /// The lying store, shared from `cas_test_helpers.h`: every key is served by exact GET while the
 /// selected ones are HIDDEN from every LIST. That is the only way to build the cross-namespace
 /// scenario -- the hidden namespace's records stay durable and readable, so a round that KNOWS to
@@ -84,9 +92,8 @@ using CountingHintHoleBackend = DB::Cas::tests::HintHoleBackendOn<DB::Cas::tests
 class DrainRaceBackend final : public CountingBackend
 {
 public:
-    using CountingBackend::casPut;
-    using CountingBackend::get;
-    using CountingBackend::putIfAbsent;
+    /// Unhide the names the primitive overrides below would otherwise shadow.
+    using CountingBackend::list;
 
     void blockNextCatalogCas(const String & key)
     {
@@ -134,48 +141,61 @@ public:
         return journal;
     }
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    /// Runs after every completed read of `key`. It is where a test moves a fact the operation's
+    /// liveness predicate samples, so admission can be lost at an exact request boundary.
+    void afterReadOf(const String & key, std::function<void()> hook)
+    {
+        std::lock_guard lock(control_mutex);
+        after_read_key = key;
+        after_read_hook = std::move(hook);
+    }
+
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
         record("get " + key);
-        return CountingBackend::get(key, range);
+        std::optional<Raw> raw = CountingBackend::read(key, access);
+        std::function<void()> hook;
+        {
+            std::lock_guard lock(control_mutex);
+            if (key == after_read_key)
+                hook = after_read_hook;
+        }
+        if (hook)
+            hook();
+        return raw;
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
         record("list " + prefix);
-        return CountingBackend::list(prefix, cursor, limit);
+        return CountingBackend::list(prefix, cursor, limit, access);
     }
 
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        TransportAccess & access) override
     {
-        record("put_begin " + key);
-        const PutResult result = CountingBackend::putIfAbsent(key, bytes, meta);
-        record("put_end " + key);
-        return result;
-    }
-
-    CasResult casPut(
-        const String & key, const String & bytes, const std::optional<Token> & expected,
-        const ObjectMeta & meta) override
-    {
-        record("cas_begin " + key);
+        /// One primitive now carries both shapes the journal used to name separately: a write with no
+        /// precondition is the create, a write with one is the conditional replace.
+        const bool conditional = expected_value.has_value();
+        record((conditional ? "cas_begin " : "put_begin ") + key);
         bool lose_response = false;
         bool force_conflict = false;
         {
             std::unique_lock lock(control_mutex);
-            if (key == catalog_key && block_next_catalog_cas)
+            if (conditional && key == catalog_key && block_next_catalog_cas)
             {
                 block_next_catalog_cas = false;
                 catalog_cas_blocked = true;
                 control_cv.notify_all();
                 control_cv.wait(lock, [&] { return release_catalog_cas; });
             }
-            if (key == catalog_key && lose_next_catalog_cas_response)
+            if (conditional && key == catalog_key && lose_next_catalog_cas_response)
             {
                 lose_next_catalog_cas_response = false;
                 lose_response = true;
             }
-            if (key == catalog_key && conflict_next_catalog_cas)
+            if (conditional && key == catalog_key && conflict_next_catalog_cas)
             {
                 conflict_next_catalog_cas = false;
                 force_conflict = true;
@@ -184,14 +204,18 @@ public:
         if (force_conflict)
         {
             record("cas_forced_conflict " + key);
-            return {.outcome = CasOutcome::Conflict, .token = {}};
+            return std::unexpected(RawConflict{});
         }
-        const CasResult result = CountingBackend::casPut(key, bytes, expected, meta);
-        record("cas_end " + key);
-        if (lose_response && result.outcome == CasOutcome::Committed)
+        std::expected<String, RawConflict> result = CountingBackend::write(key, bytes, expected_value, access);
+        record((conditional ? "cas_end " : "put_end ") + key);
+        if (lose_response && result.has_value())
         {
             record("cas_response_lost " + key);
-            throw std::runtime_error("injected lost catalog CAS response");
+            /// `Poco::TimeoutException`, because that is the class the write loop cannot distinguish
+            /// from a lost response: it settles the attempt by an exact read, finds these bytes under a
+            /// moved incarnation, and reports the write committed. A non-`Poco` exception is rethrown
+            /// unchanged instead, which would propagate a landed write as a failure.
+            throw Poco::TimeoutException("injected lost catalog CAS response");
         }
         return result;
     }
@@ -213,25 +237,31 @@ private:
     bool release_catalog_cas = false;
     bool lose_next_catalog_cas_response = false;
     bool conflict_next_catalog_cas = false;
+    String after_read_key;
+    std::function<void()> after_read_hook;
 };
 
 class PostFoldUnreadableTerminalBackend final : public CountingBackend
 {
 public:
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    /// Unhide the names the primitive overrides below would otherwise shadow.
+    using CountingBackend::head;
+    using CountingBackend::list;
+
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
-        ListPage page = CountingBackend::list(prefix, cursor, limit);
+        RawListPage page = CountingBackend::list(prefix, cursor, limit, access);
         if (prefix.ends_with("/cas/ns/"))
-            for (ListedKey & listed : page.keys)
-                listed.token.reset();
+            for (RawListedKey & listed : page.keys)
+                listed.value.reset();
         return page;
     }
 
-    HeadResult head(const String & key) override
+    std::optional<RawMeta> head(const String & key, TransportAccess & access) override
     {
-        if (key == unreadable_key)
+        if (!bypass_fault && key == unreadable_key)
             throw std::runtime_error("injected post-fold terminal read failure for " + key);
-        return CountingBackend::head(key);
+        return CountingBackend::head(key, access);
     }
 
     void makeUnreadable(String key)
@@ -239,13 +269,23 @@ public:
         unreadable_key = std::move(key);
     }
 
+    /// The test's own look at the key the fault hides, taken through the same primitive with the fault
+    /// suspended -- there is no second door to the store. A fresh open-fence CasRequests over `this`
+    /// (aliasing, owns nothing): every Backend call needs a CasRequests-minted TransportAccess, and this
+    /// method has no caller-supplied one to reuse.
     bool existsIgnoringFault(const String & key)
     {
-        return CountingBackend::head(key).exists;
+        bypass_fault = true;
+        CasRequests requests(BackendPtr(std::shared_ptr<void>(), this), Fence::open());
+        CasOperation op = requests.admit();
+        const bool present = op.head(key, Retry::once()).has_value();
+        bypass_fault = false;
+        return present;
     }
 
 private:
     String unreadable_key;
+    bool bypass_fault = false;
 };
 
 class ScopedCasGcLogCapture
@@ -290,7 +330,7 @@ struct CompletedRemovingFixture
 };
 
 CompletedRemovingFixture seedCompletedRemoving(
-    DrainRaceBackend & backend, const PoolPtr & store, const UInt128 & lease_owner)
+    CasOperation & op, const PoolPtr & store, const UInt128 & lease_owner)
 {
     const Layout & layout = store->layout();
     CompletedRemovingFixture fixture{
@@ -298,7 +338,7 @@ CompletedRemovingFixture seedCompletedRemoving(
         .life_id = UInt128{177},
         .checkpoint_key = {},
         .checkpoint_bytes = {}};
-    CasRefCatalog::casAdmitEntry(backend, layout, store->poolConfig().gc_shards, CatalogEntry{
+    CasRefCatalog::casAdmitEntry(op, layout, store->poolConfig().gc_shards, CatalogEntry{
         .ns = fixture.ns, .state = NsState::Live, .incarnation = fixture.life_id});
     fixture.checkpoint_key = layout.refCkptKey(
         NamespaceLifeId::fromCatalogEntry(fixture.ns, fixture.life_id));
@@ -308,9 +348,9 @@ CompletedRemovingFixture seedCompletedRemoving(
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt,
     });
-    backend.putIfAbsent(fixture.checkpoint_key, fixture.checkpoint_bytes);
+    op.create(fixture.checkpoint_key, fixture.checkpoint_bytes, Retry::once());
     EXPECT_TRUE(store->namespaceFilesLifeIfReadable(fixture.ns));
-    CasRefCatalog::casUpdate(backend, layout, [](const RefCatalog & current)
+    CasRefCatalog::casUpdate(op, layout, [](const RefCatalog & current)
     {
         RefCatalog next = current;
         next.entries[0].state = NsState::Removing;
@@ -321,11 +361,11 @@ CompletedRemovingFixture seedCompletedRemoving(
     CasFoldSeal parent;
     parent.generation = 1;
     parent.ref_lives.emplace(fixture.life_id, RefLifeFoldState{
-        .coverage = RefCoverage{.classification = 2, .last_folded_ref_id = RefTxnId{1, 1}},
+        .coverage = RefCoverage{.classification = CoverageClass::Folded, .last_folded_ref_id = RefTxnId{1, 1}},
         .cleanup_evidence = RefCleanupEvidence{.remove_txn_id = RefTxnId{1, 1}}});
     for (uint64_t shard = 0; shard < store->poolConfig().gc_shards; ++shard)
         parent.condemned_summary.emplace(shard, CondemnedSummary{});
-    backend.putIfAbsent(layout.foldSealKey(1, 1), encodeFoldSeal(parent));
+    op.create(layout.foldSealKey(1, 1), encodeFoldSeal(parent), Retry::once());
 
     GcState state;
     state.round = 1;
@@ -333,13 +373,14 @@ CompletedRemovingFixture seedCompletedRemoving(
     state.snap_generation = 1;
     state.snap_attempt = 1;
     state.lease = GcLease{.owner = lease_owner, .seq = 1};
-    backend.putIfAbsent(layout.gcStateKey(), encodeGcState(state));
+    op.create(layout.gcStateKey(), encodeGcState(state), Retry::once());
 
     return fixture;
 }
 
 void seedCompletedRemovingBatch(
-    DrainRaceBackend & backend, const PoolPtr & store, const UInt128 & lease_owner, size_t count)
+    CasOperation & op, const PoolPtr & store, const UInt128 & lease_owner,
+    size_t count)
 {
     const Layout & layout = store->layout();
     std::vector<CatalogEntry> entries;
@@ -350,10 +391,10 @@ void seedCompletedRemovingBatch(
             .ns = RootNamespace{fmt::format("00/drain-batch-{}@cas@", i)},
             .state = NsState::Live,
             .incarnation = UInt128{200 + i}};
-        CasRefCatalog::casAdmitEntry(backend, layout, store->poolConfig().gc_shards, entry);
+        CasRefCatalog::casAdmitEntry(op, layout, store->poolConfig().gc_shards, entry);
         entries.push_back(std::move(entry));
     }
-    CasRefCatalog::casUpdate(backend, layout, [](const RefCatalog & current)
+    CasRefCatalog::casUpdate(op, layout, [](const RefCatalog & current)
     {
         RefCatalog next = current;
         for (CatalogEntry & entry : next.entries)
@@ -368,12 +409,11 @@ void seedCompletedRemovingBatch(
     parent.generation = 1;
     for (const CatalogEntry & entry : entries)
         parent.ref_lives.emplace(entry.incarnation, RefLifeFoldState{
-            .coverage = RefCoverage{.classification = 2, .last_folded_ref_id = RefTxnId{1, 1}},
+            .coverage = RefCoverage{.classification = CoverageClass::Folded, .last_folded_ref_id = RefTxnId{1, 1}},
             .cleanup_evidence = RefCleanupEvidence{.remove_txn_id = RefTxnId{1, 1}}});
     for (uint64_t shard = 0; shard < store->poolConfig().gc_shards; ++shard)
         parent.condemned_summary.emplace(shard, CondemnedSummary{});
-    ASSERT_EQ(backend.putIfAbsent(layout.foldSealKey(1, 1), encodeFoldSeal(parent)).outcome,
-        PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.foldSealKey(1, 1), encodeFoldSeal(parent), Retry::once())));
 
     GcState state;
     state.round = 1;
@@ -381,7 +421,7 @@ void seedCompletedRemovingBatch(
     state.snap_generation = 1;
     state.snap_attempt = 1;
     state.lease = GcLease{.owner = lease_owner, .seq = 1};
-    ASSERT_EQ(backend.putIfAbsent(layout.gcStateKey(), encodeGcState(state)).outcome, PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.gcStateKey(), encodeGcState(state), Retry::once())));
 }
 
 enum class CompetingCatalogOutcome : uint8_t
@@ -396,13 +436,15 @@ class CASGCCompletedRemovalFenceRace : public testing::TestWithParam<CompetingCa
 
 void transferGcLease(DrainRaceBackend & backend, const Layout & layout, const UInt128 & new_owner)
 {
-    const auto got = backend.get(layout.gcStateKey());
+    auto requests = openRequestsForTest(backend);
+    auto op = requests.admit();
+    const auto got = op.read(layout.gcStateKey(), Retry::once());
     ASSERT_TRUE(got);
     GcState state = decodeGcState(got->bytes);
     state.lease.owner = new_owner;
     ++state.lease.seq;
-    ASSERT_EQ(backend.casPut(layout.gcStateKey(), encodeGcState(state), got->token).outcome,
-        CasOutcome::Committed);
+    ASSERT_TRUE(std::holds_alternative<Committed>(
+        op.replace(layout.gcStateKey(), encodeGcState(state), got->etag, Retry::once())));
 }
 
 size_t findJournalAfter(const std::vector<String> & journal, const String & entry, size_t after)
@@ -612,7 +654,8 @@ TEST(CASGCFrontierGate, AHiddenEdgeIsFoundByTheExactKeyProbeAndSavesTheBlobOnACo
     }
 
     ASSERT_TRUE(verdict.saw_fold) << "no round folded, so none published a gate verdict";
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists)
+    OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value())
         << "the blob a hidden namespace still owns must survive";
     EXPECT_TRUE(verdict.frontier_complete)
         << "the exact-key probe reads at `cursor + 1` and a LIST hole cannot hide an exact key, so the "
@@ -661,7 +704,8 @@ TEST(CASGCFrontierGate, TheSameBlobDrainsOnceHiddenGenuinelyProvesItsOwnFrontier
 
     drive(store, gc, /*rounds*/ 5, UniversePolicy::Authoritative);
 
-    EXPECT_FALSE(backend->head(blobKeyOf(layout, blob)).exists)
+    OperationForTest raw_op(*backend);
+    EXPECT_FALSE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value())
         << "both namespaces genuinely proved their frontier and the blob is genuinely unreferenced -- "
            "the round must still be able to reclaim it";
 }
@@ -683,7 +727,8 @@ TEST(CASGCFrontierGate, AKnownNamespaceIsProbedByExactKeyAndItsHiddenEdgeSavesTh
     Gc gc(store, kGc);
     drive(store, gc, /*rounds*/ 5, UniversePolicy::Authoritative);
 
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists)
+    OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value())
         << "the cursor kept the namespace in the universe, so its frontier was probed and its edge folded";
 }
 
@@ -786,7 +831,8 @@ TEST(CASGCFrontierGate, EveryInventoriedDestructiveSiteIsInertUnderSuppression)
         << "with no universe supplied the frontier can never be complete, whatever the probes proved";
     EXPECT_TRUE(verdict.suppress_destructive);
     expectEveryDeleteFamilyInert(*backend, "no universe supplied");
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists);
+    OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value());
 
     /// The control: the identical pool DOES reclaim at those sites on the production path, so the zeros
     /// above are the gate at work and not an empty work queue -- and it is also what makes the "on that
@@ -794,7 +840,7 @@ TEST(CASGCFrontierGate, EveryInventoriedDestructiveSiteIsInertUnderSuppression)
     drive(store, gc, /*rounds*/ 4, UniversePolicy::kDefault);
     EXPECT_GT(backend->deleteTotal(), 0u)
         << "the work queue was real -- a round with a universe drains it";
-    EXPECT_FALSE(backend->head(blobKeyOf(layout, blob)).exists);
+    EXPECT_FALSE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value());
 }
 
 /// (1) ONE ANOMALY. A namespace whose `_ckpt` is present but undecodable records the "no usable
@@ -805,6 +851,8 @@ TEST(CASGCFrontierGate, AnUndecodableCheckpointAnomalySuppressesEveryDeleteFamil
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
 
     Gc gc(store, kGc);
@@ -816,12 +864,12 @@ TEST(CASGCFrontierGate, AnUndecodableCheckpointAnomalySuppressesEveryDeleteFamil
     /// the very object the round's own life resolution will read, or the round folds normally and this
     /// test measures nothing.
     const std::optional<NamespaceLifeId> damaged_life =
-        CasRefCatalog::lifeIfCataloged(*backend, layout, damaged);
+        CasRefCatalog::lifeIfCataloged(op, layout, damaged);
     ASSERT_TRUE(damaged_life.has_value()) << "the publish must have left a catalog entry to resolve";
-    const std::optional<CkptSample> damaged_ckpt = readCkpt(*backend, layout, *damaged_life);
+    const std::optional<CkptSample> damaged_ckpt = readCkpt(op, layout, *damaged_life);
     ASSERT_TRUE(damaged_ckpt.has_value()) << "the publish must have left a `_ckpt` to damage";
-    ASSERT_EQ(backend->casPut(layout.refCkptKey(*damaged_life), "not a checkpoint",
-                              damaged_ckpt->token).outcome, CasOutcome::Committed);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(
+        layout.refCkptKey(*damaged_life), "not a checkpoint", damaged_ckpt->etag, Retry::once())));
 
     backend->resetCounts();
     std::vector<size_t> anomaly_counts;
@@ -835,7 +883,7 @@ TEST(CASGCFrontierGate, AnUndecodableCheckpointAnomalySuppressesEveryDeleteFamil
         << "the undecodable `_ckpt` must be RECORDED, not silently absorbed -- a silent exit would make "
            "this test pass for the wrong reason";
     expectEveryDeleteFamilyInert(*backend, "one anomaly");
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists);
+    EXPECT_TRUE(op.head(blobKeyOf(layout, blob), Retry::once()).has_value());
 }
 
 /// (2) ONE CARRIED HOLD. The gate's second term reads the SEAL, not this round's anomaly list, so the
@@ -882,7 +930,8 @@ TEST(CASGCFrontierGate, ACarriedHoldSuppressesEveryDeleteFamily)
         store->renewWatermarkOnce();
     }
     expectEveryDeleteFamilyInert(*backend, "one carried hold");
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists);
+    OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value());
 }
 
 /// (3c) THE PROBE BUDGET. A namespace with a sealed cursor, no `_ckpt` and no listing left can be proven
@@ -891,6 +940,8 @@ TEST(CASGCFrontierGate, ACarriedHoldSuppressesEveryDeleteFamily)
 TEST(CASGCFrontierGate, AnExhaustedProbeBudgetSuppressesEveryDeleteFamily)
 {
     auto backend = std::make_shared<CountingHintHoleBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     auto store = openPoolWithProbeBudget(backend, /*budget*/ 0);
     const Layout & layout = store->layout();
 
@@ -909,12 +960,12 @@ TEST(CASGCFrontierGate, AnExhaustedProbeBudgetSuppressesEveryDeleteFamily)
         << "without a sealed cursor the namespace never becomes a budget-spending probe target";
 
     const std::optional<NamespaceLifeId> quiet_life =
-        CasRefCatalog::lifeIfCataloged(*backend, layout, quiet);
+        CasRefCatalog::lifeIfCataloged(op, layout, quiet);
     ASSERT_TRUE(quiet_life.has_value());
-    const std::optional<CkptSample> quiet_ckpt = readCkpt(*backend, layout, *quiet_life);
+    const std::optional<CkptSample> quiet_ckpt = readCkpt(op, layout, *quiet_life);
     ASSERT_TRUE(quiet_ckpt.has_value()) << "there must be a `_ckpt` to remove";
-    ASSERT_EQ(backend->deleteExact(layout.refCkptKey(*quiet_life), quiet_ckpt->token).kind,
-              DeleteOutcome::Kind::Deleted);
+    ASSERT_EQ(op.remove(layout.refCkptKey(*quiet_life), quiet_ckpt->etag, Retry::once()),
+              Removal::Removed);
     backend->hidePrefix(layout.namespaceStreamPrefix(*quiet_life));
 
     backend->resetCounts();
@@ -931,7 +982,7 @@ TEST(CASGCFrontierGate, AnExhaustedProbeBudgetSuppressesEveryDeleteFamily)
     EXPECT_FALSE(verdict.frontier_complete);
     EXPECT_TRUE(verdict.suppress_destructive);
     expectEveryDeleteFamilyInert(*backend, "exhausted probe budget");
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists);
+    EXPECT_TRUE(op.head(blobKeyOf(layout, blob), Retry::once()).has_value());
 }
 
 /// `frontier_proven == frontier_namespaces` is `0 == 0` -- vacuously TRUE -- on an empty universe, which
@@ -944,6 +995,8 @@ TEST(CASGCFrontierGate, ADecodedTokenBearingEmptyCatalogCompletesTheFrontierAndD
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const DB::UInt128 blob(0xbead);
 
@@ -953,12 +1006,14 @@ TEST(CASGCFrontierGate, ADecodedTokenBearingEmptyCatalogCompletesTheFrontierAndD
     /// round leaves one (`injectRetire`).
     writeBlobBody(*backend, layout, blob);
     const BlobRef blob_ref = legacyMetaTestRef(blob);
-    const Token blob_token = backend->head(layout.blobKey(blob_ref)).token;
+    const std::optional<Meta> blob_observed = op.head(layout.blobKey(blob_ref), Retry::once());
+    ASSERT_TRUE(blob_observed) << "the seeded blob body must be present before it is condemned";
+    const PersistedEtag blob_token = PersistedEtag::capture(blob_observed->etag);
     injectRetire(*backend, layout, /*round*/ 1, /*shard*/ 0,
         {RetiredEntry{.kind = ObjectKind::Blob, .ref = blob_ref, .token = blob_token, .size = 0}});
     store->renewWatermarkOnce();
 
-    ASSERT_TRUE(CasRefCatalog::read(*backend, layout).catalog.entries.empty())
+    ASSERT_TRUE(CasRefCatalog::read(op, layout).catalog.entries.empty())
         << "the scenario needs a genuinely, provably empty catalog, or this test measures nothing";
 
     Gc gc(store, kGc);
@@ -978,7 +1033,7 @@ TEST(CASGCFrontierGate, ADecodedTokenBearingEmptyCatalogCompletesTheFrontierAndD
     /// Bound the drive at that plus one (5): enough slack for the fixture's own cadence to be measured
     /// without hand-counting rounds against this gate, but tight enough that a real regression in the
     /// confirm/retry cadence still fails loudly instead of silently absorbing into a generous loop.
-    ASSERT_TRUE(backend->head(layout.blobKey(blob_ref)).exists)
+    ASSERT_TRUE(op.head(layout.blobKey(blob_ref), Retry::once()).has_value())
         << "the scenario starts with the condemned blob present, or the loop below measures nothing";
 
     constexpr int kMaxRounds = 5;   /// measured cadence (4) + 1; see the comment above
@@ -991,11 +1046,11 @@ TEST(CASGCFrontierGate, ADecodedTokenBearingEmptyCatalogCompletesTheFrontierAndD
     int round_blob_vanished = -1;               /// the delete side
     GateVerdict last;
     int rounds_run = 0;
-    for (int i = 0; i < kMaxRounds && backend->head(layout.blobKey(blob_ref)).exists; ++i)
+    for (int i = 0; i < kMaxRounds && op.head(layout.blobKey(blob_ref), Retry::once()).has_value(); ++i)
     {
         last = runRoundCapturingGate(store, gc, UniversePolicy::Authoritative);
         ++rounds_run;
-        const bool still_present = backend->head(layout.blobKey(blob_ref)).exists;
+        const bool still_present = op.head(layout.blobKey(blob_ref), Retry::once()).has_value();
         if (round_gate_opened_while_present < 0 && last.saw_fold && !last.suppress_destructive && still_present)
             round_gate_opened_while_present = rounds_run;
         if (round_blob_vanished < 0 && !still_present)
@@ -1019,7 +1074,7 @@ TEST(CASGCFrontierGate, ADecodedTokenBearingEmptyCatalogCompletesTheFrontierAndD
     ASSERT_GT(round_blob_vanished, round_gate_opened_while_present)
         << "the delete must be a round STRICTLY LATER than the one that opened the gate, never the same "
            "round -- a round that both graduates and deletes in one step would hide the two-phase split";
-    EXPECT_FALSE(backend->head(layout.blobKey(blob_ref)).exists)
+    EXPECT_FALSE(op.head(layout.blobKey(blob_ref), Retry::once()).has_value())
         << "a proved-empty universe is a COMPLETE frontier, not a suppressed one -- the condemned blob "
            "must drain through the ordinary two-phase pipeline instead of leaking forever";
 }
@@ -1033,12 +1088,16 @@ TEST(CASGCFrontierGate, AZeroWalkableFrontierWithACreatingCatalogRowIsNotProvedE
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const DB::UInt128 blob(0xbead);
 
     writeBlobBody(*backend, layout, blob);
     const BlobRef blob_ref = legacyMetaTestRef(blob);
-    const Token blob_token = backend->head(layout.blobKey(blob_ref)).token;
+    const std::optional<Meta> blob_observed = op.head(layout.blobKey(blob_ref), Retry::once());
+    ASSERT_TRUE(blob_observed) << "the seeded blob body must be present before it is condemned";
+    const PersistedEtag blob_token = PersistedEtag::capture(blob_observed->etag);
     injectRetire(*backend, layout, /*round*/ 1, /*shard*/ 0,
         {RetiredEntry{.kind = ObjectKind::Blob, .ref = blob_ref, .token = blob_token, .size = 0}});
     store->renewWatermarkOnce();
@@ -1050,7 +1109,7 @@ TEST(CASGCFrontierGate, AZeroWalkableFrontierWithACreatingCatalogRowIsNotProvedE
     entry.incarnation = hexToU128("00000000000000000000000000000042");
     entry.creator = CreatorFence{
         .server_root_id = "test-stalled-creator", .writer_epoch = 1, .fence_generation = 1};
-    CasRefCatalog::casAdmitEntry(*backend, layout, /*gc_shards*/ 1, entry);
+    CasRefCatalog::casAdmitEntry(op, layout, /*gc_shards*/ 1, entry);
 
     Gc gc(store, kGc);
     backend->resetCounts();
@@ -1071,7 +1130,7 @@ TEST(CASGCFrontierGate, AZeroWalkableFrontierWithACreatingCatalogRowIsNotProvedE
         EXPECT_TRUE(v.suppress_destructive);
     }
     expectEveryDeleteFamilyInert(*backend, "Creating-only catalog");
-    EXPECT_TRUE(backend->head(layout.blobKey(blob_ref)).exists);
+    EXPECT_TRUE(op.head(layout.blobKey(blob_ref), Retry::once()).has_value());
 }
 
 /// The bootstrap-only absent-as-empty representation (`initializeEmptyForNewPool`) must never leak into
@@ -1082,8 +1141,10 @@ TEST(CASGCFrontierGate, AnAbsentCatalogNeverReadsAsAnEmptyUniverse)
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
     const Layout & layout = store->layout();
 
-    const Token catalog_token = backend->head(layout.refCatalogKey()).token;
-    ASSERT_EQ(backend->deleteExact(layout.refCatalogKey(), catalog_token).kind, DeleteOutcome::Kind::Deleted);
+    OperationForTest raw_op(*backend);
+    const auto catalog_head = (*raw_op).head(layout.refCatalogKey(), Retry::once());
+    ASSERT_TRUE(catalog_head.has_value());
+    ASSERT_EQ((*raw_op).remove(layout.refCatalogKey(), catalog_head->etag, Retry::once()), Removal::Removed);
 
     Gc gc(store, kGc);
     backend->resetCounts();
@@ -1163,9 +1224,11 @@ TEST(CASGCFrontierGate, AMalformedCatalogNeverDecodesIntoAnEmptyProof)
         auto backend = std::make_shared<CountingBackend>();
         auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
         const Layout & layout = store->layout();
-        const Token bootstrap_token = backend->head(layout.refCatalogKey()).token;
-        ASSERT_EQ(backend->casPut(layout.refCatalogKey(), c.bytes, bootstrap_token).outcome,
-            CasOutcome::Committed) << c.name;
+        OperationForTest raw_op(*backend);
+        const auto bootstrap_head = (*raw_op).head(layout.refCatalogKey(), Retry::once());
+        ASSERT_TRUE(bootstrap_head.has_value()) << c.name;
+        ASSERT_TRUE(std::holds_alternative<Committed>(
+            (*raw_op).replace(layout.refCatalogKey(), c.bytes, bootstrap_head->etag, Retry::once()))) << c.name;
 
         Gc gc(store, kGc);
         backend->resetCounts();
@@ -1191,7 +1254,11 @@ TEST(CASGCFrontierGate, AProvedEmptyCatalogUnderStageASuppressedStaysSuppressed)
 
     writeBlobBody(*backend, layout, blob);
     const BlobRef blob_ref = legacyMetaTestRef(blob);
-    const Token blob_token = backend->head(layout.blobKey(blob_ref)).token;
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const std::optional<Meta> blob_observed = op.head(layout.blobKey(blob_ref), Retry::once());
+    ASSERT_TRUE(blob_observed) << "the seeded blob body must be present before it is condemned";
+    const PersistedEtag blob_token = PersistedEtag::capture(blob_observed->etag);
     injectRetire(*backend, layout, /*round*/ 1, /*shard*/ 0,
         {RetiredEntry{.kind = ObjectKind::Blob, .ref = blob_ref, .token = blob_token, .size = 0}});
     store->renewWatermarkOnce();
@@ -1214,7 +1281,7 @@ TEST(CASGCFrontierGate, AProvedEmptyCatalogUnderStageASuppressedStaysSuppressed)
         EXPECT_TRUE(v.suppress_destructive);
     }
     expectEveryDeleteFamilyInert(*backend, "StageA_Suppressed over a proved-empty catalog");
-    EXPECT_TRUE(backend->head(layout.blobKey(blob_ref)).exists);
+    EXPECT_TRUE(op.head(layout.blobKey(blob_ref), Retry::once()).has_value());
 }
 
 /// THE BIRTH-AFTER-EMPTY-CUT BLOB RACE. The proved-empty exception's soundness rests on one hard fact:
@@ -1234,6 +1301,8 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
 
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace doomed{"00/doomed@cas@"};
 
@@ -1255,7 +1324,9 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
     dropRefTransition(*backend, layout, doomed, "ref_1", mref);
     runRegularRoundReclaiming(gc);                                 /// condemns: durable Condemned meta
     store->renewWatermarkOnce();
-    const Token condemned_token = backend->head(key).token;
+    const auto condemned_head = op.head(key, Retry::once());
+    ASSERT_TRUE(condemned_head.has_value());
+    const Etag condemned_token = condemned_head->etag;
     const auto condemned_meta = loadMetaForTest(*backend, layout, hash);
     ASSERT_TRUE(condemned_meta.has_value());
     ASSERT_EQ(condemned_meta->meta.state, MetaState::Condemned)
@@ -1270,7 +1341,7 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
     remove_op.kind = RefOpKind::RemoveNamespace;
     const uint64_t remove_seq = appendRefLogSeed(*backend, layout, doomed, {remove_op});
     publishRecoverableCkptForSemanticWrapper(*backend, layout, doomed, RefTxnId{1, remove_seq});
-    CasRefCatalog::casUpdate(*backend, layout, [&](const RefCatalog & current) -> RefCatalog
+    CasRefCatalog::casUpdate(op, layout, [&](const RefCatalog & current) -> RefCatalog
     {
         RefCatalog next = current;
         const auto it = std::find_if(next.entries.begin(), next.entries.end(),
@@ -1288,7 +1359,7 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
     /// until round R below, rather than letting it drain the ordinary way while `doomed` is still Live.
     gc.runRegularRound({}, /*allow_steal*/true, UniversePolicy::StageA_Suppressed);
     store->renewWatermarkOnce();
-    EXPECT_TRUE(backend->head(key).exists) << "the pending delete must still be carried, not yet run";
+    EXPECT_TRUE(op.head(key, Retry::once()).has_value()) << "the pending delete must still be carried, not yet run";
 
     /// Round R: its pre-fold drain (`drainCompletedRemoving`) reads the round just above's
     /// `cleanup_evidence` and drops `doomed`'s catalog row BEFORE this round's own hot-scan `GET` --
@@ -1296,11 +1367,11 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
     /// instant that cut is taken and races a real namespace birth into the window before round R's own
     /// pre-CAS delete phase runs.
     bool hook_fired = false;
-    Token fresh_token{};
+    std::optional<Etag> fresh_token;
     gc.setPostHotScanCatalogReadHookForTest([&]()
     {
         hook_fired = true;
-        ASSERT_TRUE(CasRefCatalog::read(*backend, layout).catalog.entries.empty())
+        ASSERT_TRUE(CasRefCatalog::read(op, layout).catalog.entries.empty())
             << "the race must land inside the window where the cut itself is already empty";
 
         const RootNamespace newborn{"00/newborn@cas@"};
@@ -1310,8 +1381,10 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
         build->precommitAdd(newborn, "ref_1", new_id);            /// mints `newborn` via real createNamespace
         const PutBlobResult uploaded = build->putBlob(id, BlobSource::fromString(payload));
         EXPECT_EQ(uploaded.ref, id);
-        fresh_token = backend->head(key).token;
-        EXPECT_NE(fresh_token, condemned_token)
+        const auto fresh_head = op.head(key, Retry::once());
+        ASSERT_TRUE(fresh_head.has_value());
+        fresh_token = fresh_head->etag;
+        EXPECT_NE(*fresh_token, condemned_token)
             << "the writer must have observed Condemned and resurrected -- a fresh token, not an adopt "
                "of the dying incarnation";
     });
@@ -1323,10 +1396,12 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
     EXPECT_TRUE(verdict.frontier_complete);
     EXPECT_FALSE(verdict.suppress_destructive);
 
-    EXPECT_TRUE(backend->head(key).exists)
+    const auto surviving_head = op.head(key, Retry::once());
+    EXPECT_TRUE(surviving_head.has_value())
         << "the resurrected incarnation must survive round R's delete";
-    EXPECT_EQ(backend->head(key).token, fresh_token) << "and it is still the writer's incarnation";
-    EXPECT_EQ(backend->deleteExact(key, condemned_token).kind, DeleteOutcome::Kind::TokenMismatch)
+    ASSERT_TRUE(fresh_token.has_value());
+    EXPECT_EQ(surviving_head->etag, *fresh_token) << "and it is still the writer's incarnation";
+    EXPECT_EQ(op.remove(key, condemned_token, Retry::once()), Removal::Mismatch)
         << "the condemned token can never remove the fresh object (INV_NO_LOSS)";
 
     /// A later round's own fresh catalog cut names `newborn`, folds its `+1`, and the blob's frontier is
@@ -1335,7 +1410,7 @@ TEST(CASGCFrontierGate, ANamespaceBornAfterTheEmptyCutResurrectsTheCondemnedBlob
     ASSERT_TRUE(later.saw_fold);
     EXPECT_EQ(later.frontier_namespaces, 1u);
     EXPECT_EQ(later.frontier_proven, 1u);
-    EXPECT_TRUE(backend->head(key).exists) << "the newly folded owner keeps the blob alive";
+    EXPECT_TRUE(op.head(key, Retry::once()).has_value()) << "the newly folded owner keeps the blob alive";
 }
 
 /// The generation prune's cursor must not move on a suppressed round either. It is a monotone
@@ -1355,8 +1430,9 @@ TEST(CASGCFrontierGate, ASuppressedRoundDoesNotAdvanceTheGenerationPruneCursor)
         runRegularRoundReclaiming(gc);
         store->renewWatermarkOnce();
     }
+    OperationForTest raw_op(*backend);
     const uint64_t pruned_through_before =
-        decodeGcState(backend->get(layout.gcStateKey())->bytes).snap_pruned_through;
+        decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes).snap_pruned_through;
 
     for (uint64_t i = 7; i <= 10; ++i)
     {
@@ -1365,7 +1441,7 @@ TEST(CASGCFrontierGate, ASuppressedRoundDoesNotAdvanceTheGenerationPruneCursor)
         store->renewWatermarkOnce();
     }
 
-    EXPECT_EQ(decodeGcState(backend->get(layout.gcStateKey())->bytes).snap_pruned_through,
+    EXPECT_EQ(decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes).snap_pruned_through,
               pruned_through_before)
         << "the retention cursor is a high-water mark; it may not pass a generation nothing deleted";
 }
@@ -1392,9 +1468,10 @@ TEST(CASGCFrontierGate, TheHandOffReclaimIsInertUnderSuppression)
     Gc gc(store, kGc);
     runRegularRoundReclaiming(gc);
     store->renewWatermarkOnce();
-    const uint64_t old_gen = decodeGcState(backend->get(layout.gcStateKey())->bytes).snap_generation;
+    OperationForTest raw_op(*backend);
+    const uint64_t old_gen = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes).snap_generation;
     const String old_prefix = layout.gcGenPrefix(old_gen);
-    ASSERT_FALSE(backend->list(old_prefix, "", 1000).keys.empty());
+    ASSERT_FALSE((*raw_op).list(old_prefix, "", 1000, Retry::once()).keys.empty());
 
     /// Idle-carry the ref until the retention cursor is strictly PAST its generation. Until then an
     /// ordinary prune could still reclaim it and the hand-off would not be the load-bearing path.
@@ -1403,9 +1480,9 @@ TEST(CASGCFrontierGate, TheHandOffReclaimIsInertUnderSuppression)
         runRegularRoundReclaiming(gc);
         store->renewWatermarkOnce();
     }
-    ASSERT_GT(decodeGcState(backend->get(layout.gcStateKey())->bytes).snap_pruned_through, old_gen)
+    ASSERT_GT(decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes).snap_pruned_through, old_gen)
         << "the generation must be behind the retention cursor before the hand-off is exercised";
-    ASSERT_FALSE(backend->list(old_prefix, "", 1000).keys.empty())
+    ASSERT_FALSE((*raw_op).list(old_prefix, "", 1000, Retry::once()).keys.empty())
         << "and still retained, because a live ref pins it";
 
     /// A real delta moves the shard's run off the old generation. This is the round the hand-off would
@@ -1420,10 +1497,10 @@ TEST(CASGCFrontierGate, TheHandOffReclaimIsInertUnderSuppression)
 
     EXPECT_EQ(backend->deleteCountForKeysContaining("/gc/gen/"), 0u)
         << "a suppressed round hands nothing off. Deleted:" << deletedKeysMessage(*backend);
-    EXPECT_FALSE(backend->list(old_prefix, "", 1000).keys.empty())
+    EXPECT_FALSE((*raw_op).list(old_prefix, "", 1000, Retry::once()).keys.empty())
         << "the superseded generation's prefix survives a suppressed round intact";
 
-    /// AND THE OPPORTUNITY IS CONSUMED, NOT DEFERRED -- the one place in this task where the gate
+    /// AND THE OPPORTUNITY IS CONSUMED, NOT DEFERRED -- the gate
     /// costs something permanent, so it is asserted here rather than left to be discovered later.
     ///
     /// The hand-off is a one-shot DIFFERENCE: it compares the PARENT seal's runs against the new
@@ -1437,7 +1514,7 @@ TEST(CASGCFrontierGate, TheHandOffReclaimIsInertUnderSuppression)
     /// The hand-off itself is not going untested: `CASGCRetention.HandOffDeletesSupersededRef` drives
     /// the same transition on an authoritative round and asserts the prefix IS reclaimed.
     runRegularRoundReclaiming(gc);
-    EXPECT_FALSE(backend->list(old_prefix, "", 1000).keys.empty())
+    EXPECT_FALSE((*raw_op).list(old_prefix, "", 1000, Retry::once()).keys.empty())
         << "the hand-off is a one-shot difference: the suppressed round consumed it, so the prefix is "
            "now fsck's problem rather than a later round's";
 }
@@ -1480,7 +1557,7 @@ TEST(CASGCFrontierGate, TheOrphanManifestSweepAndItsCursorAreInertUnderSuppressi
     const ManifestRef r2{.writer_epoch = 5, .build_sequence = 0xCA02, .manifest_ordinal = 1};
     writeManifestRaw(*backend, layout, ns, r1, {blobEntryFor("a", DB::UInt128(0xa1))});
     writeManifestRaw(*backend, layout, ns, r2, {blobEntryFor("b", DB::UInt128(0xb2))});
-    setWatermarkMinActive(*backend, layout, "test", r1.writer_epoch, /*min_active*/ 0xCA03);
+    setWatermarkMinActive(*backend, layout, "test", r1.writer_epoch, /*min_active_build_sequence*/ 0xCA03);
     /// The §6 deletion premise is a second precondition on the CONTROL arm below: a manifest of an
     /// epoch-`E` build is deletable only once the namespace's sealed fold cursor sits in an epoch
     /// strictly above `E`. Sealing that cursor here is what keeps this test about the GATE — without it
@@ -1498,11 +1575,12 @@ TEST(CASGCFrontierGate, TheOrphanManifestSweepAndItsCursorAreInertUnderSuppressi
         store->renewWatermarkOnce();
     }
 
+    OperationForTest raw_op(*backend);
     EXPECT_EQ(backend->deleteCountForKeysContaining("/cas/manifests/"), 0u)
         << "a suppressed round sweeps nothing. Deleted:" << deletedKeysMessage(*backend);
-    EXPECT_TRUE(backend->head(layout.manifestKey(ManifestId{ns, r1})).exists);
-    EXPECT_TRUE(backend->head(layout.manifestKey(ManifestId{ns, r2})).exists);
-    EXPECT_TRUE(decodeGcState(backend->get(layout.gcStateKey())->bytes).manifest_sweep_cursor.empty())
+    EXPECT_TRUE((*raw_op).head(layout.manifestKey(ManifestId{ns, r1}), Retry::once()).has_value());
+    EXPECT_TRUE((*raw_op).head(layout.manifestKey(ManifestId{ns, r2}), Retry::once()).has_value());
+    EXPECT_TRUE(decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes).manifest_sweep_cursor.empty())
         << "the sweep cursor must not advance over a range the round declined to sweep -- nothing "
            "revisits it";
 
@@ -1512,8 +1590,8 @@ TEST(CASGCFrontierGate, TheOrphanManifestSweepAndItsCursorAreInertUnderSuppressi
         runRegularRoundReclaiming(gc);
         store->renewWatermarkOnce();
     }
-    EXPECT_FALSE(backend->head(layout.manifestKey(ManifestId{ns, r1})).exists);
-    EXPECT_FALSE(backend->head(layout.manifestKey(ManifestId{ns, r2})).exists);
+    EXPECT_FALSE((*raw_op).head(layout.manifestKey(ManifestId{ns, r1}), Retry::once()).has_value());
+    EXPECT_FALSE((*raw_op).head(layout.manifestKey(ManifestId{ns, r2}), Retry::once()).has_value());
 }
 
 
@@ -1528,6 +1606,8 @@ TEST(CASGCFrontierGate, TheOrphanManifestSweepAndItsCursorAreInertUnderSuppressi
 TEST(CASGCFrontierGate, APartialProbeBudgetPublishesATallyThatMatchesTheSealedSet)
 {
     auto backend = std::make_shared<CountingHintHoleBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     auto store = openPoolWithProbeBudget(backend, /*budget*/ 1);
     const Layout & layout = store->layout();
     const RootNamespace a{"00/quiet_a@cas@"};
@@ -1575,8 +1655,8 @@ TEST(CASGCFrontierGate, APartialProbeBudgetPublishesATallyThatMatchesTheSealedSe
     {
         EXPECT_NE(sealedCursorOf(*backend, layout, ns), (RefTxnId{}))
             << "every namespace in the tally must have a sealed cursor: " << ns.string();
-        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
-        const auto checkpoint = readCkpt(*backend, layout, life);
+        const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
+        const auto checkpoint = readCkpt(op, layout, life);
         ASSERT_TRUE(checkpoint.has_value());
         EXPECT_EQ(checkpoint->ckpt.committed_through, (RefTxnId{1, 1}))
             << "LIST omission and the probe budget do not alter a valid CTE";
@@ -1635,6 +1715,8 @@ TEST(CASGCFrontierGate, CheckpointFrontierBehindAnInheritedCursorFailsClosed)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/checkpoint-behind-inherited-cursor@cas@"};
 
@@ -1652,16 +1734,16 @@ TEST(CASGCFrontierGate, CheckpointFrontierBehindAnInheritedCursorFailsClosed)
     ASSERT_TRUE(runRegularRoundReclaiming(gc).acquired_lease);
     ASSERT_EQ(sealedCursorOf(*backend, layout, ns), (RefTxnId{1, 2}));
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     const String checkpoint_key = layout.refCkptKey(life);
-    const HeadResult checkpoint_head = backend->head(checkpoint_key);
-    ASSERT_TRUE(checkpoint_head.exists);
-    ASSERT_EQ(backend->putOverwrite(checkpoint_key, encodeRefCkpt(RefCkpt{
+    const auto checkpoint_head = op.head(checkpoint_key, Retry::once());
+    ASSERT_TRUE(checkpoint_head.has_value());
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(checkpoint_key, encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 1},
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt,
-    }), checkpoint_head.token).outcome, PutOutcome::Done);
+    }), checkpoint_head->etag, Retry::once())));
 
     std::map<String, UInt64> intake;
     gc.setPhaseSink([&](const GcPhaseRecord & rec)
@@ -1684,6 +1766,8 @@ TEST(CASGCFrontierGate, CheckpointFrontierCrossesAnInheritedEpochSeal)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/checkpoint-inherited-seal-crossing@cas@"};
     const DB::UInt128 crossed_blob(0xfd);
@@ -1704,16 +1788,16 @@ TEST(CASGCFrontierGate, CheckpointFrontierCrossesAnInheritedEpochSeal)
 
     publishAt(*backend, layout, ns, RefTxnId{2, 1}, "crossed", 2, crossed_blob,
               /*birth=*/false, /*prev_epoch_seal=*/RefTxnId{1, 2});
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     const String checkpoint_key = layout.refCkptKey(life);
-    const HeadResult checkpoint_head = backend->head(checkpoint_key);
-    ASSERT_TRUE(checkpoint_head.exists);
-    ASSERT_EQ(backend->putOverwrite(checkpoint_key, encodeRefCkpt(RefCkpt{
+    const auto checkpoint_head = op.head(checkpoint_key, Retry::once());
+    ASSERT_TRUE(checkpoint_head.has_value());
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(checkpoint_key, encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{2, 1},
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = RefTxnId{1, 2},
-    }), checkpoint_head.token).outcome, PutOutcome::Done);
+    }), checkpoint_head->etag, Retry::once())));
 
     std::map<String, UInt64> intake;
     gc.setPhaseSink([&](const GcPhaseRecord & rec)
@@ -1773,6 +1857,8 @@ TEST(CASGCFrontierGate, AWronglyQuietNamespaceIsWalkedTheSameRound)
 {
     auto backend = std::make_shared<CountingHintHoleBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace quiet{"00/quiet@cas@"};
     const DB::UInt128 late_blob(0x77);
@@ -1792,16 +1878,16 @@ TEST(CASGCFrontierGate, AWronglyQuietNamespaceIsWalkedTheSameRound)
 
     /// A second publish lands, and the store hides the namespace from every LIST at the same moment.
     publish(*backend, layout, quiet, "ref_2", 2, late_blob);
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, quiet);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, quiet);
     const String checkpoint_key = layout.refCkptKey(life);
-    const HeadResult checkpoint_head = backend->head(checkpoint_key);
-    ASSERT_TRUE(checkpoint_head.exists);
-    ASSERT_EQ(backend->putOverwrite(checkpoint_key, encodeRefCkpt(RefCkpt{
+    const auto checkpoint_head = op.head(checkpoint_key, Retry::once());
+    ASSERT_TRUE(checkpoint_head.has_value());
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(checkpoint_key, encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 2},
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt,
-    }), checkpoint_head.token).outcome, PutOutcome::Done);
+    }), checkpoint_head->etag, Retry::once())));
     backend->hidePrefix(layout.namespaceStreamPrefix(fixture::fixtureLife(quiet)));
 
     runRegularRoundReclaiming(gc);
@@ -1820,6 +1906,8 @@ TEST(CASGCFrontierGate, CheckpointFrontierBoundsOrdinaryFoldBeforeDurableSuccess
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/checkpoint-bounds-fold@cas@"};
     const DB::UInt128 committed_blob(0xf1);
@@ -1855,7 +1943,7 @@ TEST(CASGCFrontierGate, CheckpointFrontierBoundsOrdinaryFoldBeforeDurableSuccess
     ASSERT_TRUE(report.acquired_lease);
     gc.setPhaseSink({});
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     EXPECT_EQ(sealedCursorOf(*backend, layout, ns), (RefTxnId{1, 1}));
     EXPECT_EQ(inDegreeOf(*backend, layout, beyond_frontier_blob), 0)
         << "a durable log above `_ckpt.committed_through` is not foldable history";
@@ -1876,6 +1964,8 @@ TEST(CASGCFrontierGate, ConsumedCheckpointFrontierProvesOrdinaryLifeWithoutSucce
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/checkpoint-complete-fold@cas@"};
 
@@ -1900,7 +1990,7 @@ TEST(CASGCFrontierGate, ConsumedCheckpointFrontierProvesOrdinaryLifeWithoutSucce
     ASSERT_TRUE(report.acquired_lease);
     gc.setPhaseSink({});
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     EXPECT_EQ(sealedCursorOf(*backend, layout, ns), (RefTxnId{1, 1}));
     EXPECT_EQ(backend->getCount(layout.refLogKey(life, RefTxnId{1, 2})), 0u)
         << "the checkpoint boundary proves the cut without a post-frontier 404";
@@ -1916,6 +2006,8 @@ TEST(CASGCFrontierGate, CheckpointFrontierProvesLifeWithHiddenDurableSuccessor)
 {
     auto backend = std::make_shared<CountingHintHoleBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/checkpoint-hidden-successor@cas@"};
     const DB::UInt128 beyond_frontier_blob(0xf4);
@@ -1938,7 +2030,7 @@ TEST(CASGCFrontierGate, CheckpointFrontierProvesLifeWithHiddenDurableSuccessor)
         .last_epoch_seal = std::nullopt,
     });
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     backend->hide(layout.refLogKey(life, RefTxnId{1, 2}));
 
     std::map<String, UInt64> intake;
@@ -1969,6 +2061,8 @@ TEST(CASGCFrontierGate, MissingCommittedCheckpointLogHoldsInsteadOfProvingTheFro
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/missing-committed-checkpoint-log@cas@"};
 
@@ -1982,11 +2076,11 @@ TEST(CASGCFrontierGate, MissingCommittedCheckpointLogHoldsInsteadOfProvingTheFro
         .last_epoch_seal = std::nullopt,
     });
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     const String missing_key = layout.refLogKey(life, RefTxnId{1, 2});
-    const HeadResult missing_head = backend->head(missing_key);
-    ASSERT_TRUE(missing_head.exists);
-    ASSERT_EQ(backend->deleteExact(missing_key, missing_head.token).kind, DeleteOutcome::Kind::Deleted);
+    const auto missing_head = op.head(missing_key, Retry::once());
+    ASSERT_TRUE(missing_head.has_value());
+    ASSERT_EQ(op.remove(missing_key, missing_head->etag, Retry::once()), Removal::Removed);
 
     std::map<String, UInt64> intake;
     Gc gc(store, kGc);
@@ -2011,6 +2105,8 @@ TEST(CASGCFrontierGate, HiddenCommittedCheckpointLogIsFoldedThroughTheAuthorityC
 {
     auto backend = std::make_shared<CountingHintHoleBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/hidden-committed-checkpoint-log@cas@"};
     const DB::UInt128 hidden_blob(0xf8);
@@ -2025,7 +2121,7 @@ TEST(CASGCFrontierGate, HiddenCommittedCheckpointLogIsFoldedThroughTheAuthorityC
         .last_epoch_seal = std::nullopt,
     });
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     backend->hide(layout.refLogKey(life, RefTxnId{1, 2}));
 
     std::map<String, UInt64> intake;
@@ -2080,6 +2176,8 @@ TEST(CASGCFrontierGate, EmptyCheckpointFrontierRejectsAnInheritedCursor)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/empty-checkpoint-after-cursor@cas@"};
 
@@ -2096,16 +2194,16 @@ TEST(CASGCFrontierGate, EmptyCheckpointFrontierRejectsAnInheritedCursor)
     ASSERT_TRUE(runRegularRoundReclaiming(gc).acquired_lease);
     ASSERT_EQ(sealedCursorOf(*backend, layout, ns), (RefTxnId{1, 1}));
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
     const String checkpoint_key = layout.refCkptKey(life);
-    const HeadResult checkpoint_head = backend->head(checkpoint_key);
-    ASSERT_TRUE(checkpoint_head.exists);
-    ASSERT_EQ(backend->putOverwrite(checkpoint_key, encodeRefCkpt(RefCkpt{
+    const auto checkpoint_head = op.head(checkpoint_key, Retry::once());
+    ASSERT_TRUE(checkpoint_head.has_value());
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(checkpoint_key, encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = std::nullopt,
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt,
-    }), checkpoint_head.token).outcome, PutOutcome::Done);
+    }), checkpoint_head->etag, Retry::once())));
 
     std::map<String, UInt64> intake;
     gc.setPhaseSink([&](const GcPhaseRecord & rec)
@@ -2128,6 +2226,8 @@ TEST(CASGCFrontierGate, CatalogLifeWithoutCheckpointDefersWithoutUsingListedFron
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/missing-checkpoint-fold@cas@"};
     const DB::UInt128 blob(0xc7);
@@ -2138,8 +2238,8 @@ TEST(CASGCFrontierGate, CatalogLifeWithoutCheckpointDefersWithoutUsingListedFron
     writeManifestRaw(*backend, layout, ns, manifest, {blobEntryFor("data.bin", blob)});
     appendRefLogSeed(*backend, layout, ns, publishCommittedOps("must_remain_unfolded", manifest));
 
-    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(*backend, layout, ns);
-    ASSERT_FALSE(readCkpt(*backend, layout, life).has_value());
+    const NamespaceLifeId life = *CasRefCatalog::lifeIfCataloged(op, layout, ns);
+    ASSERT_FALSE(readCkpt(op, layout, life).has_value());
 
     std::map<String, UInt64> intake;
     Gc gc(store, kGc);
@@ -2170,6 +2270,8 @@ TEST(CASGCFrontierGate, CatalogLifeWithoutCheckpointDefersWithoutUsingListedFron
 TEST(CASGCFrontierGate, AnExhaustedProbeBudgetSealsCursorsAndDeletesNothing)
 {
     auto backend = std::make_shared<CountingHintHoleBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     auto store = openPoolWithProbeBudget(backend, /*budget*/ 0);
     const Layout & layout = store->layout();
     const RootNamespace quiet{"00/quiet@cas@"};
@@ -2195,16 +2297,16 @@ TEST(CASGCFrontierGate, AnExhaustedProbeBudgetSealsCursorsAndDeletesNothing)
 
     EXPECT_GT(backend->deleteTotal(), 0u)
         << "the quiet life's checkpoint authority leaves unrelated deletion eligible";
-    EXPECT_FALSE(backend->head(blobKeyOf(layout, blob)).exists)
+    EXPECT_FALSE(op.head(blobKeyOf(layout, blob), Retry::once()).has_value())
         << "the busy life's removal remains reclaimable despite the quiet LIST omission";
     EXPECT_EQ(sealedCursorOf(*backend, layout, quiet), quiet_cursor)
         << "the unprobed namespace's cursor rides verbatim -- it is never dropped";
-    const NamespaceLifeId quiet_life = *CasRefCatalog::lifeIfCataloged(*backend, layout, quiet);
-    const auto quiet_checkpoint = readCkpt(*backend, layout, quiet_life);
+    const NamespaceLifeId quiet_life = *CasRefCatalog::lifeIfCataloged(op, layout, quiet);
+    const auto quiet_checkpoint = readCkpt(op, layout, quiet_life);
     ASSERT_TRUE(quiet_checkpoint.has_value());
     EXPECT_EQ(quiet_checkpoint->ckpt.committed_through, quiet_cursor)
         << "the quiet life's valid CTE is unaffected by LIST omission and a zero probe budget";
-    EXPECT_GT(decodeGcState(backend->get(layout.gcStateKey())->bytes).round, 1u)
+    EXPECT_GT(decodeGcState(op.read(layout.gcStateKey(), Retry::once())->bytes).round, 1u)
         << "the round still commits; only its destructive half is withheld";
 }
 
@@ -2217,6 +2319,8 @@ TEST(CASGCFrontierGate, ACommittedGapIsRedetectedAndSuppressesEveryRound)
 {
     auto backend = std::make_shared<CountingHintHoleBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace held{"00/held@cas@"};
     const RootNamespace busy{"00/busy@cas@"};
@@ -2257,8 +2361,8 @@ TEST(CASGCFrontierGate, ACommittedGapIsRedetectedAndSuppressesEveryRound)
     EXPECT_GT(first_intake["tables_held"], 0u);
     EXPECT_FALSE(first_round.anomalies.empty());
 
-    const NamespaceLifeId held_life = *CasRefCatalog::lifeIfCataloged(*backend, layout, held);
-    const auto held_checkpoint = readCkpt(*backend, layout, held_life);
+    const NamespaceLifeId held_life = *CasRefCatalog::lifeIfCataloged(op, layout, held);
+    const auto held_checkpoint = readCkpt(op, layout, held_life);
     ASSERT_TRUE(held_checkpoint.has_value());
     EXPECT_EQ(held_checkpoint->ckpt.committed_through, (RefTxnId{1, 4}));
 
@@ -2293,10 +2397,10 @@ TEST(CASGCFrontierGate, ACommittedGapIsRedetectedAndSuppressesEveryRound)
     EXPECT_EQ(backend->deleteTotal(), 0u)
         << "the re-detected committed gap suppresses each round's destructive work. "
            "Deleted:" << deletedKeysMessage(*backend);
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists);
+    EXPECT_TRUE(op.head(blobKeyOf(layout, blob), Retry::once()).has_value());
     EXPECT_EQ(sealedCursorOf(*backend, layout, held), (RefTxnId{1, 2}))
         << "the committed gap remains unresolved and the cursor cannot advance through it";
-    const auto final_checkpoint = readCkpt(*backend, layout, held_life);
+    const auto final_checkpoint = readCkpt(op, layout, held_life);
     ASSERT_TRUE(final_checkpoint.has_value());
     EXPECT_EQ(final_checkpoint->ckpt.committed_through, (RefTxnId{1, 4}));
 }
@@ -2326,7 +2430,8 @@ TEST(CASGCFrontierGate, ABlobCondemnedThisRoundIsNeverDeletedThisRound)
     backend->resetCounts();
     runRegularRoundReclaiming(gc);
 
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists)
+    OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value())
         << "the condemning round must not also delete";
     EXPECT_EQ(backend->deleteCount(blobKeyOf(layout, blob)), 0u)
         << "not merely still present -- the delete was never attempted";
@@ -2366,7 +2471,8 @@ TEST(CASGCFrontierGate, ALateEdgeSparesADeletePendingBlobAtTheDeleteSite)
     runRegularRoundReclaiming(gc);
     store->renewWatermarkOnce();
 
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists)
+    OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value())
         << "the delete-site in-degree re-read spares a blob a fresh edge re-referenced";
     EXPECT_GT(inDegreeOf(*backend, layout, blob), 0);
 }
@@ -2408,7 +2514,10 @@ TEST(CASGCFrontierGate, AResurrectedIncarnationSurvivesTheDelayedStaleTokenDelet
     runRegularRoundReclaiming(gc);            /// graduate: publishes delete_pending against THIS token
     store->renewWatermarkOnce();
 
-    const Token condemned_token = backend->head(key).token;
+    OperationForTest raw_op(*backend);
+    const auto condemned_head = (*raw_op).head(key, Retry::once());
+    ASSERT_TRUE(condemned_head.has_value());
+    const Etag condemned_token = condemned_head->etag;
     const auto condemned_meta = loadMetaForTest(*backend, layout, hash);
     ASSERT_TRUE(condemned_meta.has_value());
     ASSERT_EQ(condemned_meta->meta.state, MetaState::Condemned)
@@ -2426,16 +2535,19 @@ TEST(CASGCFrontierGate, AResurrectedIncarnationSurvivesTheDelayedStaleTokenDelet
     const PutBlobResult uploaded = build->putBlob(id, BlobSource::fromString(payload));
     EXPECT_EQ(uploaded.ref, id);
     build->promote(ns, "republished", build->buildId(), republished_manifest);
-    const Token fresh_token = backend->head(key).token;
+    const auto fresh_head = (*raw_op).head(key, Retry::once());
+    ASSERT_TRUE(fresh_head.has_value());
+    const Etag fresh_token = fresh_head->etag;
     ASSERT_NE(fresh_token, condemned_token) << "republication must displace the condemned incarnation";
 
     /// GC's delayed delete still names the OLD token. It cannot touch the new object.
     drive(store, gc, /*rounds*/ 2, UniversePolicy::Authoritative);
 
-    ASSERT_TRUE(backend->head(key).exists)
+    const auto surviving_head = (*raw_op).head(key, Retry::once());
+    ASSERT_TRUE(surviving_head.has_value())
         << "the resurrected incarnation survives the delete published against its predecessor";
-    EXPECT_EQ(backend->head(key).token, fresh_token) << "and it is still the writer's incarnation";
-    EXPECT_EQ(backend->deleteExact(key, condemned_token).kind, DeleteOutcome::Kind::TokenMismatch)
+    EXPECT_EQ(surviving_head->etag, fresh_token) << "and it is still the writer's incarnation";
+    EXPECT_EQ((*raw_op).remove(key, condemned_token, Retry::once()), Removal::Mismatch)
         << "the condemned token can never remove the fresh object (INV-NO-RETURN)";
 }
 
@@ -2474,7 +2586,8 @@ TEST(CASGCFrontierGate, ATokenlessRelinkMakesTheReceiverEdgeDurableBeforeTheSour
     dropRefTransition(*backend, layout, source, "part_1", source_ref);
     drive(store, gc, /*rounds*/ 4, UniversePolicy::Authoritative);
 
-    EXPECT_TRUE(backend->head(blobKeyOf(layout, blob)).exists)
+    OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).head(blobKeyOf(layout, blob), Retry::once()).has_value())
         << "the source released its edge only after the receiver's was durable, so nothing may collect it";
     EXPECT_EQ(inDegreeOf(*backend, layout, blob), 1)
         << "the receiver is the sole remaining owner";
@@ -2537,6 +2650,8 @@ TEST(CASGCFrontierGateCleanupRange, ASnapshotAtTheCheckpointSurvivesAndOnlyStric
 TEST(CASGCFrontierGateCleanupRange, CheckpointBaseValidatorRejectsMissingLogSnapshotAndSeal)
 {
     auto backend = std::make_shared<InMemoryBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const RefTxnId base{1, 1};
     const RefCkpt checkpoint{
@@ -2544,36 +2659,38 @@ TEST(CASGCFrontierGateCleanupRange, CheckpointBaseValidatorRejectsMissingLogSnap
         .committed_through = base,
         .checkpoint_snapshot_id = base,
         .last_epoch_seal = std::nullopt};
-    CasRefCatalog::initializeEmptyForNewPool(*backend, layout);
+    CasRefCatalog::initializeEmptyForNewPool(op, layout);
 
     {
         const RootNamespace ns{"00/cleanup-missing-base-log@cas@"};
         fixture::admitLive(*backend, layout, ns);
-        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(*backend, layout, ns).value();
+        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(op, layout, ns).value();
         writeRefSnapshotRaw(*backend, layout, minimalLiveSnapshot(ns.string(), base));
-        EXPECT_THROW((void)readCheckpointSnapshotBase(*backend, layout, life, checkpoint), DB::Exception);
+        EXPECT_THROW((void)readCheckpointSnapshotBase(op, layout, life, checkpoint), DB::Exception);
     }
     {
         const RootNamespace ns{"00/cleanup-missing-base-snapshot@cas@"};
         fixture::writeRefLogRaw(*backend, layout, RefLogTxn{
             .ns = ns.string(), .txn_id = base, .ops = {namespaceBirthOp()}, .prev_epoch_seal = std::nullopt});
-        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(*backend, layout, ns).value();
-        EXPECT_THROW((void)readCheckpointSnapshotBase(*backend, layout, life, checkpoint), DB::Exception);
+        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(op, layout, ns).value();
+        EXPECT_THROW((void)readCheckpointSnapshotBase(op, layout, life, checkpoint), DB::Exception);
     }
     {
         const RootNamespace ns{"00/cleanup-seal-is-not-base@cas@"};
         writeSealAt(*backend, layout, ns, base);
-        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(*backend, layout, ns).value();
+        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(op, layout, ns).value();
         writeRefSnapshotRaw(*backend, layout, minimalLiveSnapshot(ns.string(), base));
-        EXPECT_THROW((void)readCheckpointSnapshotBase(*backend, layout, life, checkpoint), DB::Exception);
+        EXPECT_THROW((void)readCheckpointSnapshotBase(op, layout, life, checkpoint), DB::Exception);
     }
 }
 
 TEST(CASGCFrontierGateCleanupRange, LaterEpochBaseWithoutItsContextualBacklinkCannotLicenseDeletion)
 {
     auto backend = std::make_shared<InMemoryBackend>();
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
-    CasRefCatalog::initializeEmptyForNewPool(*backend, layout);
+    CasRefCatalog::initializeEmptyForNewPool(op, layout);
     const RefTxnId seal_id{1, 2};
     const RefTxnId base_id{2, 1};
 
@@ -2586,12 +2703,12 @@ TEST(CASGCFrontierGateCleanupRange, LaterEpochBaseWithoutItsContextualBacklinkCa
         fixture::writeRefLogRaw(*backend, layout, RefLogTxn{
             .ns = ns.string(), .txn_id = base_id, .ops = {}, .prev_epoch_seal = backlink});
         writeRefSnapshotRaw(*backend, layout, minimalLiveSnapshot(ns.string(), base_id));
-        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(*backend, layout, ns).value();
+        const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(op, layout, ns).value();
 
         std::optional<RefTxnId> validated_base;
         try
         {
-            (void)readCheckpointSnapshotBase(*backend, layout, life, RefCkpt{
+            (void)readCheckpointSnapshotBase(op, layout, life, RefCkpt{
                 .life_epoch = 1,
                 .committed_through = base_id,
                 .checkpoint_snapshot_id = base_id,
@@ -2620,6 +2737,8 @@ TEST(CASGCFrontierGate, CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanito
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace removed{"00/removed@cas@"};
     const RefOp birth_op = namespaceBirthOp();
@@ -2629,8 +2748,8 @@ TEST(CASGCFrontierGate, CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanito
         .ns = removed.string(), .txn_id = RefTxnId{1, 1}, .ops = {birth_op}, .prev_epoch_seal = std::nullopt});
     fixture::writeRefLogRaw(*backend, layout, RefLogTxn{
         .ns = removed.string(), .txn_id = RefTxnId{1, 2}, .ops = {remove_op}, .prev_epoch_seal = std::nullopt});
-    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(*backend, layout, removed).value();
-    CasRefCatalog::casUpdate(*backend, layout, [&](const RefCatalog & current)
+    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(op, layout, removed).value();
+    CasRefCatalog::casUpdate(op, layout, [&](const RefCatalog & current)
     {
         RefCatalog next = current;
         const auto it = std::find_if(next.entries.begin(), next.entries.end(), [&](const CatalogEntry & entry)
@@ -2643,31 +2762,31 @@ TEST(CASGCFrontierGate, CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanito
         return next;
     });
     const String ckpt_key = layout.refCkptKey(life);
-    backend->putIfAbsent(ckpt_key, encodeRefCkpt(RefCkpt{
+    op.create(ckpt_key, encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 2},
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt,
-    }));
+    }), Retry::once());
 
     /// The removal evidence must arise from a replay-valid terminal lifecycle, rather than merely
     /// from a raw terminal record that the recovery state machine refuses.
     const RecoveredRefTable recovered = recoverRefTableDetailedAtCatalogCutForTest(
-        *backend, layout, CasRefCatalog::read(*backend, layout), removed);
+        *backend, layout, CasRefCatalog::read(op, layout), removed);
     EXPECT_EQ(recovered.state.getLifecycle(), RefLifecycle::Removed);
     EXPECT_EQ(recovered.state.getRemoveTxnId(), (RefTxnId{1, 2}));
 
     Gc gc(store, kGc);
     ASSERT_TRUE(runRegularRoundReclaiming(gc).acquired_lease);
 
-    const GcState st = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState st = decodeGcState(op.read(layout.gcStateKey(), Retry::once())->bytes);
     const CasFoldSeal seal = decodeFoldSeal(
-        backend->get(layout.foldSealKey(st.snap_generation, st.snap_attempt))->bytes);
+        op.read(layout.foldSealKey(st.snap_generation, st.snap_attempt), Retry::once())->bytes);
     const auto row_it = seal.ref_lives.find(life.incarnation);
     ASSERT_NE(row_it, seal.ref_lives.end());
     ASSERT_TRUE(row_it->second.cleanup_evidence.has_value());
     EXPECT_EQ(row_it->second.cleanup_evidence->remove_txn_id, (RefTxnId{1, 2}));
-    EXPECT_TRUE(backend->head(ckpt_key).exists);
+    EXPECT_TRUE(op.head(ckpt_key, Retry::once()).has_value());
     for (const String & key : backend->touchedKeys())
         EXPECT_EQ(key.find("/_cleanup/"), String::npos) << key;
 
@@ -2690,13 +2809,13 @@ TEST(CASGCFrontierGate, CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanito
     ASSERT_TRUE(runRegularRoundReclaiming(gc).acquired_lease);
     gc.setPhaseSink({});
 
-    EXPECT_TRUE(CasRefCatalog::read(*backend, layout).catalog.entries.empty());
-    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(*backend, layout, removed));
+    EXPECT_TRUE(CasRefCatalog::read(op, layout).catalog.entries.empty());
+    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(op, layout, removed));
     ASSERT_FALSE(janitor_metrics.empty()) << "the namespace_cleanup phase must have run this round";
     EXPECT_GE(janitor_metrics.at("janitor_deleted"), 1u)
         << "the janitor's OWN counter must show the delete -- now that the proved-empty gate has "
            "opened, not because some other site happened to remove the key";
-    EXPECT_FALSE(backend->head(ckpt_key).exists);
+    EXPECT_FALSE(op.head(ckpt_key, Retry::once()).has_value());
     EXPECT_EQ(backend->deleteCount(ckpt_key), 1);
 }
 
@@ -2707,6 +2826,8 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
 {
     auto backend = std::make_shared<PostFoldUnreadableTerminalBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace removed{"00/post-fold-unreadable@cas@"};
     const RootNamespace progressing{"00/post-fold-progress@cas@"};
@@ -2719,8 +2840,8 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
     fixture::writeRefLogRaw(*backend, layout, RefLogTxn{
         .ns = removed.string(), .txn_id = RefTxnId{1, 2}, .ops = {remove_op},
         .prev_epoch_seal = std::nullopt});
-    const NamespaceLifeId removed_life = CasRefCatalog::lifeIfCataloged(*backend, layout, removed).value();
-    CasRefCatalog::casUpdate(*backend, layout, [&](const RefCatalog & current)
+    const NamespaceLifeId removed_life = CasRefCatalog::lifeIfCataloged(op, layout, removed).value();
+    CasRefCatalog::casUpdate(op, layout, [&](const RefCatalog & current)
     {
         RefCatalog next = current;
         const auto it = std::find_if(next.entries.begin(), next.entries.end(), [&](const CatalogEntry & entry)
@@ -2733,12 +2854,12 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
         it->removal_started_round = 1;
         return next;
     });
-    ASSERT_EQ(backend->putIfAbsent(layout.refCkptKey(removed_life), encodeRefCkpt(RefCkpt{
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.refCkptKey(removed_life), encodeRefCkpt(RefCkpt{
         .life_epoch = 1,
         .committed_through = RefTxnId{1, 2},
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt,
-    })).outcome, PutOutcome::Done);
+    }), Retry::once())));
 
     const DB::UInt128 blob(0xfeed);
     const ManifestRef manifest = publish(*backend, layout, progressing, "victim", 1, blob);
@@ -2746,9 +2867,9 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
 
     Gc gc(store, kGc);
     ASSERT_TRUE(runRegularRoundReclaiming(gc).acquired_lease);
-    const GcState folded_state = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState folded_state = decodeGcState(op.read(layout.gcStateKey(), Retry::once())->bytes);
     const CasFoldSeal folded_seal = decodeFoldSeal(
-        backend->get(layout.foldSealKey(folded_state.snap_generation, folded_state.snap_attempt))->bytes);
+        op.read(layout.foldSealKey(folded_state.snap_generation, folded_state.snap_attempt), Retry::once())->bytes);
     const auto folded_row = folded_seal.ref_lives.find(removed_life.incarnation);
     ASSERT_NE(folded_row, folded_seal.ref_lives.end());
     ASSERT_TRUE(folded_row->second.cleanup_evidence.has_value());
@@ -2756,8 +2877,8 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
     dropRefTransition(*backend, layout, progressing, "victim", manifest);
     const String terminal_key = layout.refLogKey(removed_life, RefTxnId{1, 2});
     const String later_dead_residue = layout.refLogKey(removed_life, RefTxnId{1, 3});
-    ASSERT_EQ(backend->putIfAbsent(later_dead_residue, "dead residue after the folded terminal").outcome,
-        PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>(
+        op.create(later_dead_residue, "dead residue after the folded terminal", Retry::once())));
     backend->makeUnreadable(terminal_key);
 
     std::map<String, UInt64> namespace_cleanup;
@@ -2773,12 +2894,12 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
     gc.setPhaseSink({});
 
     ASSERT_TRUE(report.acquired_lease);
-    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(*backend, layout, removed))
+    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(op, layout, removed))
         << "post-fold physical cleanup cannot gate catalog removal";
-    EXPECT_TRUE(CasRefCatalog::lifeIfCataloged(*backend, layout, progressing));
+    EXPECT_TRUE(CasRefCatalog::lifeIfCataloged(op, layout, progressing));
     EXPECT_EQ(report.manifests_deleted, 1u)
         << "the janitor leak cannot promote itself into pool-wide destructive suppression";
-    EXPECT_FALSE(backend->head(layout.manifestKey(manifest_id)).exists);
+    EXPECT_FALSE(op.head(layout.manifestKey(manifest_id), Retry::once()).has_value());
     EXPECT_TRUE(backend->existsIgnoringFault(terminal_key));
     EXPECT_FALSE(backend->existsIgnoringFault(later_dead_residue))
         << "one unreadable key cannot stop the perpetual janitor from deciding the rest of its page";
@@ -2803,21 +2924,21 @@ TEST(CASGCFrontierGate, UnmatchedAdoptedParentLifeDoesNotSuppressAuthoritativeDe
     const ManifestId manifest_id{ns, mref};
 
     Gc gc(store, kGc);
+    OperationForTest raw_op(*backend);
     ASSERT_TRUE(runRegularRoundReclaiming(gc).acquired_lease);
-    ASSERT_TRUE(backend->head(layout.manifestKey(manifest_id)).exists);
+    ASSERT_TRUE((*raw_op).head(layout.manifestKey(manifest_id), Retry::once()).has_value());
 
-    const GcState before = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState before = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
     const String parent_seal_key = layout.foldSealKey(before.snap_generation, before.snap_attempt);
-    const auto parent_object = backend->get(parent_seal_key);
+    const auto parent_object = (*raw_op).read(parent_seal_key, Retry::once());
     ASSERT_TRUE(parent_object);
     CasFoldSeal parent = decodeFoldSeal(parent_object->bytes, before.snap_generation);
     const UInt128 unmatched_life = hexToU128("fedcba98765432100123456789abcdef");
     ASSERT_FALSE(parent.ref_lives.contains(unmatched_life));
     parent.ref_lives.emplace(unmatched_life, RefLifeFoldState{
-        .coverage = RefCoverage{.classification = 2, .last_folded_ref_id = RefTxnId{9, 9}}});
-    ASSERT_EQ(
-        backend->putOverwrite(parent_seal_key, encodeFoldSeal(parent), parent_object->token).outcome,
-        PutOutcome::Done);
+        .coverage = RefCoverage{.classification = CoverageClass::Folded, .last_folded_ref_id = RefTxnId{9, 9}}});
+    ASSERT_TRUE(std::holds_alternative<Committed>(
+        (*raw_op).replace(parent_seal_key, encodeFoldSeal(parent), parent_object->etag, Retry::once())));
 
     dropRefTransition(*backend, layout, ns, "victim", mref);
     const uint64_t events_before =
@@ -2830,12 +2951,12 @@ TEST(CASGCFrontierGate, UnmatchedAdoptedParentLifeDoesNotSuppressAuthoritativeDe
         1u);
     EXPECT_EQ(report.manifests_deleted, 1u)
         << "an unmatched adopted-parent row is observed and dropped, not promoted to pool-wide suppression";
-    EXPECT_FALSE(backend->head(layout.manifestKey(manifest_id)).exists)
+    EXPECT_FALSE((*raw_op).head(layout.manifestKey(manifest_id), Retry::once()).has_value())
         << "the valid manifest candidate must be physically deleted by the same authoritative round";
 
-    const GcState after = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState after = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
     const CasFoldSeal successor = decodeFoldSeal(
-        backend->get(layout.foldSealKey(after.snap_generation, after.snap_attempt))->bytes,
+        (*raw_op).read(layout.foldSealKey(after.snap_generation, after.snap_attempt), Retry::once())->bytes,
         after.snap_generation);
     EXPECT_FALSE(successor.ref_lives.contains(unmatched_life));
 }
@@ -2844,20 +2965,14 @@ TEST(CASCatalogLifecycleReconciler, EmptyCatalogReturnsAuthoritativeCompleteCut)
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    ASSERT_TRUE(CasRefCatalog::initializeEmptyForNewPool(*backend, layout).catalog.entries.empty());
+    ASSERT_TRUE(CasRefCatalog::initializeEmptyForNewPool(op, layout).catalog.entries.empty());
 
     CasFoldSeal parent;
-    CatalogLifecycleReconciler reconciler(
-        *backend,
-        layout,
-        parent,
-        /*admitted_generation=*/1,
-        [](uint64_t)
-        {
-            return CasRefCatalog::LeaderFenceStatus::Held;
-        });
-    const CatalogLifecycleReconcileResult result = reconciler.reconcile();
+    CatalogLifecycleReconciler reconciler(op, layout, parent);
+    const CatalogLifecycleReconcileResult result = reconciler.reconcile(noAuthorityRefresh);
 
     EXPECT_EQ(result.authority_status, AuthorityStatus::Authoritative);
     EXPECT_EQ(result.catalog_resolution, CatalogResolution::DrainComplete);
@@ -2871,25 +2986,19 @@ TEST(CASCatalogLifecycleReconciler, DeletesEligibleRowsFromReturnedResolutionCut
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     constexpr size_t deletes = 3;
-    seedCompletedRemovingBatch(*backend, store, kGc, deletes);
-    const auto parent_object = backend->get(layout.foldSealKey(1, 1));
+    seedCompletedRemovingBatch(op, store, kGc, deletes);
+    const auto parent_object = op.read(layout.foldSealKey(1, 1), Retry::once());
     ASSERT_TRUE(parent_object);
     const CasFoldSeal parent = decodeFoldSeal(parent_object->bytes);
     backend->clearJournal();
     backend->resetCounts();
 
-    CatalogLifecycleReconciler reconciler(
-        *backend,
-        layout,
-        parent,
-        /*admitted_generation=*/1,
-        [](uint64_t)
-        {
-            return CasRefCatalog::LeaderFenceStatus::Held;
-        });
-    const CatalogLifecycleReconcileResult result = reconciler.reconcile();
+    CatalogLifecycleReconciler reconciler(op, layout, parent);
+    const CatalogLifecycleReconcileResult result = reconciler.reconcile(noAuthorityRefresh);
 
     EXPECT_EQ(result.authority_status, AuthorityStatus::Authoritative);
     EXPECT_EQ(result.catalog_resolution, CatalogResolution::DrainComplete);
@@ -2906,33 +3015,34 @@ TEST(CASCatalogLifecycleReconciler, ReturnsRetiredLifeWhenAuthorityMovesAfterRes
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    const CompletedRemovingFixture fixture = seedCompletedRemoving(*backend, store, kGc);
-    const auto parent_object = backend->get(layout.foldSealKey(1, 1));
+    const CompletedRemovingFixture fixture = seedCompletedRemoving(op, store, kGc);
+    const auto parent_object = op.read(layout.foldSealKey(1, 1), Retry::once());
     ASSERT_TRUE(parent_object);
     const CasFoldSeal parent = decodeFoldSeal(parent_object->bytes);
-    size_t fence_checks = 0;
 
-    CatalogLifecycleReconciler reconciler(
-        *backend,
-        layout,
-        parent,
-        /*admitted_generation=*/1,
-        [&fence_checks](uint64_t)
-        {
-            ++fence_checks;
-            return fence_checks == 2
-                ? CasRefCatalog::LeaderFenceStatus::Moved
-                : CasRefCatalog::LeaderFenceStatus::Held;
-        });
-    const CatalogLifecycleReconcileResult result = reconciler.reconcile();
+    /// Admission is lost after the erase has been resolved: the second catalog read of the drain is
+    /// the resolution cut, so the row is already gone when the loop's next verdict finds no admission.
+    size_t catalog_reads = 0;
+    bool authority_held = true;
+    CasOperation fenced_op = requests.admit([&] { return authority_held; });
+    backend->afterReadOf(layout.refCatalogKey(), [&]
+    {
+        if (++catalog_reads == 2)
+            authority_held = false;
+    });
+
+    CatalogLifecycleReconciler reconciler(fenced_op, layout, parent);
+    const CatalogLifecycleReconcileResult result = reconciler.reconcile(noAuthorityRefresh);
 
     EXPECT_EQ(result.authority_status, AuthorityStatus::FencedOut);
     EXPECT_EQ(result.catalog_resolution, CatalogResolution::ExactRowAbsent);
     ASSERT_EQ(result.retired_lives.size(), 1);
     EXPECT_EQ(result.retired_lives.front(),
         NamespaceLifeId::fromCatalogEntry(fixture.ns, fixture.life_id));
-    EXPECT_EQ(result.deleted, 0);
+    EXPECT_EQ(result.deleted, 1);
     EXPECT_FALSE(result.final_catalog_cut);
 }
 
@@ -2940,33 +3050,33 @@ TEST(CASCatalogLifecycleReconciler, InitialFenceLossReportsEligibleRowStillPrese
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    const CompletedRemovingFixture fixture = seedCompletedRemoving(*backend, store, kGc);
-    const auto parent_object = backend->get(layout.foldSealKey(1, 1));
+    const CompletedRemovingFixture fixture = seedCompletedRemoving(op, store, kGc);
+    const auto parent_object = op.read(layout.foldSealKey(1, 1), Retry::once());
     ASSERT_TRUE(parent_object);
     const CasFoldSeal parent = decodeFoldSeal(parent_object->bytes);
     backend->resetCounts();
 
-    CatalogLifecycleReconciler reconciler(
-        *backend,
-        layout,
-        parent,
-        /*admitted_generation=*/1,
-        [](uint64_t)
-        {
-            return CasRefCatalog::LeaderFenceStatus::Moved;
-        });
-    const CatalogLifecycleReconcileResult result = reconciler.reconcile();
+    /// Admission is lost the moment the selection cut has been read, so the erase is never sent.
+    bool authority_held = true;
+    CasOperation fenced_op = requests.admit([&] { return authority_held; });
+    backend->afterReadOf(layout.refCatalogKey(), [&] { authority_held = false; });
+
+    CatalogLifecycleReconciler reconciler(fenced_op, layout, parent);
+    const CatalogLifecycleReconcileResult result = reconciler.reconcile(noAuthorityRefresh);
 
     EXPECT_EQ(result.authority_status, AuthorityStatus::FencedOut);
     EXPECT_EQ(result.catalog_resolution, CatalogResolution::ExactRowStillPresent);
     EXPECT_TRUE(result.retired_lives.empty());
     EXPECT_EQ(result.deleted, 0);
     EXPECT_FALSE(result.final_catalog_cut);
-    EXPECT_EQ(backend->getCount(layout.refCatalogKey()), 2)
-        << "the initial selection and mandatory erase-resolution cuts are the only catalog reads";
-    EXPECT_EQ(backend->casPutCount(layout.refCatalogKey()), 0);
-    EXPECT_EQ(CasRefCatalog::lifeIfCataloged(*backend, layout, fixture.ns),
+    EXPECT_EQ(backend->getCount(layout.refCatalogKey()), 1)
+        << "an operation whose admission is gone before the erase reports the selection cut it "
+           "already holds and reads nothing further";
+    EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), 0);
+    EXPECT_EQ(CasRefCatalog::lifeIfCataloged(op, layout, fixture.ns),
         NamespaceLifeId::fromCatalogEntry(fixture.ns, fixture.life_id));
 }
 
@@ -2974,127 +3084,148 @@ TEST(CASCatalogLifecycleReconciler, RetriesFromTheMandatoryConflictResolutionCut
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    seedCompletedRemoving(*backend, store, kGc);
-    const auto parent_object = backend->get(layout.foldSealKey(1, 1));
+    seedCompletedRemoving(op, store, kGc);
+    const auto parent_object = op.read(layout.foldSealKey(1, 1), Retry::once());
     ASSERT_TRUE(parent_object);
     const CasFoldSeal parent = decodeFoldSeal(parent_object->bytes);
     backend->clearJournal();
     backend->resetCounts();
     backend->conflictNextCatalogCas(layout.refCatalogKey());
 
-    CatalogLifecycleReconciler reconciler(
-        *backend,
-        layout,
-        parent,
-        /*admitted_generation=*/1,
-        [](uint64_t)
-        {
-            return CasRefCatalog::LeaderFenceStatus::Held;
-        });
-    const CatalogLifecycleReconcileResult result = reconciler.reconcile();
+    CatalogLifecycleReconciler reconciler(op, layout, parent);
+    const CatalogLifecycleReconcileResult result = reconciler.reconcile(noAuthorityRefresh);
 
     EXPECT_EQ(result.authority_status, AuthorityStatus::Authoritative);
     EXPECT_EQ(result.catalog_resolution, CatalogResolution::DrainComplete);
     EXPECT_EQ(result.deleted, 1);
     const std::vector<String> journal = backend->journalSnapshot();
     const String catalog_get = "get " + layout.refCatalogKey();
-    EXPECT_EQ(std::count(journal.begin(), journal.end(), catalog_get), 3)
-        << "the token-conflict retry must reuse its mandatory resolution cut";
+    EXPECT_EQ(std::count(journal.begin(), journal.end(), catalog_get), 4)
+        << "selection, the refused write's own resolve read, the mandatory resolution cut the retry "
+           "reuses, and the committed erase's resolution -- the catalog takes no cut of its own";
 }
 
-TEST(CASCatalogLifecycleReconciler, PropagatesAuthorityFailureBeforeEraseCas)
+/// THE DRAIN'S AUTHORITY, end to end. `CatalogLifecycleReconciler` and
+/// `deleteCompletedRemovingAtSnapshot` decide `FencedOut` from `CasOperation::admitted()`, and the GC
+/// plane's fence is open -- so the only thing that can make that verdict false in production is the
+/// `Liveness` the round hands its drain operation. Depose the leader in the window the round leaves
+/// between acquiring its lease and the pre-fold drain, and the drain must erase nothing. Without the
+/// predicate the verdict is a constant TRUE, the drain completes, and the completed-removal row is
+/// gone -- which is what this test catches.
+TEST(CASGCFrontierGate, ADeposedLeaderErasesNoCatalogRow)
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    seedCompletedRemoving(*backend, store, kGc);
-    const auto parent_object = backend->get(layout.foldSealKey(1, 1));
-    ASSERT_TRUE(parent_object);
-    const CasFoldSeal parent = decodeFoldSeal(parent_object->bytes);
-    size_t fence_checks = 0;
+    const CompletedRemovingFixture fixture = seedCompletedRemoving(op, store, kGc);
+    const uint64_t catalog_writes_before = backend->putOverwriteCount(layout.refCatalogKey());
 
-    CatalogLifecycleReconciler reconciler(
-        *backend,
-        layout,
-        parent,
-        /*admitted_generation=*/1,
-        [&fence_checks](uint64_t)
-        {
-            if (++fence_checks == 2)
-                throw std::runtime_error("injected reconciler authority failure before CAS");
-            return CasRefCatalog::LeaderFenceStatus::Held;
-        });
-    try
+    /// Another leader steals `gc/state` after this round's lease renewal and before its drain.
+    const auto depose = [&]
     {
-        (void)reconciler.reconcile();
-        FAIL() << "the authority exception must propagate";
-    }
-    catch (const std::runtime_error & e)
-    {
-        EXPECT_STREQ(e.what(), "injected reconciler authority failure before CAS");
-    }
+        const auto got = op.read(layout.gcStateKey(), Retry::once());
+        ASSERT_TRUE(got);
+        GcState stolen = decodeGcState(got->bytes);
+        stolen.lease.owner = hexToU128("00000000000000000000000000000099");
+        ++stolen.lease.seq;
+        ASSERT_TRUE(std::holds_alternative<Committed>(
+            op.replace(layout.gcStateKey(), encodeGcState(stolen), got->etag, Retry::once())));
+    };
+
+    Gc gc(store, kGc);
+    EXPECT_THROW(gc.runRegularRound(depose), DB::Exception)
+        << "a deposed leader must give up rather than drain the catalog";
+    EXPECT_TRUE(CasRefCatalog::lifeIfCataloged(op, layout, fixture.ns))
+        << "the completed-removal row survives a deposed leader's drain";
+    EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), catalog_writes_before)
+        << "and no catalog write was even attempted";
 }
 
-TEST(CASCatalogLifecycleReconciler, PropagatesAuthorityFailureAfterMandatoryResolution)
+/// THE SAME AUTHORITY, now DURING the drain. A drain erases one row per iteration, and what stops a
+/// leader deposed between two erases is the refresh the ERASE runs at the top of every attempt (the
+/// reconciler only forwards it): the first row goes, the second is never attempted, and the drain
+/// reports `FencedOut` from the cut it already holds. One reading taken before the drain would
+/// authorise both erases: the erase count and the surviving-row count below are what catch that,
+/// since an unrefreshed drain sends a second erase and empties the catalog under a lease this leader
+/// no longer owns.
+TEST(CASGCFrontierGate, ALeaderDeposedBetweenTwoErasesStopsAfterTheFirst)
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    const CompletedRemovingFixture fixture = seedCompletedRemoving(*backend, store, kGc);
-    const auto parent_object = backend->get(layout.foldSealKey(1, 1));
-    ASSERT_TRUE(parent_object);
-    const CasFoldSeal parent = decodeFoldSeal(parent_object->bytes);
-    size_t fence_checks = 0;
+    seedCompletedRemovingBatch(op, store, kGc, /*count=*/2);
+    const std::vector<RootNamespace> seeded{
+        RootNamespace{"00/drain-batch-0@cas@"}, RootNamespace{"00/drain-batch-1@cas@"}};
+    const uint64_t catalog_writes_before = backend->putOverwriteCount(layout.refCatalogKey());
 
-    CatalogLifecycleReconciler reconciler(
-        *backend,
-        layout,
-        parent,
-        /*admitted_generation=*/1,
-        [&fence_checks](uint64_t)
-        {
-            if (++fence_checks == 3)
-                throw std::runtime_error("injected reconciler authority failure after resolution");
-            return CasRefCatalog::LeaderFenceStatus::Held;
-        });
-    try
+    /// The hook runs after every catalog read, and the first read it sees with an erase already behind
+    /// it is the resolution read that closed erase one -- exactly the window between the two erases.
+    /// Nothing before the drain reads or writes the catalog, so no earlier read can trip this.
+    bool deposed = false;
+    backend->afterReadOf(layout.refCatalogKey(), [&]
     {
-        (void)reconciler.reconcile();
-        FAIL() << "the authority exception must propagate";
-    }
-    catch (const std::runtime_error & e)
-    {
-        EXPECT_STREQ(e.what(), "injected reconciler authority failure after resolution");
-        EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(*backend, layout, fixture.ns));
-    }
+        if (deposed || backend->putOverwriteCount(layout.refCatalogKey()) == catalog_writes_before)
+            return;
+        deposed = true;
+        const auto got = op.read(layout.gcStateKey(), Retry::once());
+        ASSERT_TRUE(got);
+        GcState stolen = decodeGcState(got->bytes);
+        stolen.lease.owner = hexToU128("00000000000000000000000000000099");
+        ++stolen.lease.seq;
+        EXPECT_TRUE(std::holds_alternative<Committed>(
+            op.replace(layout.gcStateKey(), encodeGcState(stolen), got->etag, Retry::once())));
+    });
+
+    Gc gc(store, kGc);
+    EXPECT_THROW(gc.runRegularRound(), DB::Exception)
+        << "a leader deposed inside its own drain must not finish the round";
+    EXPECT_TRUE(deposed) << "the round must have reached a catalog read after its first erase";
+    EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), catalog_writes_before + 1)
+        << "one erase reached the store; the second was refused before it was sent";
+    size_t still_cataloged = 0;
+    for (const RootNamespace & ns : seeded)
+        if (CasRefCatalog::lifeIfCataloged(op, layout, ns))
+            ++still_cataloged;
+    EXPECT_EQ(still_cataloged, 1u)
+        << "one row was erased before the deposition; the other survives it";
 }
 
 TEST(CASGCFrontierGate, HealthyRebuildUsesTheCatalogLifecycleReconciler)
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    const CompletedRemovingFixture fixture = seedCompletedRemoving(*backend, store, kGc);
-    const uint64_t catalog_cas_before = backend->casPutCount(layout.refCatalogKey());
+    const CompletedRemovingFixture fixture = seedCompletedRemoving(op, store, kGc);
+    const uint64_t catalog_cas_before = backend->putOverwriteCount(layout.refCatalogKey());
 
     Gc gc(store, kGc);
     const RebuildReport result = gc.rebuildBaseline(/*force=*/true);
 
     EXPECT_TRUE(result.performed);
-    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(*backend, layout, fixture.ns));
-    EXPECT_EQ(backend->casPutCount(layout.refCatalogKey()), catalog_cas_before + 1);
+    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(op, layout, fixture.ns));
+    EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), catalog_cas_before + 1);
 }
 
 TEST(CASGCFrontierGate, DamagedStateRebuildDoesNotDeleteCompletedRemovingRows)
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace ns{"00/damaged-rebuild-removing@cas@"};
-    CasRefCatalog::casAdmitEntry(*backend, layout, store->poolConfig().gc_shards, CatalogEntry{
+    CasRefCatalog::casAdmitEntry(op, layout, store->poolConfig().gc_shards, CatalogEntry{
         .ns = ns, .state = NsState::Live, .incarnation = UInt128{901}});
-    CasRefCatalog::casUpdate(*backend, layout, [](const RefCatalog & current)
+    CasRefCatalog::casUpdate(op, layout, [](const RefCatalog & current)
     {
         RefCatalog next = current;
         next.entries.front().state = NsState::Removing;
@@ -3107,26 +3238,28 @@ TEST(CASGCFrontierGate, DamagedStateRebuildDoesNotDeleteCompletedRemovingRows)
         .checkpoint_snapshot_id = std::nullopt,
         .last_epoch_seal = std::nullopt,
     });
-    const uint64_t catalog_cas_before = backend->casPutCount(layout.refCatalogKey());
+    const uint64_t catalog_cas_before = backend->putOverwriteCount(layout.refCatalogKey());
 
     Gc gc(store, kGc);
     const RebuildReport result = gc.rebuildBaseline(/*force=*/false);
 
     EXPECT_TRUE(result.performed);
-    EXPECT_TRUE(CasRefCatalog::lifeIfCataloged(*backend, layout, ns));
-    EXPECT_EQ(backend->casPutCount(layout.refCatalogKey()), catalog_cas_before);
+    EXPECT_TRUE(CasRefCatalog::lifeIfCataloged(op, layout, ns));
+    EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), catalog_cas_before);
 }
 
 TEST(CASGCFrontierGate, DeferredRoundDrainsCompletedRemovingBeforeReturning)
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/100);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const RootNamespace removed{"00/deferred-removed@cas@"};
     const UInt128 life_id{77};
-    CasRefCatalog::casAdmitEntry(*backend, layout, store->poolConfig().gc_shards, CatalogEntry{
+    CasRefCatalog::casAdmitEntry(op, layout, store->poolConfig().gc_shards, CatalogEntry{
         .ns = removed, .state = NsState::Live, .incarnation = life_id});
-    CasRefCatalog::casUpdate(*backend, layout, [&](const RefCatalog & current)
+    CasRefCatalog::casUpdate(op, layout, [&](const RefCatalog & current)
     {
         RefCatalog next = current;
         next.entries[0].state = NsState::Removing;
@@ -3137,31 +3270,31 @@ TEST(CASGCFrontierGate, DeferredRoundDrainsCompletedRemovingBeforeReturning)
     CasFoldSeal parent;
     parent.generation = 1;
     parent.ref_lives.emplace(life_id, RefLifeFoldState{
-        .coverage = RefCoverage{.classification = 2, .last_folded_ref_id = RefTxnId{1, 1}},
+        .coverage = RefCoverage{.classification = CoverageClass::Folded, .last_folded_ref_id = RefTxnId{1, 1}},
         .cleanup_evidence = RefCleanupEvidence{.remove_txn_id = RefTxnId{1, 1}}});
     for (uint64_t shard = 0; shard < store->poolConfig().gc_shards; ++shard)
         parent.condemned_summary.emplace(shard, CondemnedSummary{});
-    ASSERT_EQ(backend->putIfAbsent(layout.foldSealKey(1, 1), encodeFoldSeal(parent)).outcome, PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.foldSealKey(1, 1), encodeFoldSeal(parent), Retry::once())));
     GcState state;
     state.round = 1;
     state.gc_shards = store->poolConfig().gc_shards;
     state.snap_generation = 1;
     state.snap_attempt = 1;
     state.lease = GcLease{.owner = kGc, .seq = 1};
-    ASSERT_EQ(backend->putIfAbsent(layout.gcStateKey(), encodeGcState(state)).outcome, PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(layout.gcStateKey(), encodeGcState(state), Retry::once())));
 
     const String ckpt_key = layout.refCkptKey(NamespaceLifeId::fromCatalogEntry(removed, life_id));
-    ASSERT_EQ(backend->putIfAbsent(ckpt_key, "inert checkpoint debris").outcome, PutOutcome::Done);
-    const uint64_t catalog_cas_before = backend->casPutCount(layout.refCatalogKey());
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(ckpt_key, "inert checkpoint debris", Retry::once())));
+    const uint64_t catalog_cas_before = backend->putOverwriteCount(layout.refCatalogKey());
 
     Gc gc(store, kGc);
     const RoundReport report = runRegularRoundReclaiming(gc);
     ASSERT_TRUE(report.acquired_lease);
     EXPECT_TRUE(report.deferred);
-    EXPECT_TRUE(CasRefCatalog::read(*backend, layout).catalog.entries.empty());
-    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(*backend, layout, removed));
-    EXPECT_EQ(backend->casPutCount(layout.refCatalogKey()), catalog_cas_before + 1);
-    EXPECT_TRUE(backend->head(ckpt_key).exists);
+    EXPECT_TRUE(CasRefCatalog::read(op, layout).catalog.entries.empty());
+    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(op, layout, removed));
+    EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), catalog_cas_before + 1);
+    EXPECT_TRUE(op.head(ckpt_key, Retry::once()).has_value());
     EXPECT_EQ(backend->deleteCount(ckpt_key), 0);
 }
 
@@ -3169,9 +3302,11 @@ TEST(CASGCFrontierGate, StaleIssuedCatalogCasLosesAfterNewLeaderHelpsBeforeListi
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const UInt128 leader_b = hexToU128("00000000000000000000000000000002");
-    const CompletedRemovingFixture fixture = seedCompletedRemoving(*backend, store, kGc);
+    const CompletedRemovingFixture fixture = seedCompletedRemoving(op, store, kGc);
     backend->clearJournal();
     backend->blockNextCatalogCas(layout.refCatalogKey());
 
@@ -3223,7 +3358,7 @@ TEST(CASGCFrontierGate, StaleIssuedCatalogCasLosesAfterNewLeaderHelpsBeforeListi
     ASSERT_FALSE(leader_b_failure);
     ASSERT_TRUE(report_b.acquired_lease);
     ASSERT_FALSE(report_b.deferred);
-    ASSERT_TRUE(CasRefCatalog::read(*backend, layout).catalog.entries.empty());
+    ASSERT_TRUE(CasRefCatalog::read(op, layout).catalog.entries.empty());
 
     const size_t catalog_cas_end = findJournalAfter(before_a_release, "cas_end " + layout.refCatalogKey(), 0);
     ASSERT_LT(catalog_cas_end, before_a_release.size());
@@ -3236,7 +3371,7 @@ TEST(CASGCFrontierGate, StaleIssuedCatalogCasLosesAfterNewLeaderHelpsBeforeListi
     const size_t fresh_catalog_cut = findJournalAfter(
         before_a_release, "get " + layout.refCatalogKey(), stream_list + 1);
     ASSERT_LT(fresh_catalog_cut, before_a_release.size());
-    const GcState adopted = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState adopted = decodeGcState(op.read(layout.gcStateKey(), Retry::once())->bytes);
     const String successor_seal_key = layout.foldSealKey(adopted.snap_generation, adopted.snap_attempt);
     const size_t successor_seal_put = findJournalAfter(
         before_a_release, "put_end " + successor_seal_key, fresh_catalog_cut + 1);
@@ -3265,7 +3400,7 @@ TEST(CASGCFrontierGate, StaleIssuedCatalogCasLosesAfterNewLeaderHelpsBeforeListi
     EXPECT_LT(successor_seal_put, successor_adoption);
 
     ASSERT_TRUE(leader_a_failure);
-    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(*backend, layout, fixture.ns));
+    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(op, layout, fixture.ns));
     /// Same discrimination as `CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanitor`: leader_b's
     /// round both drops `fixture.ns`'s catalog row AND, because the resulting cut is genuinely,
     /// provably empty, opens the destructive gate -- so the namespace janitor reclaims the checkpoint
@@ -3275,7 +3410,7 @@ TEST(CASGCFrontierGate, StaleIssuedCatalogCasLosesAfterNewLeaderHelpsBeforeListi
     ASSERT_FALSE(janitor_metrics_b.empty()) << "the namespace_cleanup phase must have run this round";
     EXPECT_GE(janitor_metrics_b.at("janitor_deleted"), 1u)
         << "the janitor's OWN counter must show the delete, now that the proved-empty gate has opened";
-    EXPECT_FALSE(backend->get(fixture.checkpoint_key).has_value());
+    EXPECT_FALSE(op.read(fixture.checkpoint_key, Retry::once()).has_value());
     EXPECT_EQ(backend->deleteCount(fixture.checkpoint_key), 1);
 }
 
@@ -3283,8 +3418,10 @@ TEST(CASGCFrontierGate, LostCatalogCasResponseIsResolvedBeforeListing)
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
-    const CompletedRemovingFixture fixture = seedCompletedRemoving(*backend, store, kGc);
+    const CompletedRemovingFixture fixture = seedCompletedRemoving(op, store, kGc);
     backend->clearJournal();
     backend->loseNextCatalogCasResponse(layout.refCatalogKey());
 
@@ -3322,7 +3459,7 @@ TEST(CASGCFrontierGate, LostCatalogCasResponseIsResolvedBeforeListing)
     EXPECT_LT(conclusive_rescan, stream_list);
     EXPECT_LT(stream_list, fresh_catalog_cut);
 
-    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(*backend, layout, fixture.ns));
+    EXPECT_FALSE(CasRefCatalog::lifeIfCataloged(op, layout, fixture.ns));
     /// See the discrimination comment in `CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanitor`:
     /// attribute the delete to the janitor's own counter, never to end-state absence alone, and never
     /// assume survival -- both would be indistinguishable from a bug on this exact line (the old
@@ -3330,7 +3467,7 @@ TEST(CASGCFrontierGate, LostCatalogCasResponseIsResolvedBeforeListing)
     ASSERT_FALSE(janitor_metrics.empty()) << "the namespace_cleanup phase must have run this round";
     EXPECT_GE(janitor_metrics.at("janitor_deleted"), 1u)
         << "the janitor's OWN counter must show the delete, now that the proved-empty gate has opened";
-    EXPECT_FALSE(backend->get(fixture.checkpoint_key).has_value());
+    EXPECT_FALSE(op.read(fixture.checkpoint_key, Retry::once()).has_value());
     EXPECT_EQ(backend->deleteCount(fixture.checkpoint_key), 1);
 }
 
@@ -3341,9 +3478,11 @@ TEST_P(CASGCCompletedRemovalFenceRace, FencedLeaderStopsAfterWinnerRemovesOrRepl
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const UInt128 leader_b = hexToU128("00000000000000000000000000000002");
-    const CompletedRemovingFixture fixture = seedCompletedRemoving(*backend, store, kGc);
+    const CompletedRemovingFixture fixture = seedCompletedRemoving(op, store, kGc);
     const NamespaceLifeId predecessor_life
         = NamespaceLifeId::fromCatalogEntry(fixture.ns, fixture.life_id);
     ASSERT_TRUE(store->refTableRecoveredForTest(fixture.ns))
@@ -3370,7 +3509,7 @@ TEST_P(CASGCCompletedRemovalFenceRace, FencedLeaderStopsAfterWinnerRemovesOrRepl
     backend->waitForBlockedCatalogCas();
 
     transferGcLease(*backend, layout, leader_b);
-    const CasRefCatalog::Snapshot observed = CasRefCatalog::read(*backend, layout);
+    const CasRefCatalog::Snapshot observed = CasRefCatalog::read(op, layout);
     RefCatalog winner_catalog;
     if (GetParam() == CompetingCatalogOutcome::Replacement)
     {
@@ -3381,16 +3520,16 @@ TEST_P(CASGCCompletedRemovalFenceRace, FencedLeaderStopsAfterWinnerRemovesOrRepl
         /// Mirror production's publish-then-flip order: the successor life needs a readable `_ckpt`
         /// before its catalog row can read `Live`, or `chooseRecoveryGrounding` rejects it.
         const NamespaceLifeId successor_life = NamespaceLifeId::fromCatalogEntry(fixture.ns, UInt128{178});
-        backend->putIfAbsent(layout.refCkptKey(successor_life), encodeRefCkpt(RefCkpt{
+        op.create(layout.refCkptKey(successor_life), encodeRefCkpt(RefCkpt{
             .life_epoch = 1,
             .committed_through = std::nullopt,
             .checkpoint_snapshot_id = std::nullopt,
             .last_epoch_seal = std::nullopt,
-        }));
+        }), Retry::once());
     }
-    ASSERT_EQ(backend->casPut(
-        layout.refCatalogKey(), encodeRefCatalog(winner_catalog), observed.token).outcome,
-        CasOutcome::Committed);
+    ASSERT_TRUE(observed.etag);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(
+        layout.refCatalogKey(), encodeRefCatalog(winner_catalog), *observed.etag, Retry::once())));
 
     backend->clearJournal();
     const uint64_t plans_before  /// NOLINT(clang-analyzer-deadcode.DeadStores)
@@ -3444,9 +3583,11 @@ TEST(CASGCFrontierGate, CompletedRemovalDrainUsesNPlusOneCatalogReads)
 {
     auto backend = std::make_shared<DrainRaceBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     constexpr size_t deletes = 3;
-    seedCompletedRemovingBatch(*backend, store, kGc, deletes);
+    seedCompletedRemovingBatch(op, store, kGc, deletes);
     backend->clearJournal();
     backend->resetCounts();
 

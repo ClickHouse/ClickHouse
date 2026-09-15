@@ -117,11 +117,14 @@ TEST(CASGCDangle, SharedBlobSurvivesDropOfOneOfTwoLiveRefs)
 
     const FsckReport rep = runFsck(*s, /*detail=*/true);
 
+    DB::Cas::tests::OperationForTest op(*b);
+    const bool b_present = (*op).head(s->layout().blobKey(idOf("B")), DB::Cas::Retry::once()).has_value();
+
     /// THE DANGLE ASSERTION: GC must NEVER delete a blob a live ref references.
     EXPECT_EQ(rep.dangling, 0u)
         << "B140-dangle: GC deleted shared blob B still referenced by the live ref rb_cur "
         << "after " << rounds << " rounds (dangling=" << rep.dangling << ", reachable=" << rep.reachable
-        << ", B_present=" << b->head(s->layout().blobKey(idOf("B"))).exists << ").";
-    EXPECT_TRUE(b->head(s->layout().blobKey(idOf("B"))).exists)
+        << ", B_present=" << b_present << ").";
+    EXPECT_TRUE(b_present)
         << "shared blob B must remain present while rb_cur references it";
 }

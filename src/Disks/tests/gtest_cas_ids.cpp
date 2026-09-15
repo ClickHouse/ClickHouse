@@ -29,13 +29,8 @@ TEST(CASIds, HexU128RoundTrip)
     EXPECT_THROW(hexToU128("0123"), DB::Exception);        // wrong length
 }
 
-TEST(CASToken, Basics)
-{
-    Token a{"etag-1", TokenType::ETag};
-    Token b{"etag-1", TokenType::ETag};
-    Token c{"etag-2", TokenType::ETag};
-    EXPECT_EQ(a, b);
-    EXPECT_NE(a, c);
-    EXPECT_TRUE(Token{}.empty());
-    EXPECT_FALSE(a.empty());
-}
+/// `Token`'s free-standing equality/emptiness was deleted with the type itself: `Etag` has no public
+/// constructor (minted only by `CasRequests::mint`/`tryMint`) and no `empty()`, so this test's subject
+/// no longer exists to construct by hand. `Etag` equality and inequality are exercised by
+/// `CASInMemory.PutIfAbsentAndGet` and `CASInMemory.OverwriteIsTokenExactAndMintsFreshToken` in
+/// gtest_cas_backend.cpp, which compare an observed incarnation against the one a prior write returned.

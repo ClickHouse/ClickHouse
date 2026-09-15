@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPoolMetaFormat.h>
 #include <Common/Exception.h>
+#include <set>
+#include <string_view>
 
 namespace DB::ErrorCodes
 {
@@ -11,93 +12,52 @@ namespace DB::ErrorCodes
 
 using namespace DB::Cas;
 
-TEST(CASFormat, ChangePointsExistForEveryClass)
+/// Closed-set pin: the registry's complete set of object `type` strings. `allRegisteredFormatIds`
+/// is the registry's own enumeration accessor, so this walks the SAME set the codecs and the object
+/// header gate see -- a registered class with no test coverage here is a registered class this test
+/// cannot see either, which is the point: a 17th, 18th, ... entry the spec's closed set does not
+/// name would show up as a set-size mismatch instead of passing unnoticed.
+TEST(CASFormat, RegistryTypeStringsArePinnedClosedSet)
 {
-    /// Every class that existed from the start has a non-empty, gen-1 baseline.
-    for (auto id : {FormatId::Blob,
-                    FormatId::GcState,
-                    FormatId::PoolMeta, FormatId::Roster,
-                    FormatId::GcOutcomes,
-                    FormatId::PartManifest, FormatId::RunFile,
-                    FormatId::FoldSeal})
+    const std::set<std::string_view> expected{
+        "cas_blob", "cas_blob_meta", "cas_pool_meta", "cas_ref_log", "cas_ref_snap",
+        "cas_ref_ckpt", "cas_ref_catalog", "cas_gc_maintenance_state", "cas_part_manifest",
+        "cas_run", "cas_fold_seal", "cas_gc_state", "cas_gc_hb", "cas_gc_outcomes",
+        "cas_owner", "cas_epoch", "cas_mount_lease"};
+    ASSERT_EQ(expected.size(), 17u);
+
+    std::set<std::string_view> actual;
+    for (const auto id : allRegisteredFormatIds())
+        actual.insert(traitsFor(id).type);
+    EXPECT_EQ(actual, expected);
+
+    for (const auto & type : expected)
     {
-        auto cps = changePoints(id);
-        ASSERT_FALSE(cps.empty());
+        const FormatTraits * t = traitsForType(type);
+        ASSERT_NE(t, nullptr) << type;
+        EXPECT_EQ(t->type, type);
+    }
+}
+
+/// The generation history is reset to a flat `{1, 1}` baseline for every class: CAS is pre-release and
+/// carries no persisted data, so there is no compatibility cost to starting the count over. Pinned
+/// because the decision is invisible otherwise — nothing consults `changePoints` at decode time yet, so
+/// a wrong entry here would sit unnoticed until the day a per-class reader floor is wired and starts
+/// admitting objects it should refuse.
+TEST(CASFormat, EveryClassResetToTheBaselineGeneration)
+{
+    for (auto id : allRegisteredFormatIds())
+    {
+        const auto cps = changePoints(id);
+        ASSERT_EQ(cps.size(), 1u) << "FormatId " << static_cast<int>(id);
         EXPECT_EQ(cps.front().generation, 1u);
         EXPECT_EQ(cps.front().min_reader, 1u);
     }
-}
 
-/// A class BORN after generation 1 begins its history at its birth generation, not at 1. `RefCkpt`
-/// (spec INV-4) was introduced at generation 4: there is no such thing as a generation-1 `_ckpt`, and a
-/// `{1, 1}` baseline would assert that a generation-1 reader could read one. Its history then gained a
-/// three later breaking entries: generation 5 re-keyed it under `<ns>/<incarnation>/`, generation 6
-/// moved it to opaque life-owned state, and generation 9 added the exact committed frontier. Neither
-/// change touches the gen-1 baseline. Pinned because the decision is
-/// invisible otherwise — nothing consults `changePoints` at decode time yet, so a wrong entry here
-/// would sit unnoticed until the day a per-class reader floor is wired and starts admitting objects it
-/// should refuse.
-TEST(CASFormat, ChangePointsOfAClassBornAfterGenerationOneStartAtItsBirth)
-{
-    const auto cps = changePoints(FormatId::RefCkpt);
-    ASSERT_EQ(cps.size(), 4u);
-    EXPECT_EQ(cps.front().generation, kContiguousRefStreamsGeneration);
-    EXPECT_EQ(cps.front().min_reader, kContiguousRefStreamsGeneration);
-    EXPECT_GT(cps.front().generation, 1u) << "the point of this test is that it is NOT the gen-1 baseline";
-    EXPECT_EQ(cps[1].generation, kNamespaceLifeKeyedGeneration);
-    EXPECT_EQ(cps[1].min_reader, kNamespaceLifeKeyedGeneration);
-    EXPECT_EQ(cps[2].generation, kOpaqueNamespaceLifeLayoutGeneration);
-    EXPECT_EQ(cps[2].min_reader, kOpaqueNamespaceLifeLayoutGeneration);
-    EXPECT_EQ(cps.back().generation, kCommittedRefFrontierGeneration);
-    EXPECT_EQ(cps.back().min_reader, kCommittedRefFrontierGeneration);
-}
-
-TEST(CASFormat, PoolMetaTracksTheRecreateOnlyRecoveryFrontierGeneration)
-{
-    const auto cps = changePoints(FormatId::PoolMeta);
-    ASSERT_EQ(cps.size(), 4u);
-    EXPECT_EQ(cps.back().generation, kMountWriteAttemptIdGeneration);
-    EXPECT_EQ(cps.back().min_reader, kMountWriteAttemptIdGeneration);
-}
-
-TEST(CASFormat, MountAttemptIdentityIsARecreateOnlyGenerationTenChange)
-{
-    EXPECT_EQ(G_BUILD, 10u);
-    EXPECT_EQ(kMountWriteAttemptIdGeneration, 10u);
-
-    const auto mount_points = changePoints(FormatId::MountLease);
-    ASSERT_EQ(mount_points.back().generation, kMountWriteAttemptIdGeneration);
-    EXPECT_EQ(mount_points.back().min_reader, kMountWriteAttemptIdGeneration);
-
-    const auto pool_points = changePoints(FormatId::PoolMeta);
-    ASSERT_EQ(pool_points.back().generation, kMountWriteAttemptIdGeneration);
-    EXPECT_EQ(pool_points.back().min_reader, kMountWriteAttemptIdGeneration);
-}
-
-TEST(CASPoolMeta, GenerationNinePoolIsRejectedAtReaderFloor)
-{
-    PoolMeta meta;
-    meta.pool_id = UInt128{1};
-    meta.blob_header_len = 256;
-    meta.gc_shards = 1;
-    meta.min_reader_generation = 10;
-    meta.algos_used = {static_cast<uint8_t>(BlobHashAlgo::CityHash128)};
-    String encoded = encodePoolMeta(meta);
-    const String current = "\"v\":10";
-    const size_t version = encoded.find(current);
-    ASSERT_NE(version, String::npos);
-    encoded.replace(version, current.size(), "\"v\":9");
-
-    try
-    {
-        decodePoolMeta(encoded);
-        FAIL() << "expected UNKNOWN_FORMAT_VERSION";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION);
-        EXPECT_NE(e.message().find("generation-10 mount-attempt-identity"), String::npos);
-    }
+    const auto roster_cps = changePoints(FormatId::Roster);
+    ASSERT_EQ(roster_cps.size(), 1u);
+    EXPECT_EQ(roster_cps.front().generation, 1u);
+    EXPECT_EQ(roster_cps.front().min_reader, 1u);
 }
 
 TEST(CASFormat, CurrentVersionsAreGBuild)
@@ -123,4 +83,19 @@ TEST(CASFormat, CheckCompatibilityFailsClosedOnFuture)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION);
     }
+}
+
+/// The battery's goldens spell their header version as the literal 1 rather than asking production
+/// for it, so that a generation bump cannot move the expectation and the encoder output together.
+/// The cost of that is a golden set which goes stale silently if nobody notices the bump; this test
+/// is what notices. It fails FIRST and says what to do, so the failure that greets a generation bump
+/// is one explanatory test rather than every exact-encoding golden at once.
+TEST(CASFormat, HeaderVersionIsTheLiteralThisBatteryPins)
+{
+    EXPECT_EQ(currentCompatibilityVersion(), 1u)
+        << "The compatibility version has moved away from the literal 1 that "
+           "`currentFormatHeader` in cas_format_test_battery.h writes into every golden header. "
+           "That is a deliberate wire change: read the new bytes, agree to them, and update the "
+           "literal and the goldens together. Do NOT make the helper derive the version from "
+           "production again -- a golden that tracks the code it pins cannot fail.";
 }

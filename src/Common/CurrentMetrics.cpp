@@ -235,6 +235,8 @@
     M(CASPartFolderCacheEntries, "Entries retained by the CA part-folder view cache") \
     M(CASManifestDecodeCacheBytes, "Bytes retained by the CA manifest decode cache") \
     M(CASManifestDecodeCacheEntries, "Entries retained by the CA manifest decode cache") \
+    M(CASHotKeyCacheBytes, "Bytes retained by the CA hot-key lane's cache of last known objects") \
+    M(CASHotKeyCacheEntries, "Entries retained by the CA hot-key lane's cache of last known objects") \
     M(CASBlobUploadPoolThreads, "Number of threads in the CA blob upload thread pool.") \
     M(CASBlobUploadPoolThreadsActive, "Number of threads in the CA blob upload thread pool running a task.") \
     M(CASBlobUploadPoolThreadsScheduled, "Number of queued or active jobs in the CA blob upload thread pool.") \

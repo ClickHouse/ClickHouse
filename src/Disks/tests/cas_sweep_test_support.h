@@ -1,5 +1,5 @@
 #pragma once
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasOrphanManifestSweep.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <base/types.h>
@@ -22,10 +22,15 @@ inline ManifestSweepResult sweepManifestCursorPageForTest(
 {
     ManifestSweepResult result = planManifestCursorPage(
         store, cursor, list_budget, delete_budget, /*catalog_recovery_authoritative=*/true, work_budget);
+    CasOperation op = store.openRequests().admit();
     for (const ManifestSweepResult::Nomination & nomination : result.nominations)
     {
-        const DeleteOutcome outcome = store.backend().deleteExact(nomination.key, nomination.token);
-        if (classifyDeleteOutcome(outcome) == DeleteClass::Deleted)
+        /// A nomination records the incarnation it was planned against, so the delete re-observes the
+        /// key and refuses unless what is there now is still that one: a key a fresh owner has since
+        /// replaced must survive.
+        const std::optional<Meta> seen = op.head(nomination.key, Retry::standard());
+        if (seen && nomination.token.matches(seen->etag)
+            && op.remove(nomination.key, seen->etag, Retry::standard()) == Removal::Removed)
             ++result.deleted;
         else
             ++result.skipped;

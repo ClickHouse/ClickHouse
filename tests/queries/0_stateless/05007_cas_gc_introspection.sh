@@ -30,9 +30,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05007',
-    name = '05007_cas_gc_introspection',
-    path = '05007_cas_gc_introspection_pool/',
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05007',
+    name = '${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection',
+    path = '${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection_pool/',
     cas_gc_enabled = 1,
     cas_gc_interval_sec = 1),
     old_parts_lifetime = 1;
@@ -46,9 +46,9 @@ TRUNCATE TABLE t_cas_gc_introspection;
 
 # Run several synchronous rounds: the first rounds mark the retired candidates, later rounds delete
 # them once the durable watermark floor advances past the builds (the background renewer does this).
-${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '05007_cas_gc_introspection'" > /dev/null
-${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '05007_cas_gc_introspection'" > /dev/null
-${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '05007_cas_gc_introspection'" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection'" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection'" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection'" > /dev/null
 
 ${CLICKHOUSE_CLIENT} --multiline -q """
 SYSTEM FLUSH LOGS cas_gc_log;
@@ -59,14 +59,14 @@ SELECT
     countIf(event_type = 'Finish') > 0,
     countIf(trigger = 'Manual') > 0
 FROM system.cas_gc_log
-WHERE disk_name LIKE '%05007_cas_gc_introspection%';
+WHERE disk_name LIKE '%${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection%';
 
 -- A synchronous Manual Finish captured a non-empty per-round ProfileEvents delta (the round touches
 -- the object storage, so Cas*/Disk*/S3* counters are non-zero). The query thread is always attached,
 -- so capture is active for the Manual path.
 SELECT any(length(ProfileEvents)) > 0
 FROM system.cas_gc_log
-WHERE disk_name LIKE '%05007_cas_gc_introspection%'
+WHERE disk_name LIKE '%${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection%'
   AND event_type = 'Finish'
   AND trigger = 'Manual';
 
@@ -77,7 +77,7 @@ SELECT countDistinct(phase) >= 10,
        countIf(phase = 'fold_ref_group') > 0,
        countIf(phase = 'round_commit') > 0
 FROM system.cas_gc_log
-WHERE disk_name LIKE '%05007_cas_gc_introspection%'
+WHERE disk_name LIKE '%${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection%'
   AND event_type = 'Phase';
 
 -- The correlator: every row of the most recent round of this disk -- its Start, each Phase, and its
@@ -88,7 +88,7 @@ SELECT countIf(event_type = 'Start') = 1,
 FROM system.cas_gc_log
 WHERE round_id = (
     SELECT round_id FROM system.cas_gc_log
-    WHERE disk_name LIKE '%05007_cas_gc_introspection%' AND event_type = 'Finish'
+    WHERE disk_name LIKE '%${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection%' AND event_type = 'Finish'
     ORDER BY event_time_microseconds DESC LIMIT 1);
 
 -- A Phase row's \`ProfileEvents\` is that phase's own delta, not the whole round's: the phase that
@@ -98,7 +98,7 @@ WHERE round_id = (
 -- own delta is empty and this assertion would answer 0 there no matter how healthy the round was.
 SELECT max(length(ProfileEvents)) > 0
 FROM system.cas_gc_log
-WHERE disk_name LIKE '%05007_cas_gc_introspection%'
+WHERE disk_name LIKE '%${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection%'
   AND event_type = 'Phase' AND phase = 'defer_decision';
 
 -- The error path: a non-CA disk (the always-present local \`default\`) is rejected.
@@ -107,3 +107,9 @@ SYSTEM CAS GC RUN 'default'; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_cas_gc_introspection;
 SELECT 'ok';
 """
+
+# FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, which would
+# stream that expected warning to stderr and be flagged as a failure. Suppress it for the FORGET call only.
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
+    --query "SYSTEM CAS FORGET '${CLICKHOUSE_DATABASE}_05007_cas_gc_introspection'" || {
+    echo "FORGET failed"; exit 1; }

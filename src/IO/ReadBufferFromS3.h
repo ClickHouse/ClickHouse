@@ -91,6 +91,13 @@ public:
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
     ObjectMetadata getObjectMetadataFromTheLastRequest() const;
 
+    /// True when bytes already delivered to the consumer came from a response whose ETag turned out to
+    /// differ from a later, reissued response's ETag, i.e. the bytes this buffer produced may come from
+    /// more than one incarnation of the object. A response that never delivered a byte (e.g. the GET
+    /// succeeded but the body read failed before any data arrived) does not count: reissuing it and
+    /// getting a different ETag is an ordinary retry, not a coherence problem.
+    bool responseIdentityChanged() const { return response_identity_changed; }
+
     size_t getReadUntilPosition() const { return read_until_position; }
 
     std::string getStopReason() const { return stop_reason; }
@@ -110,6 +117,27 @@ private:
     size_t getObjectSizeFromS3() const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
+
+    /// Drops the identity baseline. Called when the next request is a reissue for a range the caller
+    /// explicitly repositioned to (seek, or a change of the read-until bound), as opposed to a retry of
+    /// the same range after a failure: the bytes already delivered before the reposition reached the
+    /// consumer as their own self-consistent range, so the next response is not compared against them.
+    void forgetResponseIdentityBaseline();
+
+    /// ETag of the last response that has delivered at least one byte to the consumer: the baseline a
+    /// newly-delivering response is checked against. A response that never delivers a byte (e.g. it
+    /// fails before the body starts) leaves this untouched, however many such empty attempts happen in
+    /// a row, so the baseline always reflects the last response that actually contributed bytes.
+    std::optional<String> last_delivering_response_etag;
+
+    /// ETag of the response `impl` currently represents, and whether that response has delivered a byte
+    /// yet. Both are set together in initialize(); nextImpl() flips `pending_response_bytes_delivered`
+    /// to true (and advances last_delivering_response_etag) the moment this response's first byte
+    /// reaches the consumer.
+    String pending_response_etag;
+    bool pending_response_bytes_delivered = false;
+
+    bool response_identity_changed = false;
 
     ReadSettings read_settings;
 

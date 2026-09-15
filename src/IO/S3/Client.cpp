@@ -199,6 +199,11 @@ bool SingleAttemptRetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Cl
     return false;
 }
 
+bool Client::usesSingleAttemptRetryStrategy() const
+{
+    return dynamic_cast<const SingleAttemptRetryStrategy *>(client_configuration.retryStrategy.get()) != nullptr;
+}
+
 namespace
 {
 
@@ -814,7 +819,12 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
 
-            tryLogCurrentException(log, fmt::format("Network error on S3 request, attempt {} of {}", attempt_no, max_attempts));
+            /// A client with the single-attempt strategy is owned by an outer retry loop that resolves
+            /// the outcome and reissues; its one failed attempt is not terminal, so it is not an error.
+            if (usesSingleAttemptRetryStrategy())
+                LOG_DEBUG(log, "Network error on S3 request, attempt {} of {}: {}", attempt_no, max_attempts, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            else
+                tryLogCurrentException(log, fmt::format("Network error on S3 request, attempt {} of {}", attempt_no, max_attempts));
 
             outcome = Aws::Client::AWSError<Aws::Client::CoreErrors>(
                 Aws::Client::CoreErrors::NETWORK_CONNECTION,

@@ -64,6 +64,14 @@ Two consequences for planning:
   Each prefix is a fully independent pool (its own refs, leases, and `GC`), so rounds stay short
   regardless of the total fleet size.
 
+:::tip
+For replicated tables on `CAS`, enable
+[`execute_merges_on_single_replica_time_threshold`](/operations/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold).
+This lets one replica perform each merge while the others wait for and fetch the resulting part,
+avoiding redundant merge work across replicas. Set the threshold higher than the usual merge
+duration for your workload.
+:::
+
 ## Status {#status}
 
 `CAS` is **experimental**. It ships in Altinity Antalya builds. Experimental means the on-disk

@@ -25,8 +25,8 @@
 
 /// Task 10 (rev.7 spec §5): `SYSTEM CAS FORGET` — the operator force-Vanish. FORGET drives a
 /// content-addressed pool to `Vanished(forgotten)` with the fence-first protocol: (1) publish terminal
-/// intent, (2) trip the local fence, (3+4) stop the GC scheduler, (5) join keeper/remount, drain, retire
-/// the keeper WITHOUT an unearned clean farewell, (6) publish `Vanished(forgotten)` with the [D5] message
+/// intent, (2) trip the local fence, (3+4) stop the GC scheduler, (5) join renewer/remount, drain, retire
+/// the renewer WITHOUT an unearned clean farewell, (6) publish `Vanished(forgotten)` with the [D5] message
 /// carrying the decommission timestamp. These tests exercise the Pool-level protocol body (`Pool::forgetDisk`)
 /// and the end-to-end verb through a real `ContentAddressedMetadataStorage` (the six-class gate wired to the
 /// new state). Harness patterns follow gtest_cas_lifecycle_condition.cpp and gtest_cas_operation_gate.cpp.
@@ -56,10 +56,11 @@ const String kForgetReason =
 /// gtest_cas_lifecycle_condition.cpp — used to drive a live pool into `IdentityLost`.
 void deleteKeyExact(DB::Cas::Backend & backend, const String & key)
 {
-    const auto got = backend.get(key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(key, DB::Cas::Retry::once());
     ASSERT_TRUE(got.has_value()) << "expected '" << key << "' to exist before deletion";
     if (got)
-        backend.deleteExact(key, got->token);
+        (*op).remove(key, got->etag, DB::Cas::Retry::once());
 }
 
 /// GC's fence-out applied directly to the mount lease (preserve the body, set `gc_fenced`, bump `seq`) —
@@ -67,44 +68,51 @@ void deleteKeyExact(DB::Cas::Backend & backend, const String & key)
 /// lease-expiry wait), reaching `armMountFence`. Mirrors gtest_cas_lifecycle_condition.cpp's helper.
 void fenceOutMount(DB::Cas::Backend & backend, const String & mount_key)
 {
-    const auto got = backend.get(mount_key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(mount_key, DB::Cas::Retry::once());
     ASSERT_TRUE(got.has_value());
     DB::Cas::MountLease m = DB::Cas::decodeMountLease(got->bytes);
     m.gc_fenced = true;
     m.seq += 1;
-    ASSERT_EQ(backend.putOverwrite(mount_key, DB::Cas::encodeMountLease(m), got->token).outcome,
-              DB::Cas::PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(
+        (*op).replace(mount_key, DB::Cas::encodeMountLease(m), got->etag, DB::Cas::Retry::once())));
 }
 
-/// A Backend decorator whose head/get/list throw an untyped transport error while `fail` is armed — so a
-/// self-remount attempt verdicts `StayTransient` (fast, no lease-expiry wait) and the remount loop keeps
-/// spinning. Starts DISARMED so `Pool::open` succeeds. Mirrors gtest_cas_lifecycle_condition.cpp's decorator.
+/// A Backend decorator whose reads, heads and lists throw an untyped transport error while `fail` is
+/// armed — so a self-remount attempt verdicts `StayTransient` (fast, no lease-expiry wait) and the remount
+/// loop keeps spinning. Starts DISARMED so `Pool::open` succeeds. Mirrors
+/// gtest_cas_lifecycle_condition.cpp's decorator.
 class ToggleableTransportFaultBackend final : public DB::Cas::InMemoryBackend
 {
 public:
-    using Backend::get;
-    using Backend::getStream;
-    using Backend::putIfAbsent;
-    using Backend::putOverwrite;
-    using Backend::casPut;
+    /// Unhide the LEGACY convenience overloads that the primitive overrides below would otherwise hide.
+    using Backend::head;
+    using Backend::list;
 
-    DB::Cas::HeadResult head(const String & key) override
+    /// The faults sit on the TRANSPORT PRIMITIVES, because that is where every caller reaches the store:
+    /// the lifecycle gate probes `_pool_meta` through `probeSentinelRaw`, which speaks only these. A
+    /// legacy caller still reaches the fault, through the forwarder, so arming it here covers both
+    /// surfaces rather than only one.
+    std::optional<RawMeta> head(const String & key, DB::Cas::TransportAccess & access) override
     {
         if (fail.load())
-            throw std::runtime_error("injected fault: transport error");
-        return InMemoryBackend::head(key);
+            throw Poco::TimeoutException("injected fault: transport error");
+        return InMemoryBackend::head(key, access);
     }
-    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
         if (fail.load())
-            throw std::runtime_error("injected fault: transport error");
-        return InMemoryBackend::get(key, range);
+            throw Poco::TimeoutException("injected fault: transport error");
+        return InMemoryBackend::read(key, access);
     }
-    DB::Cas::ListPage list(const String & prefix, const String & cursor, size_t limit) override
+
+    DB::Cas::Backend::RawListPage list(const String & prefix, const String & cursor, size_t limit,
+                                       DB::Cas::TransportAccess & access) override
     {
         if (fail.load())
-            throw std::runtime_error("injected fault: transport error");
-        return InMemoryBackend::list(prefix, cursor, limit);
+            throw Poco::TimeoutException("injected fault: transport error");
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 
     std::atomic<bool> fail{false};
@@ -306,7 +314,7 @@ TEST(CASForget, ForgetOnIdentityLostPoolVanishesForgotten)
 }
 
 /// (a'') The clean-farewell is EARNED, never unconditional: on a drained pool FORGET stamps the mount lease
-/// with the terminated sentinel (`min_active == UINT64_MAX`) so a same-server restart reclaims immediately,
+/// with the terminated sentinel (`min_active_build_sequence == UINT64_MAX`) so a same-server restart reclaims immediately,
 /// but with an UNSETTLED (wedged) ref lane it must NOT — the lease is left to expire by observation.
 TEST(CASForget, ForgetCleanFarewellGatedOnDrain)
 {
@@ -318,14 +326,15 @@ TEST(CASForget, ForgetCleanFarewellGatedOnDrain)
         auto backend = std::make_shared<DB::Cas::InMemoryBackend>();
         auto store = DB::Cas::tests::openPoolForTest(backend);
         const String mount_key = store->layout().mountKey(kSrid);
-        ASSERT_NE(decodeMountLease(backend->get(mount_key)->bytes).min_active, kTerminated);   /// baseline
+        DB::Cas::tests::OperationForTest op(*backend);
+        ASSERT_NE(decodeMountLease((*op).read(mount_key, DB::Cas::Retry::once())->bytes).min_active_build_sequence, kTerminated);   /// baseline
 
         store->forgetDisk([] {}, kForgetReason);
         ASSERT_EQ(store->lifecycle(), PoolLifecycle::VanishedForgotten);
 
-        const auto got = backend->get(mount_key);
+        const auto got = (*op).read(mount_key, DB::Cas::Retry::once());
         ASSERT_TRUE(got.has_value());
-        EXPECT_EQ(decodeMountLease(got->bytes).min_active, kTerminated)
+        EXPECT_EQ(decodeMountLease(got->bytes).min_active_build_sequence, kTerminated)
             << "a drained FORGET earns the clean-release farewell";
     }
 
@@ -342,9 +351,10 @@ TEST(CASForget, ForgetCleanFarewellGatedOnDrain)
         store->forgetDisk([] {}, kForgetReason);
         ASSERT_EQ(store->lifecycle(), PoolLifecycle::VanishedForgotten);
 
-        const auto got = backend->get(mount_key);
+        DB::Cas::tests::OperationForTest op(*backend);
+        const auto got = (*op).read(mount_key, DB::Cas::Retry::once());
         ASSERT_TRUE(got.has_value()) << "the lease object must still be present (expiry by observation)";
-        EXPECT_NE(decodeMountLease(got->bytes).min_active, kTerminated)
+        EXPECT_NE(decodeMountLease(got->bytes).min_active_build_sequence, kTerminated)
             << "an unearned clean farewell must NOT be written when the ref lanes did not drain";
     }
 }
@@ -431,12 +441,13 @@ TEST(CASForget, ForgetIntentBlocksNaturalReplacedPromotion)
     /// Make the identity gate verdict `Replaced`: overwrite `_pool_meta` with a FOREIGN pool_id (present,
     /// mismatched identity) — exactly gtest_cas_lifecycle_condition.cpp scenario (b).
     const String meta_key = store->layout().poolMetaKey();
-    const auto got = backend->get(meta_key);
+    DB::Cas::tests::OperationForTest op(*backend);
+    const auto got = (*op).read(meta_key, DB::Cas::Retry::once());
     ASSERT_TRUE(got.has_value());
     DB::Cas::PoolMeta foreign = DB::Cas::decodePoolMeta(got->bytes);
     foreign.pool_id = foreign.pool_id + DB::UInt128(1);
-    ASSERT_EQ(backend->putOverwrite(meta_key, DB::Cas::encodePoolMeta(foreign), got->token).outcome,
-              DB::Cas::PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(
+        (*op).replace(meta_key, DB::Cas::encodePoolMeta(foreign), got->etag, DB::Cas::Retry::once())));
 
     /// The in-flight gate (run from the GC-stop callback) reaches the `Replaced` verdict but must BAIL on the
     /// already-published intent rather than settle `Vanished(replaced)`.

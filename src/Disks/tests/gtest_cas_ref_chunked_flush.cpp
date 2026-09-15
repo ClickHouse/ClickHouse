@@ -2,6 +2,8 @@
 
 #include "config.h"
 
+#include <base/defines.h>
+
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.h>
@@ -36,6 +38,7 @@ namespace DB::ErrorCodes
 extern const int LIMIT_EXCEEDED;
 extern const int CORRUPTED_DATA;
 extern const int NETWORK_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 namespace ProfileEvents
@@ -51,9 +54,8 @@ extern const Event CASRefSnapshotPublishDispatched;
 /// single item whose own op count, or whose one op's encoded size, exceeds its cap fails ALONE; a
 /// neighbor co-batched into the same flush still commits. `ref_txn_max_ops` is checked exactly (the
 /// `build_ops` result's size), and the per-op cap is checked by encoding exactly one op at a time --
-/// no accumulation, matching the admission machinery this replaces. T9 (removal-class detection by
-/// op inspection) and T10 (chunked flush across a whole-batch op-count overflow) extend this file;
-/// this task adds only the per-item / per-op isolation tests and the canonical round-trip leg of
+/// no accumulation, matching the admission machinery. The per-item / per-op isolation tests and
+/// the canonical round-trip leg cover
 /// test 12 (the maximum legally-admissible normal-class transaction).
 ///
 /// The suite name is prefixed `RefWriter` so it is covered by the `RefWriter*` unit-test gate filter.
@@ -97,7 +99,7 @@ PoolPtr openPool(const BackendPtr & backend)
 /// production birth mints a random incarnation and those computed keys land nowhere real.
 void publishEmptyPart(const PoolPtr & s, const RootNamespace & ns, const String & ref)
 {
-    DB::Cas::tests::casAdmitRecoverableEntry(s->backend(), s->layout(), ns, s->liveWriterEpoch());
+    DB::Cas::tests::casAdmitRecoverableEntry(*s->poolBackendPtr(), s->layout(), ns, s->liveWriterEpoch());
     PartWriteInfo info;
     info.intended_namespace = ns;
     info.intended_ref = ns.string() + "/" + ref;
@@ -113,6 +115,12 @@ struct Caller
 {
     std::thread t;
     std::future<std::exception_ptr> fut;
+
+    /// A fatal `ASSERT_*` between launch and the explicit `t.join()` below returns from `TestBody` with
+    /// `t` still joinable; `std::thread::~thread` on a joinable thread calls `std::terminate`, aborting
+    /// the whole binary and discarding every later test. This destructor is the backstop: on every
+    /// success path the explicit join already ran and left nothing for it to do.
+    ~Caller() { if (t.joinable()) t.join(); }
 };
 
 Caller launchAppend(const PoolPtr & store, const RootNamespace & ns, MutationScope scope,
@@ -246,6 +254,9 @@ TEST(CASRefWriterChunkedFlush, OversizedItemFailsAlone)
     auto sync = std::make_shared<CaseSync>();
     armPreCarveBlock(store, ns, sync, 2);
 
+    /// `fillerOps` returns default `RefOp{}` of kind `NamespaceBirth`, which names no ref, so the
+    /// item's scope name is never compared against anything and the scope check (step 3) would pass
+    /// this item even with the op-count cap removed -- the cap is what's under test here, not the scope.
     Caller oversized = launchAppend(store, ns, MutationScope::ref("oversized"),
         [](const RefTableState &) -> std::vector<RefOp> { return fillerOps(ref_txn_max_ops + 1); });
     waitEntered(sync);
@@ -283,7 +294,7 @@ TEST(CASRefWriterChunkedFlush, OversizedOpFailsItsItemAlone)
     auto sync = std::make_shared<CaseSync>();
     armPreCarveBlock(store, ns, sync, 2);
 
-    Caller oversized = launchAppend(store, ns, MutationScope::ref("oversized_op"),
+    Caller oversized = launchAppend(store, ns, MutationScope::ref(oversized_op.ref_name),
         [oversized_op](const RefTableState &) -> std::vector<RefOp> { return {oversized_op}; });
     waitEntered(sync);
     Caller neighbor = launchDrop(store, ns, "neighbor");
@@ -302,6 +313,49 @@ TEST(CASRefWriterChunkedFlush, OversizedOpFailsItsItemAlone)
     EXPECT_TRUE(neighbor_err == nullptr) << "the co-batched neighbor must commit despite the oversized op";
     EXPECT_FALSE(store->resolveRef(ns, "neighbor").has_value()) << "neighbor's drop must have committed";
 }
+
+/// Per-item isolation of the `MutationScope` validation (`CasRefLedger.cpp`'s `flushRefBatch` step 3):
+/// a mis-scoped item co-batched with an innocent neighbor must fail ALONE, and the neighbor's mutation
+/// must COMMIT -- not merely avoid throwing -- exactly the batch-isolation shape
+/// `OversizedOpFailsItsItemAlone` proves for the step-1 admission caps. Release-arm only: in a debug or
+/// sanitizer build the mis-scoped item's `LOGICAL_ERROR` aborts the whole process, taking the co-batched
+/// neighbor down with it before either assertion can run.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+TEST(CASRefWriterChunkedFlush, MisScopedItemFailsAloneNeighborCommits)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    auto store = openPool(backend);
+    const RootNamespace ns{"srv1/chunked_misscoped"};
+    publishEmptyPart(store, ns, "neighbor");
+    ASSERT_TRUE(store->resolveRef(ns, "neighbor").has_value());
+
+    RefOp add;
+    add.kind = RefOpKind::OwnerTransition;
+    add.new_binding = RefOwnerBinding{RefOwnerKind::Precommit, "y", ManifestRef{900000004, 1, 1}};
+
+    auto sync = std::make_shared<CaseSync>();
+    armPreCarveBlock(store, ns, sync, 2);
+
+    Caller misscoped = launchAppend(store, ns, MutationScope::ref("x"),
+        [add](const RefTableState &) -> std::vector<RefOp> { return {add}; });
+    waitEntered(sync);
+    Caller neighbor = launchDrop(store, ns, "neighbor");
+    waitPendingAtLeast(store, ns, 2);
+    sync->cv.notify_all();
+
+    ASSERT_EQ(misscoped.fut.wait_for(std::chrono::seconds(10)), std::future_status::ready) << "mis-scoped item must not hang";
+    ASSERT_EQ(neighbor.fut.wait_for(std::chrono::seconds(10)), std::future_status::ready) << "neighbor must not hang";
+    const std::exception_ptr misscoped_err = misscoped.fut.get();
+    const std::exception_ptr neighbor_err = neighbor.fut.get();
+    misscoped.t.join();
+    neighbor.t.join();
+    store->setRefPreCarveHookForTest(nullptr);
+
+    expectFailedWithCode(misscoped_err, DB::ErrorCodes::LOGICAL_ERROR, "mis-scoped item");
+    EXPECT_TRUE(neighbor_err == nullptr) << "the co-batched neighbor must commit despite the mis-scoped item";
+    EXPECT_FALSE(store->resolveRef(ns, "neighbor").has_value()) << "neighbor's drop must have committed";
+}
+#endif
 
 /// Test 12, canonical round-trip leg: the maximum legally-admissible normal-class transaction under
 /// the new counts-only caps -- `ref_txn_max_ops` ops, each padded to exactly `ref_op_max_bytes` --
@@ -383,7 +437,9 @@ TEST(CASRefWriterChunkedFlush, DropNamespaceOverOpCapSucceeds)
         .checkpoint_snapshot_id = RefTxnId{epoch, 1},
         .last_epoch_seal = std::nullopt,
     });
-    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(*backend, layout, ns).value();
+    CasRequests catalog_requests(backend, Fence::open());
+    CasOperation catalog_op = catalog_requests.admit();
+    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(catalog_op, layout, ns).value();
     backend->resetCounts();
     ASSERT_EQ(store->listRefs(ns).size(), kTotalRefs);
     EXPECT_EQ(backend->getCount(layout.refLogKey(life, RefTxnId{epoch, 1})), 1u);
@@ -392,7 +448,7 @@ TEST(CASRefWriterChunkedFlush, DropNamespaceOverOpCapSucceeds)
     DropNamespaceStats stats;
     EXPECT_NO_THROW(stats = store->dropNamespace(ns));
     EXPECT_EQ(stats.committed_refs, kTotalRefs);
-    EXPECT_EQ(CasRefCatalog::read(*backend, layout).catalog.entries.front().state, NsState::Removing);
+    EXPECT_EQ(CasRefCatalog::read(catalog_op, layout).catalog.entries.front().state, NsState::Removing);
 }
 
 /// Test 11, second leg: `WholeShard` scope ALONE is not the removal-class discriminator -- the
@@ -450,22 +506,22 @@ PoolPtr openPoolWith(const BackendPtr & backend, PoolConfig cfg)
     return Pool::open(backend, cfg);
 }
 
-/// `num_pairs` add-then-remove precommit op pairs (2 * `num_pairs` ops total) for distinct refs
-/// (`prefix` + zero-padded index) each naming a distinct valid manifest. Every pair adds a precommit
-/// binding and immediately removes it, so the LIVE state (the `precommits` set, the committed COW map,
-/// the owned-manifest index) stays ~empty throughout the whole transaction -- keeping the per-op
-/// `admits` preview and the sanitizer-only body-counter assert O(1), so validating a maximal chunk of
-/// thousands of ops stays O(ops), not O(ops^2). It is the OP COUNT (not the resident state) that drives
-/// the chunk split under test; each op is tiny (well under `ref_op_max_bytes`), so the whole run is
-/// admissible on a `Live` namespace. The durable transaction still carries every op verbatim, so a
-/// chunk's ops can be compared against the exact expected vector.
-std::vector<RefOp> addRemovePrecommitPairs(const String & prefix, size_t num_pairs, uint64_t manifest_epoch)
+/// `num_pairs` add-then-remove precommit op pairs (2 * `num_pairs` ops total) on ONE ref, each pair
+/// naming a distinct valid manifest, so an item scoped `MutationScope::ref(ref)` names exactly the ref
+/// its ops mutate (the flush validates that). Every pair adds a precommit binding and immediately
+/// removes it, so the LIVE state (the `precommits` set, the committed COW map, the owned-manifest
+/// index) stays ~empty throughout the whole transaction -- keeping the per-op `admits` preview and the
+/// sanitizer-only body-counter assert O(1), so validating a maximal chunk of thousands of ops stays
+/// O(ops), not O(ops^2). It is the OP COUNT (not the resident state) that drives the chunk split under
+/// test; each op is tiny (well under `ref_op_max_bytes`), so the whole run is admissible on a `Live`
+/// namespace. The durable transaction still carries every op verbatim, so a chunk's ops can be compared
+/// against the exact expected vector.
+std::vector<RefOp> addRemovePrecommitPairs(const String & ref, size_t num_pairs, uint64_t manifest_epoch)
 {
     std::vector<RefOp> ops;
     ops.reserve(num_pairs * 2);
     for (size_t i = 0; i < num_pairs; ++i)
     {
-        const String ref = prefix + paddedRefName(i);
         const ManifestRef manifest{manifest_epoch, i + 1, 1};
         RefOp add;
         add.kind = RefOpKind::OwnerTransition;
@@ -484,11 +540,12 @@ std::vector<RefOp> addRemovePrecommitPairs(const String & prefix, size_t num_pai
 /// breaks the inventory. Reads the backend directly (no Pool cache).
 std::vector<RefLogTxn> listLogTxns(DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const RootNamespace & ns)
 {
+    DB::Cas::tests::OperationForTest operation(backend);
     std::vector<RefTxnId> ids;
     String cursor;
     for (;;)
     {
-        const ListPage page = backend.list(layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000);
+        const ListPage page = (*operation).list(layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000, Retry::standard());
         for (const ListedKey & lk : page.keys)
         {
             const auto parsed = layout.parseRefObjectKey(lk.key);
@@ -504,7 +561,7 @@ std::vector<RefLogTxn> listLogTxns(DB::Cas::Backend & backend, const DB::Cas::La
     std::vector<RefLogTxn> txns;
     for (const RefTxnId & id : ids)
     {
-        const auto got = backend.get(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), id));
+        const auto got = (*operation).read(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), id), Retry::standard());
         if (!got)
             continue;
         try
@@ -532,6 +589,10 @@ struct AppendCaller
 {
     std::thread t;
     std::future<AppendResult> fut;
+
+    /// Same hazard as `Caller` above (see its destructor comment): a fatal `ASSERT_*` before the
+    /// explicit join leaves `t` joinable, and a joinable thread's destructor calls `std::terminate`.
+    ~AppendCaller() { if (t.joinable()) t.join(); }
 };
 
 AppendCaller launchAppendOps(const PoolPtr & store, const RootNamespace & ns, MutationScope scope,
@@ -578,9 +639,9 @@ TEST(CASRefWriterChunkedFlush, ChunkedFlushCommitsPerChunk)
 
     /// 2000 ops per item (1000 add/remove pairs) -> 6000 > ref_txn_max_ops (5000): chunk 1 =
     /// {item_a,item_b} (4000), chunk 2 = {item_c} (2000).
-    const std::vector<RefOp> ops1 = addRemovePrecommitPairs("aaa_", 1000, 900000001);
-    const std::vector<RefOp> ops2 = addRemovePrecommitPairs("bbb_", 1000, 900000002);
-    const std::vector<RefOp> ops3 = addRemovePrecommitPairs("ccc_", 1000, 900000003);
+    const std::vector<RefOp> ops1 = addRemovePrecommitPairs("item_a", 1000, 900000001);
+    const std::vector<RefOp> ops2 = addRemovePrecommitPairs("item_b", 1000, 900000002);
+    const std::vector<RefOp> ops3 = addRemovePrecommitPairs("item_c", 1000, 900000003);
     auto c1 = std::make_shared<std::atomic<int>>(0);
     auto c2 = std::make_shared<std::atomic<int>>(0);
     auto c3 = std::make_shared<std::atomic<int>>(0);
@@ -664,28 +725,119 @@ namespace
 /// (the leader's own item), chunk 2 = {item_b}. `mode` faults ONLY chunk 2's `_log/` PUT (skip chunk 1).
 /// In every variant chunk 1 commits and the leader's own call returns chunk 1's real id, while chunk 2's
 /// caller fails. Returns the two callers' results plus chunk 1's id for the per-variant assertions.
+/// The engine reissues an unresolved write until its OWN retry window closes, and that window is
+/// measured on a clock the engine reads. Both seams here share one counter -- the sleep the engine
+/// performs is what advances the clock -- so a fault that stays armed ends the call at its deadline
+/// with no real time passing. Installed on the whole pool, because the ref-lane write, its settling
+/// read and the recovery retry loop all pace through the same seam. The pool owns the closures and the
+/// closures own the clock, so it outlives everything that can still read it.
+class VirtualRetryClock
+{
+public:
+    static std::shared_ptr<VirtualRetryClock> installOn(const PoolPtr & store)
+    {
+        auto clock = std::make_shared<VirtualRetryClock>();
+        store->setCasRequestNowFnForTest([clock] { return clock->nowMs(); });
+        store->setCasRetrySleepForTest([clock](uint64_t ms) { clock->advance(ms); });
+        return clock;
+    }
+
+    uint64_t nowMs() const
+    {
+        std::lock_guard lock(mutex);
+        return now_ms;
+    }
+    size_t pauseCount() const
+    {
+        std::lock_guard lock(mutex);
+        return pauses;
+    }
+    uint64_t longestPause() const
+    {
+        std::lock_guard lock(mutex);
+        return longest_pause;
+    }
+
+    void advance(uint64_t ms)
+    {
+        std::lock_guard lock(mutex);
+        /// Plus one millisecond, because full jitter can draw a ZERO pause: a clock that does not move
+        /// would leave the loop reissuing for ever against a fault that never clears.
+        now_ms += ms + 1;
+        ++pauses;
+        longest_pause = std::max(longest_pause, ms);
+    }
+
+private:
+    mutable std::mutex mutex;
+    uint64_t now_ms = 0;
+    size_t pauses = 0;
+    uint64_t longest_pause = 0;
+};
+
+/// `ChunkFaultBackend` COUNTS its faults, and a count can no longer make one conclusive: the write
+/// engine settles every ambiguity by an exact read and then REISSUES, so a fault that runs out
+/// mid-call is answered by the next attempt instead of by the call's own deadline. This keeps it armed
+/// until the latch is cleared, on both legs -- the write's, and the lost read `Mode::LandedThenLost`
+/// arms, which the read engine would otherwise simply reissue past.
+class LatchedChunkFaultBackend : public ChunkFaultBackend
+{
+public:
+    bool latched = false;
+
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        if (latched && !fail_read_once_key.empty() && key == fail_read_once_key)
+            throw Poco::TimeoutException("LatchedChunkFaultBackend: the lost read stays lost");
+        return ChunkFaultBackend::read(key, access);
+    }
+
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
+    {
+        if (latched && mode != Mode::None && fault_skip == 0 && !expected_value && !fault_substr.empty()
+            && key.find(fault_substr) != String::npos)
+            fault_count = 1;
+        return ChunkFaultBackend::write(key, bytes, expected_value, access);
+    }
+
+    void disarm()
+    {
+        latched = false;
+        mode = Mode::None;
+        fault_count = 0;
+        fault_skip = 0;
+        fail_read_once_key.clear();
+    }
+};
+
 struct ChunkFailureOutcome
 {
     AppendResult leader;     /// item_a, chunk 1
     AppendResult follower;   /// item_b, chunk 2
     RefTxnId chunk1_id{};
-    std::shared_ptr<ChunkFaultBackend> backend;
+    std::shared_ptr<LatchedChunkFaultBackend> backend;
     PoolPtr store;
+    std::shared_ptr<VirtualRetryClock> clock;
 };
 
 ChunkFailureOutcome runChunkFailureCase(const String & ns_suffix, ChunkFaultBackend::Mode mode)
 {
-    auto backend = std::make_shared<ChunkFaultBackend>();
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
     PoolConfig cfg;
-    /// Single-attempt budget: one ambiguous PUT is a conclusive Unresolved (wedge) / DefiniteFailure,
-    /// with no inter-attempt sleep to serve.
+    /// The budget bounds the mount lease's own admission arithmetic and nothing else -- a write's
+    /// attempt count is the `Retry` policy's. What makes the injected fault conclusive is that it
+    /// stays armed for the whole call while the injected clock carries the call to its own deadline.
     CasRequestBudget budget;
-    budget.max_attempts = 1;
     budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;   /// strictly above attempt_timeout_ms: equality is a wall-clock race (validateCasRequestBudget)
     budget.lease_safety_margin_ms = 100;
     cfg.cas_request_budget = budget;
+    /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the budget
+    /// field alone; pair the two so the mount lease's admission arithmetic sees what the budget claims.
+    backend->setAttemptTimeoutMs(budget.attempt_timeout_ms);
     auto store = openPoolWith(backend, cfg);
+    auto clock = VirtualRetryClock::installOn(store);
     const DB::Cas::Layout & layout = store->layout();
     const RootNamespace ns{String("srv1/") + ns_suffix};
     publishEmptyPart(store, ns, "seed");
@@ -696,14 +848,15 @@ ChunkFailureOutcome runChunkFailureCase(const String & ns_suffix, ChunkFaultBack
     backend->mode = mode;
     backend->fault_skip = 1;
     backend->fault_count = 1;
+    backend->latched = true;
 
     auto sync = std::make_shared<CaseSync>();
     armPreCarveBlock(store, ns, sync, 2);
     /// 3000 ops per item (1500 add/remove pairs) -> 6000 > ref_txn_max_ops: chunk 1 = {item_a},
     /// chunk 2 = {item_b}.
-    AppendCaller a = launchAppendOps(store, ns, MutationScope::ref("item_a"), addRemovePrecommitPairs("aaa_", 1500, 900000001), nullptr);
+    AppendCaller a = launchAppendOps(store, ns, MutationScope::ref("item_a"), addRemovePrecommitPairs("item_a", 1500, 900000001), nullptr);
     waitEntered(sync);
-    AppendCaller b = launchAppendOps(store, ns, MutationScope::ref("item_b"), addRemovePrecommitPairs("bbb_", 1500, 900000002), nullptr);
+    AppendCaller b = launchAppendOps(store, ns, MutationScope::ref("item_b"), addRemovePrecommitPairs("item_b", 1500, 900000002), nullptr);
     waitPendingAtLeast(store, ns, 2);
     sync->cv.notify_all();
 
@@ -714,19 +867,23 @@ ChunkFailureOutcome runChunkFailureCase(const String & ns_suffix, ChunkFaultBack
     out.follower = b.fut.get();
     a.t.join();
     b.t.join();
+    /// Disarmed before anything else touches the store: a topped-up count would fault the pool's own
+    /// teardown writes too.
+    backend->disarm();
     store->setRefPreCarveHookForTest(nullptr);
     out.chunk1_id = out.leader.id;
     out.backend = backend;
     out.store = store;
+    out.clock = clock;
     return out;
 }
 
 }
 
-/// Test 9 (chunk-failure variant a -- definite failure): chunk 2's PUT is conclusively rejected
-/// (`CasWriteOutcome::DefiniteFailure`). Chunk 1's caller (the leader's own item) observes SUCCESS with
-/// chunk 1's real id; chunk 2's caller fails; the lane does NOT wedge (a definite rejection is a safe
-/// gap, not an uncertain PUT).
+/// Test 9 (chunk-failure variant a -- definite failure): chunk 2's create is conclusively rejected by
+/// the store. Chunk 1's caller (the leader's own item) observes SUCCESS with chunk 1's real id; chunk
+/// 2's caller fails; the lane does NOT wedge (a proven refusal is a safe gap, not an uncertain
+/// write).
 TEST(CASRefWriterChunkedFlush, ChunkFailureDefinite)
 {
 #if !USE_AWS_S3
@@ -755,6 +912,11 @@ TEST(CASRefWriterChunkedFlush, ChunkFailureWedge)
     ChunkFailureOutcome out = runChunkFailureCase("chunk_fail_wedge", ChunkFaultBackend::Mode::Unresolved);
     ASSERT_TRUE(out.leader.err == nullptr) << "chunk-1 caller must observe success even though chunk 2 wedged";
     ASSERT_TRUE(out.follower.err != nullptr) << "chunk-2 caller must observe the append failure";
+    /// The give-up was chunk 2's OWN retry window: the fault outlasted several reissues, and every one
+    /// of them paced through the injected sleep rather than a real one.
+    EXPECT_GT(out.clock->pauseCount(), 1u);
+    EXPECT_LE(out.clock->longestPause(), 5000u) << "each pause is the engine's own capped full jitter";
+    EXPECT_GE(out.clock->nowMs(), 60000u);
 
     EXPECT_TRUE(out.store->refLaneWedgedForTest(ns)) << "chunk 2's unresolved PUT must wedge the lane";
     RefTxnId chunk2_id = out.chunk1_id;
@@ -824,9 +986,9 @@ TEST(CASRefWriterChunkedFlush, LeaderOwnItemCommittedBeforeThrow)
     auto sync = std::make_shared<CaseSync>();
     armPreCarveBlock(store, ns, sync, 2);
     /// 3000 ops per item (1500 add/remove pairs) -> chunk 1 = {item_a}, boundary throw before chunk 2.
-    AppendCaller a = launchAppendOps(store, ns, MutationScope::ref("item_a"), addRemovePrecommitPairs("aaa_", 1500, 900000001), c1);
+    AppendCaller a = launchAppendOps(store, ns, MutationScope::ref("item_a"), addRemovePrecommitPairs("item_a", 1500, 900000001), c1);
     waitEntered(sync);
-    AppendCaller b = launchAppendOps(store, ns, MutationScope::ref("item_b"), addRemovePrecommitPairs("bbb_", 1500, 900000002), c2);
+    AppendCaller b = launchAppendOps(store, ns, MutationScope::ref("item_b"), addRemovePrecommitPairs("item_b", 1500, 900000002), c2);
     waitPendingAtLeast(store, ns, 2);
     sync->cv.notify_all();
 
@@ -849,7 +1011,7 @@ TEST(CASRefWriterChunkedFlush, LeaderOwnItemCommittedBeforeThrow)
         if (txn.txn_id == ra.id)
             chunk1_txn = txn;
     ASSERT_TRUE(chunk1_txn.has_value()) << "chunk 1 must be durable";
-    EXPECT_EQ(chunk1_txn->ops, addRemovePrecommitPairs("aaa_", 1500, 900000001));
+    EXPECT_EQ(chunk1_txn->ops, addRemovePrecommitPairs("item_a", 1500, 900000001));
     /// item_a's build_ops ran once (chunk 1); item_b's ran once (before the boundary throw preempted its
     /// validation) and is NOT re-invoked -- the at-most-once contract holds through the failed tenure.
     EXPECT_EQ(c1->load(), 1);
@@ -870,26 +1032,71 @@ TEST(CASRefWriterChunkedFlush, SnapshotPublisherLatchedAcrossChunks)
     auto store = openPoolWith(backend, cfg);
     const DB::Cas::Layout & layout = store->layout();
     const RootNamespace ns{"srv1/chunk_snapshot_coalesce"};
-    publishEmptyPart(store, ns, "seed");
+    /// NOT `publishEmptyPart`: that helper makes `precommitAdd` (which folds an implicit
+    /// `namespace_birth` and the add into ONE transaction, since the namespace is not yet `Live`) and
+    /// `promote` two separate, back-to-back `appendRefOps` calls. `precommitAdd`'s own post-commit
+    /// trigger (`maybeScheduleSnapshotPublish` at the end of `commitRefChunk`) dispatches a background
+    /// publisher for what it just committed; with `snapshot_log_count_threshold` at 0 (every single
+    /// commit is eligible -- never reachable through a normal, 256-count threshold) that publisher can
+    /// still be in flight when `promote`, moments later, becomes lane leader for its OWN write and
+    /// moves the lane to `Writing` -- a real, reachable race between that capture and this transition.
+    /// A lost race backs the publisher off, and this pool's frozen `boot_ms_fn` (see `openPool`'s
+    /// comment) never advances past that deadline, so the backoff never clears on its own, poisoning
+    /// every later dispatch on `ns` for the rest of the test, including chunk 1's. Draining
+    /// (`waitForSnapshotPublishSettleForTest`) between the two commits removes the in-flight publisher
+    /// `promote` would otherwise race, and driving one explicitly
+    /// (`tryPublishSnapshotAndAdvanceCheckpointOnce`, the direct synchronous seam built for exactly this
+    /// -- "public so tests can drive one attempt deterministically without depending on the background
+    /// dispatch's timing") covers anything a dispatch was never even admitted for.
+    DB::Cas::tests::casAdmitRecoverableEntry(*store->poolBackendPtr(), store->layout(), ns, store->liveWriterEpoch());
+    PartWriteInfo seed_info;
+    seed_info.intended_namespace = ns;
+    seed_info.intended_ref = ns.string() + "/seed";
+    auto seed_build = store->beginPartWrite(seed_info);
+    const ManifestId seed_manifest_id = seed_build->stageManifest({});
+    seed_build->precommitAdd(ns, "seed", seed_manifest_id);
+    store->waitForSnapshotPublishSettleForTest(ns);
+    store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns);
+    seed_build->promote(ns, "seed", seed_build->buildId(), seed_manifest_id);
     store->waitForSnapshotPublishSettleForTest(ns);   /// drain the seed's publish chain -> tail == 0
+    store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns);
 
     /// Latch the FIRST `_snap/` PUT (chunk 1's publisher) at its conditional PUT -- i.e. AFTER it has
     /// captured chunk 1's prefix under state_mutex.
     backend->armBlock(layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_snap/");
-    /// Gate the leader at the chunk boundary until that publisher has parked on its PUT, so its captured
-    /// candidate is EXACTLY chunk 1's prefix (not chunk 1 + chunk 2).
-    store->setCarveHookForTest([backend](CasRefLedger::CarvePhaseForTest ph)
+    /// Gate the leader at the chunk boundary on the publisher's CAPTURE (`snapshot_after_capture_hook_for_test`,
+    /// fired the moment the publish attempt has read `rt->state` under `state_mutex` and passed the
+    /// `lane_state == Ready` admission check), not on the publisher's later blocked PUT. Capture is
+    /// causally prior to the PUT the block intercepts -- it is the OTHER side of the very check
+    /// (`CasRefLedger.cpp`'s `tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl`) whose failure logs
+    /// "refusing snapshot publication while the append lane is not Ready" -- so waiting for it is the
+    /// exact fact the boundary needs, whereas waiting for the PUT also waits on however long it takes the
+    /// dispatched publish to be scheduled onto a worker thread at all. Under contention that scheduling
+    /// delay can outlast a bounded wait, and a leader released by the wait's own timeout (rather than by
+    /// the capture it was meant to prove) can start chunk 2 -- moving the lane to `Writing` -- before the
+    /// not-yet-scheduled publisher ever captures, so it captures Writing and is refused.
+    auto captured = std::make_shared<CaseSync>();
+    store->setSnapshotAfterCaptureHookForTest([captured]
     {
-        if (ph == CasRefLedger::CarvePhaseForTest::ChunkReseed)
-            backend->awaitBlockEntered();
+        std::lock_guard lk(captured->m);
+        captured->entered = true;
+        captured->cv.notify_all();
+    });
+    store->setCarveHookForTest([captured](CasRefLedger::CarvePhaseForTest ph)
+    {
+        if (ph != CasRefLedger::CarvePhaseForTest::ChunkReseed)
+            return;
+        std::unique_lock lk(captured->m);
+        captured->cv.wait_for(lk, std::chrono::seconds(10), [&] { return captured->entered; });
+        ASSERT_TRUE(captured->entered) << "chunk 1's snapshot publisher never captured its candidate within 10s";
     });
 
     auto sync = std::make_shared<CaseSync>();
     armPreCarveBlock(store, ns, sync, 2);
     /// 3000 ops per item (1500 add/remove pairs) -> chunk 1 = {item_a}, chunk 2 = {item_b}.
-    AppendCaller a = launchAppendOps(store, ns, MutationScope::ref("item_a"), addRemovePrecommitPairs("aaa_", 1500, 900000001), nullptr);
+    AppendCaller a = launchAppendOps(store, ns, MutationScope::ref("item_a"), addRemovePrecommitPairs("item_a", 1500, 900000001), nullptr);
     waitEntered(sync);
-    AppendCaller b = launchAppendOps(store, ns, MutationScope::ref("item_b"), addRemovePrecommitPairs("bbb_", 1500, 900000002), nullptr);
+    AppendCaller b = launchAppendOps(store, ns, MutationScope::ref("item_b"), addRemovePrecommitPairs("item_b", 1500, 900000002), nullptr);
     waitPendingAtLeast(store, ns, 2);
     sync->cv.notify_all();
 
@@ -905,11 +1112,18 @@ TEST(CASRefWriterChunkedFlush, SnapshotPublisherLatchedAcrossChunks)
     ++chunk2_id.ref_sequence;
     EXPECT_EQ(rb.id, chunk2_id);
 
+    /// Independently confirm the latched publisher actually reached its blocked PUT, on the main test
+    /// thread rather than as the leader's own gate: without this, a wiring regression that never parks
+    /// the publisher would let the settlement assertion below pass VACUOUSLY (a direct, non-coalesced
+    /// dispatch can still cover chunk 2).
+    backend->awaitBlockEntered();
+
     /// Release the latched chunk-1 publisher. Its settlement must re-fire the chunk-2 trigger the
     /// single-flight gate dropped -> a follow-up publication covers chunk 2.
     backend->releaseBlock();
     store->waitForSnapshotPublishSettleForTest(ns);
     store->setCarveHookForTest(nullptr);
+    store->setSnapshotAfterCaptureHookForTest(nullptr);
     store->setRefPreCarveHookForTest(nullptr);
 
     const std::optional<RefTxnId> newest = store->newestPublishedSnapshotIdForTest(ns);

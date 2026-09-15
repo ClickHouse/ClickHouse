@@ -9,6 +9,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
 
+EXTRA_SOURCE_COLUMN_MODES = [
+    pytest.param("POSITION", id="by-position"),
+    pytest.param("NAME", id="by-name"),
+]
+
+
 def skip_if_remote_database_disk_enabled(cluster):
     """Skip test if any instance in the cluster has remote database disk enabled.
 
@@ -979,7 +985,53 @@ def test_export_part_column_count_mismatch_source_fewer_is_rejected(cluster):
     node.query(f"DROP TABLE {s3_table}")
 
 
-def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(cluster):
+@pytest.mark.parametrize(
+    "schema_match_mode,expected_error",
+    [
+        pytest.param("POSITION", "NUMBER_OF_COLUMNS_DOESNT_MATCH", id="by-position"),
+        pytest.param("NAME", "NUMBER_OF_COLUMNS_DOESNT_MATCH", id="by-name"),
+    ],
+)
+def test_export_part_column_count_mismatch_source_fewer_still_rejected_with_ignore_extra_setting(
+    cluster, schema_match_mode, expected_error
+):
+    node = cluster.instances["node1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"count_fewer_still_mt_table_{postfix}"
+    s3_table = f"count_fewer_still_s3_table_{postfix}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16) "
+        f"ENGINE = MergeTree() PARTITION BY year ORDER BY tuple() "
+        f"SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    node.query(
+        f"CREATE TABLE {s3_table} (id UInt64, year UInt16, extra String) "
+        f"ENGINE = S3(s3_conn, filename='{s3_table}', format=Parquet, partition_strategy='hive') "
+        f"PARTITION BY year"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table} "
+        f"SETTINGS export_merge_tree_part_schema_match_mode = '{schema_match_mode}', "
+        f"export_merge_tree_part_ignore_extra_source_columns = 1"
+    )
+    assert expected_error in error, (
+        f"Expected {expected_error} for source<dest column count with {schema_match_mode}, got: {error}"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {s3_table}").strip())
+    assert count == 0, f"Expected 0 rows in destination table after rejected export, got {count}"
+
+    node.query(f"DROP TABLE {mt_table}")
+    node.query(f"DROP TABLE {s3_table}")
+
+
+@pytest.mark.parametrize("schema_match_mode", EXTRA_SOURCE_COLUMN_MODES)
+def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(cluster, schema_match_mode):
     node = cluster.instances["node1"]
 
     postfix = str(uuid.uuid4()).replace("-", "_")
@@ -999,7 +1051,8 @@ def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(clust
 
     node.query(
         f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table} "
-        f"SETTINGS export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'"
+        f"SETTINGS export_merge_tree_part_schema_match_mode = '{schema_match_mode}', "
+        f"export_merge_tree_part_ignore_extra_source_columns = 1"
     )
     wait_for_export_part(node=node, table=mt_table, part="2020_1_1_0")
 
@@ -1008,6 +1061,77 @@ def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(clust
 
     result = node.query(f"SELECT id, year FROM {s3_table} ORDER BY id").strip()
     assert result == "1\t2020\n2\t2020\n3\t2020", f"Unexpected data:\n{result}"
+
+    node.query(f"DROP TABLE {mt_table}")
+    node.query(f"DROP TABLE {s3_table}")
+
+
+def test_export_part_match_by_name_with_equal_column_count_reordered(cluster):
+    """Test that match_by_name matches columns by name even with an equal source/destination column count."""
+    node = cluster.instances["node1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"match_by_name_mt_table_{postfix}"
+    s3_table = f"match_by_name_s3_table_{postfix}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16, payload String) "
+        f"ENGINE = MergeTree() PARTITION BY year ORDER BY tuple() "
+        f"SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+
+    node.query(
+        f"CREATE TABLE {s3_table} (payload String, id UInt64, year UInt16) "
+        f"ENGINE = S3(s3_conn, filename='{s3_table}', format=Parquet, partition_strategy='hive') "
+        f"PARTITION BY year"
+    )
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table} "
+        f"SETTINGS export_merge_tree_part_schema_match_mode = 'NAME'"
+    )
+    wait_for_export_part(node=node, table=mt_table, part="2020_1_1_0")
+
+    result = node.query(f"SELECT id, year, payload FROM {s3_table} ORDER BY id").strip()
+    assert result == "1\t2020\tfoo\n2\t2020\tbar", f"Unexpected data:\n{result}"
+
+    node.query(f"DROP TABLE {mt_table}")
+    node.query(f"DROP TABLE {s3_table}")
+
+
+def test_export_part_match_by_name_with_equal_column_count_rejects_unmatched_source_column(cluster):
+    """Test that match_by_name rejects an unmatched source column unless export_merge_tree_part_ignore_extra_source_columns is set."""
+    node = cluster.instances["node1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"match_by_name_unmatched_mt_table_{postfix}"
+    s3_table = f"match_by_name_unmatched_s3_table_{postfix}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16, extra String) "
+        f"ENGINE = MergeTree() PARTITION BY year ORDER BY tuple() "
+        f"SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+
+    node.query(
+        f"CREATE TABLE {s3_table} (id UInt64, year UInt16) "
+        f"ENGINE = S3(s3_conn, filename='{s3_table}', format=Parquet, partition_strategy='hive') "
+        f"PARTITION BY year"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table} "
+        f"SETTINGS export_merge_tree_part_schema_match_mode = 'NAME'"
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for an unmatched source column with "
+        f"match_by_name and export_merge_tree_part_ignore_extra_source_columns = 0, got: {error}"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {s3_table}").strip())
+    assert count == 0, f"Expected 0 rows in destination table after rejected export, got {count}"
 
     node.query(f"DROP TABLE {mt_table}")
     node.query(f"DROP TABLE {s3_table}")

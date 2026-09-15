@@ -101,65 +101,73 @@ std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view conte
     return result;
 }
 
+/// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
+/// using the minimum number of bytes for the value
+/// Our decimal binary representation is little endian
+/// so we cannot reuse our default code for parsing it.
+///
+/// NOTE: It's very weird, but Decimal values for lower bound and upper bound
+/// are stored rounded, without fractional part. What is more strange
+/// the integer part is rounded mathematically correctly according to fractional part.
+/// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
+/// I've checked two implementations: Spark and Amazon Athena and both of them
+/// do this.
+///
+/// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
+/// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
+/// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
+/// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
+///
+/// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
+/// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
+/// but at least it doesn't lead to incorrect results.
+template <typename DecimalType>
+static std::optional<Field> deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound)
+{
+    using NativeType = typename DecimalType::NativeType;
+    using UnsignedType = make_unsigned_t<NativeType>;
+
+    if (str.size() > sizeof(NativeType))
+        return std::nullopt;
+
+    /// Accumulate into the unsigned counterpart, pre-filled with the sign bits,
+    /// so that the sign extension comes out of the shifts themselves.
+    UnsignedType unscaled = (str[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
+    for (const auto byte : str)
+        unscaled = (unscaled << 8) | static_cast<UInt8>(byte);
+
+    NativeType unscaled_value = static_cast<NativeType>(unscaled);
+
+    if (scale)
+    {
+        NativeType scaler = lower_bound ? -10 : 10;
+        for (UInt32 i = 1; i < scale; ++i)
+            scaler *= 10;
+
+        unscaled_value += scaler;
+    }
+
+    return DecimalField<DecimalType>(unscaled_value, scale);
+}
+
 std::optional<Field> deserializeFieldFromBinaryRepr(const std::string & str, DataTypePtr expected_type, bool lower_bound)
 {
     auto non_nullable_type = removeNullable(expected_type);
     auto column = non_nullable_type->createColumn();
     if (WhichDataType(non_nullable_type).isDecimal())
     {
-        /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
-        /// using the minimum number of bytes for the value
-        /// Our decimal binary representation is little endian
-        /// so we cannot reuse our default code for parsing it.
-        int64_t unscaled_value = 0;
+        if (str.empty())
+            return std::nullopt;
 
-        // Convert from big-endian to signed int
-        for (const auto byte : str)
-            unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
-
-        /// Add sign
-        if (str[0] & 0x80)
-        {
-            int64_t sign_extension = -1;
-            sign_extension <<= (str.size() * 8);
-            unscaled_value |= sign_extension;
-        }
-
-        /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
-        /// are stored rounded, without fractional part. What is more strange
-        /// the integer part is rounded mathematically correctly according to fractional part.
-        /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
-        /// I've checked two implementations: Spark and Amazon Athena and both of them
-        /// do this.
-        ///
-        /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
-        /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
-        /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-        /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
-        ///
-        /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
-        /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
-        /// but at least it doesn't lead to incorrect results.
-        if (int32_t scale = getDecimalScale(*non_nullable_type))
-        {
-            int64_t scaler = lower_bound ? -10 : 10;
-            while (--scale)
-                scaler *= 10;
-
-            unscaled_value += scaler;
-        }
-
-        if (const auto * decimal_type = checkDecimal<Decimal32>(*non_nullable_type))
-        {
-            DecimalField<Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
-            return result;
-        }
-        if (const auto * decimal_type = checkDecimal<Decimal64>(*non_nullable_type))
-        {
-            DecimalField<Decimal64> result(unscaled_value, decimal_type->getScale());
-            return result;
-        }
-
+        const UInt32 scale = getDecimalScale(*non_nullable_type);
+        if (checkDecimal<Decimal32>(*non_nullable_type))
+            return deserializeDecimalBound<Decimal32>(str, scale, lower_bound);
+        if (checkDecimal<Decimal64>(*non_nullable_type))
+            return deserializeDecimalBound<Decimal64>(str, scale, lower_bound);
+        if (checkDecimal<Decimal128>(*non_nullable_type))
+            return deserializeDecimalBound<Decimal128>(str, scale, lower_bound);
+        if (checkDecimal<Decimal256>(*non_nullable_type))
+            return deserializeDecimalBound<Decimal256>(str, scale, lower_bound);
         return std::nullopt;
     }
 

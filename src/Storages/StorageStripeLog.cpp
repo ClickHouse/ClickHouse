@@ -698,7 +698,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append);
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append, /* sync= */ false);
         }
 
         /// Append the index.

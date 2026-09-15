@@ -9,12 +9,14 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobMeta.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasBlobEnvelopeFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcStateFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFoldSealFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPartManifestFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRecordStreamFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefLogFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefSnapshotFormat.h>
@@ -34,6 +36,7 @@
 #include <gtest/gtest.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteBufferFromString.h>
 /// For `ChunkFaultBackend`'s `DefiniteFailure` mode, which needs a real S3-classified error, and for
 /// the ambiguity it raises otherwise.
 #include <IO/S3Common.h>
@@ -43,6 +46,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -74,6 +78,48 @@ namespace DB::ErrorCodes
 
 namespace DB::Cas::tests
 {
+
+/// A `CasRequests` over an always-open fence, for a fixture that has a backend but no mounted pool.
+/// Every operation admitted from it holds a reference to it, so it must be named and outlive them.
+inline DB::Cas::CasRequests openRequestsForTest(DB::Cas::BackendPtr backend)
+{
+    return DB::Cas::CasRequests(std::move(backend), DB::Cas::Fence::open());
+}
+
+/// The same, for a fixture holding only a reference. The aliasing `shared_ptr` owns nothing, so the
+/// caller keeps the backend alive for as long as the returned object and its operations live.
+inline DB::Cas::CasRequests openRequestsForTest(DB::Cas::Backend & backend)
+{
+    return openRequestsForTest(DB::Cas::BackendPtr(std::shared_ptr<void>(), &backend));
+}
+
+/// An open-fence operation together with the `CasRequests` it refers to, for a fixture that holds a
+/// backend and needs to call a production entry point taking a `CasOperation &`. Neither copyable nor
+/// movable: the operation points at the member beside it.
+class OperationForTest
+{
+public:
+    explicit OperationForTest(DB::Cas::BackendPtr backend)
+        : requests(std::move(backend), DB::Cas::Fence::open()), operation(requests.admit())
+    {
+    }
+
+    /// For a fixture holding only a reference: the aliasing `shared_ptr` owns nothing, so the caller
+    /// keeps the backend alive for as long as this object.
+    explicit OperationForTest(DB::Cas::Backend & backend)
+        : OperationForTest(DB::Cas::BackendPtr(std::shared_ptr<void>(), &backend))
+    {
+    }
+
+    OperationForTest(const OperationForTest &) = delete;
+    OperationForTest & operator=(const OperationForTest &) = delete;
+
+    DB::Cas::CasOperation & operator*() { return operation; }
+
+private:
+    DB::Cas::CasRequests requests;
+    DB::Cas::CasOperation operation;
+};
 
 /// Deterministic two-phase barrier for worker-lifecycle tests. The worker calls `arriveAndWait` at
 /// the exact operation boundary under test; the test waits for that arrival and later calls
@@ -112,6 +158,66 @@ private:
     bool released = false;
 };
 
+/// Heap-owned wait/sleep log for a `wait_sleep_fn`-shaped test hook: a hook that pushed into a
+/// stack-local vector would read (or write) a dead frame if a background completion outlives the test
+/// -- a `Pool`'s own detached publish can hold `shared_from_this()` past the test function's return.
+/// Mutex-guarded because that background call can race a foreground read. Construct via
+/// `std::make_shared` and capture the shared_ptr by value into the hook, never the bare object by
+/// reference.
+class SharedWaitLog
+{
+public:
+    void push(uint64_t ms)
+    {
+        std::lock_guard lock(mutex);
+        values.push_back(ms);
+    }
+    size_t size() const
+    {
+        std::lock_guard lock(mutex);
+        return values.size();
+    }
+    bool empty() const
+    {
+        std::lock_guard lock(mutex);
+        return values.empty();
+    }
+    std::vector<uint64_t> snapshot() const
+    {
+        std::lock_guard lock(mutex);
+        return values;
+    }
+
+private:
+    mutable std::mutex mutex;
+    std::vector<uint64_t> values;
+};
+
+/// Heap-owned event log for an `event_sink`-shaped test hook: a hook that pushed into a stack-local
+/// vector would read (or write) a dead frame if a background completion outlives the test -- a `Pool`'s
+/// own detached publish can hold `shared_from_this()` past the test function's return, and its farewell
+/// or a background renewer can emit events from a thread the test itself never joins. Mutex-guarded
+/// because that background call can race a foreground read. Construct via `std::make_shared` and capture
+/// the shared_ptr by value into the sink, never the bare object by reference.
+class SharedEventLog
+{
+public:
+    void push(CasEvent event)
+    {
+        std::lock_guard lock(mutex);
+        values.push_back(std::move(event));
+    }
+    std::vector<CasEvent> snapshot() const
+    {
+        std::lock_guard lock(mutex);
+        return values;
+    }
+
+private:
+    mutable std::mutex mutex;
+    std::vector<CasEvent> values;
+};
+
 /// Bring up the server-wide blob upload pool (stage-1 §1) if it is not already up, so any test that
 /// drives a `ContentAddressedTransaction` commit -- whose `uploadPendingBlobs` fans out on this pool --
 /// finds it initialized. ROBUST (init-if-not-initialized, NOT `call_once`): the raw-lifecycle suite in
@@ -127,9 +233,9 @@ inline void ensureBlobUploadPoolForTest(size_t size = 8)
 
 /// Minimal `ContentAddressedSettings` for a direct-construction gtest fixture: sets only
 /// `server_root_id` and `scratch_path` (the two values every positional-ctor call site used to pass
-/// explicitly) and validates, so the cached enum-valued accessors (`stagingBackend`, `blobHashAlgo`,
-/// `partFolderValidate`) are populated from their (default) string settings exactly as the disk-factory
-/// path would populate them. Callers that need a non-default setting (e.g. `staging_backend=s3`) apply
+/// explicitly) and validates, so the cached enum-valued accessors (`stagingBackend`, `blobHashAlgo`)
+/// are populated from their (default) string settings exactly as the disk-factory path would populate
+/// them. Callers that need a non-default setting (e.g. `staging_backend=s3`) apply
 /// the override via `settings[ContentAddressedSetting::x] = value;` and re-run `settings.validate()`
 /// themselves before constructing.
 inline DB::ContentAddressedSettings makeSettingsForTest(const std::string & server_root_id, const std::filesystem::path & scratch_path)
@@ -140,6 +246,37 @@ inline DB::ContentAddressedSettings makeSettingsForTest(const std::string & serv
     settings.validate();
     return settings;
 }
+
+/// A clock that only ever moves when something sleeps on it, plus the record of every sleep it
+/// served. Injected into `CasRequests` so a policy's whole 90-second deadline is exercised in a test
+/// that takes no wall-clock time, and so the schedule itself -- how many pauses, how long -- becomes
+/// an assertion rather than a wait. `now` is atomic and `sleeps` is mutex-guarded because a
+/// decommission session's background mount-lease renewer reads this same clock (via
+/// `PoolConfig::boot_ms_fn`) from its own thread while the caller's thread drives it forward through
+/// `sleepFn` -- relaxed ordering is enough since nothing here needs a happens-before relationship
+/// beyond the value eventually becoming visible; direct field reads from a single thread after the
+/// clock stops moving (the common case in this file's other users) are unaffected.
+struct FakeClock
+{
+    std::atomic<uint64_t> now{1'000'000};
+    std::vector<uint64_t> sleeps;
+
+    std::function<uint64_t()> nowFn() { return [this] { return now.load(std::memory_order_relaxed); }; }
+    std::function<void(uint64_t)> sleepFn()
+    {
+        return [this](uint64_t ms)
+        {
+            {
+                std::lock_guard lock(sleeps_mutex);
+                sleeps.push_back(ms);
+            }
+            now.fetch_add(ms, std::memory_order_relaxed);
+        };
+    }
+
+private:
+    std::mutex sleeps_mutex;
+};
 
 /// Run `fn`, expect a DB::Exception with EXACTLY `expected_code` (CORRUPTED_DATA-vs-NOT_IMPLEMENTED
 /// is part of the fail-closed contract: an unknown future format must be NOT_IMPLEMENTED, never
@@ -156,6 +293,21 @@ void expectThrowsCode(int expected_code, F && fn)
     {
         EXPECT_EQ(e.code(), expected_code);
     }
+}
+
+/// Asserts the object is present before comparing its body: an absent key would otherwise dereference
+/// an empty optional and take the whole binary down instead of failing this one case.
+inline void expectBytes(DB::Cas::Backend & backend, const String & key, const String & expected)
+{
+    OperationForTest op(backend);
+    const auto got = (*op).read(key, DB::Cas::Retry::standard());
+    ASSERT_TRUE(got.has_value()) << "object '" << key << "' is absent";
+    EXPECT_EQ(got->bytes, expected);
+}
+
+inline void expectBytes(const DB::Cas::BackendPtr & backend, const String & key, const String & expected)
+{
+    expectBytes(*backend, key, expected);
 }
 
 /// Build a `LocalObjectStorage` rooted at a fresh, unique temporary directory (one per call).
@@ -252,7 +404,8 @@ inline DB::Cas::BlobRef writeBlobRaw(
     header.build_id = DB::UInt128(0x5678);
 
     const String head = DB::Cas::encodeEnvelopeHeader(header, static_cast<uint32_t>(blob_header_len));
-    backend.putIfAbsent(layout.blobKey(id), head + payload);
+    OperationForTest op(backend);
+    (*op).create(layout.blobKey(id), head + payload, DB::Cas::Retry::standard());
     return id;
 }
 
@@ -274,8 +427,9 @@ inline DB::Cas::ManifestId writeManifestRaw(
     body.root_namespace_id = ns;
     body.entries = entries;
     body.payload_digest = DB::Cas::computePayloadDigest(body);
-    backend.putIfAbsent(layout.manifestKey(id),
-        DB::Cas::sealObject(DB::Cas::FormatId::PartManifest, DB::Cas::encodePartManifest(body)));
+    OperationForTest op(backend);
+    (*op).create(layout.manifestKey(id),
+        DB::Cas::sealObject(DB::Cas::FormatId::PartManifest, DB::Cas::encodePartManifest(body)), DB::Cas::Retry::standard());
     return id;
 }
 
@@ -334,14 +488,16 @@ inline uint64_t appendRefLogSeed(
     /// sentinel), exactly as `writeRefLogTxnRaw` below now does -- otherwise this scan can miss a REAL
     /// incarnation's existing log/snap objects, wrongly conclude the table has none, and prepend a second
     /// `namespaceBirthOp` on top of a namespace that already has one.
-    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(backend, layout, ns).value_or(fixture::fixtureLife(ns));
+    OperationForTest operation(backend);
+    const NamespaceLifeId life
+        = CasRefCatalog::lifeIfCataloged(*operation, layout, ns).value_or(fixture::fixtureLife(ns));
     const String prefix = layout.namespaceStreamPrefix(life);
     uint64_t greatest_seq = 0;
     bool any_log_or_snap = false;
     String cursor;
     while (true)
     {
-        const DB::Cas::ListPage page = backend.list(prefix, cursor, /*limit=*/1000);
+        const DB::Cas::ListPage page = (*operation).list(prefix, cursor, /*limit=*/1000, DB::Cas::Retry::standard());
         for (const DB::Cas::ListedKey & lk : page.keys)
         {
             const auto parsed = layout.parseRefObjectKey(lk.key);
@@ -451,9 +607,9 @@ inline void deleteManifestBody(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::ManifestId & id)
 {
     const String key = layout.manifestKey(id);
-    const DB::Cas::HeadResult h = backend.head(key);
-    if (h.exists)
-        backend.deleteExact(key, h.token);
+    OperationForTest op(backend);
+    if (const auto h = (*op).head(key, DB::Cas::Retry::standard()))
+        (*op).remove(key, h->etag, DB::Cas::Retry::standard());
 }
 
 /// Formerly wrote the namespace into `gc/registry`. Real write helpers now admit the authoritative
@@ -474,75 +630,99 @@ inline String encodeMinimalGcState(uint64_t round)
 }
 
 /// Inject condemned bookkeeping + gc/state directly (bypassing a real GC round) so a test can seed the
-/// GC ledger's condemned state at an arbitrary round. Retired-in-snapshot: the condemned entries are
-/// seeded the way a real round leaves them — as `kCondemned` sentinel rows inside an adopted fold seal's
-/// shard run (there is no separate retired-list object). A synthetic +edge/-edge pair nets each blob to
-/// in-degree 0 and a `seed_head` replays the captured token/size so the fold mints the `kCondemned` row.
-/// Also sets {round} on gc/state. Entries carry a `condemn_round` (default 0 → uses `round`); callers
-/// pass fresh (non-pending) condemns. An empty `entries` set just advances {round}.
+/// GC ledger's condemned state at an arbitrary round. The entries are written into the adopted seal's
+/// shard run as `RunMarker::Condemned` sentinel rows at the zero source id -- the shape a real round
+/// leaves, since there is no separate retired-list object. Also sets {round} on gc/state. An entry's
+/// `condemn_round` defaults to `round` when left 0. An empty `entries` set just advances {round}.
+///
+/// The rows are written from the caller's entries VERBATIM rather than folded out of synthetic deltas.
+/// A fold mints each row's incarnation from a live HEAD of the blob, which can express neither of the
+/// two shapes this fixture exists to build: an entry condemning an incarnation NO object carries (a
+/// phantom, for the tests that check a condemnation aimed elsewhere spares the live object), and an
+/// entry for a blob whose body is already gone.
 inline void injectRetire(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout,
     uint64_t round, uint64_t shard, std::vector<DB::Cas::RetiredEntry> entries)
 {
+    OperationForTest operation(backend);
     DB::Cas::GcState gc_state;
-    const DB::Cas::HeadResult head = backend.head(layout.gcStateKey());
-    if (head.exists)
-        gc_state = DB::Cas::decodeGcState(backend.get(layout.gcStateKey())->bytes);
+    const auto existing_state = (*operation).read(layout.gcStateKey(), DB::Cas::Retry::standard());
+    if (existing_state)
+        gc_state = DB::Cas::decodeGcState(existing_state->bytes);
     gc_state.round = round;
 
     if (!entries.empty())
     {
         const uint64_t generation = 1;
         const uint64_t attempt = 1;
-        uint64_t condemn_round = round;
-        std::unordered_map<DB::Cas::BlobRef, DB::Cas::HeadResult, DB::Cas::BlobRefHash> seeded;
-        std::vector<DB::Cas::BlobDelta> synth;
-        synth.reserve(entries.size() * 2);
-        for (const DB::Cas::RetiredEntry & e : entries)
+
+        /// The writer's contract: records arrive in non-decreasing `(ref, source_id)` order, and a
+        /// sentinel row is the only row a blob may have at the zero source id.
+        std::sort(entries.begin(), entries.end(),
+                  [](const DB::Cas::RetiredEntry & a, const DB::Cas::RetiredEntry & b) { return a.ref < b.ref; });
+
+        String run_bytes;
+        /// `UINT64_MAX` is the summary's own "no non-pending entry" value, and round 0 is a real round,
+        /// so a zero initializer here would claim the oldest possible condemnation instead of none.
+        uint64_t oldest_nonpending = UINT64_MAX;
+        uint64_t pending_total = 0;
         {
-            if (e.condemn_round)
-                condemn_round = e.condemn_round;
-            seeded.emplace(e.ref, DB::Cas::HeadResult{.exists = true, .size = e.size, .token = e.token, .attributes = {}});
-            synth.push_back(DB::Cas::BlobDelta{.ref = e.ref, .source_id = DB::UInt128{1}, .remove = false});
-            synth.push_back(DB::Cas::BlobDelta{.ref = e.ref, .source_id = DB::UInt128{1}, .remove = true});
+            DB::WriteBufferFromString out(run_bytes);
+            DB::Cas::SourceEdgeRunWriter writer(out);
+            for (const DB::Cas::RetiredEntry & e : entries)
+            {
+                const uint64_t condemn_round = e.condemn_round ? e.condemn_round : round;
+                if (e.delete_pending)
+                    ++pending_total;
+                else
+                    oldest_nonpending = std::min(oldest_nonpending, condemn_round);
+                writer.append(DB::Cas::SourceEdgeRecord{
+                    .ref = e.ref,
+                    .source_id = DB::UInt128{0},
+                    .marker = DB::Cas::RunMarker::Condemned,
+                    .delete_pending = e.delete_pending,
+                    .token = e.token,
+                    .size = e.size,
+                    .condemn_round = condemn_round,
+                    .marker_confirmed = e.marker_confirmed});
+            }
+            writer.finish();
+            out.finalize();
         }
-        const auto seed_head = [&seeded](const DB::Cas::BlobRef & h) -> std::optional<DB::Cas::HeadResult>
-        {
-            const auto it = seeded.find(h);
-            return it == seeded.end() ? std::nullopt : std::optional<DB::Cas::HeadResult>(it->second);
-        };
-        std::vector<DB::Cas::RunRef> out;
-        DB::Cas::foldDeltasIntoGeneration(backend, layout, /*prior_runs*/{}, generation, attempt,
-            shard, std::move(synth), out, /*current_round*/0, condemn_round, seed_head,
-            /*peek_head*/{}, /*confirm_condemned_marker*/{},
-            /*out_retired*/nullptr, /*suppress_destructive*/false);
+
+        const String run_key = layout.blobTargetRunKey(generation, attempt, shard, 0);
+        DB::Cas::orThrow((*operation).create(run_key, run_bytes, DB::Cas::Retry::standard()),
+                         "seed the condemned run at " + run_key);
 
         DB::Cas::CasFoldSeal seal;
         seal.generation = generation;
-        for (DB::Cas::RunRef & r : out)
-            seal.blob_target_runs.push_back(std::move(r));
+        seal.blob_target_runs.push_back(DB::Cas::RunRef{.key = run_key,
+                                                       .checksum = DB::Cas::sourceEdgeRunChecksum(run_bytes),
+                                                       .shard = shard,
+                                                       .key_generation = generation});
         /// Totality over gc_shards so a later real round's graduation/carry reads it zero-I/O.
         const uint64_t gc_shards = gc_state.gc_shards ? gc_state.gc_shards : 1;
         for (uint64_t s = 0; s < gc_shards; ++s)
             seal.condemned_summary[s] = DB::Cas::CondemnedSummary{};
         DB::Cas::CondemnedSummary cs;
         cs.condemned_total = entries.size();
-        cs.oldest_nonpending_condemn_round = condemn_round;
+        cs.pending_total = pending_total;
+        cs.oldest_nonpending_condemn_round = oldest_nonpending;
         seal.condemned_summary[shard] = cs;
-        backend.putIfAbsent(layout.foldSealKey(generation, attempt), DB::Cas::encodeFoldSeal(seal));
+        (*operation).create(layout.foldSealKey(generation, attempt), DB::Cas::encodeFoldSeal(seal), DB::Cas::Retry::standard());
 
         gc_state.snap_generation = generation;
         gc_state.snap_attempt = attempt;
     }
 
     const String state = DB::Cas::encodeGcState(gc_state);
-    if (!head.exists)
-        backend.putIfAbsent(layout.gcStateKey(), state);
+    if (!existing_state)
+        (*operation).create(layout.gcStateKey(), state, DB::Cas::Retry::standard());
     else
-        backend.putOverwrite(layout.gcStateKey(), state, head.token);
+        (*operation).replace(layout.gcStateKey(), state, existing_state->etag, DB::Cas::Retry::standard());
 }
 
-/// Adopt a fold seal carrying a given per-gc-shard `condemned_summary` (retired-in-snapshot T4) and point
+/// Adopt a fold seal carrying a given per-gc-shard `condemned_summary` and point
 /// gc/state at it (snap_generation / snap_attempt / gc_shards), bypassing a real GC round. If a seal
 /// already exists at (generation, attempt) it is overwritten with the new summary (its other fields are
 /// preserved); otherwise a fresh minimal seal is created. Read-modify-CAS on gc/state preserves the lease.
@@ -552,9 +732,10 @@ inline void injectCondemnedSummarySeal(
     uint64_t generation, uint64_t attempt, uint64_t gc_shards,
     const std::map<uint64_t, DB::Cas::CondemnedSummary> & summary)
 {
+    OperationForTest operation(backend);
     const String seal_key = layout.foldSealKey(generation, attempt);
     DB::Cas::CasFoldSeal seal;
-    const auto existing = backend.get(seal_key);
+    const auto existing = (*operation).read(seal_key, DB::Cas::Retry::standard());
     if (existing)
         seal = DB::Cas::decodeFoldSeal(existing->bytes);
     else
@@ -563,28 +744,30 @@ inline void injectCondemnedSummarySeal(
     seal.condemned_summary = summary;
     const String seal_bytes = DB::Cas::encodeFoldSeal(seal);
     if (existing)
-        backend.putOverwrite(seal_key, seal_bytes, existing->token);
+        (*operation).replace(seal_key, seal_bytes, existing->etag, DB::Cas::Retry::standard());
     else
-        backend.putIfAbsent(seal_key, seal_bytes);
+        (*operation).create(seal_key, seal_bytes, DB::Cas::Retry::standard());
 
     DB::Cas::GcState gc_state;
-    const DB::Cas::HeadResult head = backend.head(layout.gcStateKey());
-    if (head.exists)
-        gc_state = DB::Cas::decodeGcState(backend.get(layout.gcStateKey())->bytes);
+    const auto existing_state = (*operation).read(layout.gcStateKey(), DB::Cas::Retry::standard());
+    if (existing_state)
+        gc_state = DB::Cas::decodeGcState(existing_state->bytes);
     gc_state.gc_shards = gc_shards;
     gc_state.snap_generation = generation;
     gc_state.snap_attempt = attempt;
     const String state = DB::Cas::encodeGcState(gc_state);
-    if (!head.exists)
-        backend.putIfAbsent(layout.gcStateKey(), state);
+    if (!existing_state)
+        (*operation).create(layout.gcStateKey(), state, DB::Cas::Retry::standard());
     else
-        backend.putOverwrite(layout.gcStateKey(), state, head.token);
+        (*operation).replace(layout.gcStateKey(), state, existing_state->etag, DB::Cas::Retry::standard());
 }
 
 /// Whether blob `hash` is absent from the backend (its exact-token content object is gone).
 inline bool blobAbsent(DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::UInt128 & hash)
 {
-    return !backend.head(layout.blobKey(DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(hash)})).exists;
+    OperationForTest op(backend);
+    return !(*op).head(layout.blobKey(DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(hash)}),
+                       DB::Cas::Retry::standard()).has_value();
 }
 
 /// ONE round that is allowed to RECLAIM -- the name is the point, so that grepping for the tests whose
@@ -620,21 +803,22 @@ inline bool runRoundsUntilAbsent(
 }
 
 /// The CURRENT condemned entries for `shard`, read from the adopted fold seal's `blob_target_runs`
-/// (retired-in-snapshot T4): the round no longer writes a separate retired-list object — condemned
-/// entries RIDE the source-edge run as `kCondemned` sentinel rows at the zero-sentinel key. This reads
+///: the round no longer writes a separate retired-list object — condemned
+/// entries RIDE the source-edge run as `RunMarker::Condemned` sentinel rows at the zero-sentinel key. This reads
 /// the seal at (snap_generation, snap_attempt), opens every run for `shard`, and reconstructs the
 /// `RetiredEntry` shape (hash from the run key, the rest from the decoded `CondemnedRow`). Empty when
 /// gc/state / the seal / the runs are absent. Used by ack-floor tests to assert pending/condemn state.
 inline std::vector<DB::Cas::RetiredEntry> currentRetiredSet(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, uint64_t shard)
 {
-    const auto st = backend.get(layout.gcStateKey());
+    OperationForTest operation(backend);
+    const auto st = (*operation).read(layout.gcStateKey(), DB::Cas::Retry::standard());
     if (!st)
         return {};
     const DB::Cas::GcState gc_state = DB::Cas::decodeGcState(st->bytes);
     if (gc_state.snap_generation == 0)
         return {};
-    const auto seal_bytes = backend.get(layout.foldSealKey(gc_state.snap_generation, gc_state.snap_attempt));
+    const auto seal_bytes = (*operation).read(layout.foldSealKey(gc_state.snap_generation, gc_state.snap_attempt), DB::Cas::Retry::standard());
     if (!seal_bytes)
         return {};
     const DB::Cas::CasFoldSeal seal = DB::Cas::decodeFoldSeal(seal_bytes->bytes);
@@ -644,12 +828,12 @@ inline std::vector<DB::Cas::RetiredEntry> currentRetiredSet(
     {
         if (run.shard != shard)
             continue;
-        auto r = DB::Cas::openSourceEdgeRun(backend, run.key);
+        auto r = DB::Cas::openSourceEdgeRun(*operation, run.key);
         String k;
         String p;
         while (r.next(k, p))
         {
-            if (p.empty() || p[0] != DB::Cas::kCondemned)
+            if (p.empty() || DB::Cas::runMarkerFromByte(p[0], "CAS test source-edge run") != DB::Cas::RunMarker::Condemned)
                 continue;
             DB::Cas::BlobRef ref;
             DB::UInt128 source_id{};
@@ -668,13 +852,13 @@ inline std::vector<DB::Cas::RetiredEntry> currentRetiredSet(
     return out;
 }
 
-/// True iff ANY gc-shard's adopted-seal run still holds a `kCondemned` row — the ack-floor deletion
-/// pipeline is in flight while this is true (retired-in-snapshot T4 replacement for the old
-/// "iterate gc/state.retired_refs" probe). `gc_shards` is read from gc/state when 0 is passed.
+/// True iff ANY gc-shard's adopted-seal run still holds a `RunMarker::Condemned` row — the ack-floor deletion
+/// pipeline is in flight while this is true. `gc_shards` is read from gc/state when 0 is passed.
 inline bool anyCondemnedInSeal(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, uint64_t gc_shards = 0)
 {
-    const auto st = backend.get(layout.gcStateKey());
+    OperationForTest operation(backend);
+    const auto st = (*operation).read(layout.gcStateKey(), DB::Cas::Retry::standard());
     if (!st)
         return false;
     const DB::Cas::GcState gc_state = DB::Cas::decodeGcState(st->bytes);
@@ -689,25 +873,32 @@ inline bool anyCondemnedInSeal(
 /// incarnation_tag in its envelope header (preserving header_len + payload), putOverwrite against the
 /// current token, and return the NEW token. Used to drive the W-REVALIDATE adopt branch (current token
 /// differs from the writer's stale observation).
-inline DB::Cas::Token displaceObjectToken(
+inline DB::Cas::Etag displaceObjectToken(
     DB::Cas::Backend & backend, const String & key, DB::Cas::ObjectKind kind)
 {
-    const auto got = backend.get(key);
+    OperationForTest operation(backend);
+    const std::optional<DB::Cas::Object> got = (*operation).read(key, DB::Cas::Retry::standard());
     if (!got)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "displaceObjectToken: object {} absent", key);
 
     DB::Cas::EnvelopeHeader header =
         DB::Cas::decodeEnvelopeHeader(got->bytes, got->bytes.size(), kind);
-    /// A fresh, distinct incarnation_tag forces a distinct body so the displaced token differs.
+    /// A fresh, distinct incarnation_tag forces a distinct body so the displaced incarnation differs.
     header.incarnation_tag = header.incarnation_tag + DB::UInt128(1);
     /// Re-encode at the SAME header length the object was decoded with (the v3 pad target).
     const String new_head = DB::Cas::encodeEnvelopeHeader(header, header.header_len);
     const String body = new_head + got->bytes.substr(header.header_len);
 
-    return backend.putOverwrite(key, body, got->token).token;
+    const std::optional<DB::Cas::Etag> displaced = DB::Cas::orThrow(
+        (*operation).replace(key, body, got->etag, DB::Cas::Retry::standard()),
+        "displace the object at " + key);
+    if (!displaced)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+            "displaceObjectToken: the replace of {} reported no incarnation", key);
+    return *displaced;
 }
 
-inline DB::Cas::Token displaceBlobToken(
+inline DB::Cas::Etag displaceBlobToken(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::BlobRef & id)
 {
     return displaceObjectToken(backend, layout.blobKey(id), DB::Cas::ObjectKind::Blob);
@@ -723,8 +914,14 @@ inline DB::Cas::Token displaceBlobToken(
 /// what Phase-4 Lever A (spec 2026-07-06-cas-gc-round-skip-unchanged) is designed to skip -- passes 0
 /// here to force fold-every-round (shouldDeferRound's liveness bound: rounds_since_last_fold(0) >= 0
 /// is always true).
-inline DB::Cas::PoolPtr openPoolForTest(
-    std::shared_ptr<DB::Cas::InMemoryBackend> backend, uint64_t gc_fold_max_defer_rounds = 8)
+/// Templated on the backend's own pointer type (an `InMemoryBackend`, one of its many test subclasses,
+/// or a decorator that is not itself an `InMemoryBackend`, e.g. `ThrottlingBackend`) rather than fixed
+/// to `InMemoryBackend`/`BackendPtr`: a fixed pair of non-template overloads is genuinely AMBIGUOUS for
+/// a `shared_ptr<Derived>` argument, since "derived-to-`InMemoryBackend`" and "derived-to-`Backend`" are
+/// equally-ranked conversions with no tiebreaker; template argument deduction has none of that problem.
+template <typename BackendT>
+DB::Cas::PoolPtr openPoolForTest(
+    std::shared_ptr<BackendT> backend, uint64_t gc_fold_max_defer_rounds = 8)
 {
     return DB::Cas::Pool::open(std::move(backend),
         DB::Cas::PoolConfig{.pool_prefix = "p", .server_root_id = "test",
@@ -748,13 +945,14 @@ inline void seedPoolMetaForRestart(
     DB::Cas::Backend & backend, const String & pool_prefix = "p", uint64_t gc_shards = 1)
 {
     const DB::Cas::Layout layout(pool_prefix);
+    OperationForTest operation(backend);
     DB::Cas::PoolMeta::createOrValidate(
-        backend, layout, /*blob_header_len=*/256, gc_shards,
+        *operation, layout, /*blob_header_len=*/256, gc_shards,
         DB::Cas::BlobHashAlgo::CityHash128, /*allow_new=*/false, /*allow_mint=*/true);
-    if (!backend.get(layout.refCatalogKey()))
-        DB::Cas::CasRefCatalog::initializeEmptyForNewPool(backend, layout);
+    if (!(*operation).read(layout.refCatalogKey(), DB::Cas::Retry::standard()))
+        DB::Cas::CasRefCatalog::initializeEmptyForNewPool(*operation, layout);
     else
-        (void)DB::Cas::CasRefCatalog::read(backend, layout);
+        (void)DB::Cas::CasRefCatalog::read(*operation, layout);
 }
 
 /// Write a blob object (envelope + payload) addressed by `hash`, so a HEAD returns a token. The bytes
@@ -768,7 +966,9 @@ inline void writeBlobBody(
     header.incarnation_tag = DB::UInt128(0x1234);
     header.build_id = DB::UInt128(0x5678);
     const String head = DB::Cas::encodeEnvelopeHeader(header, static_cast<uint32_t>(blob_header_len));
-    backend.putIfAbsent(layout.blobKey(DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(hash)}), head + String("x"));
+    OperationForTest op(backend);
+    (*op).create(layout.blobKey(DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(hash)}), head + String("x"),
+                DB::Cas::Retry::standard());
 }
 
 /// Write a raw blob body (payload written verbatim, no envelope) — the raw-body-refinement shape
@@ -776,7 +976,9 @@ inline void writeBlobBody(
 inline void writeRawBlobBody(DB::Cas::Backend & backend, const DB::Cas::Layout & layout,
                              const DB::UInt128 & hash, const String & payload)
 {
-    backend.casPut(layout.blobKey(DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(hash)}), payload, std::nullopt);
+    OperationForTest op(backend);
+    (*op).create(layout.blobKey(DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(hash)}), payload,
+                DB::Cas::Retry::standard());
 }
 
 /// These `UInt128`-hash meta-op wrappers are the pre-mixed-algo 128-bit-only test convenience surface:
@@ -794,8 +996,9 @@ inline void writeMetaClean(DB::Cas::Backend & backend, const DB::Cas::Layout & l
                            const DB::UInt128 & hash, uint64_t size)
 {
     const DB::Cas::BlobRef ref = legacyMetaTestRef(hash);
-    backend.putIfAbsent(layout.blobMetaKey(ref), DB::Cas::encodeBlobMeta(
-        DB::Cas::BlobMeta{.state = DB::Cas::MetaState::Clean, .condemn_round = 0, .size = size}));
+    OperationForTest op(backend);
+    (*op).create(layout.blobMetaKey(ref), DB::Cas::encodeBlobMeta(
+        DB::Cas::BlobMeta{.state = DB::Cas::MetaState::Clean, .condemn_round = 0, .size = size}), DB::Cas::Retry::standard());
 }
 
 /// Transition an existing meta descriptor to Condemned at `condemn_round`, via a read-modify-CAS on
@@ -804,25 +1007,29 @@ inline void condemnMeta(DB::Cas::Backend & backend, const DB::Cas::Layout & layo
                         const DB::UInt128 & hash, uint64_t condemn_round)
 {
     const DB::Cas::BlobRef ref = legacyMetaTestRef(hash);
-    const auto lm = DB::Cas::loadMeta(backend, layout, ref);
+    OperationForTest operation(backend);
+    const auto lm = DB::Cas::loadMeta(*operation, layout, ref);
     ASSERT_TRUE(lm.has_value());
     DB::Cas::BlobMeta c = lm->meta;
     c.state = DB::Cas::MetaState::Condemned;
     c.condemn_round = condemn_round;
-    backend.putOverwrite(layout.blobMetaKey(ref), DB::Cas::encodeBlobMeta(c), lm->etag);
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(
+        DB::Cas::casMeta(*operation, layout, ref, lm->etag, c)));
 }
 
 /// Load the meta descriptor for `hash` via the shared ops layer (nullopt = absent).
 inline std::optional<DB::Cas::LoadedMeta> loadMetaForTest(DB::Cas::Backend & backend,
                                                           const DB::Cas::Layout & layout, const DB::UInt128 & hash)
 {
-    return DB::Cas::loadMeta(backend, layout, legacyMetaTestRef(hash));
+    OperationForTest operation(backend);
+    return DB::Cas::loadMeta(*operation, layout, legacyMetaTestRef(hash));
 }
 
 /// The latest GC generation (snap_generation pointer in gc/state), or 0 when absent.
 inline uint64_t currentGenerationOf(DB::Cas::Backend & backend, const DB::Cas::Layout & layout)
 {
-    const auto got = backend.get(layout.gcStateKey());
+    OperationForTest op(backend);
+    const auto got = (*op).read(layout.gcStateKey(), DB::Cas::Retry::standard());
     if (!got)
         return 0;
     return DB::Cas::decodeGcState(got->bytes).snap_generation;
@@ -831,7 +1038,8 @@ inline uint64_t currentGenerationOf(DB::Cas::Backend & backend, const DB::Cas::L
 /// The adopted attempt (snap_attempt pointer in gc/state), or 0 when absent.
 inline uint64_t currentAttemptOf(DB::Cas::Backend & backend, const DB::Cas::Layout & layout)
 {
-    const auto got = backend.get(layout.gcStateKey());
+    OperationForTest op(backend);
+    const auto got = (*op).read(layout.gcStateKey(), DB::Cas::Retry::standard());
     if (!got)
         return 0;
     return DB::Cas::decodeGcState(got->bytes).snap_attempt;
@@ -845,9 +1053,10 @@ inline std::vector<DB::Cas::RunRef> runsForShard(
 {
     const uint64_t gen = currentGenerationOf(backend, layout);
     const uint64_t attempt = currentAttemptOf(backend, layout);
+    OperationForTest op(backend);
     for (uint64_t g = gen; ; --g)
     {
-        if (const auto got = backend.get(layout.foldSealKey(g, attempt)))
+        if (const auto got = (*op).read(layout.foldSealKey(g, attempt), DB::Cas::Retry::standard()))
         {
             const DB::Cas::CasFoldSeal seal = DB::Cas::decodeFoldSeal(got->bytes);
             std::vector<DB::Cas::RunRef> out;
@@ -861,7 +1070,7 @@ inline std::vector<DB::Cas::RunRef> runsForShard(
     }
 }
 
-/// Stream the sealed in-degree run segments `runs` and count the active source edges (`kEdgeActive`
+/// Stream the sealed in-degree run segments `runs` and count the active source edges (`RunMarker::Edge`
 /// rows) for `ref`. Test-side replacement for the deleted per-blob point query `inDegreeInGeneration`
 /// (codecs-v3 phase 5: a `cas_run` is a sequential NDJSON stream with no random access, so a blob's
 /// in-degree is recomputed by a full stream-and-count rather than a seek). A condemned / zero-marker
@@ -869,15 +1078,16 @@ inline std::vector<DB::Cas::RunRef> runsForShard(
 inline int64_t inDegreeInRuns(
     DB::Cas::Backend & backend, const std::vector<DB::Cas::RunRef> & runs, const DB::Cas::BlobRef & ref)
 {
+    OperationForTest operation(backend);
     int64_t degree = 0;
     for (const DB::Cas::RunRef & run : runs)
     {
-        auto r = DB::Cas::openSourceEdgeRun(backend, run.key);
+        auto r = DB::Cas::openSourceEdgeRun(*operation, run.key);
         String k;
         String p;
         while (r.next(k, p))
         {
-            if (p.empty() || p[0] != DB::Cas::kEdgeActive)
+            if (p.empty() || DB::Cas::runMarkerFromByte(p[0], "CAS test source-edge run") != DB::Cas::RunMarker::Edge)
                 continue;
             DB::Cas::BlobRef row_ref;
             DB::UInt128 source_id{};
@@ -930,8 +1140,9 @@ namespace fixture
 inline UInt128 catalogLifeIdForTest(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RootNamespace & ns)
 {
+    OperationForTest operation(backend);
     const std::optional<DB::Cas::NamespaceLifeId> life =
-        DB::Cas::CasRefCatalog::lifeIfCataloged(backend, layout, ns);
+        DB::Cas::CasRefCatalog::lifeIfCataloged(*operation, layout, ns);
     chassert(life.has_value());
     return life->incarnation;
 }
@@ -940,8 +1151,8 @@ inline UInt128 catalogLifeIdForTest(
 /// real round. This is the durable fact the sweep's §6 deletion premise reads
 /// (`CasOrphanManifestSweep.cpp`): `cursor` is the namespace's `last_folded_ref_id`, and a manifest of
 /// an epoch-`E` build is deletable only once that cursor sits in an epoch STRICTLY above `E`.
-/// `hold`, when set, makes the row classification 4 — the strict grammar `encodeFoldSeal` enforces in
-/// both directions, so a hold and a non-4 classification cannot be seeded together.
+/// `hold`, when set, makes the row classification `Clamped` — the strict grammar `encodeFoldSeal`
+/// enforces in both directions, so a hold and a non-clamped classification cannot be seeded together.
 ///
 /// SHARP EDGE, HANDLED HERE SO NO CALLER HAS TO KNOW IT: a fold seal must carry a `condemned_summary`
 /// entry for EVERY shard in `0..gc_shards-1`. A later real round adopts this object as its PARENT and
@@ -961,8 +1172,9 @@ inline void seedFoldCursorForTest(
     DB::Cas::RefTxnId cursor, std::optional<DB::Cas::RefHold> hold = std::nullopt,
     uint64_t generation = 1, uint64_t attempt = 1)
 {
+    OperationForTest operation(backend);
     DB::Cas::NamespaceLifeId life = fixture::fixtureLife(ns);
-    const DB::Cas::CasRefCatalog::Snapshot catalog_cut = DB::Cas::CasRefCatalog::read(backend, layout);
+    const DB::Cas::CasRefCatalog::Snapshot catalog_cut = DB::Cas::CasRefCatalog::read(*operation, layout);
     const auto catalog_it = std::find_if(
         catalog_cut.catalog.entries.begin(), catalog_cut.catalog.entries.end(),
         [&](const DB::Cas::CatalogEntry & entry) { return entry.ns.string() == ns.string(); });
@@ -972,7 +1184,7 @@ inline void seedFoldCursorForTest(
         entry.ns = ns;
         entry.state = DB::Cas::NsState::Live;
         entry.incarnation = fixture::fixtureLife(ns).incarnation;
-        DB::Cas::CasRefCatalog::casAdmitEntry(backend, layout, 1, entry);
+        DB::Cas::CasRefCatalog::casAdmitEntry(*operation, layout, 1, entry);
         life = DB::Cas::NamespaceLifeId::fromCatalogEntry(ns, entry.incarnation);
     }
     else
@@ -982,21 +1194,21 @@ inline void seedFoldCursorForTest(
 
     const String seal_key = layout.foldSealKey(generation, attempt);
     DB::Cas::CasFoldSeal seal;
-    const auto existing = backend.get(seal_key);
+    const auto existing = (*operation).read(seal_key, DB::Cas::Retry::standard());
     if (existing)
         seal = DB::Cas::decodeFoldSeal(existing->bytes);
     seal.generation = generation;
 
     DB::Cas::RefCoverage cov;
-    cov.classification = hold ? 4 : 2;
+    cov.classification = hold ? DB::Cas::CoverageClass::Clamped : DB::Cas::CoverageClass::Folded;
     cov.last_folded_ref_id = cursor;
     cov.hold = hold;
     seal.ref_lives[life.incarnation].coverage = cov;
 
     DB::Cas::GcState gc_state;
-    const DB::Cas::HeadResult head = backend.head(layout.gcStateKey());
-    if (head.exists)
-        gc_state = DB::Cas::decodeGcState(backend.get(layout.gcStateKey())->bytes);
+    const auto existing_state = (*operation).read(layout.gcStateKey(), DB::Cas::Retry::standard());
+    if (existing_state)
+        gc_state = DB::Cas::decodeGcState(existing_state->bytes);
 
     /// Totality over `gc_shards` — see the doc comment's SHARP EDGE note for what throws without it.
     const uint64_t gc_shards = gc_state.gc_shards ? gc_state.gc_shards : 1;
@@ -1005,17 +1217,17 @@ inline void seedFoldCursorForTest(
 
     const String seal_bytes = DB::Cas::encodeFoldSeal(seal);
     if (existing)
-        backend.putOverwrite(seal_key, seal_bytes, existing->token);
+        (*operation).replace(seal_key, seal_bytes, existing->etag, DB::Cas::Retry::standard());
     else
-        backend.putIfAbsent(seal_key, seal_bytes);
+        (*operation).create(seal_key, seal_bytes, DB::Cas::Retry::standard());
 
     gc_state.snap_generation = generation;
     gc_state.snap_attempt = attempt;
     const String state = DB::Cas::encodeGcState(gc_state);
-    if (!head.exists)
-        backend.putIfAbsent(layout.gcStateKey(), state);
+    if (!existing_state)
+        (*operation).create(layout.gcStateKey(), state, DB::Cas::Retry::standard());
     else
-        backend.putOverwrite(layout.gcStateKey(), state, head.token);
+        (*operation).replace(layout.gcStateKey(), state, existing_state->etag, DB::Cas::Retry::standard());
 }
 
 /// The folded cursor sealed for (ns, shard) by the latest fold seal, or 0 when absent. After a COMPLETE
@@ -1026,15 +1238,16 @@ inline uint64_t foldCursorOf(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RootNamespace & ns, uint64_t shard)
 {
     chassert(shard == 0);
+    OperationForTest operation(backend);
     const std::optional<DB::Cas::NamespaceLifeId> life =
-        DB::Cas::CasRefCatalog::lifeIfCataloged(backend, layout, ns);
+        DB::Cas::CasRefCatalog::lifeIfCataloged(*operation, layout, ns);
     if (!life)
         return 0;
     const uint64_t gen = currentGenerationOf(backend, layout);
     const uint64_t attempt = currentAttemptOf(backend, layout);
     for (uint64_t g = gen; ; --g)
     {
-        if (const auto got = backend.get(layout.foldSealKey(g, attempt)))
+        if (const auto got = (*operation).read(layout.foldSealKey(g, attempt), DB::Cas::Retry::standard()))
         {
             const DB::Cas::CasFoldSeal seal = DB::Cas::decodeFoldSeal(got->bytes);
             const auto it = seal.ref_lives.find(life->incarnation);
@@ -1050,23 +1263,24 @@ inline uint64_t foldCursorOf(
 
 /// Set a server root's durable floor (so orphan-sweep eligibility can be driven). After the ack-floor
 /// merge the floor rides the mount lease body (`mountKey`), so this seeds a MountLease carrying
-/// `{writer_epoch, min_active}` — exactly what `prefixEligible` reads.
+/// `{writer_epoch, min_active_build_sequence}` — exactly what `prefixEligible` reads.
 inline void setWatermarkMinActive(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const String & server_root_id,
-    uint64_t writer_epoch, uint64_t min_active)
+    uint64_t writer_epoch, uint64_t min_active_build_sequence)
 {
     DB::Cas::MountLease m;
     m.server_uuid = DB::UInt128(0);
     m.writer_epoch = writer_epoch;
-    m.min_active = min_active;
+    m.min_active_build_sequence = min_active_build_sequence;
     m.seq = 1;
     m.write_attempt_id = DB::UInt128{1};
     const String key = layout.mountKey(server_root_id);
-    const DB::Cas::HeadResult h = backend.head(key);
-    if (h.exists)
-        backend.putOverwrite(key, DB::Cas::encodeMountLease(m), h.token);
+    OperationForTest op(backend);
+    const auto h = (*op).head(key, DB::Cas::Retry::standard());
+    if (h)
+        (*op).replace(key, DB::Cas::encodeMountLease(m), h->etag, DB::Cas::Retry::standard());
     else
-        backend.putIfAbsent(key, DB::Cas::encodeMountLease(m));
+        (*op).create(key, DB::Cas::encodeMountLease(m), DB::Cas::Retry::standard());
 }
 
 /// ---- Task 10 ref snapshot+log raw fixtures ----
@@ -1085,9 +1299,12 @@ inline void writeRefSnapshotRaw(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RefTableSnapshot & snapshot)
 {
     const DB::Cas::RootNamespace ns{snapshot.ns};
-    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(backend, layout, ns).value_or(fixture::fixtureLife(ns));
+    OperationForTest operation(backend);
+    const NamespaceLifeId life
+        = CasRefCatalog::lifeIfCataloged(*operation, layout, ns).value_or(fixture::fixtureLife(ns));
     const String key = layout.refSnapshotKey(life, snapshot.snapshot_id);
-    backend.putIfAbsent(key, DB::Cas::sealObject(DB::Cas::FormatId::RefSnapshot, DB::Cas::encodeRefTableSnapshot(snapshot)));
+    (*operation).create(key, DB::Cas::sealObject(DB::Cas::FormatId::RefSnapshot, DB::Cas::encodeRefTableSnapshot(snapshot)),
+                        DB::Cas::Retry::standard());
 }
 
 /// Admits `ns` into the catalog as a `Live` entry, IDEMPOTENTLY (a no-op once `ns` already carries
@@ -1112,7 +1329,8 @@ inline void writeRefSnapshotRaw(
 ///      readable `life_epoch`. Ordinary fixtures use `casAdmitRecoverableEntry` below instead.
 inline void casAdmitEntry(DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RootNamespace & ns)
 {
-    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(backend, layout);
+    OperationForTest operation(backend);
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(*operation, layout);
     for (const CatalogEntry & entry : snap.catalog.entries)
         if (entry.ns.string() == ns.string())
             return;   /// already admitted -- by an earlier raw write to the same namespace, or by the
@@ -1121,7 +1339,7 @@ inline void casAdmitEntry(DB::Cas::Backend & backend, const DB::Cas::Layout & la
     entry.ns = ns;
     entry.state = NsState::Live;
     entry.incarnation = fixture::fixtureLife(ns).incarnation;
-    CasRefCatalog::casAdmitEntry(backend, layout, 1, entry);
+    CasRefCatalog::casAdmitEntry(*operation, layout, 1, entry);
 }
 
 namespace fixture
@@ -1140,7 +1358,8 @@ inline void writeRecoverableCkptForRawFixture(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RootNamespace & ns,
     const DB::Cas::RefCkpt & ckpt)
 {
-    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(backend, layout);
+    OperationForTest operation(backend);
+    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(*operation, layout);
     const auto it = std::find_if(
         catalog_cut.catalog.entries.begin(), catalog_cut.catalog.entries.end(),
         [&] (const CatalogEntry & entry) { return entry.ns == ns; });
@@ -1149,8 +1368,9 @@ inline void writeRecoverableCkptForRawFixture(
             "raw recovery fixture for namespace '{}' has no catalog entry", ns.string());
 
     const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(it->ns, it->incarnation);
-    const PutResult put = backend.putIfAbsent(layout.refCkptKey(life), encodeRefCkpt(ckpt));
-    if (put.outcome != PutOutcome::Done)
+    const WriteResult put = (*operation).create(layout.refCkptKey(life), encodeRefCkpt(ckpt),
+                                                DB::Cas::Retry::standard());
+    if (!std::holds_alternative<DB::Cas::Committed>(put))
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "raw recovery fixture for namespace '{}' could not publish its checkpoint", ns.string());
 }
@@ -1161,7 +1381,8 @@ inline void advanceRecoverableCkptForRawFixture(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RootNamespace & ns,
     const DB::Cas::RefTxnId & through)
 {
-    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(backend, layout);
+    OperationForTest operation(backend);
+    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(*operation, layout);
     const auto it = std::find_if(
         catalog_cut.catalog.entries.begin(), catalog_cut.catalog.entries.end(),
         [&] (const CatalogEntry & entry) { return entry.ns == ns; });
@@ -1170,7 +1391,7 @@ inline void advanceRecoverableCkptForRawFixture(
             "raw recovery fixture for namespace '{}' has no catalog entry", ns.string());
 
     const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(it->ns, it->incarnation);
-    const std::optional<CkptSample> sample = readCkpt(backend, layout, life);
+    const std::optional<CkptSample> sample = readCkpt(*operation, layout, life);
     if (!sample)
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "raw recovery fixture for namespace '{}' has no checkpoint to advance", ns.string());
@@ -1182,7 +1403,9 @@ inline void advanceRecoverableCkptForRawFixture(
 
     RefCkpt advanced = sample->ckpt;
     advanced.committed_through = through;
-    if (backend.casPut(layout.refCkptKey(life), encodeRefCkpt(advanced), sample->token).outcome != CasOutcome::Committed)
+    if (!std::holds_alternative<DB::Cas::Committed>(
+            (*operation).replace(layout.refCkptKey(life), encodeRefCkpt(advanced), sample->etag,
+                                 DB::Cas::Retry::standard())))
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "raw recovery fixture for namespace '{}' could not advance its checkpoint", ns.string());
 }
@@ -1195,7 +1418,8 @@ inline void replaceRecoverableCkptForRawFixture(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RootNamespace & ns,
     const DB::Cas::RefCkpt & next)
 {
-    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(backend, layout);
+    OperationForTest operation(backend);
+    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(*operation, layout);
     const auto it = std::find_if(
         catalog_cut.catalog.entries.begin(), catalog_cut.catalog.entries.end(),
         [&] (const CatalogEntry & entry) { return entry.ns == ns; });
@@ -1204,7 +1428,7 @@ inline void replaceRecoverableCkptForRawFixture(
             "raw recovery fixture for namespace '{}' has no catalog entry", ns.string());
 
     const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(it->ns, it->incarnation);
-    const std::optional<CkptSample> existing = readCkpt(backend, layout, life);
+    const std::optional<CkptSample> existing = readCkpt(*operation, layout, life);
     if (!existing)
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "raw recovery fixture for namespace '{}' has no checkpoint to replace", ns.string());
@@ -1219,7 +1443,9 @@ inline void replaceRecoverableCkptForRawFixture(
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "raw recovery fixture for namespace '{}' cannot regress its checkpoint frontier", ns.string());
 
-    if (backend.casPut(layout.refCkptKey(life), encodeRefCkpt(next), existing->token).outcome != CasOutcome::Committed)
+    if (!std::holds_alternative<DB::Cas::Committed>(
+            (*operation).replace(layout.refCkptKey(life), encodeRefCkpt(next), existing->etag,
+                                 DB::Cas::Retry::standard())))
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "raw recovery fixture for namespace '{}' could not replace its checkpoint", ns.string());
 }
@@ -1232,20 +1458,24 @@ inline void publishRecoverableCkptForSemanticWrapper(
     DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const DB::Cas::RootNamespace & ns,
     const DB::Cas::RefTxnId & txn_id)
 {
-    const std::optional<NamespaceLifeId> life = CasRefCatalog::lifeIfCataloged(backend, layout, ns);
+    OperationForTest operation(backend);
+    const std::optional<NamespaceLifeId> life = CasRefCatalog::lifeIfCataloged(*operation, layout, ns);
     if (!life)
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "semantic ref fixture for namespace '{}' was not admitted", ns.string());
 
-    if (!readCkpt(backend, layout, *life))
+    if (!readCkpt(*operation, layout, *life))
     {
-        const PutResult put = backend.putIfAbsent(layout.refCkptKey(*life), encodeRefCkpt(RefCkpt{
-            .life_epoch = 1,
-            .committed_through = txn_id,
-            .checkpoint_snapshot_id = std::nullopt,
-            .last_epoch_seal = std::nullopt,
-        }));
-        if (put.outcome == PutOutcome::Done)
+        const WriteResult put = (*operation).create(
+            layout.refCkptKey(*life),
+            encodeRefCkpt(RefCkpt{
+                .life_epoch = 1,
+                .committed_through = txn_id,
+                .checkpoint_snapshot_id = std::nullopt,
+                .last_epoch_seal = std::nullopt,
+            }),
+            DB::Cas::Retry::standard());
+        if (std::holds_alternative<DB::Cas::Committed>(put))
             return;
     }
 
@@ -1264,12 +1494,13 @@ inline void casAdmitRecoverableEntry(
 {
     casAdmitEntry(backend, layout, ns);
 
-    const std::optional<NamespaceLifeId> life = CasRefCatalog::lifeIfCataloged(backend, layout, ns);
+    OperationForTest operation(backend);
+    const std::optional<NamespaceLifeId> life = CasRefCatalog::lifeIfCataloged(*operation, layout, ns);
     if (!life)
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "recoverable raw fixture for namespace '{}' was not admitted", ns.string());
 
-    if (backend.head(layout.refCkptKey(*life)).exists)
+    if ((*operation).head(layout.refCkptKey(*life), DB::Cas::Retry::standard()))
         return;
 
     writeRecoverableCkptForRawFixture(backend, layout, ns, RefCkpt{
@@ -1294,15 +1525,16 @@ inline DB::Cas::RecoveredRefTable recoverRefTableDetailedAtCatalogCutForTest(
     if (it != catalog_cut.catalog.entries.end())
         catalog_entry = *it;
 
+    OperationForTest operation(backend);
     std::optional<RefCkpt> ckpt;
     if (catalog_entry)
     {
         const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(catalog_entry->ns, catalog_entry->incarnation);
-        if (const std::optional<CkptSample> sample = readCkpt(backend, layout, life))
+        if (const std::optional<CkptSample> sample = readCkpt(*operation, layout, life))
             ckpt = sample->ckpt;
     }
 
-    return recoverRefTableDetailedFromAuthority(backend, layout, catalog_entry, ckpt);
+    return recoverRefTableDetailedFromAuthority(*operation, layout, catalog_entry, ckpt);
 }
 
 /// Writes `txn` at `_log/<txn_id>` (create-if-absent). Admits `txn.ns` into the catalog first
@@ -1322,9 +1554,11 @@ inline void writeRefLogTxnRaw(
 {
     const DB::Cas::RootNamespace ns{txn.ns};
     casAdmitEntry(backend, layout, ns);
-    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(backend, layout, ns).value_or(fixture::fixtureLife(ns));
+    OperationForTest operation(backend);
+    const NamespaceLifeId life
+        = CasRefCatalog::lifeIfCataloged(*operation, layout, ns).value_or(fixture::fixtureLife(ns));
     const String key = layout.refLogKey(life, txn.txn_id);
-    backend.putIfAbsent(key, DB::Cas::sealObject(DB::Cas::FormatId::RefLog, DB::Cas::encodeRefLogTxn(txn)));
+    (*operation).create(key, DB::Cas::sealObject(DB::Cas::FormatId::RefLog, DB::Cas::encodeRefLogTxn(txn)), DB::Cas::Retry::standard());
 }
 
 namespace fixture
@@ -1445,140 +1679,194 @@ inline std::vector<DB::Cas::RefOp> publishCommittedOps(const String & ref_name, 
     return {add, promote};
 }
 
-/// Counts head/get/putIfAbsent per key for op-count assertions (Pillar B / A1 tests).
+/// Serves an inner stream in windows of at most `chunk` bytes, and records the largest window it ever
+/// handed out. `InMemoryBackend` materializes the whole object behind its stream, so without this a
+/// consumer receives every byte as one contiguous window -- it can hold the object entire and still
+/// look like a streaming reader, and nothing at the seam can tell the two apart.
+///
+/// What arming this proves is what the consumer then DOES: a reader that assumed one contiguous window
+/// fails against a chunked source, so the test's own success is the evidence. The recorded window is
+/// the bound it succeeded under, not a measurement of the reader's resident memory -- a consumer that
+/// copies every window into a buffer of its own is invisible here, as it is to any `ReadBuffer`.
+class ChunkedStreamForTest : public DB::ReadBuffer
+{
+public:
+    ChunkedStreamForTest(std::unique_ptr<DB::ReadBuffer> inner_, size_t chunk,
+                         std::shared_ptr<std::atomic<uint64_t>> largest_)
+        : DB::ReadBuffer(nullptr, 0), inner(std::move(inner_)), storage(chunk), largest(std::move(largest_))
+    {
+    }
+
+private:
+    bool nextImpl() override
+    {
+        const size_t got = inner->read(storage.data(), storage.size());
+        if (got == 0)
+            return false;
+        BufferBase::set(storage.data(), got, 0);
+        uint64_t seen = largest->load();
+        while (seen < got && !largest->compare_exchange_weak(seen, got))
+        {
+        }
+        return true;
+    }
+
+    std::unique_ptr<DB::ReadBuffer> inner;
+    std::vector<char> storage;
+    std::shared_ptr<std::atomic<uint64_t>> largest;
+};
+
+/// Counts every request per key, for the op-count assertions (Pillar B / A1 tests).
 class CountingBackend : public DB::Cas::InMemoryBackend
 {
 public:
-    /// Unhide the base convenience overloads (omitted Range/ObjectMeta/expected-token forms): the
-    /// overrides below would otherwise shadow them for callers holding a concrete backend type.
-    using DB::Cas::Backend::get;
-    using DB::Cas::Backend::getStream;
-    using DB::Cas::Backend::putIfAbsent;
-    using DB::Cas::Backend::putOverwrite;
-    using DB::Cas::Backend::casPut;
-
-    DB::Cas::HeadResult head(const String & key) override
+    /// ---- The counters live on the transport primitives, so a request is counted once ----
+    ///
+    /// Whichever surface a caller used, its request passes through one of the primitives below: a
+    /// legacy verb reaches them through its forwarder, and a `CasOperation` speaks them directly.
+    /// Counting here is therefore counting requests rather than callers.
+    ///
+    /// Each counter ticks BEFORE the request is served, so an injected failure still counts as a
+    /// request issued. A blob publication is not counted: it reaches the store through `publish`,
+    /// which no counter below observes.
+    std::optional<DB::Cas::Backend::Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
-        {
-            std::lock_guard lock(count_mutex);
-            ++head_counts[key];
-            ++head_total;
-        }
-        return InMemoryBackend::head(key);
+        tick(get_counts, get_total, key);
+        return InMemoryBackend::read(key, access);
     }
 
-    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    std::optional<DB::Cas::Backend::RawMeta> head(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        tick(head_counts, head_total, key);
+        return InMemoryBackend::head(key, access);
+    }
+
+    DB::Cas::Backend::RawListPage list(const String & prefix, const String & cursor, size_t limit,
+                                       DB::Cas::TransportAccess & access) override
+    {
+        tick(list_counts, list_total, prefix);
+        return InMemoryBackend::list(prefix, cursor, limit, access);
+    }
+
+    /// Create-shaped and replace-shaped writes are counted apart as well as together: whether a write
+    /// carried a precondition is the only thing about it the transport can still see, and the
+    /// namespace-file request-profile goldens read the create path off exactly that.
+    std::expected<String, DB::Cas::Backend::RawConflict> write(const String & key, const String & bytes,
+                                                               const std::optional<String> & expected_value,
+                                                               DB::Cas::TransportAccess & access) override
     {
         {
             std::lock_guard lock(count_mutex);
-            ++get_counts[key];
-            ++get_total;
-            /// Record the request-size shape per key so streaming-memory gates (Task 3/4) can assert
-            /// the resident-memory bound at the seam: a whole-object read (range.whole()) is a
-            /// violation for a run object; a ranged read tracks its MAX window length per key.
-            if (range.whole())
-                ++whole_get_counts[key];
+            ++write_counts[key];
+            ++write_total;
+            if (expected_value)
+            {
+                ++put_overwrite_counts[key];
+                ++put_overwrite_total;
+            }
             else
             {
-                const uint64_t len = range.length.has_value() ? *range.length : 0;
-                uint64_t & mx = max_ranged_get_len[key];
-                mx = std::max(mx, len);
+                ++put_counts[key];
+                ++put_total;
             }
         }
-        return InMemoryBackend::get(key, range);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
-    std::optional<DB::Cas::GetStreamResult> getStream(const String & key, DB::Cas::Range range) override
-    {
-        {
-            std::lock_guard lock(count_mutex);
-            ++get_stream_counts[key];
-            ++get_stream_total;
-        }
-        return InMemoryBackend::getStream(key, range);
-    }
-
-    DB::Cas::ListPage list(const String & prefix, const String & cursor, size_t limit) override
-    {
-        {
-            std::lock_guard lock(count_mutex);
-            ++list_counts[prefix];
-            ++list_total;
-        }
-        return InMemoryBackend::list(prefix, cursor, limit);
-    }
-
-    DB::Cas::PutResult putIfAbsent(const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
-    {
-        {
-            std::lock_guard lock(count_mutex);
-            ++put_counts[key];
-            ++put_total;
-        }
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
-    }
-
-
-    /// Counted separately from `putIfAbsent` and `casPut`, for the same reason those two are separate: a
-    /// replacement conditioned on an expected token is its own op with its own cost. The namespace-file
-    /// request-profile goldens tell the create path from the replace path on exactly this counter.
-    DB::Cas::PutResult putOverwrite(const String & key, const String & bytes, const DB::Cas::Token & expected,
-                                    const DB::Cas::ObjectMeta & meta) override
-    {
-        {
-            std::lock_guard lock(count_mutex);
-            ++put_overwrite_counts[key];
-            ++put_overwrite_total;
-        }
-        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
-    }
-
-    /// Counted separately from `putIfAbsent`: a token-CAS is a DIFFERENT op with a different cost, and
-    /// the `_ckpt` no-op contract ("identical merged body issues no write") is asserted on exactly this
-    /// counter -- a create-if-absent count would not see the replace path at all.
-    DB::Cas::CasResult casPut(const String & key, const String & bytes,
-                              const std::optional<DB::Cas::Token> & expected, const DB::Cas::ObjectMeta & meta) override
-    {
-        {
-            std::lock_guard lock(count_mutex);
-            ++cas_put_counts[key];
-            ++cas_put_total;
-        }
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
-    }
     /// Every ATTEMPTED delete is counted, whatever the backend answers. The destructive gate's tests
-    /// assert that a suppressed round issues NONE, and an attempt that came back `NotFound` is still an
+    /// assert that a suppressed round issues NONE, and an attempt that came back `Gone` is still an
     /// attempt -- counting only successful ones would let a gate that leaks deletes over already-absent
     /// keys read as green.
-    DB::Cas::DeleteOutcome deleteExact(const String & key, const DB::Cas::Token & token) override
+    DB::Cas::Backend::RawRemoval remove(const String & key, const String & expected_value,
+                                        DB::Cas::TransportAccess & access) override
     {
-        {
-            std::lock_guard lock(count_mutex);
-            ++delete_counts[key];
-            ++delete_total;
-        }
-        return InMemoryBackend::deleteExact(key, token);
-
+        tick(delete_counts, delete_total, key);
+        return InMemoryBackend::remove(key, expected_value, access);
     }
 
-    uint64_t headCount(const String & key) const { return lookup(head_counts, key); }
-    uint64_t casPutCount(const String & key) const { return lookup(cas_put_counts, key); }
-    uint64_t putOverwriteCount(const String & key) const { return lookup(put_overwrite_counts, key); }
+    /// One `removeManyWriteOnce` call is one bulk-delete request that names every key it carried; the
+    /// per-key `delete_counts` grow by one for each key named, exactly as a single-key `remove` would,
+    /// so `deleteCount(key)` reads the same whichever verb deleted it.
+    void removeManyWriteOnce(const std::vector<DB::Cas::WriteOnceKey> & keys, DB::Cas::TransportAccess & access) override
+    {
+        for (const DB::Cas::WriteOnceKey & key : keys)
+            tick(delete_counts, delete_total, key.str());
+        InMemoryBackend::removeManyWriteOnce(keys, access);
+    }
+
+    /// A blob publication reaches the store through `publish`, not `write` -- a "zero backend requests"
+    /// assertion built only from the primitives above would miss one landing.
+    void publish(const DB::Cas::BlobPublishRequest & request, DB::Cas::TransportAccess & access) override
+    {
+        tick(publish_counts, publish_total, request.destination_key);
+        InMemoryBackend::publish(request, access);
+    }
+
+    std::unique_ptr<DB::ReadBuffer> stream(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        tick(get_stream_counts, get_stream_total, key);
+        std::unique_ptr<DB::ReadBuffer> opened = InMemoryBackend::stream(key, access);
+        const size_t chunk = stream_chunk.load();
+        if (!opened || chunk == 0)
+            return opened;
+        auto chunked = std::make_unique<ChunkedStreamForTest>(std::move(opened), chunk, largestChunkSlot(key));
+        /// Hand back a buffer whose FIRST window is already loaded, as a network-backed store does:
+        /// `ObjectStorageBackend::stream` forces that GET so the open's own attempt is what pays for
+        /// it. A fixture that returned an empty buffer would let a consumer which drops the preloaded
+        /// window -- and so silently loses the head of every streamed body -- pass its tests.
+        chunked->nextIfAtEnd();
+        return chunked;
+    }
+
+    /// Serve every stream opened from now on in windows of at most `bytes`, as a network-backed store
+    /// does. Zero (the default) hands the consumer the whole object at once, which is what this
+    /// backend's own materialization makes of any stream. A mode rather than a count: `resetCounts`
+    /// leaves it alone.
+    void setStreamChunkForTest(size_t bytes) { stream_chunk.store(bytes); }
+
+    /// The largest contiguous window any consumer of `key`'s stream was handed. Zero when the key was
+    /// never streamed.
+    uint64_t largestStreamChunk(const String & key) const
+    {
+        std::lock_guard lock(count_mutex);
+        const auto it = largest_stream_chunk.find(key);
+        return it == largest_stream_chunk.end() ? 0 : it->second->load();
+    }
+
     uint64_t getCount(const String & key) const { return lookup(get_counts, key); }
+    uint64_t headCount(const String & key) const { return lookup(head_counts, key); }
+    uint64_t listCount(const String & prefix) const { return lookup(list_counts, prefix); }
+    uint64_t writeCount(const String & key) const { return lookup(write_counts, key); }
     uint64_t putCount(const String & key) const { return lookup(put_counts, key); }
+    uint64_t putOverwriteCount(const String & key) const { return lookup(put_overwrite_counts, key); }
     uint64_t deleteCount(const String & key) const { return lookup(delete_counts, key); }
+    uint64_t getStreamCount(const String & key) const { return lookup(get_stream_counts, key); }
+    uint64_t publishCount(const String & key) const { return lookup(publish_counts, key); }
+
+    uint64_t getTotal() const { std::lock_guard lock(count_mutex); return get_total; }
+    uint64_t headTotal() const { std::lock_guard lock(count_mutex); return head_total; }
+    uint64_t listTotal() const { std::lock_guard lock(count_mutex); return list_total; }
+    uint64_t writeTotal() const { std::lock_guard lock(count_mutex); return write_total; }
+    uint64_t putTotal() const { std::lock_guard lock(count_mutex); return put_total; }
+    uint64_t putOverwriteTotal() const { std::lock_guard lock(count_mutex); return put_overwrite_total; }
     uint64_t deleteTotal() const { std::lock_guard lock(count_mutex); return delete_total; }
+    uint64_t getStreamTotal() const { std::lock_guard lock(count_mutex); return get_stream_total; }
+    uint64_t publishTotal() const { std::lock_guard lock(count_mutex); return publish_total; }
+
     /// Attempted deletes against any key whose path CONTAINS `substr` — the per-site assertion the
     /// destructive-gate tests make ("the generation prune deleted nothing", "the sweep deleted nothing").
     uint64_t deleteCountForKeysContaining(const String & substr) const
     {
-        std::lock_guard lock(count_mutex);
-        uint64_t total = 0;
-        for (const auto & [key, n] : delete_counts)
-            if (key.find(substr) != String::npos)
-                total += n;
-        return total;
+        return sumForKeysContaining({&delete_counts}, substr);
     }
+
+    /// The total number of read + stream + create-shaped write requests against any key whose path
+    /// CONTAINS `substr` (T0 idle-round gate: zero run I/O touches every `.../blob_target/...` key).
+    uint64_t ioCountForKeysContaining(const String & substr) const
+    {
+        return sumForKeysContaining({&get_counts, &get_stream_counts, &put_counts}, substr);
+    }
+
     /// Every key this backend was ever asked to delete, in sorted order — so a failing zero-delete
     /// assertion names the sites that leaked instead of just reporting a count.
     std::vector<String> deletedKeys() const
@@ -1590,13 +1878,7 @@ public:
             keys.push_back(key);
         return keys;
     }
-    uint64_t getStreamCount(const String & key) const { return lookup(get_stream_counts, key); }
-    uint64_t listCount(const String & prefix) const { return lookup(list_counts, prefix); }
-    /// The max ranged-get window length observed for `key` (0 if only whole-object gets, or none).
-    uint64_t maxRangedGetLen(const String & key) const { return lookup(max_ranged_get_len, key); }
-    /// How many whole-object gets (range.whole()) hit `key` — nonzero flags a resident-memory
-    /// violation for a run/seal object that a streaming caller must never read whole.
-    uint64_t wholeGetCount(const String & key) const { return lookup(whole_get_counts, key); }
+
     /// Every key any counted operation was issued against, plus every LIST prefix, sorted and
     /// de-duplicated. A request-profile gate asserts the SET, not only the totals, so a new request the
     /// profile does not allow names its own key in the failure instead of moving an anonymous counter.
@@ -1605,8 +1887,7 @@ public:
         std::lock_guard lock(count_mutex);
         std::vector<String> keys;
         for (const std::map<String, uint64_t> * m :
-             {&head_counts, &get_counts, &put_counts, &put_overwrite_counts, &cas_put_counts,
-              &get_stream_counts, &list_counts, &delete_counts})
+             {&get_counts, &head_counts, &list_counts, &write_counts, &delete_counts, &get_stream_counts})
             for (const auto & [key, n] : *m)
                 keys.push_back(key);
         std::sort(keys.begin(), keys.end());
@@ -1614,48 +1895,40 @@ public:
         return keys;
     }
 
-    uint64_t headTotal() const { std::lock_guard lock(count_mutex); return head_total; }
-    uint64_t getTotal() const { std::lock_guard lock(count_mutex); return get_total; }
-    uint64_t putTotal() const { std::lock_guard lock(count_mutex); return put_total; }
-    uint64_t putOverwriteTotal() const { std::lock_guard lock(count_mutex); return put_overwrite_total; }
-    uint64_t casPutTotal() const { std::lock_guard lock(count_mutex); return cas_put_total; }
-    uint64_t getStreamTotal() const { std::lock_guard lock(count_mutex); return get_stream_total; }
-    uint64_t listTotal() const { std::lock_guard lock(count_mutex); return list_total; }
-
-    /// The total number of get + getStream + putIfAbsent operations against any key whose path
-    /// CONTAINS `substr` (T0 idle-round gate: zero run I/O touches every `.../blob_target/...` key).
-    uint64_t ioCountForKeysContaining(const String & substr) const
-    {
-        std::lock_guard lock(count_mutex);
-        uint64_t total = 0;
-        for (const auto & [key, n] : get_counts)
-            if (key.find(substr) != String::npos) total += n;
-        for (const auto & [key, n] : get_stream_counts)
-            if (key.find(substr) != String::npos) total += n;
-        for (const auto & [key, n] : put_counts)
-            if (key.find(substr) != String::npos) total += n;
-        return total;
-    }
-
     void resetCounts()
     {
         std::lock_guard lock(count_mutex);
-        head_counts.clear();
         get_counts.clear();
+        head_counts.clear();
+        list_counts.clear();
+        write_counts.clear();
         put_counts.clear();
         put_overwrite_counts.clear();
-        cas_put_counts.clear();
-        get_stream_counts.clear();
-        list_counts.clear();
         delete_counts.clear();
-        max_ranged_get_len.clear();
-        whole_get_counts.clear();
-        head_total = get_total = put_total = cas_put_total = get_stream_total = list_total = delete_total = 0;
-        put_overwrite_total = 0;
-
+        get_stream_counts.clear();
+        publish_counts.clear();
+        largest_stream_chunk.clear();
+        get_total = head_total = list_total = write_total = put_total = put_overwrite_total
+            = delete_total = get_stream_total = publish_total = 0;
     }
 
 private:
+    std::shared_ptr<std::atomic<uint64_t>> largestChunkSlot(const String & key)
+    {
+        std::lock_guard lock(count_mutex);
+        auto & slot = largest_stream_chunk[key];
+        if (!slot)
+            slot = std::make_shared<std::atomic<uint64_t>>(0);
+        return slot;
+    }
+
+    void tick(std::map<String, uint64_t> & per_key, uint64_t & total, const String & key)
+    {
+        std::lock_guard lock(count_mutex);
+        ++per_key[key];
+        ++total;
+    }
+
     uint64_t lookup(const std::map<String, uint64_t> & m, const String & key) const
     {
         std::lock_guard lock(count_mutex);
@@ -1663,132 +1936,170 @@ private:
         return it == m.end() ? 0 : it->second;
     }
 
+    uint64_t sumForKeysContaining(std::initializer_list<const std::map<String, uint64_t> *> maps,
+                                  const String & substr) const
+    {
+        std::lock_guard lock(count_mutex);
+        uint64_t total = 0;
+        for (const std::map<String, uint64_t> * m : maps)
+            for (const auto & [key, n] : *m)
+                if (key.find(substr) != String::npos)
+                    total += n;
+        return total;
+    }
+
     mutable std::mutex count_mutex;
-    std::map<String, uint64_t> head_counts;
+    /// Held by `shared_ptr` so a stream outliving the map entry's rehash still records into its own slot.
+    std::map<String, std::shared_ptr<std::atomic<uint64_t>>> largest_stream_chunk;
+    std::atomic<size_t> stream_chunk{0};
     std::map<String, uint64_t> get_counts;
+    std::map<String, uint64_t> head_counts;
+    std::map<String, uint64_t> list_counts;
+    std::map<String, uint64_t> write_counts;
     std::map<String, uint64_t> put_counts;
     std::map<String, uint64_t> put_overwrite_counts;
-    std::map<String, uint64_t> cas_put_counts;
-    std::map<String, uint64_t> get_stream_counts;
-    std::map<String, uint64_t> list_counts;
     std::map<String, uint64_t> delete_counts;
-    std::map<String, uint64_t> max_ranged_get_len;
-    std::map<String, uint64_t> whole_get_counts;
-    uint64_t head_total = 0;
+    std::map<String, uint64_t> get_stream_counts;
+    std::map<String, uint64_t> publish_counts;
     uint64_t get_total = 0;
+    uint64_t head_total = 0;
+    uint64_t list_total = 0;
+    uint64_t write_total = 0;
     uint64_t put_total = 0;
     uint64_t put_overwrite_total = 0;
-    uint64_t cas_put_total = 0;
-    uint64_t get_stream_total = 0;
-    uint64_t list_total = 0;
     uint64_t delete_total = 0;
+    uint64_t get_stream_total = 0;
+    uint64_t publish_total = 0;
 };
 
-/// Records the ORDER of body-PUT / `_ckpt`-CAS operations (so a test can compare indices) and lets a
-/// test inject a persistent `Conflict` on one chosen `_ckpt` key -- the same technique
-/// `gtest_cas_ref_writer.cpp`'s `RefWriterTestBackend::ckpt_conflict_key`/`ckpt_conflict_count` uses to
-/// drive the ledger into `NeedsRecovery`, reproduced here so this suite has no dependency on that file's
-/// internal (non-exported) test type. Delegates every operation to `CountingBackend` unchanged, so the
-/// per-key counters (`putCount`/`casPutCount`) remain available as the positive control.
+/// Records the ORDER of writes (so a test can compare indices) and lets a test refuse or fail chosen
+/// writes by key. Delegates every request to `CountingBackend` unchanged, so the per-key counters
+/// remain available as the positive control.
+///
+/// The journal records the KEY, not a verb: a write reaches the transport as bytes plus an optional
+/// precondition, and the ordering tests it serves already distinguish their two subjects (the snapshot
+/// body and the checkpoint) by key.
 class OrderedFaultBackend : public CountingBackend
 {
 public:
-    using CountingBackend::casPut;
-    using CountingBackend::get;
-    using CountingBackend::putIfAbsent;
-
-    enum class Op : uint8_t { Put, Cas };
-    struct Entry
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
     {
-        Op op;
-        String key;
-    };
-
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
-    {
-        record(Op::Put, key);
-        if (fail_put_count > 0 && !fail_put_substr.empty() && key.find(fail_put_substr) != String::npos)
+        switch (claimFault(key))
         {
-            --fail_put_count;
-            throw Poco::TimeoutException("OrderedFaultBackend: simulated PUT response lost, nothing landed");
+            case Fault::Conflict:
+                /// A refusal (not a thrown/ambiguous response): the caller's own re-read-and-merge loop
+                /// treats this exactly like a concurrent writer that landed first.
+                return std::unexpected(RawConflict{});
+            case Fault::ResponseLost:
+                throw Poco::TimeoutException("OrderedFaultBackend: simulated write response lost, nothing landed");
+            case Fault::None:
+                break;
         }
-        return CountingBackend::putIfAbsent(key, bytes, meta);
+        return CountingBackend::write(key, bytes, expected_value, access);
     }
 
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected,
-                      const ObjectMeta & meta) override
+    /// Arms a refusal at `key` for the next `count` writes. A COUNT cannot wedge one logical write:
+    /// the engine reissues an unresolved or refused write until its own retry window closes, so a
+    /// count the reissues outlive lets the call commit in the end. Use it to bound how much contention
+    /// a call meets, and `armLatchedWriteConflict` when the call must not commit at all.
+    void armWriteConflict(const String & key, size_t count)
     {
-        record(Op::Cas, key);
-        if (key == fail_cas_key && fail_cas_count > 0)
-        {
-            --fail_cas_count;
-            /// A `Conflict` (not a thrown/ambiguous response): the caller's own re-read-and-merge loop
-            /// (`publishCkpt`) treats this exactly like a concurrent writer that landed first, and
-            /// exhausts `MAX_CKPT_CAS_ATTEMPTS` (100) without ever committing -- deterministically, with
-            /// no wall-clock wait, since the loop is attempt-bounded rather than only deadline-bounded.
-            return {CasOutcome::Conflict, {}};
-        }
-        return CountingBackend::casPut(key, bytes, expected, meta);
+        std::lock_guard lock(mutex);
+        conflict_key = key;
+        conflict_count = count;
     }
 
-    /// Arms a persistent CAS conflict at `key` for the next `count` attempts.
-    void armCasConflict(const String & key, size_t count)
+    /// Refuses EVERY write of `key` until disarmed with an empty key, so a call meets the refusal on
+    /// every one of its reissues and reaches its retry deadline without committing.
+    void armLatchedWriteConflict(const String & key)
     {
-        fail_cas_key = key;
-        fail_cas_count = count;
+        std::lock_guard lock(mutex);
+        latched_conflict_key = key;
     }
 
-    /// Arms a persistent, never-committed PUT failure for the next `count` `putIfAbsent` calls whose key
-    /// contains `substr`: the object is never actually written (unlike a real ambiguous response, which
-    /// may or may not have landed), so the resolve-by-exact-GET a controlled `CasRequestBudget` with
-    /// `max_attempts = 1` performs always finds the key absent and classifies the attempt a definite,
-    /// non-`Committed` failure -- deterministically, with no internal retry and no wall-clock wait.
-    void armPutFailure(const String & substr, int count)
+    /// Arms a never-committed write failure for the next `count` writes whose key contains `substr`:
+    /// the object is never actually written (unlike a real ambiguous response, which may or may not
+    /// have landed), so a resolve read always finds the key absent and classifies the attempt a
+    /// definite, non-committed failure. The same count caveat as `armWriteConflict` applies.
+    void armWriteFailure(const String & substr, int count)
     {
-        fail_put_substr = substr;
-        fail_put_count = count;
+        std::lock_guard lock(mutex);
+        failure_substr = substr;
+        failure_count = count;
+    }
+
+    /// Loses the response of EVERY write whose key contains `substr` until disarmed with an empty
+    /// substring -- the latched form of `armWriteFailure`, for a call that must never commit.
+    void armLatchedWriteFailure(const String & substr)
+    {
+        std::lock_guard lock(mutex);
+        latched_failure_substr = substr;
     }
 
     /// The current length of the journal -- a caller's baseline for `indicesFrom` below, so a query can
     /// be scoped to "since I last looked" rather than "since the pool opened" (whose earlier entries
-    /// belong to unrelated setup writes, e.g. the birth transaction's own checkpoint CAS).
+    /// belong to unrelated setup writes, e.g. the birth transaction's own checkpoint write).
     size_t journalSize() const
     {
         std::lock_guard lock(mutex);
         return journal.size();
     }
 
-    /// Every index at or after `from` where `op`/`key` matches, in order.
-    std::vector<size_t> indicesFrom(Op op, const String & key, size_t from) const
+    /// Every index at or after `from` where a write of `key` was issued, in order.
+    std::vector<size_t> indicesFrom(const String & key, size_t from) const
     {
         std::lock_guard lock(mutex);
         std::vector<size_t> result;
         for (size_t i = from; i < journal.size(); ++i)
-            if (journal[i].op == op && journal[i].key == key)
+            if (journal[i] == key)
                 result.push_back(i);
         return result;
     }
 
-    /// The first index at or after `from` where `op`/`key` matches, if any.
-    std::optional<size_t> firstIndexFrom(Op op, const String & key, size_t from) const
+    /// The first index at or after `from` where a write of `key` was issued, if any.
+    std::optional<size_t> firstIndexFrom(const String & key, size_t from) const
     {
-        const auto indices = indicesFrom(op, key, from);
+        const auto indices = indicesFrom(key, from);
         return indices.empty() ? std::nullopt : std::make_optional(indices.front());
     }
 
 private:
-    void record(Op op, const String & key)
+    enum class Fault : uint8_t { None, Conflict, ResponseLost };
+
+    /// Journals the write and consumes at most one armed fault, all under one hold: a publisher and a
+    /// synchronous caller write concurrently in these fixtures, and a counted fault read outside the
+    /// lock would be handed to both.
+    Fault claimFault(const String & key)
     {
         std::lock_guard lock(mutex);
-        journal.push_back({op, key});
+        journal.push_back(key);
+        if (!latched_conflict_key.empty() && key == latched_conflict_key)
+            return Fault::Conflict;
+        if (key == conflict_key && conflict_count > 0)
+        {
+            --conflict_count;
+            return Fault::Conflict;
+        }
+        if (!latched_failure_substr.empty() && key.find(latched_failure_substr) != String::npos)
+            return Fault::ResponseLost;
+        if (failure_count > 0 && !failure_substr.empty() && key.find(failure_substr) != String::npos)
+        {
+            --failure_count;
+            return Fault::ResponseLost;
+        }
+        return Fault::None;
     }
 
     mutable std::mutex mutex;
-    std::vector<Entry> journal;
-    String fail_cas_key;
-    size_t fail_cas_count = 0;
-    String fail_put_substr;
-    int fail_put_count = 0;
+    std::vector<String> journal;
+    String conflict_key;
+    size_t conflict_count = 0;
+    String latched_conflict_key;
+    String failure_substr;
+    int failure_count = 0;
+    String latched_failure_substr;
 };
 
 /// A backend whose LIST permanently omits every key under a chosen prefix while those keys stay fully
@@ -1800,7 +2111,7 @@ private:
 /// arithmetic walk that finds it anyway is the property under test -- these fixtures are about the walk,
 /// not about any one `list` call.
 ///
-/// Erasing keys from a page cannot disturb pagination: `ListPage::next_cursor` is computed by the base
+/// Erasing keys from a page cannot disturb pagination: `next_cursor` is computed by the base
 /// backend before the erase, so the next page still resumes strictly after the last key it returned.
 ///
 /// Templated on the base so a suite that also needs request COUNTS composes it over `CountingBackend`
@@ -1810,6 +2121,9 @@ template <typename Base>
 class HintHoleBackendOn : public Base
 {
 public:
+    /// Unhide the legacy `list` name the primitive override below would otherwise shadow.
+    using Base::list;
+
     /// Hide every key under `prefix` from LIST -- a whole namespace, including objects a later publish
     /// adds.
     void hidePrefix(const String & prefix)
@@ -1830,8 +2144,8 @@ public:
     /// one call, replacing whatever was hidden before.
     ///
     /// This is the RustFS defect reproduced as an interface: every one of these keys stays durable and
-    /// honestly served by `get` / `head` / `putIfAbsent` / `casPut` / `deleteExact`, and only
-    /// enumeration pretends they are not there. Stating the omission as a SET is what lets a test say
+    /// honestly served by every other request, and only enumeration pretends they are not there.
+    /// Stating the omission as a SET is what lets a test say
     /// the thing the defect report says -- "ids 3 and 4 are invisible while the LATER id 5 is visible"
     /// -- in one line, instead of assembling it from repeated single-key calls whose combined effect a
     /// reader has to reconstruct.
@@ -1862,14 +2176,15 @@ public:
         hidden_prefixes.clear();
     }
 
-    DB::Cas::ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    DB::Cas::Backend::RawListPage list(const String & prefix, const String & cursor, size_t limit,
+                                       DB::Cas::TransportAccess & access) override
     {
-        DB::Cas::ListPage page = Base::list(prefix, cursor, limit);
+        DB::Cas::Backend::RawListPage page = Base::list(prefix, cursor, limit, access);
         std::lock_guard lock(hide_mutex);
         if (hidden_keys.empty() && hidden_prefixes.empty())
             return page;
         const size_t before = page.keys.size();
-        std::erase_if(page.keys, [&](const DB::Cas::ListedKey & k)
+        std::erase_if(page.keys, [&](const DB::Cas::Backend::RawListedKey & k)
         {
             if (hidden_keys.contains(k.key))
                 return true;
@@ -1905,14 +2220,14 @@ inline void rearmMountFenceAfterAnomalyForTest(const DB::Cas::PoolPtr & store)
     store->armMountFence(DB::UInt128{0, 1}, store->liveWriterEpoch(), store->bootMsNow() + 600000);
 }
 
-/// Delegates the FIRST matching `putIfAbsent` to `CountingBackend` -- so the write actually LANDS --
-/// and only THEN throws an ambiguous exception, modelling "our own PUT committed but its response was
-/// lost". Every later call behaves normally, so a caller that retries the SAME (key, bytes) meets its
-/// OWN earlier write as the occupant: the exact input the every-attempt rule's adoption arm adjudicates
-/// (`slotOccupy` reports `Occupied` with bytes equal to the attempt's own).
+/// Delegates the FIRST matching create-shaped write to `CountingBackend` -- so the write actually
+/// LANDS -- and only THEN throws an ambiguous exception, modelling "our own PUT committed but its
+/// response was lost". Every later call behaves normally, so a caller that retries the SAME (key,
+/// bytes) meets its OWN earlier write as the occupant: the exact input the every-attempt rule's
+/// adoption arm adjudicates (`slotOccupy` reports `Occupied` with bytes equal to the attempt's own).
 ///
-/// `key_substr` empty means "the first putIfAbsent of any key"; set it to scope the fault to one key
-/// family when the caller drives a whole Pool (whose bootstrap PUTs would otherwise consume the fault).
+/// `key_substr` empty means "the first create of any key"; set it to scope the fault to one key
+/// family when the caller drives a whole Pool (whose bootstrap writes would otherwise consume it).
 ///
 /// Shared rather than TU-local because two suites need exactly this shape: `gtest_cas_slot_occupy.cpp`
 /// pins the primitive's same-call resolve, and `gtest_cas_ref_wedge_every_attempt.cpp` drives the
@@ -1920,8 +2235,6 @@ inline void rearmMountFenceAfterAnomalyForTest(const DB::Cas::PoolPtr & store)
 class LandedButAckLostOnceBackend : public CountingBackend
 {
 public:
-    using CountingBackend::putIfAbsent;
-    using CountingBackend::get;
     String key_substr;
     bool fired = false;
     /// Also lose the caller's IMMEDIATE resolve read of the same key, once. Needed only by a caller
@@ -1931,46 +2244,45 @@ public:
     /// retry loop -- which is why this defaults off and this file's original caller is unaffected.
     bool lose_resolve_read = false;
 
-    DB::Cas::PutResult putIfAbsent(const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
     {
-        if (!fired && (key_substr.empty() || key.find(key_substr) != String::npos))
+        if (!fired && !expected_value && (key_substr.empty() || key.find(key_substr) != String::npos))
         {
             fired = true;
-            CountingBackend::putIfAbsent(key, bytes, meta);   /// the write LANDS
+            (void)CountingBackend::write(key, bytes, expected_value, access);   /// the write LANDS
             if (lose_resolve_read)
-                fail_get_once_key = key;
+                fail_read_once_key = key;
             throw Poco::TimeoutException("LandedButAckLostOnceBackend: simulated lost PUT response");
         }
-        return CountingBackend::putIfAbsent(key, bytes, meta);
+        return CountingBackend::write(key, bytes, expected_value, access);
     }
 
-    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
-        if (!fail_get_once_key.empty() && key == fail_get_once_key)
+        if (!fail_read_once_key.empty() && key == fail_read_once_key)
         {
-            fail_get_once_key.clear();
+            fail_read_once_key.clear();
             throw Poco::TimeoutException(
                 "LandedButAckLostOnceBackend: simulated lost GET (read response never arrived)");
         }
-        return CountingBackend::get(key, range);
+        return CountingBackend::read(key, access);
     }
 
 private:
-    String fail_get_once_key;
+    String fail_read_once_key;
 };
 
-/// A `CountingBackend` that can fault selected PUTs by key substring (skip the first `fault_skip`
-/// matches, then fault the next `fault_count`), and can latch a matching PUT mid-flight. Same class of
-/// seam as the wedge tests in `gtest_cas_ref_writer.cpp` use
+/// A `CountingBackend` that can fault selected create-shaped writes by key substring (skip the first
+/// `fault_skip` matches, then fault the next `fault_count`), and can latch a matching write mid-flight.
+/// Same class of seam as the wedge tests in `gtest_cas_ref_writer.cpp` use
 /// (`fault_key_substr`/`corrupt_key_substr`/`armPutBlock`), narrowed to what the ref-lane tests need.
 /// Shared (rather than TU-local) because the chunk-boundary tests and the post-durable install-safety
 /// tests need exactly the same seam.
 class ChunkFaultBackend : public CountingBackend
 {
 public:
-    using CountingBackend::putIfAbsent;
-    using CountingBackend::get;
-
     /// Unresolved       -> a lost-response ambiguity, NOTHING landed; with a single-attempt budget this
     ///                     wedges the lane and a later resolve proves the key ABSENT.
     /// LandedThenLost   -> our OWN exact bytes land and only the acknowledgement is lost, AND the
@@ -1994,23 +2306,29 @@ public:
     Mode mode = Mode::None;
     int fault_skip = 0;
     int fault_count = 0;
-    /// One-shot: the next `get` of exactly this key throws, then it is cleared. Armed by
+    /// One-shot: the next read of exactly this key throws, then it is cleared. Armed by
     /// `Mode::LandedThenLost` (see above); settable directly for a bare lost-read fault.
-    String fail_get_once_key;
+    String fail_read_once_key;
+    /// How many times a fault actually fired (a `--fault_count` write, not a skipped or non-matching
+    /// one), so a caller can prove the double was hit rather than infer it from an outcome that a
+    /// weaker policy could also produce.
+    int fault_hits = 0;
 
-    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
-        if (!fail_get_once_key.empty() && key == fail_get_once_key)
+        if (!fail_read_once_key.empty() && key == fail_read_once_key)
         {
-            fail_get_once_key.clear();
+            fail_read_once_key.clear();
             throw Poco::TimeoutException("ChunkFaultBackend: simulated lost GET (read response never arrived)");
         }
-        return CountingBackend::get(key, range);
+        return CountingBackend::read(key, access);
     }
 
-    DB::Cas::PutResult putIfAbsent(const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
     {
-        if (mode != Mode::None && !fault_substr.empty() && key.find(fault_substr) != String::npos)
+        if (mode != Mode::None && !expected_value && !fault_substr.empty() && key.find(fault_substr) != String::npos)
         {
             if (fault_skip > 0)
             {
@@ -2019,6 +2337,7 @@ public:
             else if (fault_count > 0)
             {
                 --fault_count;
+                ++fault_hits;
                 switch (mode)
                 {
                     case Mode::Unresolved:
@@ -2030,8 +2349,8 @@ public:
                         /// armed to fail ONCE for this key as well, or it would prove the object durable
                         /// inside this very attempt and the lane would never wedge; the wedge-resolution
                         /// GET a flush later then reads it normally.
-                        CountingBackend::putIfAbsent(key, bytes, meta);
-                        fail_get_once_key = key;
+                        (void)CountingBackend::write(key, bytes, expected_value, access);
+                        fail_read_once_key = key;
                         throw Poco::TimeoutException("ChunkFaultBackend: object landed; response lost");
                     case Mode::Definite:
 #if USE_AWS_S3
@@ -2044,7 +2363,8 @@ public:
                     case Mode::ForeignConflict:
                         /// A foreign writer lands DIFFERENT bytes at this exact key; then our response is
                         /// lost, so resolve-before-reissue GETs foreign bytes -> CORRUPTED_DATA.
-                        CountingBackend::putIfAbsent(key, bytes + String("\x01_FOREIGN_DIFFERENT"));
+                        (void)CountingBackend::write(key, bytes + String("\x01_FOREIGN_DIFFERENT"),
+                                                     expected_value, access);
                         throw Poco::TimeoutException("ChunkFaultBackend: foreign different object landed; response lost");
                     case Mode::None:
                         break;
@@ -2061,7 +2381,7 @@ public:
                 block_cv.wait_for(lk, std::chrono::seconds(20), [&] { return !block_armed; });
             }
         }
-        return CountingBackend::putIfAbsent(key, bytes, meta);
+        return CountingBackend::write(key, bytes, expected_value, access);
     }
 
     void armBlock(const String & substr)
@@ -2099,49 +2419,87 @@ private:
     bool block_entered = false;
 };
 
-/// Fault decorator for the condemn-marker gate tests (codex-review triage 2026-07-17 §3.4): while
-/// armed, every conditional-write attempt against a blob `.meta` key throws. The request controller
-/// exhausts its budget and reports `Unresolved`, so `writeCondemnedMeta` returns false while the round
-/// still commits the unconfirmed retired entry. Every other write passes through. Armed by default;
-/// disarm (`fail_meta_writes = false`) to model the backend healing.
+/// `ChunkFaultBackend` COUNTS its faults, and a count can no longer make one conclusive: the write
+/// engine settles every ambiguity by an exact read and then REISSUES, so a fault that runs out
+/// mid-call is answered by the next attempt instead of by the call's own deadline -- which is the
+/// whole difference between a wedge and a commit. This keeps the fault armed until the test clears
+/// the latch, on BOTH legs: the write's, and the lost read that `Mode::LandedThenLost` arms. The read
+/// leg matters just as much, because a readable key proves the commit inside the very same call.
+class LatchedChunkFaultBackend : public ChunkFaultBackend
+{
+public:
+    /// Set after `mode` / `fault_substr` / `fault_skip`; cleared when the scenario is over, so the
+    /// test's own out-of-band writes and reads are not caught by it.
+    bool latched = false;
+
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        if (latched && !fail_read_once_key.empty() && key == fail_read_once_key)
+            throw Poco::TimeoutException("LatchedChunkFaultBackend: the lost read stays lost");
+        return ChunkFaultBackend::read(key, access);
+    }
+
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
+    {
+        if (latched && mode != Mode::None && fault_skip == 0 && !expected_value && !fault_substr.empty()
+            && key.find(fault_substr) != String::npos)
+            fault_count = 1;
+        return ChunkFaultBackend::write(key, bytes, expected_value, access);
+    }
+
+    /// Disarms completely (not just unlatches): what a caller does right after driving a call to its
+    /// give-up is a further mutation that must reach the store normally.
+    void disarm()
+    {
+        latched = false;
+        mode = Mode::None;
+        fault_count = 0;
+        fault_skip = 0;
+        fail_read_once_key.clear();
+    }
+};
+
+/// Fault decorator for the condemn-marker gate tests: while armed, every write against a blob `.meta`
+/// key throws. Every other write passes through. Armed by default; disarm
+/// (`fail_meta_writes = false`) to model the backend healing.
+///
+/// The fault's CLASS is chosen at arming, because the two classes model different failures and the
+/// engine treats them differently. `Propagates` is a local error the write loop rethrows on the first
+/// attempt, so the caller's own handler sees it at once. `Ambiguous` is a timeout the loop cannot
+/// distinguish from a lost response: it resolves by a read and reissues until its policy bound, so a
+/// test arming it against a PERMANENT fault must drive the operation's clock or spend the whole
+/// retry window in real time.
 class MetaWriteFaultBackend : public DB::Cas::InMemoryBackend
 {
 public:
-    /// Unhide the base convenience overloads (omitted Range/ObjectMeta/expected-token forms): the
-    /// overrides below would otherwise shadow them for callers holding a concrete backend type.
-    using DB::Cas::Backend::get;
-    using DB::Cas::Backend::getStream;
-    using DB::Cas::Backend::putIfAbsent;
-    using DB::Cas::Backend::putOverwrite;
-    using DB::Cas::Backend::casPut;
+    enum class FaultKind : uint8_t { Propagates, Ambiguous };
 
-    DB::Cas::PutResult putIfAbsent(
-        const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    /// Fault every `.meta` write with `kind`. Construction arms `Propagates`.
+    void armWriteFault(FaultKind kind = FaultKind::Propagates)
     {
-        if (fail_meta_writes.load() && key.ends_with(".meta"))
-            throw std::runtime_error("injected fault: blob meta write lost");
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        fault_kind.store(kind);
+        fail_meta_writes.store(true);
     }
 
-    DB::Cas::PutResult putOverwrite(
-        const String & key, const String & bytes, const DB::Cas::Token & expected,
-        const DB::Cas::ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
     {
         if (fail_meta_writes.load() && key.ends_with(".meta"))
+        {
+            if (fault_kind.load() == FaultKind::Ambiguous)
+                throw Poco::TimeoutException("injected fault: blob meta write response lost");
             throw std::runtime_error("injected fault: blob meta write lost");
-        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
-    }
-
-    DB::Cas::CasResult casPut(const String & key, const String & bytes,
-                              const std::optional<DB::Cas::Token> & expected,
-                              const DB::Cas::ObjectMeta & meta) override
-    {
-        if (fail_meta_writes.load() && key.ends_with(".meta"))
-            throw std::runtime_error("injected fault: blob meta write lost");
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
+        }
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
     std::atomic<bool> fail_meta_writes{true};
+
+private:
+    std::atomic<FaultKind> fault_kind{FaultKind::Propagates};
 };
 
 /// Blocks INSIDE a blob-meta mutation until `release` is called, so a test can hold a real meta job in
@@ -2153,12 +2511,6 @@ public:
 class MetaWriteLatchBackend : public DB::Cas::InMemoryBackend
 {
 public:
-    using DB::Cas::Backend::get;
-    using DB::Cas::Backend::getStream;
-    using DB::Cas::Backend::putIfAbsent;
-    using DB::Cas::Backend::putOverwrite;
-    using DB::Cas::Backend::casPut;
-
     std::atomic<bool> entered{false};
 
     void arm()
@@ -2173,33 +2525,19 @@ public:
         latch_cv.notify_all();
     }
 
-    DB::Cas::PutResult putIfAbsent(
-        const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
     {
         waitIfMeta(key);
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
-    DB::Cas::PutResult putOverwrite(
-        const String & key, const String & bytes, const DB::Cas::Token & expected,
-        const DB::Cas::ObjectMeta & meta) override
+    RawRemoval remove(const String & key, const String & expected_value,
+                      DB::Cas::TransportAccess & access) override
     {
         waitIfMeta(key);
-        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
-    }
-
-    DB::Cas::CasResult casPut(const String & key, const String & bytes,
-                              const std::optional<DB::Cas::Token> & expected,
-                              const DB::Cas::ObjectMeta & meta) override
-    {
-        waitIfMeta(key);
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
-    }
-
-    DB::Cas::DeleteOutcome deleteExact(const String & key, const DB::Cas::Token & token) override
-    {
-        waitIfMeta(key);
-        return InMemoryBackend::deleteExact(key, token);
+        return InMemoryBackend::remove(key, expected_value, access);
     }
 
 private:
@@ -2224,24 +2562,22 @@ private:
 class OutcomeLogFaultBackend : public MetaWriteLatchBackend
 {
 public:
-    using DB::Cas::Backend::get;
-    using DB::Cas::Backend::putIfAbsent;
-
     std::atomic<bool> fail_outcome_logs{false};
 
-    DB::Cas::PutResult putIfAbsent(
-        const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
     {
         if (fail_outcome_logs.load() && key.contains("outcomes/"))
-            return DB::Cas::PutResult{.outcome = DB::Cas::PutOutcome::PreconditionFailed, .token = {}};
-        return MetaWriteLatchBackend::putIfAbsent(key, bytes, meta);
+            return std::unexpected(RawConflict{});
+        return MetaWriteLatchBackend::write(key, bytes, expected_value, access);
     }
 
-    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
         if (fail_outcome_logs.load() && key.contains("outcomes/"))
             return std::nullopt;
-        return DB::Cas::InMemoryBackend::get(key, range);
+        return DB::Cas::InMemoryBackend::read(key, access);
     }
 };
 
@@ -2259,40 +2595,27 @@ inline void awaitLatchEntered(MetaWriteLatchBackend & backend)
 }
 
 /// Runs a caller-supplied action ONCE, immediately before the named backend call, so a test can make
-/// the mount slot change inside a window `MountLeaseKeeper::claim` holds open. Each hook clears
+/// the mount slot change inside a window `MountLeaseRenewer::claim` holds open. Each hook clears
 /// itself after firing.
 class MountSlotRaceBackend : public DB::Cas::InMemoryBackend
 {
 public:
-    using DB::Cas::Backend::get;
-    using DB::Cas::Backend::getStream;
-    using DB::Cas::Backend::putIfAbsent;
-    using DB::Cas::Backend::putOverwrite;
-    using DB::Cas::Backend::casPut;
-
     std::function<void()> before_put_if_absent;
     std::function<void()> before_get;
     std::function<void()> before_put_overwrite;
 
-    DB::Cas::PutResult putIfAbsent(
-        const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             DB::Cas::TransportAccess & access) override
     {
-        fire(before_put_if_absent);
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        fire(expected_value ? before_put_overwrite : before_put_if_absent);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
-    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
         fire(before_get);
-        return InMemoryBackend::get(key, range);
-    }
-
-    DB::Cas::PutResult putOverwrite(
-        const String & key, const String & bytes, const DB::Cas::Token & expected,
-        const DB::Cas::ObjectMeta & meta) override
-    {
-        fire(before_put_overwrite);
-        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+        return InMemoryBackend::read(key, access);
     }
 
 private:
@@ -2304,6 +2627,67 @@ private:
         hook = nullptr;
         once();
     }
+};
+
+/// The engine reissues an unresolved write until its OWN retry window closes, and that window is
+/// measured on a clock the engine reads. Both seams here share one counter -- the sleep the engine
+/// performs is what advances the clock -- so a fault that stays armed ends the call at its deadline
+/// with no real time passing. Installed on the whole pool, because the ref-lane write, its settling
+/// read and the recovery retry loop all pace through the same seam. The pool owns the closures and the
+/// closures own the clock, so it outlives everything that can still read it.
+class VirtualRetryClock
+{
+public:
+    static std::shared_ptr<VirtualRetryClock> installOn(const PoolPtr & store)
+    {
+        auto clock = std::make_shared<VirtualRetryClock>();
+        store->setCasRequestNowFnForTest(nowFnOf(clock));
+        store->setCasRetrySleepForTest(sleepFnOf(clock));
+        return clock;
+    }
+
+    /// The two seams on their own, for a fixture that assembles its own `CasRequests` and ledger
+    /// rather than a whole `Pool`. Each closure keeps the clock alive.
+    static std::function<uint64_t()> nowFnOf(std::shared_ptr<VirtualRetryClock> owned)
+    {
+        return [clock = std::move(owned)] { return clock->nowMs(); };
+    }
+    static std::function<void(uint64_t)> sleepFnOf(std::shared_ptr<VirtualRetryClock> owned)
+    {
+        return [clock = std::move(owned)](uint64_t ms) { clock->advance(ms); };
+    }
+
+    uint64_t nowMs() const
+    {
+        std::lock_guard lock(mutex);
+        return now_ms;
+    }
+    size_t pauseCount() const
+    {
+        std::lock_guard lock(mutex);
+        return pauses;
+    }
+    uint64_t longestPause() const
+    {
+        std::lock_guard lock(mutex);
+        return longest_pause;
+    }
+
+    void advance(uint64_t ms)
+    {
+        std::lock_guard lock(mutex);
+        /// Plus one millisecond, because full jitter can draw a ZERO pause: a clock that does not move
+        /// would leave the loop reissuing for ever against a fault that never clears.
+        now_ms += ms + 1;
+        ++pauses;
+        longest_pause = std::max(longest_pause, ms);
+    }
+
+private:
+    mutable std::mutex mutex;
+    uint64_t now_ms = 0;
+    size_t pauses = 0;
+    uint64_t longest_pause = 0;
 };
 
 /// Expect a DB::Exception with EXACTLY `expected_code` AND a message containing `expected_substring`.
@@ -2325,4 +2709,14 @@ void expectThrowsCodeWithMessage(int expected_code, const String & expected_subs
     }
 }
 
+}
+
+/// The mount and GC suites call these two unqualified, under `using namespace DB::Cas;`. Argument-
+/// dependent lookup does not reach `DB::Cas::tests` from a `shared_ptr<InMemoryBackend>`, so the names
+/// are re-exported here rather than moved: the qualified `DB::Cas::tests::` spelling the rest of the
+/// tree uses keeps working, and there is still one definition.
+namespace DB::Cas
+{
+using tests::OperationForTest;
+using tests::openRequestsForTest;
 }

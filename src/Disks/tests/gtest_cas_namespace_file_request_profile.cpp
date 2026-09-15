@@ -29,7 +29,7 @@ namespace DB::ContentAddressedSetting
 ///
 /// WHAT THIS FILE PINS: the last clause, per key. The counts below were READ OFF this tree before any
 /// key change and pasted as literals, which is the whole point of the file -- expectations re-derived
-/// after a change measure the change against itself. Incarnation qualification changes the KEY a
+/// after a change measure the change against itself. Etag qualification changes the KEY a
 /// namespace file is stored under, so the keys are derived from `Layout` rather than spelled out; what
 /// must not move is the count per key and the set of keys touched.
 ///
@@ -98,24 +98,25 @@ TEST(CASNamespaceFileRequestProfile, CreateThenRewrite)
     store->putNamespaceFile(life, kFile, "1\n");
 
     EXPECT_EQ(backend->headCount(key), 1u);
-    EXPECT_EQ(backend->putCount(key), 1u);            /// putIfAbsent -- the key was absent
+    EXPECT_EQ(backend->putCount(key), 1u);            /// create-shaped -- the key was absent
     EXPECT_EQ(backend->putOverwriteCount(key), 0u);
     EXPECT_EQ(backend->getCount(key), 0u);
     EXPECT_EQ(backend->deleteCount(key), 0u);
     EXPECT_EQ(backend->listTotal(), 0u);
-    EXPECT_EQ(backend->casPutTotal(), 0u);
+    /// And no write beyond the one accounted for above, anywhere.
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->touchedKeys(), std::vector<String>{key});
 
     backend->resetCounts();
     store->putNamespaceFile(life, kFile, "2\n");
 
     EXPECT_EQ(backend->headCount(key), 1u);
-    EXPECT_EQ(backend->putOverwriteCount(key), 1u);   /// token-conditioned replacement -- it existed
+    EXPECT_EQ(backend->putOverwriteCount(key), 1u);   /// replace-shaped -- it existed
     EXPECT_EQ(backend->putCount(key), 0u);
     EXPECT_EQ(backend->getCount(key), 0u);
     EXPECT_EQ(backend->deleteCount(key), 0u);
     EXPECT_EQ(backend->listTotal(), 0u);
-    EXPECT_EQ(backend->casPutTotal(), 0u);
+    EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->touchedKeys(), std::vector<String>{key});
 }
 
@@ -132,8 +133,9 @@ TEST(CASNamespaceFileRequestProfile, Read)
 
     EXPECT_EQ(store->getNamespaceFile(life, kFile), String("1\n"));
 
+    /// One GET, and it is necessarily a whole-object one: `Backend::get` refuses a non-whole window
+    /// outright, so there is no partial read left for a separate counter to tell apart.
     EXPECT_EQ(backend->getCount(key), 1u);
-    EXPECT_EQ(backend->wholeGetCount(key), 1u);
     EXPECT_EQ(backend->headCount(key), 0u);
     EXPECT_EQ(backend->putCount(key), 0u);
     EXPECT_EQ(backend->putOverwriteCount(key), 0u);
@@ -218,7 +220,7 @@ TEST(CASNamespaceFileRequestProfile, DedupLogRotation)
     EXPECT_EQ(backend->headCount(old_key), 1u);
     EXPECT_EQ(backend->deleteCount(old_key), 1u);
     EXPECT_EQ(backend->getTotal(), 0u);              /// rotation reads no body
-    EXPECT_EQ(backend->casPutTotal(), 0u);
+    EXPECT_EQ(backend->writeTotal(), 1u);            /// and writes only the new segment
     /// Sorted, and the files prefix is a proper prefix of both segment keys, so it comes first.
     EXPECT_EQ(backend->touchedKeys(), (std::vector<String>{prefix, old_key, new_key}));
 
@@ -500,8 +502,8 @@ TEST(CASNamespaceFileDiskProfile, TheLifeResolutionIsPaidOncePerTableOpen)
 }
 
 
-/// THE REMOVAL PATHS MUST NOT CREATE A NAMESPACE — the case that regressed silently in this task's first
-/// round, so it is pinned on the catalog rather than on the file outcome.
+/// THE REMOVAL PATHS MUST NOT CREATE A NAMESPACE: the catalog, rather than the file outcome, proves
+/// that invariant.
 ///
 /// Why the file outcome cannot pin it: `unlinkFile`/`removeRecursive` against a never-opened table
 /// answer "absent" both before and after the defect, because a freshly minted namespace has no files
@@ -517,7 +519,8 @@ TEST(CASNamespaceFileDiskProfile, RemovalOnANeverOpenedTableLeavesTheCatalogUnto
 
     /// A valid pool already owns its explicit empty mandatory catalog. Nothing has opened this table:
     /// no namespace file written, no part published, and no ref operation has changed that object.
-    const auto catalog_before = storage->store()->backend().get(layout.refCatalogKey());
+    OperationForTest catalog_probe(storage->store()->poolBackendPtr());
+    const auto catalog_before = (*catalog_probe).read(layout.refCatalogKey(), Retry::standard());
     ASSERT_TRUE(catalog_before);
     EXPECT_TRUE(decodeRefCatalog(catalog_before->bytes).entries.empty());
     object_storage->resetRecords();
@@ -536,10 +539,10 @@ TEST(CASNamespaceFileDiskProfile, RemovalOnANeverOpenedTableLeavesTheCatalogUnto
 
     EXPECT_EQ(object_storage->writtenContaining(layout.refCatalogKey()), std::vector<String>{})
         << "a removal must not write the catalog: it must not birth the namespace it is removing from";
-    const auto catalog_after_removal = storage->store()->backend().get(layout.refCatalogKey());
+    const auto catalog_after_removal = (*catalog_probe).read(layout.refCatalogKey(), Retry::standard());
     ASSERT_TRUE(catalog_after_removal);
     EXPECT_EQ(catalog_after_removal->bytes, catalog_before->bytes);
-    EXPECT_EQ(catalog_after_removal->token, catalog_before->token)
+    EXPECT_EQ(catalog_after_removal->etag, catalog_before->etag)
         << "the mandatory catalog must remain byte-for-byte and token-for-token unchanged";
 
     /// Not vacuous: the SAME operations on the same table after a write do reach the file, so the zeros
@@ -551,8 +554,8 @@ TEST(CASNamespaceFileDiskProfile, RemovalOnANeverOpenedTableLeavesTheCatalogUnto
     EXPECT_FALSE(storage->existsFile(kTablePath + "/format_version.txt"));
     /// Positive control: the write really did birth the namespace and mutate the same catalog object
     /// whose stability the removal assertions pin above.
-    const auto catalog_after_birth = storage->store()->backend().get(layout.refCatalogKey());
+    const auto catalog_after_birth = (*catalog_probe).read(layout.refCatalogKey(), Retry::standard());
     ASSERT_TRUE(catalog_after_birth);
     EXPECT_NE(catalog_after_birth->bytes, catalog_after_removal->bytes);
-    EXPECT_NE(catalog_after_birth->token, catalog_after_removal->token);
+    EXPECT_NE(catalog_after_birth->etag, catalog_after_removal->etag);
 }

@@ -6848,6 +6848,14 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                     /// `FORGET PARTITION` is SUPPORTED on CA — it only manipulates ZooKeeper partition metadata
                     /// (removes block-number nodes from ZooKeeper) and does not write, clone, or touch any part
                     /// files on disk, so it is safe on a content-addressed disk.
+                    /// `EXPORT PARTITION` is SUPPORTED because the reason this list exists does not apply
+                    /// to it. The rejection below is about commands that clone parts file-by-file;
+                    /// exporting does not clone at all. `ExportPartTask` reads the source part through
+                    /// `MergeTreeSequentialSource` (`MergeTreeSequentialSourceType::Export`) and writes
+                    /// rows into the destination through a `SinkToStorage` on an ordinary query
+                    /// pipeline, so the source's part files are only READ, under `readLockParts`, and
+                    /// nothing is hard-linked or copied on the content-addressed disk. The command's
+                    /// own bookkeeping is ZooKeeper-side.
                     /// NOTE: `MOVE_PARTITION` also admits cross-disk
                     /// `MOVE ... TO DISK/VOLUME` (this check cannot distinguish the destination); that uses
                     /// the byte-copy `clonePart` path (NOT the corrupting per-file hardlink), but only
@@ -6864,6 +6872,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                         PartitionCommand::FREEZE_ALL_PARTITIONS,
                         PartitionCommand::UNFREEZE_PARTITION,
                         PartitionCommand::UNFREEZE_ALL_PARTITIONS,
+                        PartitionCommand::EXPORT_PARTITION,
                     };
 
                     if (!std::ranges::contains(supported_commands, command.type))
@@ -7884,6 +7893,12 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     /// Subdirectories in the part's directory. It's used to restore projections.
     std::unordered_set<String> subdirs;
 
+    /// A restored part is committed data the moment RESTORE is acknowledged, so it must get the same
+    /// durability an inserted part gets: fsync the file contents when the table enables fsync_after_insert.
+    /// Only meaningful on a local disk - on object storage the object is durable once finalized. The part
+    /// directory itself is fsynced later by IMergeTreeDataPart::renameTo (gated on fsync_part_directory).
+    const bool fsync_files = (*getSettings())[MergeTreeSetting::fsync_after_insert] && !disk->isRemote();
+
     /// Copy files from the backup to the directory `tmp_part_dir`.
     disk->createDirectories(temp_part_dir);
 
@@ -7925,7 +7940,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         }
         else
         {
-            size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite);
+            size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite, fsync_files);
             reservation->update(reservation->getSize() - file_size);
         }
     }
@@ -9981,9 +9996,11 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
+    /// The definitions are compared as text, so the text must not depend on whether the user has
+    /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? ast->formatWithSecretsOneLine() : "";
+        return ast ? ast->formatIgnoringRedundantParentheses() : "";
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -10006,10 +10023,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
+            my_query_strings.insert(description.definition_ast->formatIgnoringRedundantParentheses());
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
+            if (!my_query_strings.contains(src_description.definition_ast->formatIgnoringRedundantParentheses()))
                 return false;
 
         return true;

@@ -265,6 +265,13 @@ size_t getClickhouseAttemptNumber(const Aws::AmazonWebServiceRequest & request);
 size_t getClickhouseAttemptNumber(const Aws::Http::HttpRequest & request);
 void setClickhouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt);
 
+/// The attempt number a request carries when its caller seeded one: the caller's attempt for the first
+/// local try, then the local counter's increments. Seed 0 is "unseeded" and yields `local`.
+inline size_t seededAttemptNumber(size_t seed, size_t local)
+{
+    return (seed == 0 ? 1 : seed) + local - 1;
+}
+
 }
 
 #endif

@@ -1,9 +1,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPoolMetaFormat.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <algorithm>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -62,69 +63,71 @@ String joinAlgoNames(const std::vector<uint8_t> & algos_used)
 }
 
 /// The relaxed admission check (replaces an earlier fail-close that required the single pool algo to match):
-/// `pm`/`token` are the most-recently-read `_pool_meta` state (present, decoded, valid). Already a
-/// member of `algos_used` => OK, no write (steady state). Not a member and `!allow_new` =>
-/// `BAD_ARGUMENTS` (the pool is never touched). Not a member and `allow_new` => CAS-union `config_algo`
-/// into `algos_used` (recomputed from the FRESH value on every retry -- union-only, so there is no
-/// ABA) and raises `min_reader_generation` to THIS build's own floor (`G_BUILD`, `CasFormat.h`) in
-/// the SAME write (first registration of a schema-3-bearing algo also raises
-/// `min_reader_generation` -- a build that cannot decode schema-3 settlement state has an OLDER
-/// `G_BUILD` and is correctly refused by the startup gate once a future generation bump lands here).
-/// On a CAS conflict, re-read and retry the whole decision (a concurrent admitter may have unioned a
-/// DIFFERENT algo, or the very one we wanted, in the meantime).
-PoolMeta admitOrValidate(
-    Backend & backend, const String & key, PoolMeta pm, Token token,
-    BlobHashAlgo config_algo, bool allow_new)
+/// re-reads `key` itself (via `readModifyWrite`'s own observe) rather than trusting a snapshot the
+/// caller already holds, so a caller that only knows the key is present -- never a stale decode --
+/// can ask this to settle admission. Already a member of `algos_used` => OK, no write (steady state,
+/// `decide` declines). Not a member and `!allow_new` => `BAD_ARGUMENTS` (the pool is never touched).
+/// Not a member and `allow_new` => CAS-union `config_algo` into `algos_used` (recomputed from the
+/// FRESH value on every retry -- union-only, so there is no ABA) and raises `min_reader_generation` to
+/// THIS build's own floor (`G_BUILD`, `CasFormat.h`) in the SAME write (first registration of a
+/// schema-3-bearing algo also raises `min_reader_generation` -- a build that cannot decode schema-3
+/// settlement state has an OLDER `G_BUILD` and is correctly refused by the startup gate once a future
+/// generation bump lands here). A concurrent admitter's own union is folded in the same way, since
+/// `decide` runs again against whatever `readModifyWrite` observes on retry.
+PoolMeta admitOrValidate(CasOperation & op, const String & key, BlobHashAlgo config_algo, bool allow_new)
 {
-    for (;;)
-    {
-        if (isAlgoAdmittedIn(pm, config_algo))
-            return pm;
+    PoolMeta observed;
+    WriteResult result = op.readModifyWrite(
+        key,
+        [&](const std::optional<Object> & current) -> std::optional<String>
+        {
+            if (!current)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "CAS pool meta: '{}' vanished mid-admission (conflicting write then a concurrent delete)", key);
+            observed = decodePoolMeta(current->bytes);
 
-        if (!allow_new)
-            throwNotAdmitted(pm, config_algo);
+            if (isAlgoAdmittedIn(observed, config_algo))
+                return std::nullopt;
+            if (!allow_new)
+                throwNotAdmitted(observed, config_algo);
 
-        PoolMeta next = pm;
-        next.algos_used.push_back(static_cast<uint8_t>(config_algo));
-        std::sort(next.algos_used.begin(), next.algos_used.end());
-        next.min_reader_generation = G_BUILD;
-
-        const CasResult res = backend.casPut(key, encodePoolMeta(next), token);
-        if (res.outcome == CasOutcome::Committed)
-            return next;
-
-        auto fresh = backend.get(key);
-        if (!fresh)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "CAS pool meta: '{}' vanished mid-admission (conflicting write then a concurrent delete)", key);
-        pm = decodePoolMeta(fresh->bytes);
-        token = fresh->token;
-        /// loop: re-evaluate membership against the FRESH pm (never re-encode the stale `next`)
-    }
+            observed.algos_used.push_back(static_cast<uint8_t>(config_algo));
+            std::sort(observed.algos_used.begin(), observed.algos_used.end());
+            observed.min_reader_generation = G_BUILD;
+            return encodePoolMeta(observed);
+        },
+        Retry::standard());
+    orThrow(std::move(result), fmt::format("CAS pool meta admission on '{}'", key));
+    return observed;
 }
 
 }
 
 PoolMeta PoolMeta::createOrValidate(
-    Backend & backend, const Layout & layout, uint64_t blob_header_len, uint64_t gc_shards,
+    CasOperation & op, const Layout & layout, uint64_t blob_header_len, uint64_t gc_shards,
     BlobHashAlgo blob_hash_algo, bool allow_new, bool allow_mint)
 {
     /// The passed config is the caller's responsibility — reject bad values before any I/O.
     validatePoolBlobHeaderLen(blob_header_len, ErrorCodes::BAD_ARGUMENTS, "pool meta");
     if (gc_shards == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "CAS pool meta: gc_shards must be >= 1");
-    /// Defense against a garbage `static_cast` past the caller's own boundary: `blobHashAlgoName`
-    /// throws BAD_ARGUMENTS for anything `BlobHashAlgo` does not actually admit.
+    /// `blobHashAlgoName` rejects an out-of-range `BlobHashAlgo` with `LOGICAL_ERROR`: a programming
+    /// error that aborts debug and sanitizer builds, not an input-validation fence.
     blobHashAlgoName(blob_hash_algo);
 
     const String key = layout.poolMetaKey();
 
     /// Present => the pool is authoritative; ignore the passed config's blob_header_len and run the
-    /// flag-gated admission check rather than the old single-value fail-close.
-    if (auto existing = backend.get(key))
+    /// flag-gated admission check rather than the old single-value fail-close. The steady state (the
+    /// configured algo is already admitted) is decided from THIS read, so the common open costs one
+    /// GET; only a union or a `!allow_new` refusal falls through to `admitOrValidate`, which re-reads
+    /// the key itself as part of its own conditional write.
+    if (auto existing = op.read(key, Retry::standard()))
     {
         PoolMeta pm = decodePoolMeta(existing->bytes);
-        return admitOrValidate(backend, key, std::move(pm), existing->token, blob_hash_algo, allow_new);
+        if (isAlgoAdmittedIn(pm, blob_hash_algo))
+            return pm;
+        return admitOrValidate(op, key, blob_hash_algo, allow_new);
     }
 
     /// Absent => mint a pool id and try to create the object with `algos_used = {blob_hash_algo}`.
@@ -132,7 +135,7 @@ PoolMeta PoolMeta::createOrValidate(
     /// build at all), so the reader-generation floor is stamped at THIS build's `G_BUILD` at
     /// creation, not left at 0.
     ///
-    /// BOOTSTRAP GATE (spec §2 [C4][D2]): minting is permitted ONLY on the verified bootstrap path. A
+    /// BOOTSTRAP GATE: minting is permitted ONLY on the verified bootstrap path. A
     /// non-bootstrap caller (a read-only/observe open, `openForDecommission`) passes `allow_mint=false`
     /// and fails closed here — never minting a fresh identity outside that path (an observe scan that
     /// minted would poison the next writable mount's residual check). The residual EMPTINESS proof itself
@@ -152,17 +155,17 @@ PoolMeta PoolMeta::createOrValidate(
     pm.min_reader_generation = G_BUILD;
     pm.algos_used = {static_cast<uint8_t>(blob_hash_algo)};
 
-    if (backend.casPut(key, encodePoolMeta(pm), /*expected*/ std::nullopt).outcome == CasOutcome::Committed)
+    WriteResult result = op.create(key, encodePoolMeta(pm), Retry::standard());
+    if (std::holds_alternative<Committed>(result))
         return pm;
 
     /// Lost the race: the winner's object MUST be present now. The loser UNIONS its algo via the SAME
     /// flag-gated admission path as a reopen, instead of the old unconditional fail-close.
-    auto winner = backend.get(key);
-    if (!winner)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "CAS pool meta: create-if-absent reported Conflict but '{}' is absent on re-read", key);
-    PoolMeta winner_pm = decodePoolMeta(winner->bytes);
-    return admitOrValidate(backend, key, std::move(winner_pm), winner->token, blob_hash_algo, allow_new);
+    if (std::holds_alternative<Conflict>(result))
+        return admitOrValidate(op, key, blob_hash_algo, allow_new);
+
+    orThrow(std::move(result), fmt::format("CAS pool meta creation on '{}'", key));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS pool meta: create-if-absent on '{}' neither committed, conflicted, nor threw", key);
 }
 
 }

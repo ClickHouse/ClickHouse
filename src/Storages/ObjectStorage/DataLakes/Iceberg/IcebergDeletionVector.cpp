@@ -18,6 +18,7 @@
 #include <IO/WithFileSize.h>
 
 #include <atomic>
+#include <optional>
 
 namespace DB
 {
@@ -131,7 +132,9 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     ContextPtr context,
     LoggerPtr log,
     bool disable_filesystem_cache,
-    FooterBlobsPtr preloaded_footer)
+    FooterBlobsPtr preloaded_footer,
+    PuffinFilesCache * footer_cache = nullptr,
+    const std::optional<PuffinFooterCacheKey> & footer_key = {})
 {
     RelativePathWithMetadata puffin_object{puffin_path};
     auto read_settings = context->getReadSettings();
@@ -148,16 +151,35 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     if (!file_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine Puffin file size for '{}'", puffin_path);
 
-    FooterBlobsPtr footer_owner = preloaded_footer;
-    if (!footer_owner)
-        footer_owner = std::make_shared<const std::vector<PuffinBlob>>(readPuffinFooterBlobsFromSeekable(*seekable, *file_size));
+    const auto container = detectIcebergDeletionVectorContainer(
+        *seekable, *file_size, content_offset, content_size_in_bytes, puffin_path);
 
-    bindDeletionVectorBlob(
-        *footer_owner,
-        content_offset,
-        content_size_in_bytes,
-        expected_data_file.serialize(),
-        expected_cardinality);
+    if (container == IcebergDeletionVectorContainer::Puffin)
+    {
+        FooterBlobsPtr footer_owner = preloaded_footer;
+        if (!footer_owner)
+        {
+            if (footer_cache && footer_key.has_value())
+            {
+                footer_owner = footer_cache->getOrSetFooter(*footer_key, [&]()
+                {
+                    return readFooterBlobs(object_storage, puffin_path, context, log, /*disable_filesystem_cache=*/ true);
+                });
+            }
+            else
+            {
+                footer_owner = std::make_shared<const std::vector<PuffinBlob>>(
+                    readPuffinFooterBlobsFromSeekable(*seekable, *file_size));
+            }
+        }
+
+        bindDeletionVectorBlob(
+            *footer_owner,
+            content_offset,
+            content_size_in_bytes,
+            expected_data_file.serialize(),
+            expected_cardinality);
+    }
 
     auto deleted_positions = readDeletionVectorFromPuffin(
         *read_buffer, content_offset, content_size_in_bytes, expected_cardinality);
@@ -173,8 +195,9 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
 
     LOG_DEBUG(
         log,
-        "Loaded deletion vector from puffin file '{}' for data file '{}': {} deleted rows",
+        "Loaded deletion vector from file '{}' ({}) for data file '{}': {} deleted rows",
         puffin_path,
+        container == IcebergDeletionVectorContainer::Puffin ? "Puffin" : "Delta .bin",
         expected_data_file.serialize(),
         deleted_positions.size());
 
@@ -367,14 +390,10 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     }
 
     /// Footer is keyed by file identity only, so N DV slices in one coalesced Puffin share one parse.
-    /// Resolve the footer only on a deletion-vector cache miss (nested memo lookup).
+    /// Resolve the footer only on a Puffin deletion-vector cache miss (nested memo lookup).
+    /// Delta `.bin` objects have no Puffin footer; detection inside the uncached loader skips memo.
     return cache->getOrSetDeletionVector(*cache_key, [&]()
     {
-        auto footer = cache->getOrSetFooter(*footer_key, [&]()
-        {
-            return readFooterBlobs(object_storage, puffin_path, context, log, /*disable_filesystem_cache=*/ true);
-        });
-
         return loadDeletionVectorUncached(
             object_storage,
             puffin_path,
@@ -386,7 +405,9 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             context,
             log,
             true,
-            footer);
+            nullptr,
+            cache.get(),
+            footer_key);
     });
 }
 

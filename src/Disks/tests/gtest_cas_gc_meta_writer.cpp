@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobMeta.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
@@ -6,6 +7,7 @@
 #include <Disks/tests/cas_test_helpers.h>
 
 #include <chrono>
+#include <variant>
 #include <future>
 #include <thread>
 #include <utility>
@@ -13,6 +15,7 @@
 using namespace DB::Cas;
 using DB::Cas::tests::MetaWriteLatchBackend;
 using DB::Cas::tests::awaitLatchEntered;
+using DB::Cas::tests::openRequestsForTest;
 
 namespace
 {
@@ -35,7 +38,7 @@ TEST(CASGcMetaWriter, RealCondemnMarkerJobCompletesAcrossOwnerDestruction)
     auto store = Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 
     const BlobRef ref = DB::Cas::tests::idOf("1");
-    const Token token{"tok-1"};
+    const PersistedEtag token{"emulated", "tok-1"};
 
     auto gc = std::make_unique<Gc>(store, DB::Cas::tests::u128Of(kGcId));
     backend->arm();
@@ -47,7 +50,9 @@ TEST(CASGcMetaWriter, RealCondemnMarkerJobCompletesAcrossOwnerDestruction)
     gc.reset();
     releaser.join();
 
-    const auto meta = loadMeta(*backend, store->layout(), ref);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    const auto meta = loadMeta(op, store->layout(), ref);
     ASSERT_TRUE(meta) << "the condemn marker was lost across owner destruction";
     EXPECT_EQ(meta->meta.state, MetaState::Condemned);
     EXPECT_EQ(meta->meta.condemn_round, 1u);
@@ -62,7 +67,7 @@ TEST(CASGcMetaWriter, CondemnMarkerConfirmationIsVisibleAfterDrain)
     auto store = Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 
     const BlobRef ref = DB::Cas::tests::idOf("1");
-    const Token token{"tok-1"};
+    const PersistedEtag token{"emulated", "tok-1"};
 
     Gc gc(store, DB::Cas::tests::u128Of(kGcId));
     EXPECT_FALSE(gc.metaWriterForTest().condemnMarkerConfirmedInProcess(ref, token));
@@ -83,10 +88,11 @@ TEST(CASGcMetaWriter, RealConfirmedMetaDeleteCompletesAcrossOwnerDestruction)
     auto store = Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 
     const BlobRef ref = DB::Cas::tests::idOf("2");
-    ASSERT_EQ(
-        putMetaIfAbsent(*store, ref, BlobMeta{.state = MetaState::Condemned, .condemn_round = 1, .size = 64}).outcome,
-        CasOverwriteOutcome::Committed);
-    ASSERT_TRUE(loadMeta(*backend, store->layout(), ref));
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(putMetaIfAbsent(
+        op, store->layout(), ref, BlobMeta{.state = MetaState::Condemned, .condemn_round = 1, .size = 64})));
+    ASSERT_TRUE(loadMeta(op, store->layout(), ref));
 
     auto gc = std::make_unique<Gc>(store, DB::Cas::tests::u128Of(kGcId));
     backend->arm();
@@ -98,7 +104,7 @@ TEST(CASGcMetaWriter, RealConfirmedMetaDeleteCompletesAcrossOwnerDestruction)
     gc.reset();
     releaser.join();
 
-    EXPECT_FALSE(loadMeta(*backend, store->layout(), ref))
+    EXPECT_FALSE(loadMeta(op, store->layout(), ref))
         << "the confirmed-meta delete was lost across owner destruction";
 }
 

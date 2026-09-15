@@ -1,5 +1,5 @@
 #pragma once
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
@@ -72,7 +72,7 @@ uint64_t manifestCleanupShard(const ManifestId & id, uint64_t gc_shards);
 /// uses with `shard == 0`), so `gc_shards == 1` with `shard == 0` reproduces the non-sharded fold
 /// byte-for-byte. This keeps the one-shard configuration compatible with the original fold path.
 ///
-/// NOTE on durable writes: `reduce` writes the per-shard in-degree run directly via `backend`
+/// NOTE on durable writes: `reduce` writes the per-shard in-degree run directly through `op`
 /// (under `blobTargetRunKey(new_generation, shard, 0)`), exactly as `foldDeltasIntoGeneration`
 /// does. Returning the durable write here (rather than an in-memory map) keeps the round driver
 /// stateless: it simply constructs a `ShardReducer` per shard, calls `reduce`, and the sealed
@@ -90,8 +90,9 @@ public:
 
     /// Merge `shard_deltas` (the caller's per-shard `BlobDelta` slice produced by `foldManifestEdges`
     /// and bucketed by `blobShard`) into a new in-degree generation for this shard. Writes the sealed
-    /// run under `blobTargetRunKey(new_generation, shard, 0)` via `backend`, appends its `RunRef` to
-    /// `out_runs`, and returns the `RunRef`. The call is idempotent (write-once via `putIfAbsent`).
+    /// run under `blobTargetRunKey(new_generation, shard, 0)` through `op`, appends its `RunRef` to
+    /// `out_runs`, and returns the `RunRef`. The call is idempotent: the run is written once, and a
+    /// second call finds the identical object already there.
     ///
     /// `prior_runs` are the parent generation's run segments for this shard, resolved BY THE CALLER from
     /// the parent fold seal's `blob_target_runs` filtered to `shard`. An empty vector is the
@@ -100,13 +101,13 @@ public:
     /// PRECONDITION: every `BlobDelta` in `shard_deltas` must be owned by this reducer
     /// (`blobShard(d.ref, gc_shards) == shard`). This is a caller contract; there is no
     /// underflow throw backstopping it — pass a misbucketed delta and the fold silently misroutes it.
-    std::vector<RunRef> reduce(Backend & backend, const Layout & layout,
+    std::vector<RunRef> reduce(CasOperation & op, const Layout & layout,
                                const std::vector<RunRef> & prior_runs,
                                uint64_t new_generation, uint64_t attempt,
                                std::vector<BlobDelta> shard_deltas,
                                uint64_t current_round = 0, uint64_t condemn_round = 0,
-                               const std::function<std::optional<HeadResult>(const BlobRef &)> & head_blob = {},
-                               const std::function<std::optional<HeadResult>(const BlobRef &)> & peek_head = {},
+                               const BlobHeadFn & head_blob = {},
+                               const BlobHeadFn & peek_head = {},
                                const std::function<bool(const RetiredEntry &)> & confirm_condemned_marker = {},
                                RetiredMergeResult * out_retired = nullptr,
                                bool suppress_destructive = false,

@@ -25,7 +25,9 @@ namespace DB::ContentAddressedSetting
     extern const ContentAddressedSettingsBool gc_enabled;
     extern const ContentAddressedSettingsUInt64 gc_shards;
     extern const ContentAddressedSettingsUInt64 gc_interval_sec;
+    extern const ContentAddressedSettingsUInt64 gc_bulk_delete_chunk_keys;
     extern const ContentAddressedSettingsString scratch_path;
+    extern const ContentAddressedSettingsBool unsafe_remount_no_delay;
 }
 
 namespace
@@ -130,6 +132,29 @@ TEST(CASContentAddressedSettings, RemovedCacheSettingsAreRejected)
     }
 }
 
+/// `cas_part_folder_validate` paced a manifest `HEAD` that no longer exists. A config still asking
+/// for it must fail the disk open, not be quietly accepted and ignored.
+TEST(CASContentAddressedSettings, RetiredPartFolderValidateIsRejected)
+{
+    for (const std::string & value : {"always", "never", "age 5"})
+    {
+        SCOPED_TRACE(value);
+        auto cfg = makeConfig(
+            "<cas_server_root_id>srv1</cas_server_root_id>"
+            "<cas_part_folder_validate>" + value + "</cas_part_folder_validate>");
+        ContentAddressedSettings settings;
+        try
+        {
+            settings.loadFromConfig(*cfg, "disk", "/data", "/data/scratch", identity_macros);
+            FAIL() << "expected the retired setting cas_part_folder_validate to be rejected as unknown";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_SETTING);
+        }
+    }
+}
+
 TEST(CASContentAddressedSettings, UnknownKeyRejected)
 {
     expectLoadFailureWithExactMessage(
@@ -151,7 +176,37 @@ TEST(CASContentAddressedSettings, InvalidBoundsDiagnosticNamesExternalConfigKeys
     expectLoadFailureWithExactMessage(
         "<cas_server_root_id>srv1</cas_server_root_id><cas_gc_shards>0</cas_gc_shards>",
         ErrorCodes::BAD_ARGUMENTS,
-        "content_addressed disk: cas_gc_interval_sec and cas_gc_shards must be >= 1 (got 60, 0)");
+        "content_addressed disk: cas_gc_interval_sec, cas_gc_shards and cas_gc_read_concurrency must be >= 1 "
+        "(got 60, 0, 16)");
+    /// The fold's read-ahead pool is refused at zero for the same reason the shard count is: a zero
+    /// would be a silently disabled subsystem rather than a configuration the pool can honour. One is
+    /// the sequential fold and is the way to turn the read-ahead off.
+    expectLoadFailureWithExactMessage(
+        "<cas_server_root_id>srv1</cas_server_root_id><cas_gc_read_concurrency>0</cas_gc_read_concurrency>",
+        ErrorCodes::BAD_ARGUMENTS,
+        "content_addressed disk: cas_gc_interval_sec, cas_gc_shards and cas_gc_read_concurrency must be >= 1 "
+        "(got 60, 1, 0)");
+}
+
+TEST(CASSettings, BulkDeleteChunkKeysBoundsAreEnforced)
+{
+    expectLoadFailureWithExactMessage(
+        "<cas_server_root_id>srv1</cas_server_root_id>"
+        "<cas_gc_bulk_delete_chunk_keys>1001</cas_gc_bulk_delete_chunk_keys>",
+        ErrorCodes::BAD_ARGUMENTS,
+        "content_addressed disk: gc_bulk_delete_chunk_keys must be between 1 and 1000 (got 1001)");
+    expectLoadFailureWithExactMessage(
+        "<cas_server_root_id>srv1</cas_server_root_id>"
+        "<cas_gc_bulk_delete_chunk_keys>0</cas_gc_bulk_delete_chunk_keys>",
+        ErrorCodes::BAD_ARGUMENTS,
+        "content_addressed disk: gc_bulk_delete_chunk_keys must be between 1 and 1000 (got 0)");
+
+    auto cfg = makeConfig(
+        "<cas_server_root_id>srv1</cas_server_root_id>"
+        "<cas_gc_bulk_delete_chunk_keys>1</cas_gc_bulk_delete_chunk_keys>");
+    ContentAddressedSettings s;
+    EXPECT_NO_THROW(s.loadFromConfig(*cfg, "disk", "/scratch", "/scratch", identity_macros));
+    EXPECT_EQ(s[ContentAddressedSetting::gc_bulk_delete_chunk_keys].value, 1u);
 }
 
 TEST(CASContentAddressedSettings, InvalidEnumDiagnosticsNameExternalConfigKeys)
@@ -164,10 +219,6 @@ TEST(CASContentAddressedSettings, InvalidEnumDiagnosticsNameExternalConfigKeys)
         "<cas_server_root_id>srv1</cas_server_root_id><cas_staging_backend>remote</cas_staging_backend>",
         ErrorCodes::BAD_ARGUMENTS,
         "Unknown cas_staging_backend value 'remote' (expected 'local' or 's3')");
-    expectLoadFailureWithExactMessage(
-        "<cas_server_root_id>srv1</cas_server_root_id><cas_part_folder_validate>sometimes</cas_part_folder_validate>",
-        ErrorCodes::BAD_ARGUMENTS,
-        "Unknown cas_part_folder_validate value 'sometimes' (expected 'always', 'never', or 'age <non-negative integer seconds>')");
 }
 
 /// The point of this test is that none of these names appears anywhere in CAS code. It is not an
@@ -526,4 +577,20 @@ TEST(CASContentAddressedSettings, AbsentScratchPathUsesDefaultVerbatim)
     ContentAddressedSettings s;
     s.loadFromConfig(*cfg, "disk", "/data", "/data/disks/x/cas_scratch", identity_macros);
     EXPECT_EQ(s[ContentAddressedSetting::scratch_path].value, "/data/disks/x/cas_scratch");
+}
+
+TEST(CASContentAddressedSettings, UnsafeRemountNoDelayIsOffByDefault)
+{
+    {
+        auto cfg = makeConfig("<cas_server_root_id>srv1</cas_server_root_id>");
+        ContentAddressedSettings s;
+        s.loadFromConfig(*cfg, "disk", "/data", "/data/scratch", identity_macros);
+        EXPECT_FALSE(s[ContentAddressedSetting::unsafe_remount_no_delay].value);
+    }
+    {
+        auto cfg = makeConfig("<cas_server_root_id>srv1</cas_server_root_id><cas_unsafe_remount_no_delay>1</cas_unsafe_remount_no_delay>");
+        ContentAddressedSettings s;
+        s.loadFromConfig(*cfg, "disk", "/data", "/data/scratch", identity_macros);
+        EXPECT_TRUE(s[ContentAddressedSetting::unsafe_remount_no_delay].value);
+    }
 }

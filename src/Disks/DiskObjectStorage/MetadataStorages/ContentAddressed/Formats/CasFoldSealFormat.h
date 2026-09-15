@@ -27,7 +27,7 @@ struct RunRef
     String key;
     UInt128 checksum{};
     uint64_t shard = 0;        /// gc-shard this run belongs to (REQUIRED for blob_target_runs)
-    uint64_t generation = 0;   /// generation whose key namespace physically holds the object (for retention)
+    uint64_t key_generation = 0;   /// generation whose key namespace physically holds the object (for retention)
     bool operator==(const RunRef &) const = default;
 };
 
@@ -36,10 +36,12 @@ struct RunRef
 /// correlating logs. Persisted as a word, so an unknown word is `CORRUPTED_DATA` rather than a silently
 /// reinterpreted integer.
 ///
-/// THESE ARE WIRE VALUES, AND THEY ARE APPEND-ONLY. A durable seal written by one build is read by
-/// another, so a renumbered value or a reused word makes an older seal describe a hold that is not the
-/// one it recorded — and a hold's whole job is to say truthfully what stopped a namespace and where.
-/// Add new reasons at the end; never renumber, never repurpose a retired word.
+/// THE WORDS ARE THE WIRE, AND THE WORD VOCABULARY IS APPEND-ONLY. A durable seal written by one build
+/// is read by another, so a reused or repurposed word makes an older seal describe a hold that is not
+/// the one it recorded — and a hold's whole job is to say truthfully what stopped a namespace and
+/// where. The enumerator NUMBERS never leave memory; they are constrained only by the wire table's
+/// density-and-order proof, so inserting a value in the middle is a compile-time question, not a
+/// durability one. Add new reasons freely; never reuse or repurpose a retired word.
 enum class HoldReason : uint8_t
 {
     GapBelowWitness = 1,        /// 404 at the expected id with a durable witness above it, same epoch
@@ -54,6 +56,34 @@ enum class HoldReason : uint8_t
 /// beyond the codec — the sweep names it when the §6 deletion premise retains a manifest under a held
 /// namespace — and a second rendering of these words elsewhere would be a second place for them to drift.
 std::string_view holdReasonToWord(HoldReason r);
+
+/// Its fail-closed inverse: an unknown word is `CORRUPTED_DATA`. Paired with the renderer so a caller
+/// that needs to prove the vocabulary round-trips does not have to reach for the table itself.
+HoldReason holdReasonFromWord(std::string_view w);
+
+/// What the current round did for one life-keyed `CasFoldSeal::ref_lives` row. A BOUNDED enum: the type
+/// itself is the closed set, so a producer cannot construct a fifth shape without an explicit cast, and
+/// the decoder's wire-word lookup refuses anything else as `CORRUPTED_DATA` rather than silently
+/// reinterpreting an integer.
+///
+/// THE WORDS ARE THE WIRE, AND THE WORD VOCABULARY IS APPEND-ONLY, for the same reason `HoldReason`'s
+/// is: a durable seal written by one build is read by another. The enumerator numbers never leave
+/// memory. `Clamped` sits at 3, not the 4 a retired byte-valued wire used for it: nothing outside this
+/// JSON ever persisted the raw byte, and a dense range is what makes the wire table's lookup a direct
+/// index rather than a search.
+enum class CoverageClass : uint8_t
+{
+    Absent = 0,      /// no round has folded a ref cursor for this namespace
+    Unchanged = 1,   /// folded, but nothing moved this round
+    Folded = 2,      /// every record through the observed cursor was folded
+    Clamped = 3,     /// folding stopped below the ref-log cursor; must be read again next round
+};
+
+/// The wire word one `CoverageClass` is persisted as; `fromWord` rejects anything else as
+/// `CORRUPTED_DATA`. Exported for the same reason `holdReasonToWord` is: the classification is rendered
+/// outside the codec too (`cas-inspect`, the sweep's retention messages).
+std::string_view coverageClassToWord(CoverageClass c);
+CoverageClass coverageClassFromWord(std::string_view w);
 
 /// The durable hold on one namespace. It rides `RefCoverage` across rounds and across `REBUILD`, and
 /// clears ONLY by folding through `offending_position` and adopting the result in `gc/state` — never by
@@ -87,21 +117,17 @@ struct RefHold
     bool operator==(const RefHold &) const = default;
 };
 
-/// Records what the current round did for one life-keyed `CasFoldSeal::ref_lives` row.
-/// `classification` is a persisted byte:
-/// 0 means absent, 1 means unchanged, 2 means all records through the observed cursor were folded, and 4
-/// means folding was clamped below the ref-log cursor. A clamped entry must be read again in the next
-/// round, because an unfolded event may become foldable by then.
+/// Records what the current round did for one life-keyed `CasFoldSeal::ref_lives` row. See
+/// `CoverageClass` for what each value means.
 ///
-/// THE SET {0, 1, 2, 4} IS CLOSED, and both codecs enforce it (decode `CORRUPTED_DATA`, encode
-/// `LOGICAL_ERROR`). Every consumer branches on exact values — the sweep's §6 deletion premise refuses a
-/// row by testing `== 4` and `== 0` — so an unrecognized byte is not a variant to tolerate: it passes
-/// every refusal stated in terms of the set and reaches the delete. The decoder also validates BEFORE
-/// narrowing to the byte, because a wide integer on the wire (258, say) truncates into the set and would
-/// otherwise claim a coverage the fold never proved.
+/// Every consumer branches on exact values — the sweep's §6 deletion premise refuses a row by testing
+/// `== Clamped` and `== Absent` — so the CLOSED set matters beyond the codec, and it is now the type
+/// itself: `CoverageClass` names exactly the four shapes, both codecs go through the shared wire table
+/// (decode `CORRUPTED_DATA`, encode `LOGICAL_ERROR` on the one path that still reaches an out-of-range
+/// value, an explicit cast), and an unrecognized wire word is refused before it ever reaches a consumer.
 struct RefCoverage
 {
-    uint8_t classification = 0;
+    CoverageClass classification = CoverageClass::Absent;
 
     /// The greatest `RefTxnId` whose owner changes have contributed their manifest-edge deltas. There is
     /// one ref-log stream per namespace life, so this cursor is stored in that life-keyed row.
@@ -109,11 +135,11 @@ struct RefCoverage
     /// offending transaction so the complete transaction is retried rather than partially applied.
     RefTxnId last_folded_ref_id{};
 
-    /// STRICT GRAMMAR: present if and only if `classification == 4`. Both directions enforce it — the
-    /// encoder refuses to write a classification-4 row without a hold (a clamp whose reason was lost is
-    /// indistinguishable from a clean cursor once it is durable) and refuses to write a hold on any
-    /// other classification (`LOGICAL_ERROR`); the decoder rejects both shapes as `CORRUPTED_DATA`. The
-    /// pairing lives in the type, not only in the codec, so no producer can construct the forbidden
+    /// STRICT GRAMMAR: present if and only if `classification == CoverageClass::Clamped`. Both directions
+    /// enforce it — the encoder refuses to write a clamped row without a hold (a clamp whose reason was
+    /// lost is indistinguishable from a clean cursor once it is durable) and refuses to write a hold on
+    /// any other classification (`LOGICAL_ERROR`); the decoder rejects both shapes as `CORRUPTED_DATA`.
+    /// The pairing lives in the type, not only in the codec, so no producer can construct the forbidden
     /// combination by forgetting a field.
     std::optional<RefHold> hold = std::nullopt;
 
@@ -147,7 +173,7 @@ struct RefLifeFoldState
 /// must not be interpreted as zero.
 struct CondemnedSummary
 {
-    uint64_t condemned_total = 0;   /// count of `kCondemned` rows in this shard's sealed run
+    uint64_t condemned_total = 0;   /// count of `RunMarker::Condemned` rows in this shard's sealed run
     uint64_t pending_total = 0;     /// how many of those are `delete_pending` (a graduation is due)
     uint64_t oldest_nonpending_condemn_round = UINT64_MAX;   /// min condemn_round over non-pending; UINT64_MAX = none
     bool operator==(const CondemnedSummary &) const = default;
@@ -189,10 +215,10 @@ FoldSealCaps foldSealCaps();
 void checkFoldSealObjectBytes(uint64_t encoded_bytes);
 
 /// Encodes a fold seal as a strict, raw text control object. The header and meta lines are followed by
-/// tagged records in the fixed `rfl`/`btr`/`cnd` order and a record-count trailer. Map iteration and
+/// tagged records in the fixed `ref_life`/`blob_run`/`condemned` order and a record-count trailer. Map iteration and
 /// run references are sorted so retries produce byte-identical output for write-once adoption.
 ///
-/// Enforces the whole coverage grammar — the closed classification set, the classification-4 hold
+/// Enforces the whole coverage grammar — the closed classification set, the clamped-classification hold
 /// pairing, and the hold's canonical offending position — and BOTH byte caps: every emitted line against
 /// `line_cap` — header, meta, records and trailer alike, with no exception — and the whole object
 /// against `object_cap`. Both PUT sites go through this function, so the gate cannot be bypassed by

@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcOutcomesFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasWireVocab.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTableAsserts.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -18,27 +19,31 @@ namespace DB::Cas
 namespace
 {
 
-std::string_view outcomeKindToWord(OutcomeKind o)
+namespace GcOutcomesWire
 {
-    switch (o)
-    {
-        case OutcomeKind::Deleted:  return "deleted";
-        case OutcomeKind::Absent:   return "absent";
-        case OutcomeKind::Replaced: return "replaced";
-        case OutcomeKind::Spared:   return "spared";
-    }
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS outcome log: unknown OutcomeKind {}", static_cast<int>(o));
+    constexpr WireKey kind{"kind"};
+    constexpr WireKey outcome{"outcome"};
 }
 
-OutcomeKind outcomeKindFromWord(std::string_view w)
-{
-    if (w == "deleted")  return OutcomeKind::Deleted;
-    if (w == "absent")   return OutcomeKind::Absent;
-    if (w == "replaced") return OutcomeKind::Replaced;
-    if (w == "spared")   return OutcomeKind::Spared;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS outcome log: unknown outcome '{}'", w);
+constexpr EnumWireTable<OutcomeKind, 4> kOutcomeKindWords{{{
+    {OutcomeKind::Deleted, "deleted"},
+    {OutcomeKind::Absent, "absent"},
+    {OutcomeKind::Replaced, "replaced"},
+    {OutcomeKind::Spared, "spared"},
+}}};
+
+static_assert(casEnumTableCoversEnum<kOutcomeKindWords, OutcomeKind>());
+
 }
 
+std::string_view outcomeKindToWireWord(OutcomeKind outcome)
+{
+    return kOutcomeKindWords.toWord(outcome, "CAS outcome log outcome kind");
+}
+
+OutcomeKind outcomeKindFromWireWord(std::string_view w)
+{
+    return kOutcomeKindWords.fromWord(w, "CAS outcome log outcome kind");
 }
 
 String encodeOutcomeLog(const OutcomeLog & log)
@@ -48,12 +53,10 @@ String encodeOutcomeLog(const OutcomeLog & log)
     for (const OutcomeEntry & e : log.entries)
     {
         bool first = true;
-        writeKey(out, "k", first);
-        writeStringValue(out, objectKindToWord(e.kind));
-        writeBlobRefFields(out, first, e.ref);   /// ha + h
-        writeTokenFields(out, first, e.token);   /// tt + tv
-        writeKey(out, "oc", first);
-        writeStringValue(out, outcomeKindToWord(e.outcome));
+        writeWordField(out, GcOutcomesWire::kind, objectKindToWord(e.kind), first);
+        writeBlobRefFields(out, first, e.ref);   /// algo + digest
+        writeTokenFields(out, first, e.token);   /// token_type + token
+        writeWordField(out, GcOutcomesWire::outcome, outcomeKindToWireWord(e.outcome), first);
         closeObject(out, first);
         writeChar('\n', out);
     }
@@ -68,14 +71,19 @@ OutcomeLog decodeOutcomeLog(std::string_view data)
     const uint64_t line_cap = traitsFor(FormatId::GcOutcomes).line_cap;
 
     OutcomeLog log;
+    /// One line scratch and one reader for the whole loop, as the other row decoders do:
+    /// rebuilding them per row costs an allocation per row for the seen-key store and the line.
+    String row_line;
+    JsonObjectReader row_reader;
     while (true)
     {
-        const String line = readLine(in, line_cap, "outcome log");
-        ReadBufferFromMemory line_in(line.data(), line.size());
-        JsonObjectReader r(line_in, KeyStrictness::Tolerant, "outcome log");
+        readLineInto(in, row_line, line_cap, "outcome log");
+        ReadBufferFromMemory line_in(row_line.data(), row_line.size());
+        row_reader.reset(line_in, KeyStrictness::Tolerant, "outcome log");
+        JsonObjectReader & r = row_reader;
 
         String key;
-        /// The first key distinguishes a trailer ("n") from a record ("k").
+        /// The first key distinguishes a trailer (`n`) from a record (`kind`).
         if (!r.nextKey(key))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS outcome log: empty line");
         if (key == "n")
@@ -92,34 +100,19 @@ OutcomeLog decodeOutcomeLog(std::string_view data)
         }
 
         OutcomeEntry e;
-        String ha;
-        String hhex;
-        String tv;
-        bool have_ha = false;
-        bool have_h = false;
-        bool have_tt = false;
-        TokenType tt{};
+        BlobRefFields blob_ref_fields;
+        TokenFields token_fields;
         do
         {
-            if (key == "k") e.kind = objectKindFromWord(r.readString(), "outcome log");
-            else if (key == "ha") { ha = r.readString(); have_ha = true; }
-            else if (key == "h") { hhex = r.readString(); have_h = true; }
-            else if (key == "tt") { tt = tokenTypeFromWord(r.readString(), "outcome log"); have_tt = true; }
-            else if (key == "tv") tv = r.readString();
-            else if (key == "oc") e.outcome = outcomeKindFromWord(r.readString());
+            if (key == GcOutcomesWire::kind) e.kind = objectKindFromWord(r.readString(), "outcome log");
+            else if (matchBlobRefFields(key, r, blob_ref_fields)) {}
+            else if (matchTokenFields(key, r, token_fields)) {}
+            else if (key == GcOutcomesWire::outcome) e.outcome = outcomeKindFromWireWord(r.readString());
             else r.skipUnknown(key);
         } while (r.nextKey(key));
 
-        if (!have_ha || !have_h || !have_tt)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS outcome log: record missing ha/h/tt");
-        const BlobHashAlgo algo = blobHashAlgoFromWord(ha, "outcome log");
-        /// Validate the digest width before `fromHex`: a width mismatch must surface as the
-        /// CORRUPTED_DATA required for malformed serialized input, not fromHex's BAD_ARGUMENTS.
-        if (hhex.size() != blobHashLenFor(algo) * 2)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "CAS outcome log: digest width {} does not match algo '{}'", hhex.size(), ha);
-        e.ref = BlobRef{algo, codecFor(algo).fromHex(hhex)};
-        e.token = Token{tv, tt};
+        e.ref = blob_ref_fields.build("outcome log");
+        e.token = token_fields.build("outcome log");
         if (!line_in.eof())
             throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS outcome log: junk after record");
         log.entries.push_back(std::move(e));

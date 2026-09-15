@@ -6,7 +6,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPoolMetaFormat.h>
 #include <Disks/tests/cas_test_helpers.h>
@@ -69,27 +69,37 @@ PoolPtr openPool(const BackendPtr & backend)
 }
 
 /// The fence-controlled pool of `gtest_cas_ref_install_safety.cpp`, for the pre-attempt refusal: the
-/// boot clock is frozen so `setMountDeadline` alone decides both fence predicates, renewal is parked an
-/// hour out so nothing re-arms the deadline underneath the test, and the single-attempt budget makes
-/// `attempt_timeout_ms + lease_safety_margin_ms` (200 ms) the window between "the flush is admitted"
-/// and "an attempt may start".
-PoolPtr openPoolFenceControlled(const BackendPtr & backend)
+/// boot clock is frozen so `setMountDeadline` alone decides every fence predicate, renewal is parked an
+/// hour out so nothing re-arms the deadline underneath the test, and the backend reports the budget's
+/// own `attempt_timeout_ms` because that -- not the budget field -- is what the request engine reserves
+/// per attempt, exactly as `ContentAddressedMetadataStorage` pairs the two in production. No fault is
+/// injected here at all -- the refusal comes from the lease having no room to start a write -- so
+/// nothing in this fixture depends on an attempt count.
+PoolPtr openPoolFenceControlled(const std::shared_ptr<InMemoryBackend> & backend)
 {
     DB::Cas::tests::seedPoolMetaForRestart(*backend);
     PoolConfig cfg{.pool_prefix = "p", .server_root_id = "test"};
     cfg.boot_ms_fn = [] { return uint64_t{0}; };
     cfg.mount_renew_period = std::chrono::milliseconds{3600000};
     CasRequestBudget budget;
-    budget.max_attempts = 1;
     budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;   /// strictly above attempt_timeout_ms: equality is a wall-clock race (validateCasRequestBudget)
     budget.lease_safety_margin_ms = 100;
     cfg.cas_request_budget = budget;
+    backend->setAttemptTimeoutMs(budget.attempt_timeout_ms);
     return Pool::open(backend, cfg);
 }
 
 constexpr uint64_t FENCE_DEADLINE_HEALTHY_MS = 30000;
-constexpr uint64_t FENCE_DEADLINE_REFUSES_ATTEMPT_MS = 100;
+/// Between "the flush is admitted" and "an attempt may start" sit three gates with different
+/// appetites, all measured against the lease's remaining time (the frozen clock at 0 makes the
+/// deadline BE the remaining time), and each refuses until its own reservation plus
+/// `lease_safety_margin_ms` (100) is STRICTLY cleared:
+///   a `CasOperation::admitted` guard reserves nothing            -- clears above 100;
+///   a read reserves one attempt envelope                         -- clears above 200;
+///   a write reserves TWO, the attempt and the read that settles it -- clears above 300.
+/// This test wants the guards and the reads on the way in to pass while the append's own first
+/// request is refused, so it sits strictly between the second and the third.
+constexpr uint64_t FENCE_DEADLINE_REFUSES_ATTEMPT_MS = 250;
 
 /// A bare `Pool::open` with no `_pool_meta` seeded: the path an operator's pool RECREATION takes, and
 /// the only one that runs the bootstrap residual + quiesce gates (`seedPoolMetaForRestart` mints the
@@ -106,9 +116,10 @@ size_t eraseKeysContaining(Backend & backend, const String & substr)
     size_t removed = 0;
     String cursor;
     std::vector<String> keys;
+    OperationForTest op(backend);
     while (true)
     {
-        const ListPage page = backend.list("", cursor, 1000);
+        const ListPage page = (*op).list("", cursor, 1000, Retry::standard());
         for (const ListedKey & listed : page.keys)
             if (substr.empty() || listed.key.find(substr) != String::npos)
                 keys.push_back(listed.key);
@@ -118,8 +129,8 @@ size_t eraseKeysContaining(Backend & backend, const String & substr)
     }
     for (const String & key : keys)
     {
-        const HeadResult h = backend.head(key);
-        if (h.exists && backend.deleteExact(key, h.token).kind == DeleteOutcome::Kind::Deleted)
+        const auto h = (*op).head(key, Retry::standard());
+        if (h && (*op).remove(key, h->etag, Retry::standard()) == Removal::Removed)
             ++removed;
     }
     return removed;
@@ -242,9 +253,8 @@ TEST(CASRefContiguousAlloc, EpochChangeRestartsTheSequenceAtOne)
 }
 
 /// The read side is what makes INV-1 an invariant rather than a convention: a transaction whose id is
-/// not the successor of `greatest_applied` is CORRUPTED_DATA, naming both ids. Before this task the
-/// state machine checked strict increase only, so a stream with a hole applied cleanly and no reader
-/// could tell a complete chain from a truncated one.
+/// not the successor of `greatest_applied` is CORRUPTED_DATA, naming both ids. Strict increase alone
+/// admits holes, so it cannot distinguish a complete chain from a truncated one.
 TEST(CASRefContiguousAlloc, NonSuccessorIdIsRejectedOnApply)
 {
     const String ns = "srv1/contig_density";
@@ -253,7 +263,7 @@ TEST(CASRefContiguousAlloc, NonSuccessorIdIsRejectedOnApply)
     RefTableState state = replay(DB::Cas::tests::minimalLiveSnapshot(ns, RefTxnId{kEpoch, 1}), {});
     ASSERT_EQ(state.getGreatestApplied(), (RefTxnId{kEpoch, 1}));
 
-    /// Strictly greater, but skips {7,2}: admitted before this task, rejected now.
+    /// Strictly greater, but skips {7,2}: not the required successor.
     try
     {
         applyRefLogTxn(state, RefLogTxn{ns, RefTxnId{kEpoch, 3}, publishCommittedOps("r", ManifestRef{1, 1, 1}), std::nullopt});
@@ -289,128 +299,22 @@ TEST(CASRefContiguousAlloc, NonSuccessorIdIsRejectedOnApply)
     EXPECT_EQ(state.getGreatestApplied(), (RefTxnId{kEpoch + 1, 1}));
 }
 
-/// The format floor. A pool written before contiguous ref streams holds ref logs whose ids this build
-/// would read as a corrupt (holed) chain, so opening it must fail closed at the pool metadata, naming
-/// recreation as the migration -- CAS is pre-release and has no in-place migration path.
-TEST(CASRefContiguousAlloc, OldPoolFormatIsRefusedNamingRecreation)
-{
-    PoolMeta pm;
-    pm.pool_id = UInt128{1, 2};
-    pm.blob_header_len = 256;
-    pm.min_reader_generation = G_BUILD;
-    pm.algos_used = {static_cast<uint8_t>(BlobHashAlgo::CityHash128)};
-
-    const String current = encodePoolMeta(pm);
-    EXPECT_NO_THROW(decodePoolMeta(current));
-
-    /// Rewrite the header-line generation to the last pre-contiguous one, exactly as an older build
-    /// would have stamped it.
-    const String from = "\"v\":" + std::to_string(G_BUILD);
-    const String to = "\"v\":" + std::to_string(kContiguousRefStreamsGeneration - 1);
-    const size_t at = current.find(from);
-    ASSERT_NE(at, String::npos);
-    String old_format = current;
-    old_format.replace(at, from.size(), to);
-
-    try
-    {
-        decodePoolMeta(old_format);
-        FAIL() << "a pre-contiguous pool must not open";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION);
-        EXPECT_NE(e.message().find(fmt::format("CAS pool format {} predates generation-10 mount-attempt-identity floor",
-                                               kContiguousRefStreamsGeneration - 1)), String::npos)
-            << "the message must name the migration: " << e.message();
-    }
-}
-
-/// Generation 6 is a recreate-only physical-layout cut. A generation-5 pool has contiguous,
-/// incarnation-qualified streams but still repeats the logical namespace in every key; accepting it
-/// would silently run the generation-6 parsers over a different grammar.
-TEST(CASRefContiguousAlloc, GenerationFiveNamespaceBearingPoolIsRefusedNamingRecreation)
-{
-    PoolMeta pm;
-    pm.pool_id = UInt128{1, 2};
-    pm.blob_header_len = 256;
-    pm.min_reader_generation = G_BUILD;
-    pm.algos_used = {static_cast<uint8_t>(BlobHashAlgo::CityHash128)};
-
-    const String current = encodePoolMeta(pm);
-    EXPECT_NO_THROW(decodePoolMeta(current));
-
-    /// Rewrite the header to the immediately preceding generation, which used
-    /// `cas/refs/<namespace>/<incarnation>/...`.
-    const String from = "\"v\":" + std::to_string(G_BUILD);
-    const String to = "\"v\":" + std::to_string(kNamespaceLifeKeyedGeneration);
-    const size_t at = current.find(from);
-    ASSERT_NE(at, String::npos);
-    String old_format = current;
-    old_format.replace(at, from.size(), to);
-    ASSERT_EQ(kNamespaceLifeKeyedGeneration + 1, kOpaqueNamespaceLifeLayoutGeneration)
-        << "this test pins the immediately preceding namespace-bearing generation";
-
-    try
-    {
-        decodePoolMeta(old_format);
-        FAIL() << "a generation-5 namespace-bearing pool must not open";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION);
-        EXPECT_NE(e.message().find(fmt::format("CAS pool format {} predates generation-10 mount-attempt-identity floor",
-                                               kNamespaceLifeKeyedGeneration)), String::npos)
-            << "the message must name the migration: " << e.message();
-    }
-}
-
-/// Mutation caught: leaving the pool floor at generation 6 would admit a seal whose independent
-/// name-keyed coverage and cleanup collections this build no longer has. Generation 7 is a
-/// recreate-only grammar cut, so the immediately preceding generation must fail at pool open.
-TEST(CASRefContiguousAlloc, GenerationSixSplitFoldSealPoolIsRefusedNamingRecreation)
-{
-    PoolMeta pm;
-    pm.pool_id = UInt128{1, 2};
-    pm.blob_header_len = 256;
-    pm.min_reader_generation = G_BUILD;
-    pm.algos_used = {static_cast<uint8_t>(BlobHashAlgo::CityHash128)};
-
-    const String current = encodePoolMeta(pm);
-    const String from = "\"v\":" + std::to_string(G_BUILD);
-    const String to = "\"v\":6";
-    const size_t at = current.find(from);
-    ASSERT_NE(at, String::npos);
-    String old_format = current;
-    old_format.replace(at, from.size(), to);
-
-    try
-    {
-        decodePoolMeta(old_format);
-        FAIL() << "a generation-6 split ref-life fold seal pool must not open";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION);
-        EXPECT_NE(e.message().find("CAS pool format 6 predates generation-10 mount-attempt-identity floor"), String::npos)
-            << "the message must name the recreate-only grammar cut: " << e.message();
-    }
-}
-
 TEST(CASPoolMeta, GcShardsIsPersistedAndOverridesMismatchedReopenConfig)
 {
-    InMemoryBackend backend;
+    auto backend = std::make_shared<InMemoryBackend>();
     const Layout layout("p");
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit();
     const PoolMeta created = PoolMeta::createOrValidate(
-        backend, layout, /*blob_header_len=*/256, /*gc_shards=*/4,
+        op, layout, /*blob_header_len=*/256, /*gc_shards=*/4,
         BlobHashAlgo::CityHash128, /*allow_new=*/false, /*allow_mint=*/true);
     EXPECT_EQ(created.gc_shards, 4u);
 
     const PoolMeta reopened = PoolMeta::createOrValidate(
-        backend, layout, /*blob_header_len=*/256, /*gc_shards=*/1,
+        op, layout, /*blob_header_len=*/256, /*gc_shards=*/1,
         BlobHashAlgo::CityHash128, /*allow_new=*/false, /*allow_mint=*/false);
     EXPECT_EQ(reopened.gc_shards, 4u);
-    EXPECT_EQ(decodePoolMeta(backend.get(layout.poolMetaKey())->bytes).gc_shards, 4u);
+    EXPECT_EQ(decodePoolMeta(op.read(layout.poolMetaKey(), Retry::standard())->bytes).gc_shards, 4u);
 }
 
 /// The one path where "an attempt that provably sent nothing consumes nothing" does not hold, and the
@@ -456,9 +360,11 @@ TEST(CASRefContiguousAlloc, NeedsRecoveryReplaysBeforeAllocatingTheNextId)
     /// The durable stream itself is dense: `1`, `2`, `3` all exist as objects. `ns` was born through
     /// the REAL append lane (Stage B Task 4-C), so its objects sit at a real catalog-minted incarnation,
     /// not the Stage-A sentinel -- resolve it the same way production discovery does.
-    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(*backend, store->layout(), ns).value();
+    CasRequests catalog_requests(backend, Fence::open());
+    CasOperation catalog_op = catalog_requests.admit();
+    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(catalog_op, store->layout(), ns).value();
     for (uint64_t seq = 1; seq <= 3; ++seq)
-        EXPECT_TRUE(backend->head(store->layout().refLogKey(life, RefTxnId{epoch, seq})).exists)
+        EXPECT_TRUE(catalog_op.head(store->layout().refLogKey(life, RefTxnId{epoch, seq}), Retry::once()).has_value())
             << "log object " << epoch << "-" << seq << " must exist: the durable stream has no hole";
 }
 
@@ -542,7 +448,7 @@ TEST(CASRefContiguousAlloc, RecreationProceedsOnceTheHolderIsTerminal)
     {
         auto holder = openPool(backend);
         publishRef(holder, ns, "ref_1", 1);
-    }   /// destroyed: the keeper stamps the farewell, making the slot terminal
+    }   /// destroyed: the renewer stamps the farewell, making the slot terminal
     ASSERT_EQ(eraseKeysContaining(*backend, "_pool_meta"), 1u);
 
     /// The prefix still holds this pool's data, so the bootstrap still refuses -- but on the ORDINARY
@@ -570,14 +476,14 @@ TEST(CASRefContiguousAlloc, RecreationProceedsOnceTheHolderIsTerminal)
 /// survivor's renewal conclusive. Clearing the prefix also resets the durable writer-epoch counter, so
 /// a recreation by the SAME server uuid can be handed the very same `(uuid, epoch)` the survivor still
 /// holds -- and the two are then indistinguishable to the lease protocol, which reads the survivor's
-/// renewal as its own keeper adopting a refreshed body. That is precisely why the refusal above is the
+/// renewal as its own renewer adopting a refreshed body. That is precisely why the refusal above is the
 /// primary defence and this fence is only the backstop: quiescing the holder BEFORE the prefix is
 /// cleared is what keeps the ambiguous case from arising at all.
 TEST(CASRefContiguousAlloc, SurvivingWriterIsFencedByTheRecreatedPoolsMount)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     /// The survivor uses the runtime-owned renewal worker, as a real mount does: the runtime terminal
-    /// consumer is what latches the write fence when a renewal fails, so a keeper-only call would
+    /// consumer is what latches the write fence when a renewal fails, so a renewer-only call would
     /// reproduce the failure but not the lifecycle effect it causes.
     PoolConfig survivor_cfg{.pool_prefix = "p", .server_root_id = "test"};
     survivor_cfg.background_watermark = true;
@@ -616,11 +522,12 @@ TEST(CASRefContiguousAlloc, SurvivingWriterIsFencedByTheRecreatedPoolsMount)
     EXPECT_EQ(publishRef(recreated, ns, "ref_1", 1), (RefTxnId{recreated->writerEpoch(), 1}));
 
     /// The survivor's TEARDOWN is the other half, and it is asserted here rather than left to the
-    /// destructor at scope exit. A terminal keeper must skip release without backend I/O: the renewal
+    /// destructor at scope exit. A terminal renewer must skip release without backend I/O: the renewal
     /// conflict already counted the conclusive foreign successor, and teardown must neither double-count
     /// it nor stamp a farewell over the successor's slot.
     const String survivor_mount_key = recreated->layout().mountKey("test");
-    const auto successor_slot_before = backend->get(survivor_mount_key);
+    OperationForTest teardown_op(*backend);
+    const auto successor_slot_before = (*teardown_op).read(survivor_mount_key, Retry::once());
     ASSERT_TRUE(successor_slot_before.has_value());
     const uint64_t skipped_after_deposition
         = ProfileEvents::global_counters[ProfileEvents::CASMountReleaseSkippedForeignOccupant].load();
@@ -633,7 +540,7 @@ TEST(CASRefContiguousAlloc, SurvivingWriterIsFencedByTheRecreatedPoolsMount)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountExclusivityViolation].load(),
               violations_before)
         << "and must NOT report an exclusivity violation: this is a failover, not a broken guarantee";
-    const auto successor_slot_after = backend->get(survivor_mount_key);
+    const auto successor_slot_after = (*teardown_op).read(survivor_mount_key, Retry::once());
     ASSERT_TRUE(successor_slot_after.has_value());
     EXPECT_EQ(successor_slot_after->bytes, successor_slot_before->bytes)
         << "the deposed writer must not stamp its farewell over the successor's lease";

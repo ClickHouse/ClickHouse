@@ -155,7 +155,40 @@ StorageRabbitMQ::StorageRabbitMQ(
     String username;
     String password;
 
-    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
+    /// The connection is TLS when either the `rabbitmq_secure` setting is on or the
+    /// `rabbitmq_address` URI uses the `amqps` scheme; OpenSSL must be initialized in both cases.
+    bool secure_connection = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value;
+
+    const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
+
+    if (!address_string.empty())
+    {
+        std::optional<AMQP::Address> address;
+        try
+        {
+            address.emplace(address_string);
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `rabbitmq_address`: {}", e.what());
+        }
+
+        context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
+
+        /// connectImpl takes the transport (amqp/amqps) from the URI scheme and ignores the
+        /// `rabbitmq_secure` setting for the address form, so reject a contradictory
+        /// `rabbitmq_secure = 1` rather than silently connecting in plaintext. Only for a fresh
+        /// CREATE though: an existing table must still attach on restart (it stays plaintext, as
+        /// it did before), so this validation does not brick upgrades.
+        if (mode <= LoadingStrictnessLevel::CREATE && secure_connection && !address->secure())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`rabbitmq_secure = 1` conflicts with the plaintext `amqp://` scheme in "
+                "`rabbitmq_address`; use an `amqps://` address for a secure connection");
+
+        secure_connection = address->secure();
+    }
+    else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
         username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
         password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
@@ -172,7 +205,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
         context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
     }
-    else if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].changed)
+    else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ requires either `rabbitmq_host_port` or `rabbitmq_address` setting");
 
     configuration =
@@ -182,11 +215,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         .username = username,
         .password = password,
         .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
-        .secure = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value,
-        .connection_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address])
+        .secure = secure_connection,
+        .connection_string = address_string
     };
 
-    if (configuration.secure)
+    if (secure_connection)
         SSL_library_init();
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
@@ -1420,7 +1453,7 @@ Optional parameters:
 - `rabbitmq_max_block_size` - Number of row collected before flushing data from RabbitMQ. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `rabbitmq_flush_interval_ms` - Timeout for flushing data from RabbitMQ. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
 - `rabbitmq_queue_settings_list` - allows to set RabbitMQ settings when creating a queue. Available settings: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. The `durable` setting is enabled automatically for the queue.
-- `rabbitmq_address` - Address for connection. Use ether this setting or `rabbitmq_host_port`.
+- `rabbitmq_address` - Address for connection: `amqp(s)://user:password@host:port/vhost`. Use either this setting or `rabbitmq_host_port`; if both are set, `rabbitmq_address` is the one used. Its host and port are checked against [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
 - `rabbitmq_vhost` - RabbitMQ vhost. Default: `'/'`.
 - `rabbitmq_queue_consume` - Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings. Default: `false`.
 - `rabbitmq_username` - RabbitMQ username.
@@ -1435,7 +1468,8 @@ Optional parameters:
 
 ### SSL connection {#ssl-connection}
 
-Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+With the `rabbitmq_host_port` form, set `rabbitmq_secure = 1` to use TLS.
+With the `rabbitmq_address` form the transport comes from the URI scheme, so use `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` is ignored for the address form, and `rabbitmq_secure = 1` together with a plaintext `amqp://` address is rejected rather than silently connecting in cleartext.
 The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
 
 Also format settings can be added along with rabbitmq-related settings.

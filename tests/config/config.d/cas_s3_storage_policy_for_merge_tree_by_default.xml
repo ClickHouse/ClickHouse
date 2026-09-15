@@ -5,6 +5,12 @@
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
+                <!-- Recommended for every CAS S3 disk: without them, the generic default
+                     `http_keep_alive_max_requests = 100` is the whole lifetime of a connection under
+                     CAS's control-plane request rate, and its churn eventually exhausts the ephemeral
+                     port range (see `docs/en/antalya/cas/configuration.md`). -->
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
                 <!-- Phase 0 (mount safety): required, validated identity of the layout subtree this
                      server owns. Single-server stateless lane → a stable literal id. -->
                 <cas_server_root_id>stateless-ca-s3</cas_server_root_id>
@@ -22,7 +28,7 @@
                      replaces the old grace window (M-W D-W5); a short interval so reclamation
                      happens during the run. -->
                 <cas_gc_enabled>1</cas_gc_enabled>
-                <cas_gc_interval_sec>5</cas_gc_interval_sec>
+                <cas_gc_interval_sec>20</cas_gc_interval_sec>
             </cas_s3>
             <!-- Optional local filesystem cache in front of the cacheless CA-S3 disk (mirrors how plain-s3
                  backs its policy with `cached_s3`). Validated: once warm it serves reads from local disk

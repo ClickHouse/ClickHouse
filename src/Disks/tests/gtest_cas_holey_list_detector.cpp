@@ -56,6 +56,8 @@ namespace
 class HoleyListBackend : public InMemoryBackend
 {
 public:
+    /// Unhide the legacy `list` overloads the primitive override below would otherwise hide.
+    using Backend::list;
     /// Omit `key` from the `nth` (0-based) subsequent qualifying `list` call. Resets the counter.
     void omitFromNthListCall(const String & key, size_t nth)
     {
@@ -74,14 +76,16 @@ public:
         return served;
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    /// Sabotages the PRIMITIVE, which every legacy forwarder reaches too, so the hole is served
+    /// whichever surface issued the enumeration.
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
-        ListPage page = InMemoryBackend::list(prefix, cursor, limit);
+        RawListPage page = InMemoryBackend::list(prefix, cursor, limit, access);
         std::lock_guard lock(m);
         if (omitted.empty())
             return page;
         auto it = std::find_if(page.keys.begin(), page.keys.end(),
-                               [&](const ListedKey & k) { return k.key == omitted; });
+                               [&](const RawListedKey & k) { return k.key == omitted; });
         if (it == page.keys.end())
             return page;              /// not a qualifying call — do not count it
         if (seen_calls++ != target_call)
@@ -133,19 +137,25 @@ ManifestId publishOneBlobPart(const PoolPtr & s, const RootNamespace & ns, const
 
 bool blobPresent(const std::shared_ptr<HoleyListBackend> & b, const Layout & layout, const String & payload)
 {
-    return b->head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128,
-                                          BlobDigest::fromU128(u128Of(payload))})).exists;
+    DB::Cas::tests::OperationForTest op(*b);
+    return (*op).head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128,
+                                             BlobDigest::fromU128(u128Of(payload))}), Retry::standard()).has_value();
 }
 
 /// Every ref object key of one namespace. Used to identify WHICH objects a publish appended, rather
 /// than guessing a sequence number.
 std::set<String> listRefKeys(Backend & b, const Layout & layout, const RootNamespace & ns)
 {
-    /// Stage B (Task 4-C): `ns` is born through the REAL append lane here, so its objects sit at a
-    /// real catalog-minted incarnation, not the Stage-A sentinel.
-    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(b, layout, ns).value();
+    /// `ns` is born through the REAL append lane here, so its objects sit at a real catalog-minted
+    /// incarnation rather than a fixture-chosen one. The catalog read is made on an open-fence
+    /// operation of its own: this helper only observes, and shares no admission with the code
+    /// under test.
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(b);
+    CasOperation op = requests.admit();
+    const NamespaceLifeId life = CasRefCatalog::lifeIfCataloged(op, layout, ns).value();
     std::set<String> keys;
-    forEachListedKey(b, layout.namespaceStreamPrefix(life), [&](const ListedKey & k) { keys.insert(k.key); });
+    op.forEachListedKey(layout.namespaceStreamPrefix(life),
+        [&](const ListedKey & k) { keys.insert(k.key); return true; }, Retry::standard());
     return keys;
 }
 
@@ -170,13 +180,14 @@ String refLogKeyEmittingEdge(Backend & b, const Layout & layout, const RootNames
                              const std::vector<String> & candidates, const ManifestId & manifest_id,
                              int change)
 {
+    DB::Cas::tests::OperationForTest probe(b);
     std::vector<String> hits;
     for (const String & key : candidates)
     {
         const auto parsed = layout.parseRefObjectKey(key);
         if (!parsed || parsed->kind != RefObjectKind::Log)
             continue;
-        const auto got = b.get(key);
+        const auto got = (*probe).read(key, Retry::standard());
         if (!got)
             continue;
         const RefLogTxn txn =
@@ -271,8 +282,11 @@ TEST(CASHoleyListDetector, OmittedActivationNeverPermitsDeletingALiveBlob)
     Gc gc(s, hexToU128("00000000000000000000000000000001"));
     runRounds(s, gc, 2);
     ASSERT_TRUE(blobPresent(b, layout, payload));
-    ASSERT_TRUE(b->head(layout.manifestKey(m1)).exists)
-        << "M1's body must still be present so its `-1` edges are readable at removal-fold";
+    {
+        DB::Cas::tests::OperationForTest m1_probe(*b);
+        ASSERT_TRUE((*m1_probe).head(layout.manifestKey(m1), Retry::standard()).has_value())
+            << "M1's body must still be present so its `-1` edges are readable at removal-fold";
+    }
 
     /// M2 adopts the SAME deduplicated blob (`putBlob` of an identical payload dedups). Learn WHICH
     /// ref-log object carries M2's ACTIVATION by diffing the namespace's ref prefix around the publish

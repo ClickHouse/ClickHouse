@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasBlobEnvelopeFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasNamespaceLifeId.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasWriteOnceKey.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
 #include <Common/Exception.h>
 #include <base/types.h>
@@ -168,6 +169,18 @@ public:
         return namespaceStreamPrefix(ns_id) + "_snap/" + renderRefTxnId(id) + String(storedSuffix(FormatId::RefSnapshot));
     }
 
+    /// The write-once forms of `refLogKey` and `refSnapshotKey`: the same strings, typed as keys a
+    /// precondition-free delete may take. Both objects are published with a create-only write at a
+    /// life-qualified key.
+    WriteOnceKey writeOnceRefLogKey(const NamespaceLifeId & ns_id, const RefTxnId & id) const
+    {
+        return WriteOnceKey(refLogKey(ns_id, id));
+    }
+    WriteOnceKey writeOnceRefSnapshotKey(const NamespaceLifeId & ns_id, const RefTxnId & id) const
+    {
+        return WriteOnceKey(refSnapshotKey(ns_id, id));
+    }
+
     /// The life's checkpoint object (spec INV-4) at `<prefix>/cas/ns/state/<life_id>/_ckpt`. Unlike
     /// immutable stream objects it is mutable (token-CAS), carries no transaction id, and therefore lives
     /// in the point/path-addressed state tree rather than a `_log`/`_snap` directory --
@@ -271,6 +284,13 @@ public:
         return prefix + "/cas/manifests/" + id.root_namespace.string() + "/"
              + renderRefTxnId(RefTxnId{id.ref.writer_epoch, id.ref.build_sequence}) + "/"
              + manifestOrdinalFileName(id.ref.manifest_ordinal);
+    }
+
+    /// The write-once form of `manifestKey`: a manifest is published with a create-only write at a key
+    /// whose epoch, build sequence and ordinal never repeat under one server root.
+    WriteOnceKey writeOnceManifestKey(const ManifestId & id) const
+    {
+        return WriteOnceKey(manifestKey(id));
     }
 
     /// Inverse of `manifestKey`: parses `<prefix>/cas/manifests/<ns>/<epoch-hex>-<seq-hex>/<NNNNNN>.zst`.

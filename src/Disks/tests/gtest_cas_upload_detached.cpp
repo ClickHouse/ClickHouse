@@ -49,13 +49,14 @@ BlobSource reReadableStagedSource(
     source.server_side_copy_from = staging_key;
     source.open = [backend, staging_key, header_len, payload_size]() -> std::unique_ptr<DB::ReadBuffer>
     {
-        auto staged = backend->getStream(staging_key);
+        DB::Cas::tests::OperationForTest op(backend);
+        std::unique_ptr<DB::ReadBuffer> staged = (*op).stream(staging_key, Retry::once());
         if (!staged)
             throw DB::Exception(DB::ErrorCodes::FILE_DOESNT_EXIST, "staging object {} is absent", staging_key);
         String encoded_header(header_len, '\0');
-        staged->stream->readStrict(encoded_header.data(), encoded_header.size());
+        staged->readStrict(encoded_header.data(), encoded_header.size());
         (void)decodeEnvelopeHeader(encoded_header, header_len + payload_size, ObjectKind::Blob);
-        return std::move(staged->stream);
+        return staged;
     };
     return source;
 }
@@ -72,6 +73,27 @@ PartWriteTxnPtr precommitBuildFor(
     return build;
 }
 
+/// A one-shot `create`, asserting it committed (mirrors the retired `backend.putIfAbsent(key, bytes)`).
+void createObj(Backend & backend, const String & key, const String & bytes)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(key, bytes, Retry::once())));
+}
+
+/// An exact read (mirrors the retired `backend.get(key)`).
+std::optional<Object> readObj(Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).read(key, Retry::standard());
+}
+
+/// Whether `key` has a value, through a HEAD (mirrors the retired `backend.head(key).exists`).
+bool headPresent(Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).head(key, Retry::standard()).has_value();
+}
+
 /// Seed a present, well-formed blob body whose LOGICAL bytes are exactly `payload` (a fixed envelope
 /// header followed by the payload), so a later HEAD returns a token and a logical size of `payload.size()`.
 void seedPresentBody(
@@ -82,13 +104,13 @@ void seedPresentBody(
     h.incarnation_tag = DB::UInt128(0xABCD);
     h.build_id = DB::UInt128(0x1111);
     const String head = encodeEnvelopeHeader(h, static_cast<uint32_t>(pm.blob_header_len));
-    b.putIfAbsent(layout.blobKey(ref), head + payload);
+    createObj(b, layout.blobKey(ref), head + payload);
 }
 
 /// The logical payload stored at `key` (object body minus the fixed blob header), or empty when absent.
 String logicalPayloadAt(InMemoryBackend & b, const String & key, uint64_t header_len)
 {
-    const auto got = b.get(key);
+    const auto got = readObj(b, key);
     if (!got || got->bytes.size() < header_len)
         return {};
     return got->bytes.substr(header_len);
@@ -106,6 +128,8 @@ std::optional<MetaState> metaStateAt(InMemoryBackend & b, const Layout & layout,
 class ProtocolRecordingBackend final : public InMemoryBackend
 {
 public:
+    /// Unhide the legacy overload that the primitive override below would otherwise hide.
+    using InMemoryBackend::head;
     void watch(String blob_key_, String meta_key_)
     {
         blob_key = std::move(blob_key_);
@@ -117,27 +141,27 @@ public:
         meta_gets_before_first_publish.reset();
     }
 
-    HeadResult head(const String & key) override
+    std::optional<RawMeta> head(const String & key, TransportAccess & access) override
     {
         if (key == blob_key)
         {
             ++blob_heads;
             operations.emplace_back("head");
         }
-        return InMemoryBackend::head(key);
+        return InMemoryBackend::head(key, access);
     }
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
         if (key == meta_key)
         {
             ++meta_gets;
             operations.emplace_back("meta-get");
         }
-        return InMemoryBackend::get(key, range);
+        return InMemoryBackend::read(key, access);
     }
 
-    void publishBlob(const BlobPublishRequest & request) override
+    void publish(const BlobPublishRequest & request, TransportAccess & access) override
     {
         if (request.destination_key == blob_key)
         {
@@ -146,7 +170,7 @@ public:
             if (!meta_gets_before_first_publish)
                 meta_gets_before_first_publish = meta_gets;
         }
-        InMemoryBackend::publishBlob(request);
+        InMemoryBackend::publish(request, access);
     }
 
     String blob_key;
@@ -267,7 +291,8 @@ TEST(CASUploadDetached, PresentCondemnedPublishesFreshAndQueuedOldDeleteMisses)
     condemnMeta(*backend, store->layout(), u128Of(payload), 19);
     auto build = precommitBuildFor(store, RootNamespace{"srv1/protocol-condemned"}, "part", payload);
     const String blob_key = store->layout().blobKey(ref);
-    const Token condemned_token = backend->head(blob_key).token;
+    DB::Cas::tests::OperationForTest condemned_probe(*backend);
+    const Etag condemned_token = (*condemned_probe).head(blob_key, Retry::standard())->etag;
     backend->watch(blob_key, store->layout().blobMetaKey(ref));
     const uint64_t avoided_before = ProfileEvents::global_counters[ProfileEvents::CASBlobBodyPutAvoided].load();
 
@@ -280,8 +305,11 @@ TEST(CASUploadDetached, PresentCondemnedPublishesFreshAndQueuedOldDeleteMisses)
     EXPECT_EQ(backend->blob_heads, 1u);
     EXPECT_EQ(backend->publish_calls, 1u);
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASBlobBodyPutAvoided].load(), avoided_before);
-    EXPECT_EQ(backend->deleteExact(blob_key, condemned_token).kind, DeleteOutcome::Kind::TokenMismatch);
-    EXPECT_TRUE(backend->head(blob_key).exists);
+    {
+        DB::Cas::tests::OperationForTest op(*backend);
+        EXPECT_EQ((*op).remove(blob_key, condemned_token, Retry::once()), Removal::Mismatch);
+        EXPECT_TRUE((*op).head(blob_key, Retry::standard()).has_value());
+    }
 }
 
 /// A present body with absent metadata is observed and backfilled `Clean` without publication.
@@ -356,7 +384,7 @@ TEST(CASUploadDetached, FreshLocalStreaming)
     arrange(b1, s1, build1);
     const String key = s1->layout().blobKey(blob);
 
-    ASSERT_FALSE(b1->head(key).exists);   /// precondition: absent
+    ASSERT_FALSE(headPresent(*b1, key));   /// precondition: absent
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
 
     const BlobUploadResult r = build1->uploadBlobDetached(
@@ -370,7 +398,7 @@ TEST(CASUploadDetached, FreshLocalStreaming)
     EXPECT_EQ(r.dep.size, payload.size());
 
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
-    EXPECT_TRUE(b1->head(key).exists);
+    EXPECT_TRUE(headPresent(*b1, key));
     EXPECT_EQ(logicalPayloadAt(*b1, key, s1->poolMeta().blob_header_len), payload);
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Clean));
 
@@ -406,7 +434,7 @@ TEST(CASUploadDetached, S3StagingPromotion)
         h.kind = ObjectKind::Blob;
         h.incarnation_tag = DB::UInt128(0xC0FFEE);
         staging_bytes = encodeEnvelopeHeader(h, static_cast<uint32_t>(s->poolMeta().blob_header_len)) + payload;
-        b->putIfAbsent(staging_key, staging_bytes);
+        createObj(*b, staging_key, staging_bytes);
         build = precommitBuildFor(s, ns, ref_name, payload);
     };
 
@@ -417,7 +445,7 @@ TEST(CASUploadDetached, S3StagingPromotion)
     arrange(b1, s1, build1, staging_bytes1);
     const String key = s1->layout().blobKey(blob);
 
-    ASSERT_FALSE(b1->head(key).exists);
+    ASSERT_FALSE(headPresent(*b1, key));
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
 
     const BlobUploadResult r = build1->uploadBlobDetached(
@@ -433,9 +461,9 @@ TEST(CASUploadDetached, S3StagingPromotion)
     EXPECT_EQ(r.dep.size, payload.size());
 
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
-    ASSERT_TRUE(b1->head(key).exists);
+    ASSERT_TRUE(headPresent(*b1, key));
     /// The server-side copy moved the staging bytes verbatim to the blob key.
-    const auto got = b1->get(key);
+    const auto got = readObj(*b1, key);
     ASSERT_TRUE(got.has_value());
     EXPECT_EQ(got->bytes, staging_bytes1);
 
@@ -449,7 +477,7 @@ TEST(CASUploadDetached, S3StagingPromotion)
         reReadableStagedSource(b2, staging_key, payload.size(), s2->poolMeta().blob_header_len));
     EXPECT_EQ(build2->dependencyProof(blob), BlobDependencyProof::Materialized);
 
-    const auto got2 = b2->get(key);
+    const auto got2 = readObj(*b2, key);
     ASSERT_TRUE(got2.has_value());
     EXPECT_EQ(got->bytes, got2->bytes);
 }
@@ -479,7 +507,8 @@ TEST(CASUploadDetached, CondemnedLocalResurrection)
     PartWriteTxnPtr build1;
     arrange(b1, s1, build1);
     const String key = s1->layout().blobKey(blob);
-    const Token condemned_token = b1->head(key).token;
+    DB::Cas::tests::OperationForTest token_probe(*b1);
+    const Etag condemned_token = (*token_probe).head(key, Retry::standard())->etag;
 
     ASSERT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Condemned));
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
@@ -495,8 +524,8 @@ TEST(CASUploadDetached, CondemnedLocalResurrection)
 
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
     /// The condemned incarnation was displaced by a fresh one (token changed) and the meta is Clean again.
-    const Token after_token = b1->head(key).token;
-    EXPECT_NE(after_token.value, condemned_token.value);
+    const Etag after_token = (*token_probe).head(key, Retry::standard())->etag;
+    EXPECT_NE(after_token, condemned_token);
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Clean));
     EXPECT_EQ(logicalPayloadAt(*b1, key, s1->poolMeta().blob_header_len), payload);
 
@@ -531,9 +560,9 @@ TEST(CASUploadDetached, CondemnedS3Resurrection)
         h.kind = ObjectKind::Blob;
         h.incarnation_tag = DB::UInt128(0xC0FFEE);
         const String staging_bytes = encodeEnvelopeHeader(h, static_cast<uint32_t>(s->poolMeta().blob_header_len)) + payload;
-        b->putIfAbsent(staging_key, staging_bytes);
+        createObj(*b, staging_key, staging_bytes);
         /// Seed the condemned blob body = exactly a verbatim promote of the staging object would produce.
-        b->putIfAbsent(s->layout().blobKey(blob), staging_bytes);
+        createObj(*b, s->layout().blobKey(blob), staging_bytes);
         writeMetaClean(*b, s->layout(), u128Of(payload), payload.size());
         condemnMeta(*b, s->layout(), u128Of(payload), /*condemn_round=*/9);
         build = precommitBuildFor(s, ns, ref_name, payload);
@@ -544,7 +573,8 @@ TEST(CASUploadDetached, CondemnedS3Resurrection)
     PartWriteTxnPtr build1;
     arrange(b1, s1, build1);
     const String key = s1->layout().blobKey(blob);
-    const Token condemned_token = b1->head(key).token;
+    DB::Cas::tests::OperationForTest token_probe(*b1);
+    const Etag condemned_token = (*token_probe).head(key, Retry::standard())->etag;
 
     ASSERT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Condemned));
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
@@ -563,8 +593,8 @@ TEST(CASUploadDetached, CondemnedS3Resurrection)
 
     EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
     /// A fresh incarnation displaced the condemned one (INV-NO-RETURN: fresh tag ⇒ different token).
-    const Token after_token = b1->head(key).token;
-    EXPECT_NE(after_token.value, condemned_token.value);
+    const Etag after_token = (*token_probe).head(key, Retry::standard())->etag;
+    EXPECT_NE(after_token, condemned_token);
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Clean));
 
     std::shared_ptr<InMemoryBackend> b2;

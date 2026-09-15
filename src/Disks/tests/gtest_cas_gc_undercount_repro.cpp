@@ -50,7 +50,8 @@ ManifestRef ref(uint64_t seq, uint64_t inst)
 
 bool blobExists(InMemoryBackend & b, const Layout & layout, const UInt128 & hash)
 {
-    return b.head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)})).exists;
+    DB::Cas::tests::OperationForTest op(b);
+    return (*op).head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)}), Retry::standard()).has_value();
 }
 
 /// A committed `RefOwnerBinding` for a raw `owner_transition` op. The raw appender is now
@@ -155,22 +156,28 @@ TEST(CASGCUndercount, H2DuplicateCommittedRemovalIsIdempotentNoUnderflow)
 class InterruptRoundCasBackend : public InMemoryBackend
 {
 public:
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected,
-                     const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        TransportAccess & access) override
     {
-        if (arm_interrupt && key == gc_state_key)
+        if (arm_interrupt && expected_value && key == gc_state_key)
         {
-            const auto stored = get(key);
-            const uint64_t stored_gen = stored ? decodeGcState(stored->bytes).snap_generation : 0;
-            const uint64_t next_gen = decodeGcState(bytes).snap_generation;
-            if (next_gen > stored_gen)
+            const auto stored = InMemoryBackend::read(key, access);
+            if (stored
+                && decodeGcState(bytes).snap_generation > decodeGcState(stored->bytes).snap_generation)
             {
-                arm_interrupt = false;
-                throw DB::Exception(DB::ErrorCodes::ABORTED,
-                    "test-injected: round-commit gc/state CAS denied (leader deposed mid-round; lease lost)");
+                arm_interrupt = false;   /// one-shot: only depose the first round-commit write
+                /// A REFUSAL, not a throw: a thrown transport error is an ambiguity the engine settles
+                /// by an exact read and then reissues while the precondition it named is unmoved, so
+                /// the round would commit on the reissue. A refused precondition ends the write at
+                /// once. The object is moved too -- the same bytes under a fresh incarnation -- because
+                /// a store refuses only what changed; the CONTENT is deliberately left alone, so this
+                /// round's own lease and cursor are exactly what a deposed round leaves behind.
+                (void)InMemoryBackend::write(key, stored->bytes, stored->value, access);
+                return std::unexpected(RawConflict{});
             }
         }
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
     bool arm_interrupt = false;
@@ -252,14 +259,15 @@ TEST(CASGCUndercount, H1DrainAfterDeposedRemovalFoldDoesNotUnderflow)
 class DropAtCommitBackend : public InMemoryBackend
 {
 public:
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected,
-                     const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        TransportAccess & access) override
     {
         /// The one-pass round has a SINGLE gc/state CAS that advances snap_generation. Fire the injected
         /// drop ONCE, just before that CAS commits — so the drop event is above this round's sealed cursor.
         if (arm_drop && key == gc_state_key)
         {
-            const auto stored = get(key);
+            const auto stored = InMemoryBackend::read(key, access);
             if (stored)
             {
                 const GcState prev = decodeGcState(stored->bytes);
@@ -272,7 +280,7 @@ public:
                 }
             }
         }
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
     bool arm_drop = false;

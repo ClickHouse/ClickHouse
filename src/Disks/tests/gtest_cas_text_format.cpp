@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "cas_format_test_battery.h"
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
@@ -6,6 +7,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <fmt/format.h>
 #include <algorithm>
+#include <array>
 #include <set>
 
 using namespace DB::Cas;
@@ -32,6 +34,15 @@ void expectCode(int code, F && f)
         EXPECT_EQ(e.code(), code);
     }
 }
+}
+
+TEST(CASFormatBattery, EveryRegisteredFormatIsBatteryCovered)
+{
+    std::set<FormatId> registered;
+    for (FormatId id : allRegisteredFormatIds())
+        registered.insert(id);
+    EXPECT_EQ(registered, DB::Cas::tests::batteryCoveredIds())
+        << "a registered codec is missing from the common battery (or vice versa)";
 }
 
 /// ---- Task 2: FormatId entries for refsnaplog / blob meta / heartbeat ----
@@ -130,6 +141,28 @@ TEST(CASJsonVocab, WriteAndReadBack)
     EXPECT_FALSE(r.nextKey(key));
 }
 
+TEST(CASJsonVocab, WordArrayFieldAndReaderRejectInvalidValues)
+{
+    CasJsonWriter out;
+    bool first = true;
+    const std::array<std::string_view, 2> words{"ch128", "sha256"};
+    writeWordArrayField(out, WireKey{"algos_used"}, words, first);
+    closeObject(out, first);
+    EXPECT_EQ(std::move(out).take(), "{\"algos_used\":[\"ch128\",\"sha256\"]}");
+
+    const auto read = [](std::string_view text)
+    {
+        DB::ReadBufferFromMemory in(text.data(), text.size());
+        JsonObjectReader r(in, KeyStrictness::Tolerant, "test");
+        String key;
+        EXPECT_TRUE(r.nextKey(key));
+        return r.readStringArray();
+    };
+    EXPECT_EQ(read(R"({"algos_used":["ch128","sha256"]})"), (std::vector<String>{"ch128", "sha256"}));
+    expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { read(R"({"algos_used":"ch128"})"); });
+    expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { read(R"({"algos_used":["ch128",1]})"); });
+}
+
 TEST(CASJsonVocab, FailClosedRules)
 {
     auto reader = [](std::string_view text, KeyStrictness s, auto && consume)
@@ -170,12 +203,12 @@ TEST(CASJsonVocab, FailClosedRules)
         r.nextKey(k);
     }); });
     /// bad hex width / junk in u64 string
-    expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { reader(R"({"h":"0102"})", KeyStrictness::Tolerant, [](auto & r)
+    expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { reader(R"({"digest":"0102"})", KeyStrictness::Tolerant, [](auto & r)
     {
         String k;
         r.nextKey(k); r.readHex128();
     }); });
-    expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { reader(R"({"s":"12x"})", KeyStrictness::Tolerant, [](auto & r)
+    expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { reader(R"({"u64_string_field":"12x"})", KeyStrictness::Tolerant, [](auto & r)
     {
         String k;
         r.nextKey(k); r.readU64String();
@@ -203,9 +236,9 @@ TEST(CASTextHeader, WriteExpectSniffGate)
     EXPECT_FALSE(sniffHeaderLine("PAR1 not a cas object").has_value());
 
     /// wrong type -> CORRUPTED_DATA; future v -> UNKNOWN_FORMAT_VERSION
-    /// `v:3` is deliberate and must NOT follow a future `G_BUILD` bump: any version <= G_BUILD passes
-    /// the header gate, which is the point — the BODY is what has to fail here.
-    const String wrong = "{\"type\":\"cas_owner\",\"v\":3}\n";
+    /// `v:1` is the baseline generation, so it always passes the header gate -- the type mismatch is
+    /// what has to fail here.
+    const String wrong = "{\"type\":\"cas_owner\",\"v\":1}\n";
     DB::ReadBufferFromMemory in2(wrong.data(), wrong.size());
     expectCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { expectHeaderLine(in2, FormatId::PoolMeta); });
     const String future = fmt::format("{{\"type\":\"cas_pool_meta\",\"v\":{}}}\n", currentCompatibilityVersion() + 1);
@@ -241,19 +274,16 @@ TEST(CASZstdArm, SealOpenPolicyAndCaps)
 {
     /// Always types compress regardless of size (no threshold — the .zst key must be
     /// constructible without knowing the body); a raw body is still readable (repair path).
-    /// `v:3` here is NOT the "any version <= G_BUILD passes" case the other negative bodies rely on:
-    /// `cas_ref_snap`'s own `changePoints` floor is generation 4, so a generation-3 ref snapshot is not
-    /// readable by this build in principle. It passes the header gate only because nothing consults
-    /// `changePoints` at decode time yet -- the gate is `v > G_BUILD` alone. Once a per-class floor is
-    /// wired in, this literal must move to `G_BUILD`; the test's subject is the truncated BODY, not the
-    /// version.
-    const String small = "{\"type\":\"cas_ref_snap\",\"v\":3}\n{}\n";
+    /// `sealObject`/`openObject` are the storage-wrapper layer and never invoke the version gate
+    /// (that happens at decode, e.g. `decodeRefSnapshot`'s `expectHeaderLine`), so `v:1` here is just
+    /// the baseline header -- the test's subject is the compression arm, not the version.
+    const String small = "{\"type\":\"cas_ref_snap\",\"v\":1}\n{}\n";
     const String sealed_small = sealObject(FormatId::RefSnapshot, small);
     ASSERT_TRUE(looksZstd(sealed_small));
     EXPECT_EQ(openObject(FormatId::RefSnapshot, sealed_small), small);
     EXPECT_EQ(openObject(FormatId::RefSnapshot, small), small);
 
-    String big = "{\"type\":\"cas_ref_snap\",\"v\":3}\n{\"pad\":\"";
+    String big = "{\"type\":\"cas_ref_snap\",\"v\":1}\n{\"pad\":\"";
     big += String(8192, 'a');
     big += "\"}\n";
     const String sealed = sealObject(FormatId::RefSnapshot, big);

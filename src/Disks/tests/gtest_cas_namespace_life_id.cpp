@@ -205,8 +205,8 @@ TEST(CASNamespaceLifeIdDeathTest, ZeroIncarnationIsUnconstructibleAborts)
 }
 #endif
 
-/// Generation-5 namespace-bearing keys are outside the generation-6 parser roots altogether. Pool
-/// admission rejects their generation before any listed-key parser is involved.
+/// Namespace-bearing keys outside the opaque-life layout are rejected before any listed-key parser is
+/// involved.
 TEST(CASNamespaceLifeId, GenerationFiveNamespaceBearingKeysAreOutsideTheFinalGrammar)
 {
     Layout l("p");
@@ -312,8 +312,8 @@ TEST(CASNamespaceLifeId, NamespaceFileKeysCarryTheIncarnationSegment)
     EXPECT_FALSE(l.namespaceFileKey(second, "format_version.txt").starts_with(l.namespaceFilesPrefix(life)));
 }
 
-/// Generation-5 namespace-bearing file keys are outside the final parser root. Malformed ids under the
-/// final state root are corruption and name the offending key.
+/// Namespace-bearing file keys outside the opaque-life layout are rejected. Malformed life ids under
+/// the state root are corruption and name the offending key.
 TEST(CASNamespaceLifeId, NamespaceFileParserRefusesLegacyAndMalformedIncarnations)
 {
     Layout l("p");
@@ -373,8 +373,7 @@ TEST(CASNamespaceLifeId, PhysicalFileKeysIgnoreLogicalNamespaceSpelling)
     EXPECT_EQ(parsed->relative_name, nested_name);
 }
 
-/// The "cannot compile" half of spec §9 r9-5 #3: after this task there is no way to reach a ref-layer
-/// key from a namespace alone, so dropping the incarnation is a compile error rather than an aliasing
+/// A ref-layer key cannot be reached from a namespace alone, so dropping the incarnation is a compile error rather than an aliasing
 /// bug. Each helper is asserted twice -- the namespace-only form absent, the incarnation form present.
 TEST(CASNamespaceLifeId, NamespaceOnlyKeyHelpersDoNotExist)
 {
@@ -413,8 +412,8 @@ TEST(CASNamespaceLifeId, NamespaceLifeIdAndRootNamespaceDoNotInterconvert)
     SUCCEED();
 }
 
-/// The out-of-scope fences, and they are POSITIVE on purpose: Constraint 12 keeps loose mountpoint
-/// objects and part manifests on the identity they have today, so this task must NOT have qualified
+/// The out-of-scope fences are POSITIVE on purpose: loose mountpoint objects and part manifests keep
+/// their namespace identity, so they must NOT be qualified
 /// them. If a negative here fails, someone added a life-scoped overload to a family the amendment
 /// explicitly excluded; if a positive fails, someone removed the un-scoped one those callers use.
 TEST(CASNamespaceLifeId, MountpointObjectsAndManifestsStayUnqualified)

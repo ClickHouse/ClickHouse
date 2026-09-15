@@ -23,49 +23,50 @@ TEST(CASBlobMeta, PutIfAbsentThenCasTransitions)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPoolForTest(backend);
+    CasOperation op = store->mountRequests().admit();
     const BlobRef ref{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("hash-a"))};
     const BlobMeta clean{.state = MetaState::Clean, .size = 10};
 
-    const CasOverwriteResult created = putMetaIfAbsent(*store, ref, clean);
-    EXPECT_EQ(created.outcome, CasOverwriteOutcome::Committed);
+    EXPECT_TRUE(std::holds_alternative<Committed>(putMetaIfAbsent(op, store->layout(), ref, clean)));
 
-    const CasOverwriteResult dup = putMetaIfAbsent(*store, ref, clean);
-    EXPECT_EQ(dup.outcome, CasOverwriteOutcome::Committed);   /// exact-byte resolution adopts the existing marker
+    /// A create that nothing of its own left unresolved never adopts what is already at the key, even
+    /// byte-identical: the marker was somebody else's write, and the conflict carries it.
+    EXPECT_TRUE(std::holds_alternative<Conflict>(putMetaIfAbsent(op, store->layout(), ref, clean)));
 
-    const auto lm = loadMeta(*backend, store->layout(), ref);
+    const auto lm = loadMeta(op, store->layout(), ref);
     ASSERT_TRUE(lm.has_value());
     EXPECT_EQ(lm->meta.state, MetaState::Clean);
 
-    const CasOverwriteResult condemned = casMeta(*store, ref, lm->etag,
-        BlobMeta{.state = MetaState::Condemned, .condemn_round = 5, .size = 10});
-    EXPECT_EQ(condemned.outcome, CasOverwriteOutcome::Committed);
+    EXPECT_TRUE(std::holds_alternative<Committed>(casMeta(op, store->layout(), ref, lm->etag,
+        BlobMeta{.state = MetaState::Condemned, .condemn_round = 5, .size = 10})));
 
-    const CasOverwriteResult stale = casMeta(*store, ref, lm->etag,   /// stale token loses
-        BlobMeta{.state = MetaState::Clean});
-    EXPECT_EQ(stale.outcome, CasOverwriteOutcome::Conflict);
+    /// the stale incarnation loses
+    EXPECT_TRUE(std::holds_alternative<Conflict>(casMeta(op, store->layout(), ref, lm->etag,
+        BlobMeta{.state = MetaState::Clean})));
 }
 
-TEST(CASBlobMeta, DeleteMetaExactMatchesEtag)
+TEST(CASBlobMeta, DeleteMetaExactMatchesTheObservedIncarnation)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPoolForTest(backend);
+    CasOperation op = store->mountRequests().admit();
     const BlobRef ref{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("hash-b"))};
-    putMetaIfAbsent(*store, ref, BlobMeta{.state = MetaState::Condemned});
-    const auto lm = loadMeta(*backend, store->layout(), ref);
+    putMetaIfAbsent(op, store->layout(), ref, BlobMeta{.state = MetaState::Condemned});
+    const auto lm = loadMeta(op, store->layout(), ref);
     ASSERT_TRUE(lm.has_value());
-    EXPECT_EQ(deleteMetaExact(*backend, store->layout(), ref, lm->etag).kind, DeleteOutcome::Kind::Deleted);
-    EXPECT_FALSE(loadMeta(*backend, store->layout(), ref).has_value());
+    EXPECT_EQ(deleteMetaExact(op, store->layout(), ref, lm->etag), Removal::Removed);
+    EXPECT_FALSE(loadMeta(op, store->layout(), ref).has_value());
 }
 
 /// Phase 3 T3 (mixed-algo pools, was CAS pluggable-blob-hash Phase 2 Task 5 crux Test 2): the `.meta`
 /// API round-trips a 32-byte (`sha256`-width) `BlobRef` key — the meta object lands under a 64-hex
 /// key, exercising the SAME `putMetaIfAbsent`/`loadMeta`/`casMeta`/`deleteMetaExact` surface PartWriteTxn/Gc
-/// use, just at a wider algo. Writes use the `Pool`'s controller; reads and exact deletion retain their
-/// direct `Backend`/`Layout` surface.
+/// use, just at a wider algo.
 TEST(CASBlobMeta, PutLoadCasDeleteRoundTripAtWidth32)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPoolForTest(backend);
+    CasOperation op = store->mountRequests().admit();
     const Layout & layout = store->layout();
 
     /// A distinguishable 32-byte digest (not merely a 16-byte value zero-tailed): every byte set.
@@ -76,31 +77,31 @@ TEST(CASBlobMeta, PutLoadCasDeleteRoundTripAtWidth32)
     const String hex = codecFor(BlobHashAlgo::Sha256).toHex(h);
     EXPECT_EQ(hex.size(), 64u) << "a 32-byte digest renders 64 hex chars";
 
-    const CasOverwriteResult created = putMetaIfAbsent(*store, ref,
-        BlobMeta{.state = MetaState::Clean, .size = 555});
-    ASSERT_EQ(created.outcome, CasOverwriteOutcome::Committed);
-    EXPECT_TRUE(backend->head(layout.blobMetaKey(ref)).exists)
+    ASSERT_TRUE(std::holds_alternative<Committed>(
+        putMetaIfAbsent(op, store->layout(), ref, BlobMeta{.state = MetaState::Clean, .size = 555})));
+    EXPECT_TRUE(op.head(layout.blobMetaKey(ref), Retry::standard()).has_value())
         << "the meta object must land under the 64-hex key, not a truncated 32-hex one";
 
-    const auto lm = loadMeta(*backend, layout, ref);
+    const auto lm = loadMeta(op, layout, ref);
     ASSERT_TRUE(lm.has_value());
     EXPECT_EQ(lm->meta.state, MetaState::Clean);
     EXPECT_EQ(lm->meta.size, 555u);
 
-    const CasOverwriteResult condemned = casMeta(*store, ref, lm->etag,
-        BlobMeta{.state = MetaState::Condemned, .condemn_round = 7, .size = 555});
-    ASSERT_EQ(condemned.outcome, CasOverwriteOutcome::Committed);
-    const auto lm2 = loadMeta(*backend, layout, ref);
+    ASSERT_TRUE(std::holds_alternative<Committed>(casMeta(op, layout, ref, lm->etag,
+        BlobMeta{.state = MetaState::Condemned, .condemn_round = 7, .size = 555})));
+    const auto lm2 = loadMeta(op, layout, ref);
     ASSERT_TRUE(lm2.has_value());
     EXPECT_EQ(lm2->meta.state, MetaState::Condemned);
 
-    EXPECT_EQ(deleteMetaExact(*backend, layout, ref, lm2->etag).kind, DeleteOutcome::Kind::Deleted);
-    EXPECT_FALSE(loadMeta(*backend, layout, ref).has_value());
+    EXPECT_EQ(deleteMetaExact(op, layout, ref, lm2->etag), Removal::Removed);
+    EXPECT_FALSE(loadMeta(op, layout, ref).has_value());
 }
 
 namespace
 {
 
+/// The fault sits on the transport primitive, which is what every marker write reaches the store
+/// through: a create is a `write` with no precondition, a compare-swap a `write` with one.
 class ControlledMetaWriteFaultBackend : public InMemoryBackend
 {
 public:
@@ -109,52 +110,57 @@ public:
     uint64_t create_attempts = 0;
     uint64_t overwrite_attempts = 0;
 
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             TransportAccess & access) override
     {
-        ++create_attempts;
-        if (throw_next_create)
+        if (expected_value)
         {
-            throw_next_create = false;
-            throw Poco::TimeoutException("scripted meta create ambiguity");
+            ++overwrite_attempts;
+            if (throw_next_overwrite)
+            {
+                throw_next_overwrite = false;
+                throw Poco::TimeoutException("scripted meta overwrite ambiguity");
+            }
         }
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
-    }
-
-    PutResult putOverwrite(const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta) override
-    {
-        ++overwrite_attempts;
-        if (throw_next_overwrite)
+        else
         {
-            throw_next_overwrite = false;
-            throw Poco::TimeoutException("scripted meta overwrite ambiguity");
+            ++create_attempts;
+            if (throw_next_create)
+            {
+                throw_next_create = false;
+                throw Poco::TimeoutException("scripted meta create ambiguity");
+            }
         }
-        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 };
 
 }
 
-TEST(CASBlobMeta, WritesUsePoolRequestController)
+/// An ambiguous marker write is settled by the engine's exact read and reissued, rather than escaping
+/// as a raw transport error: the create's resolve proves the key still absent, the compare-swap's
+/// proves the expected incarnation still current, and both are repeatable.
+TEST(CASBlobMeta, AnAmbiguousMarkerWriteIsResolvedAndReissued)
 {
     auto backend = std::make_shared<ControlledMetaWriteFaultBackend>();
     auto store = openPoolForTest(backend);
     store->setCasRetrySleepForTest([](uint64_t) {});
+    CasOperation op = store->mountRequests().admit();
     backend->create_attempts = 0;
     backend->overwrite_attempts = 0;
 
     const BlobRef ref{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("hash-controlled"))};
     backend->throw_next_create = true;
-    EXPECT_EQ(
-        putMetaIfAbsent(*store, ref, BlobMeta{.state = MetaState::Clean, .size = 10}).outcome,
-        CasOverwriteOutcome::Committed);
+    EXPECT_TRUE(std::holds_alternative<Committed>(
+        putMetaIfAbsent(op, store->layout(), ref, BlobMeta{.state = MetaState::Clean, .size = 10})));
     EXPECT_EQ(backend->create_attempts, 2u);
 
-    const auto clean = loadMeta(*backend, store->layout(), ref);
+    const auto clean = loadMeta(op, store->layout(), ref);
     ASSERT_TRUE(clean.has_value());
     backend->throw_next_overwrite = true;
-    EXPECT_EQ(
-        casMeta(*store, ref, clean->etag, BlobMeta{.state = MetaState::Condemned, .condemn_round = 1, .size = 10}).outcome,
-        CasOverwriteOutcome::Committed);
+    EXPECT_TRUE(std::holds_alternative<Committed>(casMeta(op, store->layout(), ref, clean->etag,
+        BlobMeta{.state = MetaState::Condemned, .condemn_round = 1, .size = 10})));
     EXPECT_EQ(backend->overwrite_attempts, 2u);
 }
 

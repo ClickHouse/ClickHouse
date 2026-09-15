@@ -153,7 +153,7 @@ TEST(CASRefEpochSealFormat, EncodeRejectsSealTxnWithSecondNonSealOp)
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { encodeRefLogTxn(txn); });
 }
 
-/// Decode-side pin for the same op-count rule (review finding I1): `encodeRefLogTxn` can never
+/// Decode-side pin for the same op-count rule: `encodeRefLogTxn` can never
 /// produce a 2-op seal body, so only a decode-only splice proves `decodeRefLogTxn` independently
 /// re-derives the rule rather than trusting whatever the encoder produced -- deleting the structural
 /// validator's call site inside `decodeRefLogTxn` would leave this the only failing test.
@@ -213,7 +213,7 @@ TEST(CASRefEpochSealFormat, EncodeRejectsPrevEpochSealAtNonUnitSequence)
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { encodeRefLogTxn(txn); });
 }
 
-/// Decode-side pin for the sequence-1-only rule (review finding I1). `prev_epoch_seal`'s
+/// Decode-side pin for the sequence-1-only rule. `prev_epoch_seal`'s
 /// writer_epoch (1) is strictly below the transaction's own (5), satisfying the I3 chain-direction
 /// rule, so this isolates the sequence-1 rule specifically rather than incidentally also tripping I3.
 TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealAtNonUnitSequenceSpliced)
@@ -224,16 +224,16 @@ TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealAtNonUnitSequenceSpliced)
     txn.ops.push_back(namespaceBirthOp());
     const String bytes = encodeRefLogTxn(txn);
 
-    const String needle = R"("rs":"2")";
+    const String needle = R"("txn_seq":"2")";
     const auto pos = bytes.find(needle);
     ASSERT_NE(pos, String::npos);
     String tampered = bytes;
-    tampered.insert(pos + needle.size(), R"(,"!pse":"1","!pss":"1")");
+    tampered.insert(pos + needle.size(), R"(,"!prev_epoch":"1","!prev_seq":"1")");
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefLogTxn(tampered, txn.ns, txn.txn_id); });
 }
 
-/// Well-formedness (review finding M2): a zero component inside `prev_epoch_seal` is rejected the
+/// Well-formedness: a zero component inside `prev_epoch_seal` is rejected the
 /// same way a zero component in the primary `txn_id` is (`checkRefTxnIdNonzero`, shared code path).
 TEST(CASRefEpochSealFormat, EncodeRejectsPrevEpochSealWithZeroWriterEpoch)
 {
@@ -255,8 +255,8 @@ TEST(CASRefEpochSealFormat, EncodeRejectsPrevEpochSealWithZeroRefSequence)
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { encodeRefLogTxn(txn); });
 }
 
-/// Decode-side splice: `prev_epoch_seal` present as only one of its two wire fields ("!pse" without
-/// "!pss") -- a shape only reachable via corrupted bytes, since the encoder always writes both
+/// Decode-side splice: `prev_epoch_seal` present as only one of its two wire fields ("!prev_epoch" without
+/// "!prev_seq") -- a shape only reachable via corrupted bytes, since the encoder always writes both
 /// together. Boundary-plus-one for the additive-field decode contract (Constraint 7).
 TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealMissingPssComponent)
 {
@@ -267,7 +267,7 @@ TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealMissingPssComponent)
     txn.ops.push_back(epochSealOp());
     const String bytes = encodeRefLogTxn(txn);
 
-    const String needle = R"(,"!pss":"9")";
+    const String needle = R"(,"!prev_seq":"9")";
     const auto pos = bytes.find(needle);
     ASSERT_NE(pos, String::npos);
     String tampered = bytes;
@@ -276,7 +276,7 @@ TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealMissingPssComponent)
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefLogTxn(tampered, txn.ns, txn.txn_id); });
 }
 
-/// Chain direction (review finding I3): a seal closing epoch E always has id `{E, T+1}`, and the
+/// Chain direction: a seal closing epoch E always has id `{E, T+1}`, and the
 /// sequence-1 transaction in the next numeric epoch must name it. This remains context-free (a
 /// property of one transaction), so it belongs in the structural half; Tasks 2/6 walk this pointer
 /// backwards over untrusted decoded bodies and must not have to re-derive the rule themselves.
@@ -326,16 +326,16 @@ TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealSkippingImmediateEpochSpli
     txn.ops.push_back(namespaceBirthOp());
     const String bytes = encodeRefLogTxn(txn);
 
-    const String needle = R"("rs":"1")";
+    const String needle = R"("txn_seq":"1")";
     const auto pos = bytes.find(needle);
     ASSERT_NE(pos, String::npos);
     String tampered = bytes;
-    tampered.insert(pos + needle.size(), R"(,"!pse":"3","!pss":"1")");
+    tampered.insert(pos + needle.size(), R"(,"!prev_epoch":"3","!prev_seq":"1")");
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefLogTxn(tampered, txn.ns, txn.txn_id); });
 }
 
-/// Decode-side pin for the chain-direction rule (review finding I3): the encoder's own check would
+/// Decode-side pin for the chain-direction rule: the encoder's own check would
 /// refuse to produce this shape (the two Encode* tests above pin that direction), so a splice into an
 /// otherwise-valid sequence-1 body proves decode re-derives the rule independently.
 TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealPointingAtSameOrFutureEpochSpliced)
@@ -346,11 +346,11 @@ TEST(CASRefEpochSealFormat, DecodeRejectsPrevEpochSealPointingAtSameOrFutureEpoc
     txn.ops.push_back(namespaceBirthOp());
     const String bytes = encodeRefLogTxn(txn);   /// valid: sequence 1, no prev_epoch_seal
 
-    const String needle = R"("rs":"1")";
+    const String needle = R"("txn_seq":"1")";
     const auto pos = bytes.find(needle);
     ASSERT_NE(pos, String::npos);
     String tampered = bytes;
-    tampered.insert(pos + needle.size(), R"(,"!pse":"5","!pss":"1")");   /// self-pointer
+    tampered.insert(pos + needle.size(), R"(,"!prev_epoch":"5","!prev_seq":"1")");   /// self-pointer
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefLogTxn(tampered, txn.ns, txn.txn_id); });
 }
@@ -382,7 +382,7 @@ TEST(CASRefEpochSealFormat, ContextualRejectsPrevEpochSealWhenForbidden)
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { validateEpochSealGrammarContextual(txn, /*life_epoch=*/5); });
 }
 
-/// codex r2 finding 2: "genesis" is per-namespace. A namespace first born at global epoch 5 (not
+/// "Genesis" is per-namespace. A namespace first born at global epoch 5 (not
 /// epoch 1) appends {5, 1} with NO prev_epoch_seal -- that IS its genesis, not a transition.
 TEST(CASRefEpochSealFormat, ContextualAllowsGenesisBirthAboveEpochOneWithoutPrevEpochSeal)
 {
@@ -393,7 +393,7 @@ TEST(CASRefEpochSealFormat, ContextualAllowsGenesisBirthAboveEpochOneWithoutPrev
     EXPECT_NO_THROW(validateEpochSealGrammarContextual(txn, /*life_epoch=*/5));
 }
 
-/// Review finding I2: the `ref_sequence != 1` early return is load-bearing for Task 4's encode call
+/// The `ref_sequence != 1` early return is load-bearing for the encode call
 /// site, which calls this on every txn it mints, including ordinary sequence->=2 transactions in a
 /// post-transition epoch that legitimately carry no `prev_epoch_seal`. Pinned on both sides of the
 /// life_epoch relation to prove the early return fires regardless of it.
@@ -418,16 +418,16 @@ TEST(CASRefEpochSealFormat, ContextualPassesThroughNonSequenceOneAtOrBelowLifeEp
 }
 
 /// ===================================================================================
-/// Criticality of the prev_epoch_seal wire fields (review finding M4)
+/// Criticality of the `prev_epoch_seal` wire fields
 /// ===================================================================================
 
-/// `!pse`/`!pss` are `!`-prefixed CRITICAL keys: `prev_epoch_seal` is INV-2 chain evidence, and a
+/// `!prev_epoch`/`!prev_seq` are `!`-prefixed CRITICAL keys: `prev_epoch_seal` is INV-2 chain evidence, and a
 /// build that silently dropped it would still pass the structural grammar (absent field => no check)
 /// while losing the chain link. Proven here by splicing in a DIFFERENT, genuinely-unrecognized
-/// `!`-key (simulating a future critical field this build predates) rather than `!pse`/`!pss`
+/// `!`-key (simulating a future critical field this build predates) rather than `!prev_epoch`/`!prev_seq`
 /// themselves, which this build DOES recognize: `JsonObjectReader::skipUnknown` rejects any
 /// unrecognized `!`-prefixed key with `UNKNOWN_FORMAT_VERSION` (never a silent skip), so this pins
-/// the general mechanism the meta-line reader relies on to keep `!pse`/`!pss` safe against a decoder
+/// the general mechanism the meta-line reader relies on to keep `!prev_epoch`/`!prev_seq` safe against a decoder
 /// that doesn't (yet, or anymore) understand them.
 TEST(CASRefEpochSealFormat, DecodeRejectsUnknownCriticalKeyInMetaLine)
 {
@@ -437,7 +437,7 @@ TEST(CASRefEpochSealFormat, DecodeRejectsUnknownCriticalKeyInMetaLine)
     txn.ops.push_back(namespaceBirthOp());
     const String bytes = encodeRefLogTxn(txn);
 
-    const String needle = R"("rs":"1")";
+    const String needle = R"("txn_seq":"1")";
     const auto pos = bytes.find(needle);
     ASSERT_NE(pos, String::npos);
     String tampered = bytes;
@@ -471,6 +471,8 @@ TEST(CASRefEpochSealFormat, DecodeRejectsUnknownOpWordRegressionGuard)
 /// Shape-level failure-mode battery (truncation / v+1 gate / wrong type / leading garbage)
 /// ===================================================================================
 
+static const DB::Cas::tests::BatteryCoverageRegistrar battery_covers_RefLog_seal{DB::Cas::FormatId::RefLog};
+
 TEST(CASRefEpochSealFormat, FormatBatteryEpochSeal)
 {
     RefLogTxn txn;
@@ -484,8 +486,8 @@ TEST(CASRefEpochSealFormat, FormatBatteryEpochSeal)
     runFormatBattery({FormatId::RefLog,
         [txn] { return sealObject(FormatId::RefLog, encodeRefLogTxn(txn)); },
         [ns, id](std::string_view s) { decodeRefLogTxn(openObject(FormatId::RefLog, s), ns, id); },
-        "{\"type\":\"cas_ref_log\",\"v\":10}\n"
-        "{\"ns\":\"ns\",\"we\":\"3\",\"rs\":\"1\",\"!pse\":\"2\",\"!pss\":\"9\"}\n"
+        "{\"type\":\"cas_ref_log\",\"v\":1}\n"
+        "{\"namespace\":\"ns\",\"txn_epoch\":\"3\",\"txn_seq\":\"1\",\"!prev_epoch\":\"2\",\"!prev_seq\":\"9\"}\n"
         "{\"op\":\"epoch_seal\"}\n"
         "{\"n\":1}\n"});
 }

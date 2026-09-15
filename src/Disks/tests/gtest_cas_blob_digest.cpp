@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-/// CAS pluggable-blob-hash Phase 2, Task 1: `BlobDigest` (the pool-scoped variable-length content digest, ADDITIVE-ONLY -- no
-/// existing `UInt128 blob_hash` field is migrated in this task) + the ONE `PoolMeta`-scoped
+/// `BlobDigest` is the pool-scoped variable-length content digest. It is additive: existing
+/// `UInt128 blob_hash` fields retain their representation. The `PoolMeta`-scoped
 /// `DigestCodec` all digest<->hex/bytes conversion must route through.
 ///
 /// THE KEY GATE (`ShardOfBitIdenticalToOldHighBitsOver200RandomValues` below): `DigestCodec`'s
@@ -73,7 +73,8 @@ TEST(CASBlobDigest, ShardOfViaPoolMetaConstructedCodecMatchesOldBlobShard)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     const Layout layout("p");
-    const PoolMeta pm = PoolMeta::createOrValidate(*backend, layout, /*blob_header_len*/ 256, BlobHashAlgo::CityHash128, /*allow_new*/ false, /*allow_mint*/ true);
+    OperationForTest meta_op(*backend);
+    const PoolMeta pm = PoolMeta::createOrValidate(*meta_op, layout, /*blob_header_len*/ 256, BlobHashAlgo::CityHash128, /*allow_new*/ false, /*allow_mint*/ true);
     ASSERT_EQ(pm.algos_used, (std::vector<uint8_t>{static_cast<uint8_t>(BlobHashAlgo::CityHash128)}));
     const DigestCodec codec = codecFor(BlobHashAlgo::CityHash128);
 
@@ -227,26 +228,29 @@ TEST(CASBlobDigest, PoolMetaRecordsCreatingAlgoAndWidthDerivesFromIt)
     {
         auto backend = std::make_shared<InMemoryBackend>();
         const Layout layout("p1");
-        const PoolMeta pm = PoolMeta::createOrValidate(*backend, layout, 256, BlobHashAlgo::CityHash128, /*allow_new*/ false, /*allow_mint*/ true);
+        OperationForTest meta_op(*backend);
+        const PoolMeta pm = PoolMeta::createOrValidate(*meta_op, layout, 256, BlobHashAlgo::CityHash128, /*allow_new*/ false, /*allow_mint*/ true);
         EXPECT_EQ(pm.algos_used, (std::vector<uint8_t>{static_cast<uint8_t>(BlobHashAlgo::CityHash128)}));
         EXPECT_EQ(blobHashLenFor(BlobHashAlgo::CityHash128), 16u);
     }
     {
         auto backend = std::make_shared<InMemoryBackend>();
         const Layout layout("p2");
-        const PoolMeta pm = PoolMeta::createOrValidate(*backend, layout, 256, BlobHashAlgo::XXH3_128, /*allow_new*/ false, /*allow_mint*/ true);
+        OperationForTest meta_op(*backend);
+        const PoolMeta pm = PoolMeta::createOrValidate(*meta_op, layout, 256, BlobHashAlgo::XXH3_128, /*allow_new*/ false, /*allow_mint*/ true);
         EXPECT_EQ(pm.algos_used, (std::vector<uint8_t>{static_cast<uint8_t>(BlobHashAlgo::XXH3_128)}));
         EXPECT_EQ(blobHashLenFor(BlobHashAlgo::XXH3_128), 16u);
     }
     {
         auto backend = std::make_shared<InMemoryBackend>();
         const Layout layout("p3");
-        const PoolMeta pm = PoolMeta::createOrValidate(*backend, layout, 256, BlobHashAlgo::Sha256, /*allow_new*/ false, /*allow_mint*/ true);
+        OperationForTest meta_op(*backend);
+        const PoolMeta pm = PoolMeta::createOrValidate(*meta_op, layout, 256, BlobHashAlgo::Sha256, /*allow_new*/ false, /*allow_mint*/ true);
         EXPECT_EQ(pm.algos_used, (std::vector<uint8_t>{static_cast<uint8_t>(BlobHashAlgo::Sha256)}));
         EXPECT_EQ(blobHashLenFor(BlobHashAlgo::Sha256), 32u);
 
         /// Reopen (decode path) must re-derive the same recorded algo.
-        const PoolMeta reopened = PoolMeta::createOrValidate(*backend, layout, 256, BlobHashAlgo::Sha256);
+        const PoolMeta reopened = PoolMeta::createOrValidate(*meta_op, layout, 256, BlobHashAlgo::Sha256);
         EXPECT_EQ(reopened.algos_used, (std::vector<uint8_t>{static_cast<uint8_t>(BlobHashAlgo::Sha256)}));
     }
 }

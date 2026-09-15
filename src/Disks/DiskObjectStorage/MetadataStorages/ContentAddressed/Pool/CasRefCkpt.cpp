@@ -1,8 +1,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 #include <algorithm>
 #include <limits>
+#include <variant>
 
 namespace DB
 {
@@ -18,10 +20,6 @@ namespace DB::Cas
 
 namespace
 {
-
-/// Live-lock brake, the same shape and for the same reason as `CasPlainObjects`': the deadline is the
-/// real bound, and this only stops an unexpected continuous conflict from spinning until it elapses.
-constexpr size_t MAX_CKPT_CAS_ATTEMPTS = 100;
 
 /// The per-field semantic maximum for an OPTIONAL field: a present value beats an absent one (an
 /// absence is "this writer knew nothing", never "this writer says none"), and two present values
@@ -184,54 +182,41 @@ RecoveryGrounding chooseRecoveryGrounding(const std::optional<CatalogEntry> & ca
     return result;
 }
 
-std::optional<CkptSample> readCkpt(Backend & backend, const Layout & layout, const NamespaceLifeId & life)
+std::optional<CkptSample> readCkpt(CasOperation & op, const Layout & layout, const NamespaceLifeId & life)
 {
-    std::optional<GetResult> got = backend.get(layout.refCkptKey(life));
+    const std::optional<Object> got = op.read(layout.refCkptKey(life), Retry::standard());
     if (!got)
         return std::nullopt;
     /// Materialized read, then decode: the object is MUTABLE, so the body must be fixed before it is
-    /// parsed, and the token must be the one that labels exactly these bytes.
-    return CkptSample{decodeRefCkpt(got->bytes), got->token};
+    /// parsed, and the incarnation must be the one that labels exactly these bytes.
+    return CkptSample{decodeRefCkpt(got->bytes), got->etag};
 }
 
-CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const NamespaceLifeId & life,
-                               const RefCkpt & contribution, uint64_t admitted_generation,
-                               const std::function<void(uint64_t)> & check_fence_or_throw,
-                               const CkptDeadline & deadline,
-                               const std::function<void()> & admit_request)
+CkptPublishOutcome publishCkpt(CasOperation & op, const Layout & layout, const NamespaceLifeId & life,
+                               const RefCkpt & contribution, const Retry & policy)
 {
     const String key = layout.refCkptKey(life);
-    std::optional<CkptSample> current;
-    bool have_current = false;
-    const auto request_is_admitted = [&]
+
+    /// Why `decide` had nothing to write. Both answers are declines, and only the fence tells them
+    /// apart, so the reason is recorded where it is decided instead of re-derived from the outcome.
+    enum class Decline : uint8_t
     {
-        try
-        {
-            if (admit_request)
-                admit_request();
-            return true;
-        }
-        catch (...)
-        {
-            return false;
-        }
+        Identical,
+        Fenced,
     };
+    std::optional<Decline> decline;
+    /// A decline on any decision AFTER the first can only follow a refused attempt of this call, and an
+    /// attempt is only ever refused after it was sent. That distinction is what keeps `IdenticalSkip`'s
+    /// promise -- no write was issued -- true wherever it is reported.
+    size_t decisions = 0;
 
-    for (size_t attempt = 0; attempt < MAX_CKPT_CAS_ATTEMPTS; ++attempt)
+    const auto decide = [&](const std::optional<Object> & current) -> std::optional<String>
     {
-        if (deadline.now_ms() >= deadline.deadline_ms)
-            break;
-
-        /// Read the WHOLE body every attempt. A retry after a conflict must merge against what is
-        /// there NOW: reusing the previous attempt's reading is precisely the read-modify-write with
-        /// the merge left out, one round later.
-        if (!have_current)
-        {
-            if (!request_is_admitted())
-                return CkptPublishOutcome::FencedOut;
-            current = readCkpt(backend, layout, life);
-            have_current = true;
-        }
+        ++decisions;
+        decline.reset();
+        std::optional<RefCkpt> durable;
+        if (current)
+            durable = decodeRefCkpt(current->bytes);
 
         /// The one rule the commutative merge cannot state, and it has to be decided HERE, before the
         /// merge: the semantic maximum turns a decrease into a body identical to the stored one, which
@@ -243,125 +228,66 @@ CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const N
         /// transient control signal every other refusal in this function returns rather than throws. A
         /// writer that is still admitted and yet contributing a superseded epoch is the fence violation
         /// this detects, and that one is corruption.
-        if (current && lifeEpochWouldDecrease(current->ckpt, contribution))
+        if (durable && lifeEpochWouldDecrease(*durable, contribution))
         {
-            try
+            if (!op.admitted())
             {
-                check_fence_or_throw(admitted_generation);
+                decline = Decline::Fenced;
+                return std::nullopt;
             }
-            catch (...)
-            {
-                return CkptPublishOutcome::FencedOut;
-            }
-            throwLifeEpochDecrease(current->ckpt, contribution, key);
+            throwLifeEpochDecrease(*durable, contribution, key);
         }
 
         /// ANY writer may create the object; none of them may invent a field. An absent `_ckpt` is
         /// created from the contribution as it stands, so a publisher that knows only the checkpoint
         /// creates one that knows only the checkpoint, and the birth transaction's `life_epoch` merges
         /// into it whenever it arrives -- in either order, because the merge is a per-field maximum.
-        const RefCkpt merged = current ? mergeCkpt(current->ckpt, contribution) : contribution;
+        const RefCkpt merged = durable ? mergeCkpt(*durable, contribution) : contribution;
 
-        /// Nothing new: return WITHOUT a CAS. This is not an optimization -- both writers publish on
-        /// every snapshot and every seal, and most of those carry a checkpoint the object already has,
-        /// so issuing the write anyway would mint a fresh token per no-op and turn every other writer's
-        /// in-flight CAS into a conflict, for a body byte-identical to the one already stored.
-        if (current && merged == current->ckpt)
+        /// Nothing new: write NOTHING. This is not an optimization -- both writers publish on every
+        /// snapshot and every seal, and most of those carry a checkpoint the object already has, so
+        /// issuing the write anyway would mint a fresh incarnation per no-op and turn every other
+        /// writer's in-flight write into a conflict, for a body byte-identical to the one stored.
+        if (durable && merged == *durable)
         {
-            try
-            {
-                check_fence_or_throw(admitted_generation);
-            }
-            catch (...)
-            {
-                return CkptPublishOutcome::FencedOut;
-            }
-            return CkptPublishOutcome::IdenticalSkip;
+            decline = op.admitted() ? Decline::Identical : Decline::Fenced;
+            return std::nullopt;
         }
+        return encodeRefCkpt(merged);
+    };
 
-        /// AFTER the read, BEFORE the CAS, on EVERY attempt (spec §3). A generation that moved since
-        /// admission means this writer's lease incarnation is gone and the body it just merged is
-        /// stale, so the CAS must never be sent -- and because the check precedes it, nothing was.
-        try
-        {
-            check_fence_or_throw(admitted_generation);
-        }
-        catch (...)
-        {
-            /// Typed, not propagated: the caller asked "did this land", and "the fence moved, so
-            /// nothing was sent" is an answer, not a failure of the operation. Only the fence check is
-            /// wrapped, so nothing else can be mistaken for it.
+    WriteResult result = op.readModifyWrite(key, decide, policy);
+    if (std::holds_alternative<Committed>(result))
+        return CkptPublishOutcome::Published;
+    if (std::holds_alternative<Declined>(result))
+    {
+        if (decline == Decline::Fenced)
             return CkptPublishOutcome::FencedOut;
-        }
-
-        const std::optional<Token> expected =
-            current ? std::optional<Token>{current->token} : std::nullopt;
-        /// Encode before entering the ambiguity catch. Allocation or invariant failures happen before
-        /// any request is sent and must propagate as themselves, not trigger a needless resolution GET.
-        const String merged_bytes = encodeRefCkpt(merged);
-        if (!request_is_admitted())
-            return CkptPublishOutcome::FencedOut;
-        try
-        {
-            if (backend.casPut(key, merged_bytes, expected).outcome == CasOutcome::Committed)
-                return CkptPublishOutcome::Published;
-        }
-        catch (...)
-        {
-            /// A thrown CAS response does not say whether the object changed. Never retry its bytes
-            /// from memory: first point-read the exact mutable object, including its fresh token. If
-            /// that observation includes this contribution under the semantic join, the write is
-            /// resolved durable; otherwise that exact observation is the only valid base for a retry.
-            if (!request_is_admitted())
-                return CkptPublishOutcome::FencedOut;
-            try
-            {
-                current = readCkpt(backend, layout, life);
-                have_current = true;
-            }
-            catch (...)
-            {
-                throwCasWriteRetryLater("CAS _ckpt for namespace '" + life.ns.string()
-                    + "': a CAS response was ambiguous and the mandatory exact-read resolution failed ("
-                    + getCurrentExceptionMessage(/*with_stacktrace*/ false) + ")");
-            }
-
-            try
-            {
-                check_fence_or_throw(admitted_generation);
-            }
-            catch (...)
-            {
-                return CkptPublishOutcome::FencedOut;
-            }
-
-            if (current && lifeEpochWouldDecrease(current->ckpt, contribution))
-                throwLifeEpochDecrease(current->ckpt, contribution, key);
-
-            const RefCkpt resolved_merge = current ? mergeCkpt(current->ckpt, contribution) : contribution;
-            if (current && resolved_merge == current->ckpt)
-                return CkptPublishOutcome::Published;
-
-            /// `current` is the exact observation made after the ambiguous response. The next loop
-            /// iteration retries the SAME contribution against its token (or expected absence), with
-            /// no blind CAS and no redundant intervening GET.
-            continue;
-        }
-        /// `Conflict`: the incarnation we read is no longer current, so another writer's merge landed
-        /// first. Nothing of ours was written; re-read and merge against the winner.
-        current.reset();
-        have_current = false;
+        /// The durable body already carries this contribution and an attempt of this call was sent to
+        /// get there, so the write is resolved rather than skipped.
+        return decisions > 1 ? CkptPublishOutcome::Published : CkptPublishOutcome::IdenticalSkip;
     }
-
-    /// Fail closed. Every attempt was all-or-nothing, so there is no partial state -- only an
-    /// unpublished contribution, which the caller must be told about rather than left to assume.
-    throwCasWriteRetryLater("CAS _ckpt for namespace '" + life.ns.string()
-        + "': persistent CAS contention, the checkpoint contribution was not published");
+    if (const auto * gave_up = std::get_if<GaveUp>(&result))
+    {
+        /// A lost fence is an expected, transient control signal, so it is a value rather than a
+        /// throw. It says nothing about the object: the engine reports it both before an attempt is
+        /// sent and after one is proven durable, so the caller must re-read rather than assume.
+        /// Every other give-up leaves the contribution unpublished, and the caller must be told that
+        /// rather than left to assume it landed.
+        if (gave_up->why == GaveUp::Why::FenceLost)
+            return CkptPublishOutcome::FencedOut;
+        throwCasWriteRetryLater("CAS _ckpt for namespace '" + life.ns.string()
+            + "': persistent CAS contention, the checkpoint contribution was not published");
+    }
+    /// Only `Conflict` and `Refused` are left, and both are an exception.
+    const String what = "CAS _ckpt for namespace '" + life.ns.string() + "'";
+    orThrow(std::move(result), what);
+    UNREACHABLE();
 }
 
-MissingBaseVerdict classifyMissingSampledBase(const Token & sampled_token, const std::optional<Token> & current_token)
+MissingBaseVerdict classifyMissingSampledBase(const Etag & sampled, const std::optional<Etag> & current)
 {
-    if (current_token && !(*current_token == sampled_token))
+    if (current && !(*current == sampled))
         return MissingBaseVerdict::RestartRecovery;
     return MissingBaseVerdict::Corrupted;
 }

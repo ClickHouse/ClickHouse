@@ -22,6 +22,14 @@ CA_DISK = "disk_cas_shared"
 OTHER_STORAGE_POLICY = "cas_other"
 OTHER_CA_DISK = "disk_cas_other"
 
+# node2-only policies (configs/storage_conf_tiered.xml). `cas_tiered` = [local `default`] then
+# [disk_cas_shared]: an ordinary reservation lands on `default`, so a relink onto the pool's disk is a
+# forced placement. `cas_two_pools` = [disk_cas_other] then [disk_cas_shared]: the first content-addressed
+# disk is the WRONG pool, so a relink onto disk_cas_shared proves the whole pool set was advertised.
+TIERED_STORAGE_POLICY = "cas_tiered"
+TWO_POOLS_STORAGE_POLICY = "cas_two_pools"
+LOCAL_DISK = "default"
+
 # The shared pool's blob prefix inside the `test` RustFS bucket. The relink proof is that the fetch does
 # NOT create new objects under here: relink publishes a ref (per-server, under store/), never a blob.
 BLOBS_PREFIX = "shared_pool/blobs/"
@@ -66,6 +74,7 @@ def start_cluster():
             "configs/storage_conf.xml",
             "configs/server_root_id_node2.xml",
             "configs/storage_conf_other_pool.xml",
+            "configs/storage_conf_tiered.xml",
         ],
         macros={"replica": "node2"},
         with_rustfs=True,
@@ -181,6 +190,21 @@ def active_part_names(node, table):
         "SELECT name FROM system.parts WHERE database = 'default' AND table = '{}' AND active "
         "ORDER BY name".format(table)
     ).split()
+
+
+def part_disk(node, table, part):
+    """The disk the ACTIVE part of this name sits on, from `system.parts`."""
+    return node.query(
+        "SELECT disk_name FROM system.parts WHERE database = 'default' AND table = '{}' "
+        "AND name = '{}' AND active".format(table, part)
+    ).strip()
+
+
+def detached_part_disk(node, table, part):
+    return node.query(
+        "SELECT disk FROM system.detached_parts WHERE database = 'default' AND table = '{}' "
+        "AND name = '{}'".format(table, part)
+    ).strip()
 
 
 def any_state_part_count(node, table, part):
@@ -769,7 +793,10 @@ def test_confirm_refuses_when_source_dropped_in_window():
     """Task 16 step 1 — the race the confirm exists to lose safely.
 
     Taxonomy row 3: the source cannot prove it still holds the offered manifest, so the receiver aborts
-    its durable `+1` and throws a retry-later `NETWORK_ERROR` INSTEAD of falling back to bytes. The two
+    its durable `+1` and throws a retry-later `NO_REPLICA_HAS_PART` INSTEAD of falling back to bytes.
+    That code is part of the contract (issue #2219): both queue executors demote it to INFO with no
+    stack trace, it stays recorded on the queue entry, and it is the one fetch-transient code the
+    stateless corpus already tolerates in `part_log` checks. The two
     assertions that matter are (a) the queue recovers by re-selecting — here, onto the covering part —
     and (b) NO byte re-request ever went to the source whose state was in doubt. (b) is the entire
     reason row 3 throws where rows 2 and 5 return `nullptr`.
@@ -809,6 +836,31 @@ def test_confirm_refuses_when_source_dropped_in_window():
     )
     assert not log_lines(node2, relink_finished_pattern(table, part))
     assert any_state_part_count(node2, table, part) == 0
+
+    # (c) the refusal's CLASSIFICATION -- the contract pinned after issue #2219. The refusal must reach
+    #     the operator as the tolerated fetch-transient `NO_REPLICA_HAS_PART` (both queue executors
+    #     demote it to INFO, no stack trace; every stateless `part_log` hygiene check that whitelists
+    #     that code -- e.g. `02265_column_ttl` -- stays green), never as an Error-level `NETWORK_ERROR`
+    #     with a stack trace, which reads as a network fault and once cost a multi-hour false triage.
+    refusal_error_pattern = r"<Error>.*did not prove it still holds the manifest"
+    refusal_info_pattern = r"<Information>.*did not prove it still holds the manifest"
+    assert not log_lines(node2, refusal_error_pattern), (
+        "the relink refusal is a designed outcome and must not be logged at Error level"
+    )
+    assert log_lines(node2, refusal_info_pattern), (
+        "the demoted refusal must still be visible at Information level -- silence would be worse than "
+        "the old noise"
+    )
+    node2.query("SYSTEM FLUSH LOGS part_log")
+    stray_codes = node2.query(
+        "SELECT DISTINCT errorCodeToName(error) FROM system.part_log "
+        "WHERE table = '{}' AND error != 0 AND errorCodeToName(error) != 'NO_REPLICA_HAS_PART'".format(
+            table
+        )
+    ).split()
+    assert stray_codes == [], (
+        "a relink refusal must reach part_log only as NO_REPLICA_HAS_PART, got: {}".format(stray_codes)
+    )
 
     drop_everywhere(table)
 
@@ -902,4 +954,264 @@ def test_stalled_publish_protects_source_blobs_and_commits_nothing():
         "stall does not distinguish the relink pin from an inactive GC".format(len(part_blobs))
     )
 
+    drop_everywhere(table)
+
+
+# ----------------------------------------------------------------------------------------------------
+# FORCED PLACEMENT: a relink lands on the pool's disk even when the storage policy would put the part
+# elsewhere. Every test here asserts the relink line AND `system.parts.disk_name`, because the first
+# alone would also hold for a relink that then got moved, and the second alone would hold for a byte
+# fetch that happened to be reserved on the pool's disk.
+# ----------------------------------------------------------------------------------------------------
+
+
+def _fetch_via_queue(node1, node2, table, node2_policy, create_sql=None):
+    """INSERT on node1 while node2's fetches are stopped, then let node2 fetch exactly that one part.
+
+    Returns `(part, blobs_before)`: the part name and the pool's blob keys as they were AFTER the
+    insert on node1 and BEFORE node2 fetched — the only snapshot `assert_no_new_blobs` can be measured
+    against, since the insert itself writes the part's blobs. `create_sql` overrides the table DDL (it
+    must contain `{policy}` and `{zk}`).
+    """
+    drop_everywhere(table)
+    if create_sql is None:
+        create_replicated(node1, table)
+        create_replicated(node2, table, policy=node2_policy)
+    else:
+        node1.query(create_sql.format(policy=STORAGE_POLICY, zk="/clickhouse/tables/" + table))
+        node2.query(create_sql.format(policy=node2_policy, zk="/clickhouse/tables/" + table))
+    node2.query("SYSTEM STOP FETCHES {}".format(table))
+    insert_rows(node1, table, 0)
+    part = active_part_names(node1, table)[0]
+    blobs_before = blob_keys()
+    node2.query("SYSTEM START FETCHES {}".format(table))
+    node2.query("SYSTEM SYNC REPLICA {}".format(table), timeout=90)
+    return part, blobs_before
+
+
+def test_tiered_policy_relinks_onto_cas_over_volume_order():
+    """`[default] then [disk_cas_shared]`: the policy's own placement is the local volume, and before the
+    forced placement the fetch reserved there, failed the pool post-check and downloaded bytes onto
+    `default`. Now the offer decides the disk."""
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    table = "tiered_order"
+
+    part, blobs_before = _fetch_via_queue(node1, node2, table, TIERED_STORAGE_POLICY)
+
+    assert_relinked(node2, table, part)
+    assert part_disk(node2, table, part) == CA_DISK
+    assert_no_new_blobs(blobs_before)
+    assert int(node2.query("SELECT count() FROM {}".format(table))) == NUM_ROWS
+    drop_everywhere(table)
+
+
+def test_relink_carries_projection_under_tiered_policy():
+    """A projection-bearing part relinks like any other (the projection is loaded from the published
+    manifest), and the forced placement does not disturb that."""
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    table = "tiered_projection"
+    create_sql = (
+        "CREATE TABLE " + table + " (id Int64, v UInt64, s String, "
+        "PROJECTION p_by_s (SELECT s, sum(v) GROUP BY s)) "
+        "ENGINE = ReplicatedMergeTree('{zk}', '{{replica}}') ORDER BY id "
+        "SETTINGS storage_policy = '{policy}'"
+    )
+
+    part, _ = _fetch_via_queue(node1, node2, table, TIERED_STORAGE_POLICY, create_sql=create_sql)
+
+    assert_relinked(node2, table, part)
+    assert part_disk(node2, table, part) == CA_DISK
+    assert int(node2.query(
+        "SELECT count() FROM system.projection_parts WHERE database = 'default' AND table = '{}' "
+        "AND parent_name = '{}' AND name = 'p_by_s' AND active".format(table, part)
+    )) == 1
+    assert int(node2.query("SELECT sum(v) FROM {} WHERE s = '7'".format(table))) == 70
+    drop_everywhere(table)
+
+
+def test_two_pool_policy_relinks_into_second_pool():
+    """`[disk_cas_other] then [disk_cas_shared]`: the first content-addressed disk is the WRONG pool.
+    A single-pool advertise names `other`, the sender declines, and the bytes land on `disk_cas_other`;
+    advertising the whole set lets the sender match `shared` and the receiver place it there."""
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    table = "two_pools"
+
+    part, blobs_before = _fetch_via_queue(node1, node2, table, TWO_POOLS_STORAGE_POLICY)
+
+    assert_relinked(node2, table, part)
+    assert part_disk(node2, table, part) == CA_DISK
+    assert_no_new_blobs(blobs_before)
+    assert not log_lines(node2, download_finished_pattern(table, part, disk=OTHER_CA_DISK))
+    drop_everywhere(table)
+
+
+def test_mechanism_failure_falls_back_to_bytes_on_forced_disk():
+    """A relink that fails for a mechanism reason re-requests the bytes on the SAME forced disk — the
+    placement decision outlives the relink. (The one-offer recursion bound is proven by
+    `test_recursion_brake_bounds_relink_to_one_attempt`; this test proves only the destination.)"""
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    table = "tiered_fallback"
+    drop_everywhere(table)
+    create_replicated(node1, table)
+    create_replicated(node2, table, policy=TIERED_STORAGE_POLICY)
+    node2.query("SYSTEM STOP FETCHES {}".format(table))
+    insert_rows(node1, table, 0)
+    part = active_part_names(node1, table)[0]
+
+    node2.query("SYSTEM ENABLE FAILPOINT cas_relink_receiver_force_mechanism_failure")
+    try:
+        node2.query("SYSTEM START FETCHES {}".format(table))
+        node2.query("SYSTEM SYNC REPLICA {}".format(table), timeout=90)
+        assert_byte_downloaded(node2, table, part, disk=CA_DISK)
+        assert part_disk(node2, table, part) == CA_DISK
+        assert not log_lines(node2, download_finished_pattern(table, part, disk=LOCAL_DISK))
+    finally:
+        node2.query("SYSTEM DISABLE FAILPOINT cas_relink_receiver_force_mechanism_failure")
+    drop_everywhere(table)
+
+
+def test_detached_fetch_relinks_onto_cas_under_tiered_policy():
+    """`ALTER TABLE ... FETCH PART` into `detached/` under the tiered policy: the forced placement
+    applies to detached fetches too, and the detached part is on the pool's disk."""
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    src, dst = "tiered_det_src", "tiered_det_dst"
+    drop_everywhere(src)
+    drop_everywhere(dst)
+    create_replicated(node1, src)
+    create_replicated(node2, dst, policy=TIERED_STORAGE_POLICY)
+    insert_rows(node1, src, 0)
+    part = active_part_names(node1, src)[0]
+
+    node2.query(
+        "ALTER TABLE {dst} FETCH PART '{part}' FROM '/clickhouse/tables/{src}'".format(
+            dst=dst, part=part, src=src
+        )
+    )
+
+    assert_relinked(node2, dst, part)
+    assert detached_part_disk(node2, dst, part) == CA_DISK
+    node2.query("ALTER TABLE {} ATTACH PART '{}'".format(dst, part))
+    assert part_disk(node2, dst, part) == CA_DISK
+    assert int(node2.query("SELECT count() FROM {}".format(dst))) == NUM_ROWS
+    drop_everywhere(src)
+    drop_everywhere(dst)
+
+
+def test_offer_for_unavailable_pool_falls_back_to_ordinary_placement():
+    """The receiver resolved a forced disk and then lost it (the failpoint stands in for an offer this
+    policy has no disk for): the ordinary reservation runs, the relink block sees a disk outside the
+    offered pool, and the bytes go where the policy says — `default` under the tiered policy. Exactly
+    one offer is made: the byte re-request carries no advertise."""
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    table = "tiered_dropped"
+    drop_everywhere(table)
+    create_replicated(node1, table)
+    create_replicated(node2, table, policy=TIERED_STORAGE_POLICY)
+    node2.query("SYSTEM STOP FETCHES {}".format(table))
+    insert_rows(node1, table, 0)
+    part = active_part_names(node1, table)[0]
+
+    node2.query("SYSTEM ENABLE FAILPOINT cas_relink_receiver_drop_forced_disk")
+    try:
+        node2.query("SYSTEM START FETCHES {}".format(table))
+        node2.query("SYSTEM SYNC REPLICA {}".format(table), timeout=90)
+        assert log_lines(
+            node2,
+            r"Failpoint cas_relink_receiver_drop_forced_disk: forgetting the forced disk for part {}".format(
+                re.escape(part)
+            ),
+        )
+        assert_byte_downloaded(node2, table, part, disk=LOCAL_DISK)
+        assert part_disk(node2, table, part) == LOCAL_DISK
+        assert len(log_lines(node1, relink_offer_pattern(table, part))) == 1
+    finally:
+        node2.query("SYSTEM DISABLE FAILPOINT cas_relink_receiver_drop_forced_disk")
+    drop_everywhere(table)
+
+
+def test_offer_without_pool_cookie_resolves_to_single_advertised_pool():
+    """The old-sender shape: an offer with no `cas_pool_uuid` cookie. With ONE advertised pool that is
+    the pool, and the relink is forced as usual; with TWO advertised pools the receiver refuses to guess,
+    the ordinary reservation lands on the first volume (`disk_cas_other`), and the bytes go there."""
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    node1.query("SYSTEM ENABLE FAILPOINT cas_relink_sender_omit_pool_cookie")
+    try:
+        one_pool = "omit_cookie_one"
+        part, _ = _fetch_via_queue(node1, node2, one_pool, TIERED_STORAGE_POLICY)
+        assert_relinked(node2, one_pool, part)
+        assert part_disk(node2, one_pool, part) == CA_DISK
+        drop_everywhere(one_pool)
+
+        two_pools = "omit_cookie_two"
+        part, _ = _fetch_via_queue(node1, node2, two_pools, TWO_POOLS_STORAGE_POLICY)
+        assert_byte_downloaded(node2, two_pools, part, disk=OTHER_CA_DISK)
+        assert part_disk(node2, two_pools, part) == OTHER_CA_DISK
+        assert len(log_lines(node1, relink_offer_pattern(two_pools, part))) == 1
+        drop_everywhere(two_pools)
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT cas_relink_sender_omit_pool_cookie")
+
+
+def test_relink_wins_over_ttl_then_mover_converges():
+    """A `TTL ... TO DISK` rule that names the LOCAL disk for this (already expired) part does not stop the
+    relink: the part lands on the pool's disk at zero byte cost, and the background mover — which sees a
+    part that is not in its TTL destination — carries it to `default` afterwards. Moves are stopped on
+    node2 around the fetch so the intermediate placement is observable, exactly as `test_ttl_move` does.
+
+    `IF EXISTS` precedes the disk name in the grammar. It is there for node1, whose policy has no
+    `default` disk: without it `CREATE TABLE` on node1 fails with `BAD_TTL_EXPRESSION`, because
+    `MergeTreeData::checkTTLExpressions` rejects a `TO DISK` destination absent from the policy at
+    create time.
+    """
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    table = "tiered_ttl"
+    drop_everywhere(table)
+    create_sql = (
+        "CREATE TABLE " + table + " (id Int64, v UInt64, s String, ts DateTime) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/" + table + "', '{{replica}}') ORDER BY id "
+        "TTL ts TO DISK IF EXISTS 'default' "
+        "SETTINGS storage_policy = '{policy}'"
+    )
+    node1.query(create_sql.format(policy=STORAGE_POLICY))
+    node2.query(create_sql.format(policy=TIERED_STORAGE_POLICY))
+
+    node2.query("SYSTEM STOP MOVES {}".format(table))
+    node2.query("SYSTEM STOP FETCHES {}".format(table))
+    try:
+        node1.query(
+            "INSERT INTO {table} SELECT number, number * 10, toString(number), now() - INTERVAL 1 DAY "
+            "FROM numbers({rows})".format(table=table, rows=NUM_ROWS)
+        )
+        part = active_part_names(node1, table)[0]
+        assert part_disk(node1, table, part) == CA_DISK  # the sender holds it in the pool
+
+        node2.query("SYSTEM START FETCHES {}".format(table))
+        node2.query("SYSTEM SYNC REPLICA {}".format(table), timeout=90)
+
+        # The TTL rule says `default`; the relink put it on the pool's disk anyway, and moves are stopped.
+        assert_relinked(node2, table, part)
+        assert part_disk(node2, table, part) == CA_DISK
+        rows_before = node2.query("SELECT count(), sum(v) FROM {}".format(table))
+
+        node2.query("SYSTEM START MOVES {}".format(table))
+        wait_until(
+            lambda: part_disk(node2, table, part) == LOCAL_DISK,
+            timeout=120,
+            what="the background mover carrying {} to {}".format(part, LOCAL_DISK),
+        )
+        assert node2.query("SELECT count(), sum(v) FROM {}".format(table)) == rows_before
+        assert node2.query("SELECT count(), sum(v) FROM {}".format(table)) == node1.query(
+            "SELECT count(), sum(v) FROM {}".format(table)
+        )
+    finally:
+        node2.query("SYSTEM START FETCHES {}".format(table))
+        node2.query("SYSTEM START MOVES {}".format(table))
     drop_everywhere(table)

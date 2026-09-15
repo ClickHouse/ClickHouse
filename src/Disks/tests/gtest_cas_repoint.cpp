@@ -83,7 +83,7 @@ TEST(CASRepoint, AddFileRepoints)
     const RootNamespace ns{"srv/t1"};
     DB::Cas::CachedPartFolderAccess access(
         store, {.cache_bytes = 64ULL << 20, .max_entries = 10000, .max_entry_bytes = 16ULL << 20,
-                .explain_enabled = false, .validate = {}});
+                .explain_enabled = false});
     const auto id_before = publishPart(store, ns, "part_1", {inlineEntry("checksums.txt", "cs")});
     const DB::Cas::PartRefKey key{ns, "part_1"};
     /// Warm the retained view so the erase-on-success cache discipline is actually exercised.

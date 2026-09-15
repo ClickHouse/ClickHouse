@@ -51,6 +51,12 @@
   check_types:
   - msan
   - tsan
+- name: 04327_png_terminal_mode
+  reason: 'KNOWN - MSan false positive in libbase64 SIMD on CPUs without AVX512VBMI (issue #2265)'
+  message: "Aborted[\\s\\S]*output_format_image_terminal_mode='(iterm|kitty)'"
+  regex: true
+  check_types:
+  - msan
 - name: 02676_optimize_old_parts_replicated
   reason: INVESTIGATE - Unstable on tsan
   message: result differs with reference

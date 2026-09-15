@@ -1,13 +1,10 @@
 #pragma once
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCkptFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCatalogFormat.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <cstdint>
-#include <functional>
 #include <optional>
-#include <string_view>
 
 namespace DB::Cas
 {
@@ -46,96 +43,66 @@ RecoveryGrounding chooseRecoveryGrounding(const std::optional<CatalogEntry> & ca
 /// Compatible contributions still merge commutatively, but the committed frontier is deliberately not
 /// an unconstrained CRDT maximum: a cross-epoch pair must be numerically adjacent and carry its seal
 /// evidence. That makes arbitrary regrouping of a corrupt historical set invalid, while the actual
-/// publish protocol remains simple: each token-CAS merges one contribution with the one durable body it
+/// publish protocol remains simple: each write merges one contribution with the one durable body it
 /// just read.
 ///
 /// It is therefore NOT where `life_epoch`'s may-not-decrease rule lives, and that is a placement
 /// decision rather than an omission: a commutative function does not know which of its arguments is the
 /// durable one, so it cannot tell a decrease from an increase. That rule belongs to `publishCkpt`, which
-/// does know (see `checkLifeEpochDoesNotDecrease` in the `.cpp`).
+/// does know.
 RefCkpt mergeCkpt(const RefCkpt & a, const RefCkpt & b);
 
 /// What one `publishCkpt` call did.
 enum class CkptPublishOutcome : uint8_t
 {
-    Published,      /// the merged body is durable -- this call's CAS committed it
+    Published,      /// the contribution is durable, and this call sent at least one write before it
+                    /// was; which write made it durable -- this one or a competitor's -- is not claimed
     IdenticalSkip,  /// the contribution added nothing to what was already there; NO write was issued
-    FencedOut,      /// the admitted fence generation moved before the CAS; NOTHING was written
+    FencedOut,      /// this actor's admission is gone. Whether its last attempt landed is UNRESOLVED:
+                    /// admission can be lost before the write is sent, and equally after the write is
+                    /// proven durable. Re-read before assuming either way
 };
 
-/// The retry bound for `publishCkpt`: an absolute point on a monotonic millisecond clock, plus that
-/// clock. Both are required and must be the SAME clock -- the caller passes its own injectable boot
-/// clock (`CasRefLedger`'s `boot_ms_fn`), so a test drives the exhaustion arm deterministically
-/// instead of sleeping, and a VM suspend cannot shorten the window.
-struct CkptDeadline
-{
-    std::function<uint64_t()> now_ms;
-    uint64_t deadline_ms = 0;
-};
-
-/// Merge `contribution` into `ns`'s `_ckpt` and make the result durable.
-///
-/// One attempt is: GET the object -> decode it -> merge -> (identical? return without a CAS) ->
-/// re-check the fence -> token-CAS. A CAS conflict means another writer's read-modify-write landed
-/// between our GET and our CAS, so the whole attempt repeats against the NEW body -- never against the
-/// one we already read, which is the point of re-reading rather than retrying the same bytes.
-/// A THROWN CAS response is ambiguous rather than a conflict: exact-read the object, validate its body
-/// and token, then check admission again. If the durable body semantically includes the contribution,
-/// the write is resolved; otherwise retry the same contribution against that exact-read token. An
-/// unreadable resolution fails retry-later, and no path issues two CAS attempts without an intervening
-/// exact observation.
+/// Merge `contribution` into `life`'s `_ckpt` and make the result durable, as ONE read-modify-write
+/// on `op`.
 ///
 /// An ABSENT object is created from `contribution` as it stands. Every writer may create it and none
 /// may complete it: a publisher that knows only the checkpoint creates one that knows only the
 /// checkpoint, and the field a different writer knows merges in whenever it arrives, in either order.
 /// That is the whole reason each field is optional rather than defaulted.
 ///
-/// FENCE DISCIPLINE (spec §3, the same value at every site of the trio): `check_fence_or_throw` is
-/// re-run on EVERY attempt, AFTER that attempt's read and immediately BEFORE its CAS -- not once at
-/// entry. A generation that moved means the mount lease incarnation changed since this work was
-/// admitted, so this writer's body is stale even if the fence happens to be live again; the CAS must
-/// not be sent. That refusal is returned as `FencedOut` rather than thrown: it is an expected,
-/// transient control signal (the same class the request controller reports as `Unresolved`), and the
-/// snapshot publisher that calls this sits after a durable PUT where an exception would be worse than
-/// a value. NOTHING has been written when it is returned -- the check precedes the CAS.
+/// Both DECLINE-TIME verdicts consult `op.admitted()` before they speak, because a writer the fence is
+/// about to refuse has landed nothing AT THAT POINT: it is told `FencedOut` rather than `IdenticalSkip`
+/// or a corruption verdict. `FencedOut` is returned rather than thrown because it is an expected,
+/// transient control signal, and the snapshot publisher that calls this sits after a durable PUT where
+/// an exception would be worse than a value. It does NOT promise the object is unchanged -- a lost
+/// admission is also reported for a write already proven durable.
 ///
 /// FAILS CLOSED, never open:
 ///   - an existing `_ckpt` that does not decode PROPAGATES `CORRUPTED_DATA` and is never overwritten.
 ///     It is the only record of recovery's base and of what cleanup may delete; replacing it with a
 ///     body derived from `contribution` alone would erase the base while leaving a well-formed object
 ///     behind -- corruption laundered into something a reader would trust.
-///   - a contribution whose `life_epoch` is BELOW the durable one raises `CORRUPTED_DATA`, checked after
-///     that attempt's read and before its merge, so no body is built and no CAS is sent. This is the one
-///     refusal that HAS to live here rather than in `mergeCkpt`: only this function knows which side is
-///     durable. It is reported as corruption ONLY for a writer the fence still admits -- one the fence
-///     is about to refuse gets `FencedOut` like every other refusal here, since it landed nothing.
-///   - exhausting the deadline (or the live-lock brake) under persistent conflict throws the
-///     retry-later class. No partial state exists to clean up: every attempt either committed the
-///     complete merged body or changed nothing.
-///
-/// `admitted_generation` is the fence generation the CALLER captured when its work was admitted, and
-/// `check_fence_or_throw` is the callback the pool wires from `CasMountRuntime::checkFenceOrThrow`
-/// (the ledger never owns a `CasMountRuntime`; it receives the pair the way `CasPlainObjects` does).
-/// `admit_request` is independent of that post-read fence contract: when supplied, it is checked
-/// immediately before every raw backend request, and refusal returns `FencedOut` without starting it.
-CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const NamespaceLifeId & life,
-                               const RefCkpt & contribution, uint64_t admitted_generation,
-                               const std::function<void(uint64_t)> & check_fence_or_throw,
-                               const CkptDeadline & deadline,
-                               const std::function<void()> & admit_request = {});
+///   - a contribution whose `life_epoch` is BELOW the durable one raises `CORRUPTED_DATA`, decided
+///     before the merge, so no body is built and no write is sent. This is the one refusal that HAS to
+///     live here rather than in `mergeCkpt`: only this function knows which side is durable.
+///   - exhausting the policy under persistent conflict throws the retry-later class. No partial state
+///     exists to clean up: every attempt either committed the complete merged body or changed nothing.
+CkptPublishOutcome publishCkpt(CasOperation & op, const Layout & layout, const NamespaceLifeId & life,
+                               const RefCkpt & contribution, const Retry & policy = Retry::standard());
 
-/// One observation of a namespace's `_ckpt`: the decoded body and the incarnation TOKEN it was read
-/// at. The token is what the missing-base revalidation adjudicates against, so a reader that keeps
-/// only the body cannot apply the rule.
+/// One observation of a namespace's `_ckpt`: the decoded body and the incarnation it was read at. The
+/// incarnation is what the missing-base revalidation adjudicates against, so a reader that keeps only
+/// the body cannot apply the rule.
 struct CkptSample
 {
     RefCkpt ckpt;
-    Token token;
+    Etag etag;
 };
 
 /// Point-read of `life`'s `_ckpt`. `nullopt` means the object is absent (a namespace whose creation has
 /// not published one yet); a present-but-undecodable object throws `CORRUPTED_DATA`.
-std::optional<CkptSample> readCkpt(Backend & backend, const Layout & layout, const NamespaceLifeId & life);
+std::optional<CkptSample> readCkpt(CasOperation & op, const Layout & layout, const NamespaceLifeId & life);
 
 /// The verdict of INV-4's three-way revalidation, for the one leg that is not simply "it is there".
 enum class MissingBaseVerdict : uint8_t
@@ -145,14 +112,14 @@ enum class MissingBaseVerdict : uint8_t
 };
 
 /// Adjudicate a sampled recovery anchor that turned out to be unavailable, by comparing the `_ckpt`
-/// token this recovery sampled against the token a fresh re-read observes. The anchor is the
+/// incarnation this recovery sampled against the one a fresh re-read observes. The anchor is the
 /// checkpoint-named snapshot and its retained same-id non-seal log witness; the caller supplies this
-/// verdict after either exact GET is absent.
+/// verdict after either exact read is absent.
 ///
-///   - token ADVANCED  -> `RestartRecovery`. Cleanup legitimately advanced the checkpoint and deleted
-///     the previous anchor while we were reading. Nothing is wrong; restart from the newer base
-///     (bounded by the caller's own restart budget).
-///   - token UNCHANGED -> `Corrupted`. The checkpoint still names an object that is not there, and
+///   - incarnation ADVANCED  -> `RestartRecovery`. Cleanup legitimately advanced the checkpoint and
+///     deleted the previous anchor while we were reading. Nothing is wrong; restart from the newer
+///     base (bounded by the caller's own restart budget).
+///   - incarnation UNCHANGED -> `Corrupted`. The checkpoint still names an object that is not there, and
 ///     the deletion gate makes that unreachable in an honest run: the named snapshot and matching log
 ///     are both retained. Something deleted a live anchor.
 ///   - `_ckpt` itself ABSENT on the re-read -> `Corrupted` for the same reason, and more bluntly: the
@@ -161,7 +128,7 @@ enum class MissingBaseVerdict : uint8_t
 ///
 /// Pure, so it is decided the same way at every call site; the caller raises `CORRUPTED_DATA` on
 /// `Corrupted` with its own context.
-MissingBaseVerdict classifyMissingSampledBase(const Token & sampled_token, const std::optional<Token> & current_token);
+MissingBaseVerdict classifyMissingSampledBase(const Etag & sampled, const std::optional<Etag> & current);
 
 /// INV-4's snapshot-deletion gate: a snapshot is deletable only STRICTLY BELOW the checkpoint. Strict
 /// rather than at-or-below because the checkpoint names the snapshot a recovery is entitled to fetch

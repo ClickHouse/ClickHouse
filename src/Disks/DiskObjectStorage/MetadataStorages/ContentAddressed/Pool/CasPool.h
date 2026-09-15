@@ -9,7 +9,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPoolMetaFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPartManifestFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPlainObjects.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasManifestReader.h>
@@ -75,6 +75,10 @@ struct PoolConfig
     /// was count-bounded only (16384 entries) — decoded manifests carry inline bytes, so the worst
     /// case was multi-GB. 0 disables decode caching (every read decodes fresh — diagnostic mode).
     uint64_t manifest_decode_cache_bytes = 128ULL << 20;
+    /// Byte bound for the hot-key lane's cache of last known objects (the catalog today). 0 disables
+    /// the cache and every catalog write reads first. 16 MiB: the catalog is under 1 MiB, and the
+    /// bound exists so a later opt-in of per-namespace keys has one.
+    uint64_t hot_key_cache_bytes = 16ULL << 20;
     /// How many superseded snapshot generations to retain. After committing
     /// generation G, generations <= G - this are pruned (bounded per round). 0 = keep ALL
     /// (debug/forensics — replay GC's in-degree view as-of a past round). Default 3 = the safety
@@ -88,6 +92,8 @@ struct PoolConfig
     /// per completed GC round; the delete budget separately bounds exact-token destructive work.
     uint64_t manifest_sweep_list_budget_keys = 1000;
     uint64_t manifest_sweep_delete_budget_keys = 100;
+    /// Keys per batch delete request for the write-once families; tests lower it to exercise chunk boundaries.
+    uint64_t gc_bulk_delete_chunk_keys = 1000;
     /// Per-round blob-deletion work envelope: caps how many entries the fold's graduation
     /// (condemned -> delete_pending) and redelete (exact-token delete of a prior delete_pending row)
     /// arms move out of the durable retired pipeline in one round. Excess entries are carried
@@ -168,6 +174,11 @@ struct PoolConfig
     /// feedback_ca_gc_never_throw_on_404) and `Gc::runRegularRound` waits for the round's whole batch
     /// before the round's single gc/state CAS, so the meta writes are durable before that CAS commits.
     uint64_t gc_meta_pool_size = 16;
+    /// Bounded pool size for the fold's read-ahead of checkpoints, ref logs, manifest bodies and
+    /// zero-candidate HEADs. Every decision stays on the round thread, in the order it always ran;
+    /// only the fetch overlaps. `1` issues no read-ahead at all and is the sequential round, request
+    /// for request.
+    uint64_t gc_read_concurrency = 16;
     /// Tests drive `renewWatermarkOnce` explicitly; gates both persistent runtime workers.
     bool background_watermark = false;
     /// Installed on the pool before a writable mount can start its runtime-owned workers.
@@ -205,6 +216,11 @@ struct PoolConfig
     /// `mount_renew_period` (default ttl/3) so a healthy mount renews well before expiry.
     std::chrono::milliseconds mount_lease_ttl_ms{30000};
     std::chrono::milliseconds mount_renew_period{10000};   /// = ttl/3 by default
+
+    /// `cas_unsafe_remount_no_delay`: reclaim a same-uuid, different-epoch, uncertified mount slot at
+    /// once, with no token-stability observation at all. Unsafe whenever two processes can hold the
+    /// same server_uuid; see the setting's own description for the exact risk.
+    bool unsafe_remount_no_delay = false;
     bool read_only = false;                   /// observe-only open: skip the mutating capability probe; reads only
 
     /// Boot-time "start now, fix later": skip the access-check-class part of the capability probe
@@ -233,6 +249,15 @@ struct PoolConfig
     /// The write-fence deadline clock (CLOCK_BOOTTIME milliseconds; see `MountFence`). Empty = the real
     /// boot clock (`Pool::bootMs`); injected by tests to drive the fence deadline deterministically.
     std::function<uint64_t()> boot_ms_fn = {};
+
+    /// The inter-attempt sleep for the mount, farewell and GC request planes (`mount_requests`,
+    /// `farewell_requests`, `gc_requests`), installed at their CONSTRUCTION -- before this `Pool` has
+    /// claimed or read anything. Empty = each plane's own production default (an interruptible real
+    /// sleep for the mount and GC planes, `CasRequests`'s own real sleep for the farewell plane). A test
+    /// that also freezes `boot_ms_fn` must supply a matching sleep here: a retry loop bound to a clock
+    /// that only moves when this function is called would otherwise retry forever against a REAL sleep
+    /// that never calls it, because the deadline it measures against never appears to elapse.
+    std::function<void(uint64_t)> retry_sleep_fn = {};
 
     /// Test hook for open/remount waits: `Pool::waitSleep` -- the mount-claim observation loop's poll --
     /// routes through this function when set instead of a real `std::this_thread::sleep_for`, so a test
@@ -405,13 +430,22 @@ public:
     ~Pool();
 
     bool tryDispatchDetached(std::function<void(DetachedStopToken)> task);
+    /// Marks this pool as being torn down. The open request plane refuses every further admission and
+    /// wakes a retry sleep on it, and no new detached task is accepted. Idempotent, and it frees,
+    /// nulls and swaps nothing: it can be called before any lock a teardown takes, so a GC round
+    /// holding such a lock is refused at its next request instead of being waited out.
+    void beginTeardown() noexcept;
+    bool teardownBegun() const noexcept;
     bool stopAndDrainDetachedWork(uint64_t deadline_ms);
     uint64_t detachedWorkInFlight() const;
     uint64_t detachedWorkInFlightForTest() const { return detachedWorkInFlight(); }
     bool detachedWorkStoppingForTest() const;
     /// Test-only: shortens the metadata-storage teardown deadline without changing any request path.
     /// Call before dispatching detached work; production configuration remains immutable after open.
-    void setDetachedDrainDeadlineBudgetForTest(uint64_t attempt_timeout_ms, uint64_t lease_safety_margin_ms);
+    /// Replaces the whole budget (not just `attempt_timeout_ms`) because the drain deadline is read
+    /// from `attemptEnvelopeMs()`, which also folds in `connect_timeout_cap_ms` -- a caller that only
+    /// overrode the attempt timeout would silently keep whatever connect cap the pool froze at open.
+    void setDetachedDrainDeadlineBudgetForTest(const CasRequestBudget & budget);
 
     /// ---- per-server watermark surface ----
     /// process_epoch: random nonzero per Pool (process). GC checks epoch EQUALITY, never ordering.
@@ -427,7 +461,7 @@ public:
     uint64_t minActive();
     /// Test/assertion accessor for the next-to-allocate build_seq under the lock.
     uint64_t peekNextBuildSeq();
-    /// Renew the merged heartbeat once (bump seq, refresh min_active from the live callback, stamp a
+    /// Renew the merged heartbeat once (bump seq, refresh min_active_build_sequence from the live callback, stamp a
     /// fresh expires_at_ms). The build-watermark floor rides this beat. In production this is driven by
     /// the background renewer (background_watermark).
     void renewWatermarkOnce();
@@ -441,13 +475,18 @@ public:
     /// or foreign observation; the gated mutate chokepoints then fail closed.
     void tripMountLost();
     /// Refresh the write-fence deadline (a CLOCK_BOOTTIME-milliseconds instant; release).
-    /// keeper renew calls this on success.
+    /// renewer renew calls this on success.
     void setMountDeadline(uint64_t deadline_boot_ms);
     /// Arm the fence at startup: set (uuid, epoch, deadline), clear `lost`.
     void armMountFence(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms);
     void setArmMountFenceInterpositionHookForTest(std::function<void()> hook)
     {
         mount_runtime.setArmMountFenceInterpositionHookForTest(std::move(hook));
+    }
+    /// Swap the observation-wait hook after open -- see `CasMountRuntime::setWaitSleepForTest`.
+    void setWaitSleepForTest(std::function<void(uint64_t)> fn)
+    {
+        mount_runtime.setWaitSleepForTest(std::move(fn));
     }
     /// The fence clock: CLOCK_BOOTTIME in milliseconds (includes VM-suspend time, unlike
     /// CLOCK_MONOTONIC — see `MountFence`). Consults the injected `config.boot_ms_fn` if set (tests),
@@ -508,7 +547,7 @@ public:
     /// next step boundary, bounding the joins below); (2) trip the local fence (the deliberate
     /// decommission act, allowed on a live disk); (3+4) stop the GC scheduler via `stop_and_join_gc` —
     /// injected because the scheduler is owned above the Pool, a no-op in contexts that run none — and stop
-    /// + join both persistent workers; (5) drain the ref lanes (bounded) and retire the keeper WITHOUT an
+    /// + join both persistent workers; (5) drain the ref lanes (bounded) and retire the renewer WITHOUT an
     /// unearned clean farewell (the lease expires by observation unless the lanes provably drained); then
     /// (6) publish `Vanished(forgotten)` carrying `reason` (the [D5] message with the operator's decommission
     /// timestamp). Idempotent: an already-`Vanished` pool returns immediately (first terminal transition
@@ -555,15 +594,16 @@ public:
     {
         return ref_ledger.confirmExactRef(ns, ref_name, manifest_ref);
     }
-    /// Read the single immutable part manifest named by `id`. Derives the key via CasLayout::manifestKey,
-    /// decodes the body, and fails CLOSED: a committed ref naming a missing body throws FILE_DOESNT_EXIST
-    /// (INV-NO-DANGLE surfaced on the read path); a body whose `ref` ≠ id.ref (refMatchesBody) or whose
+    /// Read the single immutable part manifest named by `id`. Serves the cached decode when the id
+    /// is cached (no request); otherwise derives the key via CasLayout::manifestKey, GETs and decodes
+    /// the body, and fails CLOSED: an absent body throws FILE_DOESNT_EXIST (a committed ref naming a
+    /// missing body is a dangling reference); a body whose `ref` ≠ id.ref (refMatchesBody) or whose
     /// `root_namespace_id` ≠ id.root_namespace (manifestNamespaceMatches) throws CORRUPTED_DATA — the
-    /// ref is addressing the wrong object, or a cross-namespace dangle. Token-gated decode cache below.
+    /// ref is addressing the wrong object, or a cross-namespace dangle. Id-keyed decode cache below.
     PartManifest readManifest(const ManifestId & id);
-    /// Identical to `readManifest` (same mandatory HEAD, same fail-closed validation, same decode
-    /// cache) but returns the SHARED immutable decode the manifest cache holds — no per-call copy.
-    /// The wiring read path uses this variant.
+    /// Identical to `readManifest` (same fail-closed validation, same decode cache) but returns the
+    /// SHARED immutable decode the manifest cache holds — no per-call copy. The wiring read path
+    /// uses this variant.
     std::shared_ptr<const PartManifest> readManifestShared(const ManifestId & id);
     BlobLocation locate(const ManifestEntry & entry) const;       /// Blob placement only
     std::map<String, Resolved> listRefs(const RootNamespace & ns);
@@ -707,23 +747,32 @@ public:
     const PoolConfig & poolConfig() const { return config; }
     const PoolMeta & poolMeta() const { return meta; }
     const Layout & layout() const { return pool_layout; }
-    Backend & backend() { return *pool_backend; }
+
+    /// ---- the three request planes ----
+    /// The mount plane: the durable writes whose right to land IS this node's mount lease. An
+    /// operation admitted here is refused the moment the fence trips, is re-armed under a fresh lease
+    /// incarnation, or runs out of room before the lease expires.
+    CasRequests & mountRequests() { return mount_requests; }
+    /// The farewell plane, on an open fence -- shared with the mount-lease renewer's own claim/adopt,
+    /// not only its release: a self-remount claims with the fence already latched lost, so gating the
+    /// claim on the fence could never reclaim, and refusing the farewell because the mount fence has
+    /// already run down would leave the slot looking live until GC fences it out.
+    CasRequests & farewellRequests() { return farewell_requests; }
+    /// The open-fence plane: GC, the offline tools, this pool's own reads, and the bootstrap-control
+    /// claims. None of them hold a mount lease -- the claims are what ESTABLISHES one, so gating them
+    /// on the fence would make a self-remount, which runs with the fence latched lost, unable ever to
+    /// reclaim.
+    CasRequests & openRequests() { return gc_requests; }
     /// The owning `BackendPtr` itself (not just a reference into it): the decommission slot-retirement
     /// decommission step (`CasDecommission.cpp`) must keep the backend alive across `admin.reset()` -- the graceful
     /// close that stamps the mount's farewell -- to physically delete the control objects afterward. A
     /// bare `Backend &` from `backend()` would dangle the instant the owning `Pool` is destroyed.
     BackendPtr poolBackendPtr() const { return pool_backend; }
 
-    /// Staging PUT surface for `PartWriteTxn`: the methods wrap the ref-ledger's retry controller
-    /// AND the ref-lane fence predicate, so `PartWriteTxn` reaches neither directly (the `friend` is gone).
-    /// Behavior-identical to the previously-inlined controller+fence at CasPartWriteTxn.cpp stageManifest /
-    /// mutable marker writes; thin delegates to `ref_ledger`.
-    CasWriteOutcome stagingPutIfAbsent(std::string_view key, std::string_view bytes, Token * out_token = nullptr);
-    /// Same retry/fence policy as `stagingPutIfAbsent`, for a mutable If-Match overwrite.
-    CasOverwriteResult stagingConditionalOverwrite(std::string_view key, std::string_view bytes, const Token & expected);
-    /// Same retry/fence policy as `stagingPutIfAbsent`, for a mutable marker where an existing
-    /// DIFFERENT value at the key is a normal Conflict outcome, not corruption.
-    CasOverwriteResult stagingPutIfAbsentMutable(std::string_view key, std::string_view bytes);
+    /// Staging write surface for `PartWriteTxn`: thin delegate onto the ref ledger, so a staging write
+    /// is admitted on the same plane and under the same policy as a ref-lane write and `PartWriteTxn`
+    /// reaches it neither directly.
+    WriteResult stagingPutIfAbsent(const String & key, const String & bytes);
 
     /// CAS mixed-algo pools:
     /// the NODE-LOCAL algo this Pool mints NEW content with (`PoolConfig::blob_hash_algo` -- never
@@ -758,10 +807,10 @@ public:
     void setLiveWriterEpochForTest(uint64_t writer_epoch) { mount_runtime.setLiveWriterEpoch(writer_epoch); }
 
     /// Self-remount after a GC fence-out (liveness counterpart of the fence-out safety rule): the
-    /// OLD incarnation may never write again (the keeper never re-mints), but a FRESH incarnation —
+    /// OLD incarnation may never write again (the renewer never re-mints), but a FRESH incarnation —
     /// durable writer_epoch bump + mount reclaim + re-armed write fence — is exactly what a server
     /// restart would create, so a live server may create it in place. Runs the same claim machinery as
-    /// `Pool::open`. Orchestration stays here; the owned mount primitives it drives (keeper swap,
+    /// `Pool::open`. Orchestration stays here; the owned mount primitives it drives (renewer swap,
     /// epoch bump, fence re-arm) live on `mount_runtime`. Returns false (and changes nothing durable
     /// beyond the epoch bump) when the
     /// mount cannot be claimed (foreign owner / a genuinely live twin) — the caller retries. Safe to
@@ -775,7 +824,7 @@ public:
     /// Test seam: how many times `scheduleRemount` has been ENTERED, counted
     /// unconditionally as its very first statement. This increments even under the default
     /// `background_watermark = false` (no worker exists; a
-    /// test never pays for a real self-remount attempt racing this Pool's own still-live keeper, which
+    /// test never pays for a real self-remount attempt racing this Pool's own still-live renewer, which
     /// -- confirmed while building this seam -- reliably takes 30+ seconds per call and is not something
     /// a fast unit test should be driving). Positively pins that a production call site (e.g.
     /// `reportImpossibleInterference`) actually invoked `scheduleRemount`, as opposed to merely observing
@@ -835,7 +884,7 @@ private:
     };
 
     /// The writable-mount startup tail shared by `open` and `openForDecommission`: owner claim →
-    /// writer_epoch → mount claim (+fence-recovery loop) → `MountLeaseKeeper` start → watermark
+    /// writer_epoch → mount claim (+fence-recovery loop) → `MountLeaseRenewer` start → watermark
     /// anchor. `our_uuid` is the identity to mount as -- `config.server_id` for a normal open, the
     /// victim's owner uuid for decommission (impersonation). `policy` changes only what happens when
     /// the mount claim does not resolve `Claimed`/`FencedSelf`: `WaitForExpiry` observes a stale-
@@ -864,10 +913,9 @@ private:
     /// `cancel_inflight_builds` callback.
     void cancelInflightBuildsForNamespace(const RootNamespace & ns);
 
-    /// Delegate to `mount_runtime`: the write fence moved there. pre-attempt fence check: extends
-    /// `mayMutate` with the REMAINING budget check -- an attempt is not even started unless there is
-    /// enough of the mount lease left for one more attempt_timeout plus the lease safety margin. Passed
-    /// as `fence_ok` to every `CasRequestController` call the ref-log writer path makes.
+    /// Delegate to `mount_runtime`: the write fence moved there. Extends `mayMutate` with the REMAINING
+    /// budget check -- work is not started unless there is enough of the mount lease left for TWO full
+    /// attempt envelopes (a write and its settlement read) plus the safety margin.
     bool refAppendFenceOk() const;
 
     /// incidental-detection reaction for a foreign-interference
@@ -1018,12 +1066,23 @@ public:
         ref_ledger.setSnapshotBeforeCkptCasHookForTest(std::move(hook));
     }
 
-    /// Test-only: replace the request controller's inter-attempt backoff sleep (e.g. with a no-op) —
-    /// for tests that drive a persistent conditional-write fault to budget exhaustion through a fully
-    /// wired Pool/disk and must not serve the production capped-exponential sleeps for real (see
-    /// `CasRequestController::setSleepFnForTest`). Call before driving traffic; empty restores the
-    /// real sleep.
+    /// Test-only: replace the inter-attempt backoff sleep (e.g. with a clock-advancing no-op) on all
+    /// three request planes and on ref-table recovery, for tests that drive a persistent write fault to
+    /// exhaustion through a fully wired Pool/disk and must not serve the production sleeps for real.
+    /// Call before driving traffic. On the three request planes an empty function restores each plane's
+    /// own default, the mount plane's interruptible sleep included.
+    ///
+    /// It does NOT bound a reissue the engine refuses to start: the engine's inter-attempt backoff is
+    /// jittered and drawn before the sleep, and admission compares that drawn duration against the
+    /// lease. A test that needs a reissue admitted, or refused, deterministically has to arrange the
+    /// clock, not the sleep.
     void setCasRetrySleepForTest(std::function<void(uint64_t)> sleep_fn);
+
+    /// Test-only: replace the request engine's clock on all three planes. A test driving a PERSISTENT
+    /// transient fault must run the retry window on a clock it advances; the sleep seam alone cannot
+    /// bound it, because a read the engine keeps reissuing is bounded by the policy deadline and the
+    /// deadline is read from this clock.
+    void setCasRequestNowFnForTest(std::function<uint64_t()> now_fn);
 
     /// Test-only: replace only ref-table recovery's token-aware retry delay seam.
     void setRefRecoveryRetrySleepForTest(
@@ -1036,6 +1095,16 @@ public:
     /// Test seam: whether `ns` currently has an active append-lane leader (the baton). Mirrors
     /// `refQueuePendingForTest`; used to assert the baton is not stranded on a pre-tenure fault.
     bool refLeaderActiveForTest(const RootNamespace & ns) { return ref_ledger.refLeaderActiveForTest(ns); }
+
+    /// Test-only: the carved-item mirror's size for `ns` (see `CasRefLedger::refCarvedForTest`).
+    size_t refCarvedForTest(const RootNamespace & ns) { return ref_ledger.refCarvedForTest(ns); }
+
+    /// Test-only: whether the carved item named `ref_name` is already completed (see
+    /// `CasRefLedger::refCarvedItemDoneForTest`).
+    bool refCarvedItemDoneForTest(const RootNamespace & ns, const String & ref_name)
+    {
+        return ref_ledger.refCarvedItemDoneForTest(ns, ref_name);
+    }
 
     /// Test seam: how many concurrent `ensureRefTableRecovered` callers for `ns` are
     /// PARKED right now waiting on the leader's in-flight recovery (see `RefTableRuntime::
@@ -1097,9 +1166,43 @@ private:
         return std::forward<Mutation>(mutation)();
     }
 
+    /// The mount plane's inter-attempt sleep: interruptible, so a parked or stopping renewal is not
+    /// held for a whole capped backoff. Named rather than inlined because the test seam has to be able
+    /// to put it back.
+    std::function<void(uint64_t)> mountPlaneSleepFn()
+    {
+        return [this](uint64_t ms) { mount_runtime.sleepInterruptibly(ms); };
+    }
+
+    /// The open plane's inter-attempt sleep: woken by `beginTeardown`, so a retry backing off on the
+    /// GC plane cannot hold a teardown for a whole capped backoff. A predicate wait, so the detached
+    /// tasks' own completions -- which notify the same variable -- do not cut a sleep short. Named
+    /// for the same reason as `mountPlaneSleepFn`: the test seam has to be able to put it back.
+    std::function<void(uint64_t)> openPlaneSleepFn()
+    {
+        return [this](uint64_t ms)
+        {
+            std::unique_lock lock(detached_work->mutex);
+            detached_work->cv.wait_for(lock, std::chrono::milliseconds(ms),
+                                       [this] { return detached_work->stopping.load(std::memory_order_acquire); });
+        };
+    }
+
     BackendPtr pool_backend;
     PoolConfig config;
     PoolMeta meta;
+
+    /// The pool's write lane for keys several of its writers share, declared before the three planes
+    /// that carry a pointer to it, so it outlives every operation they admit. `mutable` for the same
+    /// reason the planes are.
+    mutable CasHotKeys hot_keys;
+
+    /// The three planes' engines, declared before every component that is handed one and after the
+    /// config they take their clock from. `mutable` because issuing a request is not a change to the
+    /// pool: a `const` observer still has to read the store.
+    mutable CasRequests mount_requests;
+    mutable CasRequests farewell_requests;
+    mutable CasRequests gc_requests;
 
     std::shared_ptr<DetachedRegistryState> detached_work = std::make_shared<DetachedRegistryState>();
 
@@ -1141,7 +1244,7 @@ private:
     /// `mount_runtime.finishTeardown` exactly as before.
     CasRefLedger ref_ledger;
     /// The mount / write-fence / build-watermark / self-remount runtime, extracted
-    /// from Pool. Owns the `MountLeaseKeeper`, the local `MountFence`, the per-server
+    /// from Pool. Owns the `MountLeaseRenewer`, the local `MountFence`, the per-server
     /// build watermark (`process_epoch` + the `builds_mutex`-guarded seq/registry) and its in-flight-build
     /// map, the live-incarnation `live_writer_epoch`, the unclean-epoch high-water-mark, and the
     /// persistent renewal and remount workers (with one driver mutex/condition pair). Injected with backend/layout

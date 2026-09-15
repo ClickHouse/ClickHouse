@@ -974,9 +974,11 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
-        /// handles variable hash computation cost by measuring actual iteration latency.
-        const bool prefetch = params.enable_prefetch
+        /// It also doesn't make sense when building the key holder is expensive: the look-ahead
+        /// below calls `getKeyHolder` a second time for every row, so a method that materializes
+        /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
+        /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+        const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
             && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
@@ -3049,8 +3051,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
-    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
-    /// handles variable hash computation cost by measuring actual iteration latency.
+    /// Enabled for all key types: unlike `executeImplBatch`, the merge path prefetches by the hash
+    /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
+    /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
@@ -3136,8 +3139,9 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
 
-    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
-    /// handles variable hash computation cost by measuring actual iteration latency.
+    /// Enabled for all key types: unlike `executeImplBatch`, the merge path prefetches by the hash
+    /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
+    /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 

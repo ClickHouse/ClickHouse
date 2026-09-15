@@ -23,7 +23,7 @@ TEST(CASFoldSealCodec, RefLifeCoverageRoundTripsLastFoldedRefId)
     seal.generation = 3;
     seal.parent_generation = 2;
     RefCoverage cov;
-    cov.classification = 1;
+    cov.classification = CoverageClass::Unchanged;
     cov.last_folded_ref_id = RefTxnId{4, 11};
     constexpr UInt128 life_id{1};
     seal.ref_lives[life_id].coverage = cov;

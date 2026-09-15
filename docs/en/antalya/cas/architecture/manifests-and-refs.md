@@ -101,7 +101,7 @@ swept for that root.
 flowchart TD
     A["LIST one page of cas/manifests/<br/>freeze candidates with exact GET"] --> B{"build-prefix eligible?<br/>durable watermark fact only"}
     B -->|"epoch less than lease epoch"| ELIG["eligible, old-epoch debris"]
-    B -->|"same epoch, min_active clears build_seq"| ELIG
+    B -->|"same epoch, min_active_build_sequence clears build_seq"| ELIG
     B -->|"no lease, or epoch ahead, or build may be live"| SKIP["skip"]
     ELIG --> C["protection view: committed manifests<br/>plus live precommits<br/>plus manifests with an unfolded minus-one"]
     C -->|"key protected"| SKIP2["skip"]

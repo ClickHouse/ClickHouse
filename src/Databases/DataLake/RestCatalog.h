@@ -15,6 +15,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <unordered_set>
 #include <Poco/JSON/Object.h>
 
 namespace DB
@@ -106,22 +107,7 @@ public:
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
-    String getClientId() const { return client_id; }
-    String getClientSecret() const { return client_secret; }
-
     void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override { vended_credentials_cache_ttl.store(ttl, std::memory_order_relaxed); }
-
-protected:
-    RestCatalog(
-        const std::string & warehouse_,
-        const std::string & base_url_,
-        const std::string & auth_scope_,
-        const std::string & oauth_server_uri_,
-        bool oauth_server_use_request_body_,
-        const std::string & namespaces_,
-        DB::ContextPtr context_);
-
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
     struct Config
     {
@@ -135,19 +121,55 @@ protected:
         std::string toString() const;
     };
 
+    /// Credentials together with the catalog configuration they resolve to
+    /// (the /v1/config response depends on the credentials), published as one
+    /// atomic snapshot so readers never see a torn combination of them.
+    struct CatalogState
+    {
+        std::optional<DB::HTTPHeaderEntry> auth_header;
+        std::string client_id;
+        std::string client_secret;
+        std::string tenant_id;
+        std::string bearer_token;
+        Config config;
+    };
+    using CatalogStateVersion = MultiVersion<CatalogState>::Version;
+
+    CatalogStateVersion getStateSnapshot() const { return state.get(); }
+
+    ICatalog::PreparedSettingsChangesPtr prepareSettingsChanges(const DB::SettingsChanges & changes) override;
+
+    void commitSettingsChanges(ICatalog::PreparedSettingsChangesPtr prepared) override;
+
+    /// Check that we actually support these settings alter
+    static void validateSettingsChangesImpl(
+        const DB::SettingsChanges & changes,
+        const std::unordered_set<std::string> & alterable_settings,
+        const std::string & auth_mode_description);
+
+    /// `credential_mode` means the catalog authenticates with `catalog_credential`,
+    /// `header_mode` with `auth_header`. The mode is fixed when the database is created.
+    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode);
+
+protected:
+    RestCatalog(
+        const std::string & warehouse_,
+        const std::string & base_url_,
+        const std::string & auth_scope_,
+        const std::string & oauth_server_uri_,
+        bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
+        DB::ContextPtr context_);
+
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
-    /// Catalog configuration settings from /v1/config endpoint.
-    Config config;
-
-    /// Auth headers of format: "Authorization": "<auth_scheme> <token>"
-    std::optional<DB::HTTPHeaderEntry> auth_header;
+    MultiVersion<CatalogState> state{std::make_unique<const CatalogState>()};
 
     /// Parameters for OAuth (common for REST catalog).
     bool update_token_if_expired = false;
-    std::string client_id;
-    std::string client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
@@ -187,10 +209,14 @@ protected:
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
+    /// `catalog_state` is the snapshot the caller derived the endpoint from, so that one
+    /// request never mixes the endpoint of one state version with the auth of another.
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+        const CatalogState & catalog_state,
         const std::string & endpoint,
         const Poco::URI::QueryParameters & params = {},
-        const DB::HTTPHeaderEntries & headers = {}) const;
+        const DB::HTTPHeaderEntries & headers = {},
+        const std::optional<DB::HTTPHeaderEntries> & auth_headers = std::nullopt) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
@@ -218,19 +244,26 @@ protected:
         TableMetadata & result,
         bool allow_credentials_cache = true) const;
 
-    Config loadConfig();
+    /// Load catalog config (special http handler) utilizing information from catalog_state and auth_headers.
+    Config loadConfig(const CatalogState & catalog_state, const std::optional<DB::HTTPHeaderEntries> & auth_headers = std::nullopt);
+    /// `method`, `url`, `extra_headers` and `body` describe the request being authenticated. They are
+    /// used by catalogs that sign the request itself (AWS SigV4 in `S3TablesCatalog`); catalogs that
+    /// authenticate with a token or a static header ignore them.
     virtual DB::HTTPHeaderEntries getAuthHeaders(
+        const CatalogState & catalog_state,
         bool update_token,
         const String & method = {},
         const Poco::URI & url = {},
         const DB::HTTPHeaderEntries & extra_headers = {},
-        const String & body = {}) const;
+        const String & body = {},
+        bool * used_cached_oauth_token = nullptr) const;
 
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
 
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     void sendRequest(
+        const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method = Poco::Net::HTTPRequest::HTTP_POST,
@@ -246,7 +279,21 @@ protected:
         const std::string & table_name,
         const VendedStorageCredentials & parsed) const;
 
-    AccessToken retrieveAccessToken() const;
+    AccessToken retrieveAccessToken(const std::string & client_id, const std::string & client_secret) const;
+
+    struct PreparedAuthChanges;
+
+    /// Hook for `prepareSettingsChanges`: validate `changes` and apply them to `new_state`,
+    /// building the new auth artifacts, without publishing anything. When the OAuth
+    /// credentials change, the eagerly fetched token goes into `new_access_token` and
+    /// `new_auth_headers`, so that wrong credentials fail the ALTER right here and the
+    /// config reload authenticates with the new token instead of the cached one.
+    virtual void applySettingsChangesToState(
+        const DB::SettingsChanges & changes,
+        const CatalogState & old_state,
+        CatalogState & new_state,
+        std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
+        std::unique_ptr<AccessToken> & new_access_token);
 };
 
 class OneLakeCatalog : public RestCatalog
@@ -270,15 +317,27 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
 
-    String getTenantId() const { return tenant_id; }
+    DB::HTTPHeaderEntries getAuthHeaders(
+        const CatalogState & catalog_state,
+        bool update_token,
+        const String & method = {},
+        const Poco::URI & url = {},
+        const DB::HTTPHeaderEntries & extra_headers = {},
+        const String & body = {},
+        bool * used_cached_oauth_token = nullptr) const override;
 
-    String getBearerToken() const;
+    /// `bearer_mode` means the catalog authenticates with `onelake_bearer_token`,
+    /// otherwise with the `onelake_client_id` + `onelake_client_secret` pair.
+    /// The mode is fixed when the database is created.
+    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool bearer_mode);
 
 protected:
-    /// Parameters for OneLake OAuth.
-    const std::string tenant_id;
-    /// Set from `onelake_bearer_token`.
-    String bearer_token;
+    void applySettingsChangesToState(
+        const DB::SettingsChanges & changes,
+        const CatalogState & old_state,
+        CatalogState & new_state,
+        std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
+        std::unique_ptr<AccessToken> & new_access_token) override;
 };
 
 class BigLakeCatalog : public RestCatalog
@@ -303,11 +362,13 @@ public:
     }
 
     DB::HTTPHeaderEntries getAuthHeaders(
+        const CatalogState & catalog_state,
         bool update_token,
         const String & method = {},
         const Poco::URI & url = {},
         const DB::HTTPHeaderEntries & extra_headers = {},
-        const String & body = {}) const override;
+        const String & body = {},
+        bool * used_cached_oauth_token = nullptr) const override;
 
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }

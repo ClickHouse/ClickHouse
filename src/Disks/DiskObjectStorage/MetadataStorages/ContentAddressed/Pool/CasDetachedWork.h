@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -19,7 +20,11 @@ struct DetachedRegistryState
     std::mutex mutex;
     std::condition_variable cv;
     uint64_t in_flight = 0;
-    bool stopping = false;
+    /// Written under `mutex`, so the dispatch-side check-and-count and the drain's `in_flight == 0`
+    /// wait stay serialized against the stop; read WITHOUT it by the open request plane's fence before
+    /// every attempt and every sleep of every request -- a pool-wide mutex on that path is not
+    /// acceptable, and the readers need only the flag's current truth.
+    std::atomic<bool> stopping{false};
 };
 
 /// Read-only view of the registry, handed to every task. The ONLY way a task asks whether teardown has

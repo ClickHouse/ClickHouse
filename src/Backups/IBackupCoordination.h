@@ -109,7 +109,10 @@ public:
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
     virtual void addFileInfos(BackupFileInfos && file_infos) = 0;
-    virtual BackupFileInfos getFileInfos() const = 0;
+    /// Returns the file infos of the current host by reference to avoid copying them (a backup can contain millions).
+    /// The reference is valid until the coordination is destroyed. It must only be called after file collection has
+    /// finished (i.e. no more addFileInfos()), because the referenced storage is immutable only after preparation.
+    virtual const BackupFileInfos & getFileInfos() const = 0;
 
     /// Iterates the file infos of all hosts in place, without copying them into a vector
     /// (a backup can contain millions).

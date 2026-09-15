@@ -37,6 +37,12 @@ from helpers.iceberg_export_stats import (
 )
 
 
+EXTRA_SOURCE_COLUMN_MODES = [
+    pytest.param("POSITION", id="by-position"),
+    pytest.param("NAME", id="by-name"),
+]
+
+
 # ---------------------------------------------------------------------------
 # Cluster fixture
 # ---------------------------------------------------------------------------
@@ -738,13 +744,8 @@ def test_export_part_column_count_mismatch_source_fewer_is_rejected(cluster):
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
-def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(cluster):
-    """
-    Source has 3 columns (id, year, extra), destination has 2 (id, year).
-    With `export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'`,
-    the export must succeed: the trailing `extra` source column is dropped
-    (matched positionally) and only `id`/`year` land in the destination.
-    """
+@pytest.mark.parametrize("schema_match_mode", EXTRA_SOURCE_COLUMN_MODES)
+def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(cluster, schema_match_mode):
     node = cluster.instances["node1"]
     sfx = unique_suffix()
     mt = f"mt_ignore_extra_{sfx}"
@@ -758,7 +759,10 @@ def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(clust
 
     export_part(
         node=node, table=mt, part=part_2020, dest=iceberg,
-        extra_settings="export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'",
+        extra_settings=(
+            f"export_merge_tree_part_schema_match_mode = '{schema_match_mode}', "
+            f"export_merge_tree_part_ignore_extra_source_columns = 1"
+        ),
     )
     wait_for_export_part(node=node, table=mt, part=part_2020)
 
@@ -774,13 +778,16 @@ def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(clust
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
-def test_export_part_column_count_mismatch_source_fewer_still_rejected_with_ignore_extra_setting(cluster):
-    """
-    `ignore_extra_source_columns_by_position` only relaxes the source-has-more-columns
-    direction. Source has 2 columns (id, year), destination has 3 (id, year, extra):
-    the destination cannot be filled from the source, so this must still be
-    rejected synchronously even with the relaxed setting.
-    """
+@pytest.mark.parametrize(
+    "schema_match_mode,expected_error",
+    [
+        pytest.param("POSITION", "NUMBER_OF_COLUMNS_DOESNT_MATCH", id="by-position"),
+        pytest.param("NAME", "NUMBER_OF_COLUMNS_DOESNT_MATCH", id="by-name"),
+    ],
+)
+def test_export_part_column_count_mismatch_source_fewer_still_rejected_with_ignore_extra_setting(
+    cluster, schema_match_mode, expected_error
+):
     node = cluster.instances["node1"]
     sfx = unique_suffix()
     mt = f"mt_ignore_extra_fewer_{sfx}"
@@ -796,12 +803,10 @@ def test_export_part_column_count_mismatch_source_fewer_still_rejected_with_igno
         f"ALTER TABLE {mt} EXPORT PART '{part_2020}' TO TABLE {iceberg} "
         f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
         f"allow_experimental_insert_into_iceberg = 1, "
-        f"export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'"
+        f"export_merge_tree_part_schema_match_mode = '{schema_match_mode}', "
+        f"export_merge_tree_part_ignore_extra_source_columns = 1"
     )
-    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
-        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source<dest column count "
-        f"even with ignore_extra_source_columns_by_position, got: {error!r}"
-    )
+    assert expected_error in error, f"Expected {expected_error} with {schema_match_mode}, got: {error!r}"
 
     node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
@@ -853,7 +858,7 @@ def test_export_part_ignore_extra_column_breaks_hybrid_over_source_and_destinati
 
     export_part(
         node=node, table=mt, part=part, dest=iceberg,
-        extra_settings="export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'",
+        extra_settings="export_merge_tree_part_schema_match_mode = 'POSITION', export_merge_tree_part_ignore_extra_source_columns = 1",
     )
     wait_for_export_part(node=node, table=mt, part=part)
 
@@ -931,7 +936,8 @@ def test_export_part_with_alias_column(cluster):
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
-def test_export_part_ignore_extra_setting_drops_trailing_alias_column(cluster):
+@pytest.mark.parametrize("schema_match_mode", EXTRA_SOURCE_COLUMN_MODES)
+def test_export_part_ignore_extra_setting_drops_trailing_alias_column(cluster, schema_match_mode):
     node = cluster.instances["node1"]
     sfx = unique_suffix()
     mt = f"mt_ignore_extra_alias_{sfx}"
@@ -945,7 +951,10 @@ def test_export_part_ignore_extra_setting_drops_trailing_alias_column(cluster):
 
     export_part(
         node=node, table=mt, part=part_2020, dest=iceberg,
-        extra_settings="export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'",
+        extra_settings=(
+            f"export_merge_tree_part_schema_match_mode = '{schema_match_mode}', "
+            f"export_merge_tree_part_ignore_extra_source_columns = 1"
+        ),
     )
     wait_for_export_part(node=node, table=mt, part=part_2020)
 
@@ -958,7 +967,8 @@ def test_export_part_ignore_extra_setting_drops_trailing_alias_column(cluster):
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
-def test_export_part_ignore_extra_setting_kept_alias_depends_on_dropped_column(cluster):
+@pytest.mark.parametrize("schema_match_mode", EXTRA_SOURCE_COLUMN_MODES)
+def test_export_part_ignore_extra_setting_kept_alias_depends_on_dropped_column(cluster, schema_match_mode):
     node = cluster.instances["node1"]
     sfx = unique_suffix()
     mt = f"mt_ignore_extra_dep_{sfx}"
@@ -976,7 +986,10 @@ def test_export_part_ignore_extra_setting_kept_alias_depends_on_dropped_column(c
 
     export_part(
         node=node, table=mt, part=part_2020, dest=iceberg,
-        extra_settings="export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'",
+        extra_settings=(
+            f"export_merge_tree_part_schema_match_mode = '{schema_match_mode}', "
+            f"export_merge_tree_part_ignore_extra_source_columns = 1"
+        ),
     )
     wait_for_export_part(node=node, table=mt, part=part_2020)
 
@@ -1018,6 +1031,152 @@ def test_export_part_with_renamed_destination_column(cluster):
     assert result == "1\t2020\n2\t2020\n3\t2020", (
         f"Unexpected data under renamed column:\n{result}"
     )
+
+    assert_part_log(node, mt, part_2020)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_reordered_subset_requires_matching_by_name(cluster):
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_match_by_name_{sfx}"
+    iceberg = f"iceberg_match_by_name_{sfx}"
+
+    make_mt(
+        node,
+        mt,
+        "id Int32, year Int32, omitted_before String, payload String, omitted_after UInt8",
+        "year",
+    )
+    make_iceberg_s3(node, iceberg, "payload String, year Int64, id Int64", "year")
+
+    node.query(
+        f"INSERT INTO {mt} VALUES "
+        "(1, 2020, 'left', 'first', 7), "
+        "(2, 2020, 'right', 'second', 8)"
+    )
+    part_2020 = get_part(node, mt, "2020")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt} EXPORT PART '{part_2020}' TO TABLE {iceberg} "
+        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
+        f"allow_experimental_insert_into_iceberg = 1, "
+        f"export_merge_tree_part_schema_match_mode = 'POSITION', "
+        f"export_merge_tree_part_ignore_extra_source_columns = 1"
+    )
+    assert "INCOMPATIBLE_COLUMNS" in error, f"Expected positional matching to fail, got: {error!r}"
+    assert node.query(f"SELECT count() FROM {iceberg}").strip() == "0"
+
+    export_part(
+        node,
+        mt,
+        part_2020,
+        iceberg,
+        extra_settings="export_merge_tree_part_schema_match_mode = 'NAME', export_merge_tree_part_ignore_extra_source_columns = 1",
+    )
+    wait_for_export_part(node, mt, part_2020)
+
+    result = node.query(
+        f"SELECT payload, id, toTypeName(id), year, toTypeName(year) "
+        f"FROM {iceberg} ORDER BY id"
+    ).strip()
+    assert result == (
+        "first\t1\tInt64\t2020\tInt64\n"
+        "second\t2\tInt64\t2020\tInt64"
+    ), f"Unexpected data after matching columns by name:\n{result}"
+
+    assert_part_log(node, mt, part_2020)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_match_by_name_requires_every_destination_column(cluster):
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_match_by_name_missing_{sfx}"
+    iceberg = f"iceberg_match_by_name_missing_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32, extra String", "year")
+    make_iceberg_s3(node, iceberg, "renamed_id Int32, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020, 'first'), (2, 2020, 'second')")
+    part_2020 = get_part(node, mt, "2020")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt} EXPORT PART '{part_2020}' TO TABLE {iceberg} "
+        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
+        f"allow_experimental_insert_into_iceberg = 1, "
+        f"export_merge_tree_part_schema_match_mode = 'NAME', "
+        f"export_merge_tree_part_ignore_extra_source_columns = 1"
+    )
+    assert "THERE_IS_NO_COLUMN" in error and "renamed_id" in error, (
+        f"Expected name matching to reject missing column `renamed_id`, got: {error!r}"
+    )
+
+    assert node.query(f"SELECT count() FROM {iceberg}").strip() == "0"
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_match_by_name_rejects_renamed_column_without_extra_source_columns(cluster):
+    """`match_by_name` has no positional fallback: even when the source and destination have the
+    exact same number of columns (no extra source column to justify falling back to position),
+    a destination column absent from the source by name must still be rejected."""
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_match_by_name_fallback_{sfx}"
+    iceberg = f"iceberg_match_by_name_fallback_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32", "year")
+    make_iceberg_s3(node, iceberg, "renamed_id Int32, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020), (2, 2020)")
+    part_2020 = get_part(node, mt, "2020")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt} EXPORT PART '{part_2020}' TO TABLE {iceberg} "
+        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
+        f"allow_experimental_insert_into_iceberg = 1, "
+        f"export_merge_tree_part_schema_match_mode = 'NAME'"
+    )
+    assert "THERE_IS_NO_COLUMN" in error and "renamed_id" in error, (
+        f"Expected name matching to reject missing column `renamed_id` even without an extra "
+        f"source column (no positional fallback), got: {error!r}"
+    )
+    assert node.query(f"SELECT count() FROM {iceberg}").strip() == "0"
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_match_by_name_reorders_columns_without_extra_source_columns(cluster):
+    """The scenario `export_merge_tree_part_schema_match_mode = 'NAME'` was introduced for:
+    the source and destination have the exact same number of columns, declared in a different order.
+    Previously this fell back to positional matching (a no-op for by-name mode); now it is matched
+    by name like any other case."""
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_match_by_name_equal_count_{sfx}"
+    iceberg = f"iceberg_match_by_name_equal_count_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32, payload String", "year")
+    make_iceberg_s3(node, iceberg, "payload String, id Int32, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+    part_2020 = get_part(node, mt, "2020")
+
+    export_part(
+        node, mt, part_2020, iceberg,
+        extra_settings="export_merge_tree_part_schema_match_mode = 'NAME'",
+    )
+    wait_for_export_part(node, mt, part_2020)
+
+    result = node.query(f"SELECT id, year, payload FROM {iceberg} ORDER BY id").strip()
+    assert result == "1\t2020\tfoo\n2\t2020\tbar", f"Unexpected data:\n{result}"
 
     assert_part_log(node, mt, part_2020)
 
@@ -1128,6 +1287,79 @@ def test_export_part_runtime_cast_failure_propagates_async(cluster):
 
     node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_match_by_name_revalidates_extra_source_columns_in_background_task(cluster):
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_match_by_name_schema_drift_{sfx}"
+    iceberg = f"iceberg_match_by_name_schema_drift_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32, payload String", "year")
+    make_iceberg_s3(node, iceberg, "id Int32, year Int32, payload String", "year")
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+    part = get_part(node, mt, "2020")
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT export_part_pause_before_schema_validation")
+        export_part(
+            node,
+            mt,
+            part,
+            iceberg,
+            "export_merge_tree_part_schema_match_mode = 'NAME'",
+        )
+        node.query("SYSTEM WAIT FAILPOINT export_part_pause_before_schema_validation PAUSE")
+
+        node.query(
+            f"ALTER TABLE {iceberg} DROP COLUMN payload",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+        node.query("SYSTEM NOTIFY FAILPOINT export_part_pause_before_schema_validation")
+
+        exception = wait_for_failed_export_part(node, mt, part)
+        assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in exception, (
+            f"Expected the background schema check to reject the extra source column, got: {exception}"
+        )
+        assert node.query(f"SELECT count() FROM {iceberg}").strip() == "0"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT export_part_pause_before_schema_validation")
+        node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_match_by_name_uses_source_snapshot_when_source_column_is_added(cluster):
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_match_by_name_source_schema_drift_{sfx}"
+    iceberg = f"iceberg_match_by_name_source_schema_drift_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32, payload String", "year")
+    make_iceberg_s3(node, iceberg, "id Int32, year Int32, payload String", "year")
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+    part = get_part(node, mt, "2020")
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT export_part_pause_before_schema_validation")
+        export_part(
+            node,
+            mt,
+            part,
+            iceberg,
+            "export_merge_tree_part_schema_match_mode = 'NAME'",
+        )
+        node.query("SYSTEM WAIT FAILPOINT export_part_pause_before_schema_validation PAUSE")
+
+        node.query(f"ALTER TABLE {mt} ADD COLUMN extra String DEFAULT 'new'")
+        node.query("SYSTEM NOTIFY FAILPOINT export_part_pause_before_schema_validation")
+
+        wait_for_export_part(node, mt, part)
+        result = node.query(f"SELECT id, year, payload FROM {iceberg} ORDER BY id").strip()
+        assert result == "1\t2020\tfoo\n2\t2020\tbar", f"Unexpected exported data:\n{result}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT export_part_pause_before_schema_validation")
+        node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
 def test_export_part_tuple_subcolumn_partition_key_iceberg_rejected(cluster):

@@ -2,8 +2,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
+#include <Poco/Exception.h>
 #include <algorithm>
-#include <stdexcept>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -20,105 +22,176 @@ namespace DB::Cas
 namespace
 {
 
-/// The windowed slice of `data` for `range`, with the same clamping `get` documents: an offset at or
-/// past EOF yields an empty result; an open-ended length runs to EOF. Shared by `get` and `getStream`
-/// so the two stay in lockstep.
-String sliceWindow(const String & data, Range range)
+/// A CALLER bug, refused before it ever reaches the store: an empty, wildcard or list value would
+/// turn a conditional mutation into an unconditional one. Stricter than
+/// `isIncarnationValue(Dialect::Emulated, ...)` (non-empty only): this backend is a test double
+/// reused across the whole CAS gtest suite, so it also refuses `*` and a comma even though no value
+/// it currently mints can contain either.
+bool isValidEmulatedTokenValue(const String & value)
 {
-    const size_t offset = static_cast<size_t>(range.offset);
-    if (offset >= data.size())
-        return {};
-    if (range.length.has_value())
-        return data.substr(offset, static_cast<size_t>(*range.length));
-    return data.substr(offset);
+    return !value.empty() && value != "*" && value.find(',') == String::npos;
+}
+
+/// Every conditional mutation refuses a malformed expected value unconditionally, matching the
+/// production backend's own guard: this is the test backend for that contract, and must not accept
+/// anything production refuses. A caller holding only a HEAD-derived value for a key it has not
+/// confirmed exists must gate on presence itself before calling, exactly as every production call
+/// site already does.
+void checkExpectedValue(const String & key, const String & value)
+{
+    if (!isValidEmulatedTokenValue(value))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "InMemoryBackend: refusing a conditional mutation of '{}' with a malformed token '{}': "
+            "an empty, wildcard or list token would turn the precondition into an unconditional write",
+            key, value);
 }
 
 }
 
-Token InMemoryBackend::mintToken()
+String InMemoryBackend::mintValue()
 {
-    Token t;
-    t.value = std::to_string(++token_seq_);
-    t.type = TokenType::Emulated;
-    return t;
+    return std::to_string(++token_seq_);
 }
 
-std::optional<GetResult> InMemoryBackend::get(const String & key, Range range)
+std::exception_ptr InMemoryBackend::takeArmedFailure(ArmedFailures & armed, const String & key)
 {
+    std::lock_guard lock(mutex_);
+    const auto it = armed.find(key);
+    if (it == armed.end() || it->second.empty())
+        return nullptr;
+    std::exception_ptr error = it->second.front();
+    it->second.erase(it->second.begin());
+    return error;
+}
+
+std::function<void()> InMemoryBackend::hookFor(const Hooks & hooks, const String & key) const
+{
+    std::lock_guard lock(mutex_);
+    const auto it = hooks.find(key);
+    return it == hooks.end() ? std::function<void()>{} : it->second;
+}
+
+std::optional<Backend::Raw> InMemoryBackend::read(const String & key, TransportAccess &)
+{
+    if (auto armed = takeArmedFailure(read_failures_, key))
+        std::rethrow_exception(armed);
+
     std::lock_guard lock(mutex_);
     auto it = store_.find(key);
     if (it == store_.end())
         return std::nullopt;
 
-    GetResult gr;
-    gr.bytes = sliceWindow(it->second.bytes, range);
-    gr.token = it->second.token;
-    gr.attributes = it->second.meta;
-    return gr;
+    return Raw{it->second.bytes, it->second.value};
 }
 
-std::optional<GetStreamResult> InMemoryBackend::getStream(const String & key, Range range)
+std::unique_ptr<ReadBuffer> InMemoryBackend::stream(const String & key, TransportAccess &)
 {
+    std::lock_guard lock(mutex_);
+    auto it = store_.find(key);
+    if (it == store_.end())
+        return nullptr;
+
+    /// Copies the bytes into an owning buffer — the in-memory backend has no separate storage to
+    /// stream from, so the "stream" reads from a private copy taken while the lock is held.
+    return std::make_unique<ReadBufferFromOwnString>(it->second.bytes);
+}
+
+std::optional<Backend::RawMeta> InMemoryBackend::head(const String & key, TransportAccess &)
+{
+    if (auto armed = takeArmedFailure(head_failures_, key))
+        std::rethrow_exception(armed);
+
     std::lock_guard lock(mutex_);
     auto it = store_.find(key);
     if (it == store_.end())
         return std::nullopt;
 
-    /// Copy the windowed bytes into an owning buffer — the in-memory backend has no separate storage
-    /// to stream from, so the "stream" reads from a private copy of exactly the requested window.
-    GetStreamResult sr;
-    sr.stream = std::make_unique<ReadBufferFromOwnString>(sliceWindow(it->second.bytes, range));
-    sr.token = it->second.token;
-    return sr;
+    return RawMeta{static_cast<uint64_t>(it->second.bytes.size()), it->second.value};
 }
 
-HeadResult InMemoryBackend::head(const String & key)
+std::expected<String, Backend::RawConflict> InMemoryBackend::write(
+    const String & key, const String & bytes, const std::optional<String> & expected_value, TransportAccess &)
 {
-    std::lock_guard lock(mutex_);
-    auto it = store_.find(key);
-    if (it == store_.end())
-        return HeadResult{};
-
-    HeadResult hr;
-    hr.exists = true;
-    hr.size = static_cast<uint64_t>(it->second.bytes.size());
-    hr.token = it->second.token;
-    hr.attributes = it->second.meta;
-    return hr;
+    return applyWrite(key, bytes, expected_value);
 }
 
-PutResult InMemoryBackend::putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta)
+std::expected<String, Backend::RawConflict> InMemoryBackend::applyWrite(
+    const String & key, const String & bytes, const std::optional<String> & expected_value)
+{
+    if (expected_value)
+        checkExpectedValue(key, *expected_value);
+
+    if (auto armed = takeArmedFailure(write_failures_, key))
+        std::rethrow_exception(armed);
+
+    /// Both hooks run with NO lock held: a hook exists to read and write this backend from inside a
+    /// write, and `mutex_` is not recursive.
+    if (auto hook = hookFor(before_write_hooks_, key))
+        hook();
+
+    auto result = writeUnderLock(key, bytes, expected_value);
+    if (!result.has_value())
+        return result;
+
+    if (auto hook = hookFor(write_committed_hooks_, key))
+        hook();
+
+    /// Last, so the object is durable and every observer has run before the response goes missing.
+    if (takeAmbiguousLandedWrite(key))
+        throw Poco::TimeoutException("InMemoryBackend: the write of '" + key + "' landed and its response was lost");
+
+    return result;
+}
+
+std::expected<String, Backend::RawConflict> InMemoryBackend::writeUnderLock(
+    const String & key, const String & bytes, const std::optional<String> & expected_value)
 {
     std::lock_guard lock(mutex_);
 
-    // One-shot injected ambiguous outcome: throw WITHOUT touching the store, modeling a request whose
-    // own attempt outcome never reached the caller (see the header doc for the classification this
-    // must produce). std::runtime_error, not DB::Exception, is deliberate: it dodges BOTH
-    // classification paths in BOTH build configurations -- dynamic_cast<const Exception *> fails (so
-    // isDeterministicLocalFailure is never consulted), and classifyConditionalWriteResult falls through
-    // to its Unresolved default because it isn't an S3Exception. A DB::Exception would have been
-    // fragile: picking a code outside isDeterministicLocalFailure's set is a landmine for the next
-    // person who extends that set.
-    auto ambiguous_it = ambiguous_put_keys_.find(key);
-    if (ambiguous_it != ambiguous_put_keys_.end())
+    // One-shot injected ambiguous outcome: throw WITHOUT touching the store, modeling a request
+    // whose own attempt outcome never reached the caller. Poco::TimeoutException, not
+    // DB::Exception, is deliberate: a client-side timeout is the real shape of this failure, and
+    // its class is what every caller classifies by -- ambiguous, in both build configurations.
+    auto ambiguous_it = ambiguous_write_keys_.find(key);
+    if (ambiguous_it != ambiguous_write_keys_.end())
     {
-        ambiguous_put_keys_.erase(ambiguous_it);
-        throw std::runtime_error("InMemoryBackend: injected ambiguous putIfAbsent outcome for '" + key + "'");
+        ambiguous_write_keys_.erase(ambiguous_it);
+        throw Poco::TimeoutException("InMemoryBackend: injected ambiguous write outcome for '" + key + "'");
     }
 
-    if (store_.contains(key))
-        return {PutOutcome::PreconditionFailed, {}};
+    auto refuse_it = refuse_next_write_keys_.find(key);
+    if (refuse_it != refuse_next_write_keys_.end())
+    {
+        refuse_next_write_keys_.erase(refuse_it);
+        return std::unexpected(RawConflict{});
+    }
 
-    Token t = mintToken();
-    Object obj;
-    obj.bytes = bytes;
-    obj.token = t;
-    obj.meta = meta;
-    store_[key] = std::move(obj);
-    return {PutOutcome::Done, t};
+    if (!expected_value)
+    {
+        if (store_.contains(key))
+            return std::unexpected(RawConflict{});
+
+        String v = mintValue();
+        Object obj;
+        obj.bytes = bytes;
+        obj.value = v;
+        store_[key] = std::move(obj);
+        return v;
+    }
+
+    auto it = store_.find(key);
+    if (it == store_.end())
+        return std::unexpected(RawConflict{});
+    if (enforce_tokens_ && it->second.value != *expected_value)
+        return std::unexpected(RawConflict{});
+
+    String v = mintValue();
+    it->second.bytes = bytes;
+    it->second.value = v;
+    return v;
 }
 
-void InMemoryBackend::publishBlob(const BlobPublishRequest & request)
+void InMemoryBackend::publish(const BlobPublishRequest & request, TransportAccess &)
 {
     if (const auto * streaming = std::get_if<StreamingBlobPublication>(&request.publication))
     {
@@ -126,7 +199,7 @@ void InMemoryBackend::publishBlob(const BlobPublishRequest & request)
         if (!payload)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
-                "InMemoryBackend::publishBlob: payload source for {} returned no reader",
+                "InMemoryBackend::publish: payload source for {} returned no reader",
                 request.destination_key);
 
         /// Drain before taking the store lock: the source may itself read another object from this
@@ -145,7 +218,7 @@ void InMemoryBackend::publishBlob(const BlobPublishRequest & request)
         if (!copy_result.exact(streaming->payload_size))
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
-                "InMemoryBackend::publishBlob: source yielded {}{} payload bytes for {}, declared {} -- nothing was published",
+                "InMemoryBackend::publish: source yielded {}{} payload bytes for {}, declared {} -- nothing was published",
                 copy_result.has_excess ? "more than " : "",
                 copy_result.copied,
                 request.destination_key,
@@ -154,7 +227,7 @@ void InMemoryBackend::publishBlob(const BlobPublishRequest & request)
         std::lock_guard lock(mutex_);
         Object object;
         object.bytes = std::move(body);
-        object.token = mintToken();
+        object.value = mintValue();
         store_[request.destination_key] = std::move(object);
         return;
     }
@@ -165,141 +238,119 @@ void InMemoryBackend::publishBlob(const BlobPublishRequest & request)
     if (source == store_.end())
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST,
-            "InMemoryBackend::publishBlob: staging object {} is absent",
+            "InMemoryBackend::publish: staging object {} is absent",
             staged.object_key);
 
     Object object;
     object.bytes = source->second.bytes;
-    object.token = mintToken();
+    object.value = mintValue();
     store_[request.destination_key] = std::move(object);
 }
 
-PutResult InMemoryBackend::putOverwrite(const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta)
-{
-    std::lock_guard lock(mutex_);
-    auto it = store_.find(key);
-    if (it == store_.end())
-        return {PutOutcome::PreconditionFailed, {}};
-
-    if (enforce_tokens_ && it->second.token != expected)
-        return {PutOutcome::PreconditionFailed, {}};
-
-    Token t = mintToken();
-    it->second.bytes = bytes;
-    it->second.token = t;
-    it->second.meta = meta;
-    return {PutOutcome::Done, t};
-}
-
-CasResult InMemoryBackend::casPut(const String & key, const String & bytes, const std::optional<Token> & expected, const ObjectMeta & meta)
-{
-    std::lock_guard lock(mutex_);
-
-    // One-shot injected conflict
-    auto fail_it = fail_next_cas_.find(key);
-    if (fail_it != fail_next_cas_.end())
-    {
-        fail_next_cas_.erase(fail_it);
-        return {CasOutcome::Conflict, {}};
-    }
-
-    auto it = store_.find(key);
-    bool exists = (it != store_.end());
-
-    if (!expected.has_value())
-    {
-        // create-if-absent CAS
-        if (exists)
-            return {CasOutcome::Conflict, {}};
-        Token t = mintToken();
-        Object obj;
-        obj.bytes = bytes;
-        obj.token = t;
-        obj.meta = meta;
-        store_[key] = std::move(obj);
-        return {CasOutcome::Committed, t};
-    }
-    else
-    {
-        // swap-if-current CAS
-        if (!exists)
-            return {CasOutcome::Conflict, {}};
-        if (enforce_tokens_ && it->second.token != *expected)
-            return {CasOutcome::Conflict, {}};
-        Token t = mintToken();
-        it->second.bytes = bytes;
-        it->second.token = t;
-        it->second.meta = meta;
-        return {CasOutcome::Committed, t};
-    }
-}
-
-DeleteOutcome InMemoryBackend::applyDelete(const String & key, const Token & token)
+Backend::RawRemoval InMemoryBackend::applyDelete(const String & key, const String & expected_value)
 {
     // Caller holds the mutex.
     auto it = store_.find(key);
     if (it == store_.end())
-    {
-        DeleteOutcome d;
-        d.kind = DeleteOutcome::Kind::NotFound;
-        return d;
-    }
+        return RawRemoval::Gone;
 
-    if (enforce_tokens_ && it->second.token != token)
-    {
-        DeleteOutcome d;
-        d.kind = DeleteOutcome::Kind::TokenMismatch;
-        return d;
-    }
+    if (enforce_tokens_ && it->second.value != expected_value)
+        return RawRemoval::Mismatch;
 
     store_.erase(it);
-    DeleteOutcome d;
-    d.kind = DeleteOutcome::Kind::Deleted;
-    d.created_delete_marker = simulate_delete_markers_;
-    return d;
+    return simulate_delete_markers_ ? RawRemoval::DeleteMarker : RawRemoval::Removed;
 }
 
-DeleteOutcome InMemoryBackend::deleteExact(const String & key, const Token & token)
+Backend::RawRemoval InMemoryBackend::remove(const String & key, const String & expected_value, TransportAccess &)
 {
+    /// See `checkExpectedValue`: a malformed value is refused as a caller bug, unconditionally --
+    /// covering both the immediate delete below and the hold_deletes_ enqueue path, so a queued
+    /// PendingDelete can never carry a malformed value either.
+    checkExpectedValue(key, expected_value);
+
     std::lock_guard lock(mutex_);
 
     if (hold_deletes_)
     {
-        // Validate the key exists (and token matches if enforcing) before queuing,
+        // Validate the key exists (and the value matches if enforcing) before queuing,
         // but don't remove yet — just enqueue.
         auto it = store_.find(key);
         if (it == store_.end())
-        {
-            DeleteOutcome d;
-            d.kind = DeleteOutcome::Kind::NotFound;
-            return d;
-        }
-        if (enforce_tokens_ && it->second.token != token)
-        {
-            DeleteOutcome d;
-            d.kind = DeleteOutcome::Kind::TokenMismatch;
-            return d;
-        }
+            return RawRemoval::Gone;
+        if (enforce_tokens_ && it->second.value != expected_value)
+            return RawRemoval::Mismatch;
         PendingDelete pd;
         pd.key = key;
-        pd.token = token;
+        pd.value = expected_value;
         pending_deletes_.push_back(std::move(pd));
-        DeleteOutcome d;
-        d.kind = DeleteOutcome::Kind::Deleted;
-        d.created_delete_marker = simulate_delete_markers_;
-        return d;
+        return simulate_delete_markers_ ? RawRemoval::DeleteMarker : RawRemoval::Removed;
     }
 
-    return applyDelete(key, token);
+    return applyDelete(key, expected_value);
 }
 
-ListPage InMemoryBackend::list(const String & prefix, const String & cursor, size_t limit)
+void InMemoryBackend::removeManyWriteOnce(const std::vector<WriteOnceKey> & keys, TransportAccess &)
+{
+    std::exception_ptr armed;
+    std::function<void()> hook;
+    {
+        std::lock_guard lock(mutex_);
+        ++bulk_remove_calls_;
+        if (!armed_bulk_remove_failures_.empty())
+        {
+            armed = armed_bulk_remove_failures_.front();
+            armed_bulk_remove_failures_.erase(armed_bulk_remove_failures_.begin());
+        }
+        hook = before_bulk_remove_hook_;
+    }
+    if (armed)
+        std::rethrow_exception(armed);
+    if (hook)
+        hook();
+
+    std::lock_guard lock(mutex_);
+    for (const WriteOnceKey & key : keys)
+    {
+        auto it = store_.find(key.str());
+        if (it == store_.end())
+            continue;   /// absent is success
+        if (hold_deletes_)
+        {
+            PendingDelete pd;
+            pd.key = key.str();
+            pd.value = it->second.value;
+            pending_deletes_.push_back(std::move(pd));
+            continue;
+        }
+        store_.erase(it);
+    }
+}
+
+void InMemoryBackend::failNextBulkRemoveWith(std::exception_ptr error)
+{
+    std::lock_guard lock(mutex_);
+    armed_bulk_remove_failures_.push_back(std::move(error));
+}
+
+void InMemoryBackend::onBeforeBulkRemove(std::function<void()> hook)
+{
+    std::lock_guard lock(mutex_);
+    before_bulk_remove_hook_ = std::move(hook);
+}
+
+size_t InMemoryBackend::bulkRemoveCalls() const
+{
+    std::lock_guard lock(mutex_);
+    return bulk_remove_calls_;
+}
+
+Backend::RawListPage InMemoryBackend::list(const String & prefix, const String & cursor, size_t limit, TransportAccess &)
 {
     if (limit == 0)
         return {};
 
     std::lock_guard lock(mutex_);
-    ListPage page;
+    RawListPage page;
 
     // Cursor is the last key returned by the previous page.
     auto it = cursor.empty() ? store_.lower_bound(prefix) : store_.upper_bound(cursor);
@@ -310,10 +361,10 @@ ListPage InMemoryBackend::list(const String & prefix, const String & cursor, siz
         if (!it->first.starts_with(prefix))
             break;
 
-        ListedKey lk;
+        RawListedKey lk;
         lk.key = it->first;
         lk.size = static_cast<uint64_t>(it->second.bytes.size());
-        lk.token = it->second.token;   /// in-memory backend always surfaces the token (supportsListTokens == true)
+        lk.value = it->second.value;   /// in-memory backend always surfaces it (supportsListTokens == true)
         page.keys.push_back(std::move(lk));
         ++count;
         ++it;
@@ -324,6 +375,49 @@ ListPage InMemoryBackend::list(const String & prefix, const String & cursor, siz
         page.next_cursor = page.keys.back().key;
 
     return page;
+}
+
+bool InMemoryBackend::refreshCredentials()
+{
+    std::lock_guard lock(mutex_);
+    ++refresh_credentials_calls_;
+    return refresh_credentials_result_;
+}
+
+size_t InMemoryBackend::refreshCredentialsCalls() const
+{
+    std::lock_guard lock(mutex_);
+    return refresh_credentials_calls_;
+}
+
+void InMemoryBackend::failNextWriteWith(const String & key, std::exception_ptr error)
+{
+    std::lock_guard lock(mutex_);
+    write_failures_[key].push_back(std::move(error));
+}
+
+void InMemoryBackend::failNextReadWith(const String & key, std::exception_ptr error)
+{
+    std::lock_guard lock(mutex_);
+    read_failures_[key].push_back(std::move(error));
+}
+
+void InMemoryBackend::failNextHeadWith(const String & key, std::exception_ptr error)
+{
+    std::lock_guard lock(mutex_);
+    head_failures_[key].push_back(std::move(error));
+}
+
+void InMemoryBackend::onBeforeWrite(const String & key, std::function<void()> hook)
+{
+    std::lock_guard lock(mutex_);
+    before_write_hooks_[key] = std::move(hook);
+}
+
+void InMemoryBackend::onWriteCommitted(const String & key, std::function<void()> hook)
+{
+    std::lock_guard lock(mutex_);
+    write_committed_hooks_[key] = std::move(hook);
 }
 
 void InMemoryBackend::setHoldDeletes(bool hold)
@@ -338,33 +432,41 @@ size_t InMemoryBackend::pendingDeletes() const
     return pending_deletes_.size();
 }
 
-DeleteOutcome InMemoryBackend::landPendingDelete(size_t i)
+Backend::RawRemoval InMemoryBackend::landPendingDelete(size_t i)
 {
     std::lock_guard lock(mutex_);
     if (i >= pending_deletes_.size())
-    {
-        DeleteOutcome d;
-        d.kind = DeleteOutcome::Kind::NotFound;
-        return d;
-    }
+        return RawRemoval::Gone;
 
     PendingDelete pd = pending_deletes_[i];
     pending_deletes_.erase(pending_deletes_.begin() + static_cast<ptrdiff_t>(i));
 
-    // Apply the token check at LAND time — the object may have been modified since the delete was enqueued.
-    return applyDelete(pd.key, pd.token);
+    // Apply the value check at LAND time — the object may have been modified since the delete was enqueued.
+    return applyDelete(pd.key, pd.value);
 }
 
-void InMemoryBackend::failNextCasPut(const String & key)
+void InMemoryBackend::refuseNextWrite(const String & key)
 {
     std::lock_guard lock(mutex_);
-    fail_next_cas_.insert(key);
+    refuse_next_write_keys_.insert(key);
 }
 
-void InMemoryBackend::injectAmbiguousPutIfAbsent(const String & key)
+void InMemoryBackend::injectAmbiguousWrite(const String & key)
 {
     std::lock_guard lock(mutex_);
-    ambiguous_put_keys_.insert(key);
+    ambiguous_write_keys_.insert(key);
+}
+
+void InMemoryBackend::injectAmbiguousLandedWrite(const String & key)
+{
+    std::lock_guard lock(mutex_);
+    ambiguous_landed_keys_.insert(key);
+}
+
+bool InMemoryBackend::takeAmbiguousLandedWrite(const String & key)
+{
+    std::lock_guard lock(mutex_);
+    return ambiguous_landed_keys_.erase(key) != 0;
 }
 
 void InMemoryBackend::setEnforceTokens(bool enforce)
@@ -377,6 +479,12 @@ void InMemoryBackend::setSimulateDeleteMarkers(bool simulate)
 {
     std::lock_guard lock(mutex_);
     simulate_delete_markers_ = simulate;
+}
+
+void InMemoryBackend::setRefreshCredentialsResult(bool result)
+{
+    std::lock_guard lock(mutex_);
+    refresh_credentials_result_ = result;
 }
 
 }

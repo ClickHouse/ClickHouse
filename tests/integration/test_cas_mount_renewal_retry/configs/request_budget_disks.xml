@@ -1,0 +1,51 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Two disks on a DEDICATED node/instance so their startup never shares a server incarnation
+                 with the `disk_cas_renewal` hard-restart tests: those tests count exact occurrences of a
+                 production log line across every writable CAS disk on the node, so a second disk sharing
+                 that node would inflate their counts. These two exist only to prove
+                 `ContentAddressedMetadataStorage::openPoolView` hands the REAL frozen connect-timeout cap
+                 it derives from the disk's own S3 client into the pool's request budget, through
+                 production disk startup, not a test-constructed backend. Every other setting stays at the
+                 module's default. -->
+            <disk_cas_budget_capped>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
+                <cas_server_root_id>itest-cas-budget-capped</cas_server_root_id>
+                <endpoint>http://rustfs1:11121/test/cas_request_budget_capped/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <cas_gc_enabled>false</cas_gc_enabled>
+                <!-- An explicit, narrower-than-the-attempt-timeout connect_timeout_ms: the frozen cap is
+                     min(connect_timeout_ms=1000, cas_attempt_timeout_ms=5000) = 1000, so the logged
+                     envelope is attempt_timeout_ms + 2 * cap = 5000 + 2000 = 7000. -->
+                <connect_timeout_ms>1000</connect_timeout_ms>
+                <cas_attempt_timeout_ms>5000</cas_attempt_timeout_ms>
+            </disk_cas_budget_capped>
+            <disk_cas_budget_unbounded>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
+                <cas_server_root_id>itest-cas-budget-unbounded</cas_server_root_id>
+                <endpoint>http://rustfs1:11121/test/cas_request_budget_unbounded/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <cas_gc_enabled>false</cas_gc_enabled>
+                <!-- connect_timeout_ms=0 is Poco's "unbounded", never a limit of zero: the frozen cap
+                     falls back to cas_attempt_timeout_ms itself, so both the cap and the attempt timeout
+                     are 5000 and the logged envelope is 5000 + 2 * 5000 = 15000. The lease TTL is widened
+                     because the default 30000ms TTL is too narrow for this wider envelope's renewal
+                     cadence check. -->
+                <connect_timeout_ms>0</connect_timeout_ms>
+                <cas_attempt_timeout_ms>5000</cas_attempt_timeout_ms>
+                <cas_mount_lease_ttl_ms>50000</cas_mount_lease_ttl_ms>
+            </disk_cas_budget_unbounded>
+        </disks>
+    </storage_configuration>
+</clickhouse>

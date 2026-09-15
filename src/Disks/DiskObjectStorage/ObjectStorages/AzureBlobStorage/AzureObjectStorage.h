@@ -49,6 +49,8 @@ public:
         size_t max_keys,
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
+    /// Overriding one `iterate` overload hides the other from this class's scope; bring both back.
+    using IObjectStorage::iterate;
 
     std::string getName() const override { return "Azure"; }
 

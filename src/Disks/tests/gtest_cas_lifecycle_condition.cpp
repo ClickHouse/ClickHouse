@@ -36,11 +36,12 @@ const String kSrid = "test";
 /// so a test can restore it verbatim later (scenario d).
 String deleteKeyReturningBody(Backend & backend, const String & key)
 {
-    const auto got = backend.get(key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(key, Retry::once());
     EXPECT_TRUE(got.has_value()) << "expected '" << key << "' to exist before deletion";
     if (!got)
         return {};
-    backend.deleteExact(key, got->token);
+    (*op).remove(key, got->etag, Retry::once());
     return got->bytes;
 }
 
@@ -49,49 +50,66 @@ String deleteKeyReturningBody(Backend & backend, const String & key)
 /// fresh incarnation and returns true. Mirrors gtest_cas_pool.cpp's `fenceOutMount`.
 void fenceOutMount(Backend & backend, const String & mount_key)
 {
-    const auto got = backend.get(mount_key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(mount_key, Retry::once());
     ASSERT_TRUE(got.has_value());
     MountLease m = decodeMountLease(got->bytes);
     m.gc_fenced = true;
     m.seq += 1;
-    ASSERT_EQ(backend.putOverwrite(mount_key, encodeMountLease(m), got->token).outcome, PutOutcome::Done);
+    const auto put = (*op).replace(mount_key, encodeMountLease(m), got->etag, Retry::once());
+    ASSERT_TRUE(std::holds_alternative<Committed>(put));
 }
 
-/// A Backend decorator whose head/get/list throw an untyped transport error while `fail` is armed. Starts
-/// DISARMED so `Pool::open` succeeds; a test arms it only to make the identity probe inconclusive. Mirrors
+/// A Backend decorator whose reads, heads and lists throw a transport-classified error while `fail` is
+/// armed, counting every attempt so a test can prove the probe path was actually reached (and stopped
+/// where it should) rather than some other short-circuit. Starts DISARMED so `Pool::open` succeeds; a
+/// test arms it only to make the identity probe inconclusive. Mirrors
 /// gtest_cas_sentinel_probe.cpp's `TransportFaultBackend`, but toggleable AFTER open.
+///
+/// The fault is `Poco::TimeoutException`: `Backend::probeSentinelRaw`'s default implementation (the one
+/// `InMemoryBackend` uses) calls `head`/`read` directly and folds ANY exception from either into
+/// `Indeterminate` with its own `catch (...)` -- so the exception never reaches `CasOperation`'s
+/// transport-vs-local classification at all here. A `Poco::TimeoutException` is still the right class to
+/// inject: it is what a real backend's probe would actually throw, and the point of the counters below
+/// is to prove `head` was reached and actually failed, not skipped by some other short-circuit.
+/// `tryRemountOnce` retries its own whole chain internally (well past the single probe attempt), so
+/// the exact count per call is not pinned here -- only that a call growing it proves the fault path
+/// stayed live across it, rather than a stale verdict being served from a cache.
 class ToggleableTransportFaultBackend final : public InMemoryBackend
 {
 public:
-    /// Unhide the base convenience overloads, matching every other Backend subclass in this suite.
-    using Backend::get;
-    using Backend::getStream;
-    using Backend::putIfAbsent;
-    using Backend::putOverwrite;
-    using Backend::casPut;
+    /// Unhide the LEGACY convenience overloads that the primitive overrides below would otherwise hide.
+    using Backend::head;
+    using Backend::list;
 
-    HeadResult head(const String & key) override
+    std::optional<RawMeta> head(const String & key, TransportAccess & access) override
     {
+        ++head_attempts;
         if (fail.load())
-            throw std::runtime_error("injected fault: transport error");
-        return InMemoryBackend::head(key);
+            throw Poco::TimeoutException("injected fault: transport error");
+        return InMemoryBackend::head(key, access);
     }
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
+        ++read_attempts;
         if (fail.load())
-            throw std::runtime_error("injected fault: transport error");
-        return InMemoryBackend::get(key, range);
+            throw Poco::TimeoutException("injected fault: transport error");
+        return InMemoryBackend::read(key, access);
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
+        ++list_attempts;
         if (fail.load())
-            throw std::runtime_error("injected fault: transport error");
-        return InMemoryBackend::list(prefix, cursor, limit);
+            throw Poco::TimeoutException("injected fault: transport error");
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 
     std::atomic<bool> fail{false};
+    std::atomic<uint64_t> head_attempts{0};
+    std::atomic<uint64_t> read_attempts{0};
+    std::atomic<uint64_t> list_attempts{0};
 };
 
 }
@@ -128,7 +146,7 @@ TEST(CASLifecycleCondition, SentinelsDeletedEntersIdentityLostTerminal)
     backend->resetCounts();
     EXPECT_FALSE(store->tryRemountOnce());
     EXPECT_EQ(store->lifecycle(), PoolLifecycle::IdentityLost);
-    EXPECT_EQ(backend->putTotal(), 0u) << "a terminal-IdentityLost gate probe must never claim, allocate, or write";
+    EXPECT_EQ(backend->writeTotal(), 0u) << "a terminal-IdentityLost gate probe must never claim, allocate, or write";
     EXPECT_GE(backend->headCount(meta_key), 1u) << "the gate still probes _pool_meta authoritatively";
 }
 
@@ -165,11 +183,12 @@ TEST(CASLifecycleCondition, PoolMetaForeignPoolIdEntersVanishedReplacedImmediate
 
     /// Overwrite `_pool_meta` with a FOREIGN pool_id (identity replaced); the object stays present.
     const String meta_key = store->layout().poolMetaKey();
-    const auto got = backend->get(meta_key);
+    DB::Cas::tests::OperationForTest op(*backend);
+    const auto got = (*op).read(meta_key, Retry::once());
     ASSERT_TRUE(got.has_value());
     PoolMeta foreign = decodePoolMeta(got->bytes);
     foreign.pool_id = foreign.pool_id + DB::UInt128(1);
-    ASSERT_EQ(backend->putOverwrite(meta_key, encodePoolMeta(foreign), got->token).outcome, PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(meta_key, encodePoolMeta(foreign), got->etag, Retry::once())));
 
     EXPECT_FALSE(store->tryRemountOnce());
     EXPECT_EQ(store->lifecycle(), PoolLifecycle::VanishedReplaced);
@@ -186,7 +205,8 @@ TEST(CASLifecycleCondition, PoolMetaAlgosUsedDifferIsNotReplacementRecoveryProce
     auto store = DB::Cas::tests::openPoolForTest(backend);
 
     const String meta_key = store->layout().poolMetaKey();
-    const auto got = backend->get(meta_key);
+    DB::Cas::tests::OperationForTest op(*backend);
+    const auto got = (*op).read(meta_key, Retry::once());
     ASSERT_TRUE(got.has_value());
     PoolMeta mutated = decodePoolMeta(got->bytes);
     /// pool_id + blob_header_len UNCHANGED; only `algos_used` gains a member (a mutable field, [B6]).
@@ -194,7 +214,7 @@ TEST(CASLifecycleCondition, PoolMetaAlgosUsedDifferIsNotReplacementRecoveryProce
     ASSERT_FALSE(std::binary_search(mutated.algos_used.begin(), mutated.algos_used.end(), extra));
     mutated.algos_used.push_back(extra);
     std::sort(mutated.algos_used.begin(), mutated.algos_used.end());
-    ASSERT_EQ(backend->putOverwrite(meta_key, encodePoolMeta(mutated), got->token).outcome, PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(meta_key, encodePoolMeta(mutated), got->etag, Retry::once())));
 
     /// Fence out the mount so the (correctly non-replacement) recovery cleanly reclaims a fresh incarnation.
     fenceOutMount(*backend, store->layout().mountKey(kSrid));
@@ -223,8 +243,9 @@ TEST(CASLifecycleCondition, IdentityLostDoesNotAutoReviveWhenSentinelsRestored)
     ASSERT_EQ(store->lifecycle(), PoolLifecycle::IdentityLost);
 
     /// Restore both sentinels verbatim (a backup restore with matching identity).
-    ASSERT_EQ(backend->putIfAbsent(meta_key, meta_body).outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent(owner_key, owner_body).outcome, PutOutcome::Done);
+    DB::Cas::tests::OperationForTest op(*backend);
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(meta_key, meta_body, Retry::once())));
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(owner_key, owner_body, Retry::once())));
 
     /// The gate now sees Present+match, but the state is `IdentityLost`, so it stays fail-loud.
     EXPECT_FALSE(store->tryRemountOnce());
@@ -241,17 +262,25 @@ TEST(CASLifecycleCondition, ProbeTransportErrorStaysTransientAndRetries)
     auto store = DB::Cas::tests::openPoolForTest(backend);
     ASSERT_EQ(store->lifecycle(), PoolLifecycle::Live);
 
-    /// Arm the transport fault: the identity probe's head/get/list now throw → Indeterminate.
+    /// Arm the transport fault: every request the identity probe issues now throws → Indeterminate.
     backend->fail.store(true);
 
     EXPECT_FALSE(store->tryRemountOnce());
     EXPECT_EQ(store->lifecycle(), PoolLifecycle::TransientNotLive);
     EXPECT_FALSE(store->isVanished());
     EXPECT_NO_THROW(store->throwIfLifecycleTerminal());
+    /// The `_pool_meta` probe was actually reached and actually failed at `head` -- proving the
+    /// TransientNotLive verdict above came from the probe's own `Indeterminate` classification, not
+    /// from some other short-circuit that never touched the fault at all.
+    const uint64_t first_head_attempts = backend->head_attempts.load();
+    EXPECT_GT(first_head_attempts, 0u);
 
-    /// A second attempt with the fault still armed remains transient (retries continue).
+    /// A second attempt with the fault still armed remains transient (retries continue) and probes
+    /// again -- proving each `tryRemountOnce` re-probes rather than caching the first call's
+    /// inconclusive verdict.
     EXPECT_FALSE(store->tryRemountOnce());
     EXPECT_EQ(store->lifecycle(), PoolLifecycle::TransientNotLive);
+    EXPECT_GT(backend->head_attempts.load(), first_head_attempts);
 
     /// Disarm before teardown so `~Pool()`'s clean-farewell write is not fighting the injected fault.
     backend->fail.store(false);

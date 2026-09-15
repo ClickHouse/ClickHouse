@@ -6,6 +6,8 @@
 #include <random>
 #include <vector>
 
+#include <magic_enum.hpp>
+
 /// v3 text codec tests for `cas_ref_log` (codecs-v3 phase 3). Split out of the retired
 /// `gtest_cas_ref_codecs.cpp` and re-pointed at the TEXT codec: the encoder-side validation tests are
 /// format-agnostic (they only assert `encodeRefLogTxn` throws) and carry over verbatim; the old
@@ -140,6 +142,20 @@ TEST(CASRefCodec, OrderMatchesLexicalOrderOfRender)
 /// RefLogTxn: round trip
 /// ===================================================================================
 
+/// Closed-set pin: the five `RefOpKind` words, walked through `magic_enum::enum_values`, which is
+/// what proves the renderer and the parser consult the SAME table: a table entry missing altogether is already a
+/// build error at the coverage assert, but two delegates drifting onto different tables is not.
+TEST(CASRefCodec, ClosedSetPinsRefOpKindWords)
+{
+    EXPECT_EQ(refOpKindToWireWord(RefOpKind::NamespaceBirth), "namespace_birth");
+    EXPECT_EQ(refOpKindToWireWord(RefOpKind::OwnerTransition), "owner_transition");
+    EXPECT_EQ(refOpKindToWireWord(RefOpKind::SetPublishedAt), "set_published_at");
+    EXPECT_EQ(refOpKindToWireWord(RefOpKind::RemoveNamespace), "remove_namespace");
+    EXPECT_EQ(refOpKindToWireWord(RefOpKind::EpochSeal), "epoch_seal");
+    for (const auto k : magic_enum::enum_values<RefOpKind>())
+        EXPECT_EQ(refOpKindFromWireWord(refOpKindToWireWord(k)), k);
+}
+
 TEST(CASRefCodec, RoundTripNamespaceBirth)
 {
     RefLogTxn txn;
@@ -185,9 +201,9 @@ TEST(CASRefCodec, RoundTripSetPublishedAt)
     EXPECT_EQ(decoded, txn);
 }
 
-/// No-tolerance decode pin (codex round-2, finding 3): the `"pl"` (payload) field was removed from the
-/// ref-op wire in stage-1 T12. Although the retired `set_payload` op WORD is already rejected by
-/// `opKindFromWord`, the generic op-record reader reads all field keys before switching on kind, so a
+/// No-tolerance decode pin: the `"pl"` (payload) field was removed from the
+/// ref-op wire. Although the retired `set_payload` op WORD is already rejected by
+/// `refOpKindFromWireWord`, the generic op-record reader reads all field keys before switching on kind, so a
 /// `"pl"` field paired with a still-recognized op word would otherwise be `skipUnknown`'d. It is a
 /// removed field, not a genuinely-unknown one: decoding an op record that still carries `"pl"` must FAIL
 /// with `CORRUPTED_DATA` naming the removed field.
@@ -204,8 +220,8 @@ TEST(CASRefCodec, DecodeRejectsRemovedPayloadFieldInOpRecord)
     txn.ops.push_back(op);
 
     const String bytes = encodeRefLogTxn(txn);
-    /// Splice the retired `"pl"` field back into the op record, just before its `"ts"` field.
-    const String needle = ",\"ts\":";
+    /// Splice the retired `"pl"` field back into the op record, just before its `"published_ms"` field.
+    const String needle = ",\"published_ms\":";
     const auto pos = bytes.find(needle);
     ASSERT_NE(pos, String::npos);
     const String tampered = bytes.substr(0, pos) + R"(,"pl":"deadbeef")" + bytes.substr(pos);
@@ -283,6 +299,82 @@ TEST(CASRefCodec, RoundTripOwnerTransitionReplace)
     EXPECT_EQ(decoded, txn);
     ASSERT_TRUE(decoded.ops[0].old_binding.has_value());
     ASSERT_TRUE(decoded.ops[0].new_binding.has_value());
+}
+
+TEST(CASRefCodec, OwnerTransitionBindingGroupsAreAbsentOrComplete)
+{
+    RefLogTxn txn;
+    txn.ns = "ns";
+    txn.txn_id = RefTxnId{1, 1};
+    RefOp op;
+    op.kind = RefOpKind::OwnerTransition;
+    op.old_binding = RefOwnerBinding{RefOwnerKind::Precommit, "old", manifestRef(1, 1, 1)};
+    op.new_binding = RefOwnerBinding{RefOwnerKind::Committed, "new", manifestRef(1, 1, 1)};
+    txn.ops.push_back(op);
+    const String bytes = encodeRefLogTxn(txn);
+
+    const String old_group = R"(,"old_kind":"precommit","old_ref":"old","old_epoch":"1","old_build":"1","old_ord":1)";
+    const auto old_group_pos = bytes.find(old_group);
+    ASSERT_NE(old_group_pos, String::npos);
+    String old_absent = bytes;
+    old_absent.erase(old_group_pos, old_group.size());
+    const RefLogTxn without_old = decodeRefLogTxn(old_absent, txn.ns, txn.txn_id);
+    ASSERT_EQ(without_old.ops.size(), 1u);
+    EXPECT_FALSE(without_old.ops[0].old_binding.has_value());
+    EXPECT_TRUE(without_old.ops[0].new_binding.has_value());
+
+    const String old_ref = R"(,"old_ref":"old")";
+    const auto old_ref_pos = bytes.find(old_ref);
+    ASSERT_NE(old_ref_pos, String::npos);
+    String incomplete_old = bytes;
+    incomplete_old.erase(old_ref_pos, old_ref.size());
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefLogTxn(incomplete_old, txn.ns, txn.txn_id); });
+
+    const String new_group = R"(,"new_kind":"committed","new_ref":"new","new_epoch":"1","new_build":"1","new_ord":1)";
+    const auto new_group_pos = bytes.find(new_group);
+    ASSERT_NE(new_group_pos, String::npos);
+    String new_absent = bytes;
+    new_absent.erase(new_group_pos, new_group.size());
+    const RefLogTxn without_new = decodeRefLogTxn(new_absent, txn.ns, txn.txn_id);
+    ASSERT_EQ(without_new.ops.size(), 1u);
+    EXPECT_TRUE(without_new.ops[0].old_binding.has_value());
+    EXPECT_FALSE(without_new.ops[0].new_binding.has_value());
+
+    const String new_ref = R"(,"new_ref":"new")";
+    const auto new_ref_pos = bytes.find(new_ref);
+    ASSERT_NE(new_ref_pos, String::npos);
+    String incomplete_new = bytes;
+    incomplete_new.erase(new_ref_pos, new_ref.size());
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { decodeRefLogTxn(incomplete_new, txn.ns, txn.txn_id); });
+}
+
+/// The anomaly diagnostic identifies an object found at a key it should not occupy by reading the
+/// meta line's three identity fields. It reads them through the codec's own key constants, so this
+/// test is what proves the reader did not quietly stop matching when those keys were renamed: with a
+/// stale spelling the tolerant reader skips every real key and the peek answers nullopt on a
+/// perfectly good ref-log.
+TEST(CASRefCodec, PeekReadsTheMetaIdentityOfASealedRefLog)
+{
+    RefLogTxn txn;
+    txn.ns = "srv1/db/table@cas@";
+    txn.txn_id = RefTxnId{4, 9};
+    RefOp birth;
+    birth.kind = RefOpKind::NamespaceBirth;
+    txn.ops.push_back(birth);
+
+    const auto peek = peekRefLogMeta(sealObject(FormatId::RefLog, encodeRefLogTxn(txn)));
+    ASSERT_TRUE(peek.has_value()) << "a well-formed ref-log must identify its own writer";
+    EXPECT_EQ(peek->ns, "srv1/db/table@cas@");
+    EXPECT_EQ(peek->writer_epoch, 4u);
+    EXPECT_EQ(peek->ref_sequence, 9u);
+}
+
+/// The other half of its contract: it identifies a writer, it never certifies an object, so anything
+/// it cannot read is `nullopt` rather than an exception escaping into the anomaly report.
+TEST(CASRefCodec, PeekAnswersNulloptForBytesThatAreNotARefLog)
+{
+    EXPECT_FALSE(peekRefLogMeta("not a sealed cas object at all").has_value());
+    EXPECT_FALSE(peekRefLogMeta(sealObject(FormatId::RefLog, "{\"type\":\"cas_ref_log\",\"v\":1}\n")).has_value());
 }
 
 TEST(CASRefCodec, RoundTripMultipleOpsInOneTransaction)
@@ -766,6 +858,8 @@ TEST(CASRefCodec, EncodeRejectsZeroManifestRefInSetPublishedAt)
 /// Shape-level failure-mode battery (truncation / v+1 gate / wrong type / leading garbage)
 /// ===================================================================================
 
+CAS_BATTERY_COVERS(RefLog);
+
 TEST(CASFormatBattery, RefLog)
 {
     RefLogTxn txn;
@@ -784,7 +878,7 @@ TEST(CASFormatBattery, RefLog)
         [txn] { return sealObject(FormatId::RefLog, encodeRefLogTxn(txn)); },
         [ns, id](std::string_view s) { decodeRefLogTxn(openObject(FormatId::RefLog, s), ns, id); },
         currentFormatHeader("cas_ref_log") +
-        "{\"ns\":\"ns\",\"we\":\"1\",\"rs\":\"1\"}\n"
-        "{\"op\":\"set_published_at\",\"rn\":\"all_1_1_0\",\"me\":\"1\",\"mb\":\"1\",\"mo\":1,\"ts\":42}\n"
+        "{\"namespace\":\"ns\",\"txn_epoch\":\"1\",\"txn_seq\":\"1\"}\n"
+        "{\"op\":\"set_published_at\",\"ref\":\"all_1_1_0\",\"epoch\":\"1\",\"build\":\"1\",\"ord\":1,\"published_ms\":42}\n"
         "{\"n\":1}\n"});
 }

@@ -12,6 +12,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -47,6 +48,7 @@ namespace DB::ErrorCodes
 
 using namespace DB::Cas;
 using DB::Cas::tests::idOf;
+using DB::Cas::tests::SharedWaitLog;
 using DB::Cas::tests::u128Of;
 
 namespace
@@ -63,6 +65,8 @@ namespace
 class HoleyListBackend : public InMemoryBackend
 {
 public:
+    /// Unhide the primitive overload that the legacy override below would otherwise hide.
+    using InMemoryBackend::list;
     void omitFromNthListCall(const String & key, size_t nth)
     {
         std::lock_guard lock(m);
@@ -80,14 +84,14 @@ public:
         return served;
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
-        ListPage page = InMemoryBackend::list(prefix, cursor, limit);
+        RawListPage page = InMemoryBackend::list(prefix, cursor, limit, access);
         std::lock_guard lock(m);
         if (omitted.empty())
             return page;
         auto it = std::find_if(page.keys.begin(), page.keys.end(),
-                               [&](const ListedKey & k) { return k.key == omitted; });
+                               [&](const RawListedKey & k) { return k.key == omitted; });
         if (it == page.keys.end())
             return page;              /// not a qualifying call -- do not count it
         if (seen_calls++ != target_call)
@@ -114,56 +118,65 @@ private:
 class RefPrefixListCountingBackend : public InMemoryBackend
 {
 public:
+    /// Unhide the primitive overload that the legacy override below would otherwise hide.
+    using InMemoryBackend::list;
     String refs_prefix;
     String janitor_prefix;
     std::atomic<size_t> ref_prefix_lists{0};
     std::atomic<size_t> janitor_prefix_lists{0};
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
         if (!refs_prefix.empty() && prefix == refs_prefix)
             ++ref_prefix_lists;
         if (!janitor_prefix.empty() && prefix == janitor_prefix)
             ++janitor_prefix_lists;
-        return InMemoryBackend::list(prefix, cursor, limit);
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 };
 
-/// Forces the FIRST `putIfAbsent` whose key contains `fault_key_substr` to throw an ambiguous
-/// (Unresolved-classified) exception, `fault_count` times -- the minimal fault injection needed to drive
-/// a ref-log append into the `Unresolved`/wedge outcome, with `max_attempts = 1` in the budget so the
-/// single failed attempt exhausts the retry budget immediately. (Same shape as `gtest_cas_pool.cpp`'s
-/// file-local backend of the same name; both are three lines of `throw` over `InMemoryBackend`, and
-/// hoisting a shared one would couple two suites' fault models for no gain.)
+/// Every write of a matching key is a lost response, for as long as `fault_key_substr` names one. It
+/// has to be every one: the request engine settles an ambiguity by an exact read and then reissues, so
+/// a counted fault is outlived by the reissues and the write commits -- the difference between the
+/// wedge this fixture needs and a clean commit. Clearing `fault_key_substr` disarms it.
 class UnresolvedPutBackend final : public InMemoryBackend
 {
 public:
-    using Backend::putIfAbsent;
-
     String fault_key_substr;
-    int fault_count = 0;
+    /// How many matching writes actually hit the fault, so a caller can prove the engine reissued
+    /// rather than infer it from a give-up that a non-retrying policy would also reach.
+    int fault_hits = 0;
 
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             TransportAccess & access) override
     {
-        if (fault_count > 0 && !fault_key_substr.empty() && key.find(fault_key_substr) != String::npos)
+        if (!fault_key_substr.empty() && key.find(fault_key_substr) != String::npos)
         {
-            --fault_count;
+            ++fault_hits;
             throw Poco::TimeoutException("UnresolvedPutBackend: simulated ambiguous result (response lost)");
         }
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 };
 
 /// GC's fence-out applied directly to the mount lease: preserve the body, set `gc_fenced`, bump `seq`
 /// (token-guarded). A subsequent `tryRemountOnce` then reclaims a fresh incarnation.
+bool headExists(Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).head(key, Retry::standard()).has_value();
+}
+
 void fenceOutMount(Backend & backend, const String & mount_key)
 {
-    const auto got = backend.get(mount_key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(mount_key, Retry::standard());
     ASSERT_TRUE(got.has_value());
     MountLease m = decodeMountLease(got->bytes);
     m.gc_fenced = true;
     m.seq += 1;
-    ASSERT_EQ(backend.putOverwrite(mount_key, encodeMountLease(m), got->token).outcome, PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(mount_key, encodeMountLease(m), got->etag, Retry::standard())));
 }
 
 /// Publish one part `ref` with a single content blob whose payload is `payload`.
@@ -190,11 +203,12 @@ ManifestId publishOneBlobPart(const PoolPtr & s, const RootNamespace & ns, const
 /// Every ref-log key of `ns` currently listed, in key order.
 std::set<String> listRefLogKeys(Backend & b, const Layout & l, const RootNamespace & ns)
 {
+    DB::Cas::tests::OperationForTest op(b);
     std::set<String> out;
     String cursor;
     while (true)
     {
-        const ListPage page = b.list(l.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000);
+        const ListPage page = (*op).list(l.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000, Retry::standard());
         for (const ListedKey & k : page.keys)
             if (const auto parsed = l.parseRefObjectKey(k.key); parsed && parsed->kind == RefObjectKind::Log)
                 out.insert(k.key);
@@ -256,7 +270,7 @@ TEST(CASRetirementSweep, AHiddenRemovalStillReclaimsItsBlob)
     store->renewWatermarkOnce();
     const String blob_key = layout.blobKey(BlobRef{BlobHashAlgo::CityHash128,
                                                    BlobDigest::fromU128(u128Of(payload))});
-    ASSERT_TRUE(backend->head(blob_key).exists);
+    ASSERT_TRUE(headExists(*backend, blob_key));
 
     const std::set<String> before_drop = listRefLogKeys(*backend, layout, ns);
     store->dropRef(ns, "part_a");
@@ -278,7 +292,7 @@ TEST(CASRetirementSweep, AHiddenRemovalStillReclaimsItsBlob)
     }
     ASSERT_TRUE(backend->holeServed()) << "the sabotage never fired";
 
-    EXPECT_FALSE(backend->head(blob_key).exists)
+    EXPECT_FALSE(headExists(*backend, blob_key))
         << "the removal was hidden from one enumeration and never folded -- the retention half of the "
            "skipped-transaction class, which arithmetic intake is supposed to close";
 }
@@ -333,20 +347,35 @@ TEST(CASRetirementSweep, TheRoundEnumeratesTheRefPrefixExactlyOnce)
 TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoverySeal)
 {
     CasRequestBudget budget;
-    budget.max_attempts = 1;
     budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;
     budget.lease_safety_margin_ms = 100;
 
     auto backend = std::make_shared<UnresolvedPutBackend>();
-    uint64_t fake_boot = 1'000'000;
-    std::vector<uint64_t> waits;
+    /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the budget
+    /// field alone; pair the two so the mount lease's admission arithmetic sees what the budget claims.
+    backend->setAttemptTimeoutMs(budget.attempt_timeout_ms);
+    /// Held in shared, heap-owned state, not plain locals: the hooks below mutate them, and the Pool
+    /// can outlive this stack frame (a background publish holds `shared_from_this()`), so a
+    /// by-reference capture of a local would dangle.
+    auto fake_boot = std::make_shared<std::atomic<uint64_t>>(1'000'000);
+    auto waits = std::make_shared<SharedWaitLog>();
+    /// The append's own retry clock and its sleep log, installed further down; declared here, before
+    /// the store, because the store's teardown still calls the now-function they back.
+    auto fake_retry = std::make_shared<std::atomic<uint64_t>>(0);
+    auto retry_sleeps = std::make_shared<SharedWaitLog>();
     auto store = Pool::open(backend, PoolConfig{
         .pool_prefix = "p", .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30000),
         .cas_request_budget = budget,
-        .boot_ms_fn = [&] { return fake_boot; },
-        .wait_sleep_fn = [&](uint64_t ms) { fake_boot += ms; waits.push_back(ms); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+        {
+            *fake_boot += ms;
+            waits->push(ms);
+        },
     });
     ASSERT_TRUE(store);
     const Layout & layout = store->layout();
@@ -364,28 +393,44 @@ TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoveryS
     publishOneBlobPart(store, ns, "x", "straggler-payload");
     ASSERT_EQ(store->liveWriterEpoch(), 1u);
 
-    /// Drive the next ref-log append into the Unresolved/wedge outcome: the single attempt the budget
-    /// allows fails ambiguously, so this process can never learn whether its conditional PUT landed.
-    /// That undecidability is the whole reason the resolution is a conditional CREATE and not a GET.
+    /// Drive the next ref-log append into the Unresolved/wedge outcome: every attempt it makes fails
+    /// ambiguously, so this process can never learn whether its conditional PUT landed. That
+    /// undecidability is the whole reason the resolution is a conditional CREATE and not a GET. The
+    /// give-up is the append's own retry window -- paced on ITS OWN virtual clock, separate from
+    /// `fake_boot` (the mount fence's), so the standard policy's full window is available to reissue
+    /// against rather than being cut short by the 30s lease `fake_boot` also measures.
+    store->setCasRequestNowFnForTest([fake_retry]
+    {
+        return fake_retry->load();
+    });
+    store->setCasRetrySleepForTest([fake_retry, retry_sleeps](uint64_t ms)
+    {
+        *fake_retry += ms + 1;
+        retry_sleeps->push(ms);
+    });
     backend->fault_key_substr = layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
-    backend->fault_count = 1;
     DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
+    EXPECT_GT(backend->fault_hits, 1)
+        << "the append must have reissued more than once against the persistent fault before giving up "
+           "-- a single attempt would not distinguish this from a non-retrying policy";
+    EXPECT_GT(retry_sleeps->size(), 1u) << "more than one paced retry must have occurred before the give-up";
+    EXPECT_GT(fake_retry->load(), 0u) << "the retry clock must have advanced past the policy's own deadline";
 
     /// The id the straggler would occupy: one past the greatest record that is actually durable in the
     /// dying epoch. That is also, by construction, where the recovery seal goes.
     const RefTxnId greatest = greatestLoggedId(*backend, layout, ns);
     ASSERT_EQ(greatest.writer_epoch, 1u);
     const RefTxnId straggler_slot{greatest.writer_epoch, greatest.ref_sequence + 1};
-    ASSERT_FALSE(backend->head(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot)).exists)
+    ASSERT_FALSE(headExists(*backend, layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot)))
         << "the slot must be empty before recovery -- otherwise this test proves nothing about who won";
 
     /// Fence and remount. No wait: this is the case that used to cost 30 seconds.
-    fake_boot += 30001;
+    *fake_boot += 30001;
     fenceOutMount(*backend, layout.mountKey("test"));
     ASSERT_TRUE(store->tryRemountOnce());
     ASSERT_EQ(store->liveWriterEpoch(), 2u);
-    EXPECT_TRUE(waits.empty())
+    EXPECT_TRUE(waits->empty())
         << "the remount blocked on an operator-configured wait; the grace is supposed to be gone";
 
     /// Touch the namespace so it re-recovers under the new epoch: the walk closes epoch 1 in band. The
@@ -393,13 +438,15 @@ TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoveryS
     /// landed, which is precisely the state that leaves a straggler outstanding.
     backend->fault_key_substr.clear();
     EXPECT_EQ(store->listRefs(ns).size(), 1u);
-    ASSERT_TRUE(backend->head(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot)).exists)
+    ASSERT_TRUE(headExists(*backend, layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot)))
         << "recovery did not seal the dead epoch at the slot a straggler would take -- without that "
            "seal there is nothing for the straggler's create to lose to";
 
     /// THE STRAGGLER ARRIVES. Its conditional create is refused, whenever it happens to land.
-    const PutResult put = backend->putIfAbsent(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot), "ghost-body");
-    EXPECT_EQ(put.outcome, PutOutcome::PreconditionFailed)
+    DB::Cas::tests::OperationForTest straggler_op(backend);
+    const WriteResult put = (*straggler_op).create(
+        layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot), "ghost-body", Retry::once());
+    EXPECT_TRUE(std::holds_alternative<Conflict>(put))
         << "the dying epoch's straggler overwrote (or joined) a slot the successor had already sealed";
 }
 

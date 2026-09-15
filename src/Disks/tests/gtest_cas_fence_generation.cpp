@@ -43,11 +43,14 @@ namespace
 class TripOnHeadBackend final : public InMemoryBackend
 {
 public:
-    HeadResult head(const String & key) override
+    /// Unhide the legacy overload the primitive override below would otherwise hide.
+    using InMemoryBackend::head;
+    /// The side effect sits on the HEAD primitive, which is the only path any observation takes.
+    std::optional<RawMeta> head(const String & key, TransportAccess & access) override
     {
         if (trigger)
             std::exchange(trigger, {})();
-        return InMemoryBackend::head(key);
+        return InMemoryBackend::head(key, access);
     }
 
     std::function<void()> trigger;
@@ -59,30 +62,35 @@ public:
 class TripOnSecondHeadBackend final : public InMemoryBackend
 {
 public:
-    using Backend::putIfAbsent;
+    /// Unhide the legacy overloads the primitive overrides below would otherwise hide.
+    using InMemoryBackend::head;
 
-    HeadResult head(const String & key) override
+    std::optional<RawMeta> head(const String & key, TransportAccess & access) override
     {
         ++head_calls;
         if (head_calls == 2 && trigger)
             std::exchange(trigger, {})();
-        return InMemoryBackend::head(key);
+        return InMemoryBackend::head(key, access);
     }
 
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
+    /// A refused precondition in its value form: nothing was written, and the caller settles what is
+    /// at the key by reading -- which is the second HEAD this double trips the fence on.
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             TransportAccess & access) override
     {
         if (fail_first_put)
         {
             fail_first_put = false;
-            return PutResult{.outcome = PutOutcome::PreconditionFailed, .token = {}};
+            return std::unexpected(RawConflict{});
         }
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 
     int head_calls = 0;
-    /// Default false: `Pool::open`'s own capability probe issues `putIfAbsent` calls before the test
-    /// gets to arm this, and those must succeed normally. The test flips this to `true` only right
-    /// before driving the write it actually targets.
+    /// Default false: `Pool::open`'s own capability probe issues writes before the test gets to arm
+    /// this, and those must succeed normally. The test flips this to `true` only right before driving
+    /// the write it actually targets.
     bool fail_first_put = false;
     std::function<void()> trigger;
 };
@@ -148,24 +156,28 @@ PartWriteTxnPtr precommittedBuildForBlob(
 class BlobPublicationFenceBackend final : public InMemoryBackend
 {
 public:
+    /// Unhide the legacy overload the primitive override below would otherwise hide.
+    using InMemoryBackend::head;
     enum class TripPoint : uint8_t
     {
         OnHead,
         AfterPublication,
     };
 
-    HeadResult head(const String & key) override
+    /// Both seams sit on the transport primitives: a writer's mandatory HEAD and its publication both
+    /// reach the store through them.
+    std::optional<RawMeta> head(const String & key, TransportAccess & access) override
     {
-        const HeadResult result = InMemoryBackend::head(key);
+        const std::optional<RawMeta> result = InMemoryBackend::head(key, access);
         if (key == watched_key && trip_point == TripPoint::OnHead && trigger)
             std::exchange(trigger, {})();
         return result;
     }
 
-    void publishBlob(const BlobPublishRequest & request) override
+    void publish(const BlobPublishRequest & request, TransportAccess & access) override
     {
         ++publish_calls;
-        InMemoryBackend::publishBlob(request);
+        InMemoryBackend::publish(request, access);
         if (request.destination_key == watched_key && trip_point == TripPoint::AfterPublication && trigger)
             std::exchange(trigger, {})();
     }
@@ -232,7 +244,10 @@ TEST(CASFenceGeneration, BlobPublicationFenceLossBeforeFinalCheckPublishesNothin
     });
 
     EXPECT_EQ(backend->publish_calls, 0u);
-    EXPECT_FALSE(backend->head(backend->watched_key).exists);
+    {
+        DB::Cas::tests::OperationForTest raw_op(*backend);
+        EXPECT_FALSE((*raw_op).head(backend->watched_key, Retry::once()).has_value());
+    }
     EXPECT_EQ(build->dependencyProof(ref), std::nullopt);
 }
 
@@ -260,8 +275,14 @@ TEST(CASFenceGeneration, BlobPublicationHeadTripAndRearmCannotAdoptNewFenceGener
     });
 
     EXPECT_EQ(backend->publish_calls, 0u);
-    EXPECT_FALSE(backend->head(backend->watched_key).exists);
-    EXPECT_EQ(loadMeta(*backend, store->layout(), ref), std::nullopt)
+    {
+        DB::Cas::tests::OperationForTest raw_op(*backend);
+        EXPECT_FALSE((*raw_op).head(backend->watched_key, Retry::once()).has_value());
+    }
+    /// The mount is live again under a FRESH generation, so this read is admitted where the stale
+    /// operation's writes were not.
+    CasOperation probe = store->mountRequests().admit();
+    EXPECT_FALSE(loadMeta(probe, store->layout(), ref).has_value())
         << "the stale operation must not reconcile freshness metadata after trip-and-rearm";
     EXPECT_EQ(build->dependencyProof(ref), std::nullopt);
 }
@@ -283,8 +304,11 @@ TEST(CASFenceGeneration, BlobPublicationFenceLossAfterLandingReturnsNoProof)
     });
 
     EXPECT_EQ(backend->publish_calls, 1u);
-    EXPECT_TRUE(backend->head(backend->watched_key).exists)
-        << "a publication that landed before fence loss is safe unreferenced debris";
+    {
+        DB::Cas::tests::OperationForTest raw_op(*backend);
+        EXPECT_TRUE((*raw_op).head(backend->watched_key, Retry::once()).has_value())
+            << "a publication that landed before fence loss is safe unreferenced debris";
+    }
     EXPECT_EQ(build->dependencyProof(ref), std::nullopt);
 }
 
@@ -304,8 +328,12 @@ TEST(CASFenceGeneration, PlainObjectPutAbortsWhenFenceTripsBetweenAdmissionAndDu
         store->putNamespaceFile(DB::Cas::tests::fixture::fixtureLife(ns), "somefile", "hello");
     });
 
-    /// No durable write ever landed -- assert via the Emulated backend listing.
-    EXPECT_TRUE(store->listNamespaceFiles(DB::Cas::tests::fixture::fixtureLife(ns)).empty());
+    /// No durable write ever landed. Asserted through the RAW backend: every request the pool issues
+    /// is admitted under the mount fence, which this test has just tripped, so a read through the pool
+    /// would report that refusal rather than what the store holds.
+    DB::Cas::tests::OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).list(store->layout().namespaceFilesPrefix(
+        DB::Cas::tests::fixture::fixtureLife(ns)), "", 100, Retry::once()).keys.empty());
 }
 
 /// `casRemoveObject`'s delete sibling, same shape: the fence trips between admission and the durable
@@ -327,10 +355,13 @@ TEST(CASFenceGeneration, PlainObjectRemoveAbortsWhenFenceTripsBetweenAdmissionAn
         store->removeNamespaceFile(DB::Cas::tests::fixture::fixtureLife(ns), "victim");
     });
 
-    /// The durable delete never ran -- the object survives (reads are not fence-gated by this task).
-    const auto still_there = store->getNamespaceFile(DB::Cas::tests::fixture::fixtureLife(ns), "victim");
+    /// The durable delete never ran, so the object survives -- read raw, since a read through the pool
+    /// is admitted under the fence this test has tripped and would report that refusal instead.
+    DB::Cas::tests::OperationForTest raw_op(*backend);
+    const auto still_there = (*raw_op).read(store->layout().namespaceFileKey(
+        DB::Cas::tests::fixture::fixtureLife(ns), "victim"), Retry::once());
     ASSERT_TRUE(still_there.has_value());
-    EXPECT_EQ(*still_there, "still here");
+    EXPECT_EQ(still_there->bytes, "still here");
 }
 
 /// The fence re-check must run before EVERY conditional-retry iteration, not just the first attempt
@@ -354,7 +385,9 @@ TEST(CASFenceGeneration, PlainObjectPutRechecksFenceOnEveryRetryIterationNotJust
     });
 
     EXPECT_EQ(backend->head_calls, 2);
-    EXPECT_TRUE(store->listNamespaceFiles(DB::Cas::tests::fixture::fixtureLife(ns)).empty());
+    DB::Cas::tests::OperationForTest raw_op(*backend);
+    EXPECT_TRUE((*raw_op).list(store->layout().namespaceFilesPrefix(
+        DB::Cas::tests::fixture::fixtureLife(ns)), "", 100, Retry::once()).keys.empty());
 }
 
 /// (b) The S3-native staging-buffer finalize: the fence trips AFTER the buffer is constructed

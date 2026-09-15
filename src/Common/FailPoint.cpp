@@ -41,6 +41,8 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     REGULAR(cluster_discovery_faults) \
+    REGULAR(cluster_discovery_unregister_fail) \
+    ONCE(cluster_discovery_retry_signal_fail) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     REGULAR(hybrid_watermarks_read_fail) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -85,6 +87,7 @@ static struct InitFiu
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
@@ -176,6 +179,7 @@ static struct InitFiu
     REGULAR(export_partition_processed_paths_sync_fail) \
     REGULAR(export_part_non_retryable_throw) \
     REGULAR(export_part_retryable_throw) \
+    PAUSEABLE_ONCE(export_part_pause_before_schema_validation) \
     ONCE(backup_add_empty_memory_table) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
@@ -209,6 +213,7 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
+    PAUSEABLE_ONCE(rmt_pause_before_commit_local_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
@@ -218,6 +223,8 @@ static struct InitFiu
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(datalake_simulate_missing_table_state) \
+    REGULAR(datalake_get_tables_throw) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
@@ -232,7 +239,9 @@ static struct InitFiu
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     REGULAR(cas_relink_receiver_force_mechanism_failure) \
-    PAUSEABLE_ONCE(cas_relink_receiver_pause_before_confirm)
+    PAUSEABLE_ONCE(cas_relink_receiver_pause_before_confirm) \
+    REGULAR(cas_relink_sender_omit_pool_cookie) \
+    REGULAR(cas_relink_receiver_drop_forced_disk)
 
 namespace FailPoints
 {

@@ -1,3 +1,5 @@
+import json
+import os
 import uuid
 
 import pytest
@@ -38,6 +40,223 @@ def _strip_file_uri_scheme(path):
     if path.startswith("file:"):
         return path[len("file:") :]
     return path
+
+
+PUFFIN_MAGIC = b"PFA1"
+PUFFIN_FOOTER_TRAILER_SIZE = 12
+ICEBERG_WAREHOUSE = "/var/lib/clickhouse/user_files/iceberg_data"
+
+
+def _avro_long(value):
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        if "long" in value:
+            return int(value["long"])
+        if not value:
+            return None
+        return int(next(iter(value.values())))
+    return int(value)
+
+
+def _read_avro_file(path):
+    import avro.datafile
+    import avro.io
+
+    with open(path, "rb") as f:
+        reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
+        schema = reader.datum_reader.writers_schema
+        meta = dict(reader.meta)
+        codec = reader.codec
+        records = list(reader)
+        reader.close()
+    return records, schema, meta, codec
+
+
+def _write_avro_file(path, records, schema, meta, codec):
+    import avro.datafile
+    import avro.io
+
+    with open(path, "wb") as f:
+        writer = avro.datafile.DataFileWriter(f, avro.io.DatumWriter(), schema, codec=codec)
+        for key, value in meta.items():
+            if key not in ("avro.schema", "avro.codec"):
+                writer.set_meta(key, value)
+        for record in records:
+            writer.append(record)
+        writer.flush()
+        writer.close()
+
+
+def _resolve_under_table(table_dir, path):
+    path = _strip_file_uri_scheme(path)
+    if os.path.isfile(path):
+        return path
+    joined = os.path.join(table_dir, path.lstrip("/"))
+    if os.path.isfile(joined):
+        return joined
+    raise RuntimeError(f"Cannot resolve Iceberg path '{path}' under '{table_dir}'")
+
+
+def _current_metadata(table_dir):
+    metadata_dir = os.path.join(table_dir, "metadata")
+    hint_path = os.path.join(metadata_dir, "version-hint.text")
+    if os.path.isfile(hint_path):
+        with open(hint_path, encoding="utf-8") as f:
+            version = f.read().strip()
+        if version.startswith("v"):
+            version = version[1:]
+        path = os.path.join(metadata_dir, f"v{version}.metadata.json")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+
+    candidates = [
+        os.path.join(metadata_dir, name)
+        for name in os.listdir(metadata_dir)
+        if name.endswith(".metadata.json")
+    ]
+    if not candidates:
+        raise RuntimeError(f"No metadata JSON under {metadata_dir}")
+
+    best = None
+    best_ts = -1
+    for path in candidates:
+        with open(path, encoding="utf-8") as f:
+            meta = json.load(f)
+        ts = int(meta.get("last-updated-ms") or 0)
+        if ts >= best_ts:
+            best = meta
+            best_ts = ts
+    return best
+
+
+def _puffin_to_delta_bin(data):
+    """Extract deletion-vector-v1 blobs from a Puffin file into a Delta `.bin` envelope.
+
+    Databricks UniForm / Delta DV objects are `version=1` plus the same
+    `deletion-vector-v1` bytes Iceberg stores inside Puffin. Manifest
+    `content_offset` for a single blob becomes 1.
+    """
+    if len(data) < 16 or data[:4] != PUFFIN_MAGIC or data[-4:] != PUFFIN_MAGIC:
+        raise ValueError("not a Puffin file")
+
+    footer_length = int.from_bytes(data[-12:-8], "little", signed=True)
+    flags = data[-8:-4]
+    if flags[0] & 0x01:
+        raise ValueError("compressed Puffin footers are not supported by this test helper")
+    if footer_length <= 0:
+        raise ValueError(f"invalid Puffin footer length {footer_length}")
+
+    payload_start = len(data) - PUFFIN_FOOTER_TRAILER_SIZE - footer_length
+    if payload_start < 8 or data[payload_start - 4 : payload_start] != PUFFIN_MAGIC:
+        raise ValueError("invalid Puffin footer magic")
+
+    footer = json.loads(data[payload_start : payload_start + footer_length])
+    out = bytearray([0x01])
+    offset_map = {}
+    for blob in footer.get("blobs", []):
+        if blob.get("type") != "deletion-vector-v1":
+            continue
+        old_offset = int(blob["offset"])
+        length = int(blob["length"])
+        slice_bytes = data[old_offset : old_offset + length]
+        if len(slice_bytes) != length:
+            raise ValueError(f"truncated Puffin blob at offset {old_offset}")
+        offset_map[old_offset] = len(out)
+        out.extend(slice_bytes)
+
+    if not offset_map:
+        raise ValueError("Puffin file has no deletion-vector-v1 blobs")
+    return bytes(out), offset_map
+
+
+def convert_spark_puffin_dvs_to_delta_bin(table_name):
+    """Rewrite Spark Iceberg v3 Puffin DVs as Databricks-style `.bin` files.
+
+    Spark `DELETE` on format-version 3 writes `PFA1` Puffin. Databricks UniForm
+    writes `deletion_vector_<uuid>.bin` (version byte + envelope) and still
+    stores `content_offset` / `content_size_in_bytes` on the Iceberg delete
+    manifest. Overwrite each referenced Puffin in place and retarget offsets
+    so ClickHouse must take the slice-only path (skip the Puffin footer).
+    """
+    table_dir = os.path.join(ICEBERG_WAREHOUSE, "default", table_name)
+    metadata = _current_metadata(table_dir)
+    snapshot_id = metadata.get("current-snapshot-id")
+    snapshot = next((s for s in metadata.get("snapshots", []) if s.get("snapshot-id") == snapshot_id), None)
+    if not snapshot:
+        raise RuntimeError(f"Snapshot {snapshot_id} not found for {table_name}")
+
+    manifest_list_path = _resolve_under_table(table_dir, snapshot["manifest-list"])
+    manifest_list_records, _, _, _ = _read_avro_file(manifest_list_path)
+    manifest_paths = [
+        _resolve_under_table(table_dir, record["manifest_path"])
+        for record in manifest_list_records
+        if "manifest_path" in record
+    ]
+
+    dv_paths = set()
+    for manifest_path in manifest_paths:
+        records, _, _, _ = _read_avro_file(manifest_path)
+        for record in records:
+            data_file = record.get("data_file") or {}
+            if _avro_long(data_file.get("content_offset")) is None:
+                continue
+            if _avro_long(data_file.get("content_size_in_bytes")) is None:
+                continue
+            dv_paths.add(_resolve_under_table(table_dir, data_file["file_path"]))
+
+    if not dv_paths:
+        raise RuntimeError(f"No Iceberg deletion-vector entries found under {table_dir}")
+
+    conversions = {}
+    for path in sorted(dv_paths):
+        with open(path, "rb") as f:
+            original = f.read()
+        if original[:4] != PUFFIN_MAGIC:
+            raise RuntimeError(f"Expected Puffin magic in '{path}', got {original[:4]!r}")
+        new_bytes, offset_map = _puffin_to_delta_bin(original)
+        if new_bytes[:4] == PUFFIN_MAGIC:
+            raise RuntimeError(f"Converted DV '{path}' still starts with Puffin magic")
+        with open(path, "wb") as f:
+            f.write(new_bytes)
+        conversions[path] = (offset_map, len(new_bytes))
+
+    patched_entries = 0
+    for manifest_path in manifest_paths:
+        records, schema, meta, codec = _read_avro_file(manifest_path)
+        changed = False
+        for record in records:
+            data_file = record.get("data_file")
+            if not data_file:
+                continue
+            content_offset = _avro_long(data_file.get("content_offset"))
+            content_size = _avro_long(data_file.get("content_size_in_bytes"))
+            if content_offset is None or content_size is None:
+                continue
+            local_path = _resolve_under_table(table_dir, data_file["file_path"])
+            if local_path not in conversions:
+                continue
+            offset_map, new_size = conversions[local_path]
+            if content_offset not in offset_map:
+                raise RuntimeError(
+                    f"content_offset {content_offset} missing from converted Puffin '{local_path}'"
+                )
+            new_offset = offset_map[content_offset]
+            if new_offset + content_size > new_size:
+                raise RuntimeError(
+                    f"Delta .bin slice [{new_offset}, {new_offset + content_size}) exceeds file size {new_size}"
+                )
+            data_file["content_offset"] = new_offset
+            data_file["file_size_in_bytes"] = new_size
+            changed = True
+            patched_entries += 1
+        if changed:
+            _write_avro_file(manifest_path, records, schema, meta, codec)
+
+    if patched_entries == 0:
+        raise RuntimeError(f"Failed to patch deletion-vector manifests for {table_name}")
+    return len(conversions)
 
 
 def add_equality_deletes_by_id(spark, table_name, ids):
@@ -141,6 +360,68 @@ def test_deletion_vectors(started_cluster_iceberg_with_spark, storage_type, run_
     assert get_array(instance.query(f"SELECT id FROM {expression}")) == [
         x for x in range(200) if x not in deleted_ids
     ]
+
+
+@pytest.mark.parametrize("run_on_cluster", [False, True])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_deletion_vectors_delta_bin(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
+    """Iceberg v3 DVs stored as Delta `.bin` files (Databricks UniForm), not Puffin.
+
+    Spark Iceberg DELETE writes `PFA1` Puffin. Convert those objects to the
+    Databricks layout (`0x01` + deletion-vector-v1 envelope, `content_offset=1`)
+    so ClickHouse must skip the Puffin footer and decode the slice in place.
+    """
+    if storage_type == "local" and run_on_cluster:
+        pytest.skip("Local storage with cluster execution is not supported")
+
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_deletion_vectors_delta_bin_" + storage_type + "_" + get_uuid_str()
+    deleted_ids = [2, 5, 7, 100]
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} SELECT id FROM range(0, 200)")
+    spark.sql(
+        f"DELETE FROM {table_name} WHERE id IN ({', '.join(str(x) for x in deleted_ids)})"
+    )
+
+    converted = convert_spark_puffin_dvs_to_delta_bin(table_name)
+    assert converted >= 1
+
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        run_on_cluster=run_on_cluster,
+        table_function=True,
+    )
+
+    expected = [x for x in range(200) if x not in deleted_ids]
+    settings = {"use_iceberg_metadata_files_cache": 0, "use_puffin_files_cache": 0}
+
+    assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == len(expected)
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == expected
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                settings={**settings, "optimize_trivial_count_query": 1},
+            )
+        )
+        == len(expected)
+    )
 
 
 @pytest.mark.parametrize("run_on_cluster", [False, True])

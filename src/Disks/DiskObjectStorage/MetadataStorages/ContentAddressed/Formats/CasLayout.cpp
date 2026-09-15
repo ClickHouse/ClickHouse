@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasBlobDigest.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Common/Exception.h>
 #include <charconv>
@@ -67,14 +68,16 @@ std::optional<BlobRef> Layout::parseBlobKey(std::string_view key) const
     if (shard.size() != 2 || hex.size() < 2 || shard != hex.substr(0, 2))
         return std::nullopt;   /// malformed shard/hex shape -- not ours
 
-    /// `<algoName>` -> `BlobHashAlgo`: the small enum-value set makes a linear scan against
-    /// `blobHashAlgoName` (the ONE name authority) cheaper and safer than a second name table that
-    /// could drift from it.
+    /// `<algoName>` -> `BlobHashAlgo` through the wire table itself, whose coverage is proven against
+    /// the enum at compile time. A hand-written candidate list here would be a second enumeration that
+    /// a new algorithm could silently outgrow: the parser would reject a segment the writer emits.
+    /// This path answers "is this key ours?", so an unknown segment is `nullopt` -- debris, not
+    /// corruption -- which is why it scans rather than calling the throwing `fromWord`.
     std::optional<BlobHashAlgo> algo;
-    for (BlobHashAlgo candidate : {BlobHashAlgo::CityHash128, BlobHashAlgo::XXH3_128, BlobHashAlgo::Sha256})
-        if (algo_name == blobHashAlgoName(candidate))
+    for (const auto & entry : kBlobHashAlgoWords.entries)
+        if (algo_name == entry.word)
         {
-            algo = candidate;
+            algo = entry.value;
             break;
         }
     if (!algo)
@@ -200,8 +203,8 @@ NamespaceLifePhysicalId Layout::namespaceLifePhysicalIdOf(std::string_view key, 
     if (!incarnation)
         throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA,
             "CasLayout: object '{}' names no life: '{}' is not 32 lower-case hex digits of a nonzero "
-            "life id. Generation-5 namespace-bearing pools are rejected by the pool-metadata format "
-            "gate before this generation-6 physical-key parser is reached",
+            "life id. Pools whose keys predate the opaque-life layout are rejected by the "
+            "pool-metadata format gate before this physical-key parser is reached",
             key, segment);
     return *incarnation;
 }

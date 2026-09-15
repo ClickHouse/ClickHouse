@@ -749,6 +749,9 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
+    if (write_settings.object_storage_attempt_number != 0)
+        S3::setClickhouseAttemptNumber(req, write_settings.object_storage_attempt_number);
+
     client_ptr->setKMSHeaders(req);
 
     /// The actual PUT that produces a CAS incarnation token: eligible for the typed NativeConditional
@@ -809,10 +812,13 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             }
             else
             {
-                /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it (see `S3::isPreconditionFailedError`).
-                if (S3::isPreconditionFailedError(outcome.GetError()))
-                    LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
+                /// Neither says anything to the operator: PreconditionFailed is an expected response for
+                /// conditional writes (e.g. If-None-Match: *), handled by the caller (see
+                /// `S3::isPreconditionFailedError`); a SingleAttempt write is owned by an outer retry loop
+                /// that resolves the outcome and reissues, so its one failed attempt is not terminal either.
+                if (S3::isPreconditionFailedError(outcome.GetError())
+                    || write_settings.object_storage_retry_profile == ObjectStorageRetryProfile::SingleAttempt)
+                    LOG_DEBUG(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
                 else
                     LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",

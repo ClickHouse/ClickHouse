@@ -136,6 +136,7 @@ public:
     std::string getName() const override { return "ReadFromCluster"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void describeActions(FormatSettings & format_settings) const override;
 
     ReadFromCluster(
         const Names & column_names_,
@@ -172,9 +173,10 @@ private:
     LoggerPtr log;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
+    std::shared_ptr<const ActionsDAG> listing_filter_dag;
     std::optional<Tables> external_tables;
 
-    void createExtension(const ActionsDAG::Node * predicate);
+    void createExtension();
     ContextPtr updateSettings(const Settings & settings);
 };
 

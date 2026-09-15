@@ -66,6 +66,12 @@ if(NOT OS_DARWIN)
     )
 endif()
 
+if(OS_DARWIN OR ARCH_PPC64LE)
+    set(SRCS ${SRCS}
+        "${POSTGRES_SOURCE_DIR}/src/port/explicit_bzero.c"
+    )
+endif()
+
 add_library(_libpq ${SRCS})
 
 add_definitions(-DFRONTEND)

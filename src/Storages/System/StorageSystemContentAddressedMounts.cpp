@@ -160,7 +160,11 @@ Pipe StorageSystemContentAddressedMounts::read(
             bool list_ok = true;
             try
             {
-                mounts = Cas::listMounts(store->backend(), store->layout(), now_ms, skew_margin_ms);
+                /// Introspection reads on the open fence: a row describing this disk's mount slots must
+                /// still be produced when the local mount fence has already run down -- that is exactly
+                /// the state an operator opens this table to look at.
+                Cas::CasOperation op = store->openRequests().admit();
+                mounts = Cas::listMounts(op, store->layout(), now_ms, skew_margin_ms);
             }
             catch (...)
             {
@@ -187,7 +191,7 @@ Pipe StorageSystemContentAddressedMounts::read(
                     col_seq->insert(m.lease.seq);
                     assert_cast<ColumnDateTime64 &>(*col_started).insertValue(static_cast<Decimal64>(m.lease.started_at_ms));
                     assert_cast<ColumnDateTime64 &>(*col_expires).insertValue(static_cast<Decimal64>(m.lease.expires_at_ms));
-                    col_min_active->insert(m.lease.min_active);
+                    col_min_active->insert(m.lease.min_active_build_sequence);
                     col_fenced->insert(static_cast<UInt8>(m.lease.gc_fenced));
                     col_state->insert(m.state);
 

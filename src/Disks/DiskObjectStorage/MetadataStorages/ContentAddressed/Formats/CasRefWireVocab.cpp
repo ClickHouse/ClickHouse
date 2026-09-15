@@ -1,4 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefWireVocab.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasCodecUtil.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTableAsserts.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -12,21 +14,26 @@ namespace ErrorCodes
 namespace DB::Cas
 {
 
+namespace
+{
+
+constexpr EnumWireTable<RefOwnerKind, 2> kRefOwnerKindWords{{{
+    {RefOwnerKind::Committed, "committed"},
+    {RefOwnerKind::Precommit, "precommit"},
+}}};
+
+static_assert(casEnumTableCoversEnum<kRefOwnerKindWords, RefOwnerKind>());
+
+}
+
 std::string_view refOwnerKindToWord(RefOwnerKind k)
 {
-    switch (k)
-    {
-        case RefOwnerKind::Committed: return "committed";
-        case RefOwnerKind::Precommit: return "precommit";
-    }
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS ref wire: unknown RefOwnerKind {}", static_cast<int>(k));
+    return kRefOwnerKindWords.toWord(k, "CAS ref wire: RefOwnerKind");
 }
 
 RefOwnerKind refOwnerKindFromWord(std::string_view w, std::string_view what)
 {
-    if (w == "committed") return RefOwnerKind::Committed;
-    if (w == "precommit") return RefOwnerKind::Precommit;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS {}: unknown owner kind '{}'", what, w);
+    return kRefOwnerKindWords.fromWord(w, what);
 }
 
 void checkRefTxnIdNonzero(const RefTxnId & id, std::string_view format, std::string_view field)
@@ -36,12 +43,19 @@ void checkRefTxnIdNonzero(const RefTxnId & id, std::string_view format, std::str
             "{}: {} fields must both be nonzero, got {}-{}", format, field, id.writer_epoch, id.ref_sequence);
 }
 
-void writeRefTxnIdFields(CasJsonWriter & out, bool & first, std::string_view epoch_key, std::string_view seq_key, const RefTxnId & id)
+void writeRefTxnIdFields(CasJsonWriter & out, bool & first, WireKey epoch_key, WireKey seq_key, const RefTxnId & id)
 {
-    writeKey(out, epoch_key, first);
-    writeU64StringValue(out, id.writer_epoch);
-    writeKey(out, seq_key, first);
-    writeU64StringValue(out, id.ref_sequence);
+    writeU64StringField(out, epoch_key, id.writer_epoch, first);
+    writeU64StringField(out, seq_key, id.ref_sequence, first);
+}
+
+void writeBindingFields(CasJsonWriter & out, bool & first, const BindingWireKeys & keys, const RefOwnerBinding & binding)
+{
+    checkCanonicalRefName(binding.ref_name, "RefLogTxn", "owner binding ref_name");
+    checkManifestRef(binding.manifest_ref, "RefLogTxn", "owner binding manifest_ref");
+    writeWordField(out, keys.kind, refOwnerKindToWord(binding.kind), first);
+    writeStringField(out, keys.ref, binding.ref_name, first);
+    writeManifestRefFields(out, first, keys.manifest, binding.manifest_ref);
 }
 
 }

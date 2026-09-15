@@ -14,6 +14,31 @@ namespace ErrorCodes
 namespace DB::Cas
 {
 
+namespace OwnerWire
+{
+    constexpr WireKey server_uuid{"server_uuid"};
+    constexpr WireKey retired_at_ms{"retired_at_ms"};
+}
+
+namespace ServerEpochWire
+{
+    constexpr WireKey next_writer_epoch{"next_writer_epoch"};
+}
+
+namespace MountLeaseWire
+{
+    constexpr WireKey server_uuid{"server_uuid"};
+    constexpr WireKey writer_epoch{"writer_epoch"};
+    constexpr WireKey hostname{"hostname"};
+    constexpr WireKey pid{"pid"};
+    constexpr WireKey started_at_ms{"started_at_ms"};
+    constexpr WireKey seq{"seq"};
+    constexpr WireKey expires_at_ms{"expires_at_ms"};
+    constexpr WireKey min_active_build_sequence{"min_active_build_sequence"};
+    constexpr WireKey gc_fenced{"gc_fenced"};
+    constexpr WireKey write_attempt_id{"write_attempt_id"};
+}
+
 namespace
 {
 
@@ -32,13 +57,9 @@ String encodeOwner(const OwnerObject & o)
     CasJsonWriter out(256);
     writeHeaderLine(out, FormatId::Owner);
     bool first = true;
-    writeKey(out, "su", first);
-    writeHex128Value(out, o.server_uuid);
+    writeHex128Field(out, OwnerWire::server_uuid, o.server_uuid, first);
     if (o.retired_at_ms)
-    {
-        writeKey(out, "rt", first);
-        writeIntText(*o.retired_at_ms, out);
-    }
+        writeNumberField(out, OwnerWire::retired_at_ms, *o.retired_at_ms, first);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -58,19 +79,19 @@ OwnerObject decodeOwner(std::string_view data)
     String key;
     while (r.nextKey(key))
     {
-        if (key == "su")
+        if (key == OwnerWire::server_uuid)
         {
             o.server_uuid = r.readHex128();
             saw = true;
         }
-        else if (key == "rt")
+        else if (key == OwnerWire::retired_at_ms)
             rt = r.readU64Number();
         else
             r.skipUnknown(key);
     }
     o.retired_at_ms = rt;
     if (!saw)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS owner: missing su");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS owner: missing server_uuid");
     if (!body_in.eof() || !in.eof())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS owner: trailing bytes");
     return o;
@@ -81,8 +102,7 @@ String encodeServerEpoch(const ServerEpoch & e)
     CasJsonWriter out(256);
     writeHeaderLine(out, FormatId::ServerEpoch);
     bool first = true;
-    writeKey(out, "nwe", first);
-    writeU64StringValue(out, e.next_writer_epoch);
+    writeU64StringField(out, ServerEpochWire::next_writer_epoch, e.next_writer_epoch, first);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -101,7 +121,7 @@ ServerEpoch decodeServerEpoch(std::string_view data)
     String key;
     while (r.nextKey(key))
     {
-        if (key == "nwe")
+        if (key == ServerEpochWire::next_writer_epoch)
         {
             e.next_writer_epoch = r.readU64String();
             saw = true;
@@ -110,7 +130,7 @@ ServerEpoch decodeServerEpoch(std::string_view data)
             r.skipUnknown(key);
     }
     if (!saw)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS server-epoch: missing nwe");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS server-epoch: missing next_writer_epoch");
     if (!body_in.eof() || !in.eof())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS server-epoch: trailing bytes");
     return e;
@@ -121,16 +141,16 @@ String encodeMountLease(const MountLease & m)
     CasJsonWriter out(256);
     writeHeaderLine(out, FormatId::MountLease);
     bool first = true;
-    writeKey(out, "su", first);  writeHex128Value(out, m.server_uuid);
-    writeKey(out, "we", first);  writeU64StringValue(out, m.writer_epoch);
-    writeKey(out, "hn", first);  writeStringValue(out, m.hostname);
-    writeKey(out, "pid", first); writeIntText(m.pid, out);
-    writeKey(out, "sat", first); writeIntText(m.started_at_ms, out);
-    writeKey(out, "seq", first); writeU64StringValue(out, m.seq);
-    writeKey(out, "eat", first); writeIntText(m.expires_at_ms, out);
-    writeKey(out, "ma", first);  writeU64StringValue(out, m.min_active);
-    writeKey(out, "fen", first); writeBoolValue(out, m.gc_fenced);
-    writeKey(out, "write_attempt_id", first); writeHex128Value(out, m.write_attempt_id);
+    writeHex128Field(out, MountLeaseWire::server_uuid, m.server_uuid, first);
+    writeU64StringField(out, MountLeaseWire::writer_epoch, m.writer_epoch, first);
+    writeStringField(out, MountLeaseWire::hostname, m.hostname, first);
+    writeNumberField(out, MountLeaseWire::pid, m.pid, first);
+    writeNumberField(out, MountLeaseWire::started_at_ms, m.started_at_ms, first);
+    writeU64StringField(out, MountLeaseWire::seq, m.seq, first);
+    writeNumberField(out, MountLeaseWire::expires_at_ms, m.expires_at_ms, first);
+    writeU64StringField(out, MountLeaseWire::min_active_build_sequence, m.min_active_build_sequence, first);
+    writeBoolField(out, MountLeaseWire::gc_fenced, m.gc_fenced, first);
+    writeHex128Field(out, MountLeaseWire::write_attempt_id, m.write_attempt_id, first);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -151,32 +171,47 @@ MountLease decodeMountLease(std::string_view data)
     String key;
     while (r.nextKey(key))
     {
-        if (key == "su")
+        if (key == MountLeaseWire::server_uuid)
         {
             m.server_uuid = r.readHex128();
             saw_su = true;
         }
-        else if (key == "we")
+        else if (key == MountLeaseWire::writer_epoch)
         {
             m.writer_epoch = r.readU64String();
             saw_we = true;
         }
-        else if (key == "hn") m.hostname = r.readString();
-        else if (key == "pid") m.pid = r.readU64Number();
-        else if (key == "sat") m.started_at_ms = r.readU64Number();
-        else if (key == "seq") m.seq = r.readU64String();
-        else if (key == "eat") m.expires_at_ms = r.readU64Number();
-        else if (key == "ma") m.min_active = r.readU64String();
-        else if (key == "fen") m.gc_fenced = r.readBool();
-        else if (key == "write_attempt_id")
+        else if (key == MountLeaseWire::hostname)
+            m.hostname = r.readString();
+        else if (key == MountLeaseWire::pid)
+            m.pid = r.readU64Number();
+        else if (key == MountLeaseWire::started_at_ms)
+            m.started_at_ms = r.readU64Number();
+        else if (key == MountLeaseWire::seq)
+            m.seq = r.readU64String();
+        else if (key == MountLeaseWire::expires_at_ms)
+            m.expires_at_ms = r.readU64Number();
+        else if (key == MountLeaseWire::min_active_build_sequence)
+            m.min_active_build_sequence = r.readU64String();
+        else if (key == MountLeaseWire::gc_fenced)
+            m.gc_fenced = r.readBool();
+        else if (key == MountLeaseWire::write_attempt_id)
         {
             m.write_attempt_id = r.readHex128();
             saw_write_attempt_id = true;
         }
-        else r.skipUnknown(key);
+        else
+            r.skipUnknown(key);
     }
-    if (!saw_su || !saw_we || !saw_write_attempt_id || m.write_attempt_id == UInt128{})
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: missing or zero identity field");
+    /// Named one by one rather than as a single condition: these are three separate identities, and a
+    /// shared message cannot tell an operator which of them the object is missing -- nor let a test
+    /// prove that each is actually required.
+    if (!saw_su)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: missing server_uuid");
+    if (!saw_we)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: missing writer_epoch");
+    if (!saw_write_attempt_id || m.write_attempt_id == UInt128{})
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: missing or zero write_attempt_id");
     if (!body_in.eof() || !in.eof())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: trailing bytes");
     return m;

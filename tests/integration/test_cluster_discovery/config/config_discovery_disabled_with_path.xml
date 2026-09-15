@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- Discovery paths present but feature flag off: enabling the flag alone must start the worker. -->
+    <allow_experimental_cluster_discovery>0</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_enable_allow_only>
+            <discovery>
+                <path>/clickhouse/discovery/test_enable_allow_only</path>
+            </discovery>
+        </test_enable_allow_only>
+    </remote_servers>
+</clickhouse>

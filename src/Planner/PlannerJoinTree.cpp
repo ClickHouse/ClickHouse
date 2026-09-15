@@ -66,6 +66,7 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -213,6 +214,91 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
     }
+}
+
+/// Same restrictions as JOIN filter pushdown (`canPrefilterJoinSide`).
+bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
+{
+    std::vector<QueryTreeNodePtr> stack = {join_tree};
+    while (!stack.empty())
+    {
+        auto node = std::move(stack.back());
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        if (const auto * join = node->as<JoinNode>())
+        {
+            const bool table_on_left = extractTableExpressionsSet(join->getLeftTableExpression()).contains(table.get());
+            const bool table_on_right = extractTableExpressionsSet(join->getRightTableExpression()).contains(table.get());
+
+            if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
+                return false;
+            if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
+                return false;
+            stack.push_back(join->getLeftTableExpression());
+            stack.push_back(join->getRightTableExpression());
+        }
+        else if (const auto * array_join = node->as<ArrayJoinNode>())
+        {
+            stack.push_back(array_join->getTableExpression());
+        }
+        else if (const auto * cross_join = node->as<CrossJoinNode>())
+        {
+            for (const auto & expr : cross_join->getTableExpressions())
+                stack.push_back(expr);
+        }
+    }
+    return true;
+}
+
+/// `IStorageCluster` JOINs wrap the left table in a subquery. Attach dummy-analysis
+/// filters to `ReadFromCluster` for listing only; do not add a FilterStep, which would
+/// drop unused columns from the wrap header. Other wrap sources (`ReadFromMergeTree`
+/// for a remote `Distributed` replica, `ReadFromObjectStorageStep` after cluster
+/// fallback) keep the optimizer's later `applyFilters`.
+void tryAddClusterWrapFilter(QueryPlan & query_plan, const TableExpressionData & table_expression_data)
+{
+    const auto & filter_actions = table_expression_data.getFilterActions();
+    if (!filter_actions || !query_plan.isInitialized())
+        return;
+
+    QueryPlan::Node * node = query_plan.getRootNode();
+    while (node && !node->children.empty())
+        node = node->children.front();
+
+    auto * source = node ? typeid_cast<ReadFromCluster *>(node->step.get()) : nullptr;
+    if (!source)
+        return;
+
+    auto filter_dag = filter_actions->clone();
+
+    if (filter_dag.getOutputs().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter DAG must have single output");
+
+    const auto filter_column_name = filter_dag.getOutputs().at(0)->result_name;
+    const auto & header = source->getOutputHeader();
+    ActionsDAG rename_dag(header->getColumnsWithTypeAndName());
+    const auto & identifier_to_name = table_expression_data.getColumnIdentifierToColumnName();
+
+    for (const auto * input : filter_dag.getInputs())
+    {
+        if (header->has(input->result_name))
+            continue;
+
+        auto it = identifier_to_name.find(input->result_name);
+        if (it == identifier_to_name.end() || !header->has(it->second))
+            continue;
+
+        const auto & physical = rename_dag.findInOutputs(it->second);
+        rename_dag.addOrReplaceInOutputs(rename_dag.addAlias(physical, input->result_name));
+    }
+
+    filter_dag = ActionsDAG::merge(std::move(rename_dag), std::move(filter_dag));
+    source->addFilter(std::move(filter_dag), filter_column_name);
+    /// Wrap subquery planning already called `applyFilters` with no predicate.
+    /// Apply now so `ReadFromCluster` can keep the copied `WHERE` for listing.
+    source->SourceStepWithFilterBase::applyFilters();
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -376,6 +462,12 @@ bool applyTrivialCountIfPossible(
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
+        return false;
+
+    /// `arrayJoin` in the argument multiplies rows above the source read, so the aggregate does not
+    /// observe `totalRows()` rows. Must precede `optimize_trivial_count`: storages that count in
+    /// read() act on that flag even when this function later declines.
+    if (hasFunctionNode(aggregates.front(), "arrayJoin"))
         return false;
 
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
@@ -917,11 +1009,58 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     QueryProcessingStage::Enum till_stage = QueryProcessingStage::Enum::FetchColumns;
+    bool can_prefilter_wrapped_table = false;
 
     if (wrap_read_columns_in_subquery)
     {
+        auto original_table_expression = table_expression;
+
+        const auto * parent_query = select_query_info.query_tree
+            ? select_query_info.query_tree->as<QueryNode>()
+            : nullptr;
+        can_prefilter_wrapped_table = parent_query
+            && joinTreePreservesRowsForTable(parent_query->getJoinTree(), original_table_expression);
+
+        /// Subqueries inherit the outer GlobalPlannerContext, whose filter map is keyed by
+        /// outer table nodes. Collect filters for this JOIN query so icebergCluster listing
+        /// still sees left-only WHERE after the wrap. Skip the same join sides as
+        /// `joinTreePreservesRowsForTable` so listing cannot change `ASOF` / `PASTE` matches.
+        if (can_prefilter_wrapped_table && !table_expression_data.getFilterActions())
+        {
+            auto collected = collectFiltersForAnalysis(select_query_info.query_tree, select_query_options, nullptr);
+            auto it = collected.find(table_expression);
+            if (it != collected.end() && it->second.filter_actions)
+                table_expression_data.setFilterActions(it->second.filter_actions->clone());
+        }
+
         auto columns = table_expression_data.getColumns();
-        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
+        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
+
+        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
+        /// WHERE/PREWHERE so initiator file listing sees the same predicate as a single-table
+        /// `icebergCluster` read. Same helper as `IStorageCluster::updateQueryWithJoinToSendIfNeeded`.
+        if (can_prefilter_wrapped_table)
+        {
+            auto copy_left_only = [&](const QueryTreeNodePtr & predicate) -> QueryTreeNodePtr
+            {
+                auto cloned = predicate->clone();
+                removeExpressionsThatDoNotDependOnTableIdentifiers(cloned, original_table_expression, query_context);
+                removeExpressionsThatAreUnsafeToDuplicate(cloned, query_context);
+                return cloned;
+            };
+
+            auto & wrap_query = table_expression->as<QueryNode &>();
+            if (parent_query->hasWhere())
+            {
+                if (auto pred = copy_left_only(parent_query->getWhere()))
+                    wrap_query.getWhere() = std::move(pred);
+            }
+            if (parent_query->hasPrewhere())
+            {
+                if (auto pred = copy_left_only(parent_query->getPrewhere()))
+                    wrap_query.getPrewhere() = std::move(pred);
+            }
+        }
     }
 
     auto * table_node = table_expression->as<TableNode>();
@@ -1300,7 +1439,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
-                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
+                    /// The custom-key read below replaces the plan with a remote read at the fixed stage
+                    /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
+                    /// stage is not below that: a plan built up to a partial stage - e.g. a `Merge` table plans
+                    /// its children up to `WithMergeableState` when one of the underlying tables is read through
+                    /// an interpreter - must not receive finalized (post-aggregation, post-LIMIT) data instead
+                    /// of the partial aggregation states its consumer expects.
+                    const bool to_stage_supports_custom_key = select_query_options.to_stage == QueryProcessingStage::Complete
+                        || select_query_options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+                    if (query_context->canUseParallelReplicasCustomKey() && to_stage_supports_custom_key
+                        && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
@@ -1491,12 +1640,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         else
         {
             std::shared_ptr<GlobalPlannerContext> subquery_planner_context;
+            auto subquery_options = select_query_options.subquery();
             if (wrap_read_columns_in_subquery)
-                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            {
+                subquery_planner_context = std::make_shared<GlobalPlannerContext>(
+                    nullptr, nullptr, nullptr, collectFiltersForAnalysis(table_expression, subquery_options, nullptr));
+            }
             else
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
-            auto subquery_options = select_query_options.subquery();
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
@@ -1504,6 +1656,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             const auto & mapping = subquery_planner.getQueryNodeToPlanStepMapping();
             query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
             query_plan = std::move(subquery_planner).extractQueryPlan();
+            if (wrap_read_columns_in_subquery && till_stage == QueryProcessingStage::FetchColumns && can_prefilter_wrapped_table)
+                tryAddClusterWrapFilter(query_plan, table_expression_data);
         }
 
         auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();

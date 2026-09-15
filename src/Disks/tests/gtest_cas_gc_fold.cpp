@@ -21,6 +21,18 @@ ManifestRef ref(const String &, uint64_t seq, uint64_t inst)
 {
     return ManifestRef{.writer_epoch = 1, .build_sequence = seq, .manifest_ordinal = static_cast<uint32_t>(inst)};
 }
+
+std::optional<DB::Cas::Object> readOf(Backend & backend, const String & key)
+{
+    OperationForTest op(backend);
+    return (*op).read(key, Retry::standard());
+}
+
+bool headExists(Backend & backend, const String & key)
+{
+    OperationForTest op(backend);
+    return (*op).head(key, Retry::standard()).has_value();
+}
 }
 
 /// Committed new_manifest => +1 per blob entry (BlobInDegreeMatchesActiveManifests).
@@ -38,12 +50,12 @@ TEST(CASGCFold, FoldAdoptsAttemptEqualsLeaseSeq)
     Gc gc(store, kGc);
     gc.runRegularRound();
 
-    const auto st = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st = decodeGcState(readOf(*backend, store->layout().gcStateKey())->bytes);
     EXPECT_EQ(st.snap_attempt, st.lease.seq);
     EXPECT_GT(st.snap_generation, 0u);
     /// The one-pass round's fold seal is durable under (snap_generation, snap_attempt) — the adopted
     /// attempt locates it (a seal under any other attempt would be unadopted debris).
-    EXPECT_TRUE(backend->head(store->layout().foldSealKey(st.snap_generation, st.snap_attempt)).exists);
+    EXPECT_TRUE(headExists(*backend, store->layout().foldSealKey(st.snap_generation, st.snap_attempt)));
 }
 
 TEST(CASGCFold, CommittedAddEmitsPlusOnePerBlob)
@@ -142,7 +154,7 @@ TEST(CASGCFold, PromoteOfActivatedPrecommitEmitsNoDelta)
     promoteTransition(*backend, store->layout(), ns, DB::UInt128(7), "tbl", r);
     gc.runRegularRound();
     EXPECT_EQ(inDegreeOf(*backend, store->layout(), DB::UInt128(1)), 1);   // unchanged, still pinned
-    EXPECT_TRUE(backend->head(store->layout().manifestKey(ManifestId{ns, r})).exists);   // not condemned
+    EXPECT_TRUE(headExists(*backend, store->layout().manifestKey(ManifestId{ns, r})));   // not condemned
 }
 
 /// Committed add naming a MISSING body (404) => clamp + anomaly, never a guessed +1, never a throw.
@@ -173,7 +185,10 @@ TEST(CASGCFold, RefMismatchFailsClosed)
     bad.root_namespace_id = ns;
     bad.entries = {blobEntryFor("a", DB::UInt128(1))};
     bad.payload_digest = computePayloadDigest(bad);
-    backend->putIfAbsent(store->layout().manifestKey(ManifestId{ns, r}), encodePartManifest(bad));
+    {
+        OperationForTest op(*backend);
+        (*op).create(store->layout().manifestKey(ManifestId{ns, r}), encodePartManifest(bad), Retry::standard());
+    }
     publishCommittedTransition(*backend, store->layout(), ns, "tbl", std::nullopt, r);
     Gc gc(store, kGc);
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&]{ gc.runRegularRound(); });
@@ -228,9 +243,9 @@ TEST(CASGCFold, EmptyDeltaShardCarriesParentRunRef)
     Gc gc(store, kGc);
     gc.runRegularRound();   // round 1: folds the +1, seals the gen-1 blob_target run
 
-    const auto st1 = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st1 = decodeGcState(readOf(*backend, store->layout().gcStateKey())->bytes);
     const auto parent_seal = decodeFoldSeal(
-        backend->get(store->layout().foldSealKey(st1.snap_generation, st1.snap_attempt))->bytes);
+        readOf(*backend, store->layout().foldSealKey(st1.snap_generation, st1.snap_attempt))->bytes);
     ASSERT_EQ(parent_seal.blob_target_runs.size(), 1u);
     const RunRef parent_ref = parent_seal.blob_target_runs.front();
 
@@ -240,16 +255,16 @@ TEST(CASGCFold, EmptyDeltaShardCarriesParentRunRef)
     EXPECT_EQ(backend->ioCountForKeysContaining("/blob_target/"), 0u)
         << "idle round must not GET/getStream/PUT any blob_target run object";
 
-    const auto st2 = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st2 = decodeGcState(readOf(*backend, store->layout().gcStateKey())->bytes);
     EXPECT_GT(st2.snap_generation, st1.snap_generation);
     const auto new_seal = decodeFoldSeal(
-        backend->get(store->layout().foldSealKey(st2.snap_generation, st2.snap_attempt))->bytes);
+        readOf(*backend, store->layout().foldSealKey(st2.snap_generation, st2.snap_attempt))->bytes);
     ASSERT_EQ(new_seal.blob_target_runs.size(), 1u);
     const RunRef carried = new_seal.blob_target_runs.front();
     EXPECT_EQ(carried.key, parent_ref.key) << "carried ref points at the PARENT generation's run key";
     EXPECT_EQ(carried.checksum, parent_ref.checksum);
     EXPECT_EQ(carried.shard, 0u);
-    EXPECT_EQ(carried.generation, st1.snap_generation)
+    EXPECT_EQ(carried.key_generation, st1.snap_generation)
         << "the carried ref names the generation whose key namespace physically holds the object";
 }
 
@@ -306,15 +321,15 @@ TEST(CASGCFold, PreviewResolvesCarriedRef)
 
     Gc gc(store, kGc);
     gc.runRegularRound();   // gen 1: blob referenced, in-degree 1
-    const auto st1 = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st1 = decodeGcState(readOf(*backend, store->layout().gcStateKey())->bytes);
 
     gc.runRegularRound();   // gen 2: no delta, no retired => pure ref-carry (ref points back at gen 1)
-    const auto st2 = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st2 = decodeGcState(readOf(*backend, store->layout().gcStateKey())->bytes);
     ASSERT_GT(st2.snap_generation, st1.snap_generation);
     const auto seal2 = decodeFoldSeal(
-        backend->get(store->layout().foldSealKey(st2.snap_generation, st2.snap_attempt))->bytes);
+        readOf(*backend, store->layout().foldSealKey(st2.snap_generation, st2.snap_attempt))->bytes);
     ASSERT_EQ(seal2.blob_target_runs.size(), 1u);
-    ASSERT_EQ(seal2.blob_target_runs.front().generation, st1.snap_generation)
+    ASSERT_EQ(seal2.blob_target_runs.front().key_generation, st1.snap_generation)
         << "the current seal's ref physically lives at the parent generation (carried, not reconstructed)";
 
     // The preview resolves the carried ref (a gen-1 physical key) and computes in-degree 1 => blob 1 is
@@ -335,13 +350,14 @@ namespace
 String corruptSealedRunChecksum(InMemoryBackend & backend, const Layout & layout, const GcState & st)
 {
     const String sk = layout.foldSealKey(st.snap_generation, st.snap_attempt);
-    const auto existing = backend.get(sk);
+    const auto existing = readOf(backend, sk);
     auto seal = decodeFoldSeal(existing->bytes);
     if (seal.blob_target_runs.empty())
         return {};
     const String run_key = seal.blob_target_runs.front().key;
     seal.blob_target_runs.front().checksum = seal.blob_target_runs.front().checksum + 1;
-    backend.putOverwrite(sk, encodeFoldSeal(seal), existing->token);
+    OperationForTest op(backend);
+    (*op).replace(sk, encodeFoldSeal(seal), existing->etag, Retry::standard());
     return run_key;
 }
 }
@@ -359,7 +375,7 @@ TEST(CASGCFold, PreviewDeletesSealChecksumMismatchFailsClosed)
 
     Gc gc(store, kGc);
     gc.runRegularRound();   // seals gen-1 with one blob_target run
-    const auto st = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st = decodeGcState(readOf(*backend, store->layout().gcStateKey())->bytes);
     ASSERT_FALSE(corruptSealedRunChecksum(*backend, store->layout(), st).empty());
 
     // A deletion preview must never be derived from an unverified run: fail closed.
@@ -384,7 +400,7 @@ TEST(CASGCFold, FsckSealChecksumMismatchCataloguedAndAuditCompletes)
 
     Gc gc(store, kGc);
     gc.runRegularRound();
-    const auto st = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st = decodeGcState(readOf(*backend, store->layout().gcStateKey())->bytes);
 
     /// A present-but-unreferenced blob (written AFTER the round so GC never touches it) is what makes
     /// fsck enter its GC-pipeline classification path (guarded by a non-empty unreferenced set), which
@@ -439,7 +455,7 @@ TEST(CASGCFold, MidLogClampPreservesEarlierRemovalBodyAndRecovers)
     const RoundReport clamp_report = gc.runRegularRound();
     EXPECT_TRUE(clamp_report.hasAnomaly(ns, /*shard*/0)) << "the missing B body must clamp this log";
     EXPECT_LT(foldCursorOf(*backend, store->layout(), ns, 0), log_seq) << "the clamp halts the cursor below the log";
-    EXPECT_TRUE(backend->head(store->layout().manifestKey(ManifestId{ns, a})).exists)
+    EXPECT_TRUE(headExists(*backend, store->layout().manifestKey(ManifestId{ns, a})))
         << "A's body must survive the clamp round: its `-1` was staged, not merged, so no post-CAS delete "
            "reclaimed it -- otherwise the re-fold would clamp on A's missing body forever";
     EXPECT_EQ(inDegreeOf(*backend, store->layout(), DB::UInt128(1)), 1) << "A's `-1` was not adopted (clamp)";
@@ -464,7 +480,7 @@ TEST(CASGCFold, DeadPrecommitWithMissingBodyIsSkippedNotClampedForever)
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds*/ 0);
     /// The namespace's server-root prefix is "srv"; seed its watermark floor so build_sequence 5 is retired.
     const RootNamespace ns{"srv/tbl"};
-    setWatermarkMinActive(*backend, store->layout(), "srv", /*writer_epoch*/1, /*min_active*/10);
+    setWatermarkMinActive(*backend, store->layout(), "srv", /*writer_epoch*/1, /*min_active_build_sequence*/10);
 
     /// A precommit naming a build (writer_epoch 1, build_sequence 5) whose body is never written.
     const ManifestRef dead = ManifestRef{.writer_epoch = 1, .build_sequence = 5, .manifest_ordinal = 1};
@@ -518,7 +534,7 @@ TEST(CASGCFold, SingleAnomalySuppressesEveryDestructiveActionInTheRound)
     EXPECT_EQ(rep.deleted, 0u);
     EXPECT_EQ(rep.redeleted, 0u);
     EXPECT_EQ(rep.graduated, 0u);
-    EXPECT_TRUE(backend->head(store->layout().manifestKey(ManifestId{ns, a})).exists);
+    EXPECT_TRUE(headExists(*backend, store->layout().manifestKey(ManifestId{ns, a})));
     EXPECT_EQ(inDegreeOf(*backend, store->layout(), DB::UInt128(1)), 1);
 }
 
@@ -533,6 +549,8 @@ TEST(CASGCFold, RoundSideAnomalySuppressesRefLogCleanupWhileRemovalDebrisStaysJa
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds*/ 0);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     Gc gc(store, kGc);
 
@@ -560,9 +578,12 @@ TEST(CASGCFold, RoundSideAnomalySuppressesRefLogCleanupWhileRemovalDebrisStaysJa
     /// which is the physical life that owns the eventual janitor work. Spelling the sentinel here instead
     /// would plant debris under the wrong life and make the retention assertion vacuous.
     const String debris_key
-        = layout.namespaceFilesPrefix(CasRefCatalog::lifeIfCataloged(*backend, layout, ns_removed).value())
+        = layout.namespaceFilesPrefix(CasRefCatalog::lifeIfCataloged(op, layout, ns_removed).value())
         + "leftover_verbatim_file";
-    backend->putIfAbsent(debris_key, "debris");
+    {
+        OperationForTest debris_op(*backend);
+        (*debris_op).create(debris_key, "debris", Retry::standard());
+    }
     const ManifestRef removed_body = ref("srv-r:1", 1, 0xEE);
     writeManifestRaw(*backend, layout, ns_removed, removed_body, {blobEntryFor("r", DB::UInt128(9))});
     const String debris_manifest_key = layout.manifestKey(ManifestId{ns_removed, removed_body});
@@ -585,7 +606,7 @@ TEST(CASGCFold, RoundSideAnomalySuppressesRefLogCleanupWhileRemovalDebrisStaysJa
         .last_epoch_seal = std::nullopt,
     });
     const String covered_log_key = layout.refLogKey(fixture::fixtureLife(ns_covered), RefTxnId{1, cv1});
-    ASSERT_TRUE(backend->head(covered_log_key).exists);
+    ASSERT_TRUE(headExists(*backend, covered_log_key));
 
     /// Trigger the clamp in ns_clamp: drop committed A, add precommit B whose body is absent.
     writeManifestRaw(*backend, layout, ns_clamp, b, {blobEntryFor("b", DB::UInt128(2))});
@@ -602,13 +623,13 @@ TEST(CASGCFold, RoundSideAnomalySuppressesRefLogCleanupWhileRemovalDebrisStaysJa
     EXPECT_EQ(rep.graduated, 0u);
 
     /// Removal folding never performs lifecycle-specific physical cleanup, with or without a clamp.
-    EXPECT_TRUE(backend->head(debris_manifest_key).exists)
+    EXPECT_TRUE(headExists(*backend, debris_manifest_key))
         << "removed manifest debris remains ordinary orphan-sweep work";
-    EXPECT_TRUE(backend->head(debris_key).exists)
+    EXPECT_TRUE(headExists(*backend, debris_key))
         << "removed verbatim-file debris remains ordinary janitor work";
 
     /// `cleanupRefObjects` must not have deleted anything anywhere this round.
-    EXPECT_TRUE(backend->head(covered_log_key).exists)
+    EXPECT_TRUE(headExists(*backend, covered_log_key))
         << "a clamp anywhere in the round must suppress ref-log cleanup pool-wide, even for an unrelated live table";
 
     /// Heal the clamp and run a clean round. Ordinary ref-log cleanup resumes, while removal debris
@@ -616,9 +637,9 @@ TEST(CASGCFold, RoundSideAnomalySuppressesRefLogCleanupWhileRemovalDebrisStaysJa
     writeManifestRaw(*backend, layout, ns_clamp, b, {blobEntryFor("b", DB::UInt128(2))});
     const RoundReport clean_rep = runRegularRoundReclaiming(gc);
     EXPECT_FALSE(clean_rep.hasAnomaly(ns_clamp, /*shard*/0));
-    EXPECT_TRUE(backend->head(debris_manifest_key).exists)
+    EXPECT_TRUE(headExists(*backend, debris_manifest_key))
         << "a clamp-free fold still performs no lifecycle-specific manifest deletion";
-    EXPECT_TRUE(backend->head(debris_key).exists)
+    EXPECT_TRUE(headExists(*backend, debris_key))
         << "a clamp-free fold still performs no lifecycle-specific verbatim-file deletion";
-    EXPECT_FALSE(backend->head(covered_log_key).exists) << "a clamp-free round cleans the covered ref-log";
+    EXPECT_FALSE(headExists(*backend, covered_log_key)) << "a clamp-free round cleans the covered ref-log";
 }

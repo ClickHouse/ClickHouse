@@ -6,8 +6,7 @@ namespace DB::Cas
 
 bool DetachedStopToken::stopping() const
 {
-    std::lock_guard lock(state->mutex);
-    return state->stopping;
+    return state->stopping.load(std::memory_order_acquire);
 }
 
 struct DetachedTaskLease::Completion

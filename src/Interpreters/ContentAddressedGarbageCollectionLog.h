@@ -15,7 +15,14 @@ struct ContentAddressedGarbageCollectionLogElement
     /// `DEFERRED`: the round acquired the GC lease and took the skip-unchanged fast path -- no fold, no
     /// pre-CAS deletes, no `gc/state` CAS. Kept distinct from `SUCCESS` so a query against this table can
     /// tell a round that genuinely folded and found nothing apart from one that never folded at all.
-    enum Outcome   : int8_t { UNKNOWN = 1, SUCCESS = 2, NOT_A_LEADER = 3, FAILED = 4, DEFERRED = 5 };
+    /// `ABORTED`: the round threw an exception whose code names a transient condition (backend
+    /// unavailability, a lost lease, a concurrent leader); the next scheduled round retries it.
+    /// `STOPPED`: a transient failure observed after the disk's teardown began -- the round was cut
+    /// short by a server shutdown or the storage's destructor, so neither had to wait for it;
+    /// `error` carries the engine's refusal. Decommission does not arm that flag and cannot produce
+    /// this outcome.
+    /// `FAILED` is everything else -- fail-closed, an unclassified error reads as real.
+    enum Outcome   : int8_t { UNKNOWN = 1, SUCCESS = 2, NOT_A_LEADER = 3, FAILED = 4, DEFERRED = 5, ABORTED = 6, STOPPED = 7 };
     enum Trigger   : int8_t { SCHEDULED = 1, MANUAL = 2 };
 
     time_t event_time = 0;
@@ -42,6 +49,7 @@ struct ContentAddressedGarbageCollectionLogElement
     UInt64 anomalies = 0;           /// fold clamps surfaced this round
     UInt64 duration_ms = 0;
     String error;
+    Int32 error_code = 0;           /// exception code on an Aborted/Error FINISH; 0 otherwise
     std::map<String, UInt64> profile_events;   /// per-round delta (FINISH); per-phase delta (PHASE)
 
     String round_id;                           /// correlator for every row of one round attempt

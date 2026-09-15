@@ -125,34 +125,40 @@ TEST(CASEventDispatcher, ReentrantSinkDoesNotDeadlock)
 TEST(CASEventDispatcher, LedgerEmissionOutsideLocks)
 {
     auto b = std::make_shared<InMemoryBackend>();
-    std::vector<CasEvent> seen;   /// declared before the Pool so it outlives any late background emit
-    std::mutex seen_mutex;
+    /// Heap-owned, not plain locals: `seen`'s own declaration-before-the-Pool comment protects only
+    /// against an ordinary same-thread unwind, not a detached background completion holding an extra
+    /// `shared_from_this()` that can still be running on another thread after this frame returns.
+    auto seen = std::make_shared<DB::Cas::tests::SharedEventLog>();
     auto s = Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 
     const RootNamespace ns{"srv1/tbl"};
     const String ref = "all_0_0_0";
     publishOneBlobPart(s, ns.string(), ref, "the-resolvable-payload");
 
-    std::atomic<bool> reentered{false};
-    s->setEventSink([&](CasEvent e)
+    auto reentered = std::make_shared<std::atomic<bool>>(false);
+    /// `s` is captured as a raw pointer (`s.get()`), not by reference and not by `shared_ptr`: a
+    /// `shared_ptr` capture here would make the Pool's own `event_sink` hold a permanent reference to
+    /// its owning Pool, a cycle that leaks it; a by-reference capture of the local `s` would dangle once
+    /// this frame returns. Validity is the same invariant every self-referencing hook in the production
+    /// code relies on (e.g. `CasPool.cpp`'s `[s = store.get()]`): the hook can only run while some other
+    /// `shared_ptr` keeps the Pool alive.
+    Pool * const s_ptr = s.get();
+    s->setEventSink([seen, reentered, s_ptr, ns, ref](CasEvent e)
     {
-        {
-            std::lock_guard<std::mutex> g(seen_mutex);
-            seen.push_back(e);
-        }
+        seen->push(e);
         /// Re-enter a ledger read that takes `state_mutex`, exactly once (`Deferred` => this read
         /// itself emits nothing, so there is no unbounded emit recursion). Under the pre-fix code the
         /// outer `resolveRef` still holds `state_mutex` here, so this call self-deadlocks.
-        if (e.type == CasEventType::RefResolve && !reentered.exchange(true))
-            (void)s->resolveRef(ns, ref, false, ResolveAudit::Deferred);
+        if (e.type == CasEventType::RefResolve && !reentered->exchange(true))
+            (void)s_ptr->resolveRef(ns, ref, false, ResolveAudit::Deferred);
     });
 
-    std::promise<void> resolve_done;
-    auto resolve_future = resolve_done.get_future();
+    auto resolve_done = std::make_shared<std::promise<void>>();
+    auto resolve_future = resolve_done->get_future();
     std::thread resolver([&]
     {
         (void)s->resolveRef(ns, ref);   /// ResolveAudit::Emit (default) -> emits RefResolve -> drives the sink
-        resolve_done.set_value();
+        resolve_done->set_value();
     });
 
     /// A second thread emits upload-task-style events concurrently with the resolve, so the dispatcher's
@@ -178,11 +184,10 @@ TEST(CASEventDispatcher, LedgerEmissionOutsideLocks)
     resolver.join();
     uploader.join();
 
-    EXPECT_TRUE(reentered.load()) << "the reentrant ledger read must have run";
-    std::lock_guard<std::mutex> g(seen_mutex);
+    EXPECT_TRUE(reentered->load()) << "the reentrant ledger read must have run";
     size_t resolves = 0;
     size_t uploads = 0;
-    for (const auto & e : seen)
+    for (const auto & e : seen->snapshot())
     {
         if (e.type == CasEventType::RefResolve)
             ++resolves;

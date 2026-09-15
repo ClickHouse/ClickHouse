@@ -3,5 +3,5 @@ live_before_freeze	2	2
 is_frozen	1
 live_after_drop	2	2
 command_type	partition_id	part_name	backup_name
-SYSTEM UNFREEZE	1	1_1_1_0	backup_05003
+SYSTEM UNFREEZE	1	1_1_1_0	backup_db_05003
 dropped_ok

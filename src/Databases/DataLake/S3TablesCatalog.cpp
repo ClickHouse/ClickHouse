@@ -113,14 +113,17 @@ S3TablesCatalog::S3TablesCatalog(
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Always,
         /* urlEscapePath = */ false);
 
-    config = loadConfig();
+    CatalogState initial_state;
+    initial_state.config = loadConfig(initial_state);
 
-    if (config.prefix.empty())
+    if (initial_state.config.prefix.empty())
     {
         String encoded_warehouse;
         Poco::URI::encode(warehouse_, "", encoded_warehouse);
-        config.prefix = encoded_warehouse;
+        initial_state.config.prefix = encoded_warehouse;
     }
+
+    state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
 }
 
 /// S3 Tables only supports a single level of namespaces (no nesting),
@@ -216,8 +219,9 @@ ICatalog::CredentialsRefreshCallback S3TablesCatalog::getCredentialsConfiguratio
 
 void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
+    const auto state_snapshot = state.get();
     const std::string endpoint
-        = (base_url / config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
+        = (base_url / state_snapshot->config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
         + "?purgeRequested=True";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
@@ -225,7 +229,7 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     {
         ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogDropTable);
         auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogDropTableMicroseconds);
-        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -237,11 +241,13 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
 }
 
 DB::HTTPHeaderEntries S3TablesCatalog::getAuthHeaders(
+    const CatalogState & /*catalog_state*/,
     bool /*update_token*/,
     const String & method,
     const Poco::URI & url,
     const DB::HTTPHeaderEntries & extra_headers,
-    const String & body) const
+    const String & body,
+    bool * /*used_cached_oauth_token*/) const
 {
     DB::HTTPHeaderEntries all_signed;
     signRequestWithAWSV4(method, url, extra_headers, body, *signer, region, "s3tables", all_signed);

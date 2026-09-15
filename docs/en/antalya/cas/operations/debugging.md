@@ -112,8 +112,6 @@ SELECT event_time_microseconds, event_type, outcome, reason,
        detail['write_attempt_id'] AS write_attempt_id,
        detail['attempts_sent'] AS attempts_sent,
        detail['classification'] AS classification,
-       detail['deadline_source'] AS deadline_source,
-       detail['stop_cause'] AS stop_cause,
        detail['attempt_no'] AS remount_attempt,
        detail['step'] AS remount_step,
        detail['error'] AS error
@@ -123,15 +121,33 @@ WHERE disk_name = 'cas'
 ORDER BY event_time_microseconds;
 ```
 
-Interpret the sequence as follows:
+A `watermark_renew` row now carries only two detail keys beyond the identifying ones:
+`attempts_sent` (the number of physical HTTP attempts the whole logical renewal made) and
+`classification`. There is no per-attempt `retrying` row any more — a renewal that recovers after
+one or more physical attempts produces exactly one `recovered` row when it settles, not a `retrying`
+row followed by a `recovered` one — and the older `unresolved_reason`, `deadline_source`, and
+`stop_cause` keys are gone; everything they used to distinguish is now named directly by
+`classification`. Interpret the sequence as follows:
 
-- `retrying -> recovered` with the same `write_attempt_id` means an in-budget blip recovered in the
-  existing epoch; `classification = 'committed_by_get'` means exact `GET` proved a landed request,
-  while `committed_after_retry` means a later identical physical `PUT` completed.
-- A `failed` renewal carries the decisive `unresolved_reason`, `deadline_source`, `stop_cause`, and
-  `classification`. `external_lease_deadline`, `cancelled`, `conflict`,
-  `fence_or_lifecycle_lost`, and `attempts_exhausted` are different operator diagnoses; do not
-  collapse them into a generic timeout.
+- `outcome = 'recovered'` means an in-budget renewal landed, in the same epoch. `classification`
+  says how: `committed_by_read` means an exact `GET` proved a landed request; `committed_after_retry`
+  means a later identical physical `PUT` completed and the response itself proved it.
+- `outcome = 'failed'` carries the decisive `classification`: `external_lease_deadline` (the
+  confirmed lease's own safety margin, not the request policy, ran out first — check object-store
+  latency or `BOOTTIME` advancement before anything else), `request_deadline` (the ninety-second
+  request policy exhausted first), `unresolved` (every attempt was ambiguous and never settled by
+  the time the operation gave up), `conflict` (an exact resolve read found another body — a
+  same-pair twin, a GC-fenced body, a successor epoch, or a foreign holder), `cancelled` (a
+  renewal in flight was cancelled by shutdown or a remount park request; expected during graceful
+  shutdown), `fence_or_lifecycle_lost` (another local fence loss or a terminal lifecycle transition
+  closed admission while the operation was active), `deterministic_failure` (the store's own
+  answer proved the write never applied), and `vanished` (an exact resolve read proved the mount
+  slot absent — the pool directory was removed or renamed out of band, or a decommission raced the
+  renewal). `terminal_unclassified` means the renewal terminated through a path that assigned no
+  classification; that is a defect to report together with the surrounding rows, not an operator
+  condition. Do not collapse these into a generic timeout — the action
+  differs by classification, and only `external_lease_deadline` and `request_deadline` are about a
+  deadline at all.
 - A following `mount_remount` row names the whole-chain `attempt_no` and final `step`. An `ok` row
   restored `Live` under the reported fresh `writer_epoch`; a `failed` row's `step` and optional
   `error` identify where that whole-chain attempt stopped.

@@ -74,8 +74,8 @@ TEST(GCSConditionalDialect, IfMatchUnquotedDigitsAlsoAccepted)
 TEST(GCSConditionalDialect, NonNumericIfMatchThrows)
 {
     /// CORRUPTED_DATA, not a broken internal invariant: the value can come from a persisted manifest
-    /// token or from a storage HEAD whose response carried no generation, and `mintingTypeMatches`
-    /// upstream only compares the token KIND, never the shape of its value.
+    /// etag or from a storage HEAD whose response carried no generation, and nothing upstream
+    /// validates the shape of that value before it reaches this function.
     auto r = makeRequest();
     r.SetHeaderValue("if-match", "\"6654c734ccab8f440ff0825eb443dc7f\"");
     EXPECT_THROW(applyGcsConditionalDialectToRequest(r), DB::Exception);

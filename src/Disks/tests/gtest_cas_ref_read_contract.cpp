@@ -47,13 +47,22 @@ ManifestId publishRefThroughPool(const PoolPtr & store, const RootNamespace & ns
     return id;
 }
 
+/// The `refresh_authority` hook `deleteCompletedRemoving` requires every caller to state explicitly.
+/// This fixture's operation carries a direct liveness (`op.admitted()` re-checks the fence itself on
+/// every call), not a cached flag, so there is nothing for a refresh to re-read between attempts.
+void noAuthorityRefresh()
+{
+}
+
 /// Delete the current catalog life through the production exact-removal authority (`casUpdate` to
 /// `Removing`, then `deleteCompletedRemoving` under a held fence), retaining every old physical byte
 /// and any already-resident runtime. Mirrors `gtest_cas_ns_file_read_contract.cpp`'s
 /// `deleteCatalogLife` -- lifecycle-real, not a raw sentinel overwrite.
-void deleteCatalogLife(Backend & backend, const Layout & layout, const NamespaceLifeId & life)
+void deleteCatalogLife(const BackendPtr & backend, const Layout & layout, const NamespaceLifeId & life)
 {
-    CasRefCatalog::casUpdate(backend, layout, [&](const RefCatalog & current)
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit();
+    CasRefCatalog::casUpdate(op, layout, [&](const RefCatalog & current)
     {
         RefCatalog next = current;
         const auto it = std::find_if(next.entries.begin(), next.entries.end(), [&](const CatalogEntry & entry)
@@ -67,7 +76,7 @@ void deleteCatalogLife(Backend & backend, const Layout & layout, const Namespace
         return next;
     });
 
-    const CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(op, layout);
     const auto it = std::find_if(snapshot.catalog.entries.begin(), snapshot.catalog.entries.end(), [&](const CatalogEntry & entry)
     {
         return entry.ns == life.ns && entry.incarnation == life.incarnation;
@@ -77,11 +86,9 @@ void deleteCatalogLife(Backend & backend, const Layout & layout, const Namespace
 
     CasFoldSeal parent;
     parent.ref_lives.emplace(life.incarnation, RefLifeFoldState{
-        .coverage = RefCoverage{.classification = 2, .last_folded_ref_id = RefTxnId{1, 1}},
+        .coverage = RefCoverage{.classification = CoverageClass::Folded, .last_folded_ref_id = RefTxnId{1, 1}},
         .cleanup_evidence = RefCleanupEvidence{.remove_txn_id = RefTxnId{1, 1}}});
-    if (CasRefCatalog::deleteCompletedRemoving(
-            backend, layout, *it, parent, 1,
-            [](uint64_t) { return CasRefCatalog::LeaderFenceStatus::Held; })
+    if (CasRefCatalog::deleteCompletedRemoving(op, layout, *it, parent, noAuthorityRefresh).outcome
         != CasRefCatalog::CompletedRemovingDeleteOutcome::Deleted)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to delete fixture catalog life '{}'", life.ns.string());
 }
@@ -90,13 +97,15 @@ void deleteCatalogLife(Backend & backend, const Layout & layout, const Namespace
 /// rebirth every test below drives. Mirrors `gtest_cas_ns_file_read_contract.cpp`'s
 /// `admitReplacementLife`.
 NamespaceLifeId admitReplacementLife(
-    Backend & backend, const Layout & layout, uint64_t gc_shards,
+    const BackendPtr & backend, const Layout & layout, uint64_t gc_shards,
     const NamespaceLifeId & predecessor, UInt128 successor_incarnation)
 {
     if (predecessor.incarnation == successor_incarnation)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Fixture life ids unexpectedly collide");
     const NamespaceLifeId successor = NamespaceLifeId::fromCatalogEntry(predecessor.ns, successor_incarnation);
-    CasRefCatalog::casAdmitEntry(backend, layout, gc_shards, CatalogEntry{
+    CasRequests requests(backend, Fence::open());
+    CasOperation op = requests.admit();
+    CasRefCatalog::casAdmitEntry(op, layout, gc_shards, CatalogEntry{
         .ns = successor.ns, .state = NsState::Live, .incarnation = successor.incarnation});
     return successor;
 }
@@ -131,8 +140,8 @@ TEST(CASRefReadContract, HeldRuntimeAfterSameNameRebirthReadsStaleOrNotFoundNeve
 
     /// Drop and re-admit under the SAME logical name, bypassing this store's own ledger entirely --
     /// exactly as an independent actor's drop/rebirth would look from this reader's point of view.
-    deleteCatalogLife(*backend, layout, life1);
-    const NamespaceLifeId life2 = admitReplacementLife(*backend, layout, store->poolConfig().gc_shards, life1, UInt128{0xabc123});
+    deleteCatalogLife(backend, layout, life1);
+    const NamespaceLifeId life2 = admitReplacementLife(backend, layout, store->poolConfig().gc_shards, life1, UInt128{0xabc123});
     ASSERT_NE(life1.incarnation, life2.incarnation);
 
     const ManifestRef life2_ref{/*writer_epoch*/ 1, /*build_sequence*/ 777, /*manifest_ordinal*/ 1};
@@ -184,7 +193,7 @@ TEST(CASRefReadContract, HotRefReadsThroughHeldRuntimeIssueZeroCatalogRequests)
     /// recorder that never saw anything.
     EXPECT_GT(
         backend->headCount(layout.refCatalogKey()) + backend->getCount(layout.refCatalogKey())
-            + backend->casPutCount(layout.refCatalogKey()),
+            + backend->putOverwriteCount(layout.refCatalogKey()),
         0u) << "the cold admission above must have reached the catalog at least once";
     EXPECT_GT(backend->getCount(layout.refCkptKey(life)), 0u)
         << "the cold recovery above must have read this namespace's own checkpoint at least once";
@@ -197,7 +206,7 @@ TEST(CASRefReadContract, HotRefReadsThroughHeldRuntimeIssueZeroCatalogRequests)
 
     EXPECT_EQ(backend->headCount(layout.refCatalogKey()), 0u);
     EXPECT_EQ(backend->getCount(layout.refCatalogKey()), 0u);
-    EXPECT_EQ(backend->casPutCount(layout.refCatalogKey()), 0u);
+    EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), 0u);
     EXPECT_EQ(backend->putCount(layout.refCatalogKey()), 0u);
     EXPECT_EQ(backend->putOverwriteCount(layout.refCatalogKey()), 0u);
     /// Stronger than the catalog-only clauses above: a warm ref read is a pure map lookup over the
@@ -222,27 +231,28 @@ TEST(CASRefReadContract, StaleLifeDropRefusesAfterRebirthAndNeverTouchesSuccesso
     ASSERT_TRUE(store->refTableLifeForTest(ns).has_value());
     const NamespaceLifeId life1 = *store->refTableLifeForTest(ns);
 
-    deleteCatalogLife(*backend, layout, life1);
-    const NamespaceLifeId life2 = admitReplacementLife(*backend, layout, store->poolConfig().gc_shards, life1, UInt128{0xabc456});
+    deleteCatalogLife(backend, layout, life1);
+    const NamespaceLifeId life2 = admitReplacementLife(backend, layout, store->poolConfig().gc_shards, life1, UInt128{0xabc456});
 
     const ManifestRef life2_ref{/*writer_epoch*/ 1, /*build_sequence*/ 999, /*manifest_ordinal*/ 1};
     publishCommittedTransition(*backend, layout, ns, ref_name, std::nullopt, life2_ref);
     const ManifestId life2_manifest{ns, life2_ref};
 
-    const HeadResult catalog_head_before = backend->head(layout.refCatalogKey());
-    ASSERT_TRUE(catalog_head_before.exists);
-    const auto catalog_get_before = backend->get(layout.refCatalogKey());
+    OperationForTest catalog_probe(*backend);
+    const auto catalog_head_before = (*catalog_probe).head(layout.refCatalogKey(), Retry::standard());
+    ASSERT_TRUE(catalog_head_before.has_value());
+    const auto catalog_get_before = (*catalog_probe).read(layout.refCatalogKey(), Retry::standard());
     ASSERT_TRUE(catalog_get_before.has_value());
 
     /// The held life-1 handle names an incarnation the catalog no longer carries: refused, not
     /// resolved against the current (life-2) row.
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropNamespace(life1); });
 
-    const HeadResult catalog_head_after = backend->head(layout.refCatalogKey());
-    ASSERT_TRUE(catalog_head_after.exists);
-    EXPECT_EQ(catalog_head_after.token, catalog_head_before.token)
+    const auto catalog_head_after = (*catalog_probe).head(layout.refCatalogKey(), Retry::standard());
+    ASSERT_TRUE(catalog_head_after.has_value());
+    EXPECT_EQ(catalog_head_after->etag, catalog_head_before->etag)
         << "a refused stale-life drop must not touch the catalog object at all";
-    const auto catalog_get_after = backend->get(layout.refCatalogKey());
+    const auto catalog_get_after = (*catalog_probe).read(layout.refCatalogKey(), Retry::standard());
     ASSERT_TRUE(catalog_get_after.has_value());
     EXPECT_EQ(catalog_get_after->bytes, catalog_get_before->bytes);
 

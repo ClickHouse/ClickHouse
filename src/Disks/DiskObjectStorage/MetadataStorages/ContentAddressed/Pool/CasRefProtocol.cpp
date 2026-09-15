@@ -854,7 +854,7 @@ RefCleanupPlan planRefCleanup(const RefTableListing & listing, const RefTxnId & 
     return plan;
 }
 
-EpochCrossResult crossEpochFromSeal(Backend & backend, const Layout & layout, const RootNamespace & ns,
+EpochCrossResult crossEpochFromSeal(CasOperation & op, const Layout & layout, const RootNamespace & ns,
                                     const RefTxnId & from_seal, std::optional<bool> seal_proven,
                                     const RefTxnId & witness, const NamespaceLifeId & life)
 {
@@ -870,19 +870,19 @@ EpochCrossResult crossEpochFromSeal(Backend & backend, const Layout & layout, co
         return result;
     }
 
-    /// `life`: REQUIRED, not resolved here (review NEW-3) -- an internal fallback resolve was tried
-    /// once already (review C3, `Gc::fold`) and once more here (fsck's own independent walk defaulted
-    /// to `nullopt` and re-resolved), and both times a caller that had already committed to one `life`
-    /// for the rest of its walk could silently diverge from this function's OWN resolution if the
-    /// namespace is dropped and recreated between the two reads. `CasFsck.cpp`'s stream walk resolves
-    /// `life` once, at the top of its own function, and must pass that SAME value here rather than let
-    /// this function re-derive it a second time.
+    /// `life`: REQUIRED, not resolved here -- an internal fallback resolve was tried once already
+    /// (in `Gc::fold`) and once more here (fsck's own independent walk defaulted to `nullopt` and
+    /// re-resolved), and both times a caller that had already committed to one `life` for the rest of
+    /// its walk could silently diverge from this function's OWN resolution if the namespace is dropped
+    /// and recreated between the two reads. `CasFsck.cpp`'s stream walk resolves `life` once, at the
+    /// top of its own function, and must pass that SAME value here rather than let this function
+    /// re-derive it a second time.
     uint64_t target_epoch = witness.writer_epoch;
     while (target_epoch > from_seal.writer_epoch)
     {
         const RefTxnId start{target_epoch, 1};
         result.probed = start;
-        const auto body = backend.get(layout.refLogKey(life, start));
+        const auto body = op.read(layout.refLogKey(life, start), Retry::standard());
         if (!body)
         {
             ++result.absent_probes;
@@ -952,8 +952,7 @@ std::optional<RefTxnId> nextRefLogIdWithinCommittedFrontier(
 }
 
 CheckpointSnapshotBase readCheckpointSnapshotBase(
-    Backend & backend, const Layout & layout, const NamespaceLifeId & life, const RefCkpt & checkpoint,
-    const std::function<void()> & admit_request)
+    CasOperation & op, const Layout & layout, const NamespaceLifeId & life, const RefCkpt & checkpoint)
 {
     const RootNamespace & ns = life.ns;
     if (!checkpoint.checkpoint_snapshot_id)
@@ -969,9 +968,7 @@ CheckpointSnapshotBase readCheckpointSnapshotBase(
             ns.string());
     }
     const RefTxnId snapshot_id = *checkpoint.checkpoint_snapshot_id;
-    if (admit_request)
-        admit_request();
-    const auto log = backend.get(layout.refLogKey(life, snapshot_id));
+    const auto log = op.read(layout.refLogKey(life, snapshot_id), Retry::standard());
     if (!log)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -1007,9 +1004,7 @@ CheckpointSnapshotBase readCheckpointSnapshotBase(
     if (base_txn.prev_epoch_seal)
     {
         predecessor_seal_id = *base_txn.prev_epoch_seal;
-        if (admit_request)
-            admit_request();
-        const auto predecessor = backend.get(layout.refLogKey(life, *predecessor_seal_id));
+        const auto predecessor = op.read(layout.refLogKey(life, *predecessor_seal_id), Retry::standard());
         if (!predecessor)
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -1030,9 +1025,7 @@ CheckpointSnapshotBase readCheckpointSnapshotBase(
         }
     }
 
-    if (admit_request)
-        admit_request();
-    const auto snapshot = backend.get(layout.refSnapshotKey(life, snapshot_id));
+    const auto snapshot = op.read(layout.refSnapshotKey(life, snapshot_id), Retry::standard());
     if (!snapshot)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -1047,8 +1040,8 @@ CheckpointSnapshotBase readCheckpointSnapshotBase(
 }
 
 RecoveredRefTable recoverRefTableDetailedFromAuthority(
-    Backend & backend, const Layout & layout, const std::optional<CatalogEntry> & catalog_entry,
-    const std::optional<RefCkpt> & ckpt)
+    CasOperation & op, const Layout & layout, const std::optional<CatalogEntry> & catalog_entry,
+    const std::optional<RefCkpt> & ckpt, KeyReader * reader)
 {
     /// The frozen catalog row and `_ckpt` supplied by the caller determine every recovery boundary;
     /// this function must not re-read either mutable object, or enumerate the stream, because that
@@ -1066,7 +1059,7 @@ RecoveredRefTable recoverRefTableDetailedFromAuthority(
     uint64_t base_snapshot_bytes = 0;
     if (base_id)
     {
-        CheckpointSnapshotBase base = readCheckpointSnapshotBase(backend, layout, life, *ckpt);
+        CheckpointSnapshotBase base = readCheckpointSnapshotBase(op, layout, life, *ckpt);
         base_snapshot = std::move(base.snapshot);
         base_snapshot_bytes = base.bytes;
     }
@@ -1077,7 +1070,11 @@ RecoveredRefTable recoverRefTableDetailedFromAuthority(
         RefTxnId id = *grounding.walk_from;
         while (id <= *grounding.committed_through)
         {
-            const auto got = backend.get(layout.refLogKey(life, id));
+            const String key = layout.refLogKey(life, id);
+            if (reader && id.ref_sequence < std::numeric_limits<uint64_t>::max())
+                hintRefLogsWithinEpoch(*reader, layout, life, RefTxnId{id.writer_epoch, id.ref_sequence + 1},
+                                       *grounding.committed_through);
+            const auto got = reader ? reader->take(key) : op.read(key, Retry::standard());
             if (!got)
             {
                 /// `NamespaceLifeId` is opaque and unique to one logical life. A later birth has a
@@ -1099,7 +1096,12 @@ RecoveredRefTable recoverRefTableDetailedFromAuthority(
 
             if (const std::optional<RefTxnId> next = nextRefLogIdWithinCommittedFrontier(
                     id, is_seal, *grounding.committed_through))
+            {
+                if (is_seal && reader && id.ref_sequence < std::numeric_limits<uint64_t>::max())
+                    discardRefLogHintsOfEpoch(*reader, layout, life, RefTxnId{id.writer_epoch, id.ref_sequence + 1},
+                                              *grounding.committed_through);
                 id = *next;
+            }
             else
                 break;
         }

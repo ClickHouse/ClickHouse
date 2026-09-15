@@ -17,8 +17,8 @@ namespace DB::Cas
 /// `cas/ns/stream/` and `cas/ns/state/` roots, `/mount` and `/fold_seal` suffixes, the
 /// `gc/gen/*/attempt/*/blob_target/*/*` source-edge run segments, then the pool-wide `gc/state`
 /// and `blobs/` prefix). u128 and hash fields render as lowercase hex strings (matching
-/// `u128ToHex`), while backend-native `Token` values render as escaped strings. Neither is exposed
-/// as an array of bytes or a raw struct dump.
+/// `u128ToHex`), while a recorded incarnation's backend-native value renders as an escaped string
+/// beside its dialect word. Neither is exposed as an array of bytes or a raw struct dump.
 ///
 /// Throws `ErrorCodes::BAD_ARGUMENTS` when `key` matches none of the recognized CA layouts. Any
 /// decode failure of a matched key (invalid header, corrupted bytes, future format version, ...)

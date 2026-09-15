@@ -19,7 +19,9 @@ disk and its data are untouched until a partition is explicitly moved.
 A storage policy can carry both an ordinary disk and a `CAS` disk as separate volumes. `ALTER TABLE
 ... MOVE PARTITION ... TO DISK` then moves data between them without an `INSERT`/`DROP` cycle. As on
 the [configuration](/antalya/cas/configuration#disk-config) page, the recommended shape layers a
-`type=cache` disk over the `CAS` disk, and the policy's volume references the **cached** disk name:
+`type=cache` disk over the `CAS` disk, and the policy's volume references the **cached** disk name.
+`http_keep_alive_timeout` and `http_keep_alive_max_requests` are set here for the reason explained
+under [recommended keep-alive settings](/antalya/cas/configuration#recommended-keep-alive-settings):
 
 ```xml
 <clickhouse>
@@ -37,6 +39,8 @@ the [configuration](/antalya/cas/configuration#disk-config) page, the recommende
                 <endpoint>https://bucket.s3.amazonaws.com/cas/</endpoint>
                 <access_key_id>...</access_key_id>
                 <secret_access_key>...</secret_access_key>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
             </cas>
             <cas_cache>
                 <type>cache</type>

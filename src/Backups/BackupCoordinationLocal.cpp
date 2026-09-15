@@ -110,7 +110,7 @@ void BackupCoordinationLocal::addFileInfos(BackupFileInfos && file_infos_)
     file_infos.addFileInfos(std::move(file_infos_), "");
 }
 
-BackupFileInfos BackupCoordinationLocal::getFileInfos() const
+const BackupFileInfos & BackupCoordinationLocal::getFileInfos() const
 {
     std::lock_guard lock{file_infos_mutex};
     return file_infos.getFileInfos("");

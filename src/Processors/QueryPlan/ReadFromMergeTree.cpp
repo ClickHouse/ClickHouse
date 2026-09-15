@@ -1838,8 +1838,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
 
+                /// A layer may produce an empty pipe (the in-order getter creates one source per part,
+                /// and a layer may end up with no parts). An empty pipe has no header, so it must not
+                /// reach `createProjection` or `addMergingFinal` below. Dropping it is safe here:
+                /// unlike the join-by-shards path, the per-layer pipes are simply united, so their
+                /// positions carry no meaning.
                 for (auto && merging_pipe : split_ranges_result.merging_pipes)
-                    pipes.push_back(std::move(merging_pipe));
+                {
+                    if (!merging_pipe.empty())
+                        pipes.push_back(std::move(merging_pipe));
+                }
             }
             else
             {
@@ -2674,6 +2682,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         bool is_initial_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 
         bool distributed_index_analysis_enabled = !final_second_pass
+            /// Projection parts are identified only by the projection name, which is identical in every
+            /// parent part, so per-part analysis results cannot be attributed back, and remote replicas
+            /// resolve part names against the parent table. Analyze projection parts locally.
+            && !projection_parts_exist
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)

@@ -6,7 +6,9 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include "cas_test_helpers.h"
 #include <Common/Exception.h>
+#include <Poco/Exception.h>
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -24,6 +26,7 @@
 namespace DB::ErrorCodes
 {
 extern const int INVALID_STATE;
+extern const int NOT_IMPLEMENTED;
 }
 
 using namespace DB::Cas;
@@ -41,53 +44,48 @@ const String kProbeUid2 = "fedcba9876543210fedcba9876543210";
 /// Records the ORDER of backend operations so a test can assert that the residual LIST precedes the first
 /// write, and that a fail path performs zero writes. Delegates every operation to `InMemoryBackend`
 /// unchanged; `Pool::open` wraps this in its `InstrumentedBackend`, which forwards every op here.
-class RecordingBackend final : public InMemoryBackend
+///
+/// The `write` primitive covers create, replace and conditional-put alike, so the log distinguishes
+/// only writes from removals -- which is all the ordering assertions ask.
+class RecordingBackend : public InMemoryBackend
 {
 public:
-    using Backend::get;
-    using Backend::getStream;
-    using Backend::putIfAbsent;
-    using Backend::putOverwrite;
-    using Backend::casPut;
+    /// Unhide the legacy `list` overloads the primitive override below would otherwise hide: the tests
+    /// seed and inspect this store through them.
+    using Backend::list;
 
-    enum class Op : uint8_t { List, PutIfAbsent, PutOverwrite, CasPut, Delete };
+    enum class Op : uint8_t { List, Write, Remove };
     struct Entry
     {
         Op op;
         String key;   /// the LIST prefix, or the written key
     };
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    /// Recorded at the PRIMITIVE, which every legacy forwarder reaches too, so an op is logged
+    /// whichever surface issued it.
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
         record(Op::List, prefix);
-        return InMemoryBackend::list(prefix, cursor, limit);
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             TransportAccess & access) override
     {
-        record(Op::PutIfAbsent, key);
-        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+        record(Op::Write, key);
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
-    PutResult putOverwrite(const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta) override
+    RawRemoval remove(const String & key, const String & expected_value, TransportAccess & access) override
     {
-        record(Op::PutOverwrite, key);
-        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+        record(Op::Remove, key);
+        return InMemoryBackend::remove(key, expected_value, access);
     }
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected, const ObjectMeta & meta) override
-    {
-        record(Op::CasPut, key);
-        return InMemoryBackend::casPut(key, bytes, expected, meta);
-    }
-    DeleteOutcome deleteExact(const String & key, const Token & token) override
-    {
-        record(Op::Delete, key);
-        return InMemoryBackend::deleteExact(key, token);
-    }
-    /// The bootstrap path (battery + createOrValidate + mount protocol) issues only whole-String writes,
-    /// never a streaming create, so recording the four write ops above captures every write `open` can do.
+    /// `publish` is the one mutating primitive left unrecorded: it writes a blob, and the bootstrap
+    /// path (battery + `createOrValidate` + mount protocol) publishes none.
 
     static bool isWrite(Op op)
     {
-        return op == Op::PutIfAbsent || op == Op::PutOverwrite || op == Op::CasPut || op == Op::Delete;
+        return op == Op::Write || op == Op::Remove;
     }
 
     void clearLog()
@@ -125,13 +123,11 @@ private:
 class CatalogMissingAfterListBackend final : public InMemoryBackend
 {
 public:
-    using Backend::get;
-
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
         if (key == Layout{kPrefix}.refCatalogKey())
             return std::nullopt;
-        return InMemoryBackend::get(key, range);
+        return InMemoryBackend::read(key, access);
     }
 };
 
@@ -144,6 +140,27 @@ PoolConfig makeConfig()
     return cfg;
 }
 
+/// A one-shot `create` for seeding fixture bytes before `Pool::open` runs, asserting it committed.
+void seedObject(Backend & backend, const String & key, const String & bytes)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(key, bytes, Retry::once())));
+}
+
+/// Whether `key` has a value, through an exact read (mirrors the retired `backend->get(key).has_value()`).
+bool readPresent(Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).read(key, Retry::standard()).has_value();
+}
+
+/// Whether `key` has a value, through a HEAD (mirrors the retired `backend->head(key).exists`).
+bool headPresent(Backend & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).head(key, Retry::standard()).has_value();
+}
+
 template <typename F>
 void expectThrowsCodeContaining(int expected_code, const String & needle, F && fn);
 
@@ -151,9 +168,9 @@ void expectCatalogResidueRefusesWithoutPoolMeta(const String & bytes, const Stri
 {
     auto backend = std::make_shared<RecordingBackend>();
     const Layout layout{kPrefix};
-    ASSERT_EQ(backend->putIfAbsent(layout.refCatalogKey(), bytes).outcome, PutOutcome::Done);
+    seedObject(*backend, layout.refCatalogKey(), bytes);
     if (!extra_key.empty())
-        ASSERT_EQ(backend->putIfAbsent(extra_key, "residual").outcome, PutOutcome::Done);
+        seedObject(*backend, extra_key, "residual");
     backend->clearLog();
 
     try
@@ -166,7 +183,7 @@ void expectCatalogResidueRefusesWithoutPoolMeta(const String & bytes, const Stri
         EXPECT_EQ(e.code(), DB::ErrorCodes::INVALID_STATE);
     }
     EXPECT_EQ(backend->writeCount(), 0u);
-    EXPECT_FALSE(backend->head(layout.poolMetaKey()).exists);
+    EXPECT_FALSE(headPresent(*backend, layout.poolMetaKey()));
 }
 
 /// Index of the first op matching `pred`, if any.
@@ -208,7 +225,7 @@ TEST(CASBootstrapOrdering, EmptyPrefixOpensAndListsBeforeAnyWrite)
 
     PoolPtr store = Pool::open(backend, makeConfig());
     ASSERT_EQ(store->lifecycle(), PoolLifecycle::Live);
-    EXPECT_TRUE(backend->get(kPoolMetaKey).has_value()) << "_pool_meta must be created on a fresh empty prefix";
+    EXPECT_TRUE(readPresent(*backend, kPoolMetaKey)) << "_pool_meta must be created on a fresh empty prefix";
 
     const auto log = backend->snapshot();
     const auto residual_list = firstIndex(log, [](const RecordingBackend::Entry & e)
@@ -239,15 +256,70 @@ TEST(CASBootstrapOrdering, ResidualWithoutMetaFailsTypedWithZeroWrites)
 {
     auto backend = std::make_shared<RecordingBackend>();
     /// Seed residue an incomplete erase would have left behind (a ref-log object), with no `_pool_meta`.
-    ASSERT_EQ(backend->putIfAbsent(residualRefLogKey(), "x").outcome,
-              PutOutcome::Done);
+    seedObject(*backend, residualRefLogKey(), "x");
     backend->clearLog();
 
     expectThrowsCodeContaining(DB::ErrorCodes::INVALID_STATE, "refusing to bootstrap over residual data",
                                [&] { Pool::open(backend, makeConfig()); });
 
     EXPECT_EQ(backend->writeCount(), 0u) << "the fail path must perform zero writes (battery never ran)";
-    EXPECT_FALSE(backend->get(kPoolMetaKey).has_value()) << "a fresh _pool_meta must NOT have been minted";
+    EXPECT_FALSE(readPresent(*backend, kPoolMetaKey)) << "a fresh _pool_meta must NOT have been minted";
+}
+
+/// The engine's attempt number reaches the transport even through the bootstrap's own residual LIST.
+/// A backend that fails only the FIRST attempt of every LIST
+/// (as the adaptive-timeout fuse would) must still let the residual check succeed on attempt 2 -- if
+/// propagation were broken every attempt would look like attempt 1 and the LIST would never succeed,
+/// which the bootstrap reports as `BootstrapResidual::Indeterminate` ("could not authoritatively list"),
+/// a DIFFERENT message from the one asserted below. Reuses `ResidualWithoutMetaFailsTypedWithZeroWrites`'s
+/// exact seeding helper and expected error code so the assertion distinguishes "refused because listed"
+/// from "refused because the LIST failed".
+TEST(CASBootstrapOrdering, ResidualListSucceedsOnTheSecondAttempt)
+{
+    /// Every LIST whose attempt number is 1 fails as the first-attempt fuse would; attempt 2 answers.
+    struct FuseOnFirstList : RecordingBackend
+    {
+        RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
+        {
+            if (access.attemptNo() == 1)
+                throw Poco::TimeoutException("Timeout");
+            return RecordingBackend::list(prefix, cursor, limit, access);
+        }
+    };
+    auto backend = std::make_shared<FuseOnFirstList>();
+    /// A healthy pool without `_pool_meta` is the shape that needs the LIST: seed one residual key.
+    seedObject(*backend, residualRefLogKey(), "x");
+    backend->clearLog();
+
+    expectThrowsCodeContaining(DB::ErrorCodes::INVALID_STATE, "refusing to bootstrap over residual data",
+                               [&] { Pool::open(backend, makeConfig()); });
+
+    bool listed_on_second = false;
+    for (const auto & e : backend->snapshot())
+        listed_on_second |= (e.op == RecordingBackend::Op::List);
+    EXPECT_TRUE(listed_on_second) << "the residual LIST must have been answered (on attempt 2), not merely failed forever";
+}
+
+/// (b') The residual verdict is decided by the first residual key, not by an enumeration of the whole
+/// prefix: forty residue keys and a 32-key page must cost exactly ONE list request. Enumerating a
+/// large prefix is the one request a slow store cannot answer within an attempt, and a refusal
+/// needs none of it.
+TEST(CASBootstrapOrdering, ResidualWithoutMetaIsDecidedByTheFirstPage)
+{
+    auto backend = std::make_shared<RecordingBackend>();
+    for (uint64_t i = 1; i <= 40; ++i)
+        seedObject(*backend, Layout{"p"}.refLogKey(DB::Cas::tests::fixture::fixtureLife(RootNamespace{"test%2Fabcd"}), RefTxnId{1, i}), "x");
+    backend->clearLog();
+
+    expectThrowsCodeContaining(DB::ErrorCodes::INVALID_STATE, "refusing to bootstrap over residual data",
+                               [&] { Pool::open(backend, makeConfig()); });
+
+    size_t root_lists = 0;
+    for (const auto & e : backend->snapshot())
+        if (e.op == RecordingBackend::Op::List && e.key == kPrefix + "/")
+            ++root_lists;
+    EXPECT_EQ(root_lists, 1u) << "the first residual key settles the verdict; nothing past it may be enumerated";
+    EXPECT_EQ(backend->writeCount(), 0u);
 }
 
 /// (c) A prefix containing ONLY stale, structurally-valid `_probe/<hex>/…` debris (a crash-mid-battery
@@ -256,27 +328,27 @@ TEST(CASBootstrapOrdering, ResidualWithoutMetaFailsTypedWithZeroWrites)
 TEST(CASBootstrapOrdering, StaleProbeDebrisOnlyIsTreatedAsEmpty)
 {
     auto backend = std::make_shared<RecordingBackend>();
-    ASSERT_EQ(backend->putIfAbsent("p/_probe/" + kProbeUid + "/token", "probe-v1").outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent("p/_probe/" + kProbeUid + "/cas", "cas-s1").outcome, PutOutcome::Done);
+    seedObject(*backend, "p/_probe/" + kProbeUid + "/token", "probe-v1");
+    seedObject(*backend, "p/_probe/" + kProbeUid + "/cas", "cas-s1");
     backend->clearLog();
 
     PoolPtr store;
     ASSERT_NO_THROW(store = Pool::open(backend, makeConfig()));
     EXPECT_EQ(store->lifecycle(), PoolLifecycle::Live);
-    EXPECT_TRUE(backend->get(kPoolMetaKey).has_value()) << "_pool_meta must be created over a probe-only prefix";
+    EXPECT_TRUE(readPresent(*backend, kPoolMetaKey)) << "_pool_meta must be created over a probe-only prefix";
 }
 
 TEST(CASBootstrapOrdering, CanonicalEmptyCatalogOnlyIsTheSoleRetryablePreMetaResidue)
 {
     auto backend = std::make_shared<RecordingBackend>();
     const Layout layout{kPrefix};
-    ASSERT_EQ(backend->putIfAbsent(layout.refCatalogKey(), encodeRefCatalog(RefCatalog{})).outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent(kPrefix + "/_probe/" + kProbeUid + "/token", "probe-v1").outcome, PutOutcome::Done);
+    seedObject(*backend, layout.refCatalogKey(), encodeRefCatalog(RefCatalog{}));
+    seedObject(*backend, kPrefix + "/_probe/" + kProbeUid + "/token", "probe-v1");
     backend->clearLog();
 
     PoolPtr store;
     ASSERT_NO_THROW(store = Pool::open(backend, makeConfig()));
-    EXPECT_TRUE(backend->head(layout.poolMetaKey()).exists);
+    EXPECT_TRUE(headPresent(*backend, layout.poolMetaKey()));
 }
 
 TEST(CASBootstrapOrdering, MalformedCatalogOnlyResidueRefusesWithoutPoolMeta)
@@ -316,11 +388,11 @@ TEST(CASBootstrapOrdering, ListedCatalogMissingAtExactGetRefusesWithoutPoolMeta)
 {
     auto backend = std::make_shared<CatalogMissingAfterListBackend>();
     const Layout layout{kPrefix};
-    ASSERT_EQ(backend->putIfAbsent(layout.refCatalogKey(), encodeRefCatalog(RefCatalog{})).outcome, PutOutcome::Done);
+    seedObject(*backend, layout.refCatalogKey(), encodeRefCatalog(RefCatalog{}));
 
     expectThrowsCodeContaining(DB::ErrorCodes::INVALID_STATE, "refusing to bootstrap over residual data",
                                [&] { Pool::open(backend, makeConfig()); });
-    EXPECT_FALSE(backend->head(layout.poolMetaKey()).exists);
+    EXPECT_FALSE(headPresent(*backend, layout.poolMetaKey()));
 }
 
 /// (d) An existing healthy pool (meta present + data) → reopen is unchanged: the pool identity is
@@ -342,6 +414,49 @@ TEST(CASBootstrapOrdering, HealthyPoolReopenPreservesIdentity)
         << "a healthy reopen must NOT re-mint _pool_meta — the pool identity must be preserved";
 }
 
+/// (d') An existing pool whose prefix the store cannot LIST at the moment (a large prefix on a store
+/// that enumerates slowly, a LIST budget that expires) still reopens: `_pool_meta` present is proven by
+/// ONE exact read, and the residual LIST is only the absent-key path. Before this, a pool that could be
+/// read perfectly well refused to start because the enumeration that would have found the same key
+/// did not return in time.
+TEST(CASBootstrapOrdering, HealthyPoolReopensWhenThePrefixCannotBeListed)
+{
+    /// Refuses every LIST of the pool root once armed; everything else is the ordinary store.
+    class UnlistableRootBackend final : public RecordingBackend
+    {
+    public:
+        using RecordingBackend::list;
+        RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
+        {
+            if (refuse_root_list && prefix == kPrefix + "/")
+                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                                    "UnlistableRootBackend: the pool root cannot be enumerated right now");
+            return RecordingBackend::list(prefix, cursor, limit, access);
+        }
+        std::atomic<bool> refuse_root_list{false};
+    };
+
+    auto backend = std::make_shared<UnlistableRootBackend>();
+
+    UInt128 pool_id_first;
+    {
+        PoolPtr store = Pool::open(backend, makeConfig());
+        pool_id_first = store->poolMeta().pool_id;
+    }   /// clean teardown: drained farewell, so the reopen reclaims immediately
+
+    backend->refuse_root_list = true;
+    backend->clearLog();
+    PoolPtr store2;
+    ASSERT_NO_THROW(store2 = Pool::open(backend, makeConfig()))
+        << "an existing pool must reopen on the exact read of _pool_meta alone";
+    EXPECT_EQ(store2->lifecycle(), PoolLifecycle::Live);
+    EXPECT_EQ(store2->poolMeta().pool_id, pool_id_first);
+    const auto log = backend->snapshot();
+    EXPECT_FALSE(firstIndex(log, [](const RecordingBackend::Entry & e)
+        { return e.op == RecordingBackend::Op::List && e.key == kPrefix + "/"; }).has_value())
+        << "a pool whose _pool_meta was read must not be enumerated to prove it exists";
+}
+
 /// (e) [D2] concurrent-opener case: debris from a SECOND concurrent fresh opener's in-flight battery (a
 /// distinct probe uid) is skipped by the SAME structural rule as (c). Two openers racing over one shared
 /// pool prefix must not make each other's zero-write residual check fail.
@@ -349,9 +464,9 @@ TEST(CASBootstrapOrdering, ConcurrentOpenerProbeDebrisIsAlsoSkipped)
 {
     auto backend = std::make_shared<RecordingBackend>();
     /// This mount's own crashed battery AND a concurrent opener's in-flight battery.
-    ASSERT_EQ(backend->putIfAbsent("p/_probe/" + kProbeUid + "/token", "probe-v1").outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent("p/_probe/" + kProbeUid2 + "/token", "probe-v1").outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent("p/_probe/" + kProbeUid2 + "/cas", "cas-s1").outcome, PutOutcome::Done);
+    seedObject(*backend, "p/_probe/" + kProbeUid + "/token", "probe-v1");
+    seedObject(*backend, "p/_probe/" + kProbeUid2 + "/token", "probe-v1");
+    seedObject(*backend, "p/_probe/" + kProbeUid2 + "/cas", "cas-s1");
     backend->clearLog();
 
     PoolPtr store;
@@ -367,13 +482,13 @@ TEST(CASBootstrapOrdering, ConcurrentOpenerProbeDebrisIsAlsoSkipped)
 TEST(CASBootstrapOrdering, ProbeSiblingLookalikeIsResidualNotDebris)
 {
     auto backend = std::make_shared<RecordingBackend>();
-    ASSERT_EQ(backend->putIfAbsent("p/_probelike/token", "x").outcome, PutOutcome::Done);
+    seedObject(*backend, "p/_probelike/token", "x");
     backend->clearLog();
 
     expectThrowsCodeContaining(DB::ErrorCodes::INVALID_STATE, "refusing to bootstrap over residual data",
                                [&] { Pool::open(backend, makeConfig()); });
     EXPECT_EQ(backend->writeCount(), 0u);
-    EXPECT_FALSE(backend->get(kPoolMetaKey).has_value());
+    EXPECT_FALSE(readPresent(*backend, kPoolMetaKey));
 }
 
 /// (g) An OBSERVE / read-only open over a partially-erased pool (residual data, `_pool_meta` deleted)
@@ -384,8 +499,7 @@ TEST(CASBootstrapOrdering, ProbeSiblingLookalikeIsResidualNotDebris)
 TEST(CASBootstrapOrdering, ReadOnlyOverResidualWithoutMetaFailsClosedNoMint)
 {
     auto backend = std::make_shared<RecordingBackend>();
-    ASSERT_EQ(backend->putIfAbsent(residualRefLogKey(), "x").outcome,
-              PutOutcome::Done);
+    seedObject(*backend, residualRefLogKey(), "x");
     backend->clearLog();
 
     PoolConfig cfg = makeConfig();
@@ -394,7 +508,7 @@ TEST(CASBootstrapOrdering, ReadOnlyOverResidualWithoutMetaFailsClosedNoMint)
                                [&] { Pool::open(backend, cfg); });
 
     EXPECT_EQ(backend->writeCount(), 0u) << "an observe open must never write (least of all mint _pool_meta)";
-    EXPECT_FALSE(backend->get(kPoolMetaKey).has_value());
+    EXPECT_FALSE(readPresent(*backend, kPoolMetaKey));
 }
 
 /// (h) An observe / read-only open over a HEALTHY pool (meta present) is unchanged: it validates the
@@ -428,9 +542,10 @@ TEST(CASBootstrapOrdering, DecommissionWithAbsentMetaFailsClosedNoMint)
     }
     /// Delete only `_pool_meta`, leaving the owner anchor (and other control objects) behind.
     {
-        const auto h = backend->head(kPoolMetaKey);
-        ASSERT_TRUE(h.exists);
-        ASSERT_EQ(backend->deleteExact(kPoolMetaKey, h.token).kind, DeleteOutcome::Kind::Deleted);
+        DB::Cas::tests::OperationForTest op(*backend);
+        const auto h = (*op).head(kPoolMetaKey, Retry::standard());
+        ASSERT_TRUE(h.has_value());
+        ASSERT_EQ((*op).remove(kPoolMetaKey, h->etag, Retry::once()), Removal::Removed);
     }
     backend->clearLog();
 
@@ -438,5 +553,5 @@ TEST(CASBootstrapOrdering, DecommissionWithAbsentMetaFailsClosedNoMint)
                                [&] { Pool::openForDecommission(backend, makeConfig(), kSrid); });
 
     EXPECT_EQ(backend->writeCount(), 0u) << "decommission must not mint a fresh _pool_meta";
-    EXPECT_FALSE(backend->get(kPoolMetaKey).has_value());
+    EXPECT_FALSE(readPresent(*backend, kPoolMetaKey));
 }

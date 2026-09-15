@@ -14,10 +14,13 @@
 #include <Disks/tests/cas_test_helpers.h>
 
 #include <cstdint>
+#include <expected>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 /// The `_ckpt` JOIN law and its `O(1)` SIZE invariant.
@@ -41,7 +44,7 @@
 ///     so the fence would not fire on the very change it exists to catch. Only a real producer
 ///     populates a real field.
 ///   - TRANSACTIONS and WRITER EPOCHS enter as the DECIMAL WIDTH of the two id pairs. That is not
-///     equality: `{cse=1,css=1}` and `{cse=1,css=10000}` differ by four bytes. It is `O(1)` because
+///     equality: `{snapshot_epoch=1,snapshot_seq=1}` and `{snapshot_epoch=1,snapshot_seq=10000}` differ by four bytes. It is `O(1)` because
 ///     the fields are `uint64_t` and so the width is ceilinged at twenty digits, which is a bound a
 ///     test asserts on a constructed worst case -- `EncodedCkptSizeHasAConstantCeiling...` below.
 
@@ -73,9 +76,10 @@ constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
 /// Constraint 15's bound, as a number: the encoded size of the WIDEST `_ckpt` this build can produce
 /// (all three fields present, every integer component at `UINT64_MAX`). Pinned as a literal so that
-/// adding a field, or widening one, fails a test rather than quietly moving the bound. Generation 10
-/// added one byte to the shared format-version header (`9` became `10`); the scalar body is unchanged.
-constexpr size_t CKPT_WORST_CASE_ENCODED_BYTES = 235;
+/// adding a field, or widening one, fails a test rather than quietly moving the bound. The shared
+/// format-version header is the single-digit `v:1` baseline; a future generation bump that widens it
+/// moves this constant too.
+constexpr size_t CKPT_WORST_CASE_ENCODED_BYTES = 296;
 
 /// The high-cardinality side of the size fence, in ONE transaction. Bounded above by the append lane's
 /// 5000-operation cap on a normal-class item (`publishCommittedOps` emits two ops per ref), and kept at
@@ -92,29 +96,42 @@ String refName(size_t i)
     return fmt::format("r{:08}", i);
 }
 
-/// A fence that never refuses, and a deadline far enough out that only the test's own contention
-/// decides the outcome -- each `_ckpt`/catalog test file defines its own copy, matching the precedent
-/// `gtest_cas_ns_creation_lifecycle.cpp` states explicitly.
-const std::function<void(uint64_t)> ALWAYS_ADMITTED = [](uint64_t) {};
-
-CkptDeadline generousDeadline()
+/// Withdraws an operation's admission at a chosen point inside another component's read-then-write
+/// window: deterministically, with no sleep and no second thread. A test arms exactly one of the two
+/// points and reads `admitted` from its operation's liveness predicate.
+class AdmissionHookBackend : public CountingBackend
 {
-    return CkptDeadline{[] { return uint64_t{1000}; }, 60000};
-}
+public:
+    bool admitted = true;
+    /// Withdraw once this exact key has been read.
+    String withdraw_after_read_of;
+    /// Withdraw once any `_ckpt` key has been written. The key carries an incarnation the test cannot
+    /// know before the creation mints it, so the arm names the object kind rather than the key.
+    bool withdraw_after_ckpt_write = false;
 
-/// Admits the FIRST call (spent by `completeCreation`'s step-2 `publishCkpt`) and refuses every call
-/// after (step 3's own `mutate`): "fenced out between the `_ckpt` create and the `Creating -> Live`
-/// CAS", deterministically and without a second thread. That is the durable shape a stalled creator
-/// leaves behind, and the starting state the resumption test needs.
-std::function<void(uint64_t)> admittedOnceThenFenced()
-{
-    auto calls = std::make_shared<int>(0);
-    return [calls](uint64_t admitted)
+    explicit AdmissionHookBackend(Layout layout_) : layout(std::move(layout_)) {}
+
+    std::optional<DB::Cas::Backend::Raw> read(const String & key, DB::Cas::TransportAccess & access) override
     {
-        if (++*calls > 1)
-            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "fence generation moved since admission ({})", admitted);
-    };
-}
+        auto result = CountingBackend::read(key, access);
+        if (!withdraw_after_read_of.empty() && key == withdraw_after_read_of)
+            admitted = false;
+        return result;
+    }
+
+    std::expected<String, DB::Cas::Backend::RawConflict> write(const String & key, const String & bytes,
+                                                               const std::optional<String> & expected_value,
+                                                               DB::Cas::TransportAccess & access) override
+    {
+        auto result = CountingBackend::write(key, bytes, expected_value, access);
+        if (withdraw_after_ckpt_write && layout.parseRefCkptKey(key))
+            admitted = false;
+        return result;
+    }
+
+private:
+    Layout layout;
+};
 
 CreatorFence creatorFence(const String & srid, uint64_t writer_epoch, uint64_t fence_generation = 1)
 {
@@ -138,9 +155,9 @@ const CatalogEntry * findEntryForTest(const RefCatalog & catalog, const RootName
 
 /// `life`'s durable `life_epoch`, failing the current test rather than dereferencing a disengaged
 /// optional -- a bare `->` on one aborts the whole binary and takes every later suite's result with it.
-uint64_t lifeEpochOrFail(Backend & backend, const Layout & layout, const NamespaceLifeId & life)
+uint64_t lifeEpochOrFail(CasOperation & op, const Layout & layout, const NamespaceLifeId & life)
 {
-    const std::optional<CkptSample> sample = readCkpt(backend, layout, life);
+    const std::optional<CkptSample> sample = readCkpt(op, layout, life);
     if (!sample || !sample->ckpt.life_epoch)
     {
         ADD_FAILURE() << "expected a _ckpt carrying a life_epoch for namespace '" << life.ns.string() << "'";
@@ -165,9 +182,9 @@ PoolPtr openPool(const BackendPtr & backend, std::function<uint64_t()> boot_ms_f
 /// The incarnation the production birth wiring minted for `ns`, learned back from the catalog the way a
 /// real reader does. Fails the current test rather than dereferencing a disengaged optional, so one
 /// regression cannot abort the binary and take every later suite's result with it.
-NamespaceLifeId liveLifeOrFail(Backend & backend, const Layout & layout, const RootNamespace & ns)
+NamespaceLifeId liveLifeOrFail(CasOperation & op, const Layout & layout, const RootNamespace & ns)
 {
-    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
     for (const CatalogEntry & entry : snap.catalog.entries)
         if (entry.ns.string() == ns.string())
             return NamespaceLifeId::fromCatalogEntry(entry.ns, entry.incarnation);
@@ -181,7 +198,7 @@ NamespaceLifeId liveLifeOrFail(Backend & backend, const Layout & layout, const R
 /// One transaction also holds every OTHER dimension fixed while `ref_count` varies: two namespaces
 /// built this way end at the same transaction id, so a difference in their `_ckpt` bodies can only be
 /// the refs. `ref_count` must therefore stay within the append lane's per-item operation cap.
-String encodedCkptOfNamespaceWithRefs(const PoolPtr & store, Backend & backend, const Layout & layout,
+String encodedCkptOfNamespaceWithRefs(const PoolPtr & store, CasOperation & op, const Layout & layout,
                                       const RootNamespace & ns, size_t ref_count)
 {
     store->appendRefOps(ns, MutationScope::wholeShard(),
@@ -191,14 +208,14 @@ String encodedCkptOfNamespaceWithRefs(const PoolPtr & store, Backend & backend, 
             if (state.getLifecycle() != RefLifecycle::Live)
                 ops.push_back(namespaceBirthOp());
             for (size_t i = 0; i < ref_count; ++i)
-                for (const RefOp & op : publishCommittedOps(refName(i), ManifestRef{1, i + 1, 1}))
-                    ops.push_back(op);
+                for (const RefOp & ref_op : publishCommittedOps(refName(i), ManifestRef{1, i + 1, 1}))
+                    ops.push_back(ref_op);
             return ops;
         },
         RootMutationOrigin::Writer, RootMutationKind::Publish);
 
-    const NamespaceLifeId life = liveLifeOrFail(backend, layout, ns);
-    const std::optional<CkptSample> sample = readCkpt(backend, layout, life);
+    const NamespaceLifeId life = liveLifeOrFail(op, layout, ns);
+    const std::optional<CkptSample> sample = readCkpt(op, layout, life);
     if (!sample)
     {
         ADD_FAILURE() << "expected a _ckpt for namespace '" << ns.string() << "' after its birth transaction";
@@ -298,36 +315,41 @@ TEST(CASRefCheckpointJoin, CrossEpochFrontierRequiresAnImmediatelyAdjacentSeal)
 /// only ever rise", so the fixture must not quietly model two roots.
 TEST(CASRefCheckpointJoin, ResumedCreationRaisesLifeEpochWithoutRefusal)
 {
-    InMemoryBackend backend;
     Layout layout("p");
-    DB::Cas::tests::seedPoolMetaForRestart(backend);
+    auto backend = std::make_shared<AdmissionHookBackend>(layout);
+    DB::Cas::tests::seedPoolMetaForRestart(*backend);
     const RootNamespace ns{"a"};
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation reader = requests.admit();
 
-    ASSERT_EQ(CasRefCatalog::createNamespace(backend, layout, 1, ns, creatorFence("srv1", 5),
-                                             /*admitted_generation=*/1, admittedOnceThenFenced(), generousDeadline()),
+    /// The creator loses admission the instant its step-2 `_ckpt` is durable, so step 3 never sends
+    /// its `Creating -> Live` write. That is the durable shape a stalled creator leaves behind, and
+    /// the starting state this test needs.
+    backend->withdraw_after_ckpt_write = true;
+    CasOperation creator = requests.admit([&backend] { return backend->admitted; });
+    ASSERT_EQ(CasRefCatalog::createNamespace(creator, layout, 1, ns, creatorFence("srv1", 5)),
               CasRefCatalog::NamespaceCreationOutcome::FencedOut);
+    backend->withdraw_after_ckpt_write = false;
 
     /// Bound to a name, never chained through a temporary: a `const CatalogEntry *` taken from an
     /// unbound `Snapshot` dangles the instant the full expression ends.
-    const CasRefCatalog::Snapshot stalled = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot stalled = CasRefCatalog::read(reader, layout);
     const CatalogEntry * entry = findEntryForTest(stalled.catalog, ns);
     ASSERT_NE(entry, nullptr);
     ASSERT_EQ(entry->state, NsState::Creating);
     const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(entry->ns, entry->incarnation);
-    EXPECT_EQ(lifeEpochOrFail(backend, layout, life), 5u) << "step 2 landed before the creator stalled";
+    EXPECT_EQ(lifeEpochOrFail(reader, layout, life), 5u) << "step 2 landed before the creator stalled";
 
     const CreatorFence resumer = creatorFence("srv1", 9);
-    ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(backend, layout, *entry, resumer, fixedTerminality(true),
-                                                   /*admitted_generation=*/1, ALWAYS_ADMITTED),
+    ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(reader, layout, *entry, resumer, fixedTerminality(true)),
               CasRefCatalog::ReconcileCreatorOutcome::Reconciled);
 
     CatalogEntry resumed = *entry;
     resumed.creator = resumer;
-    EXPECT_EQ(CasRefCatalog::completeCreation(backend, layout, resumed, /*admitted_generation=*/1,
-                                              ALWAYS_ADMITTED, generousDeadline()),
+    EXPECT_EQ(CasRefCatalog::completeCreation(reader, layout, resumed),
               CasRefCatalog::NamespaceCreationOutcome::Live)
         << "the resumption must not be refused by the join";
-    EXPECT_EQ(lifeEpochOrFail(backend, layout, life), 9u)
+    EXPECT_EQ(lifeEpochOrFail(reader, layout, life), 9u)
         << "the genesis epoch that actually landed is the resuming actor's, and the join must let it rise";
 }
 
@@ -338,19 +360,19 @@ TEST(CASRefCheckpointJoin, ResumedCreationRaisesLifeEpochWithoutRefusal)
 /// chunk contributes the `NamespaceBirth` record's epoch. CREATE TABLE, restart, INSERT.
 TEST(CASRefCheckpointJoin, RestartBetweenCreationAndFirstWriteRaisesLifeEpochWithoutRefusal)
 {
-    InMemoryBackend backend;
+    auto backend = std::make_shared<InMemoryBackend>();
     Layout layout("p");
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(RootNamespace{"a"}, UInt128(42));
 
     const RefCkpt from_creation{.life_epoch = 4, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(publishCkpt(backend, layout, life, from_creation, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
+    ASSERT_EQ(publishCkpt(op, layout, life, from_creation), CkptPublishOutcome::Published);
 
     const RefCkpt from_birth_chunk{.life_epoch = 7, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    EXPECT_EQ(publishCkpt(backend, layout, life, from_birth_chunk, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published)
+    EXPECT_EQ(publishCkpt(op, layout, life, from_birth_chunk), CkptPublishOutcome::Published)
         << "the birth chunk's later epoch must be publishable, not refused as a conflict";
-    EXPECT_EQ(lifeEpochOrFail(backend, layout, life), 7u);
+    EXPECT_EQ(lifeEpochOrFail(op, layout, life), 7u);
 }
 
 /// THE REFUSAL, and the state it constructs IS UNREACHABLE ON ANY HONEST PATH -- that is the point of
@@ -372,21 +394,23 @@ TEST(CASRefCheckpointJoin, RestartBetweenCreationAndFirstWriteRaisesLifeEpochWit
 /// of its arguments is durable. There is deliberately no merge-level counterpart to this test.
 TEST(CASRefCheckpointJoin, JoinDecreasingLifeEpochIsCorruptionAndPublishesNothing)
 {
-    CountingBackend backend;
+    auto backend = std::make_shared<CountingBackend>();
     Layout layout("p");
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(RootNamespace{"a"}, UInt128(42));
     const String key = layout.refCkptKey(life);
 
     const RefCkpt durable{.life_epoch = 9, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(publishCkpt(backend, layout, life, durable, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    const uint64_t cas_puts_before = backend.casPutCount(key);
+    ASSERT_EQ(publishCkpt(op, layout, life, durable), CkptPublishOutcome::Published);
+    /// This suite writes one key only, so the backend's own total is that key's count.
+    const uint64_t writes_before = backend->writeTotal();
 
     const RefCkpt superseded{.life_epoch = 3, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
     String message;
     try
     {
-        publishCkpt(backend, layout, life, superseded, 1, ALWAYS_ADMITTED, generousDeadline());
+        publishCkpt(op, layout, life, superseded);
         ADD_FAILURE() << "a contribution below the durable life_epoch must not be published";
     }
     catch (const DB::Exception & e)
@@ -409,8 +433,8 @@ TEST(CASRefCheckpointJoin, JoinDecreasingLifeEpochIsCorruptionAndPublishesNothin
 
     /// And nothing was written. The refusal is decided before the body is built, so the durable object
     /// is untouched and no write was even attempted.
-    EXPECT_EQ(backend.casPutCount(key), cas_puts_before) << "the publisher must not CAS on a refused publish";
-    EXPECT_EQ(lifeEpochOrFail(backend, layout, life), 9u) << "the durable value is unchanged";
+    EXPECT_EQ(backend->writeTotal(), writes_before) << "the publisher must not write on a refused publish";
+    EXPECT_EQ(lifeEpochOrFail(op, layout, life), 9u) << "the durable value is unchanged";
 }
 
 /// The other half of the refusal, and the reason it consults the fence before classifying: the SAME
@@ -421,26 +445,28 @@ TEST(CASRefCheckpointJoin, JoinDecreasingLifeEpochIsCorruptionAndPublishesNothin
 /// violation is a STILL-ADMITTED writer contributing a superseded epoch.
 TEST(CASRefCheckpointJoin, ADecreasingLifeEpochFromAFencedOutWriterIsReportedFencedOutNotCorruption)
 {
-    CountingBackend backend;
     Layout layout("p");
+    auto backend = std::make_shared<AdmissionHookBackend>(layout);
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation reader = requests.admit();
     const NamespaceLifeId life = NamespaceLifeId::fromCatalogEntry(RootNamespace{"a"}, UInt128(42));
     const String key = layout.refCkptKey(life);
 
     const RefCkpt durable{.life_epoch = 9, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    ASSERT_EQ(publishCkpt(backend, layout, life, durable, 1, ALWAYS_ADMITTED, generousDeadline()),
-              CkptPublishOutcome::Published);
-    const uint64_t cas_puts_before = backend.casPutCount(key);
+    ASSERT_EQ(publishCkpt(reader, layout, life, durable), CkptPublishOutcome::Published);
+    /// This suite writes one key only, so the backend's own total is that key's count.
+    const uint64_t writes_before = backend->writeTotal();
 
-    const std::function<void(uint64_t)> always_fenced = [](uint64_t admitted)
-    {
-        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "fence generation moved since admission ({})", admitted);
-    };
+    /// Admission survives the read and is gone by the time the decrease is classified -- the exact
+    /// window in which the refusal must be reported as a control signal rather than as corruption.
+    backend->withdraw_after_read_of = key;
+    CasOperation superseded_writer = requests.admit([&backend] { return backend->admitted; });
     const RefCkpt superseded{.life_epoch = 3, .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
-    EXPECT_EQ(publishCkpt(backend, layout, life, superseded, 1, always_fenced, generousDeadline()),
-              CkptPublishOutcome::FencedOut);
+    EXPECT_EQ(publishCkpt(superseded_writer, layout, life, superseded), CkptPublishOutcome::FencedOut);
+    backend->withdraw_after_read_of.clear();
 
-    EXPECT_EQ(backend.casPutCount(key), cas_puts_before);
-    EXPECT_EQ(lifeEpochOrFail(backend, layout, life), 9u);
+    EXPECT_EQ(backend->writeTotal(), writes_before);
+    EXPECT_EQ(lifeEpochOrFail(reader, layout, life), 9u);
 }
 
 /// `checkpoint_snapshot_id` and `last_epoch_seal` continue to merge by SEMANTIC MAXIMUM. Unlike
@@ -490,9 +516,11 @@ TEST(CASRefCheckpointJoin, EncodedCkptSizeIsIndependentOfCardinality)
     /// instead of racing it (see `openPool`'s doc comment).
     auto store = openPool(backend, [] { return uint64_t{0}; });
     Layout layout("p");
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
 
-    const String one = encodedCkptOfNamespaceWithRefs(store, *backend, layout, RootNamespace{"srv1/one"}, 1);
-    const String many = encodedCkptOfNamespaceWithRefs(store, *backend, layout, RootNamespace{"srv1/many"}, MANY_REFS);
+    const String one = encodedCkptOfNamespaceWithRefs(store, op, layout, RootNamespace{"srv1/one"}, 1);
+    const String many = encodedCkptOfNamespaceWithRefs(store, op, layout, RootNamespace{"srv1/many"}, MANY_REFS);
 
     ASSERT_FALSE(one.empty());
     ASSERT_FALSE(many.empty());

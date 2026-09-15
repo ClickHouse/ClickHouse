@@ -25,9 +25,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05010',
-    name = '05010_cas_mounts_gc_health',
-    path = '05010_cas_mounts_gc_health_pool/',
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05010',
+    name = '${CLICKHOUSE_DATABASE}_05010_cas_mounts_gc_health',
+    path = '${CLICKHOUSE_DATABASE}_05010_cas_mounts_gc_health_pool/',
     cas_gc_enabled = 1,
     cas_gc_interval_sec = 1),
     old_parts_lifetime = 1;
@@ -36,17 +36,23 @@ INSERT INTO t_cas_mounts_gc_health SELECT number, toString(number) FROM numbers(
 TRUNCATE TABLE t_cas_mounts_gc_health;
 """
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '05010_cas_mounts_gc_health'" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SYSTEM CAS GC RUN '${CLICKHOUSE_DATABASE}_05010_cas_mounts_gc_health'" > /dev/null
 
 ${CLICKHOUSE_CLIENT} --multiline -q """
 SELECT is_leader, wedged_namespace_count
 FROM system.cas_mounts
-WHERE disk LIKE '%05010_cas_mounts_gc_health%';
+WHERE disk LIKE '%${CLICKHOUSE_DATABASE}_05010_cas_mounts_gc_health%';
 
 SELECT pending_reclaim >= 0, last_success_age_seconds < 60
 FROM system.cas_mounts
-WHERE disk LIKE '%05010_cas_mounts_gc_health%';
+WHERE disk LIKE '%${CLICKHOUSE_DATABASE}_05010_cas_mounts_gc_health%';
 
 DROP TABLE t_cas_mounts_gc_health;
 SELECT 'ok';
 """
+
+# FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, which would
+# stream that expected warning to stderr and be flagged as a failure. Suppress it for the FORGET call only.
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
+    --query "SYSTEM CAS FORGET '${CLICKHOUSE_DATABASE}_05010_cas_mounts_gc_health'" || {
+    echo "FORGET failed"; exit 1; }

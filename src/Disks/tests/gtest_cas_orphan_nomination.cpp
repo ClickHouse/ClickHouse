@@ -29,27 +29,28 @@ ManifestRef candidateRef()
 
 bool manifestExists(Backend & backend, const Layout & layout, const ManifestId & id)
 {
-    return backend.head(layout.manifestKey(id)).exists;
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).head(layout.manifestKey(id), Retry::standard()).has_value();
 }
 
-bool activeSourceExists(Backend & backend, const Layout & layout, const UInt128 & source_id)
+bool activeSourceExists(CasOperation & op, const Layout & layout, const UInt128 & source_id)
 {
-    const auto state_got = backend.get(layout.gcStateKey());
+    const auto state_got = op.read(layout.gcStateKey(), Retry::standard());
     if (!state_got)
         return false;
     const GcState state = decodeGcState(state_got->bytes);
-    const auto seal_got = backend.get(layout.foldSealKey(state.snap_generation, state.snap_attempt));
+    const auto seal_got = op.read(layout.foldSealKey(state.snap_generation, state.snap_attempt), Retry::standard());
     if (!seal_got)
         return false;
     const CasFoldSeal seal = decodeFoldSeal(seal_got->bytes);
     for (const RunRef & run : seal.blob_target_runs)
     {
-        SourceEdgeRunView view = openSourceEdgeRun(backend, run.key);
+        SourceEdgeRunView view = openSourceEdgeRun(op, run.key);
         String key;
         String payload;
         while (view.next(key, payload))
         {
-            if (payload.empty() || payload[0] != kEdgeActive)
+            if (payload.empty() || runMarkerFromByte(payload[0], "CAS test source-edge run") != RunMarker::Edge)
                 continue;
             BlobRef ref;
             UInt128 row_source{};
@@ -62,44 +63,45 @@ bool activeSourceExists(Backend & backend, const Layout & layout, const UInt128 
     return false;
 }
 
-size_t condemnedCount(Backend & backend, const Layout & layout)
+size_t condemnedCount(CasOperation & op, const Layout & layout)
 {
     size_t count = 0;
-    const GcState state = decodeGcState(backend.get(layout.gcStateKey())->bytes);
+    const GcState state = decodeGcState(op.read(layout.gcStateKey(), Retry::standard())->bytes);
     const CasFoldSeal seal = decodeFoldSeal(
-        backend.get(layout.foldSealKey(state.snap_generation, state.snap_attempt))->bytes);
+        op.read(layout.foldSealKey(state.snap_generation, state.snap_attempt), Retry::standard())->bytes);
     for (const RunRef & run : seal.blob_target_runs)
     {
-        SourceEdgeRunView view = openSourceEdgeRun(backend, run.key);
+        SourceEdgeRunView view = openSourceEdgeRun(op, run.key);
         String key;
         String payload;
         while (view.next(key, payload))
-            count += !payload.empty() && payload[0] == kCondemned;
+            count += !payload.empty() && runMarkerFromByte(payload[0], "CAS test source-edge run") == RunMarker::Condemned;
         view.verifyAgainst(run.checksum);
     }
     return count;
 }
 
-class NominationBackend : public InMemoryBackend
+class NominationBackend : public CountingBackend
 {
 public:
-    using Backend::deleteExact;
-    using Backend::get;
-    using Backend::putOverwrite;
-
-    DeleteOutcome deleteExact(const String & key, const Token & token) override
+    /// The sweep's exact-token delete reaches the store through the keyed removal, so the fault is
+    /// armed there. It runs before the base call takes the backend's lock, so probing this same
+    /// backend from inside it is safe.
+    RawRemoval remove(const String & key, const String & expected_value, TransportAccess & access) override
     {
         if (key == watched_manifest_key)
         {
-            source_absent_when_delete_started = !activeSourceExists(*this, layout, watched_source_id);
+            CasRequests probe_requests = openRequestsForTest(*this);
+            CasOperation probe = probe_requests.admit();
+            source_absent_when_delete_started = !activeSourceExists(probe, layout, watched_source_id);
             if (replace_manifest_before_delete)
             {
-                const auto got = get(key);
+                const auto got = InMemoryBackend::read(key, access);
                 if (got)
-                    putOverwrite(key, got->bytes, got->token);
+                    static_cast<void>(InMemoryBackend::write(key, got->bytes, got->value, access));
             }
         }
-        return InMemoryBackend::deleteExact(key, token);
+        return CountingBackend::remove(key, expected_value, access);
     }
 
     Layout layout{"p"};
@@ -150,7 +152,7 @@ ReadyFixture makeReadyFixture()
         .last_epoch_seal = RefTxnId{1, 2},
     });
     EXPECT_TRUE(runRegularRoundReclaiming(*f.gc).acquired_lease);
-    setWatermarkMinActive(*f.backend, f.store->layout(), "test", kCandidateEpoch, /*min_active=*/6);
+    setWatermarkMinActive(*f.backend, f.store->layout(), "test", kCandidateEpoch, /*min_active_build_sequence=*/6);
 
     std::vector<ManifestEntry> entries;
     std::vector<BlobDelta> seeded_edges;
@@ -176,11 +178,12 @@ ReadyFixture makeReadyFixture()
 
     /// Seed the exact S42 precondition: the candidate manifest's `+1` edges are already in the adopted
     /// run, yet the recovered owner view does not name the body. Four blobs also have another source.
-    const auto state_got = f.backend->get(f.store->layout().gcStateKey());
+    CasOperation seed_op = f.store->openRequests().admit();
+    const auto state_got = seed_op.read(f.store->layout().gcStateKey(), Retry::standard());
     EXPECT_TRUE(state_got.has_value());
     GcState state = decodeGcState(state_got->bytes);
-    const auto parent_got = f.backend->get(
-        f.store->layout().foldSealKey(state.snap_generation, state.snap_attempt));
+    const auto parent_got = seed_op.read(
+        f.store->layout().foldSealKey(state.snap_generation, state.snap_attempt), Retry::standard());
     EXPECT_TRUE(parent_got.has_value());
     CasFoldSeal seal = decodeFoldSeal(parent_got->bytes);
     const uint64_t new_generation = state.snap_generation + 1;
@@ -188,7 +191,7 @@ ReadyFixture makeReadyFixture()
     std::vector<RunRef> runs;
     RetiredMergeResult retired;
     foldDeltasIntoGeneration(
-        *f.backend, f.store->layout(), seal.blob_target_runs,
+        seed_op, f.store->layout(), seal.blob_target_runs,
         new_generation, new_attempt, /*shard=*/0, std::move(seeded_edges), runs,
         /*current_round=*/state.round, /*condemn_round=*/state.round,
         {}, {}, {}, &retired, /*suppress_destructive=*/false, nullptr);
@@ -197,10 +200,10 @@ ReadyFixture makeReadyFixture()
     seal.blob_target_runs = std::move(runs);
     seal.condemned_summary[0] = CondemnedSummary{};
     putDeterministicArtifact(
-        *f.backend, f.store->layout().foldSealKey(new_generation, new_attempt), encodeFoldSeal(seal));
+        seed_op, f.store->layout().foldSealKey(new_generation, new_attempt), encodeFoldSeal(seal));
     state.snap_generation = new_generation;
     state.snap_attempt = new_attempt;
-    f.backend->putOverwrite(f.store->layout().gcStateKey(), encodeGcState(state), state_got->token);
+    seed_op.replace(f.store->layout().gcStateKey(), encodeGcState(state), state_got->etag, Retry::standard());
 
     f.backend->watched_manifest_key = f.store->layout().manifestKey(f.candidate);
     f.backend->watched_source_id = sourceEdgeId(f.candidate, "blob-0");
@@ -227,14 +230,15 @@ TEST(CASOrphanNomination, RetiresExactManifestSourcesBeforeDelete)
     EXPECT_FALSE(manifestExists(*f.backend, f.store->layout(), f.candidate));
     EXPECT_TRUE(f.backend->source_absent_when_delete_started)
         << "the adopted in-degree run must retire the manifest source before exact deletion begins";
+    CasOperation op = f.store->openRequests().admit();
     for (size_t i = 0; i < f.blobs.size(); ++i)
     {
         EXPECT_FALSE(activeSourceExists(
-            *f.backend, f.store->layout(), sourceEdgeId(f.candidate, "blob-" + std::to_string(i))));
+            op, f.store->layout(), sourceEdgeId(f.candidate, "blob-" + std::to_string(i))));
         EXPECT_EQ(inDegreeInRuns(*f.backend, runsForShard(*f.backend, f.store->layout(), 0), f.blobs[i]),
                   i < 4 ? 1 : 0);
     }
-    EXPECT_EQ(condemnedCount(*f.backend, f.store->layout()), 2u);
+    EXPECT_EQ(condemnedCount(op, f.store->layout()), 2u);
 
     ASSERT_TRUE(fold_reduce.has_value());
     EXPECT_EQ(fold_reduce->metrics.at("unmatched_removes"), 0u)
@@ -244,14 +248,40 @@ TEST(CASOrphanNomination, RetiresExactManifestSourcesBeforeDelete)
            "committed+produced ref transaction unapplied";
 }
 
+/// A page reads the body of a candidate only. Five live manifests share the namespace with the one
+/// orphan candidate; they are active under the floor, are retained from their keys alone, and cost no
+/// GET. The candidate costs exactly one.
+TEST(CASOrphanNomination, OnlyCandidatesCostABodyRead)
+{
+    ReadyFixture f = makeReadyFixture();
+    const Layout & layout = f.store->layout();
+    std::vector<String> live_keys;
+    for (uint32_t ordinal = 1; ordinal <= 5; ++ordinal)
+    {
+        const ManifestRef live{.writer_epoch = kCandidateEpoch, .build_sequence = 7, .manifest_ordinal = ordinal};
+        writeManifestRaw(*f.backend, layout, f.ns, live, {blobEntryFor("live", DB::UInt128(0xA000 + ordinal))});
+        live_keys.push_back(layout.manifestKey(ManifestId{f.ns, live}));
+    }
+    f.backend->resetCounts();
+
+    const ManifestSweepResult result = planManifestCursorPage(
+        *f.store, "", /*list_budget=*/100, /*nomination_budget=*/100, /*catalog_recovery_authoritative=*/true, nullptr);
+
+    ASSERT_EQ(result.nominations.size(), 1u);
+    EXPECT_EQ(f.backend->getCount(layout.manifestKey(f.candidate)), 1u);
+    for (const String & key : live_keys)
+        EXPECT_EQ(f.backend->getCount(key), 0u) << key;
+}
+
 /// A nomination must exact-GET and decode the manifest before it can derive any source-edge identity.
 /// An undecodable body is retained and surfaced without aborting the rest of the round.
 TEST(CASOrphanNomination, CorruptManifestIsRetainedAndSurfaced)
 {
     ReadyFixture f = makeReadyFixture();
-    const auto got = f.backend->get(f.backend->watched_manifest_key);
+    DB::Cas::tests::OperationForTest op(f.backend);
+    const auto got = (*op).read(f.backend->watched_manifest_key, Retry::standard());
     ASSERT_TRUE(got.has_value());
-    f.backend->putOverwrite(f.backend->watched_manifest_key, "not a sealed manifest", got->token);
+    (*op).replace(f.backend->watched_manifest_key, "not a sealed manifest", got->etag, Retry::standard());
 
     std::optional<GcPhaseRecord> orphan_sweep;
     f.gc->setPhaseSink([&](const GcPhaseRecord & rec) { if (rec.phase == "orphan_sweep") orphan_sweep = rec; });
@@ -261,7 +291,10 @@ TEST(CASOrphanNomination, CorruptManifestIsRetainedAndSurfaced)
     EXPECT_TRUE(report.acquired_lease);
     ASSERT_TRUE(orphan_sweep.has_value());
     EXPECT_EQ(orphan_sweep->metrics.at("undecodable"), 1u);
-    EXPECT_TRUE(f.backend->head(f.backend->watched_manifest_key).exists);
+    {
+        DB::Cas::tests::OperationForTest head_op(f.backend);
+        EXPECT_TRUE((*head_op).head(f.backend->watched_manifest_key, Retry::standard()).has_value());
+    }
 }
 
 /// Manifest identities are immutable. A changed token at the same key is illegal ABA, not an ordinary
@@ -272,7 +305,10 @@ TEST(CASOrphanNomination, TokenAbaIsRetainedAndSurfaced)
     f.backend->replace_manifest_before_delete = true;
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { runRegularRoundReclaiming(*f.gc); });
-    EXPECT_TRUE(f.backend->head(f.backend->watched_manifest_key).exists);
+    {
+        DB::Cas::tests::OperationForTest head_op(f.backend);
+        EXPECT_TRUE((*head_op).head(f.backend->watched_manifest_key, Retry::standard()).has_value());
+    }
 }
 
 /// Nomination PLANNING itself is gated on `!suppress_destructive`
@@ -303,19 +339,21 @@ TEST(CASOrphanNomination, SuppressedRoundNominatesNothing)
 TEST(CASOrphanNomination, SourceRetirementIsAccountingNeutral)
 {
     InMemoryBackend backend;
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout layout{"p"};
     const BlobRef blob = legacyMetaTestRef(UInt128(0xA001));
     const UInt128 source = UInt128(0xA002);
     std::vector<RunRef> parent_runs;
     foldDeltasIntoGeneration(
-        backend, layout, {}, /*new_generation=*/1, /*attempt=*/1, /*shard=*/0,
+        op, layout, {}, /*new_generation=*/1, /*attempt=*/1, /*shard=*/0,
         {BlobDelta{.ref = blob, .source_id = source, .remove = false}}, parent_runs);
 
     std::vector<RunRef> next_runs;
     RetiredMergeResult retired;
     std::vector<uint8_t> applied{0x5A};
     foldDeltasIntoGeneration(
-        backend, layout, parent_runs, /*new_generation=*/2, /*attempt=*/2, /*shard=*/0,
+        op, layout, parent_runs, /*new_generation=*/2, /*attempt=*/2, /*shard=*/0,
         {}, next_runs, /*current_round=*/1, /*condemn_round=*/1,
         {}, {}, {}, &retired, /*suppress_destructive=*/false, &applied,
         {BlobSourceRetirement{.ref = blob, .source_id = source},

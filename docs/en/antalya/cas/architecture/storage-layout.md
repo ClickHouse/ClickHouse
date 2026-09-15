@@ -45,7 +45,7 @@ namespace's shape and never interprets its contents.
 | `gc/gen/<gen>/attempt/<att>/outcomes/<round>/<shard>.zst` | GC outcome log | `cas_gc_outcomes` | GC |
 | `gc/server-roots/<server_root_id>/owner` | server-root owner singleton | `cas_owner` | mount |
 | `gc/server-roots/<server_root_id>/epoch` | server-root epoch singleton | `cas_epoch` | mount |
-| `gc/server-roots/<server_root_id>/mount` | mount lease (incl. `min_active` watermark) | `cas_mount_lease` | mount |
+| `gc/server-roots/<server_root_id>/mount` | mount lease (incl. `min_active_build_sequence` watermark) | `cas_mount_lease` | mount |
 | `roots/<key>` | loose mountpoint object, verbatim | — (never interpreted) | upper layers |
 | `staging/<server_root_id>/…` | S3-native upload staging scratch | — | writer, own mount only |
 

@@ -127,9 +127,15 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     flushMemoryUsageDiff(std::move(diff));
 }
 
-ReadManager::~ReadManager()
+void ReadManager::shutdownTasks()
 {
     shutdown->shutdown();
+    reader.prefetcher.shutdownTasks();
+}
+
+ReadManager::~ReadManager()
+{
+    shutdownTasks();
 }
 
 void ReadManager::cancel() noexcept

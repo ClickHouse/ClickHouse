@@ -1,5 +1,4 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobMeta.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -13,34 +12,34 @@ namespace ProfileEvents
 namespace DB::Cas
 {
 
-std::optional<LoadedMeta> loadMeta(Backend & backend, const Layout & layout, const BlobRef & ref)
+std::optional<LoadedMeta> loadMeta(CasOperation & op, const Layout & layout, const BlobRef & ref,
+                                   const Retry & policy)
 {
-    const String key = layout.blobMetaKey(ref);
-    auto got = backend.get(key);
+    auto got = op.read(layout.blobMetaKey(ref), policy);
     if (!got)
         return std::nullopt;
-    return LoadedMeta{.meta = decodeBlobMeta(got->bytes), .etag = got->token};
+    return LoadedMeta{.meta = decodeBlobMeta(got->bytes), .etag = std::move(got->etag)};
 }
 
-CasOverwriteResult putMetaIfAbsent(Pool & pool, const BlobRef & ref, const BlobMeta & meta)
+WriteResult putMetaIfAbsent(CasOperation & op, const Layout & layout, const BlobRef & ref,
+                            const BlobMeta & meta, const Retry & policy)
 {
     ProfileEvents::increment(ProfileEvents::CASMetaPut);
-    const String key = pool.layout().blobMetaKey(ref);
-    return pool.stagingPutIfAbsentMutable(key, encodeBlobMeta(meta));
+    return op.create(layout.blobMetaKey(ref), encodeBlobMeta(meta), policy);
 }
 
-CasOverwriteResult casMeta(Pool & pool, const BlobRef & ref, const Token & expected, const BlobMeta & meta)
+WriteResult casMeta(CasOperation & op, const Layout & layout, const BlobRef & ref,
+                    const Etag & expected, const BlobMeta & meta)
 {
     ProfileEvents::increment(ProfileEvents::CASMetaCompareSwap);
-    const String key = pool.layout().blobMetaKey(ref);
-    return pool.stagingConditionalOverwrite(key, encodeBlobMeta(meta), expected);
+    return op.replace(layout.blobMetaKey(ref), encodeBlobMeta(meta), expected, Retry::standard());
 }
 
-DeleteOutcome deleteMetaExact(Backend & backend, const Layout & layout, const BlobRef & ref, const Token & expected)
+Removal deleteMetaExact(CasOperation & op, const Layout & layout, const BlobRef & ref,
+                        const Etag & expected)
 {
     ProfileEvents::increment(ProfileEvents::CASMetaDelete);
-    const String key = layout.blobMetaKey(ref);
-    return backend.deleteExact(key, expected);
+    return op.remove(layout.blobMetaKey(ref), expected, Retry::standard());
 }
 
 }

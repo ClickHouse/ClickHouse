@@ -15,9 +15,9 @@
                 <secret_access_key>clickhouse</secret_access_key>
                 <!-- Settings of the underlying object storage, in the same element as the CAS
                      settings. Each of these used to fail server startup on a CAS disk. -->
-                <http_keep_alive_timeout>60</http_keep_alive_timeout>
-                <http_keep_alive_max_requests>100</http_keep_alive_max_requests>
-                <connect_timeout_ms>5000</connect_timeout_ms>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
+                <connect_timeout_ms>1000</connect_timeout_ms>
                 <s3_retry_attempts>7</s3_retry_attempts>
                 <s3_max_single_read_retries>3</s3_max_single_read_retries>
                 <header>X-Cas-Test: 1</header>

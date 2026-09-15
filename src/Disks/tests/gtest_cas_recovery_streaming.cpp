@@ -143,7 +143,8 @@ bool pollUntil(Pred pred)
 class VanishMidTailOnceBackend : public InMemoryBackend
 {
 public:
-    using InMemoryBackend::get;   /// keep the one-arg convenience overload visible past our override
+    /// Unhide the primitive overload that the override below would otherwise hide.
+    using InMemoryBackend::list;
 
     String target_log_key;
     String refs_prefix;
@@ -151,18 +152,18 @@ public:
     std::atomic<bool> vanished{false};
     std::atomic<int> fresh_list_count{0};
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
         if (armed.load() && key == target_log_key && !vanished.exchange(true))
             return std::nullopt;   /// selected object gone between LIST and GET; recovery must re-LIST
-        return InMemoryBackend::get(key, range);
+        return InMemoryBackend::read(key, access);
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
         if (armed.load() && prefix == refs_prefix && cursor.empty())
             fresh_list_count.fetch_add(1, std::memory_order_relaxed);
-        return InMemoryBackend::list(prefix, cursor, limit);
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 };
 
@@ -172,7 +173,8 @@ public:
 class CorruptLogOnGetBackend : public InMemoryBackend
 {
 public:
-    using InMemoryBackend::get;   /// keep the one-arg convenience overload visible past our override
+    /// Unhide the primitive overload that the override below would otherwise hide.
+    using InMemoryBackend::list;
 
     String target_log_key;
     String corrupt_bytes;
@@ -180,19 +182,19 @@ public:
     std::atomic<bool> armed{false};
     std::atomic<int> refs_list_count{0};
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
-        auto got = InMemoryBackend::get(key, range);
+        auto got = InMemoryBackend::read(key, access);
         if (armed.load() && got && key == target_log_key)
             got->bytes = corrupt_bytes;
         return got;
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
         if (armed.load() && prefix == refs_prefix && cursor.empty())
             refs_list_count.fetch_add(1, std::memory_order_relaxed);
-        return InMemoryBackend::list(prefix, cursor, limit);
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 };
 
@@ -202,7 +204,8 @@ public:
 class BlockingFirstLogGetBackend : public InMemoryBackend
 {
 public:
-    using InMemoryBackend::get;
+    /// Unhide the primitive overload that the override below would otherwise hide.
+    using InMemoryBackend::list;
 
     String refs_prefix;
     String target_log_key;
@@ -211,18 +214,18 @@ public:
     std::atomic<int> list_calls{0};
     std::function<void()> on_first_target_get;
 
-    std::optional<GetResult> get(const String & key, Range range) override
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
         if (armed.load() && key == target_log_key && !blocked.exchange(true))
             on_first_target_get();
-        return InMemoryBackend::get(key, range);
+        return InMemoryBackend::read(key, access);
     }
 
-    ListPage list(const String & prefix, const String & cursor, size_t limit) override
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
     {
         if (armed.load() && prefix == refs_prefix && cursor.empty())
             list_calls.fetch_add(1, std::memory_order_relaxed);
-        return InMemoryBackend::list(prefix, cursor, limit);
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 };
 
@@ -255,7 +258,9 @@ TEST(CASRecoveryStreaming, LongTailReplaysUnderMemoryBound)
     setRecoveryReplayMemoryProbeForTest(tracker.probe());
     SCOPE_EXIT({ setRecoveryReplayMemoryProbeForTest({}); });
 
-    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(*backend, layout);
+    CasRequests catalog_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation catalog_op = catalog_requests.admit();
+    const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(catalog_op, layout);
     const RefTableState state = recoverRefTableDetailedAtCatalogCutForTest(*backend, layout, catalog_cut, ns).state;
     EXPECT_EQ(state.getPrecommits().size(), kTxns * kOpsPerTxn) << "the whole tail must have replayed";
     EXPECT_LE(tracker.peak(), static_cast<int64_t>(bound))
@@ -305,9 +310,10 @@ TEST(CASRecoveryStreaming, MaterializingControlExceedsMemoryBound)
     /// tail has been applied -- exactly the memory profile streaming recovery replaced.
     std::vector<RefLogTxn> resident_txns;
     int64_t held = 0;
+    OperationForTest tail_op(*backend);
     for (size_t t = 1; t <= kTxns; ++t)
     {
-        const auto got = backend->get(layout.refLogKey(fixture::fixtureLife(ns), RefTxnId{1, t}));
+        const auto got = (*tail_op).read(layout.refLogKey(fixture::fixtureLife(ns), RefTxnId{1, t}), Retry::once());
         ASSERT_TRUE(got.has_value());
         RefLogTxn txn = decodeRefLogTxn(openObject(FormatId::RefLog, got->bytes), ns.string(), RefTxnId{1, t});
         const int64_t footprint = static_cast<int64_t>(decodedRefLogTxnFootprint(txn));
@@ -471,7 +477,9 @@ TEST(CASRecoveryStreaming, OrphanSweepAndFsckSameBound)
         PeakTracker tracker;
         setRecoveryReplayMemoryProbeForTest(tracker.probe());
         SCOPE_EXIT({ setRecoveryReplayMemoryProbeForTest({}); });
-        const CasRefCatalog::Snapshot sweep_catalog_cut = CasRefCatalog::read(*backend, layout);
+        CasRequests sweep_requests = DB::Cas::tests::openRequestsForTest(backend);
+        CasOperation sweep_op = sweep_requests.admit();
+        const CasRefCatalog::Snapshot sweep_catalog_cut = CasRefCatalog::read(sweep_op, layout);
         const RecoveredRefTable recovered =
             recoverRefTableDetailedAtCatalogCutForTest(*backend, layout, sweep_catalog_cut, ns_sweep);
         EXPECT_EQ(recovered.state.getPrecommits().size(), kTxns * kOpsPerTxn);
@@ -571,7 +579,8 @@ TEST(CASRecoveryStreaming, RecoveryResultInventoryComplete)
     base_txn.ops = publishCommittedOps("c_two", mref(12));
     fixture::writeRefLogRaw(*backend, layout, base_txn);
     writeRefSnapshotRaw(*backend, layout, base);
-    const auto base_got = backend->get(layout.refSnapshotKey(fixture::fixtureLife(ns), base.snapshot_id));
+    OperationForTest inv_op(*backend);
+    const auto base_got = (*inv_op).read(layout.refSnapshotKey(fixture::fixtureLife(ns), base.snapshot_id), Retry::once());
     ASSERT_TRUE(base_got.has_value());
     const uint64_t base_stored_bytes = base_got->bytes.size();
 
@@ -592,8 +601,8 @@ TEST(CASRecoveryStreaming, RecoveryResultInventoryComplete)
                                        .checkpoint_snapshot_id = RefTxnId{1, 5},
                                        .last_epoch_seal = std::nullopt});
 
-    const uint64_t tail6 = backend->get(layout.refLogKey(fixture::fixtureLife(ns), RefTxnId{1, 6}))->bytes.size();
-    const uint64_t tail7 = backend->get(layout.refLogKey(fixture::fixtureLife(ns), RefTxnId{1, 7}))->bytes.size();
+    const uint64_t tail6 = (*inv_op).read(layout.refLogKey(fixture::fixtureLife(ns), RefTxnId{1, 6}), Retry::once())->bytes.size();
+    const uint64_t tail7 = (*inv_op).read(layout.refLogKey(fixture::fixtureLife(ns), RefTxnId{1, 7}), Retry::once())->bytes.size();
 
     backend->resetCounts();
     auto store = openPoolForTest(backend);

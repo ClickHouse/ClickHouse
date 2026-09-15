@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <mutex>
+
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFoldSealFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefLogFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.h>
@@ -54,12 +56,13 @@ using CountingHintHoleBackend = DB::Cas::tests::HintHoleBackendOn<DB::Cas::tests
 /// than a fold seal).
 std::optional<RefCoverage> coverageOf(Backend & backend, const Layout & layout, const RootNamespace & ns)
 {
+    DB::Cas::tests::OperationForTest op(backend);
     const uint64_t gen = currentGenerationOf(backend, layout);
     const uint64_t attempt = currentAttemptOf(backend, layout);
     const UInt128 life_id = catalogLifeIdForTest(backend, layout, ns);
     for (uint64_t g = gen; ; --g)
     {
-        if (const auto got = backend.get(layout.foldSealKey(g, attempt)))
+        if (const auto got = (*op).read(layout.foldSealKey(g, attempt), Retry::standard()))
         {
             const CasFoldSeal seal = decodeFoldSeal(got->bytes);
             const auto it = seal.ref_lives.find(life_id);
@@ -128,22 +131,22 @@ std::map<String, UInt64> runRoundCapturingIntake(Gc & gc, UniversePolicy policy 
 /// A store whose writer keeps pace with the walker EXACTLY: every time the fold reads the newest record
 /// by exact key, one more record lands above it.
 ///
-/// This is a mid-round appender expressed as a synchronous hook rather than as a thread, and the
-/// determinism is the point. The property under test is "the round stops at the tail it froze, however
-/// much arrives afterwards", and a thread can only make appends arrive at times the scheduler chooses --
-/// including, on an unlucky run, entirely after the walk has gone past. The hook reproduces the WORST
-/// case (writer rate == walker rate, the rate at which the unbounded walk provably never terminates) on
-/// every run, and `max_appends` bounds it so that the UNPATCHED walk still finishes and can be measured
-/// rather than hanging the suite.
+/// This is a mid-round appender expressed as a hook rather than as a background thread, and the
+/// determinism of WHEN it fires is the point: a real thread can only make appends arrive at times the
+/// scheduler chooses, including, on an unlucky run, entirely after the walk has gone past. The hook
+/// reproduces the WORST case (writer rate == walker rate, the rate at which the unbounded walk provably
+/// never terminates) on every run, and `max_appends` bounds it so that the UNPATCHED walk still finishes
+/// and can be measured rather than hanging the suite. The GC fold read-ahead can still land `read` calls
+/// for several hinted keys on different worker threads at once, so the hook's own state is mutex-guarded
+/// rather than assumed single-threaded.
 class ChasingWriterBackend : public CountingBackend
 {
 public:
-    using CountingBackend::get;
-
     /// Start appending above `published_through` (writer epoch 1) whenever the tail is read, up to
     /// `max_appends` further records.
     void arm(const Layout * layout_, const RootNamespace & ns_, uint64_t published_through, uint64_t max_appends)
     {
+        std::lock_guard lock(hook_mutex);
         layout = layout_;
         ns = ns_;
         published = published_through;
@@ -151,29 +154,54 @@ public:
     }
 
     /// Stop appending; the tail stands still from here on.
-    void disarm() { layout = nullptr; }
-
-    uint64_t publishedThrough() const { return published; }
-
-    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    void disarm()
     {
-        auto result = CountingBackend::get(key, range);
-        if (!layout || appending || published >= limit)
-            return result;
-        if (key != layout->refLogKey(fixture::fixtureLife(ns), RefTxnId{1, published}))
-            return result;
+        std::lock_guard lock(hook_mutex);
+        layout = nullptr;
+    }
 
-        /// The walk just consumed the tail; the writer answers with the next record. Guarded against
-        /// re-entry because publishing issues backend calls of its own.
-        appending = true;
-        const uint64_t next = published + 1;
-        publishAt(*this, *layout, ns, RefTxnId{1, next}, "ref_" + std::to_string(next), next, DB::UInt128(next));
+    uint64_t publishedThrough() const
+    {
+        std::lock_guard lock(hook_mutex);
+        return published;
+    }
+
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        auto result = CountingBackend::read(key, access);
+
+        const Layout * layout_snapshot = nullptr;
+        RootNamespace ns_snapshot;
+        uint64_t next = 0;
+        {
+            std::lock_guard lock(hook_mutex);
+            if (!layout || appending || published >= limit)
+                return result;
+            if (key != layout->refLogKey(fixture::fixtureLife(ns), RefTxnId{1, published}))
+                return result;
+
+            /// The walk just consumed the tail; the writer answers with the next record. Guarded
+            /// against re-entry (by another read-ahead worker, not just the same thread) because
+            /// publishing issues backend calls of its own.
+            appending = true;
+            layout_snapshot = layout;
+            ns_snapshot = ns;
+            next = published + 1;
+        }
+
+        /// `publishAt` below must run with the mutex released: it issues backend calls of its own, and
+        /// holding the lock across them would either self-deadlock on a re-entrant call or serialize
+        /// every read-ahead worker behind this one append.
+        publishAt(*this, *layout_snapshot, ns_snapshot, RefTxnId{1, next}, "ref_" + std::to_string(next), next, DB::UInt128(next));
+
+        std::lock_guard lock(hook_mutex);
         published = next;
         appending = false;
         return result;
     }
 
 private:
+    mutable std::mutex hook_mutex;
     const Layout * layout = nullptr;
     RootNamespace ns{};
     uint64_t published = 0;
@@ -230,7 +258,7 @@ TEST(CASGCBoundedWalk, ARoundFoldsThroughItsRoundStartTailAndLeavesTheStragglers
     EXPECT_EQ(cov->last_folded_ref_id, (RefTxnId{1, planted}))
         << "the walk must fold through the round-start tail and no further -- it chased the writer";
     EXPECT_FALSE(cov->hold.has_value()) << "reaching the committed frontier is not a hold";
-    EXPECT_NE(cov->classification, 4) << "reaching the committed frontier is not a clamp";
+    EXPECT_NE(cov->classification, CoverageClass::Clamped) << "reaching the committed frontier is not a clamp";
     EXPECT_EQ(metric(intake, "tails_advanced"), 1u);
     EXPECT_EQ(metric(intake, "logs_applied"), planted) << "exactly the round-start backlog was folded";
 
@@ -394,7 +422,10 @@ TEST(CASGCBoundedWalk, ARawRecordBeyondTheCommittedFrontierCannotSuppressDestruc
     EXPECT_EQ(backend->deleteTotal(), 1u)
         << "the committed frontier permits the round's immediate manifest cleanup. Deleted:"
         << deletedKeysMessage(*backend);
-    EXPECT_TRUE(backend->head(layout.blobKey(legacyMetaTestRef(blob))).exists);
+    {
+        DB::Cas::tests::OperationForTest head_op(*backend);
+        EXPECT_TRUE((*head_op).head(layout.blobKey(legacyMetaTestRef(blob)), Retry::standard()).has_value());
+    }
 
     /// The raw F+1 record remains outside the CTE; it cannot defer the normal destructive pipeline.
     backend->disarm();
@@ -505,7 +536,7 @@ TEST(CASGCBoundedWalk, AnAbsentManifestBodyStillHoldsWithoutAHead)
     ASSERT_TRUE(cov->hold.has_value()) << "an absent committed manifest body raises the fold barrier";
     EXPECT_EQ(cov->hold->reason, HoldReason::ManifestBodyMissing);
     EXPECT_EQ(cov->hold->offending_position, (RefTxnId{1, 2}));
-    EXPECT_EQ(cov->classification, 4);
+    EXPECT_EQ(cov->classification, CoverageClass::Clamped);
     EXPECT_EQ(backend->headCount(layout.manifestKey(gone)), 0u)
         << "absence is decided by the GET, so the missing body costs no HEAD either";
 }
@@ -558,13 +589,13 @@ TEST(CASGCBoundedWalk, ANamespaceThatFoldedNothingKeepsItsSealedCursor)
     ASSERT_TRUE(after.has_value())
         << "the coverage row was DROPPED -- the next round would re-fold this namespace from {0,0}";
     /// The CURSOR and the HOLD are what the next round trusts, and both ride unchanged.
-    /// `classification` legitimately moves from 2 ("this round folded records") to 1 ("unchanged"),
+    /// `classification` legitimately moves from `Folded` ("this round folded records") to `Unchanged`,
     /// because that is what the round did — it is the one field that may differ, so it is the one field
     /// asserted loosely.
     EXPECT_EQ(after->last_folded_ref_id, before->last_folded_ref_id)
         << "a namespace that folded nothing must keep the cursor it had";
     EXPECT_EQ(after->hold, before->hold);
-    EXPECT_NE(after->classification, 4) << "folding nothing is not a clamp";
+    EXPECT_NE(after->classification, CoverageClass::Clamped) << "folding nothing is not a clamp";
     EXPECT_EQ(metric(intake, "frontier_namespaces"), 2u)
         << "it stays in the round's universe, so its proof is still owed";
 }

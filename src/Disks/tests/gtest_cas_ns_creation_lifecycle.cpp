@@ -30,18 +30,6 @@ namespace DB::ErrorCodes
 namespace
 {
 
-/// A fence that never refuses, for tests whose subject is not the fence -- same helper, same intent,
-/// as `gtest_cas_ref_ckpt.cpp`'s identically-named constant (not shared: each `_ckpt`/catalog test file
-/// defines its own copy, matching that file's own precedent).
-const std::function<void(uint64_t)> ALWAYS_ADMITTED = [](uint64_t) {};
-
-/// A deadline far enough out that only the test's own contention decides the outcome -- mirrors
-/// `gtest_cas_ref_ckpt.cpp`'s `generousDeadline`.
-CkptDeadline generousDeadline()
-{
-    return CkptDeadline{[] { return uint64_t{1000}; }, 60000};
-}
-
 CreatorFence creatorFence(const String & srid, uint64_t writer_epoch, uint64_t fence_generation = 1)
 {
     return CreatorFence{.server_root_id = srid, .writer_epoch = writer_epoch, .fence_generation = fence_generation};
@@ -63,15 +51,64 @@ const CatalogEntry * findEntryForTest(const RefCatalog & catalog, const RootName
     return nullptr;
 }
 
-/// Raw lifecycle tests operate below `Pool::open`, so model an already-bootstrapped pool explicitly.
-class InitializedCatalogBackend : public InMemoryBackend
+/// Withdraws an operation's admission, and lets a test smuggle a real concurrent write, at one chosen
+/// point of the creation sequence: once this namespace's `_ckpt` is durable (step 2 landed, step 3 has
+/// not run), or inside step 3's own read-then-write window. The `_ckpt` key carries an incarnation a
+/// test cannot know before the creation mints it, so that arm names the object kind rather than a key.
+///
+/// The read arm fires BEFORE the store is consulted, so the body the caller's `decide` receives already
+/// carries whatever the hook wrote. That is what lets a test make the observed body stale on BOTH axes
+/// -- a changed entry and a withdrawn admission -- inside ONE `decide` invocation, which is the only
+/// place the two can be told apart.
+class CreationHookBackend : public InMemoryBackend
 {
 public:
-    InitializedCatalogBackend()
+    bool admitted = true;
+    /// Withdraw once any `_ckpt` key has been written.
+    bool withdraw_after_ckpt_write = false;
+    /// Fires once before this key is read, then `withdraw_on_read` is applied.
+    String hook_before_read_of;
+    std::function<void()> on_read;
+    bool withdraw_on_read = false;
+
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
-        CasRefCatalog::initializeEmptyForNewPool(*this, Layout("p"));
+        if (!hook_before_read_of.empty() && key == hook_before_read_of && !hook_fired)
+        {
+            /// Latched before running: the hook reads and writes through this same backend, and an
+            /// unguarded re-entry would run the test's concurrent actor again against its own result.
+            hook_fired = true;
+            if (on_read)
+                on_read();
+            if (withdraw_on_read)
+                admitted = false;
+        }
+        return InMemoryBackend::read(key, access);
     }
+
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             TransportAccess & access) override
+    {
+        auto result = InMemoryBackend::write(key, bytes, expected_value, access);
+        if (withdraw_after_ckpt_write && Layout{"p"}.parseRefCkptKey(key))
+            admitted = false;
+        return result;
+    }
+
+private:
+    bool hook_fired = false;
 };
+
+/// Raw lifecycle tests operate below `Pool::open`, so model an already-bootstrapped pool explicitly.
+std::shared_ptr<CreationHookBackend> initializedCatalogBackend()
+{
+    auto backend = std::make_shared<CreationHookBackend>();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
+    CasRefCatalog::initializeEmptyForNewPool(op, Layout("p"));
+    return backend;
+}
 
 }
 
@@ -81,16 +118,18 @@ public:
 
 TEST(CASNsCreationLifecycle, HappyPathReachesLiveWithADurableCkptAndAStableIncarnation)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence creator = creatorFence("srv1", /*writer_epoch=*/5);
 
     const auto outcome = CasRefCatalog::createNamespace(
-        backend, layout, 1, ns, creator, /*admitted_generation=*/1, ALWAYS_ADMITTED, generousDeadline());
+        op, layout, 1, ns, creator);
     EXPECT_EQ(outcome, CasRefCatalog::NamespaceCreationOutcome::Live);
 
-    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
     const CatalogEntry * entry = findEntryForTest(snap.catalog, ns);
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->state, NsState::Live);
@@ -98,53 +137,66 @@ TEST(CASNsCreationLifecycle, HappyPathReachesLiveWithADurableCkptAndAStableIncar
     const UInt128 incarnation = entry->incarnation;
     EXPECT_NE(incarnation, UInt128(0));
 
-    const std::optional<CkptSample> ckpt = readCkpt(backend, layout, NamespaceLifeId::fromCatalogEntry(entry->ns, incarnation));
+    const std::optional<CkptSample> ckpt = readCkpt(op, layout, NamespaceLifeId::fromCatalogEntry(entry->ns, incarnation));
     ASSERT_TRUE(ckpt.has_value()) << "step 2's _ckpt must be durable";
     EXPECT_EQ(ckpt->ckpt.life_epoch, 5u) << "INV-4's genesis epoch is the creator's writer_epoch";
 
     /// Re-reading the catalog again must show the SAME incarnation -- nothing mints a second one.
-    EXPECT_EQ(CasRefCatalog::read(backend, layout).catalog.entries.at(0).incarnation, incarnation);
+    EXPECT_EQ(CasRefCatalog::read(op, layout).catalog.entries.at(0).incarnation, incarnation);
 }
 
 /// ---------------------------------------------------------------------------------------------
-/// `createNamespace` refuses a namespace that already has an entry (Task 2 review's own note: this
-/// is Task 3's job, not `casAdmitEntry`'s duplicate-namespace grammar refusal).
+/// `createNamespace`'s pre-check reports `Superseded` for a namespace that already has an entry, in
+/// EVERY state -- not a caller bug, but a sibling opener of the same namespace (CI PR#2300 run 3,
+/// `tiered_storage_cas`: seven concurrent `MergeTreeBackgroundExecutor` movers) that landed somewhere in
+/// its own three-step sequence between the caller's "no entry" read and this pre-check's read.
 /// ---------------------------------------------------------------------------------------------
 
-#ifndef DEBUG_OR_SANITIZER_BUILD
-TEST(CASNsCreationLifecycle, CreateNamespaceRejectsAnAlreadyExistingEntry)
+TEST(CASNsCreationLifecycle, CreateNamespaceRacingASiblingsLiveEntryReportsSupersededNotAbort)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence creator = creatorFence("srv1", 1);
-    ASSERT_EQ(CasRefCatalog::createNamespace(backend, layout, 1, ns, creator, 1, ALWAYS_ADMITTED, generousDeadline()),
+    ASSERT_EQ(CasRefCatalog::createNamespace(op, layout, 1, ns, creator),
                CasRefCatalog::NamespaceCreationOutcome::Live);
 
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::LOGICAL_ERROR, [&]
-    {
-        CasRefCatalog::createNamespace(backend, layout, 1, ns, creatorFence("srv2", 2), 1, ALWAYS_ADMITTED, generousDeadline());
-    });
-}
-#endif
+    EXPECT_EQ(CasRefCatalog::createNamespace(op, layout, 1, ns, creatorFence("srv2", 2)),
+              CasRefCatalog::NamespaceCreationOutcome::Superseded);
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-TEST(CASNsCreationLifecycleDeathTest, CreateNamespaceRejectsAnAlreadyExistingEntryAborts)
+    /// The refused call left the winner's `Live` entry exactly as it was.
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
+    const CatalogEntry * entry = findEntryForTest(snap.catalog, ns);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->state, NsState::Live);
+    EXPECT_EQ(entry->creator, std::nullopt);
+}
+
+TEST(CASNsCreationLifecycle, CreateNamespaceRacingASiblingsRemovingEntryReportsSupersededNotAbort)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence creator = creatorFence("srv1", 1);
-    ASSERT_EQ(CasRefCatalog::createNamespace(backend, layout, 1, ns, creator, 1, ALWAYS_ADMITTED, generousDeadline()),
+    ASSERT_EQ(CasRefCatalog::createNamespace(op, layout, 1, ns, creator),
                CasRefCatalog::NamespaceCreationOutcome::Live);
+    ASSERT_EQ(CasRefCatalog::beginRemoving(op, layout, *findEntryForTest(CasRefCatalog::read(op, layout).catalog, ns),
+                                          /*removal_started_round=*/1),
+              CasRefCatalog::BeginRemovingOutcome::Transitioned);
 
-    EXPECT_DEATH(
-        {
-            CasRefCatalog::createNamespace(backend, layout, 1, ns, creatorFence("srv2", 2), 1, ALWAYS_ADMITTED, generousDeadline());
-        },
-        "already carries a catalog entry");
+    EXPECT_EQ(CasRefCatalog::createNamespace(op, layout, 1, ns, creatorFence("srv2", 2)),
+              CasRefCatalog::NamespaceCreationOutcome::Superseded);
+
+    /// The refused call left the concurrent drop's `Removing` entry exactly as it was.
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
+    const CatalogEntry * entry = findEntryForTest(snap.catalog, ns);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->state, NsState::Removing);
 }
-#endif
 
 /// ---------------------------------------------------------------------------------------------
 /// `Creating` forbids publication
@@ -173,34 +225,26 @@ TEST(CASNsCreationLifecycle, LiveAndRemovingAndAbsentAllAdmitPublication)
 /// ZombieGoLive: fenced-out between the `_ckpt` publish and the `Creating -> Live` CAS
 /// ---------------------------------------------------------------------------------------------
 
-/// A fence callback that admits its FIRST call (spent by step 2's `publishCkpt`) and refuses every
-/// call after (spent by step 3's `mutate`) -- deterministically reproducing "fenced out between the
-/// `_ckpt` create and the `Creating -> Live` CAS" without a second thread or fault injection.
-namespace
-{
-std::function<void(uint64_t)> admittedOnceThenFenced()
-{
-    auto calls = std::make_shared<int>(0);
-    return [calls](uint64_t admitted)
-    {
-        if (++*calls > 1)
-            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "fence generation moved since admission ({})", admitted);
-    };
-}
-}
-
 TEST(CASNsCreationLifecycle, FencedOutBetweenTheCkptPublishAndGoLiveRefusesAndLeavesEntryCreating)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence creator = creatorFence("srv1", 5);
 
-    const auto outcome = CasRefCatalog::createNamespace(
-        backend, layout, 1, ns, creator, /*admitted_generation=*/1, admittedOnceThenFenced(), generousDeadline());
+    /// Admission is withdrawn the instant step 2's `_ckpt` is durable, so step 3 never runs --
+    /// "fenced out between the `_ckpt` create and the `Creating -> Live` write", without a second
+    /// thread.
+    backend->withdraw_after_ckpt_write = true;
+    CasOperation creating_op = requests.admit([&backend] { return backend->admitted; });
+    const auto outcome = CasRefCatalog::createNamespace(creating_op, layout, 1, ns, creator);
     EXPECT_EQ(outcome, CasRefCatalog::NamespaceCreationOutcome::FencedOut);
+    backend->withdraw_after_ckpt_write = false;
+    backend->admitted = true;
 
-    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
     const CatalogEntry * entry = findEntryForTest(snap.catalog, ns);
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->state, NsState::Creating) << "step 3 never ran its CAS -- ZombieGoLive refuses before sending it";
@@ -210,7 +254,7 @@ TEST(CASNsCreationLifecycle, FencedOutBetweenTheCkptPublishAndGoLiveRefusesAndLe
     /// Step 2's _ckpt DID land (it is not what the fence check gates) -- CKPT-FAILED-BIRTH-DEBRIS is a
     /// different mechanism (the OLD `RefOpKind::NamespaceBirth` writer, `Pool/CasRefLedger.cpp`); this
     /// driver's own `_ckpt` is simply left in place for whichever actor next reconciles this entry.
-    EXPECT_TRUE(readCkpt(backend, layout, NamespaceLifeId::fromCatalogEntry(entry->ns, entry->incarnation)).has_value());
+    EXPECT_TRUE(readCkpt(op, layout, NamespaceLifeId::fromCatalogEntry(entry->ns, entry->incarnation)).has_value());
 }
 
 /// Regression (CI PR#2073, `03611_freeze_partition_parallel_verbose` under `amd_tsan, cas s3 storage`):
@@ -220,28 +264,33 @@ TEST(CASNsCreationLifecycle, FencedOutBetweenTheCkptPublishAndGoLiveRefusesAndLe
 /// must send the loser back through the resume loop (`Superseded`), never abort the server.
 TEST(CASNsCreationLifecycle, CreateNamespaceRacingASiblingsStillCreatingEntryReportsSupersededNotAbort)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence winner = creatorFence("srv1", 1);
 
     /// Leaves the entry in `Creating` without reaching `Live` -- the same shape `resolveNamespaceLife`
     /// observes when a sibling thread's `casAdmitEntry` has landed but its `completeCreation` has not.
-    const auto winner_outcome = CasRefCatalog::createNamespace(
-        backend, layout, 1, ns, winner, /*admitted_generation=*/1, admittedOnceThenFenced(), generousDeadline());
+    backend->withdraw_after_ckpt_write = true;
+    CasOperation winner_op = requests.admit([&backend] { return backend->admitted; });
+    const auto winner_outcome = CasRefCatalog::createNamespace(winner_op, layout, 1, ns, winner);
     ASSERT_EQ(winner_outcome, CasRefCatalog::NamespaceCreationOutcome::FencedOut);
-    ASSERT_EQ(CasRefCatalog::read(backend, layout).catalog.entries.at(0).state, NsState::Creating);
+    backend->withdraw_after_ckpt_write = false;
+    backend->admitted = true;
+    ASSERT_EQ(CasRefCatalog::read(op, layout).catalog.entries.at(0).state, NsState::Creating);
 
     /// The loser: a second call, as if a sibling thread's own outer "no entry" read had raced ahead of
     /// this one. Same fence as the winner (sibling threads of one query share a mount's fence) --
     /// exercising exactly the case `resolveNamespaceLife`'s "own fence -> completeCreation" branch is
     /// built to resume, never a `LOGICAL_ERROR` abort.
     const auto loser_outcome = CasRefCatalog::createNamespace(
-        backend, layout, 1, ns, winner, /*admitted_generation=*/1, ALWAYS_ADMITTED, generousDeadline());
+        op, layout, 1, ns, winner);
     EXPECT_EQ(loser_outcome, CasRefCatalog::NamespaceCreationOutcome::Superseded);
 
     /// Nothing about the winner's own still-`Creating` entry was disturbed by the loser's refused call.
-    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
     const CatalogEntry * entry = findEntryForTest(snap.catalog, ns);
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->state, NsState::Creating);
@@ -260,7 +309,9 @@ TEST(CASNsCreationLifecycle, CreateNamespaceRacingASiblingsStillCreatingEntryRep
 /// single upfront read) can catch it.
 TEST(CASNsCreationLifecycle, CreateNamespaceRacingASiblingsFullCreateBetweenPreCheckAndStep1ReportsSupersededNotAbort)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence winner = creatorFence("srv1", 1);
@@ -275,17 +326,17 @@ TEST(CASNsCreationLifecycle, CreateNamespaceRacingASiblingsFullCreateBetweenPreC
     CasRefCatalog::setCreateNamespaceStep1PreReadHookForTest([&]
     {
         const auto winner_outcome = CasRefCatalog::createNamespace(
-            backend, layout, 1, ns, winner, /*admitted_generation=*/1, ALWAYS_ADMITTED, generousDeadline());
+            op, layout, 1, ns, winner);
         ASSERT_EQ(winner_outcome, CasRefCatalog::NamespaceCreationOutcome::Live);
     });
 
     const auto loser_outcome = CasRefCatalog::createNamespace(
-        backend, layout, 1, ns, loser, /*admitted_generation=*/1, ALWAYS_ADMITTED, generousDeadline());
+        op, layout, 1, ns, loser);
     EXPECT_EQ(loser_outcome, CasRefCatalog::NamespaceCreationOutcome::Superseded);
 
     /// Exactly one row for `ns`, owned by the winner, at `Live` -- the loser's refused admission left
     /// no trace and did not disturb it.
-    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap = CasRefCatalog::read(op, layout);
     size_t rows_for_ns = 0;
     for (const CatalogEntry & e : snap.catalog.entries)
         if (e.ns.string() == ns.string())
@@ -298,12 +349,14 @@ TEST(CASNsCreationLifecycle, CreateNamespaceRacingASiblingsFullCreateBetweenPreC
 }
 
 /// ---------------------------------------------------------------------------------------------
-/// Token-stale: the observed entry no longer matches at the `Creating -> Live` CAS
+/// Entry-stale: the observed entry no longer matches at the `Creating -> Live` write
 /// ---------------------------------------------------------------------------------------------
 
 TEST(CASNsCreationLifecycle, EntryStolenByAConcurrentReconcilerRefusesGoLiveAndLeavesTheStolenEntryAlone)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence original_creator = creatorFence("srv1", 5);
@@ -311,32 +364,32 @@ TEST(CASNsCreationLifecycle, EntryStolenByAConcurrentReconcilerRefusesGoLiveAndL
 
     /// Write 1 only -- models "crash after write 1": no _ckpt yet, entry still Creating.
     const CatalogEntry entry{.ns = ns, .state = NsState::Creating, .incarnation = UInt128(42), .creator = original_creator};
-    CasRefCatalog::casAdmitEntry(backend, layout, 1, entry);
+    CasRefCatalog::casAdmitEntry(op, layout, 1, entry);
 
-    /// `check_fence_or_throw` is the seam this driver calls on EVERY attempt -- once inside step 2's
-    /// `publishCkpt`, once more inside step 3's own `mutate` -- so smuggling a REAL concurrent write
-    /// into it (rather than faking the outcome) has to land on the SECOND call specifically, or the
-    /// steal itself would run twice (and the second run would see its own first result and refuse).
-    /// This reproduces "stolen between the creator's _ckpt publish and its Creating -> Live CAS"
-    /// without a second thread. The steal itself must succeed (asserted), so the mismatch
-    /// `completeCreation` sees below is the entry ACTUALLY changing, not a contrived stub.
-    auto calls = std::make_shared<int>(0);
-    const std::function<void(uint64_t)> steal_before_the_go_live_cas = [&, calls](uint64_t)
+    /// A REAL concurrent write, smuggled in just before step 3's own catalog read -- the first one
+    /// `completeCreation` performs, since step 2 touches only the `_ckpt`. `decide` therefore receives
+    /// the POST-steal body and refuses it without sending anything, which is what the entry check is
+    /// for. The steal itself must succeed (asserted), so the mismatch is the entry ACTUALLY changing,
+    /// not a contrived stub. It runs on its own operation and its own `CasRequests` (a rival is
+    /// another server; one server's writers never race each other on the pool's hot-key lane).
+    CasRequests rival_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation thief_op = rival_requests.admit();
+    backend->hook_before_read_of = layout.refCatalogKey();
+    backend->on_read = [&]
     {
-        if (++*calls == 2)
-            ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(backend, layout, entry, thief, fixedTerminality(true), /*admitted_generation=*/1, ALWAYS_ADMITTED),
-                       CasRefCatalog::ReconcileCreatorOutcome::Reconciled);
+        ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(thief_op, layout, entry, thief, fixedTerminality(true)),
+                   CasRefCatalog::ReconcileCreatorOutcome::Reconciled);
     };
 
-    const auto outcome = CasRefCatalog::completeCreation(
-        backend, layout, entry, /*admitted_generation=*/1, steal_before_the_go_live_cas, generousDeadline());
+    const auto outcome = CasRefCatalog::completeCreation(op, layout, entry);
     EXPECT_EQ(outcome, CasRefCatalog::NamespaceCreationOutcome::Superseded);
+    backend->on_read = nullptr;
 
     /// `read`'s `Snapshot` is bound to a name here, not chained through a temporary: a `const
     /// CatalogEntry *` taken from `.catalog` of an unbound temporary dangles the instant the full
     /// expression ends, which every other site in this file (and the copy/paste that spread it) got
     /// wrong until ASan caught it.
-    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(op, layout);
     const CatalogEntry * after = findEntryForTest(snap_after.catalog, ns);
     ASSERT_NE(after, nullptr);
     EXPECT_EQ(after->state, NsState::Creating) << "the ORIGINAL creator's attempt wrote nothing -- only the thief's CAS did";
@@ -351,37 +404,48 @@ TEST(CASNsCreationLifecycle, EntryStolenByAConcurrentReconcilerRefusesGoLiveAndL
 
 TEST(CASNsCreationLifecycle, BothFenceAndEntryStaleRefusesGoLiveViaTheFenceCheckWhichRunsFirst)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence original_creator = creatorFence("srv1", 5);
     const CreatorFence thief = creatorFence("srv2", 9);
 
     const CatalogEntry entry{.ns = ns, .state = NsState::Creating, .incarnation = UInt128(42), .creator = original_creator};
-    CasRefCatalog::casAdmitEntry(backend, layout, 1, entry);
+    CasRefCatalog::casAdmitEntry(op, layout, 1, entry);
 
-    /// Same steal as the test above, landing on the SECOND `check_fence_or_throw` call (step 3's own
-    /// `mutate`, not step 2's `publishCkpt`) -- but this one ALSO throws on that same second call, so
-    /// both axes go stale in the SAME `mutate` invocation. `completeCreation`'s fence check runs before
-    /// its entry check (documented ordering), so this is reported `FencedOut`; the assertions below
-    /// confirm the entry ALSO changed, so the test is not merely re-proving the fence-only case above.
-    auto calls = std::make_shared<int>(0);
-    const std::function<void(uint64_t)> steal_and_fence_before_the_go_live_cas = [&, calls](uint64_t admitted)
+    /// The same steal as the test above and in the same window, but this one ALSO withdraws admission
+    /// there. Because the hook runs BEFORE the read, the single `decide` invocation that follows sees a
+    /// body that is stale on both axes at once -- and that is the only situation in which the two
+    /// checks are distinguishable. `completeCreation` consults admission before it compares the entry,
+    /// so the answer is `FencedOut`.
+    ///
+    /// This is what makes the test discriminate rather than merely pass: delete the `op.admitted()`
+    /// check from that `mutate` and the entry check answers `Superseded` instead, because `decide`
+    /// refuses the stale entry before any write is sent and the engine's own gate never speaks. The
+    /// assertions below confirm the entry really did change too.
+    /// The rival gets its own `CasRequests`, on its own hot-key lane (a rival is another server; one
+    /// server's writers never race each other on the pool's lane).
+    CasRequests rival_requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation thief_op = rival_requests.admit();
+    CasOperation creator_op = requests.admit([&backend] { return backend->admitted; });
+    backend->hook_before_read_of = layout.refCatalogKey();
+    backend->withdraw_on_read = true;
+    backend->on_read = [&]
     {
-        if (++*calls == 2)
-        {
-            ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(backend, layout, entry, thief, fixedTerminality(true), /*admitted_generation=*/1, ALWAYS_ADMITTED),
-                       CasRefCatalog::ReconcileCreatorOutcome::Reconciled);
-            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "fence generation moved since admission ({})", admitted);
-        }
+        ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(thief_op, layout, entry, thief, fixedTerminality(true)),
+                   CasRefCatalog::ReconcileCreatorOutcome::Reconciled);
     };
 
-    const auto outcome = CasRefCatalog::completeCreation(
-        backend, layout, entry, /*admitted_generation=*/1, steal_and_fence_before_the_go_live_cas, generousDeadline());
+    const auto outcome = CasRefCatalog::completeCreation(creator_op, layout, entry);
     EXPECT_EQ(outcome, CasRefCatalog::NamespaceCreationOutcome::FencedOut)
-        << "both checks would refuse; the fence check speaks first by this driver's fixed ordering";
+        << "both would refuse; admission speaks first by the documented ordering";
+    backend->on_read = nullptr;
+    backend->withdraw_on_read = false;
+    backend->admitted = true;
 
-    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(op, layout);
     const CatalogEntry * after = findEntryForTest(snap_after.catalog, ns);
     ASSERT_NE(after, nullptr);
     ASSERT_TRUE(after->creator.has_value());
@@ -394,18 +458,20 @@ TEST(CASNsCreationLifecycle, BothFenceAndEntryStaleRefusesGoLiveViaTheFenceCheck
 
 TEST(CASNsCreationLifecycle, ReconcileRefusedWhileTheOriginalCreatorFenceIsStillLive)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CatalogEntry entry{.ns = ns, .state = NsState::Creating, .incarnation = UInt128(7),
                               .creator = creatorFence("srv1", 5)};
-    CasRefCatalog::casAdmitEntry(backend, layout, 1, entry);
+    CasRefCatalog::casAdmitEntry(op, layout, 1, entry);
 
     const auto outcome = CasRefCatalog::reconcileStaleCreator(
-        backend, layout, entry, creatorFence("srv2", 9), fixedTerminality(false), /*admitted_generation=*/1, ALWAYS_ADMITTED);
+        op, layout, entry, creatorFence("srv2", 9), fixedTerminality(false));
     EXPECT_EQ(outcome, CasRefCatalog::ReconcileCreatorOutcome::CreatorFenceStillLive);
 
-    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(op, layout);
     const CatalogEntry * after = findEntryForTest(snap_after.catalog, ns);
     ASSERT_NE(after, nullptr);
     EXPECT_EQ(*after, entry) << "refused -- nothing written";
@@ -413,34 +479,36 @@ TEST(CASNsCreationLifecycle, ReconcileRefusedWhileTheOriginalCreatorFenceIsStill
 
 TEST(CASNsCreationLifecycle, ReconcileSucceedsTokenExactlyAfterTheOriginalCreatorFenceIsTerminalThenResumesToLive)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CreatorFence original_creator = creatorFence("srv1", 5);
     const CreatorFence new_creator = creatorFence("srv2", 9);
     const CatalogEntry entry{.ns = ns, .state = NsState::Creating, .incarnation = UInt128(7), .creator = original_creator};
-    CasRefCatalog::casAdmitEntry(backend, layout, 1, entry);   /// "crash after write 1" -- no _ckpt yet
+    CasRefCatalog::casAdmitEntry(op, layout, 1, entry);   /// "crash after write 1" -- no _ckpt yet
 
-    ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(backend, layout, entry, new_creator, fixedTerminality(true), /*admitted_generation=*/1, ALWAYS_ADMITTED),
+    ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(op, layout, entry, new_creator, fixedTerminality(true)),
                CasRefCatalog::ReconcileCreatorOutcome::Reconciled);
 
     CatalogEntry taken_over = entry;
     taken_over.creator = new_creator;
-    const CasRefCatalog::Snapshot snap_mid = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap_mid = CasRefCatalog::read(op, layout);
     const CatalogEntry * mid = findEntryForTest(snap_mid.catalog, ns);
     ASSERT_NE(mid, nullptr);
     EXPECT_EQ(*mid, taken_over) << "creator moved to the new actor; state and incarnation unchanged";
 
     const auto outcome = CasRefCatalog::completeCreation(
-        backend, layout, taken_over, /*admitted_generation=*/1, ALWAYS_ADMITTED, generousDeadline());
+        op, layout, taken_over);
     EXPECT_EQ(outcome, CasRefCatalog::NamespaceCreationOutcome::Live);
 
-    const CasRefCatalog::Snapshot snap_final = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap_final = CasRefCatalog::read(op, layout);
     const CatalogEntry * final_entry = findEntryForTest(snap_final.catalog, ns);
     ASSERT_NE(final_entry, nullptr);
     EXPECT_EQ(final_entry->state, NsState::Live);
     EXPECT_EQ(final_entry->incarnation, entry.incarnation) << "the SAME incarnation throughout -- resumption, not rebirth";
-    const std::optional<CkptSample> ckpt = readCkpt(backend, layout, NamespaceLifeId::fromCatalogEntry(final_entry->ns, final_entry->incarnation));
+    const std::optional<CkptSample> ckpt = readCkpt(op, layout, NamespaceLifeId::fromCatalogEntry(final_entry->ns, final_entry->incarnation));
     ASSERT_TRUE(ckpt.has_value());
     EXPECT_EQ(ckpt->ckpt.life_epoch, new_creator.writer_epoch)
         << "the RESUMING actor's writer_epoch is the genesis epoch that actually landed";
@@ -450,26 +518,28 @@ TEST(CASNsCreationLifecycle, ReconcileSucceedsTokenExactlyAfterTheOriginalCreato
 /// the SAME stale `observed` before either writes.
 TEST(CASNsCreationLifecycle, ReconcileFailsClosedWhenTheEntryAlreadyChanged)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const RootNamespace ns{"a"};
     const CatalogEntry entry{.ns = ns, .state = NsState::Creating, .incarnation = UInt128(7),
                               .creator = creatorFence("srv1", 5)};
-    CasRefCatalog::casAdmitEntry(backend, layout, 1, entry);
+    CasRefCatalog::casAdmitEntry(op, layout, 1, entry);
 
     const CreatorFence first_reconciler = creatorFence("srv2", 9);
     const CreatorFence second_reconciler = creatorFence("srv3", 11);
 
-    ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(backend, layout, entry, first_reconciler, fixedTerminality(true), /*admitted_generation=*/1, ALWAYS_ADMITTED),
+    ASSERT_EQ(CasRefCatalog::reconcileStaleCreator(op, layout, entry, first_reconciler, fixedTerminality(true)),
                CasRefCatalog::ReconcileCreatorOutcome::Reconciled);
 
     /// The second reconciler still holds the ORIGINAL `entry` it read before either of them wrote --
     /// token-exactness must refuse it even though the terminality predicate would still say yes.
     const auto outcome = CasRefCatalog::reconcileStaleCreator(
-        backend, layout, entry, second_reconciler, fixedTerminality(true), /*admitted_generation=*/1, ALWAYS_ADMITTED);
+        op, layout, entry, second_reconciler, fixedTerminality(true));
     EXPECT_EQ(outcome, CasRefCatalog::ReconcileCreatorOutcome::EntryChanged);
 
-    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(backend, layout);
+    const CasRefCatalog::Snapshot snap_after = CasRefCatalog::read(op, layout);
     const CatalogEntry * after = findEntryForTest(snap_after.catalog, ns);
     ASSERT_NE(after, nullptr);
     ASSERT_TRUE(after->creator.has_value());
@@ -484,23 +554,27 @@ TEST(CASNsCreationLifecycle, ReconcileFailsClosedWhenTheEntryAlreadyChanged)
 #ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(CASNsCreationLifecycle, CompleteCreationRejectsANonCreatingEntry)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const CatalogEntry live{.ns = RootNamespace{"a"}, .state = NsState::Live, .incarnation = UInt128(1)};
     DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::LOGICAL_ERROR, [&]
     {
-        CasRefCatalog::completeCreation(backend, layout, live, 1, ALWAYS_ADMITTED, generousDeadline());
+        CasRefCatalog::completeCreation(op, layout, live);
     });
 }
 
 TEST(CASNsCreationLifecycle, ReconcileStaleCreatorRejectsANonCreatingEntry)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const CatalogEntry live{.ns = RootNamespace{"a"}, .state = NsState::Live, .incarnation = UInt128(1)};
     DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::LOGICAL_ERROR, [&]
     {
-        CasRefCatalog::reconcileStaleCreator(backend, layout, live, creatorFence("srv2", 2), fixedTerminality(true), /*admitted_generation=*/1, ALWAYS_ADMITTED);
+        CasRefCatalog::reconcileStaleCreator(op, layout, live, creatorFence("srv2", 2), fixedTerminality(true));
     });
 }
 #endif
@@ -508,22 +582,26 @@ TEST(CASNsCreationLifecycle, ReconcileStaleCreatorRejectsANonCreatingEntry)
 #if defined(DEBUG_OR_SANITIZER_BUILD)
 TEST(CASNsCreationLifecycleDeathTest, CompleteCreationRejectsANonCreatingEntryAborts)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const CatalogEntry live{.ns = RootNamespace{"a"}, .state = NsState::Live, .incarnation = UInt128(1)};
     EXPECT_DEATH(
-        { CasRefCatalog::completeCreation(backend, layout, live, 1, ALWAYS_ADMITTED, generousDeadline()); },
+        { CasRefCatalog::completeCreation(op, layout, live); },
         "not a Creating entry");
 }
 
 TEST(CASNsCreationLifecycleDeathTest, ReconcileStaleCreatorRejectsANonCreatingEntryAborts)
 {
-    InitializedCatalogBackend backend;
+    auto backend = initializedCatalogBackend();
+    CasRequests requests = DB::Cas::tests::openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     Layout layout("p");
     const CatalogEntry live{.ns = RootNamespace{"a"}, .state = NsState::Live, .incarnation = UInt128(1)};
     EXPECT_DEATH(
         {
-            CasRefCatalog::reconcileStaleCreator(backend, layout, live, creatorFence("srv2", 2), fixedTerminality(true), /*admitted_generation=*/1, ALWAYS_ADMITTED);
+            CasRefCatalog::reconcileStaleCreator(op, layout, live, creatorFence("srv2", 2), fixedTerminality(true));
         },
         "not a Creating entry");
 }

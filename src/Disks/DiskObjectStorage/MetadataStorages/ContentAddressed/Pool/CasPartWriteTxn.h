@@ -31,8 +31,10 @@ struct BlobSource
     std::shared_ptr<std::atomic<bool>> publication_attempted
         = std::make_shared<std::atomic<bool>>(false);
 
-    /// Atomically consume the logical source's first-publication privilege. Called after the final
-    /// fence check and immediately before backend publication I/O.
+    /// Atomically consume the logical source's first-publication privilege -- the verbatim staged copy
+    /// is available to exactly one physical publication of this source, whichever one gets here first.
+    /// A fenced-out writer may spend it before the engine refuses its publication; the only effect is
+    /// that a later publication streams instead of copying.
     bool beginPublication() const
     {
         return !publication_attempted->exchange(true, std::memory_order_acq_rel);
@@ -349,6 +351,11 @@ private:
     void cleanupStagedManifestDebrisBestEffort();
 
     PoolPtr store;
+    /// The mount incarnation this BUILD was admitted under, sampled once when it began. Every upload
+    /// task resumes on it rather than admitting afresh, so a fence re-armed mid-transaction makes the
+    /// upload give up instead of minting a dependency proof under an incarnation the precommit never
+    /// saw -- a re-arm that keeps the writer epoch is invisible to `requireAlive`.
+    uint64_t txn_generation{};
     UInt128 build_id{};
     uint64_t build_seq{};                                 /// per-process monotone sequence
     uint64_t epoch{};                                     /// owning Pool's process_epoch

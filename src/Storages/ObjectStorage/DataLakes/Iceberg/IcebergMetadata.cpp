@@ -535,6 +535,44 @@ bool IcebergMetadata::optimize(
     }
 }
 
+bool IcebergMetadata::optimizeManifestFiles(
+       const StorageMetadataPtr & metadata_snapshot,
+       ContextPtr context,
+       std::shared_ptr<DataLake::ICatalog> catalog,
+       const StorageID & storage_id)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    {
+        /// Reject manifest compaction on format-version 3: the writer does not yet round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids (fail-close).
+        if (persistent_components.format_version >= 3)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
+                "row-lineage 'first_row_id' round-trip is not implemented");
+
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+
+        // Perform manifest-only compaction using the current snapshot from the metadata file
+        compactIcebergManifests(
+            persistent_components,
+            object_storage,
+            *secondary_storages,
+            data_lake_settings,
+            sample_block,
+            context,
+            write_format,
+            catalog,
+            storage_id);
+
+        return true;
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call OPTIMIZE TABLE ... MANIFEST for iceberg tables.");
+    }
+}
+
 std::pair<IcebergDataSnapshotPtr, Int32>
 IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
 {
@@ -903,6 +941,7 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
             = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
@@ -913,6 +952,15 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+
+    if (catalog)
+    {
+        /// Register the namespace before any files are written (but after all local
+        /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
+        /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
+        /// a namespace over the plain directory those files would leave behind.
+        catalog->createNamespaceIfNotExists(DataLake::parseTableName(table_id_.getTableName()).first, location_path);
+    }
 
     try
     {

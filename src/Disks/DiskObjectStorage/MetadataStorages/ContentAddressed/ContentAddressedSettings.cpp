@@ -61,7 +61,7 @@ constexpr std::string_view CAS_KEY_PREFIX = "cas_";
     DECLARE(UInt64, gc_snapshot_generations_to_keep, 3, "GC snapshot generations retained", 0) \
     DECLARE(UInt64, gc_shards, 1, "Blob-hash-prefix reducer shards (>= 1); creation-time only", 0) \
     DECLARE(UInt64, manifest_sweep_list_budget_keys, 1000, "Orphan-manifest sweep LIST budget per round", 0) \
-    DECLARE(UInt64, manifest_sweep_delete_budget_keys, 100, "Orphan-manifest sweep DELETE budget per round", 0) \
+    DECLARE(UInt64, manifest_sweep_delete_budget_keys, 100, "Orphan-manifest sweep candidate budget per round: keys that pass every retain check, whose bodies are read and decided", 0) \
     DECLARE(UInt64, gc_round_graduation_budget, 5000, "Blob graduation (condemned -> delete_pending) cohort cap per round (0 = unbounded)", 0) \
     DECLARE(UInt64, gc_round_redelete_budget, 5000, "Blob redelete (exact-token delete of a prior delete_pending row) cohort cap per round (0 = unbounded)", 0) \
     DECLARE(UInt64, gc_round_sweep_namespace_budget, 20, "Orphan-manifest sweep: distinct namespaces per page whose protection view may be built (0 = unbounded)", 0) \
@@ -70,13 +70,19 @@ constexpr std::string_view CAS_KEY_PREFIX = "cas_";
     DECLARE(UInt64, gc_round_prefix_wholesale_budget, 20000, "Generation-prefix wholesale delete (prune only) object cap per round (0 = unbounded)", 0) \
     DECLARE(UInt64, gc_round_handoff_prefix_wholesale_budget, 5000, "Post-CAS hand-off generation-prefix reclaim object cap per round, reserved separately from gc_round_prefix_wholesale_budget so a prune-heavy round cannot starve the one-shot hand-off (0 = unbounded)", 0) \
     DECLARE(UInt64, gc_round_outcome_entry_budget, 5000, "GcOutcomes per-round entry cap across the redelete/spared audit log (0 = unbounded)", 0) \
+    DECLARE(UInt64, mount_lease_ttl_ms, 30000, "Mount lease validity after a successful claim or renewal, in milliseconds", 0) \
+    DECLARE(UInt64, mount_renew_period_ms, 10000, "Interval between background mount lease renewals, in milliseconds", 0) \
+    DECLARE(Bool, unsafe_remount_no_delay, false, "Reclaim a mount slot that carries this server's own uuid at once after a hard restart, without observing the slot's token for the lease TTL. Unsafe whenever two processes can hold the same server_uuid (a copied uuid file, a stalled predecessor): after such a reclaim the predecessor can still start conditional writes until its own cutoff (confirmed deadline − margin − 2 × envelope) or until its next renewal meets the token guard, and a request it already sent may materialize later. Ref-log keys carry (writer_epoch, sequence) and creates are conditional, so two writers can never commit different bodies to one key, and recovery's epoch seal settles stragglers -- the exposure is availability, not data: recovery fails closed after 64 successive seal-create attempts displaced by newly materializing old-epoch transactions. Intended for test stands and deployments that guarantee one process per uuid", 0) \
     DECLARE(String, server_root_id, "", "REQUIRED explicit layout subtree identity; macros expand as in the s3 endpoint", 0) \
     DECLARE(UInt64, part_folder_cache_bytes, 64ULL << 20, "Part-folder view cache byte budget (0 disables retention)", 0) \
     DECLARE(UInt64, part_folder_cache_max_entries, 10000, "Part-folder view cache entry cap", 0) \
     DECLARE(UInt64, part_folder_cache_max_entry_bytes, 16ULL << 20, "Oversized part-folder views bypass retention above this size", 0) \
-    DECLARE(String, part_folder_validate, "always", "ForceFresh body re-proof policy (always | never | age <seconds>)", 0) \
     DECLARE(UInt64, manifest_decode_cache_bytes, 128ULL << 20, "Manifest DECODE cache byte budget (0 disables)", 0) \
     DECLARE(UInt64, gc_meta_pool_size, 16, "Bounded pool size for GC per-hash freshness-meta writes", 0) \
+    DECLARE(UInt64, gc_read_concurrency, 16, "Bounded pool size for the GC fold's read-ahead of checkpoints, ref logs, manifest bodies and zero-candidate HEADs; 1 disables read-ahead", 0) \
+    DECLARE(UInt64, gc_bulk_delete_chunk_keys, 1000, "Keys per batch delete request in GC's write-once families (owner-removed manifest bodies, covered ref logs and snapshots); 1 to 1000", 0) \
+    DECLARE(UInt64, attempt_timeout_ms, 5000, "Budget for one HTTP attempt of a writable Native mount's control-plane requests (read, head, list, remove, conditional write), at least 1. With the connect cap it forms the attempt envelope the lease arithmetic reserves", 0) \
+    DECLARE(UInt64, lease_safety_margin_ms, 2000, "Startup-only margin validated against the mount lease TTL: attempt envelope + this must be strictly less than the TTL, and renew period + 2 × envelope + this too", 0) \
     DECLARE(String, staging_backend, "local", "Blob staging backend (local | s3); s3 is opt-in", 0) \
 
 DECLARE_SETTINGS_TRAITS(ContentAddressedSettingsTraits, LIST_OF_CONTENT_ADDRESSED_SETTINGS, CONTENT_ADDRESSED_SETTINGS_SUPPORTED_TYPES)
@@ -85,11 +91,10 @@ struct ContentAddressedSettingsImpl : public BaseSettings<ContentAddressedSettin
 {
     /// Parsed by `validate` from the corresponding string setting; cached here (rather than
     /// re-parsed on every access) because the public header only forward-declares
-    /// `Cas::StagingBackend` / `Cas::PartFolderValidate` and cannot store them by value.
+    /// `Cas::StagingBackend` and cannot store it by value.
     Cas::BlobHashAlgo blob_hash_algo_cached = Cas::BlobHashAlgo::CityHash128;
     bool skip_access_check_cached = false;
     Cas::StagingBackend staging_backend_cached = Cas::StagingBackend::Local;
-    Cas::PartFolderValidate part_folder_validate_cached{};
 };
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(ContentAddressedSettingsTraits, LIST_OF_CONTENT_ADDRESSED_SETTINGS, ContentAddressedSettings, ContentAddressedSetting)
@@ -223,10 +228,34 @@ void ContentAddressedSettings::validate()
 {
     auto & settings = *this;
 
-    if (settings[ContentAddressedSetting::gc_interval_sec] == 0 || settings[ContentAddressedSetting::gc_shards] == 0)
+    if (settings[ContentAddressedSetting::gc_interval_sec] == 0 || settings[ContentAddressedSetting::gc_shards] == 0
+        || settings[ContentAddressedSetting::gc_read_concurrency] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "content_addressed disk: cas_gc_interval_sec and cas_gc_shards must be >= 1 (got {}, {})",
-            settings[ContentAddressedSetting::gc_interval_sec].value, settings[ContentAddressedSetting::gc_shards].value);
+            "content_addressed disk: cas_gc_interval_sec, cas_gc_shards and cas_gc_read_concurrency must be >= 1 "
+            "(got {}, {}, {})",
+            settings[ContentAddressedSetting::gc_interval_sec].value, settings[ContentAddressedSetting::gc_shards].value,
+            settings[ContentAddressedSetting::gc_read_concurrency].value);
+
+    if (settings[ContentAddressedSetting::gc_bulk_delete_chunk_keys] == 0
+        || settings[ContentAddressedSetting::gc_bulk_delete_chunk_keys] > 1000)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "content_addressed disk: gc_bulk_delete_chunk_keys must be between 1 and 1000 (got {})",
+            settings[ContentAddressedSetting::gc_bulk_delete_chunk_keys].value);
+
+    if (settings[ContentAddressedSetting::attempt_timeout_ms] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "content_addressed disk: cas_attempt_timeout_ms must be >= 1 (got {})",
+            settings[ContentAddressedSetting::attempt_timeout_ms].value);
+
+    if (settings[ContentAddressedSetting::mount_lease_ttl_ms] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "content_addressed disk: cas_mount_lease_ttl_ms must be >= 1 (got {})",
+            settings[ContentAddressedSetting::mount_lease_ttl_ms].value);
+
+    if (settings[ContentAddressedSetting::mount_renew_period_ms] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "content_addressed disk: cas_mount_renew_period_ms must be >= 1 (got {})",
+            settings[ContentAddressedSetting::mount_renew_period_ms].value);
 
     /// The layout subtree identity is explicit and REQUIRED — no default, so an ABSENT key throws a
     /// typed `NO_ELEMENTS_IN_CONFIG` (mirroring the `metadata_type` check in `MetadataStorageFactory`),
@@ -241,7 +270,6 @@ void ContentAddressedSettings::validate()
 
     impl->blob_hash_algo_cached = Cas::parseBlobHashAlgo(settings[ContentAddressedSetting::blob_hash].value);
     impl->staging_backend_cached = ContentAddressedMetadataStorage::parseStagingBackend(settings[ContentAddressedSetting::staging_backend].value);
-    impl->part_folder_validate_cached = ContentAddressedMetadataStorage::parsePartFolderValidate(settings[ContentAddressedSetting::part_folder_validate].value);
 }
 
 Cas::BlobHashAlgo ContentAddressedSettings::blobHashAlgo() const
@@ -257,11 +285,6 @@ bool ContentAddressedSettings::skipAccessCheck() const
 Cas::StagingBackend ContentAddressedSettings::stagingBackend() const
 {
     return impl->staging_backend_cached;
-}
-
-Cas::PartFolderValidate ContentAddressedSettings::partFolderValidate() const
-{
-    return impl->part_folder_validate_cached;
 }
 
 }

@@ -63,13 +63,14 @@ const std::string kSrid = "test";
 /// gtest_cas_lifecycle_condition.cpp's helper — used by the operator-STOP-persistence test below.
 void fenceOutMount(DB::Cas::Backend & backend, const String & mount_key)
 {
-    const auto got = backend.get(mount_key);
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto got = (*op).read(mount_key, DB::Cas::Retry::once());
     ASSERT_TRUE(got.has_value());
     DB::Cas::MountLease m = DB::Cas::decodeMountLease(got->bytes);
     m.gc_fenced = true;
     m.seq += 1;
-    ASSERT_EQ(backend.putOverwrite(mount_key, DB::Cas::encodeMountLease(m), got->token).outcome,
-              DB::Cas::PutOutcome::Done);
+    const auto put = (*op).replace(mount_key, DB::Cas::encodeMountLease(m), got->etag, DB::Cas::Retry::once());
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(put));
 }
 
 /// A real `ContentAddressedMetadataStorage` over a fresh, unique local object storage. `context == nullptr`

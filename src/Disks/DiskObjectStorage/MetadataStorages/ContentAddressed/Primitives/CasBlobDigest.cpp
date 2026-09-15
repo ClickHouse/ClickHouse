@@ -1,20 +1,14 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasBlobDigest.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTableAsserts.h>
 
 namespace DB::Cas
 {
 
+static_assert(casEnumTableCoversEnum<kBlobHashAlgoWords, BlobHashAlgo>());
+
 std::string_view blobHashAlgoName(BlobHashAlgo algo)
 {
-    switch (algo)
-    {
-        case BlobHashAlgo::CityHash128:
-            return "ch128";
-        case BlobHashAlgo::XXH3_128:
-            return "xxh3";
-        case BlobHashAlgo::Sha256:
-            return "sha256";
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "blobHashAlgoName: unknown BlobHashAlgo {}", static_cast<int>(algo));
+    return kBlobHashAlgoWords.toWord(algo, "blobHashAlgoName");
 }
 
 uint64_t blobHashLenFor(BlobHashAlgo algo)

@@ -236,6 +236,11 @@ public:
 
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
+    /// Test-only: lets a gtest observe whether Enable/DisableRequestProcessing last took effect on this
+    /// client's own `Aws::Http::HttpClient`, without exposing the rest of the privately-inherited
+    /// `Aws::S3::S3Client` surface. Production code reaches `GetHttpClient` directly (private
+    /// inheritance already permits that from this class's own methods) and has no need of this `using`.
+    using Aws::S3::S3Client::GetHttpClient;
 
     void BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
                           const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const override;
@@ -248,6 +253,10 @@ public:
     {
         return client_configuration.for_disk_s3;
     }
+
+    /// True when this client's one and only attempt is not the final answer: it belongs to an
+    /// outer retry loop (e.g. a conditional write) that resolves the outcome and reissues.
+    bool usesSingleAttemptRetryStrategy() const;
 
     ProviderType getProviderType() const { return provider_type; }
 

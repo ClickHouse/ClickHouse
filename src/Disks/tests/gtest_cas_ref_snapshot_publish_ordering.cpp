@@ -14,6 +14,8 @@
 
 #include <Poco/Exception.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -54,6 +56,63 @@ using DB::Cas::tests::publishCommittedOps;
 
 namespace
 {
+
+/// The engine reissues an unresolved write until its OWN retry window closes, and that window is
+/// measured on a clock the engine reads. Both seams here share one counter -- the sleep the engine
+/// performs is what advances the clock -- so a fault that stays armed ends the call at its deadline
+/// with no real time passing. Installed on the whole pool, because the ref-lane write, its settling
+/// read and the recovery retry loop all pace through the same seam. The pool owns the closures and the
+/// closures own the clock, so it outlives everything that can still read it.
+class VirtualRetryClock
+{
+public:
+    static std::shared_ptr<VirtualRetryClock> installOn(const PoolPtr & store)
+    {
+        auto clock = std::make_shared<VirtualRetryClock>();
+        store->setCasRequestNowFnForTest([clock] { return clock->nowMs(); });
+        store->setCasRetrySleepForTest([clock](uint64_t ms) { clock->advance(ms); });
+        return clock;
+    }
+
+    uint64_t nowMs() const
+    {
+        std::lock_guard lock(mutex);
+        return now_ms;
+    }
+    size_t pauseCount() const
+    {
+        std::lock_guard lock(mutex);
+        return pauses;
+    }
+    uint64_t longestPause() const
+    {
+        std::lock_guard lock(mutex);
+        return longest_pause;
+    }
+
+    void advance(uint64_t ms)
+    {
+        std::lock_guard lock(mutex);
+        /// Plus one millisecond, because full jitter can draw a ZERO pause: a clock that does not move
+        /// would leave the loop reissuing for ever against a fault that never clears.
+        now_ms += ms + 1;
+        ++pauses;
+        longest_pause = std::max(longest_pause, ms);
+    }
+
+private:
+    mutable std::mutex mutex;
+    uint64_t now_ms = 0;
+    size_t pauses = 0;
+    uint64_t longest_pause = 0;
+};
+
+/// More injected failures than the engine's own retry window can make attempts, on a clock that
+/// advances at least a millisecond per pause: a call meeting this fault must end at its DEADLINE, never
+/// by outliving the fault. A bounded count would be spent by ONE call's own reissues -- the engine
+/// settles each ambiguity by an exact read and then reissues -- and the fixture would then be measuring
+/// attempts where it means to measure dispatches.
+constexpr int kFaultsBeyondTheRetryWindow = 100'000;
 
 PoolPtr openPool(const std::shared_ptr<OrderedFaultBackend> & backend, PoolConfig config = {})
 {
@@ -118,7 +177,7 @@ TEST(CASRefSnapshotPublishOrdering, SnapshotBodyIsDurableBeforeCheckpointAdvance
     /// nothing about the publisher's own ordering.
     const size_t offset = backend->journalSize();
     const uint64_t put_before = backend->putCount(snapshot_key);
-    const uint64_t cas_before = backend->casPutCount(ckpt_key);
+    const uint64_t cas_before = backend->putOverwriteCount(ckpt_key);
 
     ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns))
         << "a healthy Ready-lane table with an uncovered tail must publish";
@@ -126,10 +185,10 @@ TEST(CASRefSnapshotPublishOrdering, SnapshotBodyIsDurableBeforeCheckpointAdvance
     /// Positive control: this attempt touched each key exactly once (no retry, no redundant write) --
     /// which is what makes the index comparison below meaningful rather than an artifact of a busy log.
     EXPECT_EQ(backend->putCount(snapshot_key) - put_before, 1u);
-    EXPECT_EQ(backend->casPutCount(ckpt_key) - cas_before, 1u);
+    EXPECT_EQ(backend->putOverwriteCount(ckpt_key) - cas_before, 1u);
 
-    const auto body_index = backend->firstIndexFrom(OrderedFaultBackend::Op::Put, snapshot_key, offset);
-    const auto ckpt_index = backend->firstIndexFrom(OrderedFaultBackend::Op::Cas, ckpt_key, offset);
+    const auto body_index = backend->firstIndexFrom(snapshot_key, offset);
+    const auto ckpt_index = backend->firstIndexFrom(ckpt_key, offset);
     ASSERT_TRUE(body_index.has_value()) << "the snapshot body must have been PUT";
     ASSERT_TRUE(ckpt_index.has_value()) << "the checkpoint must have been CAS-advanced";
     EXPECT_LT(*body_index, *ckpt_index)
@@ -145,6 +204,7 @@ TEST(CASRefSnapshotPublishOrdering, AdoptionHappensLastAndOnlyAfterBothDurableEf
 {
     auto backend = std::make_shared<OrderedFaultBackend>();
     auto store = openPool(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/order_adoption_after_both"};
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{store->writerEpoch(), 1}));
@@ -152,26 +212,30 @@ TEST(CASRefSnapshotPublishOrdering, AdoptionHappensLastAndOnlyAfterBothDurableEf
     const String snapshot_key = store->layout().refSnapshotKey(life, RefTxnId{store->writerEpoch(), 1});
     const String ckpt_key = store->layout().refCkptKey(life);
 
-    /// Fail every one of the (attempt-bounded) 100 `_ckpt` CAS attempts `publishCkpt` will make: the
-    /// body PUT still commits (dedup: an identical, already-durable body resolves as `Committed` without
-    /// re-sending), but the checkpoint never advances within this call.
-    backend->armCasConflict(ckpt_key, 100);
+    /// Refuse the `_ckpt` CAS for as long as `publishCkpt` keeps reissuing, so it ends at its own retry
+    /// window: the body create still commits, but the checkpoint never advances within this call.
+    backend->armWriteConflict(ckpt_key, kFaultsBeyondTheRetryWindow);
     EXPECT_FALSE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns))
         << "a persistently conflicting checkpoint CAS must not be reported as a successful publish";
+    backend->armWriteConflict(ckpt_key, 0);
+    EXPECT_GT(clock->pauseCount(), 1u)
+        << "the reissues must pace through the injected sleep, never a real one";
+    EXPECT_LE(clock->longestPause(), 5000u) << "each pause is the engine's own capped full jitter";
 
     EXPECT_EQ(backend->putCount(snapshot_key), 1u) << "the body is durable regardless of the ckpt outcome";
     EXPECT_FALSE(store->newestPublishedSnapshotIdForTest(ns).has_value())
         << "in-memory adoption must NOT happen while the checkpoint has not advanced";
 
-    /// Disarm the fault and retry (the one retry unit): the retry issues its OWN `putIfAbsent` attempt at
+    /// Retry with the fault disarmed (the one retry unit): the retry issues its OWN create attempt at
     /// the same content-addressed key with the same bytes (so `putCount`, a call counter, becomes 2 --
-    /// not a "no write happened" 1), but the backend resolves it as `Committed` against the already-durable
-    /// object rather than sending a distinct object, and the checkpoint CAS now succeeds.
+    /// not a "no write happened" 1). That attempt meets its own identical bytes as a conflict, which the
+    /// publisher's occupant compare accepts rather than writing a second object, and the checkpoint CAS
+    /// now succeeds.
     ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns))
         << "the retry, with the fault cleared, must publish";
     EXPECT_EQ(backend->putCount(snapshot_key), 2u)
-        << "the retry's body PUT is its own attempt, resolved via dedup against identical, "
-           "already-durable bytes rather than writing a second object";
+        << "the retry's body create is its own attempt, accepted against identical, already-durable "
+           "bytes rather than writing a second object";
     EXPECT_EQ(store->newestPublishedSnapshotIdForTest(ns), std::make_optional(RefTxnId{store->writerEpoch(), 1}))
         << "adoption happens exactly once, after both effects are durable";
 }
@@ -180,7 +244,7 @@ TEST(CASRefSnapshotPublishOrdering, AdoptionHappensLastAndOnlyAfterBothDurableEf
 /// 3. `NeedsRecovery` ("Poisoned") lane: recovery precedes any snapshot publication
 /// ---------------------------------------------------------------------------------------------
 
-/// `Poisoned` is this task's plan's name for what the code spells `RefLaneState::NeedsRecovery` -- the
+/// `RefLaneState::NeedsRecovery` is the state for a transaction known durable but not installable in the cache -- the
 /// state the header documents as "a transaction is known durable but cannot be installed in this cache
 /// ... a hard write and certification fence until replay completes". Recorded here as the vocabulary
 /// correction for later tasks: there is no state literally named `Poisoned` anywhere in `CasRefLedger`.
@@ -211,6 +275,7 @@ TEST(CASRefSnapshotPublishOrdering, NeedsRecoveryLaneRecoversBeforeAnySnapshotPu
 {
     auto backend = std::make_shared<OrderedFaultBackend>();
     auto store = openPool(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/order_poisoned_refuses"};
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{store->writerEpoch(), 1}));
@@ -224,12 +289,14 @@ TEST(CASRefSnapshotPublishOrdering, NeedsRecoveryLaneRecoversBeforeAnySnapshotPu
     /// for `missing_durable_txn` commits durably, but its checkpoint never advances within this call, and
     /// the lane is left `NeedsRecovery` rather than installing an uncertain result -- so the cached view
     /// still reflects `ref_1` present, while the durable log already reflects it removed.
-    backend->armCasConflict(ckpt_key, 100);
+    backend->armWriteConflict(ckpt_key, kFaultsBeyondTheRetryWindow);
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "ref_1"); });
+    EXPECT_GT(clock->pauseCount(), 1u)
+        << "the frontier publication's reissues must pace through the injected sleep, never a real one";
     ASSERT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery);
 
     const uint64_t recovery_installs_before = store->recoveryInstallCountForTest();
-    backend->armCasConflict(ckpt_key, 0);   /// clear the fault so re-recovery's OWN catch-up CAN succeed
+    backend->armWriteConflict(ckpt_key, 0);   /// clear the fault so re-recovery's OWN catch-up CAN succeed
     const size_t offset = backend->journalSize();
 
     EXPECT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns))
@@ -247,8 +314,8 @@ TEST(CASRefSnapshotPublishOrdering, NeedsRecoveryLaneRecoversBeforeAnySnapshotPu
     /// ORDER, not a global zero: recovery's OWN checkpoint catch-up CAS is the boundary marker. NO
     /// snapshot-publish effect (the new snapshot's body PUT, nor the publisher's own checkpoint-advance
     /// CAS) may appear at or before it.
-    const auto ckpt_cas_indices = backend->indicesFrom(OrderedFaultBackend::Op::Cas, ckpt_key, offset);
-    const auto snap_put_indices = backend->indicesFrom(OrderedFaultBackend::Op::Put, next_snapshot_key, offset);
+    const auto ckpt_cas_indices = backend->indicesFrom(ckpt_key, offset);
+    const auto snap_put_indices = backend->indicesFrom(next_snapshot_key, offset);
     ASSERT_GE(ckpt_cas_indices.size(), 2u)
         << "expected one checkpoint CAS from recovery's catch-up and one from the snapshot publisher";
     const size_t recovery_catchup_index = ckpt_cas_indices.front();
@@ -291,26 +358,34 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
     using ProfileEvents::global_counters;
     auto backend = std::make_shared<OrderedFaultBackend>();
 
-    /// A single-attempt request budget, exactly as `gtest_cas_ref_writer.cpp`'s
-    /// `C4BackoffDefersThenRetriesAndPublishes` uses: with `max_attempts = 1` a faulted PUT resolves to a
-    /// definite, non-`Committed` outcome on its own attempt, with no internal retry loop and so no
-    /// wall-clock wait.
+    /// The budget bounds the mount lease's own admission arithmetic and nothing else. What makes each
+    /// dispatch below fail as ONE dispatch is that the injected fault outlasts the whole call while the
+    /// injected clock carries it to its own retry window; the fake boot clock this test drives the
+    /// backoff decisions on is a DIFFERENT clock, and stays frozen between steps.
     CasRequestBudget budget;
-    budget.max_attempts = 1;
     budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;
     budget.lease_safety_margin_ms = 100;
 
-    uint64_t fake_now = 1'000'000;
+    /// Held in a shared atomic, not a plain local: this test mutates the clock below, and the Pool can
+    /// outlive this stack frame (a background publish holds `shared_from_this()`), so a by-reference
+    /// capture of a local would dangle.
+    auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
     PoolConfig config;
     config.snapshot_log_count_threshold = 0;              /// any nonempty tail is over-threshold
     config.snapshot_log_bytes_threshold = 1ULL << 40;
     config.snapshot_publish_backoff_initial_ms = 1000;
     config.snapshot_publish_backoff_max_ms = 4000;
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    config.boot_ms_fn = [fake_now]
+    {
+        return fake_now->load();
+    };
     config.cas_request_budget = budget;
+    /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the budget
+    /// field alone; pair the two so the mount lease's admission arithmetic sees what the budget claims.
+    backend->setAttemptTimeoutMs(budget.attempt_timeout_ms);
     auto store = openPool(backend, config);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/order_backoff"};
 
     ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{store->writerEpoch(), 1}));
@@ -322,10 +397,11 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
 
     /// Fault the snapshot BODY put (never the `_ckpt` CAS -- an append-commit's OWN checkpoint write
     /// shares that key, and faulting it would drive the append lane into `NeedsRecovery` instead of
-    /// exercising the snapshot-publish backoff this test targets). Exactly 3 failures: the next 3
-    /// automatic dispatch attempts fail (arming, then doubling, then re-doubling the backoff); the 4th
-    /// finds the fault disarmed and succeeds.
-    backend->armPutFailure("_snap/", 3);
+    /// exercising the snapshot-publish backoff this test targets). Armed for as long as any dispatch
+    /// keeps reissuing, so each dispatch ends at its own retry window and counts as ONE dispatch: the
+    /// next 3 fail (arming, then doubling, then re-doubling the backoff) and the test disarms the fault
+    /// before the 4th.
+    backend->armWriteFailure("_snap/", kFaultsBeyondTheRetryWindow);
 
     const auto dispatchCount = [&] { return global_counters[ProfileEvents::CASRefSnapshotPublishDispatched].load(); };
 
@@ -342,13 +418,13 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
     EXPECT_EQ(dispatchCount(), d1) << "a read within the initial backoff window must not re-dispatch";
 
     /// Cross the 1000ms deadline: exactly one retry dispatches (and fails again, doubling to 2000ms).
-    fake_now += 1000;
+    *fake_now += 1000;
     store->resolveRef(ns, "ref_1");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(dispatchCount(), d1 + 1) << "past the first deadline, exactly one retry dispatches";
 
     /// Short of the DOUBLED (2000ms) deadline: still refused.
-    fake_now += 1000;
+    *fake_now += 1000;
     store->resolveRef(ns, "ref_1");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(dispatchCount(), d1 + 1)
@@ -356,7 +432,7 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
 
     /// Cross the doubled deadline: one more retry dispatches (and fails again -- the third and last armed
     /// failure -- doubling to the 4000ms cap).
-    fake_now += 1000;
+    *fake_now += 1000;
     store->resolveRef(ns, "ref_1");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(dispatchCount(), d1 + 2) << "past the doubled deadline, exactly one more retry dispatches";
@@ -365,21 +441,22 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
     /// 2000ms, or that read `initial` where it means `max`, would still pass -- the only check so far
     /// is AT the +4000 crossing below. 2000ms past the doubled deadline is still short of the capped
     /// 4000ms backoff, so no third retry may dispatch yet.
-    fake_now += 2000;
+    *fake_now += 2000;
     store->resolveRef(ns, "ref_1");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(dispatchCount(), d1 + 2)
         << "2000ms past the doubled deadline is still short of the capped 4000ms backoff";
 
-    /// Cross the (capped) 4000ms deadline: the retry's fault budget is exhausted, so this attempt
-    /// succeeds, and `resetPublishBackoff` clears the cooldown -- proved by the NEXT trigger dispatching
-    /// with no wait at all.
-    fake_now += 2000;
+    /// Cross the (capped) 4000ms deadline with the fault disarmed, so this attempt succeeds and
+    /// `resetPublishBackoff` clears the cooldown -- proved by the NEXT trigger dispatching with no wait
+    /// at all.
+    backend->armWriteFailure("_snap/", 0);
+    *fake_now += 2000;
     store->resolveRef(ns, "ref_1");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(dispatchCount(), d1 + 3) << "past the second (capped) deadline, the retry dispatches and succeeds";
     EXPECT_NE(store->newestPublishedSnapshotIdForTest(ns), snapshot_after_birth)
-        << "the fault budget is exhausted, so this attempt actually advances the published snapshot";
+        << "the fault is disarmed, so this attempt actually advances the published snapshot";
 
     ASSERT_EQ(publishRef(store, ns, "ref_3", 3), (RefTxnId{store->writerEpoch(), 3}));
     store->waitForSnapshotPublishSettleForTest(ns);
@@ -393,20 +470,23 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
     /// the INITIAL 1000ms interval rather than continuing from the 4000ms cap -- refused short of
     /// 1000ms, admitted at 1000ms -- which a no-op reset cannot produce (it would refuse both probes,
     /// since the stale deadline is still far in the future).
-    backend->armPutFailure("_snap/", 1);
+    backend->armWriteFailure("_snap/", kFaultsBeyondTheRetryWindow);
     ASSERT_EQ(publishRef(store, ns, "ref_4", 4), (RefTxnId{store->writerEpoch(), 4}));
     store->waitForSnapshotPublishSettleForTest(ns);
     const uint64_t d2 = dispatchCount();
-    fake_now += 500;
+    *fake_now += 500;
     store->resolveRef(ns, "ref_1");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(dispatchCount(), d2) << "short of 1000ms since the reset, no retry may dispatch yet";
-    fake_now += 500;
+    *fake_now += 500;
     store->resolveRef(ns, "ref_1");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(dispatchCount(), d2 + 1)
         << "resetPublishBackoff must have restarted the schedule at the INITIAL 1000ms interval, not "
            "left it continuing from the 4000ms cap";
+    backend->armWriteFailure("_snap/", 0);
+    EXPECT_GT(clock->pauseCount(), 1u)
+        << "every failed dispatch above must have paced through the injected sleep, never a real one";
 }
 
 TEST(CASRefSnapshotPublishOrdering, NotReadyRefusalBacksOffAndResetsAfterDurablePublish)
@@ -414,21 +494,30 @@ TEST(CASRefSnapshotPublishOrdering, NotReadyRefusalBacksOffAndResetsAfterDurable
     using ProfileEvents::global_counters;
     auto backend = std::make_shared<OrderedFaultBackend>();
 
+    /// No write fault anywhere in this test: every refusal below comes from the lane not being Ready,
+    /// so the budget only has to keep the mount lease admitting.
     CasRequestBudget budget;
-    budget.max_attempts = 1;
     budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;
     budget.lease_safety_margin_ms = 100;
 
-    uint64_t fake_now = 2'000'000;
+    /// Held in a shared atomic, not a plain local: this test mutates the clock below, and the Pool can
+    /// outlive this stack frame (a background publish holds `shared_from_this()`), so a by-reference
+    /// capture of a local would dangle.
+    auto fake_now = std::make_shared<std::atomic<uint64_t>>(2'000'000);
     PoolConfig config;
     config.snapshot_log_count_threshold = 0;
     config.snapshot_log_bytes_threshold = 1ULL << 40;
     config.snapshot_publish_backoff_initial_ms = 200;
     config.snapshot_publish_backoff_max_ms = 30'000;
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    config.boot_ms_fn = [fake_now]
+    {
+        return fake_now->load();
+    };
     config.cas_request_budget = budget;
+    /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the budget
+    /// field alone; pair the two so the mount lease's admission arithmetic sees what the budget claims.
+    backend->setAttemptTimeoutMs(budget.attempt_timeout_ms);
     auto store = openPool(backend, config);
     const RootNamespace ns{"srv1/order_not_ready_backoff"};
 
@@ -508,14 +597,14 @@ TEST(CASRefSnapshotPublishOrdering, NotReadyRefusalBacksOffAndResetsAfterDurable
         400, 800, 1600, 3200, 6400, 12'800, 25'600, 30'000, 30'000};
     for (const uint64_t next_delay_ms : next_delays)
     {
-        fake_now += delay_ms - 1;
+        *fake_now += delay_ms - 1;
         store->resolveRef(ns, "ref_1");
         store->waitForSnapshotPublishSettleForTest(ns);
         EXPECT_EQ(dispatch_count(), production_dispatches + 1 + admitted_retries)
             << "no retry may dispatch one millisecond before the current deadline";
         EXPECT_EQ(backoff_count(), production_backoffs + 1 + admitted_retries);
 
-        ++fake_now;
+        ++(*fake_now);
         store->resolveRef(ns, "ref_1");
         store->waitForSnapshotPublishSettleForTest(ns);
         ++admitted_retries;

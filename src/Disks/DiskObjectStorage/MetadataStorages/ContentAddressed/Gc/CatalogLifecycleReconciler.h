@@ -43,22 +43,22 @@ class CatalogLifecycleReconciler
 {
 public:
     CatalogLifecycleReconciler(
-        Backend & backend_, const Layout & layout_, const CasFoldSeal & adopted_parent_,
-        uint64_t admitted_generation_,
-        std::function<CasRefCatalog::LeaderFenceStatus(uint64_t)> check_fence_);
+        CasOperation & op_, const Layout & layout_, const CasFoldSeal & adopted_parent_);
 
-    CatalogLifecycleReconcileResult reconcile();
+    /// `refresh_authority` is forwarded to each erase, which runs it at the top of every attempt, so
+    /// every erase is authorised by a reading taken in its own attempt, and it is run once more before
+    /// the drain-complete verdict, which would otherwise report from the reading its last erase left.
+    /// It is a refresh, not a verdict: the verdict stays `op.admitted()`.
+    CatalogLifecycleReconcileResult reconcile(const std::function<void()> & refresh_authority);
 
 private:
     std::optional<CatalogEntry> selectEligible(const CasRefCatalog::Snapshot & catalog) const;
     static CatalogResolution resolveExactRow(
         const CasRefCatalog::Snapshot & catalog, const CatalogEntry & observed);
 
-    Backend & backend;
+    CasOperation & op;
     const Layout & layout;
     const CasFoldSeal & adopted_parent;
-    uint64_t admitted_generation;
-    std::function<CasRefCatalog::LeaderFenceStatus(uint64_t)> check_fence;
 };
 
 }

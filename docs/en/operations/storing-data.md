@@ -467,7 +467,9 @@ and the [`system.cas_gc_log`](/operations/system-tables/cas_gc_log),
 [content-addressed storage documentation](/antalya/cas) for the architecture, operations
 runbooks, and a live-validated quick start.
 
-Configuration:
+Configuration: `http_keep_alive_timeout` and `http_keep_alive_max_requests` are set here for the
+reason explained under
+[recommended keep-alive settings](/antalya/cas/configuration#recommended-keep-alive-settings).
 
 ```xml
 <s3_cas>
@@ -476,6 +478,8 @@ Configuration:
     <metadata_type>cas</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
+    <http_keep_alive_timeout>30</http_keep_alive_timeout>
+    <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
 
     <cas_server_root_id>server-{replica}</cas_server_root_id>
     <cas_scratch_path>disks/s3_cas/cas_scratch/</cas_scratch_path>
@@ -485,7 +489,6 @@ Configuration:
     <cas_gc_interval_sec>60</cas_gc_interval_sec>
     <cas_gc_shards>1</cas_gc_shards>
     <cas_part_folder_cache_bytes>67108864</cas_part_folder_cache_bytes>
-    <cas_part_folder_validate>always</cas_part_folder_validate>
 </s3_cas>
 ```
 
@@ -542,15 +545,14 @@ disk-level and server-level settings surface.
   view cache.
 - `cas_part_folder_cache_max_entry_bytes` — `16` MiB by default. Maximum size of a single cached
   part-folder view entry.
-- `cas_part_folder_validate` — `always` (default), `never`, or `age <seconds>`. Controls how often a
-  `ForceFresh` read re-proves a cached manifest body via a `HEAD` request: `always` re-proves every
-  time (the original, pre-optimization behavior), `never` trusts the cache without re-proving, and
-  `age <seconds>` re-proves only once the cached entry is older than the given number of seconds.
 - `cas_manifest_decode_cache_bytes` — `128` MiB by default. Byte bound for the decoded-manifest cache.
   `0` disables decode caching entirely (a diagnostic mode).
 - `cas_gc_meta_pool_size` — `16` by default. Bounded thread-pool size for the GC's per-hash freshness-meta
   writes (condemn/spare/delete), so a mass `DROP` condemning millions of blobs does not run fully
   sequentially.
+- `cas_gc_read_concurrency` — `16` by default. Bounded thread-pool size for the GC fold's read-ahead of
+  checkpoints, ref logs, manifest bodies and zero-candidate `HEAD`s. The fold's decisions stay on the
+  round thread in their original order; only the fetches overlap. `1` disables read-ahead.
 - `skip_access_check` — `false` by default. Skips the disk's `CAS` capability probe ("start now,
   fix later"). The server-level `skip_access_check` flag skips the generic disk access check;
   this disk key governs the `CAS` capability probe.

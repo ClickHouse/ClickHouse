@@ -209,7 +209,23 @@ bool ReadBufferFromS3::nextImpl()
             }
 
             /// Try to read a next portion of data.
-            next_result = impl->next();
+            const bool delivered_more_data = impl->next();
+            if (delivered_more_data && !pending_response_bytes_delivered)
+            {
+                /// This response just delivered its first byte: check it against whichever response
+                /// last delivered bytes, then it becomes the new baseline. A response that never
+                /// reaches this point (fails before delivering anything) never touches the baseline,
+                /// so any number of empty failed attempts in between are transparent to the check.
+                ///
+                /// Must run before `next_result = delivered_more_data` below exits the loop via
+                /// `break`: a throw after that point would leave the loop exiting with `impl` null
+                /// (reset by the catch handler) while the code past the loop still dereferences it.
+                if (last_delivering_response_etag && *last_delivering_response_etag != pending_response_etag)
+                    response_identity_changed = true;
+                last_delivering_response_etag = std::move(pending_response_etag);
+                pending_response_bytes_delivered = true;
+            }
+            next_result = delivered_more_data;
             break;
         }
         catch (...)
@@ -448,6 +464,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             if (!atEndOfRequestedRangeGuess())
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             impl.reset();
+            forgetResponseIdentityBaseline();
         }
     }
 
@@ -493,6 +510,7 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
             offset = getPosition();
             resetWorkingBuffer();
             impl.reset();
+            forgetResponseIdentityBaseline();
         }
         read_until_position = position;
     }
@@ -512,6 +530,7 @@ void ReadBufferFromS3::setReadUntilEnd()
             offset = getPosition();
             resetWorkingBuffer();
             impl.reset();
+            forgetResponseIdentityBaseline();
         }
     }
 }
@@ -525,6 +544,12 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
     if (file_size)
         return getPosition() >= static_cast<off_t>(*file_size);
     return false;
+}
+
+void ReadBufferFromS3::forgetResponseIdentityBaseline()
+{
+    last_delivering_response_etag.reset();
+    pending_response_bytes_delivered = false;
 }
 
 std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
@@ -545,6 +570,15 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
+    /// Record the new response's identity; the coherence check itself happens in nextImpl(), at the
+    /// moment this response actually delivers its first byte. Comparing here instead (against
+    /// whatever the previous attempt's ETag was) would flag a mismatch as soon as a differently-ETagged
+    /// response is merely attempted, before it is known whether that attempt will ever deliver
+    /// anything - and would just as easily lose track of an earlier delivering response across an
+    /// intervening empty failed attempt with yet another ETag.
+    pending_response_etag = read_result.GetETag();
+    pending_response_bytes_delivered = false;
+
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
@@ -557,7 +591,10 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (!version_id.empty())
         req.SetVersionId(version_id);
 
-    S3::setClickhouseAttemptNumber(req, attempt);
+    S3::setClickhouseAttemptNumber(req, S3::seededAttemptNumber(read_settings.object_storage_attempt_number, attempt));
+
+    if (read_settings.object_storage_request_mode == ObjectStorageRequestMode::NativeConditional)
+        req.setNativeConditional();
 
     if (range_end_incl)
     {

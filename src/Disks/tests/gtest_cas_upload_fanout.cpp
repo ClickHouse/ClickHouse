@@ -41,6 +41,7 @@ using DB::Cas::tests::expectThrowsCode;
 using DB::Cas::tests::runRoundsUntilAbsent;
 using DB::Cas::tests::blobAbsent;
 using DB::Cas::tests::CountingBackend;
+using DB::Cas::tests::OperationForTest;
 
 namespace DB::ErrorCodes
 {
@@ -77,6 +78,24 @@ PoolPtr openPool(const std::shared_ptr<InMemoryBackend> & b)
     return Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 }
 
+std::optional<DB::Cas::Object> readOf(Backend & backend, const String & key)
+{
+    OperationForTest op(backend);
+    return (*op).read(key, DB::Cas::Retry::standard());
+}
+
+bool headExists(Backend & backend, const String & key)
+{
+    OperationForTest op(backend);
+    return (*op).head(key, DB::Cas::Retry::standard()).has_value();
+}
+
+void createRaw(Backend & backend, const String & key, const String & bytes)
+{
+    OperationForTest op(backend);
+    (*op).create(key, bytes, DB::Cas::Retry::standard());
+}
+
 /// Stage a one-blob seed manifest and precommit it, so every adopt branch of `uploadBlobDetached`
 /// passes its EDGE-BEFORE-OBSERVE fail-closed gate (which only checks the `precommitted` flag). One
 /// precommit covers an arbitrary number of subsequently-uploaded blobs, mirroring
@@ -100,13 +119,13 @@ void seedPresentBody(InMemoryBackend & b, const Layout & layout, const PoolMeta 
     h.incarnation_tag = DB::UInt128(0xABCD);
     h.build_id = DB::UInt128(0x1111);
     const String head = encodeEnvelopeHeader(h, static_cast<uint32_t>(pm.blob_header_len));
-    b.putIfAbsent(layout.blobKey(idOf(payload)), head + payload);
+    createRaw(b, layout.blobKey(idOf(payload)), head + payload);
 }
 
 /// The logical payload stored at a blob key (object body minus the fixed blob header), or empty when absent.
 String logicalPayloadAt(InMemoryBackend & b, const String & key, uint64_t header_len)
 {
-    const auto got = b.get(key);
+    const auto got = readOf(b, key);
     if (!got || got->bytes.size() < header_len)
         return {};
     return got->bytes.substr(header_len);
@@ -224,7 +243,7 @@ struct ConcurrencyProbe
 class RejectFirstStagedCopyBackend final : public InMemoryBackend
 {
 public:
-    void publishBlob(const BlobPublishRequest & request) override
+    void publish(const BlobPublishRequest & request, TransportAccess & access) override
     {
         if (std::holds_alternative<VerbatimStagedBlobPublication>(request.publication))
         {
@@ -239,7 +258,7 @@ public:
         {
             ++streaming_publications;
         }
-        InMemoryBackend::publishBlob(request);
+        InMemoryBackend::publish(request, access);
     }
 
     bool reject_copy = true;
@@ -264,7 +283,7 @@ TEST(CASUploadFanout, CopiedAndMovedRequestsSharePublicationAttemptedState)
     header.incarnation_tag = DB::UInt128(0xC0FFEE);
     const String staging_bytes
         = encodeEnvelopeHeader(header, static_cast<uint32_t>(store->poolMeta().blob_header_len)) + payload;
-    backend->putIfAbsent(staging_key, staging_bytes);
+    createRaw(*backend, staging_key, staging_bytes);
 
     BlobSource source;
     source.size = payload.size();
@@ -293,7 +312,7 @@ TEST(CASUploadFanout, CopiedAndMovedRequestsSharePublicationAttemptedState)
     EXPECT_EQ(backend->streaming_publications, 1u)
         << "the request copied and moved through fan-out must retain the consumed first-attempt state";
     EXPECT_EQ(build->dependencyProof(ref), BlobDependencyProof::Materialized);
-    const auto stored = backend->get(store->layout().blobKey(ref));
+    const auto stored = readOf(*backend, store->layout().blobKey(ref));
     ASSERT_TRUE(stored.has_value());
     EXPECT_EQ(stored->bytes.substr(store->poolMeta().blob_header_len), payload);
 }
@@ -347,7 +366,7 @@ WorldA arrangeWorldA()
         h.kind = ObjectKind::Blob;
         h.incarnation_tag = DB::UInt128(0xC0FFEE);
         const String staging = encodeEnvelopeHeader(h, static_cast<uint32_t>(w.s->poolMeta().blob_header_len)) + kStaging;
-        w.b->putIfAbsent("p/staging/mount1/A-staging.tmp", staging);
+        createRaw(*w.b, "p/staging/mount1/A-staging.tmp", staging);
     }
 
     /// condemned-local resurrection: present body + condemned meta, local source.
@@ -362,8 +381,8 @@ WorldA arrangeWorldA()
         h.kind = ObjectKind::Blob;
         h.incarnation_tag = DB::UInt128(0xC0FFEE);
         const String staging = encodeEnvelopeHeader(h, static_cast<uint32_t>(w.s->poolMeta().blob_header_len)) + kResS3;
-        w.b->putIfAbsent("p/staging/mount1/A-republish.tmp", staging);
-        w.b->putIfAbsent(w.s->layout().blobKey(idOf(kResS3)), staging);
+        createRaw(*w.b, "p/staging/mount1/A-republish.tmp", staging);
+        createRaw(*w.b, w.s->layout().blobKey(idOf(kResS3)), staging);
         writeMetaClean(*w.b, w.s->layout(), u128Of(kResS3), std::string(kResS3).size());
         condemnMeta(*w.b, w.s->layout(), u128Of(kResS3), /*condemn_round=*/9);
     }
@@ -436,8 +455,8 @@ TEST(CASUploadFanout, CondemnedBranchesNeverGet)
         h.kind = ObjectKind::Blob;
         h.incarnation_tag = DB::UInt128(0xC0FFEE);
         const String staging = encodeEnvelopeHeader(h, static_cast<uint32_t>(s->poolMeta().blob_header_len)) + s3_payload;
-        counting->putIfAbsent(s3_staging, staging);
-        counting->putIfAbsent(s->layout().blobKey(idOf(s3_payload)), staging);
+        createRaw(*counting, s3_staging, staging);
+        createRaw(*counting, s->layout().blobKey(idOf(s3_payload)), staging);
         writeMetaClean(*counting, s->layout(), u128Of(s3_payload), s3_payload.size());
         condemnMeta(*counting, s->layout(), u128Of(s3_payload), /*condemn_round=*/5);
     }
@@ -598,22 +617,24 @@ TEST(CASUploadFanout, CondemnedLocalResurrectStreamsAndFlipsMetaClean)
     condemnMeta(*b, s->layout(), u128Of(payload), /*condemn_round=*/13);
 
     const String blob_key = s->layout().blobKey(idOf(payload));
-    const Token condemned_token = b->head(blob_key).token;
+    OperationForTest op(*b);
+    const auto condemned_meta = (*op).head(blob_key, Retry::standard());
+    ASSERT_TRUE(condemned_meta.has_value());
 
     std::vector<BlobUploadRequest> reqs{localRequest(payload)};
     auto pool = makePool(2);
     fanOutBlobUploads(*build, reqs, *pool, nullptr);
 
-    /// A fresh incarnation displaced the condemned one; INV-NO-RETURN: the queued exact-token delete
-    /// of the condemned incarnation must miss the resurrection.
-    const HeadResult after = b->head(blob_key);
-    ASSERT_TRUE(after.exists);
-    EXPECT_NE(after.token, condemned_token);
-    EXPECT_EQ(b->deleteExact(blob_key, condemned_token).kind, DeleteOutcome::Kind::TokenMismatch);
-    EXPECT_TRUE(b->head(blob_key).exists);
+    /// A fresh incarnation displaced the condemned one; INV-NO-RETURN: the queued exact-incarnation
+    /// delete of the condemned incarnation must miss the resurrection.
+    const auto after = (*op).head(blob_key, Retry::standard());
+    ASSERT_TRUE(after.has_value());
+    EXPECT_NE(after->etag, condemned_meta->etag);
+    EXPECT_EQ((*op).remove(blob_key, condemned_meta->etag, Retry::standard()), Removal::Mismatch);
+    EXPECT_TRUE(headExists(*b, blob_key));
 
     /// The payload survived verbatim under the fresh header.
-    const auto got = b->get(blob_key);
+    const auto got = readOf(*b, blob_key);
     ASSERT_TRUE(got.has_value());
     EXPECT_EQ(got->bytes.substr(s->poolMeta().blob_header_len), payload);
 
@@ -670,12 +691,14 @@ TEST(CASUploadFanout, DuplicateCondemnedS3ResurrectsCorrectly)
     h.kind = ObjectKind::Blob;
     h.incarnation_tag = DB::UInt128(0xC0FFEE);
     const String staging_bytes = encodeEnvelopeHeader(h, static_cast<uint32_t>(s->poolMeta().blob_header_len)) + payload;
-    b->putIfAbsent(staging_key, staging_bytes);
-    b->putIfAbsent(s->layout().blobKey(idOf(payload)), staging_bytes);
+    createRaw(*b, staging_key, staging_bytes);
+    createRaw(*b, s->layout().blobKey(idOf(payload)), staging_bytes);
     writeMetaClean(*b, s->layout(), u128Of(payload), payload.size());
     condemnMeta(*b, s->layout(), u128Of(payload), /*condemn_round=*/11);
 
-    const Token condemned_token = b->head(s->layout().blobKey(idOf(payload))).token;
+    OperationForTest op(*b);
+    const auto condemned_meta = (*op).head(s->layout().blobKey(idOf(payload)), Retry::standard());
+    ASSERT_TRUE(condemned_meta.has_value());
 
     std::atomic<int> dispatched{0};
     BlobUploadFanoutHooksForTest hooks;
@@ -687,8 +710,9 @@ TEST(CASUploadFanout, DuplicateCondemnedS3ResurrectsCorrectly)
 
     EXPECT_EQ(dispatched.load(), 1) << "duplicate condemned records collapse to one republication task";
     EXPECT_EQ(build->dependencyProof(idOf(payload)), BlobDependencyProof::Materialized);
-    const Token after_token = b->head(s->layout().blobKey(idOf(payload))).token;
-    EXPECT_NE(after_token.value, condemned_token.value) << "a fresh incarnation displaced the condemned one";
+    const auto after_meta = (*op).head(s->layout().blobKey(idOf(payload)), Retry::standard());
+    ASSERT_TRUE(after_meta.has_value());
+    EXPECT_NE(after_meta->etag, condemned_meta->etag) << "a fresh incarnation displaced the condemned one";
     EXPECT_EQ(metaStateAt(*b, s->layout(), payload), std::optional<MetaState>(MetaState::Clean));
     EXPECT_EQ(logicalPayloadAt(*b, s->layout().blobKey(idOf(payload)), s->poolMeta().blob_header_len), payload);
 }
@@ -860,7 +884,7 @@ TEST(CASUploadFanout, DrainPrecedesUnwind)
         fanOutBlobUploads(*build, reqs, *pool, &hooks);
     });
 
-    EXPECT_TRUE(b->head(s->layout().blobKey(idOf(slow))).exists)
+    EXPECT_TRUE(headExists(*b, s->layout().blobKey(idOf(slow))))
         << "the sibling's upload was drained by the join before the failure surfaced";
     EXPECT_EQ(build->dependencyProof(idOf(slow)), std::nullopt)
         << "merge-nothing: the drained sibling's dep is not merged";
@@ -920,7 +944,7 @@ TEST(CASUploadFanout, DispatchThrowStillDrains)
     EXPECT_EQ(dispatch_calls.load(), 2) << "the throw fired on the second dispatch";
     /// The already-RUNNING first task was drained before the stack unwound, so its body is present
     /// although nothing was merged.
-    EXPECT_TRUE(b->head(s->layout().blobKey(idOf(enqueued))).exists)
+    EXPECT_TRUE(headExists(*b, s->layout().blobKey(idOf(enqueued))))
         << "the already-dispatched task was drained before the stack unwound";
     EXPECT_EQ(build->depsSnapshotForTest().size(), 0u) << "merge-nothing on a dispatch throw";
 }
@@ -978,7 +1002,7 @@ TEST(CASUploadFanout, TrackingSeamThrowStillDrains)
 
     /// The already-scheduled first task was drained before `results` was destroyed, so its body is
     /// present; nothing was merged (merge-nothing on any fan-out throw).
-    EXPECT_TRUE(b->head(s->layout().blobKey(idOf(smaller))).exists)
+    EXPECT_TRUE(headExists(*b, s->layout().blobKey(idOf(smaller))))
         << "an already-scheduled task was not drained before the stack unwound";
     EXPECT_EQ(build->depsSnapshotForTest().size(), 0u) << "merge-nothing on a tracking-seam throw";
 }

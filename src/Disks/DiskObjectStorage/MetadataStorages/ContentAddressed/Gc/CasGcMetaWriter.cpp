@@ -1,9 +1,11 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcMetaWriter.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobMeta.h>
 
 #include <Common/ProfileEvents.h>
 
 #include <algorithm>
+#include <variant>
 
 namespace ProfileEvents
 {
@@ -23,6 +25,13 @@ namespace DB::Cas
 
 namespace
 {
+
+/// The registry key for one condemned incarnation: the persisted pair rendered the way a live
+/// `Etag` renders itself, so two dialects can never collide on a shared value.
+String condemnMarkerKey(const PersistedEtag & token)
+{
+    return token.dialect + ":" + token.value;
+}
 
 /// The per-hash freshness-meta operations GC schedules on the bounded pool are
 /// best-effort/idempotent by design. The meta is only a point-read freshness marker for the writer/
@@ -46,8 +55,8 @@ namespace
 /// a writer reading `Clean` would reuse the exact condemned token, which a stale pre-CAS exact-token
 /// redelete then deletes -- live-blob data loss (INV_NO_LOSS). Removing the clear restores the exact-token
 /// delete argument in full: once a hash is `Condemned`, observing `Clean` means EITHER the condemned body
-/// is absent OR a writer already changed its incarnation token, so every stale `deleteExact(t1)` finds the
-/// body absent or `TokenMismatch`.
+/// is absent OR a writer already changed its incarnation, so every stale exact-incarnation delete of the
+/// condemned incarnation finds the body absent or holding a different one.
 
 /// Write the per-hash meta to Condemned: a blob newly entering the retired set this round (either the
 /// fresh zero-in-degree condemn, or a republication-supersede re-condemn of the current token). Absent meta
@@ -55,17 +64,18 @@ namespace
 /// alone rather than clobbering a possibly-newer condemn_round.
 ///
 /// Returns whether durable Condemned evidence exists after the call: the conditional write committed,
-/// or an already-Condemned meta was observed. A lost CAS reports false and writes nothing further (the
-/// loser re-reads next time); a thrown backend error propagates (the scheduling wrapper swallows it) —
-/// either way the entry stays UNCONFIRMED and the graduation gate carries it.
-bool writeCondemnedMeta(Pool & pool, const BlobRef & ref, uint64_t condemn_round, uint64_t size)
+/// or an already-Condemned meta was observed. Any other write outcome reports false and writes nothing
+/// further (the loser re-reads next time); a thrown backend error propagates (the scheduling wrapper
+/// swallows it) — either way the entry stays UNCONFIRMED and the graduation gate carries it.
+bool writeCondemnedMeta(CasOperation & op, const Layout & layout, const BlobRef & ref,
+                        uint64_t condemn_round, uint64_t size)
 {
-    const auto lm = loadMeta(pool.backend(), pool.layout(), ref);
+    const auto lm = loadMeta(op, layout, ref);
     const BlobMeta desired{.state = MetaState::Condemned, .condemn_round = condemn_round, .size = size};
     if (!lm)
-        return putMetaIfAbsent(pool, ref, desired).outcome == CasOverwriteOutcome::Committed;
+        return std::holds_alternative<Committed>(putMetaIfAbsent(op, layout, ref, desired));
     if (lm->meta.state != MetaState::Condemned)
-        return casMeta(pool, ref, lm->etag, desired).outcome == CasOverwriteOutcome::Committed;
+        return std::holds_alternative<Committed>(casMeta(op, layout, ref, lm->etag, desired));
     return true;
 }
 
@@ -73,12 +83,12 @@ bool writeCondemnedMeta(Pool & pool, const BlobRef & ref, uint64_t condemn_round
 /// exact-token delete. NO tombstone -- an absent meta reads exactly like a Clean one (absent
 /// means not condemned"). Idempotent: an already-absent meta, or one a racing writer/GC pass already
 /// moved, is a silent no-op.
-void deleteConfirmedMeta(Backend & backend, const Layout & layout, const BlobRef & ref)
+void deleteConfirmedMeta(CasOperation & op, const Layout & layout, const BlobRef & ref)
 {
-    const auto lm = loadMeta(backend, layout, ref);
+    const auto lm = loadMeta(op, layout, ref);
     if (!lm)
         return;
-    deleteMetaExact(backend, layout, ref, lm->etag);
+    deleteMetaExact(op, layout, ref, lm->etag);
 }
 
 }
@@ -134,12 +144,15 @@ void GcMetaWriter::submit(std::function<void()> op)
     }
 }
 
-void GcMetaWriter::scheduleCondemnMarkerWrite(const BlobRef & ref, const Token & token,
+void GcMetaWriter::scheduleCondemnMarkerWrite(const BlobRef & ref, const PersistedEtag & token,
                                               uint64_t condemn_round, uint64_t size)
 {
+    /// The job admits its OWN operation: a `CasOperation` carries per-call state and belongs to one
+    /// task, while several of these run concurrently on the pool.
     submit([st = state, ref, token, condemn_round, size]()
     {
-        if (writeCondemnedMeta(*st->store, ref, condemn_round, size))
+        CasOperation op = st->store->openRequests().admit();
+        if (writeCondemnedMeta(op, st->store->layout(), ref, condemn_round, size))
             st->noteCondemnMarkerDurable(ref, token);
     });
 }
@@ -148,7 +161,8 @@ void GcMetaWriter::scheduleConfirmedMetaDelete(const BlobRef & ref)
 {
     submit([st = state, ref]()
     {
-        deleteConfirmedMeta(st->store->backend(), st->store->layout(), ref);
+        CasOperation op = st->store->openRequests().admit();
+        deleteConfirmedMeta(op, st->store->layout(), ref);
     });
 }
 
@@ -187,35 +201,35 @@ uint64_t GcMetaWriter::completed() const
     return state->completed.load(std::memory_order_relaxed);
 }
 
-void GcMetaWriter::State::noteCondemnMarkerDurable(const BlobRef & ref, const Token & token)
+void GcMetaWriter::State::noteCondemnMarkerDurable(const BlobRef & ref, const PersistedEtag & token)
 {
     std::lock_guard lock(condemn_marker_mutex);
-    condemn_markers_confirmed.emplace(ref, token.value);
+    condemn_markers_confirmed.emplace(ref, condemnMarkerKey(token));
 }
 
-bool GcMetaWriter::State::condemnMarkerConfirmedInProcess(const BlobRef & ref, const Token & token)
+bool GcMetaWriter::State::condemnMarkerConfirmedInProcess(const BlobRef & ref, const PersistedEtag & token)
 {
     std::lock_guard lock(condemn_marker_mutex);
-    return condemn_markers_confirmed.contains({ref, token.value});
+    return condemn_markers_confirmed.contains({ref, condemnMarkerKey(token)});
 }
 
-void GcMetaWriter::State::forgetCondemnMarker(const BlobRef & ref, const Token & token)
+void GcMetaWriter::State::forgetCondemnMarker(const BlobRef & ref, const PersistedEtag & token)
 {
     std::lock_guard lock(condemn_marker_mutex);
-    condemn_markers_confirmed.erase({ref, token.value});
+    condemn_markers_confirmed.erase({ref, condemnMarkerKey(token)});
 }
 
-void GcMetaWriter::noteCondemnMarkerDurable(const BlobRef & ref, const Token & token)
+void GcMetaWriter::noteCondemnMarkerDurable(const BlobRef & ref, const PersistedEtag & token)
 {
     state->noteCondemnMarkerDurable(ref, token);
 }
 
-bool GcMetaWriter::condemnMarkerConfirmedInProcess(const BlobRef & ref, const Token & token)
+bool GcMetaWriter::condemnMarkerConfirmedInProcess(const BlobRef & ref, const PersistedEtag & token)
 {
     return state->condemnMarkerConfirmedInProcess(ref, token);
 }
 
-void GcMetaWriter::forgetCondemnMarker(const BlobRef & ref, const Token & token)
+void GcMetaWriter::forgetCondemnMarker(const BlobRef & ref, const PersistedEtag & token)
 {
     state->forgetCondemnMarker(ref, token);
 }

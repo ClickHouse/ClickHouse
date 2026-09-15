@@ -41,7 +41,7 @@ TEST(CASGCRoundDefer, PredicateTruthTable)
     EXPECT_FALSE(shouldDeferRound(2, false, 8, 3, 8));   // bound reached => force fold
 }
 
-/// graduationDue (retired-in-snapshot T4): read ZERO-I/O from the adopted seal's condemned_summary. An
+/// `graduationDue` reads ZERO-I/O from the adopted seal's `condemned_summary`. An
 /// entry whose oldest non-pending condemn round crosses current_round forces it true; a delete_pending
 /// entry forces it true regardless of the round; otherwise false.
 TEST(CASGCRoundDefer, GraduationDueDetectsDuePendingAndRoundCrossing)
@@ -56,7 +56,8 @@ TEST(CASGCRoundDefer, GraduationDueDetectsDuePendingAndRoundCrossing)
                               .oldest_nonpending_condemn_round = 2}}});
 
     Gc gc(store, kGc);
-    const GcState state = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    OperationForTest raw_op(*backend);
+    const GcState state = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
 
     EXPECT_FALSE(gc.graduationDueForTest(state, /*current_round=*/2))
         << "oldest non-pending condemn round (2) is not < current_round (2); not yet due to graduate";
@@ -67,7 +68,7 @@ TEST(CASGCRoundDefer, GraduationDueDetectsDuePendingAndRoundCrossing)
     injectCondemnedSummarySeal(*backend, layout, /*generation*/1, /*attempt*/1, /*gc_shards*/1,
         {{0, CondemnedSummary{.condemned_total = 1, .pending_total = 1,
                               .oldest_nonpending_condemn_round = std::numeric_limits<uint64_t>::max()}}});
-    const GcState state_pending = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState state_pending = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
 
     EXPECT_TRUE(gc.graduationDueForTest(state_pending, /*current_round=*/0))
         << "a delete_pending entry must force graduationDue true regardless of current_round";
@@ -84,13 +85,14 @@ TEST(CASGCRoundDefer, GraduationDueFailsClosedWhenSealMissing)
 
     injectCondemnedSummarySeal(*backend, layout, /*generation*/1, /*attempt*/1, /*gc_shards*/1,
         {{0, CondemnedSummary{}}});
-    const GcState state = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    OperationForTest raw_op(*backend);
+    const GcState state = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
 
     /// Delete the adopted seal object (corrupt destructive bookkeeping).
     const String seal_key = layout.foldSealKey(state.snap_generation, state.snap_attempt);
-    const HeadResult h = backend->head(seal_key);
-    ASSERT_TRUE(h.exists);
-    ASSERT_EQ(backend->deleteExact(seal_key, h.token).kind, DeleteOutcome::Kind::Deleted);
+    const auto h = (*raw_op).head(seal_key, Retry::once());
+    ASSERT_TRUE(h.has_value());
+    ASSERT_EQ((*raw_op).remove(seal_key, h->etag, Retry::once()), Removal::Removed);
 
     Gc gc(store, kGc);
     EXPECT_TRUE(gc.graduationDueForTest(state, /*current_round=*/5))
@@ -107,7 +109,8 @@ TEST(CASGCRoundDefer, GraduationDueFalseOnAllZeroSummary)
 
     injectCondemnedSummarySeal(*backend, layout, /*generation*/1, /*attempt*/1, /*gc_shards*/2,
         {{0, CondemnedSummary{}}, {1, CondemnedSummary{}}});
-    const GcState state = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    OperationForTest raw_op(*backend);
+    const GcState state = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
 
     Gc gc(store, kGc);
     EXPECT_FALSE(gc.graduationDueForTest(state, /*current_round=*/9))
@@ -116,7 +119,7 @@ TEST(CASGCRoundDefer, GraduationDueFalseOnAllZeroSummary)
     /// Fail-closed if the summary is NOT total over gc_shards (shard 1 missing).
     injectCondemnedSummarySeal(*backend, layout, /*generation*/1, /*attempt*/1, /*gc_shards*/2,
         {{0, CondemnedSummary{}}});
-    const GcState partial = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    const GcState partial = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
     EXPECT_TRUE(gc.graduationDueForTest(partial, /*current_round=*/9))
         << "a summary not total over gc_shards is corrupt => fail-closed force-fold";
 }
@@ -143,7 +146,8 @@ TEST(CASGCRoundDefer, ChangedShardCountIsZeroWhenQuiescent)
                                                          /// trim, so THIS round's fold seal finally
                                                          /// captures the shard's actual current token.
 
-    const GcState quiescent_state = decodeGcState(backend->get(layout.gcStateKey())->bytes);
+    OperationForTest raw_op(*backend);
+    const GcState quiescent_state = decodeGcState((*raw_op).read(layout.gcStateKey(), Retry::once())->bytes);
     EXPECT_EQ(gc.listRefPrefixForTest(quiescent_state).changed_shards, 0u)
         << "a quiescent shard (listed token == sealed token) must not count as changed";
 
@@ -172,10 +176,13 @@ TEST(CASGCRoundDefer, HotEnumerationOffersLogsAndSnapshotsButNeverCheckpointOrFi
     const String snap_key = layout.refSnapshotKey(life, id);
     const String ckpt_key = layout.refCkptKey(life);
     const String file_key = layout.namespaceFileKey(life, "f");
-    ASSERT_EQ(backend->putIfAbsent(log_key, "log").outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent(snap_key, "snap").outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent(ckpt_key, "ckpt").outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent(file_key, "file").outcome, PutOutcome::Done);
+    {
+        OperationForTest seed_op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*seed_op).create(log_key, "log", Retry::once())));
+        ASSERT_TRUE(std::holds_alternative<Committed>((*seed_op).create(snap_key, "snap", Retry::once())));
+        ASSERT_TRUE(std::holds_alternative<Committed>((*seed_op).create(ckpt_key, "ckpt", Retry::once())));
+        ASSERT_TRUE(std::holds_alternative<Committed>((*seed_op).create(file_key, "file", Retry::once())));
+    }
     backend->resetCounts();
 
     Gc gc(store, kGc);
@@ -196,7 +203,10 @@ TEST(CASGCRoundDefer, ListedLifeAbsentFromThePostListCatalogCutIsInertDebris)
     const Layout & layout = store->layout();
     const NamespaceLifeId unknown = NamespaceLifeId::fromCatalogEntry(RootNamespace{"cannot-authorize"}, UInt128{0x456});
     const String log_key = layout.refLogKey(unknown, RefTxnId{1, 1});
-    ASSERT_EQ(backend->putIfAbsent(log_key, "not-read-on-defer").outcome, PutOutcome::Done);
+    {
+        OperationForTest seed_op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*seed_op).create(log_key, "not-read-on-defer", Retry::once())));
+    }
     backend->resetCounts();
 
     Gc gc(store, kGc);
@@ -222,7 +232,10 @@ TEST(CASGCRoundDefer, SnapshotLifeAbsentFromThePostListCatalogCutIsInertDebris)
     const Layout & layout = store->layout();
     const NamespaceLifeId unknown = NamespaceLifeId::fromCatalogEntry(RootNamespace{"cannot-authorize"}, UInt128{0x457});
     const String snapshot_key = layout.refSnapshotKey(unknown, RefTxnId{1, 1});
-    ASSERT_EQ(backend->putIfAbsent(snapshot_key, "not-read-on-defer").outcome, PutOutcome::Done);
+    {
+        OperationForTest seed_op(*backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*seed_op).create(snapshot_key, "not-read-on-defer", Retry::once())));
+    }
     backend->resetCounts();
 
     Gc gc(store, kGc);
@@ -262,7 +275,8 @@ TEST(CASGCRoundDefer, IdleRoundDefersAndReadsNoGeneration)
     const uint64_t fold_round_gets = backend->getTotal();
     EXPECT_GT(fold_round_gets, 0u) << "sanity: a real fold round performs some GETs";
 
-    const auto st_before = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    OperationForTest raw_op(*backend);
+    const auto st_before = decodeGcState((*raw_op).read(store->layout().gcStateKey(), Retry::once())->bytes);
 
     backend->resetCounts();
     const RoundReport rep = gc.runRegularRound();   /// round 2: genuinely quiesced now => must defer
@@ -278,7 +292,7 @@ TEST(CASGCRoundDefer, IdleRoundDefersAndReadsNoGeneration)
     EXPECT_EQ(rep.round, fold_rep.round)
         << "a deferred round re-adopts the already-committed round, not a fabricated new one";
 
-    const auto st_after = decodeGcState(backend->get(store->layout().gcStateKey())->bytes);
+    const auto st_after = decodeGcState((*raw_op).read(store->layout().gcStateKey(), Retry::once())->bytes);
     EXPECT_EQ(st_after.snap_generation, st_before.snap_generation)
         << "a deferred round must not mint a new generation (snapshot rebuild elided)";
     EXPECT_EQ(st_after.snap_attempt, st_before.snap_attempt);
@@ -374,6 +388,8 @@ TEST(CASGCRoundDefer, DeferredRoundRetriesPartialJanitorPageAtForcedFoldWithoutP
 {
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/1);
+    CasRequests requests = openRequestsForTest(backend);
+    CasOperation op = requests.admit();
     const Layout & layout = store->layout();
     const NamespaceLifeId dead_a
         = NamespaceLifeId::fromCatalogEntry(RootNamespace{"dead/a"}, UInt128{0xDA});
@@ -381,32 +397,32 @@ TEST(CASGCRoundDefer, DeferredRoundRetriesPartialJanitorPageAtForcedFoldWithoutP
         = NamespaceLifeId::fromCatalogEntry(RootNamespace{"dead/b"}, UInt128{0xDB});
     const String key_a = layout.refCkptKey(dead_a);
     const String key_b = layout.refCkptKey(dead_b);
-    ASSERT_EQ(backend->putIfAbsent(key_a, "dead-a").outcome, PutOutcome::Done);
-    ASSERT_EQ(backend->putIfAbsent(key_b, "dead-b").outcome, PutOutcome::Done);
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key_a, "dead-a", Retry::once())));
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key_b, "dead-b", Retry::once())));
 
     /// Establish real opaque backend progress rather than fabricating a cursor value. One key remains
     /// after this page and the durable cursor must be non-empty.
     const NamespaceJanitorResult first_page
-        = NamespaceJanitor(*backend, layout, 1).runOnePage(false, [] { return true; });
+        = NamespaceJanitor(requests, layout, 1).runOnePage(false, [] { return true; });
     ASSERT_EQ(first_page.pages, 1u);
     ASSERT_EQ(first_page.deleted, 1u);
-    const GcMaintenanceReadResult partial = readGcMaintenanceState(*backend, layout);
+    const GcMaintenanceReadResult partial = readGcMaintenanceState(op, layout);
     ASSERT_EQ(partial.status, GcMaintenanceReadStatus::Valid);
     ASSERT_TRUE(partial.state);
     ASSERT_FALSE(partial.state->janitor_cursor.empty());
-    ASSERT_EQ(static_cast<uint64_t>(backend->head(key_a).exists) + static_cast<uint64_t>(backend->head(key_b).exists), 1u);
+    ASSERT_EQ(static_cast<uint64_t>(op.head(key_a, Retry::once()).has_value()) + static_cast<uint64_t>(op.head(key_b, Retry::once()).has_value()), 1u);
 
     /// Give the forced fold a nonempty, fully proved authoritative universe. The R11 floor correctly
     /// refuses to open the destructive gate for an empty 0-of-0 universe even in the test-only policy.
     const RootNamespace live_namespace{"live/frontier@cas@"};
     fixture::admitLive(*backend, layout, live_namespace);
-    ASSERT_EQ(backend->putIfAbsent(
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create(
         layout.refCkptKey(fixture::fixtureLife(live_namespace)),
         encodeRefCkpt(RefCkpt{
             .life_epoch = std::optional<uint64_t>{1},
             .checkpoint_snapshot_id = std::nullopt,
-            .last_epoch_seal = std::nullopt})).outcome,
-        PutOutcome::Done);
+            .last_epoch_seal = std::nullopt}),
+        Retry::once())));
 
     backend->resetCounts();
     std::vector<GcPhaseRecord> phases;
@@ -435,19 +451,19 @@ TEST(CASGCRoundDefer, DeferredRoundRetriesPartialJanitorPageAtForcedFoldWithoutP
     EXPECT_GE(cleanup->metrics.at("janitor_keys"), 1u);
     EXPECT_EQ(cleanup->metrics.at("janitor_deleted"), 0u);
 
-    const GcMaintenanceReadResult deferred_progress = readGcMaintenanceState(*backend, layout);
+    const GcMaintenanceReadResult deferred_progress = readGcMaintenanceState(op, layout);
     ASSERT_EQ(deferred_progress.status, GcMaintenanceReadStatus::Valid);
     ASSERT_TRUE(deferred_progress.state);
     EXPECT_EQ(deferred_progress.state->janitor_cursor, partial.state->janitor_cursor)
         << "a suppressed DEFER page is undecided and must remain selected for the authoritative fold";
-    EXPECT_EQ(static_cast<uint64_t>(backend->head(key_a).exists) + static_cast<uint64_t>(backend->head(key_b).exists), 1u);
+    EXPECT_EQ(static_cast<uint64_t>(op.head(key_a, Retry::once()).has_value()) + static_cast<uint64_t>(op.head(key_b, Retry::once()).has_value()), 1u);
 
-    const auto gc_state = backend->get(layout.gcStateKey());
+    const auto gc_state = op.read(layout.gcStateKey(), Retry::once());
     ASSERT_TRUE(gc_state);
     const GcState state = decodeGcState(gc_state->bytes);
     EXPECT_EQ(state.snap_generation, 0u);
     EXPECT_EQ(state.snap_attempt, 0u);
-    EXPECT_FALSE(backend->head(layout.foldSealKey(1, 1)).exists)
+    EXPECT_FALSE(op.head(layout.foldSealKey(1, 1), Retry::once()).has_value())
         << "maintenance on DEFER must not publish a fold successor";
 
     backend->resetCounts();
@@ -466,9 +482,9 @@ TEST(CASGCRoundDefer, DeferredRoundRetriesPartialJanitorPageAtForcedFoldWithoutP
     EXPECT_EQ(folded_cleanup->metrics.at("janitor_pages"), 1u);
     EXPECT_GE(folded_cleanup->metrics.at("janitor_keys"), 1u);
     EXPECT_EQ(folded_cleanup->metrics.at("janitor_deleted"), 1u);
-    EXPECT_EQ(static_cast<uint64_t>(backend->head(key_a).exists) + static_cast<uint64_t>(backend->head(key_b).exists), 0u)
+    EXPECT_EQ(static_cast<uint64_t>(op.head(key_a, Retry::once()).has_value()) + static_cast<uint64_t>(op.head(key_b, Retry::once()).has_value()), 0u)
         << "the fold must retry and delete the exact page that DEFER left undecided";
-    const GcMaintenanceReadResult completed = readGcMaintenanceState(*backend, layout);
+    const GcMaintenanceReadResult completed = readGcMaintenanceState(op, layout);
     ASSERT_EQ(completed.status, GcMaintenanceReadStatus::Valid);
     ASSERT_TRUE(completed.state);
     EXPECT_TRUE(completed.state->janitor_cursor.empty());
@@ -584,9 +600,9 @@ TEST(CASGCRoundDefer, DueGraduationIsSoleFoldTriggerAtHighThreshold)
 
     writeBlobBody(*backend, layout, blob);
 
-    /// Seed the adopted fold seal's condemned_summary with B already `delete_pending` (pending_total = 1),
-    /// mirroring `CASGCRoundDefer.GraduationDueDetectsDuePendingAndRoundCrossing`. Retired-in-snapshot
-    /// (T4): graduationDue reads this summary ZERO-I/O off the adopted seal — a delete_pending entry forces
+    /// Seed the adopted fold seal's condemned_summary with B already `delete_pending` (pending_total = 1).
+    /// `graduationDue`
+    /// reads this summary ZERO-I/O from the adopted seal — a `delete_pending` entry forces
     /// it true regardless of the round. At `gc_fold_threshold = 1000` a real condemn -> graduate pipeline of
     /// `runRegularRound` calls is not usable to set this up: every round before graduation would ITSELF
     /// defer (nothing due yet, and changed_shards never nears 1000), so the due-pending summary is injected

@@ -108,15 +108,17 @@ storage, and GC would silently stop reclaiming.
 `runCapabilityProbe` (`Backend/CasProbe.cpp`) runs a throwaway-key battery against every writable
 mount, described in full on the [bucket requirements](/antalya/cas/bucket-requirements) page. It is
 fail-closed: any check that does not pass throws `NOT_IMPLEMENTED` naming the specific failure, and
-the mount refuses to become writable. Two further gates run as the battery's opening steps, and one
+the mount refuses to become writable. The one tolerated exception is a versioning probe that cannot
+answer at all, described in the first bullet below. Two further gates run as the battery's opening steps, and one
 sits genuinely alongside it. The distinction matters: because the versioning check runs *inside* the
 battery, skipping the battery used to skip it too, which is exactly why the third gate exists.
 
-- `checkPoolPreconditions` — inside the battery. On the `GCS`-dialect combination only, requires bucket versioning to be
-  *verifiably* off. A confirmed `Enabled` and an inconclusive probe both throw: `CAS` cannot assume
-  the safe answer here, because what it would do on a versioned bucket is delete objects it believes
-  it reclaimed. A probe is inconclusive when the credential may not read the bucket's versioning
-  configuration, or when the backend cannot answer at all.
+- `checkPoolPreconditions` — inside the battery. On the `GCS`-dialect combination only, checks that
+  bucket versioning is off. A confirmed `Enabled` throws: what `CAS` would do on a versioned bucket is
+  delete objects it believes it reclaimed. An inconclusive probe — the credential may not read the
+  bucket's versioning configuration, or the backend cannot answer at all — logs a warning and lets
+  the mount proceed, since it is not evidence of a versioned bucket; verifying it then falls to the
+  operator, as it already does for soft delete.
 - `checkSkipAccessCheckSupport` — alongside the battery, in the skip branch of `Pool::open`, since it
   is the gate that decides whether the battery may be skipped at all. It asks whether the backend may serve a writable mount that skips the
   battery at all. The `GCS`-dialect combination refuses, so `skip_access_check = true` cannot reach a

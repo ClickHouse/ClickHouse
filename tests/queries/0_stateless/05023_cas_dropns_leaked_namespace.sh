@@ -4,17 +4,17 @@
 #   own unique local-object-storage pool and a per-run CAS disk name, so unlike 04290_cas_no_leftovers
 #   it does not need no-parallel.
 
-# FINDING #2 regression test: `DROP TABLE ... SYNC` on a content-addressed MergeTree used to leave the
+# Regression test: `DROP TABLE ... SYNC` on a content-addressed MergeTree used to leave the
 # table's CAS ref-catalog row `live` forever whenever `DirShape::TableDir`'s `existsDirectory` observed
 # zero committed refs -- an empty table, or one whose last part was just removed. `dropAllData`'s own
 # `existsDirectory` precheck skipped `removeRecursive`/`dropNamespace` entirely in that shape, so the
 # SQL-level drop completed normally while the CAS catalog row leaked, one per create/drop cycle.
 #
 # The primary oracle is the pool's OWN plain-text `cas/ref_catalog` object, read directly off disk: the
-# exact `st` (lifecycle) field recorded for the table's logical namespace. `SYSTEM CAS FSCK`'s
+# exact `state` (lifecycle) field recorded for the table's logical namespace. `SYSTEM CAS FSCK`'s
 # unreachable/dangling counts are a secondary check only -- fsck correctly regards a `live` leak as
 # CONSISTENT (nothing is unreachable; the row simply never dies), so it cannot detect this defect on its
-# own; `04290_cas_no_leftovers.sh`'s fsck-only oracle is exactly why FINDING #2 shipped unnoticed.
+# own; `04290_cas_no_leftovers.sh`'s fsck-only oracle is exactly why that leak shipped unnoticed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +22,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 POOL_DIR="${CLICKHOUSE_USER_FILES_UNIQUE}_05023_${RANDOM}"
 DISK_NAME="ca_05023_${CLICKHOUSE_TEST_UNIQUE_NAME}_${RANDOM}"
-SERVER_ROOT_ID="dropns05023"
+SERVER_ROOT_ID="${CLICKHOUSE_DATABASE}_dropns05023"
 
 rm -rf "${POOL_DIR:?}"
 mkdir -p "${POOL_DIR}"
@@ -34,7 +34,7 @@ catalog_line() {
     grep -F "\"ns\":\"$1\"" "${CATALOG_FILE}" 2>/dev/null || true
 }
 
-# The `st` (lifecycle) word recorded for namespace $1: "live"/"creating"/"removing", or "absent" if the
+# The `state` (lifecycle) word recorded for namespace $1: "live"/"creating"/"removing", or "absent" if the
 # namespace has no catalog row (matches `04290`'s field-by-name discipline: never assume a position).
 catalog_state() {
     local line
@@ -43,7 +43,16 @@ catalog_state() {
         echo "absent"
         return
     fi
-    echo "${line}" | grep -o '"st":"[a-z]*"' | head -1 | sed -E 's/"st":"([a-z]*)"/\1/'
+    # The pipeline's exit status is `sed`'s, which is 0 even on empty input, so emptiness is the only
+    # usable signal that the row exists but its state field could not be read -- a stale key spelling
+    # here must be loud, never mistaken for "absent".
+    local state
+    state=$(echo "${line}" | grep -o '"state":"[a-z]*"' | head -1 | sed -E 's/"state":"([a-z]*)"/\1/')
+    if [ -z "${state}" ]; then
+        echo "catalog row for namespace $1 exists but has no readable state field" >&2
+        return 1
+    fi
+    echo "${state}"
 }
 
 # ClickHouse's own store/<u3>/<uuid> fanout with the CAS archive boundary marker, exactly as
@@ -91,7 +100,7 @@ echo "empty_table_has_no_ref_stream_before_drop $([ "${STREAM_HITS_BEFORE}" -eq 
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_dropns_empty SYNC"
 
-# The current branch fails here by leaving st:"live"; the fix must show "removing" (a terminal stream
+# The current branch fails here by leaving state:"live"; the fix must show "removing" (a terminal stream
 # record now exists but the catalog row itself is not deleted until GC folds and reclaims it).
 echo "empty_table_state_after_sync_drop $(catalog_state "${EMPTY_NS}")"
 STREAM_HITS_AFTER=$(find "${POOL_DIR}/ca/cas/ns/stream" -type f 2>/dev/null | wc -l)
@@ -145,7 +154,10 @@ for i in 1 2 3; do
     CYCLE_NS_LIST+=("${CYCLE_NS}")
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE t_dropns_cycle SYNC"
-    if [ "$(catalog_state "${CYCLE_NS}")" = "live" ]; then
+    # Read the state into a variable first: `$(...)` inside a test swallows a non-zero return, so an
+    # unreadable row would count as "not live" and this counter would pass while the reader is broken.
+    CYCLE_STATE=$(catalog_state "${CYCLE_NS}") || exit 1
+    if [ "${CYCLE_STATE}" = "live" ]; then
         CYCLE_LEAK_COUNT=$((CYCLE_LEAK_COUNT + 1))
     fi
 done

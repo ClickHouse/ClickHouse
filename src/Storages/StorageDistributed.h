@@ -116,6 +116,7 @@ public:
     bool canMoveConditionsToPrewhere() const override { return false; }
 
     bool isRemote() const override { return true; }
+    bool readsFromOtherTables() const override { return true; }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 

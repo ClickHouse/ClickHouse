@@ -88,9 +88,10 @@ void emitTestEvent(DB::ContentAddressedMetadataStorage & storage)
 
     /// A failed ref-lane drain must not leave a clean-release marker behind. That marker lets a
     /// successor skip the observation window, so a phase-2 failure must leave it absent.
-    const auto mount = backend->get(Layout(config.pool_prefix).mountKey(config.server_root_id));
+    DB::Cas::tests::OperationForTest op(backend);
+    const auto mount = (*op).read(Layout(config.pool_prefix).mountKey(config.server_root_id), Retry::standard());
     const bool clean_release = mount
-        && decodeMountLease(mount->bytes).min_active == std::numeric_limits<uint64_t>::max();
+        && decodeMountLease(mount->bytes).min_active_build_sequence == std::numeric_limits<uint64_t>::max();
     const bool marker_must_be_absent = phase == 2;
     std::_Exit(marker_must_be_absent && clean_release ? 1 : 0);
 }

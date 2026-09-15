@@ -9,32 +9,32 @@ namespace DB::ErrorCodes
 namespace DB::Cas
 {
 
-GcMaintenanceReadResult readGcMaintenanceState(Backend & backend, const Layout & layout)
+GcMaintenanceReadResult readGcMaintenanceState(CasOperation & op, const Layout & layout)
 {
-    const auto got = backend.get(layout.gcMaintenanceStateKey());
+    const auto got = op.read(layout.gcMaintenanceStateKey(), Retry::standard());
     if (!got)
-        return {.status = GcMaintenanceReadStatus::Absent, .state = std::nullopt, .token = std::nullopt, .diagnostic = {}};
+        return {.status = GcMaintenanceReadStatus::Absent, .state = std::nullopt, .etag = std::nullopt, .diagnostic = {}};
     try
     {
         return {.status = GcMaintenanceReadStatus::Valid, .state = decodeGcMaintenanceState(got->bytes),
-            .token = got->token, .diagnostic = {}};
+            .etag = got->etag, .diagnostic = {}};
     }
     catch (const DB::Exception & e)
     {
         if (e.code() != ErrorCodes::CORRUPTED_DATA)
             throw;
         return {.status = GcMaintenanceReadStatus::Corrupt, .state = std::nullopt,
-            .token = got->token, .diagnostic = e.message()};
+            .etag = got->etag, .diagnostic = e.message()};
     }
 }
 
-GcMaintenanceCasResult casGcMaintenanceState(
-    Backend & backend, const Layout & layout, const std::optional<Token> & expected, const GcMaintenanceState & next)
+WriteResult casGcMaintenanceState(
+    CasOperation & op, const Layout & layout, const std::optional<Etag> & expected,
+    const GcMaintenanceState & next, const Retry & policy)
 {
-    const CasResult result = backend.casPut(layout.gcMaintenanceStateKey(), encodeGcMaintenanceState(next), expected);
-    if (result.outcome == CasOutcome::Committed)
-        return {.outcome = GcMaintenanceCasOutcome::Committed, .token = result.token};
-    return {.outcome = GcMaintenanceCasOutcome::Conflict, .token = {}};
+    const String key = layout.gcMaintenanceStateKey();
+    const String bytes = encodeGcMaintenanceState(next);
+    return expected ? op.replace(key, bytes, *expected, policy) : op.create(key, bytes, policy);
 }
 
 }

@@ -724,6 +724,55 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_schema_evolution_show_create_and_drop(started_cluster):
+    """SHOW CREATE TABLE must reflect columns added/dropped via ALTER.
+
+    Reproducer for the bug where GlueCatalog::updateSchema only updated
+    metadata_location but not StorageDescriptor.Columns, causing
+    SHOW CREATE TABLE to return a stale schema and DROP COLUMN to fail
+    with NOT_FOUND_COLUMN_IN_BLOCK.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_show_create_drop_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(name Nullable(String))")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('Alice');", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN column_a Nullable(String);", settings=write_settings)
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN column_b Nullable(Int64);", settings=write_settings)
+
+    assert node.query(f"SELECT * FROM {table_ref}") == "Alice\t\\N\t\\N\n"
+
+    show_create = node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert "column_a" in show_create, f"column_a missing from SHOW CREATE:\n{show_create}"
+    assert "column_b" in show_create, f"column_b missing from SHOW CREATE:\n{show_create}"
+
+    node.query(f"ALTER TABLE {table_ref} DROP COLUMN column_a;", settings=write_settings)
+
+    show_create = node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert "column_a" not in show_create, f"column_a still in SHOW CREATE after DROP:\n{show_create}"
+    assert "column_b" in show_create, f"column_b missing from SHOW CREATE after DROP:\n{show_create}"
+
+    assert node.query(f"SELECT name, column_b FROM {table_ref}") == "Alice\t\\N\n"
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN column_c Nullable(String);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} (name, column_b, column_c) VALUES ('Bob', 42, 'hello');", settings=write_settings)
+
+    show_create = node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert "column_c" in show_create, f"column_c missing from SHOW CREATE:\n{show_create}"
+    assert "column_a" not in show_create, f"column_a reappeared in SHOW CREATE:\n{show_create}"
+
+    result = node.query(f"SELECT name, column_b, column_c FROM {table_ref} ORDER BY name")
+    assert result == "Alice\t\\N\t\\N\nBob\t42\thello\n"
+
+
 def test_schema_evolution(started_cluster):
     node = started_cluster.instances["node1"]
 

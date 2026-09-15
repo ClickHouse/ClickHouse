@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasBlobMetaFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEnumWireTableAsserts.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -17,26 +18,30 @@ namespace DB::Cas
 namespace
 {
 
-std::string_view metaStateToWord(MetaState s)
+namespace BlobMetaWire
 {
-    switch (s)
-    {
-        case MetaState::Clean:     return "clean";
-        case MetaState::Condemned: return "condemned";
-    }
-    // The enum is persisted as a closed vocabulary. Do not silently invent a spelling for a value
-    // added without a corresponding format decision: that would make the writer emit data older
-    // readers cannot classify.
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS blob meta: unknown MetaState {}", static_cast<int>(s));
+    constexpr WireKey state{"state"};
+    constexpr WireKey condemn_round{"condemn_round"};
+    constexpr WireKey size{"size"};
 }
 
-MetaState metaStateFromWord(std::string_view w)
-{
-    if (w == "clean")     return MetaState::Clean;
-    if (w == "condemned") return MetaState::Condemned;
-    throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS blob meta: unknown state '{}'", w);
+constexpr EnumWireTable<MetaState, 2> kMetaStateWords{{{
+    {MetaState::Clean, "clean"},
+    {MetaState::Condemned, "condemned"},
+}}};
+
+static_assert(casEnumTableCoversEnum<kMetaStateWords, MetaState>());
+
 }
 
+std::string_view metaStateToWireWord(MetaState state)
+{
+    return kMetaStateWords.toWord(state, "CAS blob meta");
+}
+
+MetaState metaStateFromWireWord(std::string_view w)
+{
+    return kMetaStateWords.fromWord(w, "CAS blob meta");
 }
 
 String encodeBlobMeta(const BlobMeta & meta)
@@ -46,12 +51,9 @@ String encodeBlobMeta(const BlobMeta & meta)
     // `version` is represented by the header line. The JSON body contains only fields that describe
     // the current marker and its accounting data.
     bool first = true;
-    writeKey(out, "st", first);
-    writeStringValue(out, metaStateToWord(meta.state));
-    writeKey(out, "cr", first);
-    writeU64StringValue(out, meta.condemn_round);
-    writeKey(out, "sz", first);
-    writeU64StringValue(out, meta.size);
+    writeWordField(out, BlobMetaWire::state, metaStateToWireWord(meta.state), first);
+    writeU64StringField(out, BlobMetaWire::condemn_round, meta.condemn_round, first);
+    writeU64StringField(out, BlobMetaWire::size, meta.size, first);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -72,20 +74,20 @@ BlobMeta decodeBlobMeta(std::string_view bytes)
     String key;
     while (r.nextKey(key))
     {
-        if (key == "st")
+        if (key == BlobMetaWire::state)
         {
-            m.state = metaStateFromWord(r.readString());
+            m.state = metaStateFromWireWord(r.readString());
             saw_state = true;
         }
-        else if (key == "cr")
+        else if (key == BlobMetaWire::condemn_round)
             m.condemn_round = r.readU64String();
-        else if (key == "sz")
+        else if (key == BlobMetaWire::size)
             m.size = r.readU64String();
         else
             r.skipUnknown(key);
     }
     if (!saw_state)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS blob meta: missing st");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS blob meta: missing state");
     if (!body_in.eof() || !in.eof())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS blob meta: trailing bytes");
     return m;

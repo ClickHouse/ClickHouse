@@ -7,17 +7,22 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 
+#include <Poco/Exception.h>
+
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <exception>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 
 /// Task 3 (spec §A1, site 1): the region of `CasRefLedger::commitRefChunk` between "this chunk's
@@ -53,6 +58,12 @@ using namespace DB::Cas;
 namespace
 {
 
+bool manifestKeyExists(const BackendPtr & backend, const String & key)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    return (*op).head(key, Retry::standard()).has_value();
+}
+
 PoolPtr openPool(const BackendPtr & backend)
 {
     /// A fresh pool with no residue, mirroring `gtest_cas_ref_chunked_flush.cpp`'s `openPool`.
@@ -60,57 +71,41 @@ PoolPtr openPool(const BackendPtr & backend)
     return Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 }
 
-/// As `openPool`, but with a SINGLE-attempt request budget, which is what makes one ambiguous `PUT`
-/// conclusive: with retries allowed the controller's resolve-before-reissue would either re-`PUT` (the
-/// object never landed) or prove the object durable (it did) and report `Committed`, and neither of the
-/// wedge arms under test would ever be reached. Same budget shape as
-/// `gtest_cas_ref_chunked_flush.cpp`'s `runChunkFailureCase`, including the short timeouts so there is
-/// no inter-attempt sleep to serve.
-PoolPtr openPoolSingleAttempt(const BackendPtr & backend)
+/// As `openPool`, but with the budget that bounds the mount lease's own admission arithmetic:
+/// `attempt_timeout_ms` is what one attempt reserves and `lease_safety_margin_ms` the room kept past
+/// it, which together decide the two fence predicates the pre-attempt tests below drive. No budget
+/// field bounds a write's ATTEMPT COUNT -- that is the `Retry` policy's, and the ref lane's is
+/// `standard` -- so what makes an injected fault conclusive in these tests is that it stays armed for
+/// the whole call (`LatchedChunkFaultBackend`) while `VirtualRetryClock` carries the call to its own
+/// deadline.
+PoolPtr openPoolWedgeBudget(const BackendPtr & backend)
 {
     DB::Cas::tests::seedPoolMetaForRestart(*backend);
     PoolConfig cfg{.pool_prefix = "p", .server_root_id = "test"};
     CasRequestBudget budget;
-    /// ONE attempt is the whole mechanism these tests need: it is what turns an injected lost
-    /// acknowledgement into `Unresolved` instead of a transparent retry, and it does so independently of
-    /// how fast the machine is.
-    ///
-    /// The operation deadline must therefore NOT sit at `attempt_timeout_ms`, which is where it used to.
-    /// The controller's pre-send gate (`putIfAbsentControlled`: `now + attempt_timeout > deadline`
-    /// returns `Unresolved` WITHOUT sending) is then a zero-width race that passes only if no
-    /// millisecond tick elapses between the deadline capture and the gate. Under parallel-build load it
-    /// loses: the gate fires first, nothing is sent, the injected fault is never reached, and the flush
-    /// fails CLEAN -- so the product correctly does NOT wedge the lane and the wedge expectations flip.
-    /// `UncertainPrecommitKeepsItsCleanupOwnerAndItsBody` was observed failing exactly that way (Task 9,
-    /// `refLaneWedgedForTest` false at the wedge assertion), and every test on this fixture carries the
-    /// same razor. Same root cause and same fix as `8f9e63c7a19` for the sweep-interruption test.
-    ///
-    /// A WIDE deadline keeps the request always actually sent, so the injected fault decides the outcome
-    /// rather than the scheduler. Tests that want the pre-send REFUSAL instead use
-    /// `openPoolFenceControlled`, where a frozen clock makes that refusal deterministic rather than raced.
-    budget.max_attempts = 1;
     budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;
     budget.lease_safety_margin_ms = 100;
     cfg.cas_request_budget = budget;
     return Pool::open(backend, cfg);
 }
 
+using DB::Cas::tests::LatchedChunkFaultBackend;
+using DB::Cas::tests::VirtualRetryClock;
+
 /// The mount-fence deadlines the pre-attempt tests drive, in the FROZEN boot clock of
 /// `openPoolFenceControlled` (which is pinned at 0, so these are also the remaining lease budgets).
 ///
-/// `CasMountRuntime` has TWO fence predicates and they are deliberately not the same:
-///   `mayMutate`         -- `now < deadline`; the top-of-flush gate in `flushRefBatch`.
-///   `refAppendFenceOk`  -- additionally `attempt_timeout_ms + lease_safety_margin_ms < deadline - now`,
-///                          i.e. "there is room for one whole controlled attempt"; the `fence_ok`
-///                          `commitRefChunk` hands to `putIfAbsentControlled`.
-/// With `openPoolFenceControlled`'s budget below that margin is 100 + 100 = 200 ms, so a 100 ms
-/// remaining lease sits BETWEEN them: the flush is admitted and then its very first pre-attempt gate
-/// refuses. That is
-/// exactly the production shape this task is about (a lease too short to start a write, not a lost
-/// one), and it needs no fault injection at all -- which is the point: nothing is sent.
+/// `mayMutate` -- `now < deadline` -- is the top-of-flush gate in `flushRefBatch`. Behind it the fence
+/// is asked again by everything the flush issues, and each of those refuses until its own reservation
+/// plus `lease_safety_margin_ms` (100) is STRICTLY cleared:
+///   a `CasOperation::admitted` guard (e.g. `namespaceLife`'s "resident namespace life" one) reserves
+///     nothing                                                      -- clears above 100;
+///   a read reserves one attempt envelope                           -- clears above 200;
+///   a write reserves TWO, the attempt and the read that settles it -- clears above 300.
+/// A "pre-attempt refusal" test wants the flush admitted and everything on the way in to pass while
+/// the append's own first request is refused, so it sits strictly between the second and the third.
 constexpr uint64_t FENCE_DEADLINE_HEALTHY_MS = 30000;
-constexpr uint64_t FENCE_DEADLINE_REFUSES_ATTEMPT_MS = 100;
+constexpr uint64_t FENCE_DEADLINE_REFUSES_ATTEMPT_MS = 250;
 
 /// A legal blob-free part: stage an empty manifest, precommit, promote -- enough to drive real
 /// ref-log transactions through the append lane.
@@ -125,7 +120,7 @@ void publishEmptyPart(const PoolPtr & s, const RootNamespace & ns, const String 
     build->promote(ns, ref, build->buildId(), id);
 }
 
-/// As `openPoolSingleAttempt`, but with the mount fence under the TEST's control instead of the wall
+/// As `openPoolWedgeBudget`, but with the mount fence under the TEST's control instead of the wall
 /// clock's:
 ///   - the boot clock is FROZEN at 0, so `setMountDeadline` alone decides both fence predicates and no
 ///     elapsed real time can flip one of them mid-test (the same load-bearing injection, for the same
@@ -133,25 +128,27 @@ void publishEmptyPart(const PoolPtr & s, const RootNamespace & ns, const String 
 ///   - lease renewal is parked an hour out, so the runtime-owned renewal worker cannot re-arm the deadline
 ///     underneath a test that just shortened it. Ten seconds (the default) would be enough in practice
 ///     and flaky in principle; this removes the race rather than betting on it.
-PoolPtr openPoolFenceControlled(const BackendPtr & backend)
+PoolPtr openPoolFenceControlled(const std::shared_ptr<DB::Cas::InMemoryBackend> & backend)
 {
     DB::Cas::tests::seedPoolMetaForRestart(*backend);
     PoolConfig cfg{.pool_prefix = "p", .server_root_id = "test"};
     cfg.boot_ms_fn = [] { return uint64_t{0}; };
     cfg.mount_renew_period = std::chrono::milliseconds{3600000};
     CasRequestBudget budget;
-    budget.max_attempts = 1;
     budget.attempt_timeout_ms = 100;
-    budget.operation_deadline_ms = 5000;   /// strictly above attempt_timeout_ms: equality is a wall-clock race (validateCasRequestBudget)
     budget.lease_safety_margin_ms = 100;
     cfg.cas_request_budget = budget;
+    /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the budget
+    /// field; production pairs the two in `ContentAddressedMetadataStorage`, and a fixture that sets
+    /// only the budget leaves the engine reserving nothing and no pre-attempt gate to refuse.
+    backend->setAttemptTimeoutMs(budget.attempt_timeout_ms);
     return Pool::open(backend, cfg);
 }
 
 /// Runs `f`, requires it to throw the ref lane's retry-later condition, and returns the message so a
-/// caller can assert WHICH condition it was. The message is the only place the `CasUnresolvedReason`
-/// surfaces -- there is no accessor for it, by design (it is a diagnostic, not state) -- so this is how
-/// a test proves the reason actually reached the decision site instead of defaulting.
+/// caller can assert WHICH condition it was. The message is the only place the lane's own reading of a
+/// give-up surfaces -- there is no accessor for it, by design (it is a diagnostic, not state) -- so
+/// this is how a test proves the verdict reached the decision site instead of defaulting.
 String retryLaterMessageOf(const std::function<void()> & f)
 {
     try
@@ -165,6 +162,41 @@ String retryLaterMessageOf(const std::function<void()> & f)
     }
     ADD_FAILURE() << "expected the CAS retry-later condition, but nothing was thrown";
     return {};
+}
+
+/// `retryLaterMessageOf` with the fault held armed for the whole call, and with the give-up proven to
+/// be the call's OWN retry window: the write engine settles each ambiguity by an exact read and then
+/// reissues, so a bounded fault would be outlived and the write would commit. The pacing assertions
+/// are what make a fixture whose sleep seam is not wired fail rather than sleep the window out for
+/// real.
+String wedgingRetryLaterMessageOf(VirtualRetryClock & clock, LatchedChunkFaultBackend & backend,
+                                  const std::function<void()> & f)
+{
+    const size_t pauses_before = clock.pauseCount();
+    const uint64_t clock_before = clock.nowMs();
+    backend.latched = true;
+    const String message = retryLaterMessageOf(f);
+    /// Disarmed COMPLETELY, not just unlatched: what every caller does next is a flush that must reach
+    /// the store normally -- the wedge resolution, or an abandon. A topped-up count or a still-armed
+    /// lost read would fault that one too, and a wedge resolution whose settling read fails does not
+    /// resolve anything.
+    backend.latched = false;
+    backend.mode = LatchedChunkFaultBackend::Mode::None;
+    backend.fault_count = 0;
+    backend.fault_skip = 0;
+    backend.fail_read_once_key.clear();
+    EXPECT_GT(clock.pauseCount(), pauses_before + 1)
+        << "the reissues must pace through the injected sleep, never a real one";
+    EXPECT_LE(clock.longestPause(), 5000u) << "each pause is the engine's own capped full jitter";
+    EXPECT_GE(clock.nowMs() - clock_before, 60000u)
+        << "the give-up must be the call's own retry window, not a pre-attempt refusal";
+    return message;
+}
+
+void driveToTheWedge(VirtualRetryClock & clock, LatchedChunkFaultBackend & backend,
+                     const std::function<void()> & f)
+{
+    (void)wedgingRetryLaterMessageOf(clock, backend, f);
 }
 
 /// Installs a ONE-SHOT throwing probe into the post-durable install regions (spec §A2): the next region
@@ -243,8 +275,9 @@ TEST(CASRefInstallSafety, PostDurableInstallIsAllocationFree)
 /// counter must NOT advance -- an unproven transaction is not a recorded one.
 TEST(CASRefInstallSafety, UnresolvedAlwaysRecordsTheWedge)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/unresolved_wedge"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -257,7 +290,8 @@ TEST(CASRefInstallSafety, UnresolvedAlwaysRecordsTheWedge)
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::Unresolved;
     backend->fault_count = 1;
 
-    const String message = retryLaterMessageOf([&] { publishEmptyPart(store, ns, "part_a"); });
+    const String message = wedgingRetryLaterMessageOf(*clock, *backend,
+        [&] { publishEmptyPart(store, ns, "part_a"); });
 
     EXPECT_TRUE(store->refLaneWedgedForTest(ns)) << "an Unresolved PUT must always leave a wedge";
     const String wedged_key = store->wedgedKeyForTest(ns);
@@ -272,9 +306,9 @@ TEST(CASRefInstallSafety, UnresolvedAlwaysRecordsTheWedge)
     /// backend's `putIfAbsent`, so the request reached it), the single-attempt budget is then spent, and
     /// the lane wedges. The message must say so -- and must NOT say "no attempt was sent", which is the
     /// only shape allowed to skip the wedge.
-    EXPECT_NE(message.find("attempt budget was exhausted"), String::npos)
+    EXPECT_NE(message.find("is UNCERTAIN"), String::npos)
         << "the reason must reach the wedge message rather than defaulting: " << message;
-    EXPECT_EQ(message.find("no attempt was sent"), String::npos)
+    EXPECT_EQ(message.find("BEFORE any request was sent"), String::npos)
         << "an ambiguous PUT is not a pre-attempt refusal: " << message;
 }
 
@@ -314,7 +348,7 @@ TEST(CASRefInstallSafety, PreAttemptRefusalDoesNotWedgeTheLane)
 
     const String message = retryLaterMessageOf([&] { store->dropRef(ns, "part_a"); });
 
-    EXPECT_NE(message.find("no attempt was sent"), String::npos)
+    EXPECT_NE(message.find("refused BEFORE any request was sent"), String::npos)
         << "the caller must be told WHY, and this is the reason the no-wedge decision rests on: " << message;
     EXPECT_FALSE(store->refLaneWedgedForTest(ns))
         << "nothing was sent, so nothing can be durable: there is no ambiguity for a wedge to resolve";
@@ -330,8 +364,8 @@ TEST(CASRefInstallSafety, PreAttemptRefusalDoesNotWedgeTheLane)
         << "the refused drop must not have taken effect";
 
     /// The availability half of the claim: the lane is usable the moment the lease is healthy again --
-    /// no remount, no wedge resolution, nothing to clear. Before this task the same sequence left a
-    /// wedge over a key that was never written, and this append would have failed forever.
+    /// no remount, no wedge resolution, nothing to clear. A refused pre-attempt never writes a key,
+    /// so it cannot leave a wedge to block this append.
     store->setMountDeadline(FENCE_DEADLINE_HEALTHY_MS);
     store->dropRef(ns, "part_a");
     EXPECT_FALSE(store->resolveRef(ns, "part_a", /*allow_stale=*/false).has_value())
@@ -352,8 +386,9 @@ TEST(CASRefInstallSafety, PreAttemptRefusalDoesNotWedgeTheLane)
 /// that never can.
 TEST(CASRefInstallSafety, PreAttemptRefusalAfterAWedgeResolutionLeavesTheLaneClean)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
     auto store = openPoolFenceControlled(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/pre_attempt_after_unwedge"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -364,12 +399,12 @@ TEST(CASRefInstallSafety, PreAttemptRefusalAfterAWedgeResolutionLeavesTheLaneCle
     publishEmptyPart(store, ns, "y");
     const size_t tail_after_seed = store->tailSinceSnapshotCountForTest(ns);
 
-    /// Wedge over an object that IS durable: the write lands, its acknowledgement is lost, and the
-    /// controller's own verifying read is lost too (the only mode that reaches the resolution install).
+    /// Wedge over an object that IS durable: the write lands, its acknowledgement is lost, and every
+    /// settling read of the key is lost too (the only mode that reaches the resolution install).
     backend->fault_substr = store->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::LandedThenLost;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
+    driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
     ASSERT_EQ(store->tailSinceSnapshotCountForTest(ns), tail_after_seed);
 
@@ -383,7 +418,7 @@ TEST(CASRefInstallSafety, PreAttemptRefusalAfterAWedgeResolutionLeavesTheLaneCle
     const String message = retryLaterMessageOf([&] { store->dropRef(ns, "y"); });
     store->setRefPreCarveHookForTest(nullptr);
 
-    EXPECT_NE(message.find("no attempt was sent"), String::npos) << message;
+    EXPECT_NE(message.find("refused BEFORE any request was sent"), String::npos) << message;
     EXPECT_FALSE(store->refLaneWedgedForTest(ns))
         << "the wedge that existed was RESOLVED, and the chunk that followed it was never sent -- the "
            "lane must be left clean, not re-wedged over an id that can never resolve";
@@ -407,8 +442,9 @@ TEST(CASRefInstallSafety, PreAttemptRefusalAfterAWedgeResolutionLeavesTheLaneCle
 /// lane must wedge again, now over the NEW transaction.
 TEST(CASRefInstallSafety, AmbiguousChunkAfterAWedgeResolutionRewedgesTheLane)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
     auto store = openPoolFenceControlled(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/ambiguous_after_unwedge"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -422,19 +458,19 @@ TEST(CASRefInstallSafety, AmbiguousChunkAfterAWedgeResolutionRewedgesTheLane)
     backend->fault_substr = store->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::LandedThenLost;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
+    driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
     const String first_wedged_key = store->wedgedKeyForTest(ns);
     ASSERT_FALSE(first_wedged_key.empty());
 
     /// The resolution is a conditional CREATE at the wedged key now, and that key already holds our
-    /// own landed object, so it conflicts and the follow-up read adopts it (`LandedThenLost`'s one-shot
-    /// lost read was consumed inside the previous attempt, so this read succeeds). `fault_skip` lets
-    /// that create through and puts the fault on this flush's OWN chunk PUT, which is the subject.
+    /// own landed object, so it conflicts and the settling read adopts it -- the lost-read leg is
+    /// disarmed above, so that read succeeds. `fault_skip` lets that create through and puts the fault
+    /// on this flush's OWN chunk PUT, which is the subject.
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::Unresolved;
     backend->fault_skip = 1;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "y"); });
+    driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "y"); });
 
     EXPECT_TRUE(store->refLaneWedgedForTest(ns))
         << "an attempt was sent for the new chunk, so its object may be durable: the lane must wedge";
@@ -446,39 +482,88 @@ TEST(CASRefInstallSafety, AmbiguousChunkAfterAWedgeResolutionRewedgesTheLane)
         << "a wedged lane may hold a durable transaction the runtime has not recorded";
 }
 
-/// Task 18's regression guard, asserted on the mapping itself rather than through six pieces of fault
-/// choreography. `unresolvedProvesNothingWasSent` is the whole decision: the ledger wedges unless it
-/// answers true, so this table IS the protocol.
+/// The whole wedge decision, as one table. `GaveUp::sent_any` is what the ledger branches on -- it
+/// returns the attempt to `Ready` when nothing was sent and wedges otherwise -- so this table IS the
+/// protocol. Each row is DRIVEN rather than asserted about a mapping: the point of the old enum-shaped
+/// version was that a value could be listed without any way to reach it.
 ///
-/// What protects a future contributor who adds a `CasUnresolvedReason` member and forgets this file:
-/// the predicate is a switch with NO `default`, so the addition is a `-Wswitch` build error (a forced
-/// decision, not a silent one), and its trailing `return false` makes the runtime answer "wedge" even
-/// if that diagnostic is ever suppressed. Both directions fail closed; neither can widen the allow-list
-/// by omission. The `static_assert`s make the mapping a compile-time fact, and the `EXPECT`s repeat it
-/// so a break names the offending value in the test report.
-TEST(CASRefInstallSafety, OnlyNoAttemptSentMaySkipTheWedge)
+/// `sent_any` is set on the line before the attempt goes out, so exactly one shape can report it false:
+/// every gate refused before the first request. The four rows below it are the ways a call can end
+/// AFTER something reached the network, and each leaves an object that may be durable.
+TEST(CASRefInstallSafety, OnlySendingNothingMaySkipTheWedge)
 {
-    static_assert(unresolvedProvesNothingWasSent(CasUnresolvedReason::NoAttemptSent));
-    static_assert(!unresolvedProvesNothingWasSent(CasUnresolvedReason::NotUnresolved));
-    static_assert(!unresolvedProvesNothingWasSent(CasUnresolvedReason::FenceLostMidWay));
-    static_assert(!unresolvedProvesNothingWasSent(CasUnresolvedReason::DeadlineMidWay));
-    static_assert(!unresolvedProvesNothingWasSent(CasUnresolvedReason::FenceLostPostWrite));
-    static_assert(!unresolvedProvesNothingWasSent(CasUnresolvedReason::AttemptsExhausted));
+    /// Row 1: the caller's own facts refuse before the attempt. Nothing reaches the store.
+    {
+        auto backend = std::make_shared<DB::Cas::tests::CountingBackend>();
+        CasRequests requests(backend, Fence::open());
+        CasOperation op = requests.admit([] { return false; });
+        const WriteResult result = op.create("k", "v", Retry::standard());
+        const auto * gave_up = std::get_if<GaveUp>(&result);
+        ASSERT_TRUE(gave_up != nullptr);
+        EXPECT_FALSE(gave_up->sent_any)
+            << "the pre-attempt gates rejected before the first request: the key is provably unwritten";
+        EXPECT_EQ(backend->writeTotal(), 0u);
+    }
 
-    EXPECT_TRUE(unresolvedProvesNothingWasSent(CasUnresolvedReason::NoAttemptSent))
-        << "the pre-attempt gates rejected before the first request: the key is provably unwritten";
-    /// `NotUnresolved` is reachable at the decision site if any path ever returns `Unresolved` without
-    /// recording a reason, so it is listed here as a real case, not as enum hygiene.
-    EXPECT_FALSE(unresolvedProvesNothingWasSent(CasUnresolvedReason::NotUnresolved))
-        << "an unrecorded reason proves nothing and must keep wedging";
-    EXPECT_FALSE(unresolvedProvesNothingWasSent(CasUnresolvedReason::FenceLostMidWay))
-        << "an attempt was already sent: its object may be durable";
-    EXPECT_FALSE(unresolvedProvesNothingWasSent(CasUnresolvedReason::DeadlineMidWay))
-        << "an attempt was already sent: its object may be durable";
-    EXPECT_FALSE(unresolvedProvesNothingWasSent(CasUnresolvedReason::FenceLostPostWrite))
-        << "the attempt COMMITTED and only the fence was lost afterwards -- the most durable case of all";
-    EXPECT_FALSE(unresolvedProvesNothingWasSent(CasUnresolvedReason::AttemptsExhausted))
-        << "every attempt is a candidate for having landed";
+    /// Row 2: the OTHER pre-attempt refusal. Same verdict, a different bound.
+    {
+        auto backend = std::make_shared<DB::Cas::tests::CountingBackend>();
+        uint64_t clock = 0;
+        CasRequests requests(backend, Fence::open(),
+                             [&clock]() -> uint64_t { const uint64_t t = clock; clock += 1000; return t; });
+        CasOperation op = requests.admit();
+        const WriteResult result = op.create("k", "v", Retry::within(500));
+        const auto * gave_up = std::get_if<GaveUp>(&result);
+        ASSERT_TRUE(gave_up != nullptr);
+        EXPECT_EQ(gave_up->why, GaveUp::Why::Deadline);
+        EXPECT_FALSE(gave_up->sent_any);
+        EXPECT_EQ(backend->writeTotal(), 0u);
+    }
+
+    /// Row 3: an attempt was sent and its outcome never settled.
+    {
+        auto backend = std::make_shared<DB::Cas::tests::CountingBackend>();
+        backend->injectAmbiguousWrite("k");
+        CasRequests requests(backend, Fence::open());
+        CasOperation op = requests.admit();
+        const WriteResult result = op.create("k", "v", Retry::once());
+        const auto * gave_up = std::get_if<GaveUp>(&result);
+        ASSERT_TRUE(gave_up != nullptr);
+        EXPECT_EQ(gave_up->why, GaveUp::Why::Unresolved);
+        EXPECT_TRUE(gave_up->sent_any) << "an attempt was already sent: its object may be durable";
+    }
+
+    /// Row 4: the attempt COMMITTED and only the admission was lost afterwards -- the most durable case
+    /// of all, and the one a caller is most tempted to report as success.
+    {
+        auto backend = std::make_shared<DB::Cas::tests::CountingBackend>();
+        bool live = true;
+        backend->onWriteCommitted("k", [&live] { live = false; });
+        CasRequests requests(backend, Fence::open());
+        CasOperation op = requests.admit([&live] { return live; });
+        const WriteResult result = op.create("k", "v", Retry::standard());
+        const auto * gave_up = std::get_if<GaveUp>(&result);
+        ASSERT_TRUE(gave_up != nullptr);
+        EXPECT_EQ(gave_up->why, GaveUp::Why::FenceLost);
+        EXPECT_TRUE(gave_up->sent_any);
+        EXPECT_EQ(backend->writeTotal(), 1u) << "and the object IS there";
+    }
+
+    /// Row 5: the deadline arrives AFTER an attempt rather than before one. The clock is moved by a
+    /// hook that runs inside the write, so the first attempt is admitted and the settling read is not.
+    {
+        auto backend = std::make_shared<DB::Cas::tests::CountingBackend>();
+        uint64_t clock = 0;
+        backend->onBeforeWrite("k", [&clock] { clock = 100'000; });
+        backend->injectAmbiguousWrite("k");
+        CasRequests requests(backend, Fence::open(), [&clock]() -> uint64_t { return clock; });
+        CasOperation op = requests.admit();
+        const WriteResult result = op.create("k", "v", Retry::within(1000));
+        const auto * gave_up = std::get_if<GaveUp>(&result);
+        ASSERT_TRUE(gave_up != nullptr);
+        EXPECT_EQ(gave_up->why, GaveUp::Why::Deadline);
+        EXPECT_TRUE(gave_up->sent_any) << "an attempt was already sent: its object may be durable";
+    }
 }
 
 /// Task 5 (spec §A1, site 2). Resolving a wedge is a post-durable install too: the resolving GET PROVES
@@ -495,8 +580,9 @@ TEST(CASRefInstallSafety, OnlyNoAttemptSentMaySkipTheWedge)
 /// bumped once per install, so a re-applied transaction shows up as one extra.
 TEST(CASRefInstallSafety, WedgeResolutionInstallsExactlyOnce)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/wedge_resolution"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -509,13 +595,13 @@ TEST(CASRefInstallSafety, WedgeResolutionInstallsExactlyOnce)
     /// whole test is a handful of tiny transactions, so every delta below is exact.
     const size_t tail_after_seed = store->tailSinceSnapshotCountForTest(ns);
 
-    /// Drop "x" through a PUT that LANDS and then loses its response, plus the one-shot lost read that
-    /// keeps the controller's own resolve-before-reissue from settling it inside the same attempt. One
-    /// attempt, so the lane wedges over an object that is genuinely durable -- the only way in.
+    /// Drop "x" through a PUT that LANDS and then loses its response, plus the lost settling read that
+    /// keeps the engine from proving the commit inside the same call. Both stay armed for the whole
+    /// call, so the lane wedges over an object that is genuinely durable -- the only way in.
     backend->fault_substr = store->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::LandedThenLost;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
+    driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
 
     ASSERT_TRUE(store->refLaneWedgedForTest(ns)) << "the lost-response drop must wedge the lane";
     ASSERT_FALSE(store->wedgedKeyForTest(ns).empty());
@@ -631,8 +717,9 @@ TEST(CASRefInstallSafety, WritingOwnsTheAttemptUntilInstall)
 /// Ambiguity transfers the same exact attempt from `Writing` to `Wedged`.
 TEST(CASRefInstallSafety, UnresolvedTransfersWritingToWedged)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/apply_state_wedge"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -643,7 +730,7 @@ TEST(CASRefInstallSafety, UnresolvedTransfersWritingToWedged)
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::Unresolved;
     backend->fault_count = 1;
 
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { publishEmptyPart(store, ns, "part_a"); });
+    driveToTheWedge(*clock, *backend, [&] { publishEmptyPart(store, ns, "part_a"); });
 
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Wedged)
@@ -653,8 +740,9 @@ TEST(CASRefInstallSafety, UnresolvedTransfersWritingToWedged)
 /// Durable resolution installs the attempt and returns the lane to `Ready`.
 TEST(CASRefInstallSafety, WedgeResolutionReturnsReady)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/apply_state_unwedge"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -665,11 +753,11 @@ TEST(CASRefInstallSafety, WedgeResolutionReturnsReady)
     publishEmptyPart(store, ns, "y");
 
     /// The one mode that wedges over a GENUINELY durable object (see `ChunkFaultBackend`): the write
-    /// lands, its acknowledgement is lost, and the controller's own verifying read is lost too.
+    /// lands, its acknowledgement is lost, and every settling read of the key is lost too.
     backend->fault_substr = store->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::LandedThenLost;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
+    driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
     ASSERT_EQ(store->laneStateForTest(ns), RefLaneState::Wedged);
 
@@ -684,8 +772,8 @@ TEST(CASRefInstallSafety, WedgeResolutionReturnsReady)
 /// A foreign occupant is a terminal `Faulted` verdict.
 TEST(CASRefInstallSafety, ConclusiveForeignConflictFaultsTheLane)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
     const RootNamespace ns{"srv1/apply_state_conflict"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -711,8 +799,8 @@ TEST(CASRefInstallSafety, DefiniteFailureReturnsReady)
 #if !USE_AWS_S3
     GTEST_SKIP() << "DefiniteFailure classification requires S3 error types (USE_AWS_S3 off)";
 #else
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
     const RootNamespace ns{"srv1/apply_state_definite"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -743,8 +831,9 @@ TEST(CASRefInstallSafety, DefiniteFailureReturnsReady)
 /// `CASAnomalyPolicy.ForeignBytesAtWedgeKeyTripFenceAndRemount`'s.
 TEST(CASRefInstallSafety, WedgeResolutionProvenForeignFaultsTheLane)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/apply_state_foreign_wedge"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -757,7 +846,7 @@ TEST(CASRefInstallSafety, WedgeResolutionProvenForeignFaultsTheLane)
     backend->fault_substr = store->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::Unresolved;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
+    driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
     ASSERT_EQ(store->laneStateForTest(ns), RefLaneState::Wedged);
 
     /// Out of band, a foreign writer lands DIFFERENT bytes at the exact wedged key. The fault mode is
@@ -765,7 +854,10 @@ TEST(CASRefInstallSafety, WedgeResolutionProvenForeignFaultsTheLane)
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::None;
     const String wedged_key = store->wedgedKeyForTest(ns);
     ASSERT_FALSE(wedged_key.empty());
-    ASSERT_EQ(backend->putIfAbsent(wedged_key, "a-different-object").outcome, PutOutcome::Done);
+    {
+        DB::Cas::tests::OperationForTest foreign_op(backend);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*foreign_op).create(wedged_key, "a-different-object", Retry::once())));
+    }
 
     DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "y"); });
 
@@ -804,8 +896,9 @@ TEST(CASRefInstallSafety, PostDurableInstallFailureRequiresRecovery)
 /// would have cleared it is in the same region that threw.
 TEST(CASRefInstallSafety, WedgeResolutionInstallFailureRequiresRecovery)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/apply_state_poison_unwedge"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -818,7 +911,7 @@ TEST(CASRefInstallSafety, WedgeResolutionInstallFailureRequiresRecovery)
     backend->fault_substr = store->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::LandedThenLost;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
+    driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
 
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::None;
@@ -886,8 +979,9 @@ TEST(CASRefInstallSafety, NeedsRecoveryReplaysBeforeALaterFlush)
 /// still live once the wedge resolves.
 TEST(CASRefInstallSafety, UncertainPrecommitKeepsItsCleanupOwnerAndItsBody)
 {
-    auto backend = std::make_shared<DB::Cas::tests::ChunkFaultBackend>();
-    auto store = openPoolSingleAttempt(backend);
+    auto backend = std::make_shared<LatchedChunkFaultBackend>();
+    auto store = openPoolWedgeBudget(backend);
+    auto clock = VirtualRetryClock::installOn(store);
     const RootNamespace ns{"srv1/uncertain_precommit"};
     /// Stage B (Task 4-C): pin `ns` to the Stage-A sentinel BEFORE its first real touch, so
     /// the fault injected below (computed from that same sentinel) lands on the key production
@@ -900,15 +994,15 @@ TEST(CASRefInstallSafety, UncertainPrecommitKeepsItsCleanupOwnerAndItsBody)
     auto build = store->beginPartWrite(info);
     const ManifestId id = build->stageManifest({});
     const String manifest_key = store->layout().manifestKey(id);
-    ASSERT_TRUE(backend->head(manifest_key).exists) << "the staged body must exist before the precommit";
+    ASSERT_TRUE(manifestKeyExists(backend, manifest_key)) << "the staged body must exist before the precommit";
 
     /// Scoped to THIS namespace's ref log so the manifest body's own PUT cannot consume the fault. The
-    /// object LANDS and only its acknowledgement is lost, which with the single-attempt budget wedges
-    /// the lane over a genuinely durable precommit -- the exact shape the old code mishandled.
+    /// object LANDS and only its acknowledgement is lost, and no settling read can prove otherwise, so
+    /// the lane wedges over a genuinely durable precommit -- the exact shape the old code mishandled.
     backend->fault_substr = store->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     backend->mode = DB::Cas::tests::ChunkFaultBackend::Mode::LandedThenLost;
     backend->fault_count = 1;
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { build->precommitAdd(ns, "part_a", id); });
+    driveToTheWedge(*clock, *backend, [&] { build->precommitAdd(ns, "part_a", id); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns)) << "the lost-response precommit must wedge the lane";
     EXPECT_EQ(build->precommitState(), PartWriteTxn::PrecommitState::Uncertain)
         << "an append that may have landed is neither 'never precommitted' nor 'durably precommitted'";
@@ -917,7 +1011,7 @@ TEST(CASRefInstallSafety, UncertainPrecommitKeepsItsCleanupOwnerAndItsBody)
     /// precommit durable) and appends the exact removal in the same flush.
     build->abandon();
 
-    EXPECT_TRUE(backend->head(manifest_key).exists)
+    EXPECT_TRUE(manifestKeyExists(backend, manifest_key))
         << "abandon writer-deleted the body of a precommit that may be live -- GC's fold barrier would "
            "clamp on it forever";
     EXPECT_TRUE(store->livePrecommitsForTest(ns).empty())

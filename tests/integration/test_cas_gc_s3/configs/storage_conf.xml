@@ -5,6 +5,8 @@
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
                 <!-- Phase 0 (mount safety): required, validated layout-subtree identity. Single server. -->
                 <cas_server_root_id>itest-content-addressed-gc-s3</cas_server_root_id>
                 <!-- RustFS (not MinIO) enforces the conditional-PUT/DELETE semantics the CA mount

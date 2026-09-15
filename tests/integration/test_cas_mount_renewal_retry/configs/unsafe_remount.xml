@@ -1,0 +1,14 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_cas_renewal>
+                <!-- Test-stand-only overlay: copied into config.d while the server is stopped, to
+                     prove cas_unsafe_remount_no_delay skips the token-stability observation wait on a
+                     second hard restart, once this server's own uuid already holds the mount slot. -->
+                <cas_unsafe_remount_no_delay>1</cas_unsafe_remount_no_delay>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
+            </disk_cas_renewal>
+        </disks>
+    </storage_configuration>
+</clickhouse>

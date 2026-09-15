@@ -1,3 +1,4 @@
+#include <Common/HTTPConnectionPool.h>
 #include <gtest/gtest.h>
 
 #include <IO/S3/Credentials.h>
@@ -18,6 +19,7 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/ThreadPool.h>
 #include <Poco/URI.h>
 
 #include <aws/core/client/AWSError.h>
@@ -1055,9 +1057,20 @@ public:
         , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , handler_factory(new Factory(*this))
         , server_params(new Poco::Net::HTTPServerParams())
-        , server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+        , thread_pool("ScriptedResponseServer")
+        , server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, thread_pool, *server_socket, server_params))
     {
         server->start();
+    }
+
+    /// Closing the cached client sockets wakes the server workers without Poco's abort notification,
+    /// whose unlocked socket shutdown races the worker's own close. Precondition: callers have released
+    /// their sessions, otherwise `joinAll` waits for the server's request timeout.
+    ~ScriptedResponseServer()
+    {
+        DB::HTTPConnectionPools::instance().dropCache();
+        server->stop();
+        thread_pool.joinAll();
     }
 
     /// `server_socket->address()` is the wildcard bind address (`0.0.0.0:PORT`), which is not a usable
@@ -1114,6 +1127,11 @@ private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<Factory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    /// A dedicated pool, not `Poco::ThreadPool::defaultPool()` (the `HTTPServer` default): that pool
+    /// is shared with every other local-server test in this binary, and `TCPServerDispatcher::enqueue`
+    /// (base/poco/Net/src/TCPServerDispatcher.cpp) has an acknowledged-in-comment saturation-check race
+    /// when it's shared, which can accept a connection and then close it with no response.
+    Poco::ThreadPool thread_pool;
     std::unique_ptr<Poco::Net::HTTPServer> server;
 };
 

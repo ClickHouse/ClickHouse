@@ -24,7 +24,7 @@ DISK_CA="disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05020',
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05020',
     name = '${DISK_NAME}',
     path = '${POOL_DIR}/')"
 

@@ -66,7 +66,7 @@ PoolPtr openPool(const BackendPtr & backend)
 /// injection/verification that separately computes a key via `DB::Cas::tests::fixture::fixtureLife(ns)`.
 void publishEmptyPart(const PoolPtr & s, const RootNamespace & ns, const String & ref)
 {
-    DB::Cas::tests::casAdmitRecoverableEntry(s->backend(), s->layout(), ns, s->liveWriterEpoch());
+    DB::Cas::tests::casAdmitRecoverableEntry(*s->poolBackendPtr(), s->layout(), ns, s->liveWriterEpoch());
     PartWriteInfo info;
     info.intended_namespace = ns;
     info.intended_ref = ns.string() + "/" + ref;
@@ -96,11 +96,12 @@ struct CaseSync
 /// cache). Used to inspect exactly what a flush durably committed.
 std::optional<RefLogTxn> newestLogTxn(DB::Cas::Backend & backend, const DB::Cas::Layout & layout, const RootNamespace & ns)
 {
+    DB::Cas::tests::OperationForTest operation(backend);
     std::optional<RefTxnId> newest;
     String cursor;
     for (;;)
     {
-        const ListPage page = backend.list(layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000);
+        const ListPage page = (*operation).list(layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000, Retry::standard());
         for (const ListedKey & lk : page.keys)
         {
             const auto parsed = layout.parseRefObjectKey(lk.key);
@@ -115,7 +116,7 @@ std::optional<RefLogTxn> newestLogTxn(DB::Cas::Backend & backend, const DB::Cas:
     }
     if (!newest)
         return std::nullopt;
-    const auto got = backend.get(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), *newest));
+    const auto got = (*operation).read(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), *newest), Retry::standard());
     if (!got)
         return std::nullopt;
     return decodeRefLogTxn(openObject(FormatId::RefLog, got->bytes), ns.string(), *newest);
@@ -126,18 +127,19 @@ std::optional<RefLogTxn> newestLogTxn(DB::Cas::Backend & backend, const DB::Cas:
 size_t committedRemovalCountForRef(DB::Cas::Backend & backend, const DB::Cas::Layout & layout,
                                    const RootNamespace & ns, const String & ref_name)
 {
+    DB::Cas::tests::OperationForTest operation(backend);
     size_t count = 0;
     String cursor;
     for (;;)
     {
-        const ListPage page = backend.list(layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000);
+        const ListPage page = (*operation).list(layout.namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)), cursor, 1000, Retry::standard());
         for (const ListedKey & lk : page.keys)
         {
             const auto parsed = layout.parseRefObjectKey(lk.key);
             if (!parsed || parsed->life_id != DB::Cas::tests::fixture::fixtureLife(ns).incarnation
                 || parsed->kind != RefObjectKind::Log)
                 continue;
-            const auto got = backend.get(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), parsed->txn_id));
+            const auto got = (*operation).read(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), parsed->txn_id), Retry::standard());
             if (!got)
                 continue;
             const RefLogTxn txn = decodeRefLogTxn(openObject(FormatId::RefLog, got->bytes), ns.string(), parsed->txn_id);

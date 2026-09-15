@@ -512,6 +512,17 @@ enum class TextIndexPostingListCodec : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
+/// On-disk serialization format version of text indexes.
+/// These are the on-disk version numbers and must remain stable.
+enum class MergeTreeTextIndexSerializationVersion : uint8_t
+{
+    V0_Initial = 0,
+    V1_WithCodec = 1,
+    V2_WithPositions = 2,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeTextIndexSerializationVersion)
+
 /// NOTE: Part level min-max index depends on strict columns order.
 ///       That means if you want to add new columns segment to index - it will not be materialized until
 ///       previous segment will be materialized in all data parts via mutation or merge.
@@ -620,13 +631,13 @@ enum class MergeTreePartExportFileAlreadyExistsPolicy : uint8_t
 
 DECLARE_SETTING_ENUM(MergeTreePartExportFileAlreadyExistsPolicy)
 
-enum class MergeTreePartExportSchemaMismatchMode : uint8_t
+enum class MergeTreePartExportSchemaMatchMode : uint8_t
 {
-    strict,
-    ignore_extra_source_columns_by_position,
+    POSITION,
+    NAME,
 };
 
-DECLARE_SETTING_ENUM(MergeTreePartExportSchemaMismatchMode)
+DECLARE_SETTING_ENUM(MergeTreePartExportSchemaMatchMode)
 
 enum class ExportPartitionAllOnError : uint8_t
 {

@@ -386,35 +386,39 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
     std::lock_guard lock(mutex);
 
-    /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
+    /// If old config is set, remove deleted clusters; otherwise rebuild ownership from scratch
+    /// while preserving non-automatic entries (e.g. clusters added via setCluster).
     if (old_config)
     {
         for (const auto & key : deleted_keys)
         {
-            if (!automatic_clusters.contains(key))
-                impl.erase(key);
+            automatic_clusters.erase(key);
+            impl.erase(key);
         }
     }
     else
     {
-        if (!automatic_clusters.empty())
-            std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
-        else
-            impl.clear();
+        for (const auto & name : automatic_clusters)
+            impl.erase(name);
+        automatic_clusters.clear();
     }
-
 
     for (const auto & key : new_config_keys)
     {
         if (new_config.has(config_prefix + "." + key + ".discovery"))
         {
-            /// Handled in ClusterDiscovery
+            /// Handled in ClusterDiscovery — must not leave a prior static Cluster in impl,
+            /// or Context::getCluster / getClusters would prefer the stale static entry.
             automatic_clusters.insert(key);
+            impl.erase(key);
             continue;
         }
 
         if (key.contains('.'))
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cluster names with dots are not supported: '{}'", key);
+
+        /// Leaving discovery (or never was discovery): drop automatic ownership for this name.
+        automatic_clusters.erase(key);
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))

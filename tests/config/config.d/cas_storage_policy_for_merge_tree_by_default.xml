@@ -16,7 +16,7 @@
                      replaces the old grace window (M-W D-W5); a short interval so reclamation
                      happens during the run. -->
                 <cas_gc_enabled>1</cas_gc_enabled>
-                <cas_gc_interval_sec>5</cas_gc_interval_sec>
+                <cas_gc_interval_sec>20</cas_gc_interval_sec>
             </cas>
         </disks>
         <policies>

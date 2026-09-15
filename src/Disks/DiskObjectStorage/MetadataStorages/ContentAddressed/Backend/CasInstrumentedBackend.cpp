@@ -15,6 +15,8 @@ extern const Event CASBlobGetStream;
 extern const Event CASBlobDelete;
 extern const Event CASBlobList;
 
+extern const Event CASBulkDeleteRequests;
+
 extern const Event CASManifestPut;
 extern const Event CASManifestPutDeduplicated;
 extern const Event CASManifestOverwrite;
@@ -82,6 +84,10 @@ namespace DB::Cas
 /// Maps `(CasNs, CasOp)` to the corresponding `ProfileEvents::Event`. The table is row-major: the
 /// outer index is the namespace and the inner index is the operation. Its rows and columns must stay
 /// in lockstep with the `CasNs` and `CasOp` enum orderings.
+///
+/// `CasOp::Read` deliberately keeps the `CAS*Get` event names: renaming a user-visible ProfileEvent
+/// is its own change, made when the events are retired, and nothing outside this table would have
+/// been improved by doing it here.
 static const ProfileEvents::Event cas_event_table[CAS_NS_COUNT][CAS_OP_COUNT] =
 {
     /* Blob   */ {ProfileEvents::CASBlobPut, ProfileEvents::CASBlobPutDeduplicated, ProfileEvents::CASBlobOverwrite,
@@ -134,10 +140,18 @@ void incrementCasEvent(CasNs ns, CasOp op)
     ProfileEvents::increment(cas_event_table[static_cast<size_t>(ns)][static_cast<size_t>(op)]);
 }
 
-void InstrumentedBackend::publishBlob(const BlobPublishRequest & request)
+void InstrumentedBackend::publish(const BlobPublishRequest & request, TransportAccess & access)
 {
-    inner->publishBlob(request);
+    inner->publish(request, access);
     incrementCasEvent(classifyCasNs(request.destination_key), CasOp::Put);
+}
+
+void InstrumentedBackend::removeManyWriteOnce(const std::vector<WriteOnceKey> & keys, TransportAccess & access)
+{
+    inner->removeManyWriteOnce(keys, access);
+    ProfileEvents::increment(ProfileEvents::CASBulkDeleteRequests);
+    for (const WriteOnceKey & key : keys)
+        incrementCasEvent(classifyCasNs(key.str()), CasOp::Delete);
 }
 
 }

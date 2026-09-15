@@ -27,10 +27,30 @@ Control surface, reserved under the bucket name ``_control``:
   - ``POST /_control/condemn?bucket=B&key=K`` — rewrite blob ``K``'s existing ``.meta`` sibling from
     ``Clean`` to ``Condemned`` without adding a captured storage request. This is a deterministic
     state seam for the writer retry test, not a model of the GC request sequence;
-  - ``POST /_control/reset`` — drop the capture log and the counters (objects are kept);
+  - ``POST /_control/reset`` — drop the capture log and the counters (objects are kept), and clear the
+    delay knob below;
+  - ``POST /_control/delay?substr=S&ms=N&method=PUT|GET|LIST&once=0|1`` — every request matching
+    ``method`` (default ``PUT``) whose key contains ``S`` sleeps ``N`` milliseconds before it is
+    served, outside the store lock so other requests keep flowing. ``LIST`` matches a GET with an
+    empty key and a ``prefix`` query, against the prefix value rather than the key. A fixed
+    per-request delay, not a modelled per-object rate cap: it charges an isolated write the same as a
+    burst. ``once=1`` clears the whole knob the instant it matches, so only the very first matching
+    request is ever delayed -- needed to fire a fault exactly once and let the retry through clean.
+    Each delayed request increments the ``DelayedRequest`` counter, and a delayed PUT also
+    increments ``DelayedPut`` (both visible at ``/_control/counters``), so a caller can prove the
+    knob fired rather than infer it from timing. Every capture record also carries ``arrival_seq``,
+    assigned when the request arrives, before any delay is applied -- unlike ``seq``, which is
+    assigned when the handler finishes and so can order a delayed request's own faster reissue
+    ahead of it. ``substr=&ms=0`` clears it;
   - ``POST /_control/mode?if_match=reject|ignore&omit_generation=0|1`` — select the adversarial
     behaviours below. Global, not per bucket: the client reuses connections across buckets and a
     per-bucket switch would invite a test to believe it had isolated something it had not.
+  - ``POST /_control/first_per_key_throttle?enabled=0|1`` — while enabled, the FIRST request naming
+    any given ``(bucket, key)`` -- of any method, ``_control/*`` excluded -- answers ``429 SlowDown``
+    and touches nothing; every later request to that same key is served normally. Models a real
+    store's transient per-object throttling: the caller must resolve the refusal by reissuing, never
+    by treating it as a definite failure. ``enabled=0`` clears the seen-key set along with the flag, so
+    a later ``enabled=1`` throttles every key again from scratch.
 
 Adversarial behaviours, each off by default:
 
@@ -40,8 +60,9 @@ Adversarial behaviours, each off by default:
     if it did, and therefore how much of the fixture's safety depends on the service being strict.
   - ``omit_generation=1`` — a successful object-write ``PUT`` answers without ``x-goog-generation``.
     A real GCS always sends one; this models the response a proxy or a future API version might
-    return, which is the only input that can reach the "write succeeded but carried no valid
-    generation" refusal in the CAS write path.
+    return, which is the only input that leaves a successful conditional write UNATTRIBUTED to an
+    incarnation. The CAS request engine settles such a write with an exact GET of the key (see
+    ``CasOperation::writeLoop``) rather than refusing it or adopting whatever a HEAD reports.
 
 Usage: ``python3 server.py <port>``. Started by ``helpers.mock_servers.start_mock_servers``, which
 probes ``GET /`` and expects the body ``OK``.
@@ -124,12 +145,38 @@ class Store:
         # Adversarial behaviour, off by default — see the module docstring.
         self.if_match_mode = "reject"
         self.omit_generation = False
+        # `/_control/delay`: a request matching `delay_method`/`delay_substr` sleeps `delay_ms` before
+        # it is served, outside the store lock so other requests keep flowing. A fixed per-request
+        # delay, not a modelled rate cap — see the module docstring's `/_control/delay` bullet.
+        # `delay_method` is one of PUT (match the key, default), GET (match the key) or LIST (a GET
+        # with an empty key and a `prefix` query, matched against the prefix value). `delay_once`
+        # clears the whole knob the instant it matches, so only the first matching request is ever
+        # delayed — needed to fire a fault exactly once and let the retry through clean.
+        self.delay_substr = ""
+        self.delay_ms = 0
+        self.delay_method = "PUT"
+        self.delay_once = False
+        # `/_control/first_per_key_throttle`: while enabled, every key in `throttled_keys_seen` has
+        # already been refused once and is now served normally; a key not yet in the set gets added
+        # and refused with 429 instead of being dispatched.
+        self.first_per_key_throttle = False
+        self.throttled_keys_seen = set()
         self._next_generation = _GENERATION_SEED
         self._next_etag_ordinal = 1
         self._next_upload_ordinal = 1
+        self._next_arrival_seq = 0
 
     def count(self, name):
         self.counters[name] = self.counters.get(name, 0) + 1
+
+    def next_arrival_seq(self):
+        """A strictly increasing id assigned when a request ARRIVES (before any delay), unlike
+        ``seq`` on the capture record, which reflects when its handler FINISHES. A delayed
+        request's handler can finish after its own faster reissue, so ``seq`` alone cannot order
+        them; ``arrival_seq`` can. Must be called with ``_LOCK`` held."""
+        value = self._next_arrival_seq
+        self._next_arrival_seq += 1
+        return value
 
     def mint_generation(self):
         value = str(self._next_generation)
@@ -146,6 +193,25 @@ class Store:
 
 
 STORE = Store()
+
+
+def _delay_matches(method, key, query):
+    """Whether this request is the one the `/_control/delay` knob targets.
+
+    Must be called with `_LOCK` held: it reads `STORE.delay_*` and the caller pairs it with clearing
+    a `once` knob atomically. `query` is the parsed query dict (values are lists), as everywhere else
+    in this module.
+    """
+    if not STORE.delay_ms or not STORE.delay_substr:
+        return False
+    if STORE.delay_method == "LIST":
+        # A LIST is a GET with an empty key and a `prefix` query; match the prefix value, not the key.
+        if method != "GET" or key or "prefix" not in query:
+            return False
+        return any(STORE.delay_substr in value for value in query["prefix"])
+    if STORE.delay_method not in ("PUT", "GET"):
+        return False
+    return method == STORE.delay_method and bool(key) and STORE.delay_substr in key
 
 
 def _xml_escape(text):
@@ -197,6 +263,14 @@ def _unsupported(what):
 def _bad_request(message):
     return Reply(
         400, _error_xml("InvalidArgument", message), {"Content-Type": "application/xml"}
+    )
+
+
+def _slow_down(key):
+    return Reply(
+        429,
+        _error_xml("SlowDown", "throttled by /_control/first_per_key_throttle: " + key),
+        {"Content-Type": "application/xml"},
     )
 
 
@@ -784,7 +858,7 @@ def handle_control(path, method, query):
             return _no_such_key(meta_key)
         text = entry["body"].decode("utf-8", "strict")
         rewritten, replacements = re.subn(
-            r'"st":"clean","cr":"[0-9]+"', '"st":"condemned","cr":"1"', text, count=1
+            r'"state":"clean","condemn_round":"[0-9]+"', '"state":"condemned","condemn_round":"1"', text, count=1
         )
         if replacements != 1:
             return _bad_request("blob metadata is not Clean: " + meta_key)
@@ -797,9 +871,43 @@ def handle_control(path, method, query):
             json.dumps({"bucket": bucket, "key": blob_key, "state": "condemned"}).encode(),
             {"Content-Type": "application/json"},
         )
+    if path == "/_control/delay" and method == "POST":
+        delay_method = query.get("method", ["PUT"])[0]
+        if delay_method not in ("PUT", "GET", "LIST"):
+            return _bad_request("unknown delay method " + delay_method)
+        STORE.delay_substr = query.get("substr", [""])[0]
+        STORE.delay_ms = int(query.get("ms", ["0"])[0])
+        STORE.delay_method = delay_method
+        STORE.delay_once = query.get("once", ["0"])[0] == "1"
+        return Reply(
+            200,
+            json.dumps(
+                {
+                    "substr": STORE.delay_substr,
+                    "ms": STORE.delay_ms,
+                    "method": STORE.delay_method,
+                    "once": STORE.delay_once,
+                }
+            ).encode(),
+            {"Content-Type": "application/json"},
+        )
+    if path == "/_control/first_per_key_throttle" and method == "POST":
+        STORE.first_per_key_throttle = query.get("enabled", ["0"])[0] == "1"
+        STORE.throttled_keys_seen = set()
+        return Reply(
+            200,
+            json.dumps({"enabled": STORE.first_per_key_throttle}).encode(),
+            {"Content-Type": "application/json"},
+        )
     if path == "/_control/reset" and method == "POST":
         STORE.requests = []
         STORE.counters = {}
+        STORE.delay_substr = ""
+        STORE.delay_ms = 0
+        STORE.delay_method = "PUT"
+        STORE.delay_once = False
+        STORE.first_per_key_throttle = False
+        STORE.throttled_keys_seen = set()
         return Reply(200, b"OK")
     return Reply(404, _error_xml("NoSuchControl", "unknown control path " + path))
 
@@ -847,51 +955,99 @@ class Handler(http.server.BaseHTTPRequestHandler):
         stripped = path.lstrip("/")
         bucket, _, key = stripped.partition("/")
 
+        # Whether this request matches the `/_control/delay` knob, and how long to sleep for it, is
+        # decided under the lock so a `once` knob is consumed by exactly one request even when
+        # several requests race here; the sleep itself still happens outside the lock so other
+        # requests keep flowing while this one is delayed.
+        with _LOCK:
+            arrival_seq = STORE.next_arrival_seq()
+            delayed = _delay_matches(method, key, query)
+            delay_ms = STORE.delay_ms if delayed else 0
+            if delayed and STORE.delay_once:
+                STORE.delay_substr = ""
+                STORE.delay_ms = 0
+                STORE.delay_method = "PUT"
+                STORE.delay_once = False
+        if delayed:
+            time.sleep(delay_ms / 1000.0)
+
         with _LOCK:
             STORE.count("method_" + method)
-            request_class = _request_class(bucket, key)
-            operation = _request_operation(bucket, request_class, method, query, headers)
-            if method == "PUT":
-                if "partNumber" in query:
-                    STORE.count("UploadPart")
-                reply = handle_put(bucket, key, query, headers, body)
-            elif method == "DELETE":
-                reply = handle_delete(bucket, key, query, headers)
-            elif method == "POST":
-                if "delete" in query:
-                    STORE.count("DeleteObjects")
-                    reply = handle_batch_delete(bucket, body)
+            # A caller that only checks queue drainage cannot tell a delay that fired from a delay
+            # knob that silently stopped matching (a renamed endpoint, a renamed query param, a
+            # substring that no longer matches the key) — this counter is the caller's proof the
+            # sleep above actually ran.
+            if delayed:
+                STORE.count("DelayedRequest")
+                if method == "PUT":
+                    STORE.count("DelayedPut")
+            throttled = STORE.first_per_key_throttle and (bucket, key) not in STORE.throttled_keys_seen
+            if throttled:
+                STORE.throttled_keys_seen.add((bucket, key))
+                STORE.count("FirstPerKeyThrottled")
+                reply = _slow_down(key)
+                STORE.requests.append(
+                    {
+                        "seq": len(STORE.requests),
+                        "arrival_seq": arrival_seq,
+                        "method": method,
+                        "bucket": bucket,
+                        "key": key,
+                        "query": parsed.query,
+                        "headers": headers,
+                        "request_class": _request_class(bucket, key),
+                        "operation": "first_per_key_throttled",
+                        "request_body": "",
+                        "status": reply.status,
+                        "response_generation": None,
+                        "response_etag": None,
+                    }
+                )
+            if not throttled:
+                request_class = _request_class(bucket, key)
+                operation = _request_operation(bucket, request_class, method, query, headers)
+                if method == "PUT":
+                    if "partNumber" in query:
+                        STORE.count("UploadPart")
+                    reply = handle_put(bucket, key, query, headers, body)
+                elif method == "DELETE":
+                    reply = handle_delete(bucket, key, query, headers)
+                elif method == "POST":
+                    if "delete" in query:
+                        STORE.count("DeleteObjects")
+                        reply = handle_batch_delete(bucket, body)
+                    else:
+                        if "uploads" in query:
+                            STORE.count("CreateMultipartUpload")
+                        if "uploadId" in query:
+                            STORE.count("CompleteMultipartUpload")
+                        reply = handle_post(bucket, key, query, headers, body)
+                elif method in ("GET", "HEAD"):
+                    reply = handle_get_or_head(bucket, key, query, headers)
                 else:
-                    if "uploads" in query:
-                        STORE.count("CreateMultipartUpload")
-                    if "uploadId" in query:
-                        STORE.count("CompleteMultipartUpload")
-                    reply = handle_post(bucket, key, query, headers, body)
-            elif method in ("GET", "HEAD"):
-                reply = handle_get_or_head(bucket, key, query, headers)
-            else:
-                reply = _unsupported(method)
+                    reply = _unsupported(method)
 
-            STORE.requests.append(
-                {
-                    "seq": len(STORE.requests),
-                    "method": method,
-                    "bucket": bucket,
-                    "key": key,
-                    "query": parsed.query,
-                    "headers": headers,
-                    "request_class": request_class,
-                    "operation": operation,
-                    "request_body": (
-                        body.decode("utf-8", "replace")
-                        if request_class in ("blob_meta", "cas_control")
-                        else ""
-                    ),
-                    "status": reply.status,
-                    "response_generation": reply.headers.get("x-goog-generation"),
-                    "response_etag": reply.headers.get("ETag"),
-                }
-            )
+                STORE.requests.append(
+                    {
+                        "seq": len(STORE.requests),
+                        "arrival_seq": arrival_seq,
+                        "method": method,
+                        "bucket": bucket,
+                        "key": key,
+                        "query": parsed.query,
+                        "headers": headers,
+                        "request_class": request_class,
+                        "operation": operation,
+                        "request_body": (
+                            body.decode("utf-8", "replace")
+                            if request_class in ("blob_meta", "cas_control")
+                            else ""
+                        ),
+                        "status": reply.status,
+                        "response_generation": reply.headers.get("x-goog-generation"),
+                        "response_etag": reply.headers.get("ETag"),
+                    }
+                )
 
         self._send(reply, want_body)
 
@@ -923,8 +1079,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 def main():
     port = int(sys.argv[1])
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    # `bind_and_activate=False`, then raise the listen backlog, then bind+activate by hand: the base
+    # class calls `socket.listen()` (which locks in the backlog) from inside `__init__` when
+    # `bind_and_activate` is left at its default, before this line could change it.
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler, bind_and_activate=False)
     server.daemon_threads = True
+    # The default listen backlog (5) starves unrelated connections once `/_control/delay` holds a
+    # few dozen handler threads asleep at once: a caller under `test_cas_gcs_relink_liveness`
+    # measured `connect timed out` on keys the delay knob was never meant to slow.
+    server.request_queue_size = 128
+    server.server_bind()
+    server.server_activate()
     server.serve_forever()
 
 

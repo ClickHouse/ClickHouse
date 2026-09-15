@@ -47,9 +47,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05025_dst',
-    name = '05025_cas_dst',
-    path = '05025_cas_dst_pool/');"
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05025_dst',
+    name = '${CLICKHOUSE_DATABASE}_05025_cas_dst',
+    path = '${CLICKHOUSE_DATABASE}_05025_cas_dst_pool/');"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO src_plain SELECT number % 2, toString(number) FROM numbers(64);"
 
@@ -73,9 +73,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05025_shared_a',
-    name = '05025_cas_shared_a',
-    path = '05025_cas_shared_pool/');"
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05025_shared_a',
+    name = '${CLICKHOUSE_DATABASE}_05025_cas_shared_a',
+    path = '${CLICKHOUSE_DATABASE}_05025_cas_shared_pool/');"
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE dst_cas_same_pool (k UInt32, v String)
@@ -84,9 +84,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05025_shared_b',
-    name = '05025_cas_shared_b',
-    path = '05025_cas_shared_pool/');"
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05025_shared_b',
+    name = '${CLICKHOUSE_DATABASE}_05025_cas_shared_b',
+    path = '${CLICKHOUSE_DATABASE}_05025_cas_shared_pool/');"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO src_cas SELECT number % 2, toString(number) FROM numbers(64);"
 
@@ -119,9 +119,9 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    cas_server_root_id = '05025_dst_repl',
-    name = '05025_cas_dst_repl',
-    path = '05025_cas_dst_repl_pool/');"
+    cas_server_root_id = '${CLICKHOUSE_DATABASE}_05025_dst_repl',
+    name = '${CLICKHOUSE_DATABASE}_05025_cas_dst_repl',
+    path = '${CLICKHOUSE_DATABASE}_05025_cas_dst_repl_pool/');"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO src_plain_repl SELECT number % 2, toString(number) FROM numbers(64);"
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE dst_cas_repl ATTACH PARTITION 1 FROM src_plain_repl;"
@@ -140,3 +140,13 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE dst_cas_same_pool;"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE src_plain_repl SYNC;"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE dst_cas_repl SYNC;"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'dropped_ok';"
+
+# FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, which would
+# stream that expected warning to stderr and be flagged as a failure. Suppress it for the FORGET calls.
+# Four independent content-addressed disks were created across the three legs; each needs its own FORGET.
+for disk in "${CLICKHOUSE_DATABASE}_05025_cas_dst" "${CLICKHOUSE_DATABASE}_05025_cas_shared_a" \
+    "${CLICKHOUSE_DATABASE}_05025_cas_shared_b" "${CLICKHOUSE_DATABASE}_05025_cas_dst_repl"; do
+    ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
+        --query "SYSTEM CAS FORGET '${disk}'" || {
+        echo "FORGET failed for ${disk}"; exit 1; }
+done

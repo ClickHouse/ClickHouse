@@ -1,6 +1,11 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
 #include <Common/Exception.h>
 
+#include <zstd.h>
+
+#include <algorithm>
+#include <array>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -16,56 +21,12 @@ namespace DB::Cas
 namespace
 {
 
-/// Generation-1 baseline for every class. A future format change appends to that class's array and
+/// Generation-1 baseline for every class. A future format change appends to that class's own array and
 /// bumps `G_BUILD`: additive changes use the previous reader floor, while breaking changes use the
-/// new generation as the floor. Existing entries are immutable history.
+/// new generation as the floor. Existing entries are immutable history. Every class currently shares
+/// this baseline; a class that outgrows it gets its own named array again, the way the pre-reset
+/// history once had.
 constexpr FormatChangePoint BASELINE[] = {{1, 1}};
-
-/// The two ref classes changed at generation 4 (INV-1, per-namespace contiguous ids) AND AGAIN at
-/// generation 5 (Stage B's recreate-only "format bump B": the ref layer re-keyed under
-/// `<ns>/<incarnation>/`). Both changes are BREAKING even though not one byte of the encoding moved
-/// either time -- a generation-3 stream's ids came from a pool-wide counter and legitimately skip,
-/// which a generation-4 reader reports as corruption, and a generation-4 key names no incarnation at
-/// all, which a generation-5 reader also reports as corruption (`Layout::parseRefObjectKey`). Each
-/// floor is the change generation itself.
-constexpr FormatChangePoint REF_STREAM[] = {
-    {1, 1},
-    {kContiguousRefStreamsGeneration, kContiguousRefStreamsGeneration},
-    {kNamespaceLifeKeyedGeneration, kNamespaceLifeKeyedGeneration},
-    {kOpaqueNamespaceLifeLayoutGeneration, kOpaqueNamespaceLifeLayoutGeneration},
-};
-
-/// `cas_ref_ckpt` is BORN at generation 4, so it has no generation-1 baseline to inherit: there is no
-/// such thing as a generation-1 `_ckpt` object, and claiming one would say a generation-1 reader could
-/// read it. Generation 5 re-keys it under `<ns>/<incarnation>/` exactly like `REF_STREAM` above, for
-/// the same reason and with the same floor.
-constexpr FormatChangePoint REF_CKPT[] = {
-    {kContiguousRefStreamsGeneration, kContiguousRefStreamsGeneration},
-    {kNamespaceLifeKeyedGeneration, kNamespaceLifeKeyedGeneration},
-    {kOpaqueNamespaceLifeLayoutGeneration, kOpaqueNamespaceLifeLayoutGeneration},
-    {kCommittedRefFrontierGeneration, kCommittedRefFrontierGeneration},
-};
-
-/// `cas_ref_catalog` is BORN at generation 4, one generation BEFORE the bump that makes namespace
-/// existence catalog-authoritative (Stage B's Task 4, "format bump B" -- `kNamespaceLifeKeyedGeneration`):
-/// Task 2 introduced the catalog OBJECT while `G_BUILD` was still the value
-/// `kContiguousRefStreamsGeneration` names, and Task 4 is the later change that actually wires
-/// discovery to read it and bumps the floor. The catalog's own encoding is unaffected by that bump (it
-/// reuses `kContiguousRefStreamsGeneration` as its birth generation, not a second constant named after
-/// itself, for the same reason `REF_CKPT` originally did), so it carries no second change point here.
-constexpr FormatChangePoint REF_CATALOG[] = {{kContiguousRefStreamsGeneration, kContiguousRefStreamsGeneration}};
-constexpr FormatChangePoint GC_MAINTENANCE_STATE[] = {{kUnifiedRefLifeFoldGeneration, kUnifiedRefLifeFoldGeneration}};
-constexpr FormatChangePoint POOL_META[] = {
-    {1, 1},
-    {kPoolGcShardsGeneration, kPoolGcShardsGeneration},
-    {kCommittedRefFrontierGeneration, kCommittedRefFrontierGeneration},
-    {kMountWriteAttemptIdGeneration, kMountWriteAttemptIdGeneration},
-};
-
-constexpr FormatChangePoint MOUNT_LEASE[] = {
-    {1, 1},
-    {kMountWriteAttemptIdGeneration, kMountWriteAttemptIdGeneration},
-};
 
 }
 
@@ -75,17 +36,11 @@ std::span<const FormatChangePoint> changePoints(FormatId id)
     {
         case FormatId::RefLog:
         case FormatId::RefSnapshot:
-            return REF_STREAM;
         case FormatId::RefCkpt:
-            return REF_CKPT;
         case FormatId::RefCatalog:
-            return REF_CATALOG;
         case FormatId::GcMaintenanceState:
-            return GC_MAINTENANCE_STATE;
         case FormatId::PoolMeta:
-            return POOL_META;
         case FormatId::MountLease:
-            return MOUNT_LEASE;
         case FormatId::Blob:
         case FormatId::GcState:
         case FormatId::Roster:
@@ -181,6 +136,18 @@ constexpr FormatTraits TRAITS[] =
 };
 }
 
+uint64_t casMaxStoredObjectBytes()
+{
+    static const uint64_t bound = []
+    {
+        uint64_t largest_uncompressed = 0;
+        for (const FormatTraits & t : TRAITS)
+            largest_uncompressed = std::max(largest_uncompressed, t.object_cap);
+        return static_cast<uint64_t>(ZSTD_compressBound(largest_uncompressed));
+    }();
+    return bound;
+}
+
 const FormatTraits & traitsFor(FormatId id)
 {
     for (const FormatTraits & t : TRAITS)
@@ -195,6 +162,18 @@ const FormatTraits * traitsForType(std::string_view type)
         if (t.type == type)
             return &t;
     return nullptr;
+}
+
+std::span<const FormatId> allRegisteredFormatIds()
+{
+    static const auto ids = []
+    {
+        std::array<FormatId, std::size(TRAITS)> out{};
+        for (size_t i = 0; i < std::size(TRAITS); ++i)
+            out[i] = TRAITS[i].id;
+        return out;
+    }();
+    return ids;
 }
 
 std::string_view storedSuffix(FormatId id)

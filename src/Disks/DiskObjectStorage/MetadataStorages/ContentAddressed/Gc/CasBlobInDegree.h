@@ -1,5 +1,5 @@
 #pragma once
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasBlobEnvelopeFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFoldSealFormat.h>
@@ -20,13 +20,13 @@ namespace DB::Cas
 
 /// In-memory description of a blob incarnation condemned by the in-degree merge. The exact token and
 /// size are captured from the blob HEAD so the GC caller can issue an exact-token deletion later;
-/// `condemn_round` controls round-paced graduation. Entries are decoded from `kCondemned` rows and are
+/// `condemn_round` controls round-paced graduation. Entries are decoded from `RunMarker::Condemned` rows and are
 /// returned through `RetiredMergeResult`; the type itself has no serialized representation.
 struct RetiredEntry
 {
     ObjectKind kind = ObjectKind::Blob;
     BlobRef ref{};
-    Token token;          /// the exact incarnation token GC observed (exact-token delete)
+    PersistedEtag token;   /// the exact incarnation GC observed; the delete re-heads and compares it
     uint64_t size = 0;
     uint64_t condemn_round = 0;   /// the GC round that condemned this incarnation (round-paced
                                   /// graduation: an entry graduates only once condemn_round < the
@@ -43,6 +43,10 @@ struct RetiredEntry
                                      /// unconfirmed entry is CARRIED, never fail-open deleted. Set at
                                      /// graduation (delete_pending rows always carry it).
 };
+
+/// The fold's HEAD hooks (`head_blob`, `peek_head`): the caller issues the request on its own admitted
+/// operation and reports what it saw, or nothing when the object is absent.
+using BlobHeadFn = std::function<std::optional<Meta>(const BlobRef &)>;
 
 /// Backend-independent codec for source-edge keys. A key is `algo` (u8), the digest at that algorithm's
 /// native width, and `source_id` (16 bytes, big-endian). The packed byte order is exactly
@@ -67,24 +71,34 @@ UInt128 sourceEdgeId(const ManifestId & id, const String & path);
 /// producers of real source edges must fail closed on a hash collision with it.
 void assertValidSourceEdgeId(const UInt128 & source_id);
 
-/// Serialized payload of a condemned source-edge sentinel. The payload retains the full incarnation
-/// token, including its type, because deletion must remain exact-token guarded. Its fixed prefix is
-/// `[0x02][flags][token_type][round BE64][size BE64][token_len BE16]`, followed by token bytes.
+/// Serialized payload of a condemned source-edge sentinel. The payload retains the full incarnation,
+/// dialect included, because deletion must remain exact-token guarded. Its fixed prefix is
+/// `[0x02][flags][token_type][round BE64][size BE64][token_len BE16]`, followed by token bytes;
+/// `token_type` is the dialect byte of `CasWireVocab`'s vocabulary.
 /// `flags` bit 0 is `delete_pending`, bit 1 is `marker_confirmed`.
 struct CondemnedRow
 {
     bool delete_pending = false;
-    Token token;                 // {value, type} — the full token required by exact-token deletion
+    PersistedEtag token;   // the incarnation the exact-token delete must re-observe
     uint64_t size = 0;
     uint64_t condemn_round = 0;
     bool marker_confirmed = false;   // durable Condemned meta confirmed (graduation gate)
-    bool operator==(const CondemnedRow &) const = default;
+    /// Spelled out rather than defaulted because `PersistedEtag` carries no equality of its
+    /// own. A field added above belongs here too.
+    bool operator==(const CondemnedRow & o) const
+    {
+        return delete_pending == o.delete_pending
+            && token.dialect == o.token.dialect && token.value == o.token.value
+            && size == o.size && condemn_round == o.condemn_round
+            && marker_confirmed == o.marker_confirmed;
+    }
 };
 
-/// Encode a condemned-row payload. Throws `CORRUPTED_DATA` if the token cannot fit in its u16 length.
+/// Encode a condemned-row payload. Throws `CORRUPTED_DATA` if the token cannot fit in its u16 length
+/// or the dialect is not one this vocabulary knows.
 String encodeCondemnedRow(const CondemnedRow & row);
 
-/// Decode and validate a condemned-row payload. Unknown flags, token types, or inconsistent lengths
+/// Decode and validate a condemned-row payload. Unknown flags, dialect bytes, or inconsistent lengths
 /// throw `CORRUPTED_DATA`.
 CondemnedRow decodeCondemnedRow(std::string_view payload);
 
@@ -112,7 +126,7 @@ public:
 
 private:
     friend SourceEdgeRunView openSourceEdgeRun(std::string_view bytes);
-    friend SourceEdgeRunView openSourceEdgeRun(Backend & backend, const String & key);
+    friend SourceEdgeRunView openSourceEdgeRun(CasOperation & op, const String & key);
     /// Keep the underlying stream alive for the reader, which borrows it rather than owning it.
     explicit SourceEdgeRunView(std::unique_ptr<ReadBuffer> stream_);
 
@@ -122,19 +136,21 @@ private:
 
 /// Open a typed source-edge run. The NDJSON header must identify a `cas_run` of kind `source_edge`;
 /// otherwise opening fails closed. The memory overload borrows caller-owned bytes. The backend overload
-/// streams the write-once object through `getStream`, retaining only one record-sized buffer.
+/// streams the write-once object: the reader itself holds one record-sized buffer, but the open stream
+/// underneath it buffers on its own terms, unbounded and unmeasured here.
 SourceEdgeRunView openSourceEdgeRun(std::string_view bytes);
-SourceEdgeRunView openSourceEdgeRun(Backend & backend, const String & key);
+SourceEdgeRunView openSourceEdgeRun(CasOperation & op, const String & key);
 
 /// Store a deterministic write-once artifact (same inputs => byte-identical bytes): the blob in-degree
-/// runs and fold seals. `putIfAbsent`; on a `PreconditionFailed` the key is already
-/// occupied — `get` it and compare bytes: byte-equal means our own deterministic replay (adopt, no-op),
-/// divergent bytes are impossible under correct operation and we fail closed with `CORRUPTED_DATA`
-/// rather than let a divergent artifact disagree with the adopted snapshot. Deterministic artifacts are
-/// therefore byte-equal-or-`CORRUPTED_DATA`. It is
+/// runs and fold seals. `create`; a `Conflict` means the write was refused, and only what its resolve
+/// read OBSERVED decides what that means: byte-equal bytes are our own deterministic replay (adopt,
+/// no-op), divergent bytes or a key that reads as absent are impossible under correct operation and
+/// fail closed with `CORRUPTED_DATA` rather than let a divergent artifact disagree with the adopted
+/// snapshot, and an unobserved key proves nothing and is reported as the ordinary refusal it is --
+/// a corruption verdict there would be a deterministic local failure no caller retries. It is
 /// NOT for observation-bearing artifacts (outcome logs) — those carry HEAD-observed
-/// tokens that two observers may legitimately differ on and keep first-durable-write-wins semantics.
-void putDeterministicArtifact(Backend & backend, const String & key, const String & bytes);
+/// incarnations that two observers may legitimately differ on and keep first-durable-write-wins semantics.
+void putDeterministicArtifact(CasOperation & op, const String & key, const String & bytes);
 
 /// One source-edge update before merging: the edge `(ref, source_id)`, and whether it is an activation
 /// (+edge) or a removal (−edge). Idempotent under re-fold at the merge (set membership, not a counter).
@@ -193,13 +209,13 @@ struct BlobCandidate
 /// seal's exact reference is authoritative and key construction is not used. `new_generation`, `attempt`,
 /// and `shard` name only the output run's key namespace.
 /// The fresh entry that re-condemns the current
-/// token, paired with the STALE entry's token it superseded. Kept as its own struct (rather than a
+/// incarnation, paired with the STALE entry's it superseded. Kept as its own struct (rather than a
 /// field bolted onto `RetiredEntry`) so the common merge element stays slim — only replaced entries
-/// carry the extra superseded token.
+/// carry the extra superseded incarnation.
 struct ReplacedEntry
 {
-    RetiredEntry fresh;   /// the freshly condemned CURRENT token (also pushed into still_retired byte-identically)
-    Token old_token;      /// the superseded (stale) entry's token — what republication replaced
+    RetiredEntry fresh;   /// the freshly condemned CURRENT incarnation (also pushed into still_retired byte-identically)
+    PersistedEtag old_token;   /// the superseded (stale) entry's — what republication replaced
 };
 
 /// One example of an unmatched-remove delta, kept for the caller's single once-per-round WARNING
@@ -218,7 +234,7 @@ struct RetiredMergeResult
     std::vector<RetiredEntry> still_retired;   /// carried + newly-condemned + newly-PENDING entries (the next list)
     std::vector<RetiredEntry> graduated;       /// newly floor-passed this pass — published pending, deleted NEXT pass
     std::vector<RetiredEntry> spared;          /// in-degree recovered — entry dropped
-    std::vector<RetiredEntry> redelete;        /// pending in the PRIOR list — execute deleteExact pre-CAS, drop
+    std::vector<RetiredEntry> redelete;        /// pending in the PRIOR list — execute the exact-incarnation delete pre-CAS, drop
     std::vector<ReplacedEntry> replaced;  /// re-condemned CURRENT tokens that superseded a stale entry after republication; caller emits blob_retire_replaced
 
     /// Count of `remove == true` deltas that matched no presence for their `(BlobRef, source_id)` key —
@@ -324,10 +340,10 @@ struct GcRoundWorkBudget
     bool outcomeEntryAvailable() const { return max_outcome_entries == 0 || outcome_entries_used < max_outcome_entries; }
 };
 
-/// Merge the prior generation's source-edge run with new deltas. The prior run's `kCondemned` rows RIDE
+/// Merge the prior generation's source-edge run with new deltas. The prior run's `RunMarker::Condemned` rows RIDE
 /// the source-edge run itself at the zero-sentinel key (`source_id = 0`), so there is no separate
 /// `prior_retired` cursor — the prior run IS the retired input. `PriorEdgeCursor` decodes each sentinel
-/// `kCondemned` row and hands it to the per-blob close-out (in ascending hash order, exactly the order
+/// `RunMarker::Condemned` row and hands it to the per-blob close-out (in ascending hash order, exactly the order
 /// the old sorted vector had). Settlement rules, in order, per condemned row for blob `h` with post-merge
 /// in-degree `d`:
 ///   delete_pending (prior pass)                -> redelete if d = 0 (the caller executes the exact-token
@@ -342,9 +358,9 @@ struct GcRoundWorkBudget
 ///                                                 `confirm_condemned_marker` below): an unconfirmed
 ///                                                 entry is carried unchanged instead;
 ///   d = 0 otherwise                             -> still_retired, carried byte-unchanged.
-/// A carried `kCondemned` row is SETTLEMENT-ONLY: it never sets the blob's `cur_touched` bit, so a
+/// A carried `RunMarker::Condemned` row is SETTLEMENT-ONLY: it never sets the blob's `cur_touched` bit, so a
 /// generation that only carries the row emits no zero-marker and pays no `peek_head` HEAD. The surviving
-/// `still_retired` entries are re-emitted as `kCondemned` sentinel rows into the OUTPUT run (one sentinel
+/// `still_retired` entries are re-emitted as `RunMarker::Condemned` sentinel rows into the OUTPUT run (one sentinel
 /// per blob, emitted before the blob's edges since the sentinel key sorts first), so the next generation
 /// reads them back — `still_retired` mirrors exactly those rows, in the same order.
 /// When the pass is clamped on any shard, landed-before-cut events may remain unfolded behind the clamp,
@@ -381,14 +397,14 @@ struct GcRoundWorkBudget
 /// for merge-mechanics unit tests only; the real GC round always passes the gate.
 /// The merge comparator is exactly `(ref.algo, ref.digest, source_id)` (that is, `BlobRef::operator<`
 /// followed by `source_id`), which is also the raw key order produced by `SourceEdgeKeyCodec`.
-void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
+void foldDeltasIntoGeneration(CasOperation & op, const Layout & layout,
                               const std::vector<RunRef> & prior_runs,
                               uint64_t new_generation, uint64_t attempt,
                               uint64_t shard,
                               std::vector<BlobDelta> scattered, std::vector<RunRef> & out_runs,
                               uint64_t current_round = 0, uint64_t condemn_round = 0,
-                              const std::function<std::optional<HeadResult>(const BlobRef &)> & head_blob = {},
-                              const std::function<std::optional<HeadResult>(const BlobRef &)> & peek_head = {},
+                              const BlobHeadFn & head_blob = {},
+                              const BlobHeadFn & peek_head = {},
                               const std::function<bool(const RetiredEntry &)> & confirm_condemned_marker = {},
                               RetiredMergeResult * out_retired = nullptr,
                               bool suppress_destructive = false,
@@ -408,6 +424,6 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
 /// shard) and return every blob written at in-degree 0 (the candidates that transitioned to zero). An
 /// empty `runs` is an empty baseline. Each `RunRef` supplies the exact object key, so resolution never
 /// reconstructs a key from generation metadata.
-std::vector<BlobCandidate> zeroInDegree(Backend & backend, const std::vector<RunRef> & runs);
+std::vector<BlobCandidate> zeroInDegree(CasOperation & op, const std::vector<RunRef> & runs);
 
 }
