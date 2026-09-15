@@ -12,8 +12,6 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesMin.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesPresentToGrid.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesQuantileToGrid.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesPredictLinearVarying.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesQuantileVarying.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
@@ -237,8 +235,10 @@ AggregateFunctionPtr createWithTimestampAndValueTypes(const std::string & name, 
 
 /// Entry point shared by every timeSeries*ToGrid function: validates the arguments, resolves the value type, and
 /// builds the function through the given factory (a generic lambda templated on timestamp, interval and value types).
+/// `has_grid_argument` is set for functions taking one more argument after the samples, a number or an array of numbers
+/// (see `AggregateFunctionTimeseriesBase::num_extra_arguments`).
 template <typename MakeFunction>
-AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings, MakeFunction && make_function)
+AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings, MakeFunction && make_function, bool has_grid_argument = false)
 {
     if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
         throw Exception(
@@ -246,77 +246,55 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
             "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
             name);
 
-    if (argument_types.size() == 1)
+    DataTypes sample_types = argument_types;
+    if (has_grid_argument)
+    {
+        if (argument_types.size() != 2 && argument_types.size() != 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Aggregate function {} requires 2 or 3 arguments: the samples as (timestamp, value) or as a single array of tuples, followed by one more argument",
+                name);
+
+        const auto & grid_argument_type = argument_types.back();
+        const auto * array_type = typeid_cast<const DataTypeArray *>(grid_argument_type.get());
+        if (!isNativeNumber(array_type ? array_type->getNestedType() : grid_argument_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the last argument for aggregate function {}, expected a number or an array of numbers",
+                grid_argument_type->getName(), name);
+
+        sample_types.pop_back();
+    }
+
+    if (sample_types.size() == 1)
     {
         /// The single argument form: samples are passed as Array(Tuple(timestamp, value)).
-        const auto * array_type = typeid_cast<const DataTypeArray *>(argument_types[0].get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(sample_types[0].get());
         const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
         if (!tuple_type || tuple_type->getElements().size() != 2)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument for aggregate function {}, expected Array(Tuple(timestamp, value))",
-                argument_types[0]->getName(), name);
+                sample_types[0]->getName(), name);
 
         return createWithTimestampAndValueTypes(
             name, parameters, tuple_type->getElements()[0], tuple_type->getElements()[1], make_function);
     }
 
-    assertBinary(name, argument_types);
+    if (sample_types.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires the samples as two arguments (timestamp, value) or as a single array of tuples", name);
 
-    if ((argument_types[0]->getTypeId() == TypeIndex::Array) != (argument_types[1]->getTypeId() == TypeIndex::Array))
+    if ((sample_types[0]->getTypeId() == TypeIndex::Array) != (sample_types[1]->getTypeId() == TypeIndex::Array))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal combination of argument type {} and {} for aggregate function {}, expected both arguments to be arrays or not arrays",
-            argument_types[0]->getName(), argument_types[1]->getName(), name);
+            sample_types[0]->getName(), sample_types[1]->getName(), name);
 
-    if (argument_types[1]->getTypeId() == TypeIndex::Array)
+    if (sample_types[1]->getTypeId() == TypeIndex::Array)
     {
-        const auto & timestamp_type = typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType();
-        const auto & value_type = typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType();
+        const auto & timestamp_type = typeid_cast<const DataTypeArray *>(sample_types[0].get())->getNestedType();
+        const auto & value_type = typeid_cast<const DataTypeArray *>(sample_types[1].get())->getNestedType();
         return createWithTimestampAndValueTypes(name, parameters, timestamp_type, value_type, make_function);
     }
 
-    return createWithTimestampAndValueTypes(name, parameters, argument_types[0], argument_types[1], make_function);
-}
-
-/// Entry point for the *Varying functions (timeSeriesPredictLinearVaryingToGrid, timeSeriesQuantileVaryingToGrid):
-/// a separate 3-argument path, not `createAggregateFunctionTimeseries`, so it stays isolated from the 2-argument functions.
-template <typename MakeFunction>
-AggregateFunctionPtr createAggregateFunctionTimeseriesVarying(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings, MakeFunction && make_function)
-{
-    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
-        throw Exception(
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
-            name);
-
-    if (argument_types.size() != 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} requires 3 arguments: timestamp, value, per-grid-point parameter", name);
-
-    if ((argument_types[0]->getTypeId() == TypeIndex::Array) != (argument_types[1]->getTypeId() == TypeIndex::Array))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal combination of argument type {} and {} for aggregate function {}, expected both arguments to be arrays or not arrays",
-            argument_types[0]->getName(), argument_types[1]->getName(), name);
-
-    /// The per-grid-point argument carries scalar values, so it accepts the same value types as the 2nd argument:
-    /// a PromQL scalar grid is typed after the TimeSeries table's value column, which can be Float32 or Float64.
-    const auto * varying_array_type = typeid_cast<const DataTypeArray *>(argument_types[2].get());
-    const auto varying_value_type_id = varying_array_type ? varying_array_type->getNestedType()->getTypeId() : TypeIndex::Nothing;
-    if (varying_value_type_id != TypeIndex::Float64 && varying_value_type_id != TypeIndex::Float32)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of 3rd argument for aggregate function {}, expected Array(Float32) or Array(Float64)",
-            argument_types[2]->getName(), name);
-
-    const bool array_arguments = argument_types[1]->getTypeId() == TypeIndex::Array;
-    const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
-    const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType() : argument_types[1];
-
-    if (value_type->getTypeId() == TypeIndex::Float64)
-        return createWithValueType<Float64>(name, parameters, timestamp_type, make_function);
-    if (value_type->getTypeId() == TypeIndex::Float32)
-        return createWithValueType<Float32>(name, parameters, timestamp_type, make_function);
-
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
+    return createWithTimestampAndValueTypes(name, parameters, sample_types[0], sample_types[1], make_function);
 }
 
 }
@@ -1005,6 +983,76 @@ SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seco
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
         documentation_timeSeriesPredictLinearToGrid});
+
+    /// timeSeriesLinearRegressionToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesLinearRegressionToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and fits a line to the values on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples within the specified time window are fitted by a line, and the function returns the tuple `(intercept, slope)`: `intercept` is the value of that line at the grid point's timestamp and `slope` is its slope per second. Both are NULL if there are not enough samples in the window.
+
+The result of `timeSeriesPredictLinearToGrid` with the offset `t` equals `intercept + slope * t`, and the result of `timeSeriesDerivToGrid` equals `slope`. The PromQL function `predict_linear` is implemented with this function, which allows the prediction offset to differ between grid points, like in `predict_linear(v, time())`.
+
+The samples can be passed in one of three forms:
+- as two arguments `timestamp` and `value`, where each row holds a single sample;
+- as two arrays of timestamps and values, where each row holds a whole time series;
+- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
+:::note
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesLinearRegressionToGrid = R"(
+timeSeriesLinearRegressionToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesLinearRegressionToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesLinearRegressionToGrid = {
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesLinearRegressionToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesLinearRegressionToGrid = {"The tuple `(intercept, slope)` for each grid point: the value of the fitted line at the grid point's timestamp and its slope per second. Both elements are NULL if there are not enough samples within the window for a particular grid point.", {"Array(Tuple(intercept Nullable(Float64), slope Nullable(Float64)))"}};
+    FunctionDocumentation::Examples examples_timeSeriesLinearRegressionToGrid = {
+    {
+        "Fit a line on the grid [100, 110, 120] and compare with timeSeriesPredictLinearToGrid and timeSeriesDerivToGrid",
+        R"(
+SET enable_time_series_aggregate_functions = 1;
+WITH
+    [100, 110, 120]::Array(DateTime) AS timestamps,
+    [10, 20, 30]::Array(Float64) AS values,
+    timeSeriesLinearRegressionToGrid(100, 120, 10, 30)(timestamps, values) AS regression
+SELECT
+    regression,
+    arrayMap(r -> r.intercept + r.slope * 60, regression) AS predict_linear_60,
+    arrayMap(r -> r.slope, regression) AS deriv;
+        )",
+        R"(
+┌─regression──────────────────┬─predict_linear_60─┬─deriv──────┐
+│ [(NULL,NULL),(20,1),(30,1)] │ [NULL,80,90]      │ [NULL,1,1] │
+└─────────────────────────────┴───────────────────┴────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesLinearRegressionToGrid = {26, 9};
+    FunctionDocumentation::Category category_timeSeriesLinearRegressionToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesLinearRegressionToGrid = {description_timeSeriesLinearRegressionToGrid, syntax_timeSeriesLinearRegressionToGrid, arguments_timeSeriesLinearRegressionToGrid, parameters_timeSeriesLinearRegressionToGrid, returned_value_timeSeriesLinearRegressionToGrid, examples_timeSeriesLinearRegressionToGrid, introduced_in_timeSeriesLinearRegressionToGrid, category_timeSeriesLinearRegressionToGrid};
+
+    factory.registerFunction("timeSeriesLinearRegressionToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<AggregateFunctionTimeseriesLinearRegressionToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesLinearRegressionToGrid});
 
     /// timeSeriesChangesToGrid documentation
     FunctionDocumentation::Description description_timeSeriesChangesToGrid = R"(
@@ -1986,18 +2034,20 @@ This function is in private preview, enable it by setting `enable_time_series_ag
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesPresentToGrid = R"(
 timeSeriesPresentToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesPresentToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesPresentToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesPresentToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesPresentToGrid = {"Returns 1 for each grid point whose window contains at least one sample, otherwise NULL.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesPresentToGrid = {"Returns 1 for each grid point whose window contains at least one sample, otherwise NULL. The values are of the same type as `value`.", {"Array(Nullable(Float*))"}};
     FunctionDocumentation::Examples examples_timeSeriesPresentToGrid = {};
     FunctionDocumentation::IntroducedIn introduced_in_timeSeriesPresentToGrid = {26, 9};
     FunctionDocumentation::Category category_timeSeriesPresentToGrid = FunctionDocumentation::Category::AggregateFunction;
@@ -2017,27 +2067,31 @@ timeSeriesPresentToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
 
     /// timeSeriesQuantileToGrid documentation
     FunctionDocumentation::Description description_timeSeriesQuantileToGrid = R"(
-Aggregate function that takes time series data as pairs of timestamps and values and calculates the [PromQL `quantile_over_time`](https://prometheus.io/docs/prometheus/latest/querying/functions/#quantile_over_time) function on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating the quantile are considered within the specified time window. The quantile is computed using the R-7 (inclusive) method, matching `quantileExactInclusive` for real values. NaN samples are not skipped the way `quantileExactInclusive` skips them: like in Prometheus they are kept and sorted before every real value, so a window of `[1, NaN, 2]` has median `1`, and a window whose samples are all NaN gives NaN.
+Aggregate function that takes time series data as pairs of timestamps and values and calculates the [PromQL `quantile_over_time`](https://prometheus.io/docs/prometheus/latest/querying/functions/#quantile_over_time) function on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating the quantile are considered within the specified time window. The quantile is computed using the R-7 (inclusive) method, like `quantileExactInclusive`. NaN samples are not skipped the way `quantileExactInclusive` skips them: like in Prometheus they are kept and sorted before every real value, so a window of `[1, NaN, 2]` has median `1`, and a window whose samples are all NaN gives NaN.
+
+The quantile level follows the samples as the last argument: either one number used at every grid point, or an array with one number per grid point. It must be the same in every row. Like in Prometheus, a level below 0 gives `-Inf`, a level above 1 gives `+Inf` and a NaN level gives NaN for every grid point whose window has samples.
 
 :::note
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesQuantileToGrid = R"(
-timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness, phi)(timestamp, value)
+timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, phi)
+timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples, phi)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesQuantileToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}},
-        {"phi", "Quantile in the range [0, 1].", {"Float64"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesQuantileToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}},
+        {"phi", "Quantile level, normally in the range [0, 1]: either one number for the whole grid or an array with one number per grid point. Must be the same in every row.", {"Float*", "UInt8/16/32/64", "Int8/16/32/64", "Array(Float*)", "Array(UInt8/16/32/64)", "Array(Int8/16/32/64)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"Returns the phi-quantile of values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"Returns the phi-quantile of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
     FunctionDocumentation::Examples examples_timeSeriesQuantileToGrid = {};
     FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantileToGrid = {26, 9};
     FunctionDocumentation::Category category_timeSeriesQuantileToGrid = FunctionDocumentation::Category::AggregateFunction;
@@ -2046,83 +2100,15 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness, p
     factory.registerFunction("timeSeriesQuantileToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 5, "start_timestamp, end_timestamp, step, window, phi");
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
-                const Float64 phi = extractFloatParameter(name, "phi", parameters[4]);
-                return std::make_shared<AggregateFunctionTimeseriesQuantileToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, phi);
+                return std::make_shared<AggregateFunctionTimeseriesQuantileToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
             };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function, /* has_grid_argument = */ true);
         },
         documentation_timeSeriesQuantileToGrid});
 
-    /// timeSeriesPredictLinearVaryingToGrid documentation
-    FunctionDocumentation::Description description_timeSeriesPredictLinearVaryingToGrid = "Like `timeSeriesPredictLinearToGrid`, but `predict_offset` is a per-grid-point array argument instead of a fixed parameter. The array describes the whole grid, so it must have one value per grid point and be the same in every aggregated row; otherwise the function throws.";
-    FunctionDocumentation::Syntax syntax_timeSeriesPredictLinearVaryingToGrid = R"(
-timeSeriesPredictLinearVaryingToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, predict_offsets)
-    )";
-    FunctionDocumentation::Parameters parameters_timeSeriesPredictLinearVaryingToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples.", {"UInt32"}}
-    };
-    FunctionDocumentation::Arguments arguments_timeSeriesPredictLinearVaryingToGrid = {
-        {"timestamp", "Timestamp of the sample.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
-        {"value", "Value of the time series corresponding to the timestamp.", {"Float*", "Array(Float*)"}},
-        {"predict_offsets", "Prediction offset in seconds for each grid point, same length as the grid. Must be the same for all rows.", {"Array(Float32)", "Array(Float64)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesPredictLinearVaryingToGrid = {"`predict_linear` values on the specified grid.", {"Array(Nullable(Float64))"}};
-    FunctionDocumentation::Examples examples_timeSeriesPredictLinearVaryingToGrid = {};
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesPredictLinearVaryingToGrid = {26, 9};
-    FunctionDocumentation::Category category_timeSeriesPredictLinearVaryingToGrid = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_timeSeriesPredictLinearVaryingToGrid = {description_timeSeriesPredictLinearVaryingToGrid, syntax_timeSeriesPredictLinearVaryingToGrid, arguments_timeSeriesPredictLinearVaryingToGrid, parameters_timeSeriesPredictLinearVaryingToGrid, returned_value_timeSeriesPredictLinearVaryingToGrid, examples_timeSeriesPredictLinearVaryingToGrid, introduced_in_timeSeriesPredictLinearVaryingToGrid, category_timeSeriesPredictLinearVaryingToGrid};
-
-    factory.registerFunction("timeSeriesPredictLinearVaryingToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesPredictLinearVarying<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseriesVarying(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesPredictLinearVaryingToGrid});
-
-    /// timeSeriesQuantileVaryingToGrid documentation
-    FunctionDocumentation::Description description_timeSeriesQuantileVaryingToGrid = "Like `timeSeriesQuantileToGrid`, but `phi` is a per-grid-point array argument instead of a fixed parameter. The array describes the whole grid, so it must have one value per grid point and be the same in every aggregated row; otherwise the function throws.";
-    FunctionDocumentation::Syntax syntax_timeSeriesQuantileVaryingToGrid = R"(
-timeSeriesQuantileVaryingToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, phis)
-    )";
-    FunctionDocumentation::Parameters parameters_timeSeriesQuantileVaryingToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples.", {"UInt32"}}
-    };
-    FunctionDocumentation::Arguments arguments_timeSeriesQuantileVaryingToGrid = {
-        {"timestamp", "Timestamp of the sample.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
-        {"value", "Value of the time series corresponding to the timestamp.", {"Float*", "Array(Float*)"}},
-        {"phis", "Quantile level in [0, 1] for each grid point, same length as the grid. Must be the same for all rows.", {"Array(Float32)", "Array(Float64)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileVaryingToGrid = {"Returns the phi-quantile of values on the specified grid.", {"Array(Nullable(Float64))"}};
-    FunctionDocumentation::Examples examples_timeSeriesQuantileVaryingToGrid = {};
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantileVaryingToGrid = {26, 9};
-    FunctionDocumentation::Category category_timeSeriesQuantileVaryingToGrid = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_timeSeriesQuantileVaryingToGrid = {description_timeSeriesQuantileVaryingToGrid, syntax_timeSeriesQuantileVaryingToGrid, arguments_timeSeriesQuantileVaryingToGrid, parameters_timeSeriesQuantileVaryingToGrid, returned_value_timeSeriesQuantileVaryingToGrid, examples_timeSeriesQuantileVaryingToGrid, introduced_in_timeSeriesQuantileVaryingToGrid, category_timeSeriesQuantileVaryingToGrid};
-
-    factory.registerFunction("timeSeriesQuantileVaryingToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesQuantileVarying<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window);
-            };
-            return createAggregateFunctionTimeseriesVarying(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesQuantileVaryingToGrid});
 }
 
 }
