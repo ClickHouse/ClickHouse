@@ -1195,7 +1195,8 @@ try
 
     /// Without this the round count proves nothing: it is also low when the injection is never reached.
     EXPECT_GT(errors, 0u);
-    EXPECT_LT(rounds, 20u);
+    /// One failed round ends the wait; the slack covers a background round landing in the same window.
+    EXPECT_LT(rounds, 8u);
 }
 catch (...)
 {

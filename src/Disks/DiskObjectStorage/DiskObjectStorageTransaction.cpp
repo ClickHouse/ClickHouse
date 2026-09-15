@@ -59,8 +59,8 @@ void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
         for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
         {
-            /// A cleanup round that removed nothing means the object storage is rejecting removals, so
-            /// repeating the wait cannot make progress. The blobs stay queued for background removal.
+            /// A round that could not complete its removals will not do better on an immediate retry, and
+            /// each retry pays the storage's full retry budget. The blobs stay queued for background removal.
             if (!blob_killer->triggerAndWait())
             {
                 LOG_WARNING(getLogger("DiskObjectStorageTransaction"),

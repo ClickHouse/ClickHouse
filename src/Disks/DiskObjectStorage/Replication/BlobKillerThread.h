@@ -31,8 +31,9 @@ public:
 
     void startup();
     void shutdown();
-    /// Returns false when no cleanup round succeeded while waiting, which means removals are currently
-    /// being rejected and the queued blobs were left for a later round.
+    /// Returns false when no cleanup round completed its removals while the caller waited, so the queued
+    /// blobs were left for a later round. The counter is compared as a snapshot, so a concurrent round's
+    /// success can be attributed to this wait; that can only lengthen a wait, never end one early.
     bool triggerAndWait();
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
