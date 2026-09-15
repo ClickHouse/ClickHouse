@@ -151,7 +151,7 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
     return false;
 }
 
-/// Whether `dictGet` accepts this key expression shape for the dictionary's key columns.
+/// Check whether `dictGet` accepts this key expression shape for the dictionary's key columns.
 /// It mirrors what `dictGet` does with its third argument: the outer `Nullable` is stripped
 /// (`columnGetNested`), a `Tuple` supplies one lookup column per element, and a non-tuple
 /// expression is the bare form that only a single key column accepts. `IDictionary::convertKeyColumns`
@@ -197,8 +197,8 @@ void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextP
 
     chassert(key_expr_tuple_type->getElements().size() == 1);
 
-    /// A syntactic wrapper: `tuple(k)` -> `k`. `tuple` produces one element per argument and
-    /// never returns `Nullable`, so a one-element tuple result means exactly one argument.
+    /// Unwrap a syntactic `tuple(k)` expression to `k`. `tuple` produces one element per argument
+    /// and never returns `Nullable`, so a one-element tuple result means exactly one argument.
     if (const auto * key_expr_function = key_expr_node->as<FunctionNode>();
         key_expr_function && key_expr_function->getFunctionName() == "tuple")
     {
@@ -207,20 +207,18 @@ void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextP
         return;
     }
 
-    /// Not a `tuple(...)` call, but still a (possibly `Nullable`) one-element tuple,
-    /// e.g. a column of type `Tuple(UUID)`: extract the element.
+    /// Extract the element from other expressions with a possibly `Nullable` one-element tuple
+    /// type, such as a column of type `Tuple(UUID)`.
     key_expr_node = createTupleElementFunction(context, key_expr_node, 1);
 }
 
-/// Whether comparing `expr_type` values against `key_col_type` values is equivalent to the
-/// conversion `dictGet` applies, so that no explicit cast is needed. The generic comparison
-/// converts both sides to their common supertype, which reproduces the converted lookup only
-/// when the key column type is itself that supertype - a provably total widening, e.g. a
-/// narrow integer expression against a wide key type. The criterion is total for
-/// integer-to-float pairs as well: `getLeastSupertype` refuses e.g. `Int64` with `Float64`
-/// (not enough mantissa bits), so an integer expression passes only when the float key type
-/// represents every input value exactly. It is the same criterion `canReplaceWithDictGetKeys`
-/// uses for the attribute side.
+/// Check whether the key column type is the common supertype, so that the rewrite needs no explicit
+/// cast of the probe. For numeric types, this permits only total widening, such as a narrow integer
+/// expression against a wide key type. `getLeastSupertype` also checks floating-point precision:
+/// it refuses `Int64` with `Float64` because there are not enough mantissa bits, so an integer
+/// expression passes only when the float key type represents every input value exactly.
+/// `canReplaceWithDictGetKeys` uses the same common-supertype criterion for the attribute side.
+/// The caller checks nullable lookup semantics separately from this type comparison.
 bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr & key_col_type)
 {
     const DataTypePtr stripped_expr_type = removeLowCardinalityAndNullable(expr_type);
@@ -229,100 +227,24 @@ bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr &
     return supertype && supertype->equals(*stripped_key_col_type);
 }
 
-/// `dictGet` implicitly converts the key columns to the dictionary key types
-/// (`IDictionary::convertKeyColumns`, which uses `castColumnAccurate`), so e.g. a `String` key
-/// expression is valid for a `UUID` key column, and an `Int16` expression over a `UInt8` key
-/// column throws for values outside of `UInt8`. The rewrites compare the key expression with
-/// values of the key column types and convert via a common supertype instead, which both
-/// rejects valid lookups (`NO_COMMON_TYPE` for `String` against `UUID`) and silently returns
-/// false where `dictGet` throws. `_accurateCast` delegates to `castColumnAccurate` at execution
-/// time, preserving its conversion settings and deferring type errors until rows are evaluated.
-///
-/// That is a per-row guarantee, not a per-query one. The rewritten predicate is an ordinary
-/// expression, so the planner decides which rows it runs on, and that set can differ from the
-/// rows the `dictGet` call would have converted: index analysis skips granules, `PREWHERE`
-/// reorders the filtering, and for a composite key the single-match fold `tuple(...) = (c1, c2)`
-/// is split by `ComparisonTupleEliminationPass` into a short-circuiting `and`, which converts an
-/// element only on rows where the preceding elements matched. A conversion error `dictGet` would
-/// raise for a row the optimized query never converts disappears together with the lookup, the
-/// same way the zero-match constant fold elides the key expression entirely. Conversion results
-/// and exceptions are preserved for rows evaluated by both expressions.
-///
-/// Expressions that need no cast are left untouched, which keeps them usable for index
-/// analysis. Conversions with nullable inputs or destinations keep the original lookup.
-/// `dictGet` converts the nested values of nullable inputs before propagating their null map.
-/// Converting to a nullable key can introduce `NULL` and match a stored null key, whereas the
-/// rewritten comparison would propagate or discard that `NULL`.
-///
-/// Returns false when the rewrite must be skipped entirely.
-bool tryConvertKeyForComparison(QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols, const ContextPtr & context)
+/// Check every normalized key component against its dictionary column type. The expression must have
+/// a valid key shape, with any single-column tuple wrapper already removed.
+bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols)
 {
     if (key_cols.size() == 1)
-    {
-        if (canCompareKeyWithoutCast(key_expr_node->getResultType(), key_cols.front().type))
-            return true;
+        return canCompareKeyWithoutCast(key_expr_node->getResultType(), key_cols.front().type);
 
-        if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType())
-            || isNullableOrLowCardinalityNullable(key_cols.front().type))
-            return false;
-
-        key_expr_node = createResolvedFunction(
-            context, "_accurateCast", {key_expr_node, std::make_shared<ConstantNode>(key_cols.front().type->getName())});
-        return true;
-    }
-
-    /// A composite key with several columns is passed to `dictGet` as a tuple and converted
-    /// per key column, so the rewrite has to cast per element as well. The shape was already
-    /// checked by `keyExpressionMatchesDictionaryStructure`, so the tuple and its arity are guaranteed.
+    /// `keyExpressionMatchesDictionaryStructure` guarantees a tuple with one element per key column.
     const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
     const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
     chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
 
     const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
-
-    std::vector<size_t> elements_to_cast;
     for (size_t i = 0; i < key_cols.size(); ++i)
     {
-        if (canCompareKeyWithoutCast(key_expr_elements[i], key_cols[i].type))
-            continue;
-
-        if (isNullableOrLowCardinalityNullable(key_cols[i].type))
+        if (!canCompareKeyWithoutCast(key_expr_elements[i], key_cols[i].type))
             return false;
-
-        elements_to_cast.push_back(i);
     }
-
-    /// Nothing to convert: keep the original expression, tuple shape included.
-    if (elements_to_cast.empty())
-        return true;
-
-    /// An outer `Nullable` carrier (e.g. `if(cond, (k1, k2), NULL)`) makes every extracted
-    /// element `Nullable`, which is the case the single-column branch above skips as well.
-    if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
-        return false;
-
-    /// Rebuild the tuple, casting only the elements that need it. A syntactic `tuple(...)`
-    /// call supplies its arguments directly; any other tuple-typed expression is taken apart
-    /// with `tupleElement`.
-    QueryTreeNodes key_element_nodes;
-    if (const auto * key_expr_function = key_expr_node->as<FunctionNode>();
-        key_expr_function && key_expr_function->getFunctionName() == "tuple")
-    {
-        chassert(key_expr_function->getArguments().getNodes().size() == key_cols.size());
-        key_element_nodes = key_expr_function->getArguments().getNodes();
-    }
-    else
-    {
-        key_element_nodes.reserve(key_cols.size());
-        for (size_t i = 0; i < key_cols.size(); ++i)
-            key_element_nodes.push_back(createTupleElementFunction(context, key_expr_node, i + 1));
-    }
-
-    for (size_t i : elements_to_cast)
-        key_element_nodes[i] = createResolvedFunction(
-            context, "_accurateCast", {key_element_nodes[i], std::make_shared<ConstantNode>(key_cols[i].type->getName())});
-
-    key_expr_node = createResolvedFunction(context, "tuple", std::move(key_element_nodes));
     return true;
 }
 
@@ -574,8 +496,13 @@ public:
         if (dict_structure.key && key_cols.size() == 1)
             unwrapSingleColumnTupleKey(dictget_function_info.key_expr_node, getContext());
 
-        /// Match the key conversion `dictGet` performs on rows evaluated by the rewritten comparison.
-        if (!tryConvertKeyForComparison(dictget_function_info.key_expr_node, key_cols, getContext()))
+        /// `dictGet` converts each key column with `castColumnAccurate`. Keep the lookup when a comparison
+        /// would need an explicit cast, such as `String` to `UUID` or `Int16` to `UInt8`.
+        /// Public `accurateCast` has different conversion settings and prepares conversions before execution,
+        /// so it cannot preserve the lookup's behavior for empty inputs and skipped branches. Replacement
+        /// expressions must also use functions understood by remote servers, which reanalyze generated SQL.
+        /// Comparisons that only widen key values need no cast and keep the expression usable for indices.
+        if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, key_cols))
             return;
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
@@ -660,10 +587,8 @@ public:
                 /// `0` with it.
                 ///
                 /// Like any constant fold, this replaces the predicate without evaluating the
-                /// key expression: when the key needs the accurate conversion inserted above,
-                /// `dictGet` throws for rows whose key value does not convert, and that error
-                /// disappears here together with the lookup. This applies to both bare keys
-                /// and tuple-wrapped keys.
+                /// key expression. Exceptions from that expression, such as an explicit user-supplied
+                /// cast, are therefore skipped together with the lookup.
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();

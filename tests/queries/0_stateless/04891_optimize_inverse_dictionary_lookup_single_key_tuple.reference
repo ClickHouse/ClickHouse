@@ -53,13 +53,13 @@ nullable tuple expr, like
 nullable tuple expr, like, opt off
 2
 implicit key conversion, wrapped, equals - plan
-SELECT count() AS `count()`\nFROM default.data AS __table1\nWHERE equals(_accurateCast(toString(__table1.k), \'UUID\'), \'22222222-2222-2222-2222-222222222222\')
+SELECT count() AS `count()`\nFROM default.data AS __table1\nWHERE equals(dictGet(\'default.dict_single_key\', \'attr\', tuple(toString(__table1.k))), \'onboarding\')
 implicit key conversion, wrapped, equals
 1
 implicit key conversion, wrapped, equals, opt off
 1
 implicit key conversion, wrapped, like - plan
-SELECT count() AS `count()`\nFROM default.data AS __table1\nWHERE in(_accurateCast(toString(__table1.k), \'UUID\'), (\n    SELECT k AS k\n    FROM dictionary(\'default.dict_single_key\')\n    WHERE like(attr, \'pay%\')\n))
+SELECT count() AS `count()`\nFROM default.data AS __table1\nWHERE like(dictGet(\'default.dict_single_key\', \'attr\', tuple(toString(__table1.k))), \'pay%\')
 implicit key conversion, wrapped, like
 2
 implicit key conversion, wrapped, like, opt off
@@ -69,7 +69,7 @@ implicit key conversion, bare, equals
 implicit key conversion, bare, equals, opt off
 1
 implicit key conversion, simple key, equals - plan
-SELECT count() AS `count()`\nFROM default.data_n AS __table1\nWHERE in(_accurateCast(toString(__table1.n), \'UInt64\'), _CAST([1, 4], \'Array(UInt64)\'))
+SELECT count() AS `count()`\nFROM default.data_n AS __table1\nWHERE equals(dictGet(\'default.dict_simple_key\', \'attr\', toString(__table1.n)), \'paywall\')
 implicit key conversion, simple key, equals
 2
 implicit key conversion, simple key, equals, opt off
@@ -81,7 +81,7 @@ implicit key conversion, numeric widening, equals
 implicit key conversion, numeric widening, equals, opt off
 1
 lossy key conversion, in-range values - plan
-SELECT count() AS `count()`\nFROM default.data_wide AS __table1\nWHERE in(_accurateCast(__table1.w, \'UInt8\'), _CAST([4, 1], \'Array(UInt8)\'))
+SELECT count() AS `count()`\nFROM default.data_wide AS __table1\nWHERE equals(dictGet(\'default.dict_narrow_key\', \'attr\', __table1.w), \'paywall\')
 lossy key conversion, in-range values
 2
 lossy key conversion, in-range values, opt off
@@ -90,8 +90,7 @@ lossy key conversion, wrapped, in-range values
 2
 lossy key conversion, wrapped, in-range values, opt off
 2
-lossy key conversion, zero-match fold
-0
+lossy key conversion, no matching attribute
 NULL-keyed row match, tuple carrier - plan
 SELECT count() AS `count()`\nFROM default.data_nk AS __table1\nWHERE in(tupleElement(if(notEquals(__table1.id, 0), tuple(__table1.id), _CAST(NULL, \'Nullable(Nothing)\')), 1), _CAST([NULL], \'Array(Nullable(UInt64))\'))
 NULL-keyed row match, tuple carrier, projected
@@ -133,7 +132,7 @@ two-column key, equals
 two-column key, equals, opt off
 2
 two-column key, String for UUID column - plan
-SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE and(equals(_accurateCast(toString(__table1.k1), \'UUID\'), \'11111111-1111-1111-1111-111111111111\'), equals(__table1.k2_u8, _CAST(1, \'UInt16\')))
+SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE equals(dictGet(\'default.dict_mc\', \'attr\', tuple(toString(__table1.k1), __table1.k2_u8)), \'paywall\')
 two-column key, String for UUID column
 1
 two-column key, String for UUID column, opt off
@@ -145,19 +144,19 @@ two-column key, no conversion needed
 two-column key, no conversion needed, opt off
 1
 two-column key, String for UUID column, like - plan
-SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE in(tuple(_accurateCast(toString(__table1.k1), \'UUID\'), __table1.k2_u8), (\n    SELECT\n        k1 AS k1,\n        k2 AS k2\n    FROM dictionary(\'default.dict_mc\')\n    WHERE like(attr, \'pay%\')\n))
+SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE like(dictGet(\'default.dict_mc\', \'attr\', tuple(toString(__table1.k1), __table1.k2_u8)), \'pay%\')
 two-column key, String for UUID column, like
 1
 two-column key, String for UUID column, like, opt off
 1
 two-column key, tuple-typed column, equals - plan
-SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE and(equals(_accurateCast(tupleElement(__table1.kt, 1), \'UUID\'), \'11111111-1111-1111-1111-111111111111\'), equals(tupleElement(__table1.kt, 2), _CAST(1, \'UInt16\')))
+SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE equals(dictGet(\'default.dict_mc\', \'attr\', __table1.kt), \'paywall\')
 two-column key, tuple-typed column, equals
 1
 two-column key, tuple-typed column, equals, opt off
 1
 two-column key, tuple-typed column, like - plan
-SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE in(tuple(_accurateCast(tupleElement(__table1.kt, 1), \'UUID\'), tupleElement(__table1.kt, 2)), (\n    SELECT\n        k1 AS k1,\n        k2 AS k2\n    FROM dictionary(\'default.dict_mc\')\n    WHERE like(attr, \'pay%\')\n))
+SELECT count() AS `count()`\nFROM default.data_mc AS __table1\nWHERE like(dictGet(\'default.dict_mc\', \'attr\', __table1.kt), \'pay%\')
 two-column key, tuple-typed column, like
 1
 two-column key, tuple-typed column, like, opt off

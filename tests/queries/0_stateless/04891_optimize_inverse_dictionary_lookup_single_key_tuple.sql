@@ -165,7 +165,7 @@ SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 -- `dictGet` implicitly converts the key expression to the key column type
 -- (`IDictionary::convertKeyColumns`), so a `String` key expression is valid for a
--- `UUID` key column. The rewrite must mirror that conversion.
+-- `UUID` key column. Such lookups retain `dictGet` to preserve the conversion.
 SELECT 'implicit key conversion, wrapped, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(toString(k))) = 'onboarding';
@@ -242,7 +242,7 @@ SELECT 'implicit key conversion, simple key, equals, opt off';
 SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toString(n)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- When a common supertype exists (a narrow integer against a wide key type), the
+-- When the key type is the common supertype (a narrow integer against a wide key type), the
 -- plain comparison already matches `dictGet` conversion semantics and no cast is
 -- inserted, keeping the key expression usable for index analysis.
 SELECT 'implicit key conversion, numeric widening, equals - plan';
@@ -324,11 +324,10 @@ SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', tuple
 SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', tuple(w)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
--- When the attribute value matches no keys, the whole predicate constant-folds to `0`
--- without evaluating the key expression. A key value outside the dictionary key type's
--- range therefore produces a false predicate instead of a conversion exception.
-SELECT 'lossy key conversion, zero-match fold';
-SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing';
+-- An out-of-range key still throws when the attribute value matches no dictionary rows.
+-- The conversion requirement prevents the predicate from being folded to a constant.
+SELECT 'lossy key conversion, no matching attribute';
+SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
@@ -429,7 +428,7 @@ SELECT count() FROM data WHERE dictGet('dict_two_keys', 'attr', (k, k2)) = 'payw
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 -- Multi-column composite keys are converted per key column by `dictGet` exactly as
--- single-column ones are, so the rewrite mirrors the conversion element-wise.
+-- single-column ones are, so every column must permit a comparison without an explicit cast.
 DROP DICTIONARY IF EXISTS dict_mc;
 DROP TABLE IF EXISTS ref_source_mc;
 DROP TABLE IF EXISTS data_mc;
@@ -463,8 +462,8 @@ CREATE TABLE data_mc
     k1 UUID,
     k2_i16 Int16,
     k2_u8 UInt8,
-    -- This tuple column represents the same key as the expression `(toString(k1), k2_u8)`.
-    -- It exercises element extraction from a column instead of a syntactic `tuple` call.
+    -- This tuple column supplies a `String` UUID and an unsigned integer as the two key components.
+    -- Its element types must also be checked when deciding whether to keep the lookup.
     kt Tuple(String, UInt16)
 )
 ENGINE = MergeTree
@@ -473,13 +472,12 @@ ORDER BY k1;
 INSERT INTO data_mc VALUES
     ('11111111-1111-1111-1111-111111111111', 1, 1, ('11111111-1111-1111-1111-111111111111', 1)),
     ('33333333-3333-3333-3333-333333333333', -1, 7, ('33333333-3333-3333-3333-333333333333', 7)),
-    -- This row shares `k1` with the matching dictionary key, so the rewritten conjunction cannot
-    -- short-circuit past the out-of-range `k2_i16` and the conversion is always evaluated.
+    -- Out-of-range values are checked both when `k1` matches a dictionary key and when it misses.
     ('11111111-1111-1111-1111-111111111111', -1, 9, ('11111111-1111-1111-1111-111111111111', 9));
 
 -- A `String` expression for the `UUID` key column is a valid `dictGet` key, but the
--- comparison has no common type for `String` and `UUID`. Only that element is cast;
--- `UInt8` against the `UInt16` key column is a total widening and stays untouched.
+-- comparison has no common type for `String` and `UUID`, so the lookup is kept even though
+-- the second column only needs a widening conversion from `UInt8` to `UInt16`.
 SELECT 'two-column key, String for UUID column - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) = 'paywall';
@@ -489,17 +487,13 @@ SELECT 'two-column key, String for UUID column, opt off';
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- A lossy `Int16` expression over the `UInt16` key column: `dictGet` throws on the rows
--- holding `-1`, and so does the rewrite's `_accurateCast` on every row it is evaluated on,
--- instead of silently comparing in `Int32`. Which rows that is depends on the plan:
--- `ComparisonTupleEliminationPass` splits the single-match fold into a short-circuiting
--- `and`, so the conversion of `k2_i16` runs only on rows whose `k1` matched. One of the
--- out-of-range rows carries the matching `k1`, so the error is raised in any case.
+-- A lossy `Int16` expression over the `UInt16` key column keeps `dictGet`, which throws on
+-- the rows holding `-1` whether or not the first key column matches a dictionary row.
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
--- A key expression that needs no conversion retains its shape so that the rewrite remains
+-- A key expression that needs no explicit cast retains its shape so that the rewrite remains
 -- usable for index analysis.
 SELECT 'two-column key, no conversion needed - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -510,7 +504,7 @@ SELECT 'two-column key, no conversion needed, opt off';
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- The subquery rewrite reuses the same normalized key expression.
+-- A `LIKE` predicate also keeps the lookup when a key column needs an explicit conversion.
 SELECT 'two-column key, String for UUID column, like - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) LIKE 'pay%';
@@ -520,9 +514,8 @@ SELECT 'two-column key, String for UUID column, like, opt off';
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) LIKE 'pay%'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- The key can be a tuple-typed column rather than a syntactic `tuple(...)` call. The rewrite
--- then takes it apart with `tupleElement`, one call per key column over the same expression,
--- and casts only the `String` element.
+-- The key can be a tuple-typed column rather than a syntactic `tuple` call. Its `String`
+-- element needs conversion to `UUID`, so both comparison forms keep the lookup.
 SELECT 'two-column key, tuple-typed column, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', kt) = 'paywall';
