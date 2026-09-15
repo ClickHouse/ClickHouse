@@ -1,0 +1,8 @@
+Test 1: An escape line inside a variation is skipped whole, even when it contains ')'
+Variation Escape	1-0	e4 e5
+Test 2: The same file read one byte at a time, so the escape line starts at a refill boundary
+e4 e5
+Test 3: A game with moves but neither a 'Result' tag nor a termination marker is an error
+Invalid PGN game: the movetext has no game termination marker and there is no 'Result' tag
+Test 4: A 'Result' tag without a termination marker is fine
+1/2-1/2	e4 e5 Nf3 Nc6
