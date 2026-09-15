@@ -1,0 +1,18 @@
+filter consumes the vector column
+5
+6
+7
+SELECT consumes the vector column indirectly
+2	5
+2	6
+2	7
+SELECT contains another distance expression over the vector column
+5	0.1
+6	0
+7	0.1
+the filter consuming the vector column works with the old analyzer as well
+5
+6
+7
+the rewrite still applies when only the ORDER BY consumes the vector column
+1
