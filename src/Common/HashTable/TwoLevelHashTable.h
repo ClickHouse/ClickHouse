@@ -1,8 +1,7 @@
 #pragma once
 
-#include <array>
-#include <mutex>
 #include <type_traits>
+#include <vector>
 #include <base/defines.h>
 #include <Common/CacheLine.h>
 #include <Common/HashTable/HashTable.h>
@@ -28,8 +27,9 @@
   *
   * Buckets share no state, so threads may fill different buckets at the same time when every bucket
   * is written under its own lock. `offsetInternal` numbers the cells of all buckets as one range and
-  * needs the prefix sums of the bucket capacities for that: they are computed on first use, and a
-  * caller that grows the table afterwards recomputes them with `computeBucketPrefix`.
+  * needs the prefix sums of the bucket capacities for that. A caller computes them with
+  * `computeBucketPrefix` once the table stops growing, and again after it grows; the lookup path
+  * itself does not check.
   */
 
 template <size_t initial_size_degree = 8>
@@ -39,7 +39,7 @@ struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initia
     void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
 };
 
-constexpr size_t DEFAULT_BITS_FOR_BUCKET = 8;
+constexpr Int32 DEFAULT_BITS_FOR_BUCKET = 8;
 
 /// A table that directly addresses a fixed key range, so that all buckets can share one instance of
 /// it. Specialized next to the table types that qualify.
@@ -71,11 +71,11 @@ template <
     typename Grower,
     typename Allocator,
     typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
-    size_t bits_for_bucket = DEFAULT_BITS_FOR_BUCKET,
+    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET,
     typename BucketHash = void>
 class TwoLevelHashTable : private boost::noncopyable, protected Hash /// empty base optimization
 {
-    static_assert(bits_for_bucket < 32, "the bucket is taken from the low 32 bits of the hash");
+    static_assert(bits_for_bucket >= 0 && bits_for_bucket < 32, "the bucket is taken from the low 32 bits of the hash");
 
 protected:
     friend class const_iterator;
@@ -143,6 +143,7 @@ private:
         /// the buckets before `b`. Must not run while another thread reads offsets.
         void computeBucketPrefix() const
         {
+            bucket_cells_prefix.assign(NUM_BUCKETS, 0);
             size_t run = 0;
             for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             {
@@ -158,7 +159,7 @@ private:
             if constexpr (NUM_BUCKETS == 1)
                 return static_cast<size_t>(ptr - buckets[0].buf) + 1;
 
-            std::call_once(bucket_prefix_once, [this] { computeBucketPrefix(); });
+            chassert(!bucket_cells_prefix.empty(), "computeBucketPrefix must run before an offset is read");
             return bucket_cells_prefix[bucket] + static_cast<size_t>(ptr - buckets[bucket].buf) + 1;
         }
 
@@ -173,8 +174,7 @@ private:
         }
 
         Impl buckets[NUM_BUCKETS];
-        mutable std::array<size_t, NUM_BUCKETS> bucket_cells_prefix{};
-        mutable std::once_flag bucket_prefix_once;
+        mutable std::vector<size_t> bucket_cells_prefix;
     };
 
     /// One flat table that every bucket maps into. The buckets only partition the keys, which lets
@@ -290,7 +290,6 @@ public:
             return BucketHash{}(key);
     }
 
-private:
     /// Index of the sub-table that holds `key`. A single bucket needs no routing, and fixed-range
     /// storage maps every bucket to the same table, so both fold to zero without computing the
     /// routing hash. The bucket a key routes to is `getBucketFromHash(bucketRoutingHash(...))`.
@@ -627,8 +626,8 @@ public:
         impls.forEachMapped(func);
     }
 
-    /// Recompute what `offsetInternal` numbers cells by. Offsets computed before a bucket grew are
-    /// stale, so a caller that inserts after reading offsets calls this before reading them again.
+    /// Compute what `offsetInternal` numbers cells by. Call it once the table stops growing, and
+    /// again after it grows: an offset read before that is stale, and the lookup path does not check.
     void computeBucketPrefix() const { impls.computeBucketPrefix(); }
 
     void restoreMinMaxOptimization() { impls.restoreMinMaxOptimization(); }
@@ -636,6 +635,7 @@ public:
 
     /// Number of the cell over all buckets: 0 for the zero cell, otherwise the position in the
     /// concatenated bucket buffers plus one, so it fits an array of `getBufferSizeInCells() + 1`.
+    /// `computeBucketPrefix` must have run since the last insert; a single bucket needs none.
     size_t offsetInternal(ConstLookupResult ptr) const { return impls.offsetInternal(ptr, bucketOf(ptr)); }
 
     /// Same, for a caller that iterates and already knows the bucket of `ptr`.

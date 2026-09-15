@@ -26,7 +26,7 @@ template <
     typename Grower,
     typename Allocator,
     template <typename...> typename ImplTable,
-    size_t bits_for_bucket>
+    Int32 bits_for_bucket>
 struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable, bits_for_bucket>>
     : std::true_type
 {
@@ -37,7 +37,7 @@ struct HasConstructorOfNumberOfElements<HashSetTable<Ts...>> : std::true_type
 {
 };
 
-template <typename Key, typename TCell, typename Hash, typename Grower, typename Allocator, size_t bits_for_bucket>
+template <typename Key, typename TCell, typename Hash, typename Grower, typename Allocator, Int32 bits_for_bucket>
 struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Key, TCell, Hash, Grower, Allocator, bits_for_bucket>> : std::true_type
 {
 };

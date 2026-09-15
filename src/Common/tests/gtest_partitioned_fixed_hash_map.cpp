@@ -23,7 +23,7 @@
 namespace
 {
 
-template <typename Key, size_t size_bits, size_t bits_for_bucket>
+template <typename Key, size_t size_bits, Int32 bits_for_bucket>
 using Partitioned = PartitionedFixedHashMap<Key, UInt64, size_bits, bits_for_bucket>;
 
 template <typename Key, size_t size_bits>
@@ -57,7 +57,7 @@ std::vector<size_t> offsetsByIteration(Map & map)
     return offsets;
 }
 
-template <size_t... bits, typename Fn>
+template <Int32... bits, typename Fn>
 void forBucketBits(Fn && fn)
 {
     (fn.template operator()<bits>(), ...);
@@ -121,7 +121,7 @@ TEST(PartitionedFixedHashMap, CellsAndOffsetsMatchThePlainMap)
     for (UInt32 key = 0; key < num_keys; ++key)
         insertKeyValue(plain, key, key);
 
-    forBucketBits<0, 8>([&]<size_t bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
     {
         using Map = Partitioned<UInt32, size_bits, bits>;
         Map map;
@@ -147,7 +147,7 @@ TEST(PartitionedFixedHashMap, BufferSizeIsIndependentOfBucketCount)
     constexpr size_t size_bits = 16;
     constexpr size_t expected_cells = 1ULL << size_bits;
 
-    forBucketBits<0, 1, 4, 8>([&]<size_t bits>()
+    forBucketBits<0, 1, 4, 8>([&]<Int32 bits>()
     {
         using Map = Partitioned<UInt32, size_bits, bits>;
         Map map;
@@ -167,7 +167,7 @@ TEST(PartitionedFixedHashMap, IterationVisitsEveryCellOnce)
     constexpr size_t size_bits = 16;
     constexpr UInt32 num_keys = 3000;
 
-    forBucketBits<0, 8>([&]<size_t bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
     {
         Partitioned<UInt32, size_bits, bits> map;
         for (UInt32 key = 0; key < num_keys; ++key)
@@ -198,7 +198,7 @@ TEST(PartitionedFixedHashMap, RoutingIsInRangeAndStable)
     constexpr size_t size_bits = 16;
     constexpr UInt32 num_keys = 4000;
 
-    forBucketBits<0, 8>([&]<size_t bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
     {
         using Map = Partitioned<UInt32, size_bits, bits>;
         Map map;
@@ -262,7 +262,7 @@ TEST(PartitionedFixedHashMap, SpreadsKeysThatShareHighOrLowBits)
 TEST(PartitionedFixedHashMap, SmallKeyTypeIsFullyAddressable)
 {
     /// Every key of `UInt8` must be reachable, also with more buckets than the table has cache lines.
-    forBucketBits<0, 8>([&]<size_t bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
     {
         Partitioned<UInt8, 8, bits> map;
         for (size_t key = 0; key < 256; ++key)
@@ -424,7 +424,7 @@ TEST(PartitionedFixedHashSet, RecordsPresenceAndRoutesByCacheLine)
     constexpr size_t keys_per_line = DB::CH_CACHE_LINE_SIZE / sizeof(FixedHashTableCell<UInt16>);
     constexpr UInt32 num_lines = 1000;
 
-    forBucketBits<0, 8>([&]<size_t bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
     {
         using Set = PartitionedFixedHashSet<UInt16, 16, bits>;
         Set set;
