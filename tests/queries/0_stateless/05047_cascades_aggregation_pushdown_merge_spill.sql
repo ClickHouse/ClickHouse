@@ -1,3 +1,7 @@
+-- Tags: no-flaky-check
+-- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+-- execution, and this one also spills; the flaky check's repeated runs exceed its budget.
+
 -- End-to-end external-aggregation (spill) coverage for the merge-only `Aggregating` above the
 -- pushed variant-A join. The full-`Params` copy in the rule and the settings round trip of the
 -- serialized fragment must deliver `max_bytes_before_external_group_by` (and the two-level
