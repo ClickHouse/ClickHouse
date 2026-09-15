@@ -143,12 +143,13 @@ namespace QueryPlanFormat
         out << '\n';
     }
 
-    String formatNodePretty(
+    static String formatNodePretty(
         const ActionsDAG::Node * node,
         const PrettyColumnNameMap & pretty_names,
         const PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
-        int parent_precedence = 0);
+        int parent_precedence = 0,
+        bool in_secret_slot = false);
 
     static PrettyColumnName formatFilterPretty(
         const ActionsDAG & dag,
