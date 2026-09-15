@@ -2,10 +2,11 @@
 
 # Regression test for the resource usage annotation rendered on top of the progress bar
 # (once the query is at least halfway done): the cells it covers must keep the colors of
-# the bar history, instead of being repainted with the current state only. The query is a
-# hash join whose build side is read through a throttler (yellow) and whose probe side is
-# CPU-bound (green), so the history under the annotation is mixed, and the annotation must
-# be rendered with both background colors.
+# the bar history, instead of being repainted with the current state only. The query reads
+# a single part through a throttler: the first cells are green (the read starts at full speed
+# while the throttler's burst budget lasts, and the meters skip the first points), the rest
+# of the bar is yellow, so the history under the annotation is mixed, and the annotation
+# must be rendered with both background colors.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -22,11 +23,12 @@ set env(CLICKHOUSE_LOCAL_PATH) $local_path
 file delete -force -- $local_path
 
 log_user 0
-set timeout 120
+set timeout 60
 match_max 100000
-# The annotation is shown only when the progress bar is wider than twice the annotation, and
-# the bar has to be wide enough for the throttled prefix to span more than one cell.
-set stty_init "rows 25 cols 240"
+# The annotation is shown only when the progress bar is wider than twice the annotation, and it
+# covers the first cells of the bar: the terminal is just wide enough for it to be shown, so that
+# the annotation spans more than a third of the bar and covers the green-to-yellow transition.
+set stty_init "rows 25 cols 180"
 
 expect_after {
     -i $any_spawn_id eof { exp_continue }
@@ -37,13 +39,16 @@ spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
 send "source $basedir/../shell_config.sh\r"
 expect "bash) "
 
-send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --query 'CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY (); INSERT INTO t SELECT number FROM numbers(3000000)' && echo created\r"
+# A single part (one insert block), so the total number of rows is known from the start and
+# the bar is shown while the query is less than halfway done. About 1.6 MB compressed on disk.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --query 'CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY (); INSERT INTO t SELECT number FROM numbers(400000)' && echo created\r"
 expect "created"
 expect "bash) "
 
-# The build side of the join (`t`, a few seconds at 3 MB/s) is read before the probe side
-# (`numbers`, CPU-bound), so the bar starts yellow and turns green later.
-send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_local_read_bandwidth 3000000 --query 'SELECT count() FROM numbers(100000000) AS a INNER JOIN t AS b ON a.number = b.n WHERE NOT ignore(sipHash64(a.number))' >/dev/null 2>&1\r"
+# The throttler lets the first 300 KB through at once and the rest at 300 KB/s: the first
+# fifth of the bar is read at full speed (green), the remaining seconds are spent sleeping
+# in the throttler (yellow).
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_local_read_bandwidth 300000 --query 'SELECT count() FROM t WHERE NOT ignore(n)' >/dev/null 2>&1\r"
 
 # Past 50% the annotation is rendered at the left, on top of the bar, with a black-on-green
 # (`30;42`) or black-on-yellow (`30;43`) background. A single background for the whole
