@@ -399,6 +399,14 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # leak in disguise - `paciasp` mixes `SP` into the signature, so one call site produces a
     # different value at every stack depth and each one takes a fresh entry in the stack depot,
     # which is never freed.
+    #
+    # This covers the C, C++ and assembly objects. The Rust ones (`skim`, `delta-kernel`, `chdig`,
+    # `wasmtime`, ...) keep unsigned return addresses: `rustc` treats `-Zbranch-protection` as
+    # ABI-affecting and refuses it outright while `std` comes precompiled without it ("mixing
+    # `-Zbranch-protection` will cause an ABI mismatch"). Signing them needs either `std` built from
+    # source with the same flag - non-sanitizer builds do not use `-Zbuild-std` - or an explicit
+    # `-Cunsafe-allow-abi-mismatch=branch-protection`, so it wants its own change.
+    #
     # Our own unwinding is unaffected: `StackTrace` and jemalloc's profiler go through
     # `unw_backtrace`, whose DWARF-based stepper follows `DW_CFA_AARCH64_negate_ra_state`, and
     # the frame-pointer walk that `StackTrace::tryCapture` uses under TSan is abseil's, which
