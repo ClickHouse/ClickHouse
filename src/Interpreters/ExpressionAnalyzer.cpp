@@ -1,80 +1,90 @@
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <memory>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/WindowFunction.h>
-#include <AggregateFunctions/parseAggregateFunctionParameters.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Joins.h>
-#include <Core/Names.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/validateGroupByKeyType.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Functions/FunctionsExternalDictionaries.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/ConstantJoin.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DirectJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/GlobalSubqueriesVisitor.h>
-#include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashTablesStatistics.h>
-#include <Interpreters/JoinSwitcher.h>
-#include <Interpreters/JoinUtils.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/PasteJoin.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/SpillingHashJoin.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/misc.h>
-#include <Interpreters/replaceForPositionalArguments.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/QueryParameterVisitor.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryPipeline/SizeLimits.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageJoin.h>
-#include <Common/StringUtils.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
+#include <Parsers/ASTInterpolateElement.h>
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/validateGroupByKeyType.h>
+#include <Columns/IColumn.h>
+
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/SpillingHashJoin.h>
+#include <Interpreters/MergeJoin.h>
+#include <Interpreters/DirectJoin.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/replaceForPositionalArguments.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
+
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <AggregateFunctions/WindowFunction.h>
+
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/StorageJoin.h>
+#include <Functions/FunctionsExternalDictionaries.h>
+
+#include <Dictionaries/DictionaryStructure.h>
+
+#include <Common/typeid_cast.h>
+#include <Common/StringUtils.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
+#include <Core/SettingsEnums.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/PasteJoin.h>
+#include <QueryPipeline/SizeLimits.h>
+
+
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/GlobalSubqueriesVisitor.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/JoinUtils.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/PreparedSets.h>
+
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -86,7 +96,6 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool enable_early_constant_folding;
-    extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 max_bytes_in_set;
@@ -94,7 +103,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
-    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_read_in_order;
@@ -120,7 +128,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int ILLEGAL_COLUMN;
-    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -690,10 +697,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             for (const auto & col : actions_dag->getResultColumns())
             {
                 if (col.name == with_alias->getColumnName())
-                {
                     DB::validateGroupByKeyType(col.type, context_.getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
-                    DB::validateWindowKeyType(col.type, "PARTITION BY");
-                }
             }
 
             desc.partition_by_actions.push_back(std::move(actions_dag));
@@ -717,14 +721,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
             auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
-
-            const auto & sort_key_name = order_by_element.children.front()->getColumnName();
-            for (const auto & col : actions_dag->getResultColumns())
-            {
-                if (col.name == sort_key_name)
-                    DB::validateWindowKeyType(col.type, "ORDER BY");
-            }
-
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }
@@ -732,6 +728,15 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.full_sort_description = desc.partition_by;
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
+
+    if (definition.frame_type != WindowFrame::FrameType::ROWS
+        && definition.frame_type != WindowFrame::FrameType::RANGE)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Window frame '{}' is not implemented (while processing '{}')",
+            definition.frame_type,
+            ast->formatForErrorMessage());
+    }
 
     const auto * window_function = aggregate_function ? dynamic_cast<const IWindowFunction *>(aggregate_function.get()) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
@@ -767,8 +772,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
     }
-
-    desc.checkValid();
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
@@ -1011,20 +1014,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
-    if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
-        && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
-        analyzed_join->setRowStoreEnabled(true);
-
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
-
-    /// Preserve the set of algorithms that accepted CROSS and comma joins before they were handled by ConstantJoin.
-    const auto is_cross_join_compatible = algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
-        || algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
-        || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
-
-    if (is_cross_join_compatible && isCrossOrComma(analyzed_join->kind()))
-        return std::make_shared<ConstantJoin>(analyzed_join, right_sample_block);
 
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
@@ -1036,10 +1027,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             return direct_join;
         }
     }
-
-    if (analyzed_join->isJoinWithConstant()
-        || (!isCrossOrComma(analyzed_join->kind()) && analyzed_join->getClauses().empty() && analyzed_join->strictness() != JoinStrictness::Asof))
-        return std::make_shared<ConstantJoin>(analyzed_join, right_sample_block);
 
     if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
@@ -1071,7 +1058,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        HashJoinStatsCollectingParams{});
+                        StatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1085,16 +1072,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(
-                analyzed_join, settings[Setting::max_threads], right_sample_block, HashJoinStatsCollectingParams{});
+                analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(analyzed_join))
-            return std::make_shared<FullSortingMergeJoin>(
-                analyzed_join, right_sample_block, /*null_direction_=*/1,
-                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+            return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
@@ -1132,7 +1117,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        HashJoinStatsCollectingParams{});
+                        StatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1145,7 +1130,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         }
 
         if (MergeJoin::isSupported(analyzed_join))
-            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, /*any_take_last_row_=*/false);
+            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     return nullptr;
@@ -1163,20 +1148,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
-    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
-    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
-    /// which the setting parser rejects.
-    std::vector<String> enabled_algorithm_names;
-    enabled_algorithm_names.reserve(join_algorithms.size());
-    for (auto algorithm : join_algorithms)
-        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
-        "with the given right table storage type",
-        fmt::join(enabled_algorithm_names, ", "),
-        toString(analyzed_join->strictness()),
-        toString(analyzed_join->kind()));
+        "Can't execute any of specified join algorithms for this strictness/kind and right storage type");
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1854,42 +1827,6 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     return true;
 }
 
-bool SelectQueryExpressionAnalyzer::appendLimitRange(ExpressionActionsChain & chain, bool only_types)
-{
-    const auto * select_query = getSelectQuery();
-
-    if (!select_query->limitAfter() && !select_query->limitUntil())
-        return false;
-
-    ExpressionActionsChainSteps::Step & step = chain.lastStep(aggregated_columns);
-
-    auto analyze_boundary = [&](const ASTPtr & expr, const char * description)
-    {
-        if (!expr)
-            return;
-        if (astContainsArrayJoinFunction(expr))
-            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
-        getRootActionsForHaving(expr, only_types, step.actions()->dag);
-        const auto & column_name = expr->getColumnName();
-        if (!only_types)
-        {
-            const auto * node = step.actions()->dag.tryFindInOutputs(column_name);
-            if (node && !node->result_type->canBeUsedInBooleanContext())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                    "{} expression must be boolean, got {}", description, node->result_type->getName());
-        }
-        step.addRequiredOutput(column_name);
-    };
-
-    analyze_boundary(select_query->limitAfter(), "LIMIT AFTER");
-    analyze_boundary(select_query->limitUntil(), "LIMIT UNTIL");
-
-    for (const auto & column : aggregated_columns)
-        step.addRequiredOutput(column.name);
-
-    return true;
-}
-
 ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     const auto * select_query = getSelectQuery();
@@ -2054,14 +1991,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const StorageMetadataPtr & metadata_snapshot,
     bool first_stage_,
     bool second_stage_,
-    bool from_aggregation_stage_,
     bool only_types,
     const FilterDAGInfoPtr & row_policy_info_,
     const FilterDAGInfoPtr & additional_filter,
     const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
-    , from_aggregation_stage(from_aggregation_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
     , has_window(query_analyzer.hasWindow())
     , use_grouping_set_key(query_analyzer.useGroupingSetKey())
@@ -2393,16 +2328,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
             before_limit_by = chain.getLastActions();
-            chain.addStep();
-        }
-
-        /// The range is applied where the second stage ends: on this server when it runs the second stage
-        /// itself, and on the initiator that continues from the remote servers' after-aggregation state.
-        if (query_analyzer.appendLimitRange(chain, only_types || !(second_stage || from_aggregation_stage)))
-        {
-            before_limit_range = chain.getLastActions();
-            limit_range_start_column_name = query.limitAfter() ? query.limitAfter()->getColumnName() : "";
-            limit_range_end_column_name = query.limitUntil() ? query.limitUntil()->getColumnName() : "";
             chain.addStep();
         }
 

@@ -27,7 +27,6 @@
 #include <Planner/Utils.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaAllocator.h>
-#include <Common/ProfileEvents.h>
 #include <Functions/CastOverloadResolver.h>
 
 
@@ -108,8 +107,8 @@ static std::unique_ptr<FilterStep> buildFilterStepWithIn(const ColumnWithTypeAnd
 
 Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
 {
-    /// `buildQueryPipeline` optimizes internally, which also lets it decide the
-    /// distributed-to-local fallback before the optimization passes.
+    plan.optimize(plan_optimization_settings);
+
     auto pipeline_builder = plan.buildQueryPipeline(plan_optimization_settings, pipeline_build_settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
 
