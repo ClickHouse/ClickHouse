@@ -135,6 +135,18 @@ public:
         return getData().size();
     }
 
+    /// Real reserve (base IColumn::reserve is a no-op): lets a caller make a run of `push_back`
+    /// non-throwing.
+    void reserve(size_t n) override
+    {
+        data.reserve(n);
+    }
+
+    size_t capacity() const override
+    {
+        return data.capacity();
+    }
+
     MutableColumnPtr cloneEmpty() const override;
 
     Field operator[](size_t n) const override;

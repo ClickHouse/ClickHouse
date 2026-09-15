@@ -291,6 +291,14 @@ public:
         nested_func->insertMergeResultInto(getNestedPlace(place), to, arena);
     }
 
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        /// insertResultInto delegates to the nested function on the nested place and same column, so
+        /// forward the reservation there too (a `-State` result reachable through `-Distinct` otherwise
+        /// keeps the throwing transfer window when this is a `-Tuple` element).
+        nested_func->reserveForInsertResult(getNestedPlace(place), to);
+    }
+
     size_t sizeOfData() const override
     {
         return prefix_size + nested_func->sizeOfData();
