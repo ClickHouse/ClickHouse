@@ -16,6 +16,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
 #include <Interpreters/Context.h>
@@ -149,6 +150,44 @@ protected:
             SerializationInfoByName serialization_hints{{}};
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
             const auto * alias = storage->as<StorageAlias>();
+            /// Set when the table is reached through a read-only `Overlay` facade: the id of the
+            /// underlying source table, on which the privileges must be granted as well (the
+            /// facade must not widen visibility).
+            const std::optional<StorageID> overlay_source_id
+                = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, storage);
+
+            /// The privilege checks run before the table is locked and its metadata is probed: for a
+            /// table that must stay hidden nothing of it may be touched, otherwise a failing metadata
+            /// probe (`tryGetColumnSizes` of a `Merge` table over an unavailable remote database, for
+            /// example) would abort the query and expose the hidden table through its error.
+            /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
+            /// For a table reached through a read-only `Overlay` facade the privilege is required
+            /// on the underlying source table too.
+            if (need_to_check_access_for_tables
+                && !(access->isGranted(AccessType::SHOW_TABLES, database_name, table_name)
+                     && (!overlay_source_id
+                         || access->isGranted(AccessType::SHOW_TABLES, overlay_source_id->database_name, overlay_source_id->table_name))))
+                continue;
+
+            const bool need_to_check_access_for_columns = need_to_check_access_for_tables
+                && !(access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
+                     && (!overlay_source_id
+                         || access->isGranted(AccessType::SHOW_COLUMNS, overlay_source_id->database_name, overlay_source_id->table_name)));
+
+            /// Whether the caller is allowed to see the given column: `SHOW_COLUMNS` on the written name,
+            /// on the underlying source table when reached through a read-only `Overlay` facade, and on
+            /// the target table of an `Alias`.
+            auto is_column_visible = [&](const String & column_name)
+            {
+                if (need_to_check_access_for_columns
+                    && !(access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column_name)
+                         && (!overlay_source_id
+                             || access->isGranted(
+                                 AccessType::SHOW_COLUMNS, overlay_source_id->database_name, overlay_source_id->table_name, column_name))))
+                    return false;
+
+                return !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column_name);
+            };
 
             {
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
@@ -162,13 +201,16 @@ protected:
                 const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
+                /// The size and serialization probes touch the storage beyond its metadata; run them only
+                /// when at least one column survives the access checks above, so that a table whose
+                /// columns are all hidden is never probed.
                 const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
                 bool can_expose_any_column_metadata = !needs_column_metadata;
                 if (needs_column_metadata)
                 {
                     for (const auto & column : columns)
                     {
-                        if (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
+                        if (is_column_visible(column.name))
                         {
                             can_expose_any_column_metadata = true;
                             break;
@@ -199,20 +241,11 @@ protected:
                 }
             }
 
-            /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
-            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
-                continue;
-
-            bool need_to_check_access_for_columns = need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
-
             size_t position = 0;
             for (const auto & column : columns)
             {
                 ++position;
-                if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
-                    continue;
-
-                if (alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
+                if (!is_column_visible(column.name))
                     continue;
 
                 size_t src_index = 0;

@@ -1,0 +1,11 @@
+The facade reads its source
+1
+A facade cannot be created over a name that another facade uses as a source
+rejected
+The same holds for ATTACH
+rejected
+Re-creating the source as an ordinary database is allowed, and the facade sees it again
+2
+Whole-server scans work while a facade has a source it cannot use
+1
+1

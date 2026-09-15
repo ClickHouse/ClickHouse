@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -294,6 +295,18 @@ BlockIO InterpreterKillQueryQuery::execute()
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
                         command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name,
                         InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
+
+                    /// The row may expose the table under a read-only `Overlay` facade name while the
+                    /// mutation runs on the underlying source table; also require the grant there, so
+                    /// the facade cannot widen access (mirrors the dual-grant contract of the read path).
+                    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, storage))
+                    {
+                        auto source_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
+                            command_ast->as<const ASTAlterCommand &>(), source_id->database_name, source_id->table_name,
+                            InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
+                        required_access_rights.insert(required_access_rights.end(), source_access_rights.begin(), source_access_rights.end());
+                    }
+
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;
@@ -359,6 +372,18 @@ BlockIO InterpreterKillQueryQuery::execute()
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
                         alter_command, table_id.database_name, table_id.table_name,
                         InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
+
+                    /// The row may expose the table under a read-only `Overlay` facade name while the
+                    /// part move runs on the underlying source table; also require the grant there, so
+                    /// the facade cannot widen access (mirrors the dual-grant contract of the read path).
+                    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, storage))
+                    {
+                        auto source_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
+                            alter_command, source_id->database_name, source_id->table_name,
+                            InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
+                        required_access_rights.insert(required_access_rights.end(), source_access_rights.begin(), source_access_rights.end());
+                    }
+
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;

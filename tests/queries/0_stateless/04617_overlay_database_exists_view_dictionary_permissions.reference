@@ -1,0 +1,14 @@
+Sanity: default user sees the view and the dictionary through the facade
+1
+1
+Facade-only SHOW grant: EXISTS VIEW reports an existing source view as nonexistent, same as a missing one
+0
+0
+Facade-only SHOW grant: EXISTS DICTIONARY reports an existing source dictionary as nonexistent, same as a missing one
+0
+0
+Dual SHOW grants: EXISTS VIEW and EXISTS DICTIONARY see the source objects
+1
+1
+Dual SHOW grants: a missing name still reports 0
+0

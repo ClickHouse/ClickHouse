@@ -24,6 +24,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
@@ -586,6 +587,15 @@ NameSet checkAccessRights(
     if (typeid_cast<const StorageDummy *>(storage.get()))
         return {};
 
+    /// `storage_id` is the table as written in the query. When a table is reached through a
+    /// read-only `Overlay` facade, that is the facade name, while the storage itself belongs to
+    /// the underlying source database. Reading through the facade requires a grant on *both* the
+    /// facade database and the underlying source database, so collect both ids and check each.
+    /// For a plain table the two ids coincide and only one check is performed.
+    std::vector<StorageID> ids_to_check{storage_id};
+    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(storage_id, storage))
+        ids_to_check.push_back(*source_id);
+
     if (column_names.empty())
     {
         NameSet accessible_columns;
@@ -596,9 +606,18 @@ NameSet checkAccessRights(
         const auto * alias = storage->as<StorageAlias>();
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
+            /// The column is accessible only if it is granted through every id (facade + source).
+            bool granted_everywhere = true;
+            for (const auto & id : ids_to_check)
+            {
+                if (!access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+                {
+                    granted_everywhere = false;
+                    break;
+                }
+            }
             /// An `Alias` also requires access to the selected column of its target table.
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
+            if (granted_everywhere && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 
@@ -615,8 +634,11 @@ NameSet checkAccessRights(
     // In case of cross-replication we don't know what database is used for the table.
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    for (const auto & id : ids_to_check)
+    {
+        if (id.hasDatabase())
+            query_context->checkAccess(AccessType::SELECT, id, column_names);
+    }
 
     return {};
 }

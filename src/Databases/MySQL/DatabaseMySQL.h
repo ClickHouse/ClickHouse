@@ -131,6 +131,7 @@ private:
 
     bool persistent = true;
     const UUID db_uuid;
+    void destroy();
 };
 
 }

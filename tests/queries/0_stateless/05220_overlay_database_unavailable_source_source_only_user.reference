@@ -1,0 +1,22 @@
+Source-only grants: the data entrypoints are denied on the facade, not the connection error
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+Source-only grants: the metadata entrypoints are denied on the facade, not the connection error
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+Source-only grants: a parameterized view through the facade is indistinguishable from a missing one
+UNKNOWN_FUNCTION
+not inlined
+Source-only grants: the listings through the facade are empty, not the connection error
+
+0
+0
+Source-only grants: the source itself still reports its own error on direct access
+ALL_CONNECTION_TRIES_FAILED
+ALL_CONNECTION_TRIES_FAILED
+Dual grants: the source connection error is visible through the facade
+ALL_CONNECTION_TRIES_FAILED
+ALL_CONNECTION_TRIES_FAILED

@@ -1,0 +1,5 @@
+Facade-only user: the misspelled name fails without suggesting the hidden source table
+0
+0
+Dual-grant user: the misspelled name is corrected to the source table through the facade
+1
