@@ -16,7 +16,7 @@ struct IsFixedRangeTable<FixedHashMap<Key, Mapped, Cell, FixedHashTableStoredSiz
 /// under, so the cells, their offsets and iteration are those of the plain `FixedHashMap`. Keys are
 /// routed by the cache line of their cell, not by the key's high bits, so a dense key range spreads
 /// over the buckets. With `bits_for_bucket = 0` it is the plain map with no routing at all.
-template <typename Key, typename Mapped, size_t size_bits = sizeof(Key) * 8, size_t bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
+template <typename Key, typename Mapped, size_t size_bits = sizeof(Key) * 8, Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
 using PartitionedFixedHashMap = TwoLevelHashTable<
     Key,
     FixedHashMapCell<Key, Mapped>,

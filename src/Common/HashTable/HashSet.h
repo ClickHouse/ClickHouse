@@ -144,7 +144,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    size_t bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
+    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
 class TwoLevelHashSetTable
     : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, bits_for_bucket>
 {
@@ -232,7 +232,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    size_t bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
+    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
 using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator, bits_for_bucket>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
@@ -256,7 +256,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    size_t bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
+    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
 using TwoLevelHashSetWithSavedHash
     = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator, bits_for_bucket>;
 

@@ -24,7 +24,7 @@
 namespace
 {
 
-template <size_t bits>
+template <Int32 bits>
 using MapWithBits = TwoLevelHashMap<UInt64, UInt64, DefaultHash<UInt64>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, bits>;
 
 using OneBucketMap = MapWithBits<0>;
@@ -181,7 +181,8 @@ TEST(TwoLevelHashTableBuckets, OneBucketBehavesLikeASingleLevelTable)
     ASSERT_EQ(map.size(), num_keys);
     ASSERT_EQ(map.impls[0].size(), num_keys);
 
-    /// The numbering is the one bucket's own, both before and after the prefix sums exist.
+    /// The numbering is the one bucket's own, and needs no `computeBucketPrefix`; the second pass
+    /// checks that computing them changes nothing.
     for (int pass = 0; pass < 2; ++pass)
     {
         for (UInt64 key = 1; key <= num_keys; ++key)
@@ -218,10 +219,10 @@ TEST(TwoLevelHashTableBuckets, BucketIsTakenFromTheHighEndOfTheLow32Bits)
 {
     /// A caller that routes keys before it has a table computes the bucket itself, so the formula is
     /// part of the interface: the top `bits` of the low 32 bits of the hash.
-    const auto check = []<size_t bits>()
+    const auto check = []<Int32 bits>()
     {
         using Map = MapWithBits<bits>;
-        ASSERT_EQ(Map::bucketShift(), 32 - bits);
+        ASSERT_EQ(Map::bucketShift(), static_cast<UInt32>(32 - bits));
         for (const size_t hash_value : {size_t(0), size_t(1), size_t(0xFFFFFFFFULL), size_t(0x100000000ULL),
                                         size_t(0xFFFFFFFFFFFFFFFFULL), size_t(0x123456789ABCDEFULL), size_t(0xDEADBEEF00000000ULL)})
         {
@@ -314,17 +315,18 @@ TEST(TwoLevelHashTableBuckets, OffsetsAreUniqueAcrossBuckets)
 {
     constexpr UInt64 num_keys = 2000;
 
-    /// Without an explicit `computeBucketPrefix`: the prefix sums are computed on first use.
-    auto lazy = std::make_unique<RoutedMap>();
+    /// With a bucket hash the bucket of a cell comes from the key, not from the cell hash.
+    auto routed = std::make_unique<RoutedMap>();
     for (UInt64 key = 1; key <= num_keys; ++key)
-        insertKeyValue(*lazy, key, key);
-    assertOffsetsAreUnique(*lazy, 1, num_keys);
+        insertKeyValue(*routed, key, key);
+    routed->computeBucketPrefix();
+    assertOffsetsAreUnique(*routed, 1, num_keys);
 
-    auto eager = std::make_unique<DefaultMap>();
+    auto plain = std::make_unique<DefaultMap>();
     for (UInt64 key = 1; key <= num_keys; ++key)
-        insertKeyValue(*eager, key, key);
-    eager->computeBucketPrefix();
-    assertOffsetsAreUnique(*eager, 1, num_keys);
+        insertKeyValue(*plain, key, key);
+    plain->computeBucketPrefix();
+    assertOffsetsAreUnique(*plain, 1, num_keys);
 }
 
 
@@ -333,6 +335,7 @@ TEST(TwoLevelHashTableBuckets, OffsetsAreValidAgainAfterGrowthAndRecompute)
     MapWithBits<4> map;
     for (UInt64 key = 1; key <= 200; ++key)
         insertKeyValue(map, key, key);
+    map.computeBucketPrefix();
     assertOffsetsAreUnique(map, 1, 200);
 
     const size_t cells_before = map.getBufferSizeInCells();
