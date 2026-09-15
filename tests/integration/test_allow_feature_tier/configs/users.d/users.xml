@@ -9,12 +9,6 @@
 
             <allow_experimental_funnel_functions>0</allow_experimental_funnel_functions>
         </default>
-
-        <!-- An EXPERIMENTAL setting a read-only storage puts in effect, used to check writes which change
-             which same-name user is visible. -->
-        <tier_config_experimental>
-            <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
-        </tier_config_experimental>
     </profiles>
     <users>
         <default>
@@ -29,9 +23,5 @@
             <no_password/>
             <profile>default</profile>
         </tier_config_user>
-        <tier_config_experimental_user>
-            <no_password/>
-            <profile>tier_config_experimental</profile>
-        </tier_config_experimental_user>
     </users>
 </clickhouse>

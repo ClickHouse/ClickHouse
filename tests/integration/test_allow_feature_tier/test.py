@@ -18,6 +18,7 @@ instance = cluster.add_instance(
     ],
     user_configs=[
         "configs/users.d/users.xml",
+        "configs/users.d/config_experimental_user.xml",
     ],
     stay_alive=True,
 )
@@ -100,7 +101,7 @@ MERGE_TREE_PRODUCTION_MIN = 536870912
 MERGE_TREE_PRODUCTION_MAX = 2147483648
 MERGE_TREE_PRODUCTION_VALUE = 1073741824
 
-# Defined in configs/users.d/users.xml with a profile setting `EXPERIMENTAL_SETTING` to 1
+# Defined in configs/users.d/config_experimental_user.xml, with a profile setting `EXPERIMENTAL_SETTING` to 1
 CONFIG_EXPERIMENTAL_USER = "tier_config_experimental_user"
 
 # Allowed by configs/custom_settings_prefix.xml
