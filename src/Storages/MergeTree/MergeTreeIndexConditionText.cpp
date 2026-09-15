@@ -1213,14 +1213,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
-    auto stripped_value_type = removeLowCardinality(value_type);
-    if (!value_field.isNull())
-        stripped_value_type = removeNullable(stripped_value_type);
-    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
-    /// padding, which string equality ignores, so the index would discard matching granules.
-    if (WhichDataType(stripped_value_type).isString())
-        value_type = stripped_value_type;
-
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
@@ -1409,50 +1401,30 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
-        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
-        /// In all other cases, bypass the index.
+        /// `hasToken` splits by non-alphanumeric characters, so only an index with the same tokenizer can answer it.
         if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
             return false;
 
-        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
-        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
-        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
-        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
-        /// pre/postprocessor is configured; the plain index path is unaffected.
+        /// `hasTokenOrNull` is never rewritten to a direct read, so its needle never goes through the
+        /// pre/postprocessor, while `stringToTokens` applies them. The index would disagree with the scan.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
-        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
-        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
-        ///
-        /// A separator is any ASCII non-alphanumeric character.
-        if (function_name == "hasToken"
-            && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+        /// The scan raises BAD_ARGUMENTS for a needle with a separator, and the exact direct read of `hasToken`
+        /// would replace the predicate and hide it. `hasTokenOrNull` returns NULL for such a needle instead.
+        if (function_name == "hasToken" && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
+            /// A needle without a word character is invalid: leave it to the scan, which raises or returns NULL.
+            /// Otherwise the pre/postprocessor dropped the needle (e.g. a stop word), so it is not in the index:
+            /// push the empty sentinel to prune every granule.
             const String & string_needle = value_field.safeGet<String>();
-            if (!string_needle.empty())
-            {
-                /// hasToken uses splitByNonAlpha as its tokenizer, so:
-                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
-                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistent with the no-index behaviour.
-                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
-                ///  - It is valid but too short for the index's tokenizer:
-                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
-                /// If the postprocessor filters the needle (e.g. stop-word):
-                ///  -- The needle is not in the index; push "" sentinel so the condition evaluates to false.
-                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
-                    return false;
-            }
-            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
-            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
+            if (!string_needle.empty() && std::ranges::all_of(string_needle, isTokenSeparator))
+                return false;
+
             tokens.push_back("");
         }
 
@@ -1826,9 +1798,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     /// It can be an arbitrary function that returns 0 for the default value of the map value type.
     /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
+    /// The result may be `Nullable` or `LowCardinality`, e.g. for a `Nullable` key: NULL reads as false below, as in WHERE.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1868,17 +1844,14 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN)
+                /// A NULL key is declined: `arrayElement` returns NULL for it, not the default value.
+                Field key_field;
+                DataTypePtr key_type;
+                if (!RPNBuilderTreeNode(const_key_argument, function_node.getTreeContext()).tryGetConstant(key_field, key_type)
+                    || key_field.getType() != Field::Types::String)
                     return false;
 
-                auto unwrapped_result_type = removeLowCardinality(const_key_argument->result_type);
-                const bool key_is_null = const_key_argument->column->isNullAt(0);
-                if (!key_is_null)
-                    unwrapped_result_type = removeNullable(unwrapped_result_type);
-                if (key_is_null || !isStringOrFixedString(unwrapped_result_type))
-                    return false;
-
-                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                key_const_value = key_field.safeGet<String>();
             }
             else
             {
@@ -2036,8 +2009,10 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     /// Similar to traverseMapElementKeyNode but for JSON subcolumns.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
-        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
