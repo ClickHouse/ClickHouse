@@ -1,5 +1,7 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
+#include <algorithm>
+
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
@@ -80,15 +82,18 @@ void DistinctTransform::transform(Chunk & chunk)
     if (max_bytes_before_pass_through)
     {
         distinct_set->prepareForInsert(chunk);
-        if (const auto available = getMostStrictAvailableSystemMemory())
+
+        /// Preliminary hashing shares the query's remaining spill-threshold budget with the final
+        /// transform and other operators.
+        const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+        const UInt64 available_memory = max_bytes_before_pass_through - std::min(max_bytes_before_pass_through, query_memory_usage);
+
+        const size_t filtering_memory = distinct_set->estimateFilteringMemory(chunk);
+        if (filtering_memory > available_memory || distinct_set->estimateGrowthMemory(chunk) > available_memory - filtering_memory)
         {
-            const size_t filtering_memory = distinct_set->estimateFilteringMemory(chunk);
-            if (filtering_memory > *available || distinct_set->estimateGrowthMemory(chunk) > *available - filtering_memory)
-            {
-                distinct_set.reset();
-                ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
-                return;
-            }
+            distinct_set.reset();
+            ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
+            return;
         }
     }
 

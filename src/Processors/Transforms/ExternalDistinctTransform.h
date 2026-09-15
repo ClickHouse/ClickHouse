@@ -19,7 +19,7 @@ class BufferingToFileSink;
 class DistinctSortedTransform;
 
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
-/// spill threshold or projected table growth leaves insufficient user/server memory for spilling.
+/// spill threshold or projected growth and spill workspace exceed the remaining threshold budget.
 /// Its set retains typed keys or the same generic-key fingerprints as ordinary `DISTINCT`.
 ///
 /// At the first spill, the set's keys become sorted suppression runs carrying already-emitted flags.

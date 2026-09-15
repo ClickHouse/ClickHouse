@@ -310,14 +310,17 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     const size_t spill_headroom_bytes
         = hashing.set.estimateFilteringMemory(input_chunk) + fingerprint_bytes
             + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
-    if (const auto available = getMostStrictAvailableSystemMemory())
+
+    /// The threshold applies to total query memory, so current usage reduces the budget for growth.
+    /// Query accounting can briefly become negative while a concurrent free saturates its counter.
+    const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+    const UInt64 available_memory
+        = max_bytes_before_external_distinct - std::min<UInt64>(max_bytes_before_external_distinct, query_memory_usage);
+
+    if (spill_headroom_bytes > available_memory || hashing.set.estimateGrowthMemory(input_chunk) > available_memory - spill_headroom_bytes)
     {
-        if (spill_headroom_bytes > *available
-            || hashing.set.estimateGrowthMemory(input_chunk) > *available - spill_headroom_bytes)
-        {
-            startSpilling(hashing);
-            return;
-        }
+        startSpilling(hashing);
+        return;
     }
 
     consumed_rows += input_chunk.getNumRows();
@@ -332,6 +335,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
         return;
     }
 
+    /// Actual allocations and concurrent operators can consume more than the pre-insertion estimate.
     if (getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
         startSpilling(hashing);
 }

@@ -56,7 +56,7 @@ public:
     /// of emitting them (see `DistinctSetFilter`); it must only be enabled when the consumer drops them
     /// anyway. `max_bytes_before_pass_through_` is a query-memory threshold for preliminary `DISTINCT`
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
-    /// exceeded or projected growth would exhaust available user/server memory. Subsequent rows pass
+    /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
     DistinctTransform(
         SharedHeader header_,
