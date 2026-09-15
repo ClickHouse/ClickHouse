@@ -1206,10 +1206,12 @@ void writeColumnImpl(
     /// of the batch it kept.
     static constexpr size_t max_batch_bytes = 64uz << 20;
 
-    /// A record is normally kept whole, but one that reaches this on its own is split anyway: the
-    /// page's 32-bit size and the dictionary builder's 32-bit offsets do not care that the values
-    /// belong to one row. Still far below both limits, so the split leaves room for the levels.
-    static constexpr size_t max_record_bytes = 1uz << 30;
+    /// A record is normally kept whole, because that is where a page has to start for the page
+    /// index to describe it. One that would not fit a page at all is split anyway - the page's
+    /// 32-bit size does not care that the values belong to one row - and then the index is
+    /// dropped. Sits just under that limit, leaving room for the levels, so that a record which
+    /// master writes with a valid index keeps one.
+    static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
 
     auto limit_batch_by_bytes = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, auto && value_size)
     {
