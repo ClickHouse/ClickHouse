@@ -302,12 +302,17 @@ static void pushPullNotInAtom(CNFQueryAtomicFormula & atom, const std::unordered
     }
 }
 
+/// The ordered comparisons are missing from the two maps below on purpose. `NaN` fails every ordered
+/// comparison, so for a `NaN` argument `NOT (x < c)` is true while `x >= c` is false: `less` and
+/// `greaterOrEquals` (and `greater` and `lessOrEquals`) are complementary over a totally ordered
+/// domain only, and inverting one into the other silently drops the `NaN` rows. This stage runs on the
+/// AST, where the type of an argument is not known, so it cannot tell a floating point comparison from
+/// an integer one and leaves every ordered comparison alone. The analyzer, which has the types, keeps
+/// inverting the comparisons that cannot see a `NaN` - see `Analyzer::CNF::pushNotIntoFunction`.
 static void pullNotOut(CNFQueryAtomicFormula & atom)
 {
     static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"notEquals", "equals"},
-        {"greaterOrEquals", "less"},
-        {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
         {"notEmpty", "empty"},
@@ -323,14 +328,10 @@ void pushNotIn(CNFQueryAtomicFormula & atom)
 
     static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"equals", "notEquals"},
-        {"less", "greaterOrEquals"},
-        {"lessOrEquals", "greater"},
         {"in", "notIn"},
         {"like", "notLike"},
         {"empty", "notEmpty"},
         {"notEquals", "equals"},
-        {"greaterOrEquals", "less"},
-        {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
         {"notEmpty", "empty"},
