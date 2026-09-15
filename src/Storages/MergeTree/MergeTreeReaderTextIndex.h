@@ -22,6 +22,8 @@ class MergeTreeIndexConditionText;
 class PostingListCursor;
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 
+struct PhraseTerms;
+
 using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<size_t, PostingListPtr>>;
 
 /// A part of "direct read from text index" optimization.
@@ -98,8 +100,13 @@ private:
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
-    /// Intersects the phrase tokens' postings into candidates, then decodes only the covering blocks.
-    PaddedPODArray<UInt32> phraseSearchBlocked(const TextSearchQuery & search_query);
+    /// Finds the documents holding every phrase term, then decodes only the position blocks covering them.
+    PaddedPODArray<UInt32> phraseSearch(const TextSearchQuery & search_query);
+    /// Candidates from the terms' full posting lists, intersected as bitmaps.
+    PaddedPODArray<UInt32> phraseSearchBlocked(const PhraseTerms & terms);
+    /// Candidates from a leapfrog over the terms' posting lists, which also yields their ranks.
+    PaddedPODArray<UInt32> phraseSearchBlockedCursors(const PhraseTerms & terms);
+    MergeTreeReaderStream & getPostingsStream(std::string_view token);
     /// One token's full posting list — the rank space the blocked position stream is addressed in.
     PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
 

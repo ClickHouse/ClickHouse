@@ -33,3 +33,25 @@ Merge path re-encodes positions
 Blocks are read and skipped through the index
 1
 1	1
+Candidates from cursors
+256	33432832
+256	33432832
+256	33432832
+256	33432832
+256	33432832
+256	33432832
+512	66996736
+512	66996736
+0	0
+0	0
+3	6000
+3	6000
+Candidates from bitmaps
+174762
+174762
+174762
+174762
+0
+0
+174762
+174762
