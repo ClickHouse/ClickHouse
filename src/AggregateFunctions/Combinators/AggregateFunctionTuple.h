@@ -141,6 +141,7 @@ public:
 
     bool allocatesMemoryInArena() const override;
     bool isState() const override;
+    bool isOnlyNullPlaceholder() const override;
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;

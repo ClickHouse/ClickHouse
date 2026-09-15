@@ -56,6 +56,8 @@ public:
 
     String getName() const override { return Name::name; }
 
+    bool isOnlyNullPlaceholder() const override { return true; }
+
     DataTypePtr getNormalizedStateType() const override
     {
         /// The state of this placeholder is empty and its serialization is a single zero byte,
