@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Storages/IStorage.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -10,6 +12,12 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+
+#if USE_AVRO
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#endif
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -22,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -43,6 +52,45 @@ BlockIO InterpreterOptimizeQuery::execute()
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+
+    /// Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
+    if (ast.manifest)
+    {
+        if (ast.final || ast.partition || ast.deduplicate || ast.cleanup || ast.dry_run)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options");
+
+#if USE_AVRO
+        IDataLakeMetadata * external_metadata = nullptr;
+        std::shared_ptr<DataLake::ICatalog> catalog;
+
+        auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(table.get());
+        auto * object_storage_cluster_table = dynamic_cast<StorageObjectStorageCluster *>(table.get());
+
+        if (object_storage_table)
+        {
+            external_metadata = object_storage_table->getExternalMetadata(getContext());
+            catalog = object_storage_table->getCatalog();
+        }
+        else if (object_storage_cluster_table)
+        {
+            external_metadata = object_storage_cluster_table->getExternalMetadata(getContext());
+            catalog = object_storage_cluster_table->getCatalog();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
+        }
+
+        auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(external_metadata);
+        if (!iceberg_metadata)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
+
+        iceberg_metadata->optimizeManifestFiles(metadata_snapshot, getContext(), catalog, table_id);
+        return {};
+#else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
+#endif
+    }
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;

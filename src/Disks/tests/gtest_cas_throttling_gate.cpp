@@ -123,6 +123,8 @@ TEST(CASThrottlingGate, EveryUserVisibleStatementSucceedsUnderFirstPerKeyThrottl
 #if !WITH_COVERAGE
     EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::CASRequestResolveRead].load() - resolve_reads_before, 0u)
         << "no throttled write was settled by a read -- the engine's ambiguity-resolution path never ran";
+#else
+    (void)resolve_reads_before;
 #endif
 }
 
