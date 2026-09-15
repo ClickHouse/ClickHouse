@@ -1790,24 +1790,26 @@ world`)"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral("\"hello\rworld\""), "hello\rworld");
 }
 
-
 TEST(PromQLParser, RejectOverlappingOnAndGroupLabels)
 {
-    auto expect_rejected = [](std::string_view query, std::string_view expected_label)
+    auto expect_rejected = [](std::string_view query, std::string_view expected_error_message)
     {
         PrometheusQueryTree query_tree;
         String error_message;
         size_t error_pos = String::npos;
         EXPECT_FALSE(query_tree.tryParse(query, /* timestamp_scale = */ 3, &error_message, &error_pos));
-        EXPECT_EQ(error_message, "label \"" + String{expected_label} + "\" must not occur in ON and GROUP clause at once");
+        EXPECT_EQ(error_message, expected_error_message);
         EXPECT_EQ(error_pos, 6);
     };
 
-    expect_rejected("foo + on(job) group_left(job) bar", "job");
-    expect_rejected("foo + on(job) group_right(job) bar", "job");
-    expect_rejected("foo + on(job,job,job) group_left(job,job,job) bar", "job");
-    expect_rejected("foo + on(job,instance) group_left(instance,job) bar", "job");
-    expect_rejected("foo + on(job,instance) group_left(zone,instance) bar", "instance");
+    expect_rejected("foo + on(job) group_left(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job) group_right(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,job,job) group_left(job,job,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(instance,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(zone,instance) bar", R"(label "instance" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("job") group_left(job) bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on(job) group_left("job") bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("a\"b") group_left("a\"b") bar)", R"(label "a\"b" must not occur in ON and GROUP clause at once)");
 
     EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(job) group_left(instance) bar"});
     EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(a,a,a) group_left(b,b,b) bar"});
