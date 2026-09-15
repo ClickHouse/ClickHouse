@@ -118,7 +118,7 @@ mergeTreeProjection(database, table, projection)
 | `table`      | The table name to read projection from.    |
 | `projection` | The projection to read from.               |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table object with columns provided by given projection.
 

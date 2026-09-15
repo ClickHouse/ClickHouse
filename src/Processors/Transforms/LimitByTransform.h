@@ -6,11 +6,18 @@
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
-#include <Processors/Transforms/ChunkRowRange.h>
 
 
 namespace DB
 {
+
+/// Chunk-local half-open range of rows `[start, start + length)`.
+struct ChunkRowRange
+{
+    UInt64 start = 0;
+    UInt64 length = 0;
+};
+
 
 /// General `LIMIT BY` transform for input where equal grouping keys are not
 /// guaranteed to be contiguous.
@@ -44,14 +51,6 @@ private:
     void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx);
 
     template <typename Method>
-    requires MapAggregationMethod<Method>
-    void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
-
-    /// LimitBy keeps a group index in the cell's mapped slot, so it cannot use a set method. This overload
-    /// exists only because the dispatch macro is generated over every `AggregatedDataVariants::Type`,
-    /// including the set ones that `GROUP BY` without aggregate functions uses.
-    template <typename Method>
-    requires SetAggregationMethod<Method>
     void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
 
     /// Positions of the non-constant grouping key columns in the chunk header.

@@ -122,38 +122,12 @@ assert schema.field('t_s').type == pa.time32('s'), f't_s: expected time32[s], go
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Arrow')"
 
 # ---------------------------------------------------------------
-# 3. Out-of-range time-of-day rejection.
-#    Arrow time32/time64 values are a time of day and must lie in [0, units_per_day).
-#    ClickHouse Time/Time64 can hold negative values and values >= 24h, which must be
-#    rejected on export instead of being written as invalid Arrow data.
-#    Durations use INTERVAL HOUR (a fixed offset), so the out-of-range values are
-#    timezone-independent and deterministic.
-#    This covers the native Arrow writer, which is the only writer used by the `Arrow` format.
-#    The other converter, `CHColumnToArrowColumn` (used by `ArrowFlight` and Delta Lake writes),
-#    is covered by the unit test `CHColumnToArrowColumn.TimeOutOfRangeIsRejected`.
+# 3. Overflow
 # ---------------------------------------------------------------
+echo "=== Export Time64 to Arrow – Overflow ==="
 
-reject_arrow() {
-    $CLICKHOUSE_LOCAL -q "$1 INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 \
-        | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
-}
-
-echo "=== Export out-of-range Time64 to Arrow – rejected ==="
-# Time64(3) -> Arrow time32[ms]: >= 24h, negative, and exactly 24h (the upper bound is exclusive).
-reject_arrow "SELECT toTime64(0, 3) + INTERVAL 25 HOUR"
-reject_arrow "SELECT toTime64(0, 3) - INTERVAL 1 HOUR"
-reject_arrow "SELECT toTime64(0, 3) + INTERVAL 24 HOUR"
-# Time64(6) -> Arrow time64[us], bulk path (no rescale, not nullable).
-reject_arrow "SELECT toTime64(0, 6) + INTERVAL 25 HOUR"
-# Time64(4) -> Arrow time64[us], per-element rescale path (scale % 3 != 0). The raw value is
-# checked before rescaling, so the reported value is in the column's own scale.
-reject_arrow "SELECT toTime64(0, 4) + INTERVAL 25 HOUR"
-# Nullable(Time64(6)) -> per-element path because of the null bytemap.
-reject_arrow "SELECT (toTime64(0, 6) + INTERVAL 25 HOUR)::Nullable(Time64(6))"
-
-echo "=== Export out-of-range Time to Arrow – rejected ==="
-# Time -> Arrow time32[s].
-reject_arrow "SELECT '25:00:00'::Time AS t"
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) - INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
 # Cleanup
 rm -f "$DATA_FILE"

@@ -136,15 +136,15 @@ LIMIT 10
   #### Настройка FINAL
 </div>
 
-Вместо того чтобы добавлять модификатор FINAL к имени каждой таблицы в запросе, можно использовать [настройку FINAL](/ru/reference/settings/session-settings/other#final), чтобы он автоматически применялся ко всем таблицам в запросе.
+Вместо того чтобы добавлять модификатор FINAL к имени каждой таблицы в запросе, можно использовать [настройку FINAL](/ru/reference/settings/session-settings#final), чтобы он автоматически применялся ко всем таблицам в запросе.
 
 Эту настройку можно применять как к отдельному запросу, так и ко всему сеансу.
 
 ```sql
--- Per query FINAL setting
+-- Настройка FINAL для отдельного запроса
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- Set FINAL for the session
+-- Установка FINAL для сеанса
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```

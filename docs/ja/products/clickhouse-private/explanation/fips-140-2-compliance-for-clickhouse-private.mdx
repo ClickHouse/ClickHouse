@@ -1,0 +1,96 @@
+---
+noindex: true
+title: "ClickHouse Private における FIPS 140-2 準拠"
+sidebarTitle: "FIPS 準拠"
+description: "このドキュメントでは、ClickHouse Private における FIPS 140-2 準拠の意味と、FIPS 準拠構成でデプロイした場合に何が変わるのかを説明します。"
+---
+
+このドキュメントでは、ClickHouse Private における FIPS 140-2 準拠の意味と、FIPS 準拠構成でデプロイした場合に何が変わるのかを説明します。
+
+<div id="what-fips-140-2-means-for-clickhouse-private">
+  ## ClickHouse Private における FIPS 140-2 の意味
+</div>
+
+FIPS 140-2 (Federal Information Processing Standard) は、暗号モジュールに関する米国政府の標準です。政府機関向け環境 (AWS GovCloud など) で運用する組織や、機密性の高い政府データを扱う組織では、すべての暗号処理で FIPS 検証済みのアルゴリズムと実装を使用することが求められる場合が少なくありません。
+
+ClickHouse Private を FIPS モードでデプロイする場合、コンポーネント間の TLS 接続、AWS サービスへの接続、証明書の生成を含むすべての暗号処理で、FIPS 準拠のアルゴリズムとライブラリを使用する必要があります。
+
+<div id="what-changes-in-a-fips-deployment">
+  ## FIPS デプロイメントでの変更点
+</div>
+
+FIPS デプロイメントは、標準的な ClickHouse Private デプロイメントと比べて、いくつかの重要な点が異なります。
+
+<div id="fips-server-images">
+  ### FIPS サーバーイメージ
+</div>
+
+ClickHouse server および Keeper のイメージでは、FIPS 専用のバリアントを使用する必要があります。これらは、イメージタグの `-fips` 接尾辞で識別されます (例: server は `25.12.1.1497-fips`、keeper は `26.2.1.258-fips`) 。FIPS イメージは、FIPS 認証済みの暗号ライブラリを使用してビルドされています。operator イメージには、別個の FIPS バリアントはありません。
+
+<div id="fips-ecr-endpoints">
+  ### FIPS ECR エンドポイント
+</div>
+
+Amazon ECR からコンテナーイメージを取得する場合は、FIPS 準拠の ECR エンドポイントを使用する必要があります。これらのエンドポイントは、標準の ECR ホスト名ではなく、`0000000000.dkr-ecr-fips.<region>.on.aws` 形式になります。
+
+<div id="fips-s3-endpoints">
+  ### FIPS S3 エンドポイント
+</div>
+
+ClickHouse はデータを S3 に保存するため、FIPS モードでは FIPS 準拠の S3 エンドポイントを設定する必要があります。AWS は、各サービスおよびリージョンごとの FIPS エンドポイントの一覧を [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/) で公開しています。
+
+<div id="s3-bucket-naming-restriction">
+  ### S3 バケット名の制限
+</div>
+
+FIPS モードでは、**S3 バケット名にピリオド** (`.`) **を含めることはできません**。これは、FIPS S3 エンドポイントでは仮想ホスト形式のアドレス指定 (例: `https://my-bucket.s3-fips.us-gov-west-1.amazonaws.com`) が必要なためです。バケット名にピリオドが含まれていると、サブドメインの階層が余分に増え、ワイルドカード証明書と一致しなくなるため、仮想ホスト形式の URL で TLS 証明書の検証に失敗します。
+
+これは、S3 インフラストラクチャをセットアップする際の重要な注意点です。名前にピリオドを含む既存のバケットは、FIPS S3 エンドポイントでは使用できません。
+
+<div id="certificate-requirements">
+  ## 証明書の要件
+</div>
+
+FIPS デプロイメントでは、すべての ClickHouse コンポーネント間の通信を暗号化するために TLS 証明書が必要です。生成する証明書は 3 組あります。
+
+| Certificate Set | Purpose                                                              | Files                      |
+| --------------- | -------------------------------------------------------------------- | -------------------------- |
+| **サーバー**        | clickhouse-server への受信接続を保護します                                       | `server.crt`, `server.key` |
+| **Keeper**      | clickhouse-keeper との接続を保護します                                         | `keeper.crt`, `keeper.key` |
+| **Client**      | clickhouse-server が送信接続 (例: keeper や HTTPS Dictionaries への接続) に使用します | `client.crt`, `client.key` |
+
+これら 3 組の証明書はすべて、共通の認証局 (`ca.crt`) によって署名されます。
+
+<div id="fips-compliant-algorithm-requirements">
+  ### FIPS準拠アルゴリズムの要件
+</div>
+
+FIPS 準拠が求められる場合、すべての証明書は次の要件を満たす必要があります。
+
+* **FIPS準拠のアルゴリズムを使用して生成されていること** -- たとえば、鍵長が 3072 ビット以上の RSA。
+* **FIPS が有効な環境で作成されていること** -- 秘密鍵の生成時および署名時の暗号処理には、FIPS 検証済みモジュールを使用する必要があります。方法の 1 つとして、FIPS モードを有効にした Red Hat UBI コンテナーを使用できます。
+* **秘密鍵が FIPS準拠の方法で生成された認証局によって署名されていること**。
+
+<div id="subject-alternative-names-sans">
+  ### Subject Alternative Names (SANs)
+</div>
+
+各証明書には、Kubernetes クラスター内のコンポーネント間通信で TLS 検証が正常に行われるよう、正しい SAN エントリを含める必要があります。SAN の形式は次のパターンに従います。
+
+* サーバー: `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` and `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* Keeper: `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+プロビジョニングする各 ClickHouse クラスターごとに、一意の証明書セット (CA 証明書を除く) を作成する必要があります。
+
+<div id="certificate-expiration">
+  ### 証明書の有効期限
+</div>
+
+証明書には定められた有効期間があります。証明書の有効期限を監視し、期限切れになる前にローテーションできるよう、運用プロセスを整備しておく必要があります。一般的な既定値は365日ですが、これは組織のセキュリティ要件に合わせて調整してください。
+
+<div id="further-reading">
+  ## 参考情報
+</div>
+
+* FIPS 準拠証明書の生成手順については、[Configure FIPS certificates](/ja/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) のハウツーガイドを参照してください。
+* ClickHouse Private における PKI と mTLS の仕組み (証明書の用途、検証モード、ローテーションの動作) については、[PKI and mTLS in ClickHouse Private](/ja/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private) を参照してください。
