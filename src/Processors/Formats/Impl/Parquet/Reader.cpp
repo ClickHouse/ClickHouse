@@ -27,10 +27,15 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <bit>
 #include <mutex>
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
+
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -3072,7 +3077,6 @@ static void processDefLevelsForInnermostColumn(
 }
 
 /// Produces array offsets at a given level of nested arrays.
-/// TODO [parquet]: Try simdifying.
 ///
 /// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
 /// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
@@ -3083,7 +3087,50 @@ static void processRepDefLevelsForArray(
     UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
 {
     UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
-    for (size_t i = 0; i < num_values; ++i)
+
+    size_t i = 0;
+#if defined(__AVX2__)
+    constexpr size_t simd_width = 32;
+    const __m256i sign_bit = _mm256_set1_epi8(static_cast<char>(0x80));
+    const __m256i array_rep_xored = _mm256_set1_epi8(static_cast<char>(array_rep ^ 0x80));
+    const __m256i array_def_xored = _mm256_set1_epi8(static_cast<char>(array_def ^ 0x80));
+    const __m256i parent_array_def_xored = _mm256_set1_epi8(static_cast<char>(parent_array_def ^ 0x80));
+
+    for (; i + simd_width <= num_values; i += simd_width)
+    {
+        const __m256i def_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(def + i));
+        const __m256i rep_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(rep + i));
+        const __m256i def_values_xored = _mm256_xor_si256(def_values, sign_bit);
+        const __m256i rep_values_xored = _mm256_xor_si256(rep_values, sign_bit);
+
+        const UInt32 def_lt_parent_mask
+            = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(parent_array_def_xored, def_values_xored)));
+        const UInt32 valid_mask = ~def_lt_parent_mask;
+        const UInt32 new_array_mask
+            = valid_mask & static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_rep_xored, rep_values_xored)));
+        const UInt32 rep_gt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(rep_values_xored, array_rep_xored)));
+        const UInt32 def_lt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_def_xored, def_values_xored)));
+        const UInt32 contributes_mask = valid_mask & ~rep_gt_array_mask & ~def_lt_array_mask;
+
+        UInt32 processed_mask = 0;
+        UInt32 boundaries = new_array_mask;
+        while (boundaries)
+        {
+            const UInt32 boundary = std::countr_zero(boundaries);
+            const UInt32 before_boundary_mask = boundary ? (UInt32(1) << boundary) - 1 : 0;
+            const UInt32 boundary_bit = UInt32(1) << boundary;
+            offset += std::popcount(contributes_mask & before_boundary_mask & ~processed_mask);
+            out_offsets.back() = offset;
+            out_offsets.resize(out_offsets.size() + 1);
+            offset += (contributes_mask >> boundary) & 1;
+            processed_mask |= before_boundary_mask | boundary_bit;
+            boundaries &= boundaries - 1;
+        }
+        offset += std::popcount(contributes_mask & ~processed_mask);
+    }
+#endif
+
+    for (; i < num_values; ++i)
     {
         if (def[i] < parent_array_def)
             /// Some ancestor is null or empty array.
