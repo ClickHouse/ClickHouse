@@ -39,6 +39,7 @@
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -63,6 +64,12 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace FailPoints
+{
+    extern const char database_on_disk_fail_before_commit_create_table[];
+    extern const char database_on_disk_fail_after_commit_create_table[];
 }
 
 namespace ErrorCodes
@@ -308,7 +315,20 @@ void DatabaseOnDisk::createTable(
             /*fsync_metadata=*/settings[Setting::fsync_metadata]);
     }
 
+    /// Emulates a failure of the metadata write, before the table is published to the database.
+    fiu_do_on(FailPoints::database_on_disk_fail_before_commit_create_table,
+    {
+        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Fault injected (before committing table creation)");
+    });
+
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
+
+    /// Emulates a failure of removeDetachedPermanentlyFlag, after the table is published.
+    fiu_do_on(FailPoints::database_on_disk_fail_after_commit_create_table,
+    {
+        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Fault injected (after committing table creation)");
+    });
+
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
 }
 
