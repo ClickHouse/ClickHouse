@@ -150,23 +150,58 @@ TEST(HTTPHeaderFilter, RegexpMatchExplicitInlineFlagStillWorks)
     EXPECT_TRUE(isForbidden(filter, "Secret_Header"));
 }
 
-/// A header name is matched in lower case, so a pattern cannot opt out of case insensitivity with
-/// an inline (?-i) scope. A lower-case literal in such a scope still blocks every case variant,
-/// which is what keeps the blocklist from being bypassed by changing the case of a header.
-TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeCannotBeBypassed)
+/// A header name is matched in lower case, so an inline (?-i) scope cannot be honoured. Such a
+/// config is rejected rather than accepted as a rule that blocks less than it appears to.
+TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeIsRejected)
+{
+    HTTPHeaderFilter filter;
+
+    auto configureWith = [&](const std::string & pattern)
+    {
+        configure(filter,
+            "<clickhouse><http_forbid_headers><header_regexp>"
+            + pattern
+            + "</header_regexp></http_forbid_headers></clickhouse>");
+    };
+
+    EXPECT_THROW(configureWith("(?-i)Authorization"), Exception);
+    EXPECT_THROW(configureWith("(?-i)authorization"), Exception);
+    EXPECT_THROW(configureWith("(?-i:authorization)"), Exception);
+}
+
+/// A pattern that does not compile forbids nothing, so it is rejected rather than skipped.
+TEST(HTTPHeaderFilter, RegexpThatDoesNotCompileIsRejected)
+{
+    HTTPHeaderFilter filter;
+
+    EXPECT_THROW(configure(filter,
+        "<clickhouse><http_forbid_headers><header_regexp>x-custom-[</header_regexp>"
+        "</http_forbid_headers></clickhouse>"), Exception);
+}
+
+/// A rejected config leaves the blocklist that is already loaded in place.
+TEST(HTTPHeaderFilter, RejectedConfigKeepsThePreviousBlocklist)
 {
     HTTPHeaderFilter filter;
     configure(filter, R"(
         <clickhouse>
             <http_forbid_headers>
-                <header_regexp>(?-i)authorization</header_regexp>
+                <header>Authorization</header>
             </http_forbid_headers>
         </clickhouse>
     )");
 
+    EXPECT_THROW(configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>x-other</header>
+                <header_regexp>(?-i)authorization</header_regexp>
+            </http_forbid_headers>
+        </clickhouse>
+    )"), Exception);
+
     EXPECT_TRUE(isForbidden(filter, "authorization"));
-    EXPECT_TRUE(isForbidden(filter, "Authorization"));
-    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
+    EXPECT_FALSE(isForbidden(filter, "x-other"));
 }
 
 /// The filter also guards a collection that already holds lower-cased names. The verdict must be
