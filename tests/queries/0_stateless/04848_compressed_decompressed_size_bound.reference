@@ -1,0 +1,22 @@
+-- a valid frame still executes (proves the arms below fail for the intended reason)
+1
+-- a codec that stores data uncompressed must not lie about the uncompressed size
+1
+-- and neither may the other verbatim codec
+1
+-- a valid nested frame still executes
+1
+-- and neither may a nested one, which the top-level parser never sees
+1
+-- including the other verbatim codec nested
+1
+-- nor may it understate the uncompressed size
+1
+-- and neither may a nested one
+1
+-- engines keep working on ordinary data
+1000	100000
+1000	100000
+1000	100000
+1
+1

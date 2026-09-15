@@ -172,6 +172,13 @@ static void readHeaderAndGetCodecAndSize(
         throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
             "the compressed data size ({}, this should include header size) is less than the header size ({})",
             size_compressed_without_checksum, static_cast<size_t>(header_size));
+
+    /// A codec that stores data verbatim has body length equal to the decompressed length.
+    if (codec->isNone() && size_compressed_without_checksum - header_size != size_decompressed)
+        throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
+            "the compressed data size without header ({}) does not match size_decompressed ({}) "
+            "for a codec that stores data uncompressed",
+            size_compressed_without_checksum - header_size, size_decompressed);
 }
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
