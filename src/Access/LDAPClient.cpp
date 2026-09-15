@@ -1375,22 +1375,22 @@ std::vector<LDAPSyncClient::UserEntry> LDAPSyncClient::enumerate(const UserEnume
     std::vector<UserEntry> users;
     users.reserve(entries.size());
 
+    /// A malformed entry fails the whole run rather than being skipped: a skipped entry is a user missing
+    /// from the plan, and the next run would remove them from ClickHouse as if they had left the directory
+    /// (within what `max_removed_fraction` allows). A failed run changes nothing.
     for (const auto & entry : entries)
     {
         if (entry.dn.empty())
-        {
-            LOG_WARNING(log, "Skipping an LDAP entry without a DN returned by the user enumeration on server '{}'", params.name);
-            continue;
-        }
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "LDAP user enumeration under '{}' on server '{}' returned an entry without a DN; refusing to synchronise",
+                enumeration_params.base_dn, params.name);
 
         const auto name_it = entry.attributes.find(name_attribute);
         const size_t name_count = (name_it == entry.attributes.end()) ? 0 : name_it->second.size();
         if (name_count != 1)
-        {
-            LOG_WARNING(log, "Skipping LDAP entry '{}' on server '{}': expected exactly one value of '{}', found {}",
-                entry.dn, params.name, enumeration_params.attribute, name_count);
-            continue;
-        }
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "LDAP entry '{}' returned by the user enumeration on server '{}' has {} values of the user name attribute '{}', expected exactly one; refusing to synchronise",
+                entry.dn, params.name, name_count, enumeration_params.attribute);
 
         UserEntry user;
         user.name = *name_it->second.begin();

@@ -366,13 +366,14 @@ public:
     /// resolves the role mappings of every entry on the same connection: a self-lookup mapping
     /// (`SearchParams::isSelfLookup`) is read from the entry's own attributes, which were fetched
     /// along with the user name, every other mapping is one `search` per user with
-    /// `Placeholders{user_name = name, bind_dn = user_dn = dn}`. Entries with zero or several values
-    /// of `enumeration_params.attribute`, or without a DN, are skipped with a warning. The result is
-    /// in directory order and not deduplicated; the caller decides what a duplicate name means.
+    /// `Placeholders{user_name = name, bind_dn = user_dn = dn}`. The result is in directory order and
+    /// not deduplicated; the caller decides what a duplicate name means.
     /// Throws `BAD_ARGUMENTS` without a lookup identity, when `attribute` is empty or `dn`, or when
     /// `base_dn`/`search_filter` contain a per-user placeholder (nothing could substitute it);
-    /// `LDAP_ERROR` for every directory-side failure (see `searchEntries`). Never returns partial
-    /// results: an error in the middle of the enumeration propagates.
+    /// `LDAP_ERROR` for every directory-side failure (see `searchEntries`) and for an entry with zero
+    /// or several values of `enumeration_params.attribute` or without a DN (a skipped entry would be
+    /// a user removed by the next run). Never returns partial results: an error in the middle of the
+    /// enumeration propagates.
     std::vector<UserEntry> enumerate(const UserEnumerationParams & enumeration_params, const RoleSearchParamsList & role_search_params);
 };
 

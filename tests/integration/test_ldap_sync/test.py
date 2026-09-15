@@ -760,6 +760,45 @@ def test_duplicate_user_name_guard(janedoe_in_role_a):
 
 
 def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
+def test_entry_with_several_user_names_fails_the_run(janedoe_in_role_a):
+    """`uid` is multi-valued in `inetOrgPerson`. An entry that matches the search but does not yield
+    exactly one user name fails the run instead of being skipped: skipped, it would be a user missing
+    from the plan, whom the next run would remove as if they had left the directory."""
+    base_users = sync_node_manual()
+    base_entries = ldap_count_synced_entries()
+    ldap_add(
+        f"dn: {user_dn('twonames')}\n"
+        "objectClass: inetOrgPerson\n"
+        "cn: twonames\n"
+        "sn: Test\n"
+        "uid: twonames\n"
+        "uid: twonames2\n"
+        "userPassword: qwerty\n",
+        ignore_codes=(68,),  # "Already exists"
+    )
+    try:
+        ldap_set_member(ROLE_A_GROUP, user_dn("twonames"), True)
+        wait_ldap_synced_entries(base_entries + 1)
+
+        failures_before = event_value(node_manual, "LDAPSyncFailures")
+        error = admin_error(node_manual, "SYSTEM RELOAD USERS")
+        assert (
+            f"LDAP entry '{user_dn('twonames')}' returned by the user enumeration on server"
+            f" '{LDAP_SERVER_NAME}' has 2 values of the user name attribute 'uid', expected exactly one"
+        ) in error, error
+        assert event_value(node_manual, "LDAPSyncFailures") == failures_before + 1
+        # A failed run changes nothing: neither name was materialised, nobody was removed.
+        assert admin(node_manual, ldap_users_query()) == f"{base_users}\n"
+        for name in ("twonames", "twonames2"):
+            assert admin(node_manual, ldap_users_query(name)) == "0\n"
+    finally:
+        ldap_set_member(ROLE_A_GROUP, user_dn("twonames"), False)
+        ldap_delete(user_dn("twonames"), ignore_missing=True)
+        wait_ldap_synced_entries(base_entries)
+    # The directory is well-formed again: the next run succeeds with nothing to change.
+    assert sync_node_manual() == base_users
+
+
     """1200 users in `clickhouse-role_b` need 13 pages of 100 and exceed the default OpenLDAP
     size limit of 500, which the fixture lifts for the service account. Deleting the group would
     remove them all at once: `max_removed_fraction` refuses the run.
