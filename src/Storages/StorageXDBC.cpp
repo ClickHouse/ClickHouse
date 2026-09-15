@@ -3,6 +3,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ColumnDefault.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
 #include <Core/ServerSettings.h>
@@ -89,10 +90,26 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
+    /// `columns_description` only describes the columns this read requests. The ownership check of
+    /// `transformQueryForExternalDatabase` (which predicates are filters on this table, as opposed to a
+    /// foreign one that the outer query evaluates) and the `external_table_strict_query` enforcement need
+    /// the full column set of the storage instead: every physical column, including a `MATERIALIZED` one,
+    /// is a column of the remote table and pushdown-eligible, while an `ALIAS` column is owned by this
+    /// storage but exists only locally, so it is passed as local-only - a filter over it belongs to this
+    /// table, is applied locally, and is therefore rejected by strict mode instead of being silently
+    /// dropped as if it belonged to another table. This mirrors the `MySQL` / `PostgreSQL` / `SQLite`
+    /// storages (`StorageWithCommonVirtualColumns::getLocalOnlyColumnNames`).
+    const auto metadata = getInMemoryMetadataPtr(local_context, false);
+    const auto & all_columns = metadata->getColumns();
+    NameSet local_only_columns;
+    for (const auto & column : all_columns)
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            local_only_columns.insert(column.name);
+
     String query = transformQueryForExternalDatabase(
         query_info,
         column_names,
-        columns_description.getOrdinary(),
+        all_columns.getAllPhysical(),
         bridge_helper->getIdentifierQuotingStyle(),
         /// The bridge protocol only reports the identifier quoting style, not the literal
         /// escaping dialect of the remote database, so string literals keep the historical
@@ -104,7 +121,10 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         remote_database_name,
         remote_table_name,
         getStorageID(),
-        local_context);
+        local_context,
+        /* limit */ {},
+        /* unsupported_functions */ {},
+        local_only_columns);
     LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;
