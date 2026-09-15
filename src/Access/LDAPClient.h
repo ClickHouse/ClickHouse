@@ -145,6 +145,10 @@ public:
 
         bool follow_referrals = false; /// Whether to follow LDAP referrals for server.
 
+        /// Feeds every field that influences the outcome of a bind or a search into `hash`. `ExternalAuthenticators` uses
+        /// the result as the key of the `verification_cooldown` cache and to detect a configuration reload that raced with
+        /// an authentication in flight, so a field left out here lets a result obtained under the old policy survive a change.
+        /// `verification_cooldown` itself is deliberately not hashed: it bounds the lifetime of a result, not its meaning.
         void updateHash(SipHash & hash) const;
     };
 
