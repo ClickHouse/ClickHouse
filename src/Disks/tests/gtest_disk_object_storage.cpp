@@ -1176,8 +1176,6 @@ try
 
     waitBlobsCount(disk, 1);
 
-    /// Replacing the only blob with a directory makes the object storage reject its removal:
-    /// `unlink` fails with EISDIR, so every cleanup round for it ends with an error.
     fs::path blob_path;
     for (const auto & entry : fs::recursive_directory_iterator("./local_blob_storage_dir"))
         if (entry.is_regular_file())
@@ -1189,19 +1187,15 @@ try
     const auto rounds_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns];
     const auto errors_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors];
 
-    /// Commits the metadata change and then waits for the blob removal, which cannot succeed.
     disk->removeFile(file_name);
 
     const auto rounds = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns] - rounds_before;
     const auto errors = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors] - errors_before;
     std::cout << "Cleanup rounds: " << rounds << ", removal errors: " << errors << std::endl;
 
-    /// Without an error the round count proves nothing: it is also low when the removal just succeeds.
     EXPECT_GT(errors, 0u);
-    /// The wait spends its whole 100-round budget on the failing removal when it does not stop early.
     EXPECT_LT(rounds, 8u);
 
-    /// Abandoning the wait keeps the blob queued: it is removed once it can be unlinked again.
     fs::remove_all(blob_path);
     {
         DB::WriteBufferFromFile wb(blob_path);

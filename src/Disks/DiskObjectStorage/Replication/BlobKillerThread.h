@@ -31,7 +31,6 @@ public:
 
     void startup();
     void shutdown();
-    /// Returns false when no cleanup round removed a blob while the caller waited.
     bool triggerAndWait();
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
