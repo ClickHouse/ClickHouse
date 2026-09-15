@@ -58,8 +58,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/ASTShowTableSettingsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowTableSettingsQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTStreamSettings.h>

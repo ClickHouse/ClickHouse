@@ -19,7 +19,7 @@ SELECT
     format('[{}](/operations/settings/merge-tree-settings#{})', name, name) AS Name,
     format('`{}`', default) AS Default
 FROM system.merge_tree_settings
-WHERE tier = 'PrivatePreview'
+WHERE tier = 'PrivatePreview' AND alias_for=''
     ),
     combined AS
     (

@@ -5,7 +5,6 @@
 
 namespace DB
 {
-struct MutableColumnsAndConstraints;
 
 struct MutableColumnsAndConstraints
 {
