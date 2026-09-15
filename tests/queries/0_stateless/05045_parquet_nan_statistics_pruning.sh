@@ -11,6 +11,10 @@ NAN_F32="${PREFIX}_nan_f32.parquet"
 NAN_NULLABLE="${PREFIX}_nan_nullable.parquet"
 NAN_WITH_NULL="${PREFIX}_nan_with_null.parquet"
 NAN_TUPLE="${PREFIX}_nan_tuple.parquet"
+# Negative finite values are load-bearing: with a positive fixture sign maps the bounds and the
+# hidden NaN alike, so a chain over it cannot tell a widened decision from a pruned one.
+NAN_NEG="${PREFIX}_nan_neg.parquet"
+NAN_NEG_F32="${PREFIX}_nan_neg_f32.parquet"
 FINITE="${PREFIX}_finite.parquet"
 INTEGER="${PREFIX}_integer.parquet"
 MANY="${PREFIX}_many.parquet"
@@ -32,6 +36,12 @@ ${CLICKHOUSE_CLIENT} --query "
 
     INSERT INTO FUNCTION file('${NAN_TUPLE}', Parquet, 'i Int64, val Float64')
     SELECT 1, arrayJoin([toFloat64(5), toFloat64(5), nan]) SETTINGS engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${NAN_NEG}', Parquet, 'val Float64')
+    SELECT arrayJoin([toFloat64(-5), toFloat64(-5), nan]) SETTINGS engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${NAN_NEG_F32}', Parquet, 'val Float32')
+    SELECT arrayJoin([toFloat32(-5), toFloat32(-5), toFloat32(nan)]) SETTINGS engine_file_truncate_on_insert = 1;
 
     INSERT INTO FUNCTION file('${FINITE}', Parquet, 'val Float64')
     SELECT arrayJoin([toFloat64(5), toFloat64(5)]) SETTINGS engine_file_truncate_on_insert = 1;
@@ -138,10 +148,21 @@ arm in_nan_null_transform "${NAN_WITH_NULL}" 'val IN (nan, NULL)' 'transform_nul
 arm in_null_nan_transform "${NAN_WITH_NULL}" 'val IN (NULL, nan)' 'transform_null_in = 1'
 run_arms
 
+# A monotonic function is applied to the bounds, and the atom is then compared against that image.
+# The hidden NaN is not described by the bounds, so its own image is not described by theirs either:
+# sign maps -5 to -1 and NaN to 1. The last arm reaches the same row through bounds whose image is
+# NaN itself (-1 * inf is -inf, -inf + inf is NaN) while the row's image is +inf.
+echo '-- a monotonic chain must not map the hidden NaN out of the atom range'
+arm chain_sign "${NAN_NEG}" 'sign(val) = 1'
+arm chain_sign_float32 "${NAN_NEG_F32}" 'sign(val) = 1'
+arm chain_nan_bound "${NAN_NEG}" 'sign(val) * inf + inf > 0'
+run_arms
+
 echo '-- page statistics prune the same way, with row group pushdown disabled'
 arm_page_only page_not_equals "${NAN}" 'val != 5.'
 arm_page_only page_not_in "${NAN}" 'val NOT IN (5.)'
 arm_page_only page_in_nan "${NAN}" 'val IN (nan)'
+arm_page_only page_chain_sign "${NAN_NEG}" 'sign(val) = 1'
 run_arms
 
 echo '-- already correct before, must stay correct'
@@ -194,6 +215,7 @@ prune float_above_max_pages "${MANY}" 'val > 1e9' 0
 prune float_above_max_rowgroup "${MANY}" 'val > 1e9' 1 0
 prune integer_not_equals "${INTEGER}" 'i != 5'
 prune integer_not_in "${INTEGER}" 'i NOT IN (5, 6)'
+prune chain_integer "${INTEGER}" 'sign(i) = -1'
 prune finite_float_in "${FINITE}" 'val IN (6.)'
 run_prunes
 

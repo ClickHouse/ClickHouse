@@ -6328,7 +6328,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// - If only right bound is NaN: the range extends into NaN territory,
             ///   so it cannot be fully contained (NaN values don't satisfy the condition).
             /// - If the bounds were computed from non-NaN values only, a NaN row may sit outside them,
-            ///   so containing them is not containing every row.
+            ///   so containing them is not containing every row, and a monotonic chain can map that
+            ///   row to a value outside the image of the bounds, so the atom can also be true.
             if (unlikely(key_range.left.isNaN()))
             {
                 intersects = false;
@@ -6338,9 +6339,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 contains = false;
             }
-            else if (bounds_may_hide_nan && key_column < bounds_may_hide_nan->size() && (*bounds_may_hide_nan)[key_column])
+
+            if (bounds_may_hide_nan && key_column < bounds_may_hide_nan->size() && (*bounds_may_hide_nan)[key_column])
             {
                 contains = false;
+                if (!element.monotonic_functions_chain.empty())
+                    intersects = true;
             }
 
             rpn_stack.emplace_back(intersects, !contains);
