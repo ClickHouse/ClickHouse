@@ -397,6 +397,8 @@ ChunkBucketSerializationMetadata serializeChunkBucketData(
     /// Don't write any dynamic statistics.
     data_serialization_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::NONE;
     data_serialization_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(settings.path); };
+    /// Inherit the min_compress_block_size setting.
+    data_serialization_settings.min_compress_block_size = settings.min_compress_block_size;
 
     ISerialization::StreamFileNameSettings stream_file_name_settings;
     stream_file_name_settings.escape_variant_substreams = false;
@@ -407,9 +409,10 @@ ChunkBucketSerializationMetadata serializeChunkBucketData(
         metadata.paths_substreams_marks.emplace_back();
         data_serialization_settings.getter = [&](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
         {
-            /// Start each substream in a new compressed block so a selective read (one path or one
-            /// subcolumn of a path) doesn't decompress blocks shared with the path's other substreams.
-            data_stream.next();
+            /// New block per substream only once it's worth it: bounds a selective read's over-read
+            /// to min_compress_block_size while small substreams still share a block (good compression).
+            if (data_stream.offset() >= settings.min_compress_block_size)
+                data_stream.next();
             /// Add new substream and its mark for current path.
             metadata.paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type_), substream_path, stream_file_name_settings));
             metadata.paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
@@ -417,8 +420,9 @@ ChunkBucketSerializationMetadata serializeChunkBucketData(
         };
 
         ISerialization::SerializeBinaryBulkStatePtr path_state;
-        /// Close the previous path's last substream block so this path's mark starts on a block boundary.
-        data_stream.next();
+        /// Same at the path boundary.
+        if (data_stream.offset() >= settings.min_compress_block_size)
+            data_stream.next();
         /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
         metadata.paths_marks.push_back(settings.stream_mark_getter(settings.path));
         dynamic_serialization_->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
