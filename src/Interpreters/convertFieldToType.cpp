@@ -42,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
@@ -227,59 +228,112 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 
-/// The constant sources a `DateTime64` / `Time64` accepts on the `Field` path: a `Decimal64` (already a tick count at
-/// some scale) or an integer count of whole seconds.
+/// The constant sources a `DateTime64` / `Time64` accepts on the `Field` path: a plain `Decimal` of any width (already
+/// a tick count at some scale) or an integer count of whole seconds of any width - the same carriers `ConvertImpl`
+/// accepts, so an exact `IN` constant behaves like its `CAST`.
 bool isDateTime64TicksSourceFieldType(Field::Types::Which which)
 {
-    return which == Field::Types::UInt64 || which == Field::Types::Int64 || which == Field::Types::Decimal64;
+    switch (which)
+    {
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            return true;
+        default:
+            return false;
+    }
 }
 
-/// The ticks of `src` at the target scale, or nullopt when they do not fit the `Int64` ticks. A `Decimal64` is
-/// rescaled; the shrinking direction truncates like the plain `Decimal` conversion, except under `strict`, where a
-/// value that loses its fraction cannot equal any stored value (`toTime64('00:00:01', 0) IN (1.9)` is 0, as
-/// `CAST('33.3', 'Decimal64(1)') IN (33.33)` is). An integer is a count of whole seconds. Whether the ticks are
-/// inside the calendar / clock window is up to the caller.
-std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_multiplier_to, bool strict)
+/// `value` as an `Int64`, or nullopt when it is outside the `Int64` range.
+template <typename T>
+std::optional<Int64> int64FromInteger(const T & value)
 {
-    if (src.getType() == Field::Types::Decimal64)
+    if (accurate::greaterOp(value, std::numeric_limits<Int64>::max()) || accurate::lessOp(value, std::numeric_limits<Int64>::min()))
+        return std::nullopt;
+    return static_cast<Int64>(value);
+}
+
+/// The ticks of a `Decimal` at the target scale, or nullopt when they do not fit the `Int64` ticks. The shrinking
+/// direction truncates like the plain `Decimal` conversion, except under `strict`, where a value that loses its
+/// fraction cannot equal any stored value (`toTime64('00:00:01', 0) IN (1.9)` is 0, as `CAST('33.3', 'Decimal64(1)')
+/// IN (33.33)` is). The arithmetic is done in `Int256`, wide enough for every `Decimal` carrier.
+template <typename DecimalType>
+std::optional<Int64> ticksFromDecimalField(const DecimalField<DecimalType> & from, Int64 scale_multiplier_to, bool strict)
+{
+    const Int256 value = static_cast<Int256>(from.getValue().value);
+    const Int256 scale_multiplier_from = static_cast<Int256>(from.getScaleMultiplier().value);
+    const Int256 multiplier_to = static_cast<Int256>(scale_multiplier_to);
+
+    Int256 ticks = 0;
+    if (scale_multiplier_from == multiplier_to)
     {
-        const auto & from = src.safeGet<Decimal64>();
-        const Int64 value = from.getValue().value;
-        const Int64 scale_multiplier_from = from.getScaleMultiplier();
-
-        if (scale_multiplier_from == scale_multiplier_to)
-            return value;
-        if (scale_multiplier_from > scale_multiplier_to)
-        {
-            const Int64 divisor = scale_multiplier_from / scale_multiplier_to;
-            if (strict && value % divisor != 0)
-                return std::nullopt;
-            return value / divisor;
-        }
-
-        Int64 result = 0;
-        if (common::mulOverflow(value, scale_multiplier_to / scale_multiplier_from, result))
+        ticks = value;
+    }
+    else if (scale_multiplier_from > multiplier_to)
+    {
+        const Int256 divisor = scale_multiplier_from / multiplier_to;
+        if (strict && value % divisor != 0)
             return std::nullopt;
-        return result;
+        ticks = value / divisor;
+    }
+    else if (common::mulOverflow(value, multiplier_to / scale_multiplier_from, ticks))
+    {
+        return std::nullopt;
     }
 
-    Int64 whole_seconds = 0;
-    if (src.getType() == Field::Types::UInt64)
-    {
-        const UInt64 value = src.safeGet<UInt64>();
-        if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-            return std::nullopt;
-        whole_seconds = static_cast<Int64>(value);
-    }
-    else
-    {
-        whole_seconds = src.safeGet<Int64>();
-    }
+    return int64FromInteger(ticks);
+}
+
+/// The ticks of an integer count of whole seconds at the target scale, or nullopt when they do not fit the `Int64` ticks.
+template <typename T>
+std::optional<Int64> ticksFromIntegerField(const T & whole_seconds, Int64 scale_multiplier_to)
+{
+    const auto seconds = int64FromInteger(whole_seconds);
+    if (!seconds)
+        return std::nullopt;
 
     Int64 result = 0;
-    if (common::mulOverflow(whole_seconds, scale_multiplier_to, result))
+    if (common::mulOverflow(*seconds, scale_multiplier_to, result))
         return std::nullopt;
     return result;
+}
+
+/// The ticks of `src` at the target scale, or nullopt when they do not fit the `Int64` ticks. Whether the ticks are
+/// inside the calendar / clock window is up to the caller. `src` must satisfy `isDateTime64TicksSourceFieldType`.
+std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_multiplier_to, bool strict)
+{
+    switch (src.getType())
+    {
+        case Field::Types::UInt64:
+            return ticksFromIntegerField(src.safeGet<UInt64>(), scale_multiplier_to);
+        case Field::Types::Int64:
+            return ticksFromIntegerField(src.safeGet<Int64>(), scale_multiplier_to);
+        case Field::Types::UInt128:
+            return ticksFromIntegerField(src.safeGet<UInt128>(), scale_multiplier_to);
+        case Field::Types::Int128:
+            return ticksFromIntegerField(src.safeGet<Int128>(), scale_multiplier_to);
+        case Field::Types::UInt256:
+            return ticksFromIntegerField(src.safeGet<UInt256>(), scale_multiplier_to);
+        case Field::Types::Int256:
+            return ticksFromIntegerField(src.safeGet<Int256>(), scale_multiplier_to);
+        case Field::Types::Decimal32:
+            return ticksFromDecimalField(src.safeGet<DecimalField<Decimal32>>(), scale_multiplier_to, strict);
+        case Field::Types::Decimal64:
+            return ticksFromDecimalField(src.safeGet<DecimalField<Decimal64>>(), scale_multiplier_to, strict);
+        case Field::Types::Decimal128:
+            return ticksFromDecimalField(src.safeGet<DecimalField<Decimal128>>(), scale_multiplier_to, strict);
+        case Field::Types::Decimal256:
+            return ticksFromDecimalField(src.safeGet<DecimalField<Decimal256>>(), scale_multiplier_to, strict);
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected field type {} for a DateTime64 / Time64 constant", src.getTypeName());
+    }
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)

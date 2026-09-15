@@ -1,4 +1,4 @@
--- `convertFieldToType` is the conversion behind the constants of `IN`. A `Decimal64` or integer constant that no
+-- `convertFieldToType` is the conversion behind the constants of `IN`. A `Decimal` or integer constant that no
 -- `DateTime64` / `Time64` of the target scale can hold - its rescale overflows the `Int64` ticks, or it lands
 -- outside the calendar / clock window - is "cannot convert" (Null) and is excluded from the set, the same way an
 -- impossible `Date32` constant is. The query must not fail with `DECIMAL_OVERFLOW`.
@@ -42,6 +42,40 @@ select 1 where toTime64('00:00:01.5', 6) in (toDecimal64('1.5', 1));
 select 1 where toTime64('00:00:01', 0) in (toDecimal64('1.0', 1));
 select count() from (select 1 where toTime64('00:00:01', 0) in (toDecimal64('1.9', 1)));
 
+select 'Wide integers and every Decimal width are carriers too';
+-- The same constants `CAST` / `toDateTime64` accept match on the `IN` path, whatever the width of the carrier.
+select 1 where toDateTime64(1735689600, 3, 'UTC') in (toUInt128(1735689600));
+select 1 where toDateTime64(1735689600, 3, 'UTC') in (toInt128(1735689600));
+select 1 where toDateTime64(1735689600, 3, 'UTC') in (toUInt256(1735689600));
+select 1 where toDateTime64(1735689600, 3, 'UTC') in (toInt256(1735689600));
+select 1 where toDateTime64('1900-01-01 00:00:00', 3, 'UTC') in (toInt128(-2208988800));
+select 1 where toDateTime64('1970-01-01 00:00:01.5', 3, 'UTC') in (toDecimal32('1.5', 1));
+select 1 where toDateTime64('1970-01-01 00:00:01.5', 3, 'UTC') in (toDecimal128('1.5', 1));
+select 1 where toDateTime64('1970-01-01 00:00:01.5', 3, 'UTC') in (toDecimal256('1.5', 1));
+select 1 where toDateTime64('1970-01-01 00:00:00.5', 3, 'UTC') in (toDecimal32('0.500000000', 9));
+select 1 where toDateTime64('1970-01-01 00:00:01.5', 3, 'UTC') in (toDecimal256('1.5', 70));
+select 1 where toTime64('00:00:01', 6) in (toUInt128(1));
+select 1 where toTime64('-999:59:59', 6) in (toInt256(-3599999));
+select 1 where toTime64('00:00:01.5', 6) in (toDecimal32('1.5', 1));
+select 1 where toTime64('00:00:01.5', 6) in (toDecimal128('1.5', 30));
+-- A constant outside the `Int64` ticks or the calendar / clock window is excluded, not `TYPE_MISMATCH` or `DECIMAL_OVERFLOW`.
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (toUInt128('99999999999999999999')));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (toInt256('-99999999999999999999')));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (toUInt128(999999999999)));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (toDecimal128('999999999999', 0)));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (toDecimal256('99999999999999999999999999', 0)));
+select count() from (select 1 where toTime64('00:00:01', 6) in (toDecimal32('3600000', 0)));
+select count() from (select 1 where toTime64('00:00:01', 6) in (toUInt256(3600000)));
+select count() from (select 1 where toTime64('00:00:01', 6) in (toInt128(-3600000)));
+select count() from (select 1 where toTime64('00:00:01', 6) in (toDecimal128('-3600000', 0)));
+-- A constant that loses its fraction cannot equal a stored value, whatever its width.
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 0, 'UTC') in (toDecimal32('1.9', 1)));
+select count() from (select 1 where toTime64('00:00:01', 0) in (toDecimal256('1.9', 1)));
+select 1 where toDateTime64('1970-01-01 00:00:01', 0, 'UTC') in (toDecimal128('1.0', 1));
+-- Mixed sets and Nullable arguments take the same path.
+select toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (toUInt128('99999999999999999999'), 1);
+select toNullable(toTime64('00:00:01', 3)) in (toDecimal256('99999999999999999999999999', 0), toDecimal256('1', 0));
+
 select 'Nullable and multi-element sets';
 select toNullable(toDateTime64('1970-01-01 00:00:01', 3, 'UTC')) in (1, 99999999999999999);
 select toNullable(toTime64('00:00:01', 3)) in (253402207200000::Decimal64(0), 1);
@@ -56,4 +90,8 @@ select count() from t_05218 where dt in (1, 99999999999999999);
 select count() from t_05218 where t in (253402207200000::Decimal64(0));
 select count() from t_05218 where t in (3599999, 253402207200000::Decimal64(0));
 select count() from t_05218 where (dt, t) in ((1, 1), (946684800, 253402207200000::Decimal64(0)));
+select count() from t_05218 where dt in (toUInt128('99999999999999999999'));
+select count() from t_05218 where dt in (toInt256(1), toUInt128('99999999999999999999'));
+select count() from t_05218 where t in (toDecimal32('3599999', 0));
+select count() from t_05218 where t in (toDecimal256('1.000000', 6), toDecimal128('-3600000', 0));
 drop table t_05218;

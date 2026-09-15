@@ -29,6 +29,35 @@ Time64: representable constants still match
 1
 1
 0
+Wide integers and every Decimal width are carriers too
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+1
+1
 Nullable and multi-element sets
 1
 1
@@ -37,5 +66,9 @@ Primary key pruning with an impossible constant
 0
 1
 0
+1
+1
+0
+1
 1
 1
