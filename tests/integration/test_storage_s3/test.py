@@ -3795,3 +3795,26 @@ def test_row_policy_over_csv(started_cluster):
     finally:
         run_query(instance, "DROP ROW POLICY test_row_policy_csv_p ON test_row_policy_csv")
         run_query(instance, "DROP TABLE test_row_policy_csv")
+
+
+def test_hive_partition_key_named_headers_with_map_value(started_cluster):
+    # The storage type, not the registered type, says who owns `_headers`: only `Web` object storage
+    # serves it as a response-header `Map`, and a Hive key of that name can infer as `Map` too, so on
+    # `s3` the path value must win. The key holds `{`, which is a glob in SQL, hence the direct put.
+    instance = started_cluster.instances["dummy"]
+    bucket = started_cluster.minio_bucket
+    prefix = f"test_hive_headers_map_{generate_random_string()}"
+
+    put_s3_file_content(
+        started_cluster, bucket, f"{prefix}/_headers={{1:2}}/data.tsv", b"1\n"
+    )
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/_headers=*/data.tsv"
+    assert (
+        run_query(
+            instance,
+            f"SELECT toTypeName(_headers), _headers FROM s3('{url}', 'TSV', 'x UInt64')",
+            settings={"use_hive_partitioning": 1},
+        )
+        == "Map(Int64, Int64)\t{1:2}\n"
+    )
