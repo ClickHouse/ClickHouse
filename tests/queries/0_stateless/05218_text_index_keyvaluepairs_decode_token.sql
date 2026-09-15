@@ -10,6 +10,7 @@ SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET optimize_trivial_count_query = 1;
 SET query_plan_optimize_count_from_text_index = 1;
+SET serialize_query_plan = 0; -- the trivial count step is not injected into a serialized plan
 
 DROP TABLE IF EXISTS tab;
 
