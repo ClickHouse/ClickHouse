@@ -1776,7 +1776,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             fuzzRefreshStrategy(*create.refresh_strategy);
     }
 
-    /// Fuzz SQL SECURITY type for ordinary and materialized views
+    /// Fuzz SQL SECURITY type for every shape that accepts the clause
     if (create.supportSQLSecurity() && create.sql_security && fuzz_rand() % 10 == 0)
     {
         auto * sec = create.sql_security->as<ASTSQLSecurity>();

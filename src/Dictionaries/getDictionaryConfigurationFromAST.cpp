@@ -17,6 +17,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <base/EnumReflection.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -815,6 +817,26 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     if (query.dictionary->range)
         buildRangeConfiguration(xml_document, structure_element, query.dictionary->range, all_attr_names_and_types);
+
+    if (query.sql_security)
+    {
+        const auto & sql_security = query.sql_security->as<const ASTSQLSecurity &>();
+        if (sql_security.type)
+        {
+            AutoPtr<Element> security_element(xml_document->createElement("sql_security"));
+            current_dictionary->appendChild(security_element);
+            AutoPtr<Text> security_value(xml_document->createTextNode(String{magic_enum::enum_name(*sql_security.type)}));
+            security_element->appendChild(security_value);
+
+            if (sql_security.definer)
+            {
+                AutoPtr<Element> definer_element(xml_document->createElement("definer"));
+                current_dictionary->appendChild(definer_element);
+                AutoPtr<Text> definer_value(xml_document->createTextNode(sql_security.definer->toString()));
+                definer_element->appendChild(definer_value);
+            }
+        }
+    }
 
     if (query.comment)
     {
