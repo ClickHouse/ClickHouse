@@ -402,7 +402,7 @@ public:
         return true;
     }
 
-    bool contains(const std::string & key) const
+    bool contains(std::string_view key) const
     {
         return map.find(key) != map.end();
     }
