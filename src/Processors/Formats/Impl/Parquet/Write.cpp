@@ -1206,6 +1206,11 @@ void writeColumnImpl(
     /// of the batch it kept.
     static constexpr size_t max_batch_bytes = 64uz << 20;
 
+    /// A record is normally kept whole, but one that reaches this on its own is split anyway: the
+    /// page's 32-bit size and the dictionary builder's 32-bit offsets do not care that the values
+    /// belong to one row. Still far below both limits, so the split leaves room for the levels.
+    static constexpr size_t max_record_bytes = 1uz << 30;
+
     auto limit_batch_by_bytes = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, auto && value_size)
     {
         size_t bytes = 0;
@@ -1219,6 +1224,17 @@ void writeColumnImpl(
             bool record_ends = !pages_change_on_record_boundaries
                 || batch_def_offset + i + 1 == num_values
                 || s.rep[batch_def_offset + i + 1] == 0;
+
+            /// Pages of such a chunk no longer start on record boundaries, which is what the column
+            /// index promises, so it is dropped rather than written wrong.
+            if (!record_ends && bytes >= max_record_bytes)
+            {
+                /// Neither index can describe a chunk whose pages start mid-record, so both are
+                /// dropped rather than written wrong.
+                s.indexes.column_index_valid = false;
+                s.indexes.offset_index_valid = false;
+                record_ends = true;
+            }
 
             if (record_ends && bytes >= max_batch_bytes)
             {
@@ -1634,6 +1650,9 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     {
         for (size_t j = 0; j < rg.column_indexes.size(); ++j)
         {
+            if (!rg.column_indexes.at(j).offset_index_valid)
+                continue;
+
             auto & column = rg.row_group.columns.at(j);
             column.__set_offset_index_offset(file.offset);
             size_t length = serializeThriftStruct(rg.column_indexes.at(j).offset_index, out);
