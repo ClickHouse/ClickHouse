@@ -59,7 +59,7 @@ private:
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
-    /// Conflict-detector variant: decide validity and the resulting (kind, strictness) using the
+    /// Conflict-detector (CD) variant: decide validity and the resulting (kind, strictness) using the
     /// per-operator descriptors in `dpsub_data.conflict_operators` (CD-A or CD-C), which support
     /// outer and semi/anti reordering. Returns nullopt to reject the split.
     std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
@@ -68,6 +68,10 @@ private:
     /// a conflict detector (CD-A or CD-C) is enabled, otherwise to the per-relation
     /// `isValidJoinOrderMask` (with strictness fixed to All, its only supported case).
     std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
+
+    /// True when an inner-join condition joins the two sides here: all its tables are present and it
+    /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
+    bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
 
     bool useConflictDetector() const
     {
@@ -297,7 +301,7 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
                 return std::nullopt;
 
         /// Required-set containment. `forward` keeps the operator's (left, right) inputs aligned
-        /// with (left_mask, right_mask); `mirrored` swaps them -- a valid equivalence for any of our
+        /// with (left_mask, right_mask); `mirrored` swaps them: a valid equivalence for any of our
         /// operators via `reverseJoinKind` (Left<->Right, Full/Inner unchanged; for semi/anti it
         /// flips the preserved side). The two required sides are disjoint and, for a non-degenerate
         /// predicate, both non-empty, so at most one orientation can hold.
@@ -307,7 +311,7 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         /// A one-sided/cross-product operator has an empty required side, so the containment above
         /// cannot orient it. Require each whole input subtree on its own side instead: this orients
         /// it and rejects a fragmented split that pulls part of a subtree across the outer-join
-        /// boundary (an invalid plan). Rare -- gated by the flag.
+        /// boundary (an invalid plan). This is a very rare condition.
         if (op.degenerate)
         {
             const UInt32 right_relations = op.relations & ~op.left_relations;
@@ -340,11 +344,29 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     /// No operator is applied across this split. A real predicate always maps to an operator, so the
     /// only legitimate no-operator split is a transitive inner join (two sides tied by a column
     /// equivalence, no direct predicate). Anything else reaching here is the synthetic cross-product
-    /// connectivity with no operator spanning it -- reject rather than invent an inner join.
-    if (!any_involved && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
+    /// connectivity with no operator spanning it, thus reject rather than invent an inner join.
+    if (!any_involved
+        && !hasInnerEdgeAcross(left_mask, right_mask)
+        && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
         return std::nullopt;
 
     return std::make_pair(kind, strictness);
+}
+
+bool DPSubJoinOrderOptimizer::hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const
+{
+    const UInt32 combined = left_mask | right_mask;
+    for (size_t i = 0; i < dpsub_data.edge_source_mask.size(); ++i)
+    {
+        if (dpsub_data.edge_pinned[i])
+            continue;
+        const UInt32 sources = dpsub_data.edge_source_mask[i];
+        if (sources & ~combined)
+            continue;
+        if ((sources & left_mask) && (sources & right_mask))
+            return true;
+    }
+    return false;
 }
 
 std::optional<std::pair<JoinKind, JoinStrictness>>
@@ -488,16 +510,6 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
 }
 
-/** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
-* This algorithm constructs optimal join trees by iterating over subsets of the relations in an ascending order
-* based on an integer bitmask (from 1 to 2^n - 2). This ordering ensures that for any relation subset S,
-* the best plans for all its proper sub-plans (subsets S1 ⊂ S) have already been computed, thereby adhering to
-* Bellman's optimality principle.
-* This methodical evaluation of all connected subsets results in the creation of the best plan for each.
-* The final answer is the optimal plan for the complete set of relations.
-* For more detailed information, see "Building Query Compilers":
-* (https://pi3.informatik.uni-mannheim.de/~moer/querycompiler.pdf)
-*/
 std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 {
     /// DPsub uses the generic memo only for composite-expression statistics. Clear any
@@ -508,15 +520,16 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 
     const size_t n = query_graph.relation_stats.size();
     using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
-    // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
-    // This budget cap is obtained from empirical testing using different queries and join graphs.
-    static constexpr UInt32 max_nr_ccps = 50'000;
 
-    if (n >= std::numeric_limits<Bitvector>::digits)
+    /// Check the table count up front rather than stopping midway through: a half-finished search
+    /// throws away the time it already spent and still ends up handing the query to greedy.
+    static_assert(DPSUB_MAX_RELATIONS < std::numeric_limits<Bitvector>::digits);
+
+    if (n > DPSUB_MAX_RELATIONS)
     {
         LOG_TRACE(log,
-            "Number of relations {} exceeds the DP threshold {}, skipping DP optimization invoking greedy algorithm",
-            n, std::numeric_limits<Bitvector>::digits);
+            "Number of relations {} exceeds the DPsub threshold {}, skipping DPsub optimization and falling back to the next algorithm",
+            n, DPSUB_MAX_RELATIONS);
         return nullptr;
     }
 
@@ -544,14 +557,13 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     initDPsubScratch();
 
     Checker checker(n, *this);
-    Enumerator enumerator(n, max_nr_ccps, log);
+    Enumerator enumerator(n, log);
     enumerator.enumerate(checker, query_graph);
 
     const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
     const auto & dptable = checker.getDPTable();
 
-    /// a. If the join graph is too complex we break early
-    /// b. The full set is assembled only if the join graph is connected. When it is not e.g.
+    /// The full set is assembled only if the join graph is connected. When it is not e.g.
     /// cross products, or predicates that reference a single relation or a constant and thus
     /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
     /// disconnected components, so the full-set entry is missing (or was never given a join)
@@ -559,7 +571,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
                             && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
     if (!full_built)
     {
-        LOG_TRACE(log, "DPsub: join graph is either too complex or disconnected!");
+        LOG_TRACE(log, "DPsub: join graph is disconnected!");
         return nullptr;
     }
 
