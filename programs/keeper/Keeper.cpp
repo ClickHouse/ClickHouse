@@ -451,7 +451,8 @@ try
             std::lock_guard lock(servers_lock);
             metrics.reserve(servers->size());
             for (const auto & server : *servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+                metrics.emplace_back(ProtocolServerMetrics{
+                    server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         },
         /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
@@ -502,6 +503,7 @@ try
             servers->emplace_back(
                 listen_host,
                 port_name,
+                ServerType::Type::END,
                 "Keeper (tcp): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
@@ -524,6 +526,7 @@ try
             servers->emplace_back(
                 listen_host,
                 secure_port_name,
+                ServerType::Type::END,
                 "Keeper with secure protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
@@ -563,6 +566,7 @@ try
                     servers->emplace_back(
                         listen_host,
                         port_name,
+                        ServerType::Type::PROMETHEUS,
                         "Prometheus: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             std::move(my_http_context), handler_factory, server_pool, socket, http_params));
@@ -586,6 +590,7 @@ try
                 servers->emplace_back(
                     listen_host,
                     port_name,
+                    ServerType::Type::END,
                     "HTTP Control: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),
@@ -616,6 +621,7 @@ try
                 servers->emplace_back(
                     listen_host,
                     port_name,
+                    ServerType::Type::END,
                     "HTTPS Control: https://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),

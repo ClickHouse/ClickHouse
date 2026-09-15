@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Server/ServerType.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
@@ -77,6 +78,8 @@ void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, As
 struct ProtocolServerMetrics
 {
     String port_name;
+    /// `ServerType::Type::END` for servers with no protocol type of their own (Keeper listeners).
+    ServerType::Type protocol_type = ServerType::Type::END;
     size_t current_threads;
     size_t rejected_connections;
 };
