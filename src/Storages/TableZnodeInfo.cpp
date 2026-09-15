@@ -122,23 +122,28 @@ void checkPathComponents(ZnodeString what, const String & str)
     }
 }
 
-/// Returns the position right after the last path component that is a UUID, or npos if there is none.
-size_t findEndOfLastUUIDComponent(const String & path)
+/// Returns the position right after the path component containing the last canonical UUID (36 characters)
+/// in the path, or npos if there is none. The UUID does not have to be a whole component: the `{uuid}`
+/// macro may be surrounded by other text in the same component, as in "/foo/pika{uuid}chu/bar".
+size_t findEndOfComponentWithLastUUID(const String & path)
 {
-    size_t end = path.size();
-    while (end > 0)
+    static constexpr size_t uuid_text_size = 36;
+    if (path.size() < uuid_text_size)
+        return String::npos;
+
+    for (size_t begin = path.size() - uuid_text_size; ; --begin)
     {
-        const size_t slash_pos = path.find_last_of('/', end - 1);
-        const size_t begin = slash_pos == String::npos ? 0 : slash_pos + 1;
-        const std::string_view component(path.data() + begin, end - begin);
-
         UUID uuid;
-        if (component.size() == 36 && tryParseUUID({reinterpret_cast<const UInt8 *>(component.data()), component.size()}, uuid))
+        if (tryParseUUID({reinterpret_cast<const UInt8 *>(path.data() + begin), uuid_text_size}, uuid))
+        {
+            size_t end = begin + uuid_text_size;
+            while (end < path.size() && path[end] != '/')
+                ++end;
             return end;
+        }
 
-        if (slash_pos == String::npos)
+        if (begin == 0)
             break;
-        end = slash_pos;
     }
     return String::npos;
 }
@@ -281,12 +286,12 @@ TableZnodeInfo TableZnodeInfo::resolve(
         /// a table of an `Ordinary` database to a replicated engine mints a UUID for the {uuid} macro and
         /// stores the fully expanded path as a literal, because the metadata of such a table has no place
         /// for the UUID itself. That literal is the only record of the UUID, so the owned prefix is
-        /// recovered from the path: it ends with the last path component that is a UUID. The recovery
+        /// recovered from the path: it ends with the path component containing the last UUID, which may be
+        /// surrounded by other text as in "/foo/pika{uuid}chu/bar" (the same rule as above). The recovery
         /// cannot be limited to tables with a Nil UUID: after `RENAME TABLE` from `Ordinary` into `Atomic`
         /// the table gets a fresh UUID of its own while the literal path keeps the minted one. (A UUID
-        /// component the user wrote by hand may be picked up as well; harmless, as only emptied znodes
-        /// are removed.)
-        if (const size_t i = findEndOfLastUUIDComponent(res.path); i != String::npos)
+        /// the user wrote by hand may be picked up as well; harmless, as only emptied znodes are removed.)
+        if (const size_t i = findEndOfComponentWithLastUUID(res.path); i != String::npos)
             res.path_prefix_for_drop = res.path.substr(0, i);
     }
 
