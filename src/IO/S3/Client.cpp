@@ -160,10 +160,10 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
-                "Attempt {}/{} failed with retryable error: {}, {}",
+                "Attempt {}/{} failed with a retryable error, HTTP response code: {}, error: {}",
                 httpResponseOutcome.GetRetryCount() + 1,
                 GetMaxAttempts(),
-                static_cast<size_t>(error.GetResponseCode()),
+                error.GetResponseCode(),
                 error.GetMessage());
     }
 }
@@ -174,11 +174,11 @@ void Client::RetryStrategy::RequestBookkeeping(
     if (httpResponseOutcome.IsSuccess())
         LOG_TRACE(
             log,
-            "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
+            "Attempt {}/{} succeeded with HTTP response code: {}; the previous attempt failed with HTTP response code: {}, error: {}",
             httpResponseOutcome.GetRetryCount() + 1,
             GetMaxAttempts(),
-            static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
-            static_cast<size_t>(lastError.GetResponseCode()),
+            httpResponseOutcome.GetResult()->GetResponseCode(),
+            lastError.GetResponseCode(),
             lastError.GetMessage());
     RequestBookkeeping(httpResponseOutcome);
 }
@@ -905,7 +905,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {}", sleep_ms, error.GetResponseCode());
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after a retryable error, HTTP response code: {}", sleep_ms, error.GetResponseCode());
             break;
         }
     }
