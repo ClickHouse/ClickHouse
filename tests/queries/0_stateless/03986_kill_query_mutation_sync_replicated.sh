@@ -53,10 +53,9 @@ alter_pid=$!
 
 wait_for_query_to_start "$query_id"
 
-# wait_for_query_to_start only proves the foreground ALTER reached system.processes; the
-# background mutation may still be queued at that point. Wait for an unambiguous "a part is
-# actively mutating" signal (system.mutations.parts_in_progress_names non-empty for this table)
-# so KILL QUERY lands in the middle of mutation execution, not while it is still queued.
+# wait_for_query_to_start only proves the foreground ALTER reached system.processes. A non-empty
+# system.mutations.parts_in_progress_names means this mutation has a part queued for mutation, so
+# the ALTER is already parked in the wait that KILL QUERY has to cancel.
 in_progress=0
 for _ in $(seq 1 600); do
     in_progress=$($CLICKHOUSE_CLIENT --query "
