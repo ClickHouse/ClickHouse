@@ -100,11 +100,11 @@ Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a 
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a set of rows unfolded from `arr`."};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src)", R"(
-┌─dst─┬─\'Hello\'─┬─src─────┐
-│   1 │ Hello     │ [1,2,3] │
-│   2 │ Hello     │ [1,2,3] │
-│   3 │ Hello     │ [1,2,3] │
-└─────┴───────────┴─────────┘
+┌─dst─┬─'Hello'─┬─src─────┐
+│   1 │ Hello   │ [1,2,3] │
+│   2 │ Hello   │ [1,2,3] │
+│   3 │ Hello   │ [1,2,3] │
+└─────┴─────────┴─────────┘
         )"},
         {"arrayJoin affects all sections of the query", R"(
 -- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.

@@ -9,6 +9,7 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -66,6 +67,7 @@ public:
         if (!tryVisitDynamicCast<ASTAlterQuery>(parent, ast) &&
             !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(parent, ast) &&
             !tryVisitDynamicCast<ASTRenameQuery>(parent, ast) &&
+            !tryVisitDynamicCast<ASTSystemQuery>(parent, ast) &&
             !tryVisitDynamicCast<ASTFunction>(parent, ast))
         {}
     }
@@ -124,6 +126,7 @@ private:
     const String database_name;
     std::set<String> external_tables;
     mutable std::unordered_set<String> with_aliases;
+    mutable std::unordered_set<String> expression_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -148,10 +151,37 @@ private:
                     with_aliases.insert(child->as<ASTWithElement>()->name);
             }
 
+        /// The right argument of IN may refer to an alias of an expression defined elsewhere
+        /// in the query, possibly after the point of use - then it is not a table name.
+        /// Collect the aliases before descending into the children.
+        /// Like in `MarkTableIdentifiersVisitor`, only the aliases of the current select query
+        /// are considered: an alias is not visible inside a nested select query and vice versa.
+        auto enclosing_query_aliases = std::move(expression_aliases);
+        expression_aliases.clear();
+        for (const auto & child : select.children)
+            collectAliases(child);
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
         visitChildren(select);
+
+        expression_aliases = std::move(enclosing_query_aliases);
+    }
+
+    /// Collect aliases of expressions in the subtree, skipping nested select queries:
+    /// their aliases are collected when the visitor descends into them.
+    void collectAliases(const ASTPtr & ast) const
+    {
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
+            return;
+
+        String alias = ast->tryGetAlias();
+        if (!alias.empty())
+            expression_aliases.insert(alias);
+
+        for (const auto & child : ast->children)
+            collectAliases(child);
     }
 
     void visit(ASTSelectIntersectExceptQuery & select, ASTPtr &) const
@@ -321,10 +351,15 @@ private:
                     }
                     else if (is_operator_in && i == 1)
                     {
-                        /// XXX: for some unknown reason this place assumes that argument can't be an alias,
-                        ///      like in the similar code in `MarkTableIdentifierVisitor`.
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
+                            /// The argument may be an alias of an expression defined elsewhere in the query,
+                            /// e.g. `SELECT 'foo' AS object WHERE (object IN (('foo', 'bar') AS objects)) AND object IN objects`.
+                            /// Then it is not a table name and must not be qualified with the database
+                            /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
+                            if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
+                                continue;
+
                             /// If identifier is broken then we can do nothing and get an exception
                             auto maybe_table_identifier = identifier->createTable();
                             if (maybe_table_identifier)
@@ -407,6 +442,18 @@ private:
             if (command_ast->to_database.empty())
                 command_ast->to_database = database_name;
         }
+    }
+
+    void visitDDL(ASTPtr & /* parent */, ASTSystemQuery & query, ASTPtr &) const
+    {
+        if (query.type != ASTSystemQuery::Type::RELOAD_DICTIONARY
+            && query.type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
+            return;
+
+        if (!query.table || query.database || only_replace_current_database_function)
+            return;
+
+        query.setDatabase(database_name);
     }
 
     void visitDDL(ASTPtr & parent, ASTFunction & function, ASTPtr & node) const

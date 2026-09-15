@@ -1,0 +1,20 @@
+-- Parquet make_json_columns_nullable, nullable=1 first
+Nullable(JSON)
+JSON
+-- Parquet make_json_columns_nullable, nullable=0 first
+JSON
+Nullable(JSON)
+-- JSONEachRow array_of_dynamic, dynamic=1 first
+Array(Dynamic)
+Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
+-- JSONEachRow array_of_dynamic, dynamic=0 first
+Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
+Array(Dynamic)
+-- JSONEachRow array_of_dynamic, a repeated query hits the cache
+1
+-- Template exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- Template exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)

@@ -46,14 +46,6 @@ StorageAlias::StorageAlias(
     , target_database(target_database_)
     , target_table(target_table_)
 {
-    StorageID target_id(target_database, target_table);
-    if (table_id_ == target_id)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
-
-    // Disallow target is also an alias
-    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
-    if (target_storage && target_storage->getName() == "Alias")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -261,17 +253,27 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & /*table_lock_holder*/,
+    DDLGuardPtr & ddl_guard)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
-    /// ALTER through alias on a table in a Replicated database is not supported
-    /// when the alias and target are in different databases. This is because the
-    /// DDL worker path is bypassed and metadata changes won't be replicated to
-    /// other replicas in ZooKeeper. If both are in the same Replicated database,
-    /// the DDL worker handles the ALTER correctly.
+    /// Read under the alias guard: a concurrent RENAME of the alias can change it after the release.
+    auto alias_database_name = getStorageID().database_name;
+
+    /// The forwarded ALTER writes the target's metadata, so guard the target, not the alias.
+    /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
+    /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
+    ddl_guard.reset();
+    auto target_ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+        target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// ALTER through alias on a table in a Replicated database is not supported when the alias
+    /// and target are in different databases, because the DDL worker path is bypassed and the
+    /// metadata change would not be replicated. Check under the target's guard, so a concurrent
+    /// RENAME cannot move the target into a Replicated database after the check.
     auto target_storage_id = target_storage->getStorageID();
-    if (getStorageID().database_name != target_storage_id.database_name)
+    if (alias_database_name != target_storage_id.database_name)
     {
         auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
         if (target_db && target_db->getEngineName() == "Replicated")
@@ -284,7 +286,8 @@ void StorageAlias::alter(
         }
     }
 
-    target_storage->alter(params, local_context, table_lock_holder);
+    auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(
@@ -558,6 +561,23 @@ void registerStorageAlias(StorageFactory & factory)
         if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
             local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
 
+        /// The restrictions below read the catalog, so they may only judge freshly supplied input:
+        /// an already accepted definition must stay loadable, because a rejection while loading
+        /// metadata fails the whole load rather than the one table. They run after the access check
+        /// so that a caller without access to the target cannot learn its engine from the message.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (fresh_user_definition)
+        {
+            StorageID target_id(target_database, target_table);
+            if (args.table_id == target_id)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
+
+            auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, local_context);
+            if (target_storage && target_storage->getName() == "Alias")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
+        }
+
         return std::make_shared<StorageAlias>(
             args.table_id,
             local_context,
@@ -587,18 +607,18 @@ CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
 
-:::note
+<Note>
 The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
-:::
+</Note>
 
 ## Engine Parameters {#engine-parameters}
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
 
-:::note
+<Note>
 When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
-:::
+</Note>
 
 ## Supported Operations {#supported-operations}
 
