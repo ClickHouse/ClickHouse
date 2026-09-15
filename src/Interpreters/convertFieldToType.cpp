@@ -117,6 +117,35 @@ Field convertNumericType(const Field & from, const IDataType & type, bool strict
 }
 
 
+/// A `UInt64`/`Int64` constant for a `DateTime64` or `Time64` type is a number of whole seconds, while
+/// the type counts ticks of `10^-scale` seconds in an `Int64`. A constant whose tick count does not fit
+/// is not representable in the type, so Null is returned and the caller leaves it out of the set or of
+/// the key range, instead of using a value that wrapped around: `dt IN (toUInt64(18446744073709551615))`
+/// used to wrap to `-1` and match a row at `1969-12-31 23:59:59`, which `dt = toUInt64(...)` does not.
+template <typename DecimalType>
+Field convertWholeSecondsToDateTimeType(
+    const Field & from, UInt32 scale, const IDataType & type, bool strict, bool convert_inexact_floats)
+{
+    using NativeType = typename DecimalType::NativeType;
+
+    Field whole_seconds = from;
+    if (from.getType() != Field::Types::Decimal64)
+    {
+        whole_seconds = convertNumericType<Int64>(from, type, strict, convert_inexact_floats);
+        if (whole_seconds.isNull())
+            return {};
+    }
+
+    NativeType ticks = 0;
+    if (common::mulOverflow<NativeType>(
+            applyVisitor(FieldVisitorConvertToNumber<Int64>(), whole_seconds),
+            DecimalUtils::scaleMultiplier<NativeType>(scale),
+            ticks))
+        return {};
+
+    return Field(DecimalField<DecimalType>(DecimalType(ticks), scale));
+}
+
 template <typename From, typename T>
 Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
@@ -505,18 +534,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
-            const auto decimal_value
-                = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
-            return Field(DecimalField<DateTime64>(decimal_value, scale));
+            return convertWholeSecondsToDateTimeType<DateTime64>(src, scale, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isTime64()
             && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {
             const auto scale = static_cast<const DataTypeTime64 &>(type).getScale();
-            const auto decimal_value
-                = DecimalUtils::decimalFromComponents<Time64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
-            return Field(DecimalField<Time64>(decimal_value, scale));
+            return convertWholeSecondsToDateTimeType<Time64>(src, scale, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
