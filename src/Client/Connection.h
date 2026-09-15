@@ -27,6 +27,10 @@
 
 #include "config.h"
 
+/// Lets the PacketReceiver unit test attach an already-connected socket without a server.
+/// Keep in sync with the struct name in src/Client/tests/gtest_packet_receiver_timeout_latch.cpp.
+struct PacketReceiverTestAccess;
+
 namespace DB
 {
 
@@ -54,6 +58,7 @@ class NativeWriter;
 class Connection : public IServerConnection
 {
     friend class MultiplexedConnections;
+    friend struct ::PacketReceiverTestAccess;
 
 public:
     using SocketFactory = std::function<std::unique_ptr<Poco::Net::StreamSocket>(bool secure)>;
