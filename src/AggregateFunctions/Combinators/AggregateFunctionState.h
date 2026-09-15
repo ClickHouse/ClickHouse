@@ -77,6 +77,8 @@ public:
 
     size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
 
+    bool preservesNulls() const override { return nested_func->preservesNulls(); }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
@@ -147,6 +149,27 @@ public:
         ssize_t if_argument_pos) const override
     {
         nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+    }
+
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        nested_func->addBatchSparse(row_begin, row_end, places, place_offset, columns, arena);
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        nested_func->addBatchSparseSinglePlace(row_begin, row_end, place, columns, arena);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override

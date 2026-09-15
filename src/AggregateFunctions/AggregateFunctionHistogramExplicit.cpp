@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -660,6 +661,23 @@ public:
             nullable_column.getNullMapData().data(),
             arena,
             if_argument_pos);
+    }
+
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        auto offset_it = column_sparse.getIterator(row_begin);
+
+        for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
+            if (places[offset_it.getCurrentRow()])
+                add(places[offset_it.getCurrentRow()] + place_offset, &values, offset_it.getValueIndex(), arena);
     }
 
     /// Use the raw function when -If wraps this adapter to avoid unwrapping Nullable twice.
