@@ -338,15 +338,37 @@ static bool producesJoinForStep(JoinAlgorithm algorithm, const JoinOperator & jo
     return false;
 }
 
-/// `GraceHashJoin::isSupported` on the kind and strictness of a step. Its remaining requirement, a single
-/// disjunct, is one the merge algorithms share, so a step that fails it never reaches `grace_hash` through them
-/// either; assuming it holds only ever refuses a plan, never lets one through.
+/// Whether the `ON` clause has an equality between one expression of the left side and one of the right side at
+/// the top level. `JoinStepLogical::buildPhysicalJoinImpl` turns exactly those predicates into the join keys of a
+/// single `TableJoin` clause (`addJoinPredicatesToTableJoin`), which is what `TableJoin::oneDisjunct` checks.
+/// Without one, the step never has a one-clause hash join on either side: a single top-level `OR` is split into
+/// one clause per disjunct, two inequalities become an `IEJoinStep` when `ie_join` is enabled, an `INNER ALL` join
+/// is converted to a CROSS join with a residual filter, and anything else is refused - none of which spills.
+static bool hasEqualityKeys(const JoinOperator & join_operator)
+{
+    for (const auto & predicate : join_operator.expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            return true;
+    }
+    return false;
+}
+
+/// `GraceHashJoin::isSupported` on a step: the kind and strictness it accepts, and a single join clause
+/// (`TableJoin::oneDisjunct`), which a step has exactly when its `ON` clause carries equality keys. This is also
+/// the condition for the hash family to become a `SpillingHashJoin`, so a step that fails it is never spilled by
+/// either side, whatever the preference list says.
 static bool graceHashSupports(const JoinOperator & join_operator)
 {
     if (join_operator.strictness == JoinStrictness::Asof)
         return false;
     const auto kind = join_operator.kind;
-    return isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind);
+    if (!(isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)))
+        return false;
+    return hasEqualityKeys(join_operator);
 }
 
 bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const
@@ -361,6 +383,14 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
     if (isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind))
         return false;
     if (isJoinOnConstant(join_operator))
+        return false;
+
+    /// Only a `GraceHashJoin` (standalone, or inside the `SpillingHashJoin` of the hash family) treats the size
+    /// limits as a spill trigger, and only a step it supports can ever be run by one, on either side. An ASOF join,
+    /// a kind outside INNER / LEFT / RIGHT / FULL, and an `ON` clause without equality keys (a disjunction, an
+    /// inequality-only join that becomes an `IEJoinStep` or a CROSS join) are run by algorithms that check the
+    /// limits as hard caps on both sides, and the spill threshold does not apply to any of them.
+    if (!graceHashSupports(join_operator))
         return false;
 
     /// Hard caps here, a spill trigger there - but only where the old peer spills at all. Its plain `HashJoin` /
@@ -378,22 +408,17 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
     /// (unset) size limits.
     ///
     /// Only a `grace_hash` that this step actually reaches counts: behind an entry that produces a join for the
-    /// step it is dead weight in the list, and both sides run that join instead. One that the step cannot run at
-    /// all - an ASOF join, or a kind outside INNER / LEFT / RIGHT / FULL - is skipped on both sides too.
+    /// step it is dead weight in the list, and both sides run that join instead.
     for (auto algorithm : join_algorithms)
     {
         if (algorithm == JoinAlgorithm::GRACE_HASH)
-        {
-            if (graceHashSupports(join_operator))
-                return true;
-            continue;
-        }
+            return true;
         if (producesJoinForStep(algorithm, join_operator))
         {
-            /// The hash family becomes a `SpillingHashJoin` on the old peer once it has a threshold and the step
-            /// fits `GraceHashJoin`, and that is where the size limits used to trigger the spill instead of capping.
+            /// The hash family becomes a `SpillingHashJoin` on the old peer once it has a threshold, and that is
+            /// where the size limits used to trigger the spill instead of capping.
             if (alwaysProducesJoin(algorithm))
-                return size_limits_set && spill_threshold_set && graceHashSupports(join_operator);
+                return size_limits_set && spill_threshold_set;
             return false;
         }
     }

@@ -46,8 +46,9 @@ bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
     return out.str().contains("legacy_join_size_limits_trigger_spilling");
 }
 
-/// A join step to serialize the settings for: one column per side, and an `ON` clause made of the given binary
-/// predicates over them. `JoinActionRef` only refers into the DAG, so the actions outlive the operator here.
+/// A join step to serialize the settings for: two columns per side, and an `ON` clause made of the given binary
+/// predicates over the first column of each side. `JoinActionRef` only refers into the DAG, so the actions outlive
+/// the operator here.
 struct Step
 {
     Step(JoinKind kind, JoinStrictness strictness, const std::vector<JoinConditionOperator> & predicates = {JoinConditionOperator::Equals})
@@ -55,17 +56,46 @@ struct Step
         , join_operator(kind, strictness)
     {
         tryRegisterFunctions();
-        const auto & inputs = expression_actions.getActionsDAG()->getInputs();
-        JoinActionRef left(inputs.at(0), expression_actions);
-        JoinActionRef right(inputs.at(1), expression_actions);
         for (auto op : predicates)
-            join_operator.expression.push_back(JoinActionRef::transform({left, right}, JoinActionRef::AddFunction(op)));
+            join_operator.expression.push_back(predicate(op, 0));
     }
 
     static Block makeHeader(const String & column_name)
     {
         auto type = std::make_shared<DataTypeUInt64>();
-        return Block({ColumnWithTypeAndName(type->createColumn(), type, column_name)});
+        return Block(
+            {ColumnWithTypeAndName(type->createColumn(), type, column_name),
+             ColumnWithTypeAndName(type->createColumn(), type, column_name + "2")});
+    }
+
+    /// `l <op> r` over the `index`-th column of each side. The inputs of the DAG are the left header followed by
+    /// the right one.
+    JoinActionRef predicate(JoinConditionOperator op, size_t index) const
+    {
+        const auto & inputs = expression_actions.getActionsDAG()->getInputs();
+        JoinActionRef left(inputs.at(index), expression_actions);
+        JoinActionRef right(inputs.at(2 + index), expression_actions);
+        return JoinActionRef::transform({left, right}, JoinActionRef::AddFunction(op));
+    }
+
+    /// `ON (l = r) OR (l2 = r2)`: a single disjunction, which `JoinStepLogical::buildPhysicalJoinImpl` splits into one
+    /// `TableJoin` clause per disjunct (`tryAddDisjunctiveConditions`), so the step never has a single clause.
+    Step & onDisjunction()
+    {
+        join_operator.expression.clear();
+        join_operator.expression.push_back(JoinActionRef::transform(
+            {predicate(JoinConditionOperator::Equals, 0), predicate(JoinConditionOperator::Equals, 1)},
+            JoinActionRef::AddFunction(JoinConditionOperator::Or)));
+        return *this;
+    }
+
+    /// `ON l = r AND ((l = r) OR (l2 = r2))`: the equality is a join key, the disjunction a residual condition of the
+    /// same single clause.
+    Step & onEqualityAndDisjunction()
+    {
+        onDisjunction();
+        join_operator.expression.push_back(predicate(JoinConditionOperator::Equals, 0));
+        return *this;
     }
 
     /// `ON NULL`: a single constant of type `Nullable(Nothing)` that is not a binary predicate, the shape
@@ -377,4 +407,73 @@ TEST(JoinSpillTriggerPlanSetting, StepsGraceHashCannotRun)
     Step asof_on_null(JoinKind::Left, JoinStrictness::Asof, {});
     asof_on_null.onNull();
     EXPECT_NO_THROW(serializeAt(grace_hash_only, pre_setting_version, asof_on_null.join_operator));
+}
+
+TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
+{
+    /// `GraceHashJoin::isSupported` also requires a single join clause (`TableJoin::oneDisjunct`), which a step has
+    /// only when its `ON` clause carries an equality between the two sides at the top level. Without one, neither
+    /// side ever spills the step: a disjunction is split into one clause per disjunct and run by a plain
+    /// multi-clause hash join, an inequality-only join becomes an `IEJoinStep` (or a CROSS join with a residual
+    /// filter), and every one of those checks the size limits as hard caps, like this side.
+    Step disjunction(JoinKind::Inner, JoinStrictness::All, {});
+    disjunction.onDisjunction();
+    Step left_disjunction(JoinKind::Left, JoinStrictness::All, {});
+    left_disjunction.onDisjunction();
+    const Step inequalities(JoinKind::Inner, JoinStrictness::All, {JoinConditionOperator::Less, JoinConditionOperator::Greater});
+    const Step one_inequality(JoinKind::Inner, JoinStrictness::All, {JoinConditionOperator::Less});
+
+    /// A size limit with the default, spill-capable settings, and with a hash-family list and an explicit threshold.
+    const auto with_size_limit = makeJoinSettings({{"max_rows_in_join", 100u}});
+    const auto hash_with_threshold_and_limit
+        = makeJoinSettings({{"join_algorithm", "hash"}, {"max_bytes_before_external_join", 1000000u}, {"max_bytes_in_join", 1000u}});
+    const auto parallel_hash_with_threshold_and_limit = makeJoinSettings(
+        {{"join_algorithm", "parallel_hash,hash"}, {"max_bytes_before_external_join", 1000000u}, {"max_rows_in_join", 100u}});
+    for (const Step * step : std::initializer_list<const Step *>{&disjunction, &left_disjunction, &inequalities, &one_inequality})
+    {
+        EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, step->join_operator));
+        EXPECT_NO_THROW(serializeAt(hash_with_threshold_and_limit, pre_setting_version, step->join_operator));
+        EXPECT_NO_THROW(serializeAt(parallel_hash_with_threshold_and_limit, pre_setting_version, step->join_operator));
+    }
+
+    /// `ie_join` claims an inequality-only step before the preference list is consulted, and a list nothing else in
+    /// which runs the step is not a reason to refuse it either: the limits are hard caps for `IEJoinStep` on both sides.
+    for (const auto & algorithms : {"ie_join", "ie_join,hash", "hash,ie_join", "direct"})
+    {
+        EXPECT_NO_THROW(serializeAt(
+            makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version, inequalities.join_operator))
+            << algorithms;
+    }
+
+    /// `grace_hash` cannot run such a step on either side, so listing it changes nothing.
+    const auto grace_hash_only = makeJoinSettings({{"join_algorithm", "grace_hash"}, {"max_bytes_before_external_join", 1000000u}});
+    const auto grace_hash_first
+        = makeJoinSettings({{"join_algorithm", "grace_hash,hash"}, {"max_bytes_ratio_before_external_join", 0.0}, {"max_rows_in_join", 100u}});
+    for (const Step * step : std::initializer_list<const Step *>{&disjunction, &left_disjunction, &inequalities, &one_inequality})
+    {
+        EXPECT_NO_THROW(serializeAt(grace_hash_only, pre_setting_version, step->join_operator));
+        EXPECT_NO_THROW(serializeAt(grace_hash_first, pre_setting_version, step->join_operator));
+    }
+
+    /// One top-level equality is enough for a single clause: the disjunction is then a residual condition of a
+    /// spill-capable hash join, and an equality next to inequalities is a join key unless `ie_join` is listed first -
+    /// which an old peer may not honor, so the gate does not rely on it. Both stay refused with a size limit.
+    Step equality_and_disjunction(JoinKind::Inner, JoinStrictness::All, {});
+    equality_and_disjunction.onEqualityAndDisjunction();
+    EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, equality_and_disjunction.join_operator), Exception);
+    EXPECT_THROW(serializeAt(hash_with_threshold_and_limit, pre_setting_version, equality_and_disjunction.join_operator), Exception);
+    EXPECT_THROW(serializeAt(grace_hash_only, pre_setting_version, equality_and_disjunction.join_operator), Exception);
+
+    const Step equality_and_inequalities(
+        JoinKind::Inner, JoinStrictness::All, {JoinConditionOperator::Equals, JoinConditionOperator::Less, JoinConditionOperator::Greater});
+    EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, equality_and_inequalities.join_operator), Exception);
+    EXPECT_THROW(
+        serializeAt(
+            makeJoinSettings({{"join_algorithm", "ie_join,hash"}, {"max_rows_in_join", 100u}}), pre_setting_version,
+            equality_and_inequalities.join_operator),
+        Exception);
+
+    /// `IS NOT DISTINCT FROM` is a join key too.
+    const Step null_safe(JoinKind::Inner, JoinStrictness::All, {JoinConditionOperator::NullSafeEquals});
+    EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, null_safe.join_operator), Exception);
 }
