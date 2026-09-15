@@ -67,6 +67,13 @@ struct TableZnodeInfo
         const ContextPtr & context, bool validate_substitutions = false);
 
     void dropAncestorZnodesIfNeeded(const zkutil::ZooKeeperPtr & zookeeper) const;
+
+    /// A table of an `Ordinary` database stores `path` as a literal, without the {uuid} macro, so on every
+    /// later load `path_prefix_for_drop` is recovered from the last UUID-shaped substring of the path. Throws
+    /// if that recovery would not yield the prefix computed here, which happens when a component after the
+    /// {uuid} one is UUID-shaped as well (a UUID-like {shard} value, say): such a table would keep its
+    /// parent znode forever after `DROP TABLE`. Call it before the literal path is written into metadata.
+    void checkPrefixForDropRecoverableFromPath() const;
 };
 
 }

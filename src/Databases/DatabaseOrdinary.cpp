@@ -141,13 +141,13 @@ static void checkReplicaPathExists(const TableZnodeInfo & znode_info, const Stor
         );
 }
 
-TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
+TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context, bool stores_path_literally)
 {
     /// A conversion mints a path the table never had, so the substituted name is validated as strictly
     /// as a CREATE validates it -- but one level below CREATE, because the requirement that a path start
     /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
     const auto & server_settings = local_context->getServerSettings();
-    return TableZnodeInfo::resolve(
+    auto znode_info = TableZnodeInfo::resolve(
         server_settings[ServerSetting::default_replica_path],
         server_settings[ServerSetting::default_replica_name],
         StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
@@ -155,6 +155,13 @@ TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & c
         LoadingStrictnessLevel::SECONDARY_CREATE,
         local_context,
         /*validate_substitutions=*/true);
+
+    /// The replica name is resolved with a Nil UUID above, so a {uuid} in `default_replica_name` has already
+    /// been rejected here: the literal path is the only thing that outlives the temporary UUID of the conversion.
+    if (stores_path_literally)
+        znode_info.checkPrefixForDropRecoverableFromPath();
+
+    return znode_info;
 }
 
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated, bool ordinary_database)
@@ -254,7 +261,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         create_query.uuid = UUIDHelpers::generateV4();
         create_query.has_uuid = true;
     }
-    const auto znode_info = checkReplicaPathIsSafe(create_query, getContext());
+    const auto znode_info = checkReplicaPathIsSafe(create_query, getContext(), /*stores_path_literally=*/ordinary_database);
     checkReplicaPathExists(znode_info, StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid), getContext());
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true, ordinary_database);
     if (ordinary_database)

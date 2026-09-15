@@ -298,6 +298,23 @@ TableZnodeInfo TableZnodeInfo::resolve(
     return res;
 }
 
+void TableZnodeInfo::checkPrefixForDropRecoverableFromPath() const
+{
+    const size_t recovered_end = findEndOfComponentWithLastUUID(path);
+    const std::string_view recovered_prefix = recovered_end == String::npos ? std::string_view(path) : std::string_view(path).substr(0, recovered_end);
+    if (recovered_prefix == path_prefix_for_drop)
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "The ZooKeeper path {} of the converted table has another UUID-shaped path component after the one expanded "
+        "from the {{uuid}} macro. A table of an Ordinary database stores this path literally, without the macro, "
+        "so on a later load it could not tell which znode it owns and would keep {} in ZooKeeper after DROP TABLE. "
+        "Change the default_replica_path template or the macro that expands to a UUID (such as {{shard}}), "
+        "or move the table to an Atomic database before converting it",
+        quoteString(full_path), quoteString(path_prefix_for_drop));
+}
+
 void TableZnodeInfo::dropAncestorZnodesIfNeeded(const zkutil::ZooKeeperPtr & zookeeper) const
 {
     chassert(path.starts_with(path_prefix_for_drop));
