@@ -677,6 +677,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
+/// Exact name, or a Nested parent stored as flattened `name.*` when offsets are shared.
+static bool columnExists(const ColumnsDescription & columns, const String & name, bool share_nested_offsets)
+{
+    return columns.has(name) || (share_nested_offsets && columns.hasNested(name));
+}
+
 /// The column definition an `ADD COLUMN` command materializes, including default/comment/codec/
 /// ttl/settings/statistics, so `prepare`/`validate` advance their working snapshots with the same
 /// definition as `apply` instead of a bare name+type.
@@ -711,10 +717,8 @@ static ColumnDescription columnDescriptionFromAddAlter(const AlterCommand & comm
 }
 
 
-/// The exact set of columns an ADD COLUMN command materializes: flatten_nested expansion plus the
-/// IF NOT EXISTS existence filter. Shared by AlterCommand::apply and AlterCommands::validate so both
-/// model the identical schema (an earlier drift here caused apply/validate to disagree on nested adds).
-/// Returns empty when the command is a whole-command no-op (IF NOT EXISTS and the column already exists).
+/// Columns an `ADD COLUMN` materializes (`flatten_nested` + `IF NOT EXISTS`).
+/// Empty means a whole-command no-op. Shared by `apply`/`prepare`/`validate`.
 static std::vector<ColumnDescription> columnsAddedByAlter(
     const ColumnsDescription & existing_columns,
     ColumnDescription column,
@@ -724,9 +728,7 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 {
     /// An exact `column_name` match is always a whole-command no-op; the `n`/`n.*` nested equivalence
     /// (`hasNested`) is only "exists" when share_nested_offsets is enabled, matching prepare()/validate().
-    if (if_not_exists
-        && (existing_columns.has(column.name)
-            || (share_nested_offsets && existing_columns.hasNested(column.name))))
+    if (if_not_exists && columnExists(existing_columns, column.name, share_nested_offsets))
         return {};
 
     std::vector<ColumnDescription> columns_to_add;
@@ -753,6 +755,15 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
+static void addColumnsFromAlter(
+    ColumnsDescription & columns, const AlterCommand & command, ContextPtr context, bool share_nested_offsets)
+{
+    for (auto & col : columnsAddedByAlter(
+             columns, columnDescriptionFromAddAlter(command), context, command.if_not_exists, share_nested_offsets))
+        columns.add(std::move(col));
+}
+
+
 void AlterCommand::apply(
     StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
 {
@@ -765,9 +776,6 @@ void AlterCommand::apply(
     {
         ColumnDescription column = columnDescriptionFromAddAlter(*this);
 
-        /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
-        /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
-        /// apply() and validate() never disagree on what a (nested) ADD introduces.
         auto columns_to_add = columnsAddedByAlter(metadata.columns, column, context, if_not_exists, share_nested_offsets);
         if (columns_to_add.empty())
             return;
@@ -792,12 +800,8 @@ void AlterCommand::apply(
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            /// `ColumnsDescription::has` is exact-only, but a Nested parent like `n` exists in a table
-            /// that physically stores the flattened members `n.x` / `n.y` -- the same `n.*` range that
-            /// `getNested()` and `remove()` below operate on and that prepare() and validate() check.
-            const bool column_exists
-                = metadata.columns.has(column_name) || (share_nested_offsets && metadata.columns.hasNested(column_name));
-            if (if_exists && !column_exists)
+            /// Nested parent `n` exists as flattened `n.*`; `has` is exact-only.
+            if (if_exists && !columnExists(metadata.columns, column_name, share_nested_offsets))
                 return;
             /// `remove()` deletes the whole `n.*` range, so drop the implicit indices of all these columns too.
             for (const auto & removed_column : metadata.columns.getNested(column_name))
@@ -1942,7 +1946,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
+        bool has_column = columnExists(columns, command.column_name, share_nested_offsets);
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column && command.if_exists)
@@ -2064,12 +2068,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
             }
             else
             {
-                /// Advance the working snapshot with the exact columns apply() would materialize
-                /// (flatten_nested expansion), so a later command in the same ALTER statement
-                /// sees the column as existing, matching validate() and apply().
-                for (auto & col : columnsAddedByAlter(columns, columnDescriptionFromAddAlter(command),
-                                                      context, command.if_not_exists, share_nested_offsets))
-                    columns.add(std::move(col));
+                /// Same snapshot as apply()/validate(), so a later command sees this ADD.
+                addColumnsFromAlter(columns, command, context, share_nested_offsets);
             }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2080,9 +2080,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
             }
             else if (has_column && !command.clear && !command.partition)
             {
-                /// A plain DROP un-exists the column by apply time (CLEAR and per-partition DROP keep
-                /// the column definition), and for a Nested group `ColumnsDescription::remove` walks the
-                /// `n.*` prefix range, so the whole group leaves the snapshot like in apply().
+                /// Plain DROP (not CLEAR / partition) removes the column, including a Nested `n.*` group.
                 columns.remove(command.column_name);
             }
         }
@@ -2099,8 +2097,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
             }
             else if (columns.has(command.column_name))
             {
-                /// The old name leaves the snapshot exactly like in apply(), so a later
-                /// `ADD COLUMN IF NOT EXISTS` on that name is a genuine re-add, not a no-op.
+                /// Free the old name so a later `ADD COLUMN IF NOT EXISTS` is a real re-add.
                 columns.rename(command.column_name, command.rename_to);
             }
         }
@@ -2192,7 +2189,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (all_columns.has(column_name) || (share_nested && all_columns.hasNested(column_name)))
+            if (columnExists(all_columns, column_name, share_nested))
             {
                 if (!command.if_not_exists)
                     throw Exception(ErrorCodes::DUPLICATE_COLUMN,
@@ -2226,12 +2223,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     codec_validation_settings);
             }
 
-            /// Advance the working snapshot with the exact columns apply() would materialize
-            /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
-            /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, columnDescriptionFromAddAlter(command),
-                                                  context, command.if_not_exists, share_nested))
-                all_columns.add(std::move(col));
+            addColumnsFromAlter(all_columns, command, context, share_nested);
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -2350,7 +2342,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
+            if (columnExists(all_columns, command.column_name, share_nested))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {

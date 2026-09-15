@@ -5151,15 +5151,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
-            /// CLEAR COLUMN (parsed as DROP_COLUMN with `clear`) rewrites the whole part and
-            /// drops the per-part `unique_key_index.sst`, regardless of which column is
-            /// targeted, so reject it when the target is a stored column. `CLEAR COLUMN
-            /// missing IF EXISTS` is a no-op and falls through. CLEAR of a UK column is
-            /// rejected by the ALTER_OF_COLUMN_IS_FORBIDDEN guard below.
+            /// CLEAR COLUMN rewrites the whole part and drops `unique_key_index.sst`.
+            /// Reject it for a stored target; `CLEAR COLUMN missing IF EXISTS` is a no-op.
+            /// CLEAR of a UNIQUE KEY column is rejected by ALTER_OF_COLUMN_IS_FORBIDDEN below.
             if (command.type == AlterCommand::DROP_COLUMN && command.clear
                 && !uk_set.contains(command.column_name)
                 && (old_metadata.columns.hasPhysical(command.column_name)
-                    || ((*getSettings())[MergeTreeSetting::share_nested_offsets]
+                    || ((*settings_from_storage)[MergeTreeSetting::share_nested_offsets]
                         && old_metadata.columns.hasNested(command.column_name))))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
