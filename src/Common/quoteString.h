@@ -30,6 +30,10 @@ namespace DB
 /// Double quote the string.
 String doubleQuoteString(std::string_view x);
 
+/// Quote an identifier for a query sent to a PostgreSQL server. Prefer this over `doubleQuoteString`,
+/// whose `\"` does not escape the quote there: the identifier ends and the rest is parsed as SQL.
+[[nodiscard]] String doubleQuoteStringPostgreSQL(std::string_view x);
+
 /// Quote the identifier with backquotes.
 String backQuote(std::string_view x);
 
