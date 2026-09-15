@@ -96,8 +96,16 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
 
 IProcessor::Status BuildRuntimeFilterTransform::prepare()
 {
+    /// Invariant: the filter is published BEFORE the output port closes on end-of-stream.
+    /// Downstream treats the close as "this stream's build is complete" (seal emission,
+    /// `HashJoin::publishSharedRuntimeFilters`), so a filter published after it could be
+    /// observed unmerged. No insert can happen past this point, so the filter is complete.
+    if (input.isFinished() && !has_input)
+        finish();
+
     auto status = ISimpleTransform::prepare();
 
+    /// Consumer-cancellation path: publish whatever was collected.
     if (status == IProcessor::Status::Finished)
         finish();
 
@@ -123,6 +131,9 @@ void BuildRuntimeFilterTransform::finish()
 {
     /// A deserialized step has no random key and is never executed in practice; nothing to register.
     if (filter_key.empty())
+        return;
+    /// Already published.
+    if (!built_filter)
         return;
     if (!query_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterTransform");
