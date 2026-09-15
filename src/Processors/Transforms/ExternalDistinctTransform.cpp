@@ -317,8 +317,20 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     const UInt64 available_memory
         = max_bytes_before_external_distinct - std::min<UInt64>(max_bytes_before_external_distinct, query_memory_usage);
 
-    if (spill_headroom_bytes > available_memory || hashing.set.estimateGrowthMemory(input_chunk) > available_memory - spill_headroom_bytes)
+    const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk);
+    if (spill_headroom_bytes > available_memory || growth_memory > available_memory - spill_headroom_bytes)
     {
+        LOG_TRACE(log, "Switching DISTINCT to external mode: {} "
+            "(query memory: {}, spill threshold: {}, "
+            "estimated peak extra memory for growth: {}, filtering and spill workspace: {})",
+            query_memory_usage > max_bytes_before_external_distinct
+                ? "query memory exceeded the spill threshold"
+                : "projected allocations exceed the remaining spill-threshold budget",
+            formatReadableSizeWithBinarySuffix(query_memory_usage),
+            formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct),
+            formatReadableSizeWithBinarySuffix(growth_memory),
+            formatReadableSizeWithBinarySuffix(spill_headroom_bytes));
+
         startSpilling(hashing);
         return;
     }
@@ -336,8 +348,15 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     }
 
     /// Actual allocations and concurrent operators can consume more than the pre-insertion estimate.
-    if (getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
+    const Int64 query_memory_usage_after_insert = getCurrentQueryMemoryUsage();
+    if (query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external_distinct))
+    {
+        LOG_TRACE(log, "Switching DISTINCT to external mode: query memory exceeded the spill threshold after insertion "
+            "(query memory: {}, spill threshold: {})",
+            formatReadableSizeWithBinarySuffix(query_memory_usage_after_insert),
+            formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
         startSpilling(hashing);
+    }
 }
 
 void ExternalDistinctTransform::startSpilling(Hashing & hashing)
@@ -346,18 +365,19 @@ void ExternalDistinctTransform::startSpilling(Hashing & hashing)
     spill_layout.emplace(inputs.front().getSharedHeader(), hashing.set.getKeyColumnsPositions(),
         hashing.set.getKeyRepresentation(), preserve_input_order);
 
-    LOG_TRACE(log, "Switching DISTINCT to the external mode (query memory: {}, spill threshold: {})",
-        formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
-        formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
-
     if (hashing.set.getTotalRowCount())
     {
+        LOG_TRACE(log, "Extracting {} DISTINCT suppression keys (set memory: {}) into sorted runs",
+            hashing.set.getTotalRowCount(), formatReadableSizeWithBinarySuffix(hashing.set.getTotalByteCount()));
         auto keys = std::move(hashing.set).extractKeys();
         auto & extracting = state.emplace<ExtractingSuppression>(std::move(keys));
         extractSuppressionRun(extracting);
     }
     else
+    {
         state.emplace<CollectingInput>();
+        LOG_TRACE(log, "DISTINCT hash set is empty; collecting input for ordinary spill runs");
+    }
 }
 
 void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & extracting)
@@ -390,6 +410,8 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
     if (chunks.empty())
     {
         state.emplace<CollectingInput>();
+        LOG_TRACE(log, "Finished writing {} DISTINCT suppression runs; hash set released, collecting ordinary input "
+            "(query memory: {})", temporary_files_num, formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()));
         return;
     }
 
@@ -435,8 +457,10 @@ ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
 {
     ++temporary_files_num;
 
-    LOG_TRACE(log, "Will dump distinct run ({} chunks, {}) to disk (query memory: {}, limit: {})",
-        chunks.size(),
+    LOG_TRACE(log, "Will dump DISTINCT {} run #{} to disk "
+        "(chunks: {}, buffered memory: {}, query memory: {}, spill threshold: {})",
+        mode == MergeSorter::Mode::PreserveRows ? "suppression" : "ordinary",
+        temporary_files_num, chunks.size(),
         formatReadableSizeWithBinarySuffix(bytes),
         formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
@@ -482,7 +506,9 @@ void ExternalDistinctTransform::readRun(RunWriteProgress & progress)
 void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
 {
     ProfileEvents::increment(ProfileEvents::ExternalDistinctMerge);
-    LOG_INFO(log, "There are {} temporary distinct runs to merge", temporary_files_num);
+    LOG_TRACE(log, "Preparing final DISTINCT merge "
+        "(temporary runs: {}, in-memory chunks: {}, restore input order: {})",
+        temporary_files_num, tail.chunks.size(), spill_layout->preservesInputOrder());
 
     /// Register the final input even when the tail is empty, then close merge-input registration.
     /// The tail is merged into unique chunks under the same contract as ordinary disk runs.
