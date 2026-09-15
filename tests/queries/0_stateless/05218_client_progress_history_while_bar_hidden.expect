@@ -1,0 +1,105 @@
+#!/usr/bin/expect -f
+
+# Regression test for the progress bar history recorded while the bar is not shown. The bar is
+# hidden while the query is past 50% of the total known so far, and the total can still grow:
+# here the build side of a JOIN is read first (a fast phase and then a throttled one), and the
+# probe side, which is larger than everything before it, adds its total only when it starts, so
+# the bar appears with the build side already read. The cells of that interval must have the
+# colors of the states the query went through while the bar was hidden (green for the fast
+# phase, yellow from the moment the throttler started to sleep), not a single color taken at
+# the moment the bar appeared.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set local_path $CLICKHOUSE_TMP/$basename.path
+# The path comes from the environment: it is not sent to the shell as text, but inherited by the
+# spawned `bash` as a variable and expanded there inside double quotes, so no quoting is needed.
+set env(CLICKHOUSE_LOCAL_PATH) $local_path
+file delete -force -- $local_path
+
+log_user 0
+set timeout 60
+match_max 100000
+# A wide terminal, so that a cell of the bar is a small fraction of it.
+set stty_init "rows 25 cols 300"
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+send "source $basedir/../shell_config.sh\r"
+expect "bash) "
+
+# One byte per row, stored as is (the values vary, so the columns are not stored sparse): the
+# throttler below is set in bytes, and this makes the rows read per second, and the progress,
+# proportional to it. Each table is a single part (the smaller one is a single insert block, the
+# larger one is merged), so its total is added to the query at once.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --query 'CREATE TABLE build_side (n UInt8 CODEC(NONE)) ENGINE = MergeTree ORDER BY (); INSERT INTO build_side SELECT number FROM numbers(300000); CREATE TABLE probe_side (n UInt8 CODEC(NONE)) ENGINE = MergeTree ORDER BY (); INSERT INTO probe_side SELECT number FROM numbers(1200000); OPTIMIZE TABLE probe_side FINAL' && echo created\r"
+expect "created"
+expect "bash) "
+
+# The phases of the query, in the order they are executed (the build side of a JOIN is read
+# before its probe side, and the tables are never swapped):
+# 1. `numbers(310000)`: read at once, without any IO. The bar is not shown, because the query
+#    is past 50% of the total known so far, and it stays hidden through the next two phases,
+#    since they add fewer rows than were read here.
+# 2. `sleep(1)`: a pause of one second, so that the throttled phase begins well after the first
+#    half second of the query (the history is recorded during that half second in any case).
+# 3. `build_side`, 300 KB through a 50 KB/s throttler: the first 50 KB are the throttler's burst
+#    budget and are read at once, then the reads sleep, and the state flips to yellow while the
+#    bar is hidden, about a fifth of the way through the final total of 1.81 million rows.
+# 4. `probe_side`, 1.2 million rows, which more than doubles the total: the bar appears, with the
+#    610 thousand rows of the first phases already read (34% of the bar).
+# With the history recorded while the bar was hidden, the green prefix of the bar ends where the
+# throttler started to sleep (about 22%); if the history were recorded only while the bar is
+# shown, the yellow would begin at the 34% mark, with the state at that moment.
+# The bandwidth is far below the pace of the query itself: the flaky check runs the client under
+# `ThreadFuzzer`, which slows the query down to a few hundred KB/s, and a throttler set close to
+# that pace would hardly ever sleep, so nothing would turn yellow. The reads are 8 KB each, so
+# that the throttler sleeps on every read for a fraction of a second: the sleeps are reported to
+# the client often enough for the meter of the waited time to warm up within a few packets.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_read_buffer_size 8192 --max_local_read_bandwidth 50000 --query_plan_join_swap_table false --query_plan_optimize_join_order_limit 0 --query 'SELECT count() FROM probe_side INNER JOIN (SELECT DISTINCT toUInt64(build_side.n) AS n FROM build_side INNER JOIN (SELECT pad.number AS number FROM (SELECT number FROM numbers(256) WHERE NOT ignore(sleep(1))) AS pause INNER JOIN (SELECT DISTINCT number % 256 AS number FROM numbers(310000)) AS pad ON pause.number = pad.number) AS gate ON toUInt64(build_side.n) = gate.number) AS build ON toUInt64(probe_side.n) = build.n' >/dev/null 2>&1\r"
+
+# The first repaint with the bar, a yellow segment in it (`0;33` in the bar, or `30;43` in the
+# annotation rendered on top of it), and the query below 50%: the bar can be shown earlier, during
+# the build side, if the first phase takes more than half a second (the flaky check runs the client
+# under `ThreadFuzzer`), but then the total does not include the probe side yet and the query is
+# past 50% of it. The bar follows the speed, `/s.) `, and ends before the percentage; both the
+# filled cells and the padding up to the full width of the bar are captured.
+expect -re {/s\.\) ([^\r]*(\x1b\[0;33m|\x1b\[30;43m)[^\r]*) +[1-4]?[0-9]%\x1b\[K}
+set bar $expect_out(1,string)
+
+proc visible_length {s} {
+    regsub -all {\x1b\[[0-9;]*[A-Za-z]} $s "" s
+    return [string length $s]
+}
+set yellow_at [string first "\x1b\[0;33m" $bar]
+set annotation_yellow_at [string first "\x1b\[30;43m" $bar]
+if {$yellow_at < 0 || ($annotation_yellow_at >= 0 && $annotation_yellow_at < $yellow_at)} {
+    set yellow_at $annotation_yellow_at
+}
+set width [visible_length $bar]
+set green_prefix [visible_length [string range $bar 0 [expr {$yellow_at - 1}]]]
+
+# The green prefix ends where the throttler started to sleep, about a fifth of the way through,
+# before the 34% mark where the bar appeared. It is not empty either: the first phase was green.
+if {$green_prefix * 100 <= $width * 10 || $green_prefix * 100 >= $width * 30} {
+    puts stderr "The green prefix of the bar is $green_prefix cells out of $width, expected between 10% and 30%"
+    exit 1
+}
+
+send "\3"
+expect "bash) "
+
+send "exit\r"
+expect eof
+
+file delete -force -- $local_path
