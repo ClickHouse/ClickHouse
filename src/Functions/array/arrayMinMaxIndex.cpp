@@ -311,14 +311,15 @@ size_t findFirstEqualPackedMaskSIMD(const T * data, size_t size, const T & value
     return matches ? static_cast<size_t>(__builtin_ctzll(matches)) : size;
 }
 
-template <ArrayMinMaxIndexStrategy strategy, typename T, bool two_accumulators>
+template <ArrayMinMaxIndexStrategy strategy, typename T, size_t accumulator_count>
 requires(
     std::is_same_v<T, UInt32> || std::is_same_v<T, Int32> || std::is_same_v<T, UInt64>
     || std::is_same_v<T, Int64>)
 size_t findIndexAVX512(const T * data, size_t size)
 {
     constexpr size_t lanes = sizeof(__m512i) / sizeof(T);
-    using Index = std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
+    constexpr size_t stride = accumulator_count * lanes;
+    static_assert(accumulator_count == 1 || accumulator_count == 2 || accumulator_count == 4);
 
     const auto is_better = [](T lhs, T rhs)
     {
@@ -360,59 +361,111 @@ size_t findIndexAVX512(const T * data, size_t size)
         }
     };
 
-    __m512i best_values0 = _mm512_loadu_si512(data);
-    __m512i best_indices0 = makeIndexVector<T>(0);
-    __m512i current_indices0 = best_indices0;
-    __m512i best_values1 = _mm512_setzero_si512();
-    __m512i best_indices1 = _mm512_setzero_si512();
-    __m512i current_indices1 = _mm512_setzero_si512();
-
-    size_t i = lanes;
-    if constexpr (two_accumulators)
+    std::array<__m512i, accumulator_count> best_values;
+    std::array<__m512i, accumulator_count> best_indices;
+    std::array<__m512i, accumulator_count> current_indices;
+    for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
     {
-        best_values1 = _mm512_loadu_si512(data + lanes);
-        best_indices1 = makeIndexVector<T>(lanes);
-        current_indices1 = best_indices1;
-        i = 2 * lanes;
+        const size_t offset = accumulator * lanes;
+        best_values[accumulator] = _mm512_loadu_si512(data + offset);
+        best_indices[accumulator] = makeIndexVector<T>(offset);
+        current_indices[accumulator] = best_indices[accumulator];
+    }
 
-        for (; i + 2 * lanes <= size; i += 2 * lanes)
+    size_t i = stride;
+    for (; i + stride <= size; i += stride)
+    {
+        for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
         {
-            current_indices0 = addIndexVector<T>(current_indices0, 2 * lanes);
-            current_indices1 = addIndexVector<T>(current_indices1, 2 * lanes);
-            update(_mm512_loadu_si512(data + i), current_indices0, best_values0, best_indices0);
-            update(_mm512_loadu_si512(data + i + lanes), current_indices1, best_values1, best_indices1);
+            current_indices[accumulator] = addIndexVector<T>(current_indices[accumulator], stride);
+            update(
+                _mm512_loadu_si512(data + i + accumulator * lanes),
+                current_indices[accumulator],
+                best_values[accumulator],
+                best_indices[accumulator]);
         }
+    }
 
-        if (i + lanes <= size)
+    const size_t remaining_vectors = (size - i) / lanes;
+    for (size_t accumulator = 0; accumulator < remaining_vectors; ++accumulator)
+    {
+        current_indices[accumulator] = addIndexVector<T>(current_indices[accumulator], stride);
+        update(
+            _mm512_loadu_si512(data + i + accumulator * lanes),
+            current_indices[accumulator],
+            best_values[accumulator],
+            best_indices[accumulator]);
+    }
+    i += remaining_vectors * lanes;
+
+    const auto reduce_value = [](const __m512i values) -> T
+    {
+        if constexpr (std::is_same_v<T, UInt32>)
         {
-            current_indices0 = addIndexVector<T>(current_indices0, 2 * lanes);
-            update(_mm512_loadu_si512(data + i), current_indices0, best_values0, best_indices0);
-            i += lanes;
+            if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+                return _mm512_reduce_min_epu32(values);
+            else
+                return _mm512_reduce_max_epu32(values);
+        }
+        else if constexpr (std::is_same_v<T, Int32>)
+        {
+            if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+                return _mm512_reduce_min_epi32(values);
+            else
+                return _mm512_reduce_max_epi32(values);
+        }
+        else if constexpr (std::is_same_v<T, UInt64>)
+        {
+            if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+                return _mm512_reduce_min_epu64(values);
+            else
+                return _mm512_reduce_max_epu64(values);
+        }
+        else
+        {
+            if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+                return _mm512_reduce_min_epi64(values);
+            else
+                return _mm512_reduce_max_epi64(values);
+        }
+    };
+
+    T best = reduce_value(best_values[0]);
+    for (size_t accumulator = 1; accumulator < accumulator_count; ++accumulator)
+    {
+        const T value = reduce_value(best_values[accumulator]);
+        if (is_better(value, best))
+            best = value;
+    }
+
+    size_t best_index = size;
+    if constexpr (sizeof(T) == 4)
+    {
+        const __m512i target = _mm512_set1_epi32(static_cast<int>(best));
+        for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
+        {
+            const __mmask16 matches = _mm512_cmpeq_epi32_mask(best_values[accumulator], target);
+            if (matches)
+            {
+                const size_t index = static_cast<size_t>(_mm512_mask_reduce_min_epu32(matches, best_indices[accumulator]));
+                best_index = std::min(best_index, index);
+            }
         }
     }
     else
     {
-        for (; i + lanes <= size; i += lanes)
+        const __m512i target = _mm512_set1_epi64(static_cast<long long>(best));
+        for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
         {
-            current_indices0 = addIndexVector<T>(current_indices0, lanes);
-            update(_mm512_loadu_si512(data + i), current_indices0, best_values0, best_indices0);
+            const __mmask8 matches = _mm512_cmpeq_epi64_mask(best_values[accumulator], target);
+            if (matches)
+            {
+                const size_t index = static_cast<size_t>(_mm512_mask_reduce_min_epu64(matches, best_indices[accumulator]));
+                best_index = std::min(best_index, index);
+            }
         }
     }
 
-    std::array<T, lanes> values0{};
-    std::array<T, lanes> values1{};
-    std::array<Index, lanes> indices0{};
-    std::array<Index, lanes> indices1{};
-    _mm512_storeu_si512(values0.data(), best_values0);
-    _mm512_storeu_si512(indices0.data(), best_indices0);
-    if constexpr (two_accumulators)
-    {
-        _mm512_storeu_si512(values1.data(), best_values1);
-        _mm512_storeu_si512(indices1.data(), best_indices1);
-    }
-
-    T best = values0[0];
-    size_t best_index = indices0[0];
     const auto consider = [&](T value, size_t index)
     {
         if (is_better(value, best) || (value == best && index < best_index))
@@ -422,13 +475,6 @@ size_t findIndexAVX512(const T * data, size_t size)
         }
     };
 
-    for (size_t lane = 1; lane < lanes; ++lane)
-        consider(values0[lane], indices0[lane]);
-    if constexpr (two_accumulators)
-    {
-        for (size_t lane = 0; lane < lanes; ++lane)
-            consider(values1[lane], indices1[lane]);
-    }
     for (; i < size; ++i)
         consider(data[i], i);
 
@@ -444,7 +490,8 @@ constexpr size_t small_tournament_limit = 32;
 constexpr size_t small_tournament_limit_64_bit = 48;
 constexpr size_t medium_two_pass_limit = 256;
 constexpr size_t two_pass_limit_64_bit_integer = 16384;
-constexpr size_t avx512_two_accumulator_min_size = 4096;
+constexpr size_t avx512_two_accumulator_min_size = 128;
+constexpr size_t avx512_four_accumulator_min_size = 512;
 constexpr size_t packed_mask_min_size = 8;
 constexpr size_t avx2_packed_mask_max_size = 32;
 constexpr size_t avx512_packed_mask_max_size = 64;
@@ -455,8 +502,8 @@ constexpr size_t avx512_packed_mask_max_size = 64;
  * path covers short 64-bit rows, the two-pass SIMD path is capped at 256 for
  * other types, and 64-bit arrays stay on the two-pass path until record blocks
  * amortize their extra lookup work at 16384. x86-64-v4 uses a one-pass indexed
- * reduction after the packed-mask path, with two independent accumulators for
- * long 64-bit arrays.
+ * reduction after the packed-mask path, increasing from one to two and then
+ * four accumulators at 128 and 512 elements.
  */
 
 template <typename T>
@@ -897,18 +944,20 @@ static void executeNumericData(const Element * data, const ColumnArray::Offsets 
 
             if (use_avx512 && size > smallTournamentLimit<Element>())
             {
-                if constexpr (sizeof(Element) == 8)
+                if (size >= avx512_four_accumulator_min_size)
                 {
                     result[row] = static_cast<UInt32>(
-                        (size >= avx512_two_accumulator_min_size
-                            ? TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, true>(data + begin, size)
-                            : TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, false>(data + begin, size))
-                        + 1);
+                        TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 4>(data + begin, size) + 1);
+                }
+                else if (size >= avx512_two_accumulator_min_size)
+                {
+                    result[row] = static_cast<UInt32>(
+                        TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 2>(data + begin, size) + 1);
                 }
                 else
                 {
                     result[row] = static_cast<UInt32>(
-                        TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, false>(data + begin, size) + 1);
+                        TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 1>(data + begin, size) + 1);
                 }
                 begin = end;
                 continue;
