@@ -10,6 +10,12 @@ import pyarrow.flight as fl
 # How long a stalling handler blocks: a STALL_* dataset, or the stall_handshake user. Finite
 # rather than infinite, because a blocked handler occupies a gRPC worker thread throughout.
 STALL_SECONDS = 120
+# How long do_get withholds the stream for SLOW_DOGET_THEN_STALL, so the client is still inside
+# DoGet when a query-level timeout fires.
+SLOW_DOGET_SECONDS = 15
+# How long the stream that follows withholds its first message. Longer than the deadline the test
+# configures, and shorter than STALL_SECONDS so this handler is held no longer than the others.
+SLOW_DOGET_STALL_SECONDS = 60
 
 
 class FlightServer(fl.FlightServerBase):
@@ -64,11 +70,22 @@ class FlightServer(fl.FlightServerBase):
         yield self._tables["ABC"].to_batches()[0]
         time.sleep(STALL_SECONDS)
 
+    def _stalling_before_first_batch(self):
+        # Nothing is yielded first, so the client's first read blocks. The schema is supplied to
+        # GeneratorStream separately and the server writes it before pulling this generator, so
+        # DoGet itself still returns.
+        time.sleep(SLOW_DOGET_STALL_SECONDS)
+        yield self._tables["ABC"].to_batches()[0]
+
     def do_get(self, context, ticket):
         dataset = ticket.ticket.decode()
         if dataset == "STALL_DOGET":
             # Nothing is sent at all, so the client blocks inside DoGet itself.
             time.sleep(STALL_SECONDS)
+        if dataset == "SLOW_DOGET_THEN_STALL":
+            # The reader is handed back only after the delay, and its first message never arrives.
+            time.sleep(SLOW_DOGET_SECONDS)
+            return fl.GeneratorStream(self._schema, self._stalling_before_first_batch())
         if dataset == "STALL_STREAM":
             # The schema and one batch arrive, so the client blocks in its read loop instead.
             return fl.GeneratorStream(self._schema, self._stalling_batches())

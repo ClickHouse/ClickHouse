@@ -12,6 +12,18 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 STALL_QUERY_BOUND_SEC = 60
 STALL_REQUEST_TIMEOUT_SEC = 3
 
+# SLOW_DOGET_THEN_STALL withholds its stream this long, and then never sends a first message. Kept
+# in step with SLOW_DOGET_SECONDS in ci/docker/integration/arrowflight/flight_server.py.
+DOGET_DELAY_SEC = 15
+# Cancellation lands inside DoGet: after the read is issued, well before the stub answers.
+DOGET_CANCEL_AT_SEC = 5
+# Far enough above DOGET_DELAY_SEC that a query ending on its deadline is separable from one
+# ending when DoGet returns.
+DOGET_REQUEST_TIMEOUT_SEC = 45
+# Midway between the two outcomes: DOGET_DELAY_SEC when the published reader is aborted, and
+# DOGET_REQUEST_TIMEOUT_SEC when it is left running.
+DOGET_STOP_BOUND_SEC = (DOGET_DELAY_SEC + DOGET_REQUEST_TIMEOUT_SEC) // 2
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
@@ -571,6 +583,28 @@ def test_max_execution_time_interrupts_a_stalled_flight_read():
     elapsed = time.time() - start
     assert "TIMEOUT_EXCEEDED" in error, error
     assert elapsed < STALL_QUERY_BOUND_SEC, f"query took {elapsed:.1f}s"
+
+
+def test_cancellation_during_doget_is_not_lost():
+    # A cancellation raised while DoGet is in flight finds no reader to abort, so the reader DoGet
+    # goes on to return has to be aborted where it is published. Otherwise the read that follows
+    # blocks until the request deadline instead of ending with the cancellation.
+    start = time.time()
+    error = node.query_and_get_error(
+        "SELECT * FROM arrowFlight('arrowflight1:5005', 'SLOW_DOGET_THEN_STALL')",
+        settings={
+            "arrow_flight_request_timeout_sec": DOGET_REQUEST_TIMEOUT_SEC,
+            "max_execution_time": DOGET_CANCEL_AT_SEC,
+        },
+    )
+    elapsed = time.time() - start
+    assert "TIMEOUT_EXCEEDED" in error, error
+    # The query cannot return before DoGet does, so an earlier return means the cancellation landed
+    # before the read was ever issued and the run says nothing about this frame.
+    assert (
+        elapsed >= DOGET_DELAY_SEC - 0.5
+    ), f"query returned after {elapsed:.1f}s, before DoGet could return"
+    assert elapsed < DOGET_STOP_BOUND_SEC, f"query took {elapsed:.1f}s"
 
 
 def test_huge_request_timeout_does_not_break_a_healthy_read():
