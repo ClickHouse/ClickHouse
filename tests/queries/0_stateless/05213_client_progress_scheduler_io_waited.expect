@@ -43,7 +43,9 @@ send "\$CLICKHOUSE_CLIENT --query \"CREATE OR REPLACE RESOURCE r_05213_io (READ 
 expect "created"
 expect "bash) "
 
-send "\$CLICKHOUSE_CLIENT --progress --workload w_05213_slow --max_threads 1 --max_read_buffer_size 65536 --query 'SELECT count() FROM t_05213 WHERE NOT ignore(s)' >/dev/null 2>&1\r"
+# Parallel replicas are pinned off: the test harness may enable them at random, and then the
+# client is not shown the rows read by the replicas, so the bar would have no cell to color.
+send "\$CLICKHOUSE_CLIENT --progress --workload w_05213_slow --max_threads 1 --max_read_buffer_size 65536 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query 'SELECT count() FROM t_05213 WHERE NOT ignore(s)' >/dev/null 2>&1\r"
 
 # The query is waiting for the IO scheduler most of the time: the `waited` figure is shown
 # next to `CPU` and the bar turns yellow.
