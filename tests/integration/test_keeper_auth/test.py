@@ -838,23 +838,44 @@ def test_world_anyone_all_permissions_with_other_acl(started_cluster, get_zk):
             ],
         )
 
+        # fixupACL appends in request order, so the index order is the request order.
         acls, _ = connection.get_acls(path)
         assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 31  # All permissions
+        assert acls[1].id.scheme == "digest"
+        assert acls[1].id.id == "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI="
+        assert acls[1].perms == 1  # Read only
 
         no_auth_connection = get_zk()
         assert no_auth_connection.get(path)[0] == b"data"
         no_auth_connection.set(path, b"new_data")
 
         # The node stays repairable: world:anyone with all permissions carries ADMIN.
+        # The digest entry is wider than the one create stored, so the list below cannot
+        # resolve to the stored list and the assertions after it observe setACL only.
         connection.set_acls(
             path,
             [
                 make_acl("world", "anyone", all=True),
-                make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", read=True),
+                make_acl(
+                    "digest",
+                    "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
+                    read=True,
+                    write=True,
+                ),
             ],
         )
-        acls, _ = connection.get_acls(path)
+        acls, stat = connection.get_acls(path)
+        assert stat.aversion == 1
         assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 31  # All permissions
+        assert acls[1].id.scheme == "digest"
+        assert acls[1].id.id == "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI="
+        assert acls[1].perms == 3  # Read and write
 
         zk_delete_after_acl_change(connection, path)
     finally:
