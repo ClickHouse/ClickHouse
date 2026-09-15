@@ -34,6 +34,7 @@
 
 #include <array>
 #include <bit>
+#include <bitset>
 #include <cstring>
 
 namespace
@@ -137,7 +138,7 @@ Supported values:
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
-- `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `allow_experimental_trino_dialect`.
+- `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -7532,9 +7533,11 @@ Use schema from cache for URL with last modification time validation (for URLs w
 )", 0) \
     \
     DECLARE(String, compatibility, "", R"(
-The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
+The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, with exceptions recorded in the settings changes history.
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+Changes marked `Ignore` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
 
 This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
@@ -8836,12 +8839,12 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, true, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
 This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
 Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
-)", BETA, allow_experimental_nullable_tuple_type) \
+)", 0, allow_experimental_nullable_tuple_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
@@ -8881,21 +8884,6 @@ Enable transforming the payload of a hash join into a row-major layout.
 )", 0) \
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
-)", 0) \
-    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
-Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
-
-Only conditions of the form `expr1` <op> `expr2` are considered, where <op> is one of `=`, `<`, `<=`, `>`, `>=`. Each side can be a column or an expression that propagates NULLs, such as `col1` + 1, in which case a filter is derived for every column the expression propagates NULLs from.
-
-The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
-
-The derived filters are not executed unless `query_plan_allow_derived_not_null_filters_execution` is enabled.
-)", 0) \
-    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
-Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
-)", 0) \
-    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
-The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
 )", 0) \
     \
     /* ####################################################### */ \
@@ -9110,7 +9098,7 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
+    DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, true, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 
 - `false`: Return `Tuple(...)` and use default tuple values for rows where the subcolumn is missing.
@@ -9155,7 +9143,7 @@ SET dialect = 'clickhouse_json';
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_trino_dialect, false, R"(
+    DECLARE(Bool, enable_trino_dialect, false, R"(
 Enable the `trino` value of the `dialect` setting.
 
 When `dialect` is set to `trino`, queries are written in Trino SQL: Trino-specific
@@ -9866,6 +9854,7 @@ struct ResolvedCompatibilityChange
     const Field * previous_value;
     /// Whether `previous_value` is what the setting holds when nothing changed it.
     bool previous_value_is_default;
+    SettingsChangesHistory::SettingChange::CompatibilitySetting compatibility_mode;
 };
 
 using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
@@ -9896,7 +9885,7 @@ const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
                 const bool previous_value_is_default
                     = accessor.getValue(default_settings, index) == change.previous_value;
 
-                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default});
+                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default, change.compatibility_mode});
             }
             result.emplace_back(version, std::move(resolved_changes));
         }
@@ -9939,6 +9928,8 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
     ClickHouseVersion version(compatibility_value);
     const auto & accessor = Traits::Accessor::instance();
     const auto & resolved_history = getResolvedCompatibilityHistory();
+    /// Keep blockers across versions to skip earlier changes to the same setting.
+    std::bitset<static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS)> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = resolved_history.rbegin(); it != resolved_history.rend(); ++it)
@@ -9949,6 +9940,12 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilitySetting::Ignore)
+                blocked_settings.set(change.index);
+
+            if (blocked_settings[change.index])
+                continue;
+
             const bool changed_by_compatibility = isChangedByCompatibility(change.index);
 
             /// If this setting was changed manually, we don't change it
