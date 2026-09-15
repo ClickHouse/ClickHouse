@@ -34,3 +34,9 @@ SELECT formatQuerySingleLine('SELECT 1 WINDOW w AS (ORDER BY a), x AS (PARTITION
 SELECT formatQuerySingleLine('SELECT 1 WINDOW w AS (ORDER BY a), x AS (ORDER BY a)');
 SELECT formatQuerySingleLine('SELECT 1 WINDOW w AS (ORDER BY a), x AS (ROWS UNBOUNDED PRECEDING)');
 SELECT formatQuerySingleLine('SELECT 1 WINDOW w AS (ORDER BY a), x AS ()');
+
+-- The residue is invisible to `dumpTree` and to the formatter, so inside SQL the only oracle for it
+-- is the round-trip hash check a debug build runs on every incoming query. These two reach it with a
+-- frame-keyword parent window, the shape whose first reading consumes the keyword and fails.
+SELECT 1 WINDOW `rows` AS (), x AS (`rows`);
+SELECT 1 WINDOW `groups` AS (), x AS (`groups` ROWS UNBOUNDED PRECEDING);
