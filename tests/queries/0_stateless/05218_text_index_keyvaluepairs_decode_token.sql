@@ -70,6 +70,11 @@ SELECT '-- filtering on the decoded parts';
 SELECT length(token_key), token_value FROM mergeTreeTextIndex(currentDatabase(), tab_bytes, idx) WHERE token_key = repeat('b', 64);
 SELECT hex(token_key) FROM mergeTreeTextIndex(currentDatabase(), tab_bytes, idx) WHERE token_value = '' ORDER BY token;
 
+SELECT '-- quotes, backslashes and control bytes in a pair are escaped in the condition';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_bytes WHERE m['a"b'] = 'c\\d') WHERE explain LIKE '%Condition%' AND explain NOT LIKE '%Condition: true%';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_bytes WHERE m['tab\tkey'] = 'new\nline') WHERE explain LIKE '%Condition%' AND explain NOT LIKE '%Condition: true%';
+SELECT trim(explain) FROM (EXPLAIN SELECT count() FROM tab_bytes WHERE m['a"b'] = 'c\\d') WHERE explain LIKE '%Trivial count from text index%';
+
 DROP TABLE tab_bytes;
 
 SELECT '-- other tokenizers do not have the columns';

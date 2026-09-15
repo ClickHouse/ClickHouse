@@ -40,6 +40,10 @@ ReadFromTextIndexCount (Trivial count from text index (idx, token = {"level": "e
 64	v64
 
 6B
+-- quotes, backslashes and control bytes in a pair are escaped in the condition
+Condition: (mode: All; tokens: [{"a\\"b": "c\\\\d"}])
+Condition: (mode: All; tokens: [{"tab\\tkey": "new\\nline"}])
+ReadFromTextIndexCount (Trivial count from text index (idx, token = {"a\\"b": "c\\\\d"}))
 -- other tokenizers do not have the columns
 part_name	String					
 token	String					

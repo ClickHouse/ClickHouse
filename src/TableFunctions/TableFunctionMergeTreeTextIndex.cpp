@@ -1,5 +1,7 @@
 #include <Storages/StorageMergeTreeTextIndex.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -55,7 +57,12 @@ private:
     };
 
     /// Resolves the source table and builds the index object from its current metadata.
+    /// Requires `SHOW TABLES` on the source table: the grant that reveals the index definition in `system.data_skipping_indices`,
+    /// implied by a grant on any of its columns, so it only adds a tier below the `SELECT` check done when reading.
     SourceIndex resolveSourceIndex(ContextPtr context) const;
+
+    /// The result structure for the given resolved index.
+    static ColumnsDescription getTableStructure(const MergeTreeIndexPtr & index);
 
     String source_database;
     String source_table;
@@ -93,6 +100,8 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
 
 TableFunctionMergeTreeTextIndex::SourceIndex TableFunctionMergeTreeTextIndex::resolveSourceIndex(ContextPtr context) const
 {
+    context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
+
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
@@ -113,7 +122,7 @@ TableFunctionMergeTreeTextIndex::SourceIndex TableFunctionMergeTreeTextIndex::re
     return {.table = std::move(source_table_ptr), .index = std::move(text_index)};
 }
 
-ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMergeTreeTextIndex::getTableStructure(const MergeTreeIndexPtr & index)
 {
     NamesAndTypesList columns
     {
@@ -122,8 +131,7 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(Cont
     };
 
     /// A `keyValuePairs` token is a `(key, value)` pair of a `Map` with a binary trailer. Expose its parts.
-    const auto source_index = resolveSourceIndex(context);
-    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*source_index.index);
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index);
 
     if (text_index.tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
@@ -144,15 +152,21 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(Cont
     return ColumnsDescription{columns};
 }
 
+ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+{
+    return getTableStructure(resolveSourceIndex(context).index);
+}
+
 StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     const ASTPtr & /*ast_function*/,
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+    bool /*is_insert_query*/) const
 {
+    /// The structure comes from the same index object the storage reads with, so the two cannot diverge.
     auto [source_table_ptr, text_index] = resolveSourceIndex(context);
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getTableStructure(text_index);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeTextIndex>(
