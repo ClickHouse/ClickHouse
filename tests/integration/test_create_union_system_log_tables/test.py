@@ -93,11 +93,13 @@ def test_recreated_on_rotation(start_cluster):
     node3.query("SYSTEM FLUSH LOGS query_log")
 
     # A user-modified union table is left intact until the next rotation of the log table
-    # (or a server restart).
+    # (or a server restart). The replacement table is a proxy over a table function, like the
+    # generated one - a table of any other shape is never replaced, see
+    # `test_preexisting_user_table_is_preserved`.
     node3.query("DROP TABLE system.all_query_log SYNC")
-    node3.query("CREATE TABLE system.all_query_log (x UInt8) ENGINE = Memory")
+    node3.query("CREATE TABLE system.all_query_log (dummy UInt8) AS merge('system', '^one$')")
     node3.query("SYSTEM FLUSH LOGS query_log")
-    assert "Memory" in node3.query(
+    assert "'^one$'" in node3.query(
         "SHOW CREATE TABLE system.all_query_log FORMAT TSVRaw"
     )
 
@@ -132,6 +134,57 @@ def test_recreated_on_rotation(start_cluster):
             )
         )
         == 1
+    )
+
+
+def test_preexisting_user_table_is_preserved(start_cluster):
+    # The `all_...` names are not reserved: a user table can already occupy one of them
+    # (a hand-rolled union table over the rotated logs is exactly what users created before
+    # this feature existed, and it can be stateful). Such a table must never be dropped.
+    node3.query("SYSTEM FLUSH LOGS query_log")
+    node3.query("DROP TABLE IF EXISTS system.all_query_log SYNC")
+    node3.query(
+        "CREATE TABLE system.all_query_log (d Date, note String) ENGINE = MergeTree ORDER BY d"
+    )
+    node3.query(
+        "INSERT INTO system.all_query_log SELECT '2026-01-01', 'precious' FROM numbers(10)"
+    )
+
+    # Trigger a rotation, so that the union table is checked in the most aggressive way.
+    node3.query("ALTER TABLE system.query_log ADD COLUMN test_preexisting UInt8")
+    node3.restart_clickhouse()
+    node3.query("SELECT 'test_preexisting_marker'")
+    node3.query("SYSTEM FLUSH LOGS query_log")
+
+    # The user table and its data are intact.
+    assert (
+        int(
+            node3.query(
+                "SELECT count() FROM system.all_query_log WHERE note = 'precious'"
+            )
+        )
+        == 10
+    )
+    assert "MergeTree" in node3.query(
+        "SHOW CREATE TABLE system.all_query_log FORMAT TSVRaw"
+    )
+
+    # Flushing of the log table itself is not affected by the union table not being created.
+    assert (
+        int(
+            node3.query(
+                "SELECT count() > 0 FROM system.query_log WHERE query LIKE '%test_preexisting_marker%'"
+            )
+        )
+        == 1
+    )
+
+    # Once the name is free again, the union table is created as usual.
+    node3.query("DROP TABLE system.all_query_log SYNC")
+    node3.restart_clickhouse()
+    node3.query("SYSTEM FLUSH LOGS query_log")
+    assert "AS merge" in node3.query(
+        "SHOW CREATE TABLE system.all_query_log FORMAT TSVRaw"
     )
 
 

@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -122,6 +123,11 @@ std::pair<String, StoragePtr> createTableFromAST(
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
+
+        /// The comment is not passed to a table function (unlike a table engine), so it has to be
+        /// applied to the storage explicitly when the definition is loaded back from the metadata.
+        if (ast_create_query.comment)
+            storage->setInMemoryMetadataComment(ast_create_query.comment->as<ASTLiteral &>().value.safeGet<String>());
 
         /// Re-establish the named collection dependency (if any) that `CREATE TABLE ... AS f(...)`
         /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
