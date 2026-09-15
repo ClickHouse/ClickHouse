@@ -25,6 +25,8 @@
 namespace DB
 {
 
+struct KeyRangeHistogram;
+
 class RuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<RuntimeFilter>;
 using SharedRuntimeFilterPtr = std::shared_ptr<RuntimeFilter>;
@@ -256,7 +258,7 @@ public:
     SharedFixedHashTableRuntimeFilter(
         const DataTypePtr & filter_column_target_type_,
         ProbeFn probe_fn_,
-        std::optional<Range> key_range_ = {},
+        std::vector<Range> key_ranges_ = {},
         ColumnPtr recorded_key_values_ = {});
 
     /// All build entry points are no-ops: the data was built inside `HashJoin` already.
@@ -266,12 +268,12 @@ public:
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     ColumnPtr getRecordedKeyValues() const { return recorded_key_values; }
     DataTypePtr getTargetType() const { return filter_column_target_type; }
-    const std::optional<Range> & getInitialKeyRange() const { return key_range; }
+    const std::vector<Range> & getInitialKeyRanges() const { return key_ranges; }
 
 private:
     const DataTypePtr filter_column_target_type;
     ProbeFn probe_fn;
-    std::optional<Range> key_range;
+    std::vector<Range> key_ranges;
     ColumnPtr recorded_key_values;
 };
 
@@ -288,12 +290,24 @@ private:
 
     struct Data
     {
+        Data(detail::RuntimeFilterBuildState build_state_, Filter filter_)
+            : build_state(std::move(build_state_)), filter(std::move(filter_))
+        {
+        }
+
         detail::RuntimeFilterBuildState build_state;
         Filter filter;
         bool index_analysis_enabled = false;
+        /// Envelope, for key types the histogram cannot bucket.
         bool has_range = false;
         Field range_min{};
         Field range_max{};
+        /// Disjoint closed intervals, sorted by left bound.
+        std::vector<std::pair<Field, Field>> range_cover;
+        /// Keys as bits over a bucketed domain; order-independent (see `KeyRangeHistogram`).
+        std::shared_ptr<KeyRangeHistogram> range_histogram;
+        /// Memoized `getRecordedKeyRanges`; mutable for the const getter, still mutex-guarded.
+        mutable std::optional<std::vector<Range>> recorded_key_ranges;
     };
 
     template <typename FilterImpl>
@@ -306,12 +320,9 @@ private:
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis_enabled = true;
-            if (const auto & range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange())
-            {
-                result.range_min = range->left;
-                result.range_max = range->right;
-                result.has_range = true;
-            }
+            /// Carry over the replaced filter's cover so left-side pruning survives the switch.
+            for (const auto & range : std::get<SharedFixedHashTable>(result.filter).getInitialKeyRanges())
+                result.range_cover.emplace_back(range.left, range.right);
         }
         return result;
     }
@@ -347,7 +358,11 @@ public:
     /// Opt in to collecting build-side metadata for storage index analysis.
     void enableIndexAnalysis();
     ColumnPtr getRecordedKeyValues() const;
-    std::optional<Range> getRecordedKeyRanges() const;
+    /// Disjoint closed intervals covering the recorded keys, by left bound; empty if none.
+    std::vector<Range> getRecordedKeyRanges() const;
+
+    /// Intervals the cover may keep; each is another OR branch and mark-range trim per part.
+    static constexpr size_t max_key_range_intervals = 8;
     DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
 
     /// Usage statistics
@@ -358,6 +373,11 @@ private:
     const DataTypePtr filter_column_target_type;
     const bool range_supported;
     const bool range_positive;
+    /// Whether the histogram can bucket this key type; if not, the envelope is used.
+    const bool range_histogram_supported;
+
+    std::vector<std::pair<Field, Field>> effectiveRangeCover() const TSA_REQUIRES_SHARED(mutex);
+    void appendRangeCover(std::vector<std::pair<Field, Field>> & out) const;
 
     RuntimeFilterEvaluationState evaluation_state;
     mutable SharedMutex mutex;
