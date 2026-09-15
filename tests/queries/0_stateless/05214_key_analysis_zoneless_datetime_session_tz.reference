@@ -8,6 +8,18 @@ UTC
 -- the same key through a Nullable wrapper
 1	1
 
+-- the same defect on a DateTime key, which resolves its implicit zone the same way
+1	1
+
+-- a primary key over the same transform: the condition reaches the mark filter, so a wrong
+-- instant drops granules instead of parts
+1	1
+Condition: (toYYYYMMDD(dt) in [20240102, 20240102])
+Granules: 2/2
+
+-- and a minmax skip index, which evaluates the same transform per granule
+1	1
+
 -- a timezone-sensitive non-monotonic key: the pruner must look for the key value computed in
 -- the frozen zone (hour 20 in UTC), because that is the zone the stored values were computed in
 1	1

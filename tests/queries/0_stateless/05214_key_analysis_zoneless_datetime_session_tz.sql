@@ -14,20 +14,29 @@ SET optimize_time_filter_with_preimage = 0;  -- the rewrite would rewrite the `c
 SET explain_query_plan_default = 'legacy';   -- for the Condition/Parts/Granules assertions
 SET parallel_replicas_local_plan = 1;        -- for explain with indexes and key condition values
 
-DROP TABLE IF EXISTS 05214_day, 05214_day_nullable, 05214_hour, 05214_cast_date, 05214_explicit_zone, 05214_dynamic;
+DROP TABLE IF EXISTS 05214_day, 05214_day_nullable, 05214_dt_seconds, 05214_hour, 05214_cast_date, 05214_pk, 05214_skip, 05214_explicit_zone, 05214_dynamic;
 
 -- Rows 1 and 2 are in UTC day 20240102 and row 3 in 20240105, so there are two parts to prune between.
 -- Read in Asia/Tokyo, '2024-01-03 05:00:00' names row 2, so the honest answer for that literal is 1.
 CREATE TABLE 05214_day (dt DateTime64(6), id Int32) ENGINE = MergeTree PARTITION BY toYYYYMMDD(dt) ORDER BY id;
 CREATE TABLE 05214_day_nullable (dt Nullable(DateTime64(6)), id Int32) ENGINE = MergeTree PARTITION BY toYYYYMMDD(dt) ORDER BY id SETTINGS allow_nullable_key = 1;
+CREATE TABLE 05214_dt_seconds (dt DateTime, id Int32) ENGINE = MergeTree PARTITION BY toYYYYMMDD(dt) ORDER BY id;
 CREATE TABLE 05214_hour (dt DateTime64(6), id Int32) ENGINE = MergeTree PARTITION BY cityHash64(toHour(dt)) ORDER BY id;
 CREATE TABLE 05214_cast_date (dt DateTime64(6), id Int32) ENGINE = MergeTree PARTITION BY dt::Date ORDER BY id;
+-- Both tables below need one row per granule: at the default granularity one granule holds every row and
+-- the mark and skip-index filters have no value to discriminate. 05214_pk holds a single day too, since the
+-- mark filter tests the ranges BETWEEN marks and a row in a later day makes one range span the wrong day.
+CREATE TABLE 05214_pk (dt DateTime64(6), id Int32) ENGINE = MergeTree ORDER BY toYYYYMMDD(dt) SETTINGS index_granularity = 1;
+CREATE TABLE 05214_skip (dt DateTime64(6), id Int32, INDEX mm toYYYYMMDD(dt) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 CREATE TABLE 05214_explicit_zone (dt DateTime64(6, 'UTC'), id Int32) ENGINE = MergeTree PARTITION BY toYYYYMMDD(dt) ORDER BY id;
 
 INSERT INTO 05214_day VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2), ('2024-01-05 12:00:00', 3);
 INSERT INTO 05214_day_nullable VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2), ('2024-01-05 12:00:00', 3);
+INSERT INTO 05214_dt_seconds VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2), ('2024-01-05 12:00:00', 3);
 INSERT INTO 05214_hour VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2), ('2024-01-05 12:00:00', 3);
 INSERT INTO 05214_cast_date VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2), ('2024-01-05 12:00:00', 3);
+INSERT INTO 05214_pk VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2);
+INSERT INTO 05214_skip VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2), ('2024-01-05 12:00:00', 3);
 INSERT INTO 05214_explicit_zone VALUES ('2024-01-02 03:00:00', 1), ('2024-01-02 20:00:00', 2), ('2024-01-05 12:00:00', 3);
 
 SELECT '-- the key type keeps the zone it was created with (otherwise every arm below is a tautology)';
@@ -46,6 +55,31 @@ SELECT '';
 SELECT '-- the same key through a Nullable wrapper';
 SELECT (SELECT count() FROM 05214_day_nullable WHERE dt = '2024-01-03 05:00:00') AS pruned,
        (SELECT countIf(dt = '2024-01-03 05:00:00') FROM 05214_day_nullable) AS honest
+SETTINGS session_timezone = 'Asia/Tokyo';
+
+SELECT '';
+SELECT '-- the same defect on a DateTime key, which resolves its implicit zone the same way';
+SELECT (SELECT count() FROM 05214_dt_seconds WHERE dt = '2024-01-03 05:00:00') AS pruned,
+       (SELECT countIf(dt = '2024-01-03 05:00:00') FROM 05214_dt_seconds) AS honest
+SETTINGS session_timezone = 'Asia/Tokyo';
+
+SELECT '';
+SELECT '-- a primary key over the same transform: the condition reaches the mark filter, so a wrong';
+SELECT '-- instant drops granules instead of parts';
+SELECT (SELECT count() FROM 05214_pk WHERE dt = '2024-01-03 05:00:00') AS pruned,
+       (SELECT countIf(dt = '2024-01-03 05:00:00') FROM 05214_pk) AS honest
+SETTINGS session_timezone = 'Asia/Tokyo';
+SELECT trim(explain)
+FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM 05214_pk WHERE dt = '2024-01-03 05:00:00'
+)
+WHERE trim(explain) ilike 'condition: %' OR trim(explain) ilike 'granules: %'
+SETTINGS session_timezone = 'Asia/Tokyo';
+
+SELECT '';
+SELECT '-- and a minmax skip index, which evaluates the same transform per granule';
+SELECT (SELECT count() FROM 05214_skip WHERE dt = '2024-01-03 05:00:00') AS pruned,
+       (SELECT countIf(dt = '2024-01-03 05:00:00') FROM 05214_skip) AS honest
 SETTINGS session_timezone = 'Asia/Tokyo';
 
 SELECT '';
@@ -117,4 +151,4 @@ FROM (
 WHERE trim(explain) ilike 'granules: %'
 SETTINGS session_timezone = 'Asia/Tokyo';
 
-DROP TABLE 05214_day, 05214_day_nullable, 05214_hour, 05214_cast_date, 05214_explicit_zone, 05214_dynamic;
+DROP TABLE 05214_day, 05214_day_nullable, 05214_dt_seconds, 05214_hour, 05214_cast_date, 05214_pk, 05214_skip, 05214_explicit_zone, 05214_dynamic;
