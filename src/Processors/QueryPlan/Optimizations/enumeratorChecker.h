@@ -105,11 +105,16 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     /// it is only read below and copied into the DP entry, so the aliasing is safe.
     const auto & edge = optimizer.collectJoinEdgesMask(left_mask, right_mask);
 
-    /// The enumerator only invokes the acceptor for connected pairs, so a `Cross`
-    /// kind here is a connected join that should be treated as `Inner` (mirrors the
-    /// normalization done by the greedy and DPsize solvers).
-    if (kind == JoinKind::Cross)
+    /// Tell a real join from a cross product, the way greedy does. `initDPTable` links the two sides
+    /// of a join that has no two-table condition, so the acceptor is reached for pairs that nothing
+    /// actually joins; those have to stay `Cross`, because that is what keeps a cross product local
+    /// in `applyParallelReplicas`. Everything with a condition connecting the sides becomes `Inner`.
+    const bool connected = optimizer.hasInnerEdgeAcross(left_mask, right_mask)
+        || optimizer.query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask));
+    if (kind == JoinKind::Cross && connected)
         kind = JoinKind::Inner;
+    else if (kind == JoinKind::Inner && !connected)
+        kind = JoinKind::Cross;
 
     auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);

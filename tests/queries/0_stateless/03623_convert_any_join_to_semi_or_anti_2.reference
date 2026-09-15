@@ -68,7 +68,7 @@ Positions: 0
       Positions: 2
         JoinLogical
         Join: u1[100000] ⋉ u2[1000]
-        ResultRows: 100000
+        ResultRows: 1000
         Type: LEFT
         Strictness: SEMI
         Locality: UNSPECIFIED

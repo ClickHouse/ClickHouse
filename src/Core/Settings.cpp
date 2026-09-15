@@ -9353,7 +9353,7 @@ reorderings are valid using the CD-A conflict detector).
     DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, true, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
 are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
