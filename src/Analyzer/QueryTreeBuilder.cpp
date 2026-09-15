@@ -894,18 +894,17 @@ namespace
 ///
 /// becomes
 ///
-///     FROM (SELECT * EXCEPT (c1, c2),
-///                  __unpivot_name AS name,
-///                  __unpivot_value AS value
+///     FROM (SELECT * EXCEPT STRICT (c1, c2), name, value
 ///           FROM t
-///           ARRAY JOIN ['c1', 'c2_alias'] AS __unpivot_name, [c1, c2] AS __unpivot_value
-///           WHERE __unpivot_value IS NOT NULL)
+///           ARRAY JOIN ['c1', 'c2_alias'] AS name, [c1, c2] AS value
+///           WHERE value IS NOT NULL)
 ///
 /// The two arrays are zipped by a single ARRAY JOIN, so the value column takes the common type of
 /// the listed columns directly, rather than the common type of (name, value) tuples.
 ///
 /// Which columns are carried through is left to `* EXCEPT`, so the rewrite does not need to know
-/// what the table's columns are - it only knows the ones the query named.
+/// what the table's columns are - it only knows the ones the query named. It is strict so that the
+/// same `* EXCEPT`, which does see those columns, refuses a listed column the source does not have.
 ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression, const ASTUnpivot & unpivot)
 {
     /// Two parallel arrays that ARRAY JOIN zips into one row per listed column. They are named
