@@ -284,6 +284,9 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+/// Whether a plan build should leave `GLOBAL IN` / `GLOBAL JOIN` temporary tables empty, and whether
+/// it has done so. Null means not deferring at all.
+using DeferredSubqueryMaterializationState = std::shared_ptr<std::atomic_bool>;
 
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
@@ -654,7 +657,7 @@ protected:
     PreparedSetsCachePtr prepared_sets_cache;
     /// Shared with every context derived from this one, so that a plan build several contexts deep can
     /// report back that it skipped materializing a subquery.
-    std::shared_ptr<std::atomic_bool> deferred_subquery_materialization;
+    DeferredSubqueryMaterializationState deferred_subquery_materialization;
 
     struct StorageCache
     {
@@ -2085,13 +2088,18 @@ public:
     /// built without materializing the subqueries a `GLOBAL IN` / `GLOBAL JOIN` rewrite would otherwise
     /// execute. Arming this makes such a build create the temporary tables empty and record that it did;
     /// the caller rebuilds the plan for real before executing it. See `considerEnablingParallelReplicas`.
-    /// Set on every plan build, not only the deferring one: the same `Context` is reused for the probe
-    /// and for the rebuild that materializes for real, so leaving a previous build's arming in place
-    /// would make the rebuild defer too and execute a plan whose temporary tables are empty.
+    /// Armed only for the duration of one probe build and disarmed again when it returns, so that a
+    /// discarded probe cannot leave the query context deferring for planning that happens later in the
+    /// same query - such planning would leave a real temporary table empty and return wrong results.
     void setDeferredSubqueryMaterialization(bool defer);
     bool isSubqueryMaterializationDeferred() const;
     void setSubqueryMaterializationDeferred();
     bool wasSubqueryMaterializationDeferred() const;
+    /// Save and restore the whole state rather than re-arming, so that a nested probe - an `IN`
+    /// subquery is costed by a probe of its own - hands the enclosing build back exactly the state it
+    /// had, including whether it had already deferred something.
+    DeferredSubqueryMaterializationState getDeferredSubqueryMaterializationState() const;
+    void setDeferredSubqueryMaterializationState(DeferredSubqueryMaterializationState state);
 
     ReverseLookupCache & getReverseLookupCache() const;
 

@@ -176,6 +176,40 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
+/// Arms deferred subquery materialization on a context and its query context for as long as it is
+/// alive, then puts back whatever state they had. See the use site for why the arming must not escape
+/// the probe build, and why it is restored rather than simply cleared.
+class ScopedDeferredSubqueryMaterialization
+{
+public:
+    ScopedDeferredSubqueryMaterialization(const ContextMutablePtr & context_, bool defer)
+        : context(context_)
+        , query_context(context_->hasQueryContext() ? context_->getQueryContext() : nullptr)
+        , saved_context_state(context->getDeferredSubqueryMaterializationState())
+        , saved_query_context_state(query_context ? query_context->getDeferredSubqueryMaterializationState() : nullptr)
+    {
+        context->setDeferredSubqueryMaterialization(defer);
+        if (query_context)
+            query_context->setDeferredSubqueryMaterialization(defer);
+    }
+
+    ~ScopedDeferredSubqueryMaterialization()
+    {
+        context->setDeferredSubqueryMaterializationState(std::move(saved_context_state));
+        if (query_context)
+            query_context->setDeferredSubqueryMaterializationState(std::move(saved_query_context_state));
+    }
+
+    ScopedDeferredSubqueryMaterialization(const ScopedDeferredSubqueryMaterialization &) = delete;
+    ScopedDeferredSubqueryMaterialization & operator=(const ScopedDeferredSubqueryMaterialization &) = delete;
+
+private:
+    ContextMutablePtr context;
+    ContextMutablePtr query_context;
+    DeferredSubqueryMaterializationState saved_context_state;
+    DeferredSubqueryMaterializationState saved_query_context_state;
+};
+
 template <typename... Args>
 QueryPlanOptimizationSettings::ParallelReplicasPlan buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast,
@@ -228,11 +262,17 @@ QueryPlanOptimizationSettings::ParallelReplicasPlan buildQueryPlanForAutomaticPa
     /// Decide before the tree is built: a `GLOBAL IN` / `GLOBAL JOIN` rewrite materializes its subquery
     /// while building the plan, and the probe is discarded often enough that paying for those rows here
     /// is waste. Set it on the query context too - the plan is built through several derived contexts,
-    /// and the one that reaches `executeSubqueryNode` is not this copy. This is written on every build,
-    /// including the one that must materialize, because the same `ctx` is reused for both.
-    ctx->setDeferredSubqueryMaterialization(defer_materialization);
-    if (ctx->hasQueryContext())
-        ctx->getQueryContext()->setDeferredSubqueryMaterialization(defer_materialization);
+    /// and the one that reaches `executeSubqueryNode` is not this copy.
+    ///
+    /// The arming must not outlive this build. The query context belongs to the whole query, and
+    /// optimization is not the last thing that happens to it: `addStepsToBuildSets` runs afterwards and
+    /// can plan further. A probe that armed the flag and was then discarded would leave that later
+    /// planning free to leave a real `GLOBAL IN` / `GLOBAL JOIN` temporary table empty, which returns
+    /// wrong results rather than failing. Restore on every exit, including an exception - and restore
+    /// rather than clear, because an `IN` subquery is costed by a probe of its own nested inside this
+    /// one, and clearing would lose this build's own record of having deferred.
+    ScopedDeferredSubqueryMaterialization deferral_scope(ctx, defer_materialization);
+
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
