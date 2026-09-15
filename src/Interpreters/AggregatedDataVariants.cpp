@@ -274,6 +274,12 @@ bool AggregatedDataVariants::isLowCardinality() const
     }
 }
 
+bool AggregatedDataVariants::isSingleLowCardinalityDictionary() const
+{
+    return type == Type::low_cardinality_single_dictionary
+        || type == Type::low_cardinality_single_dictionary_two_level;
+}
+
 HashMethodContextPtr AggregatedDataVariants::createCache(Type type, const HashMethodContext::Settings & settings)
 {
     switch (type)

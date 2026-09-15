@@ -1,0 +1,13 @@
+direct argument
+retained dictionary applied backpressure
+shared	128	4160	8192
+nested argument
+retained dictionary applied backpressure
+shared	128	4160	8192
+cancellation
+query failed with 394
+owner exception
+query failed with 710
+duplicate dictionary references
+duplicate references stayed below the watermark
+shared	128	4160	256
