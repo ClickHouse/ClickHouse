@@ -26,6 +26,10 @@ public:
     void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
     void addTotalBytes(size_t value) { total_bytes += value; }
 
+    /// Report the accumulated totals with no read progress. Consumes the counters, since Progress
+    /// sums total_rows_to_read over events and a repeated value would double the query's total.
+    void publishTotals();
+
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
