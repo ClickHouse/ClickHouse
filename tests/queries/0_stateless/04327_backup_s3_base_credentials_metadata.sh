@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: long, no-fasttest
+# Tag: long - eight backup/restore round trips against S3 exceed the flaky check's 180s budget
 # Tag: no-fasttest - requires S3
 
-# The `base_backup` locator in `.backup` metadata must not store `S3` credentials.
+# The `base_backup` locator in `.backup` metadata must not store `S3` credentials, except for the
+# non-secret role identifiers (`role_arn`, `role_session_name`), which are kept so that a
+# role-authenticated base backup stays openable on restore.
 # Old metadata with embedded credentials remains readable.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -30,6 +33,14 @@ function check_base_backup_in_metadata()
     grep -c '<base_backup_copy_s3_credentials_from_backup>' <<< "$metadata" || true
     grep -c '<use_same_s3_credentials_for_base_backup>' <<< "$metadata" || true
     grep -cE ", 'test'|, 'testtest'|, 'clickhouse'|SECRET" <<< "$metadata" || true
+}
+
+function count_pattern_in_metadata()
+{
+    local name=$1 && shift
+    local pattern=$1 && shift
+    $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT line FROM s3($(s3_location $name/.backup), 'LineAsString') FORMAT TSVRaw" \
+        | grep -c "$pattern" || true
 }
 
 function expect_restore_failure()
@@ -84,8 +95,11 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_3 FROM S3(
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_3"
 
 echo 'inc_4: distinct base credentials and extra auth arguments'
-$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location_root base), role_arn = 'SECRET_ROLE_ARN', external_id = 'SECRET_EXTERNAL_ID')" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location_root base), role_arn = 'KEPT_ROLE_ARN', role_session_name = 'KEPT_ROLE_SESSION', external_id = 'SECRET_EXTERNAL_ID')" | cut -f2
 check_base_backup_in_metadata inc_4
+# The role identifiers are not secrets and are needed to reopen the base backup on restore.
+count_pattern_in_metadata inc_4 'KEPT_ROLE_ARN'
+count_pattern_in_metadata inc_4 'KEPT_ROLE_SESSION'
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_4 FROM S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location_root base))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_4"
 

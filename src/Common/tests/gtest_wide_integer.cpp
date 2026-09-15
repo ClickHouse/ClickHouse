@@ -592,6 +592,11 @@ GTEST_TEST(WideInteger, DivisionRandomValues)
             UInt128 b = randomOfWidth<UInt128>(rng, bits_b);
             if (b != UInt128(0))
                 checkDivisionAgainstExactOracle(a, b);
+
+            Int128 signed_a = static_cast<Int128>(a);
+            Int128 signed_b = static_cast<Int128>(b);
+            if (signed_b != Int128(0) && !(signed_a == std::numeric_limits<Int128>::min() && signed_b == Int128(-1)))
+                checkDivisionAgainstExactOracle(signed_a, signed_b);
         }
         {
             unsigned bits_a = rng() % 257;
@@ -648,4 +653,62 @@ GTEST_TEST(WideInteger, DivisionEdgeCases)
     /// Dividing by zero throws rather than doing anything undefined.
     EXPECT_ANY_THROW(std::ignore = std::numeric_limits<UInt256>::max() / UInt256(0));
     EXPECT_ANY_THROW(std::ignore = std::numeric_limits<UInt256>::max() % UInt256(0));
+
+    /// 128 bits is a separate implementation, and its two limbs make every operand either narrow
+    /// or full width, so the same sweep narrowed to that width walks all four combinations.
+    std::vector<UInt128> values_128;
+    for (const UInt256 & value : values)
+        if (value <= UInt256(std::numeric_limits<UInt128>::max()))
+            values_128.push_back(static_cast<UInt128>(value));
+
+    for (const UInt128 & a : values_128)
+        for (const UInt128 & b : values_128)
+            if (b != UInt128(0))
+                checkDivisionAgainstExactOracle(a, b);
+
+    EXPECT_ANY_THROW(std::ignore = std::numeric_limits<UInt128>::max() / UInt128(0));
+    EXPECT_ANY_THROW(std::ignore = std::numeric_limits<UInt128>::max() % UInt128(0));
+}
+
+/// The reciprocal replaces the division instruction only on targets that lack one for this shape, so
+/// nothing else here reaches it on x86-64. Calling it directly is what gives it coverage on every target.
+GTEST_TEST(WideInteger, Divide128By64Preinv)
+{
+    const auto check = [](uint64_t high, uint64_t low, uint64_t divisor)
+    {
+        ASSERT_LT(high, divisor);
+        const wide::invariant_divisor prepared = wide::prepare_divisor(divisor);
+        uint64_t remainder = 0;
+        const uint64_t quotient = wide::divide_128_by_64_preinv(high, low, prepared, remainder);
+
+        const unsigned __int128 dividend = (static_cast<unsigned __int128>(high) << 64) | low;
+        EXPECT_EQ(quotient, static_cast<uint64_t>(dividend / divisor))
+            << "high=" << high << " low=" << low << " divisor=" << divisor;
+        EXPECT_EQ(remainder, static_cast<uint64_t>(dividend % divisor))
+            << "high=" << high << " low=" << low << " divisor=" << divisor;
+    };
+
+    /// Every normalization shift, both extremes of the low word, and a high word at both ends of its
+    /// permitted range, which is where the two corrections and the shift arithmetic are decided.
+    std::vector<uint64_t> divisors{1, 2, 3, 58, 656356768ULL, 430804206899405824ULL,
+                                   std::numeric_limits<uint64_t>::max()};
+    for (unsigned bit = 0; bit < 64; ++bit)
+    {
+        divisors.push_back(1ULL << bit);
+        divisors.push_back((1ULL << bit) | 1ULL);
+    }
+
+    for (uint64_t divisor : divisors)
+        for (uint64_t low : {uint64_t{0}, uint64_t{1}, uint64_t{1} << 63, std::numeric_limits<uint64_t>::max()})
+            for (uint64_t high : {uint64_t{0}, divisor / 2, divisor - 1})
+                check(high, low, divisor);
+
+    pcg64 generator(20260907);
+    for (size_t i = 0; i < 200000; ++i)
+    {
+        uint64_t divisor = generator();
+        if (divisor == 0)
+            divisor = 1;
+        check(generator() % divisor, generator(), divisor);
+    }
 }

@@ -124,6 +124,11 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
     select.limit_by_all = false;
+    /// The `LIMIT AFTER`/`UNTIL` boundaries are analyzed unconditionally too (appendLimitRange) and may
+    /// refer to columns of the removed joined table.
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
+    select.limit_after_all = false;
     /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
     /// a stale flag would be a logical error in InterpreterSelectQuery.
     select.limit_with_ties = false;
