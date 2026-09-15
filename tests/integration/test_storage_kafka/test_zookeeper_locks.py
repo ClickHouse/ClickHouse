@@ -230,7 +230,7 @@ def test_inactive_replica_not_counted(kafka_cluster):
         # Simulate a replica that died without cleaning up: a persistent replica
         # znode without the is_active ephemeral node
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-            zk.create(f"{keeper_path}/replicas/ghost", "")
+            zk.create(f"{keeper_path}/replicas/ghost", "0")
 
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
 
