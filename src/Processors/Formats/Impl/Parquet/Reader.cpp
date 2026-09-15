@@ -470,32 +470,101 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     {
         all_spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
 
-        /// Collect all leaf column paths from the Parquet schema.
+        /// The spatial filters' covering.bbox paths, sorted, as views into metadata already held.
+        /// The schema and these paths both come from the file, so nothing below may scale with a
+        /// number the file supplies: no path is built or stored per schema element, and the only
+        /// multiplier is this vector's size, which the query fixes at four per geometry column.
+        std::vector<std::string_view> wanted_bbox_paths;
+        for (const auto & sf : all_spatial_filters)
+        {
+            auto geo_it = resolve_geo_meta(sf.geometry_column_name);
+            if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value())
+                continue;
+            const auto & bbox_cov = *geo_it->second.covering_bbox;
+            for (const String * col : {&bbox_cov.xmin_column, &bbox_cov.ymin_column,
+                                       &bbox_cov.xmax_column, &bbox_cov.ymax_column})
+                wanted_bbox_paths.emplace_back(*col);
+        }
+        std::sort(wanted_bbox_paths.begin(), wanted_bbox_paths.end());
+        wanted_bbox_paths.erase(
+            std::unique(wanted_bbox_paths.begin(), wanted_bbox_paths.end()), wanted_bbox_paths.end());
+
+        /// Which of those paths are leaves in the file's own schema.
         /// Used below to guard covering.bbox injection: a bbox path from GeoParquet metadata
         /// might not exist in the actual file schema (stale/malformed metadata). Without this
         /// check, SchemaConverter throws THERE_IS_NO_COLUMN for the injected column when
         /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
-        std::unordered_set<String> schema_leaf_paths;
+        std::unordered_set<String> bbox_paths_in_schema;
+        if (!wanted_bbox_paths.empty())
         {
             const auto & schema = file_metadata.schema;
             if (schema.size() >= 2 && schema.at(0).num_children > 0)
             {
-                size_t schema_idx = 1;
-                std::function<void(const String &)> dfs = [&](const String & parent)
+                /// `num_children` and the nesting depth come straight from the file footer and are
+                /// validated only later, by SchemaConverter. Walk with an explicit stack, carrying the
+                /// candidates that still have the path so far as a prefix.
+                struct Frame
                 {
+                    Int64 children_left;
+                    size_t lo;
+                    size_t hi;
+                    size_t matched;
+                    bool path_empty;
+                };
+                /// Restrict [lo, hi) to the candidates whose next `chunk.size()` characters are
+                /// `chunk`. They stay contiguous because the paths are sorted.
+                auto narrow = [&](Frame & frame, std::string_view chunk)
+                {
+                    size_t new_lo = frame.hi;
+                    size_t new_hi = frame.lo;
+                    for (size_t i = frame.lo; i < frame.hi; ++i)
+                    {
+                        std::string_view wanted = wanted_bbox_paths[i];
+                        if (wanted.size() >= frame.matched + chunk.size()
+                            && wanted.compare(frame.matched, chunk.size(), chunk) == 0)
+                        {
+                            new_lo = std::min(new_lo, i);
+                            new_hi = i + 1;
+                        }
+                    }
+                    frame.lo = new_lo;
+                    frame.hi = std::max(new_hi, new_lo);
+                    frame.matched += chunk.size();
+                };
+                std::vector<Frame> stack;
+                stack.push_back({schema.at(0).num_children, 0, wanted_bbox_paths.size(), 0, true});
+                size_t schema_idx = 1;
+                while (!stack.empty())
+                {
+                    if (stack.back().children_left <= 0)
+                    {
+                        stack.pop_back();
+                        continue;
+                    }
                     if (schema_idx >= schema.size())
-                        return;
+                        break;
+                    stack.back().children_left -= 1;
+                    Frame frame = stack.back();
                     const auto & elem = schema.at(schema_idx++);
-                    String path = parent.empty() ? String(elem.name) : parent + "." + elem.name;
+                    /// The flattened path is the parent's, then '.', then this element's name. The
+                    /// separator depends on the parent path being non-empty and not on the depth: a
+                    /// field name may be empty, and then the path does not grow.
+                    if (!frame.path_empty)
+                        narrow(frame, ".");
+                    narrow(frame, elem.name);
+                    frame.path_empty = frame.path_empty && elem.name.empty();
                     bool is_primitive = !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
                     if (is_primitive)
-                        schema_leaf_paths.insert(path);
+                    {
+                        if (frame.lo < frame.hi && wanted_bbox_paths[frame.lo].size() == frame.matched)
+                            bbox_paths_in_schema.emplace(String(wanted_bbox_paths[frame.lo]));
+                    }
                     else
-                        for (int i = 0; i < elem.num_children; ++i)
-                            dfs(path);
-                };
-                for (int i = 0; i < schema.at(0).num_children; ++i)
-                    dfs({});
+                    {
+                        frame.children_left = elem.num_children;
+                        stack.push_back(frame);
+                    }
+                }
             }
         }
 
@@ -518,12 +587,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 &bbox_cov.xmax_column, &bbox_cov.ymax_column};
 
             /// Skip injection if any bbox column is absent from the actual file schema. Checked
-            /// against raw parquet-side paths, matching `schema_leaf_paths` (built from the file's
+            /// against raw parquet-side paths, matching `bbox_paths_in_schema` (built from the file's
             /// own schema). Falls back to geostats pruning; avoids THERE_IS_NO_COLUMN when
             /// input_format_parquet_allow_missing_columns = 0 with stale metadata.
             bool all_bbox_in_schema = true;
             for (const String * col : raw_bbox_col_ptrs)
-                if (!schema_leaf_paths.contains(*col))
+                if (!bbox_paths_in_schema.contains(*col))
                 { all_bbox_in_schema = false; break; }
             if (!all_bbox_in_schema)
             {
