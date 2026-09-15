@@ -410,7 +410,7 @@ TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattache
         bool seen = false;
         t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
         {
-            if (path.find("/prio/") != String::npos)
+            if (path.contains("/prio/"))
                 seen = true;
         });
         return seen;

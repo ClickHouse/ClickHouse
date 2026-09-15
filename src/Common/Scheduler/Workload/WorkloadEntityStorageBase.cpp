@@ -711,7 +711,8 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
         if (auto it = local_new_entities.find(IMPLICIT_ROOT_WORKLOAD_NAME);
             it != local_new_entities.end() && typeid_cast<ASTCreateWorkloadQuery *>(it->second.get()))
             ignored.insert(IMPLICIT_ROOT_WORKLOAD_NAME);
-        for (bool changed = !ignored.empty(); changed; )
+        bool changed = !ignored.empty();
+        while (changed)
         {
             changed = false;
             for (const auto & [name, ast] : local_new_entities)
