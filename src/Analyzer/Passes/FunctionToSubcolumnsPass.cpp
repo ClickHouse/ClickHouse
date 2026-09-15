@@ -680,15 +680,22 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Nullable, "isNull"},
-        [](QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
+            /// Replace `isNull(nullable_argument)` with `nullable_argument.null != 0`. The subcolumn
+            /// cannot stand in for the function on its own, because a null map byte only has to be
+            /// non-zero to mean NULL while `isNull` returns 0 or 1.
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
                 || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
-            node = std::make_shared<ColumnNode>(column, ctx.column_source);
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            function_arguments_nodes = {
+                std::make_shared<ColumnNode>(column, ctx.column_source),
+                std::make_shared<ConstantNode>(static_cast<UInt64>(0))};
+            resolveOrdinaryFunctionNodeByName(function_node, "notEquals", ctx.context);
         },
     },
     {
