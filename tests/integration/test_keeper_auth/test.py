@@ -818,6 +818,50 @@ def test_world_anyone_specific_permissions(started_cluster):
         zk_stop_and_close(no_auth_connection)
 
 
+@pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
+def test_world_anyone_all_permissions_with_other_acl(started_cluster, get_zk):
+    """world:anyone with all permissions still grants everyone when the list has other entries"""
+    connection = None
+    no_auth_connection = None
+    path = "/test_world_anyone_all_and_auth"
+
+    try:
+        connection = get_zk()
+        connection.add_auth("digest", "user1:password1")
+
+        connection.create(
+            path,
+            b"data",
+            acl=[
+                make_acl("world", "anyone", all=True),
+                make_acl("auth", "", read=True),
+            ],
+        )
+
+        acls, _ = connection.get_acls(path)
+        assert len(acls) == 2
+
+        no_auth_connection = get_zk()
+        assert no_auth_connection.get(path)[0] == b"data"
+        no_auth_connection.set(path, b"new_data")
+
+        # The node stays repairable: world:anyone with all permissions carries ADMIN.
+        connection.set_acls(
+            path,
+            [
+                make_acl("world", "anyone", all=True),
+                make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", read=True),
+            ],
+        )
+        acls, _ = connection.get_acls(path)
+        assert len(acls) == 2
+
+        zk_delete_after_acl_change(connection, path)
+    finally:
+        zk_stop_and_close(connection)
+        zk_stop_and_close(no_auth_connection)
+
+
 def test_auth_snapshot(started_cluster):
     connection = None
     connection1 = None
