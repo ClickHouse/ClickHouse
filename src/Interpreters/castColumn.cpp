@@ -1,8 +1,8 @@
 #include <Interpreters/castColumn.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
@@ -19,9 +19,8 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
     {
         if (arg.type->getName() != type->getName()
-            && containsExponentialTimeDecayingFloat64(type))
-            validateExponentialTimeDecayingFloat64Column(
-                *arg.column, type, "conversion to ExponentialTimeDecayingFloat64");
+            && containsCustomTypeValueValidation(type))
+            validateCustomDataTypeColumn(*arg.column, type, "conversion to semantic custom type");
 
         return arg.column;
     }
