@@ -95,7 +95,8 @@ public:
     void setLocalLogsPreprocessed();
     bool localLogsPreprocessed() const;
 
-    void waitLocalLogsPreprocessedOrShutdown();
+    /// returns false if the timeout happened before the local logs were preprocessed
+    bool waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms);
 
     uint64_t lastCommittedIndex() const;
     void setLastCommitIndex(uint64_t commit_index);

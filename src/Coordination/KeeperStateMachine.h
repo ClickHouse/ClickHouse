@@ -9,6 +9,7 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <atomic>
 #include <optional>
 
 namespace DB
@@ -98,6 +99,17 @@ public:
     void rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
+
+    /// A negative hint makes the leader fall back to heartbeats instead of resending entries as
+    /// fast as they are refused. Entries are refused while the local logs are not preprocessed,
+    /// but only ask the leader to pause once the node knows it can finish the replay on its own:
+    /// if its local tail diverges from the leader's, it still needs those requests to find out
+    /// where the two logs match.
+    void setPauseAppendingEntries(bool pause) { pause_appending_entries = pause; }
+    int64_t get_next_batch_size_hint_in_bytes() override
+    {
+        return pause_appending_entries && !keeper_context->localLogsPreprocessed() ? -1 : 0;
+    }
 
     nuraft::ptr<nuraft::snapshot> last_snapshot() override;
 
@@ -257,6 +269,8 @@ private:
     const std::string superdigest;
 
     KeeperContextPtr keeper_context;
+
+    std::atomic<bool> pause_appending_entries = false;
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 

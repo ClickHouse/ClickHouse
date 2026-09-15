@@ -698,10 +698,11 @@ bool KeeperContext::localLogsPreprocessed() const
     return local_logs_preprocessed;
 }
 
-void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
+bool KeeperContext::waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms)
 {
     std::unique_lock lock(local_logs_preprocessed_cv_mutex);
-    local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
+    return local_logs_preprocessed_cv.wait_for(
+        lock, std::chrono::milliseconds(wait_timeout_ms), [this] { return shutdown_called || local_logs_preprocessed; });
 }
 
 const CoordinationSettings & KeeperContext::getFixedCoordinationSettings() const
