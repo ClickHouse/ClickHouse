@@ -10188,6 +10188,30 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
     return affected_partition_ids;
 }
 
+namespace
+{
+
+/// The partition literals of a partition-scoped mutation command: `IN PARTITION p` is stored in
+/// `ASTAlterCommand::partition`, and `IN PARTITION p1, p2, ...` in `ASTAlterCommand::partitions`.
+/// Empty for a command that is not partition-scoped.
+ASTs getPartitionScopeLiterals(const ASTAlterCommand & alter)
+{
+    ASTs res;
+    if (alter.partition)
+        res.push_back(ASTPtr(alter.partition));
+    else if (alter.partitions)
+        res = alter.partitions->children;
+    return res;
+}
+
+/// Is any of the partition literals still a value (`IN PARTITION <value>`) rather than an id?
+bool hasPartitionValueLiteral(const ASTs & literals)
+{
+    return std::ranges::any_of(literals, [](const auto & literal) { return literal->template as<const ASTPartition &>().value != nullptr; });
+}
+
+}
+
 PartitionIds MergeTreeData::rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const
 {
     bool all_commands_are_partition_scoped = !commands.empty();
@@ -10196,41 +10220,60 @@ PartitionIds MergeTreeData::rewritePartitionScopeToIds(MutationCommands & comman
 
     for (auto & command : commands)
     {
-        /// A command listing several partitions (`IN PARTITION p1, p2`, i.e. `alter->partitions`)
-        /// cannot be pinned to a single `resolved_partition_id`, so it is treated here as not
-        /// partition-scoped and makes the mutation global. It is still executed only in its
-        /// partitions, because `getPartitionAndPredicateExpressionForMutationCommand` turns the
-        /// list into a `_partition_id IN (...)` predicate.
         auto alter = command.ast();
-        if (!alter || !alter->partition)
+        if (!alter)
+        {
+            all_commands_are_partition_scoped = false;
+            continue;
+        }
+
+        const auto literals = getPartitionScopeLiterals(*alter);
+        if (literals.empty())
         {
             all_commands_are_partition_scoped = false;
             continue;
         }
 
         /// `ALL` is not a scope that has to survive a partition key change.
-        const auto & partition_ast = alter->partition->as<const ASTPartition &>();
-        if (partition_ast.all)
+        if (std::ranges::any_of(literals, [](const auto & literal) { return literal->template as<const ASTPartition &>().all; }))
         {
             all_commands_are_partition_scoped = false;
             continue;
         }
 
-        /// A partition id is decoded without the partition key, so the command of a command that
-        /// already carries one is left as it is; only its scope is pinned.
-        String partition_id = getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
+        /// A partition id is decoded without the partition key, so the AST of a command whose
+        /// literals already carry ids is left as it is; only its scope is pinned.
+        std::vector<String> command_partition_ids;
+        command_partition_ids.reserve(literals.size());
+        for (const auto & literal : literals)
+            command_partition_ids.push_back(getPartitionIDFromQuery(literal, query_context));
 
-        if (partition_ast.value)
+        if (hasPartitionValueLiteral(literals))
         {
             auto handle = command.mutateAst();
-            auto new_partition = make_intrusive<ASTPartition>();
-            new_partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
-            handle->setOrReplace(handle->partition, new_partition);
+            auto make_id_partition = [](const String & partition_id)
+            {
+                auto new_partition = make_intrusive<ASTPartition>();
+                new_partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+                return new_partition;
+            };
+
+            if (handle->partition)
+            {
+                handle->setOrReplace(handle->partition, make_id_partition(command_partition_ids.front()));
+            }
+            else
+            {
+                auto new_partitions = make_intrusive<ASTExpressionList>();
+                for (const auto & partition_id : command_partition_ids)
+                    new_partitions->children.push_back(make_id_partition(partition_id));
+                handle->setOrReplace(handle->partitions, new_partitions);
+            }
             handle.commit();
         }
 
-        area.push_back(partition_id);
-        command.resolved_partition_id = std::move(partition_id);
+        area.insert(area.end(), command_partition_ids.begin(), command_partition_ids.end());
+        command.resolved_partition_ids = PartitionIds{command_partition_ids.begin(), command_partition_ids.end()};
     }
 
     /// A single command without `IN PARTITION` makes the whole mutation global.
@@ -10245,10 +10288,7 @@ bool MergeTreeData::hasUnresolvedPartitionScope(const MutationCommands & command
     for (const auto & command : commands)
     {
         auto alter = command.ast();
-        if (!alter || !alter->partition)
-            continue;
-
-        if (alter->partition->as<const ASTPartition &>().value)
+        if (alter && hasPartitionValueLiteral(getPartitionScopeLiterals(*alter)))
             return true;
     }
 
@@ -10260,16 +10300,15 @@ void MergeTreeData::pinPartitionScopeOfLegacyCommands(
 {
     /// Entries created before the partition scope was pinned at creation (see
     /// `rewritePartitionScopeToIds`) still carry the original `IN PARTITION <value>`
-    /// literal, which has to be decoded through the partition key. Partition ids and
+    /// literals, which have to be decoded through the partition key. Partition ids and
     /// `ALL` are decoded without the key, so they need no pinning.
     std::vector<MutationCommand *> legacy_commands;
     for (auto & command : commands)
     {
         auto alter = command.ast();
-        if (!alter || !alter->partition || command.resolved_partition_id)
+        if (!alter || command.resolved_partition_ids)
             continue;
-        const auto & partition_ast = alter->partition->as<const ASTPartition &>();
-        if (!partition_ast.value)
+        if (!hasPartitionValueLiteral(getPartitionScopeLiterals(*alter)))
             continue;
         legacy_commands.push_back(&command);
     }
@@ -10298,7 +10337,13 @@ void MergeTreeData::pinPartitionScopeOfLegacyCommands(
     try
     {
         for (auto * command : legacy_commands)
-            command->resolved_partition_id = getPartitionIDFromQuery(ASTPtr(command->ast()->partition), query_context);
+        {
+            auto alter = command->ast();
+            std::vector<String> command_partition_ids;
+            for (const auto & literal : getPartitionScopeLiterals(*alter))
+                command_partition_ids.push_back(getPartitionIDFromQuery(literal, query_context));
+            command->resolved_partition_ids = PartitionIds{command_partition_ids.begin(), command_partition_ids.end()};
+        }
     }
     catch (...)
     {

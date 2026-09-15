@@ -1255,12 +1255,12 @@ public:
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
     PartitionIds getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
 
-    /// Rewrites the `IN PARTITION <value>` clause of every partition-scoped command into the
-    /// `IN PARTITION ID '<id>'` form, resolving the partition value through the current table
-    /// metadata once, pins the resolved id into `MutationCommand::resolved_partition_id` and
-    /// returns the set of partitions affected by the mutation as a whole. The returned set is
-    /// empty when at least one command is not partition-scoped, i.e. when the mutation affects
-    /// all partitions.
+    /// Rewrites the `IN PARTITION <value>` (or `IN PARTITION <value1>, <value2>, ...`) clause of
+    /// every partition-scoped command into the `IN PARTITION ID '<id>'` form, resolving the
+    /// partition values through the current table metadata once, pins the resolved ids into
+    /// `MutationCommand::resolved_partition_ids` and returns the union of the partitions affected
+    /// by the mutation as a whole. The returned set is empty when at least one command is not
+    /// partition-scoped, i.e. when the mutation affects all partitions.
     /// Unlike a partition value, a partition id is decoded without the partition key, so the
     /// rewritten command can be serialized, re-parsed and executed after a key-safe partition
     /// key type change (e.g. `Enum8 -> Int8`) that makes the original value literal
@@ -1269,11 +1269,12 @@ public:
     /// survive such a change.
     PartitionIds rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const;
 
-    /// Does any command still carry an `IN PARTITION <value>` literal, i.e. a scope that has
-    /// not been rewritten into the `IN PARTITION ID` form yet (a legacy mutation entry)?
+    /// Does any command still carry an `IN PARTITION <value>` literal (in either the single- or
+    /// the multi-partition form), i.e. a scope that has not been rewritten into the
+    /// `IN PARTITION ID` form yet (a legacy mutation entry)?
     static bool hasUnresolvedPartitionScope(const MutationCommands & commands);
 
-    /// Pins `MutationCommand::resolved_partition_id` for partition-scoped commands of a legacy
+    /// Pins `MutationCommand::resolved_partition_ids` for partition-scoped commands of a legacy
     /// `ReplicatedMergeTree` mutation entry, i.e. one whose znode was written before
     /// `rewritePartitionScopeToIds` existed and therefore still carries `IN PARTITION <value>`
     /// literals. When the entry is scoped to a single partition, the id is recovered from the

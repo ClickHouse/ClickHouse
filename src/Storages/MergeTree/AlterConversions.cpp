@@ -58,7 +58,7 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.max_parser_depth = command.max_parser_depth;
     res.max_parser_backtracks = command.max_parser_backtracks;
     res.ast_text = command.ast_text;
-    res.resolved_partition_id = command.resolved_partition_id;
+    res.resolved_partition_ids = command.resolved_partition_ids;
 
     auto handle = res.mutateAst();
     auto new_assignments = make_intrusive<ASTExpressionList>();
@@ -116,7 +116,7 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
 
-    mutation_command->resolved_partition_id = command.resolved_partition_id;
+    mutation_command->resolved_partition_ids = command.resolved_partition_ids;
     return *mutation_command;
 }
 
