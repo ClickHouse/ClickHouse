@@ -111,6 +111,7 @@ namespace Setting
     extern const SettingsBool optimize_skip_merged_partitions;
     extern const SettingsBool optimize_throw_if_noop;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 max_parts_to_move;
     extern const SettingsUpdateParallelMode update_parallel_mode;
@@ -352,8 +353,11 @@ void StorageMergeTree::read(
 {
     const auto & settings = local_context->getSettingsRef();
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
+    /// With `parallel_replicas_plan_based` do not build the query-based reading step either: the
+    /// plan-based implementation is meant to replace it, so a query the planner never saw reads
+    /// locally instead of falling back to the implementation being replaced.
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
-        && !settings[Setting::allow_experimental_analyzer])
+        && !settings[Setting::allow_experimental_analyzer] && !settings[Setting::parallel_replicas_plan_based])
     {
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
@@ -466,7 +470,8 @@ void StorageMergeTree::drop()
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & table_lock_holder,
+    DDLGuardPtr & ddl_guard)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
 
@@ -517,8 +522,19 @@ void StorageMergeTree::alter(
             setInMemoryMetadata(new_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            if (statistics_changed)
+                setInMemoryMetadata(old_metadata);
+            throw;
+        }
     }
     else if (commands.isCommentAlter())
     {
@@ -527,8 +543,16 @@ void StorageMergeTree::alter(
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
         }
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            setInMemoryMetadata(old_metadata);
+            throw;
+        }
     }
     else
     {
@@ -548,6 +572,21 @@ void StorageMergeTree::alter(
             applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
         }
 
+        /// Waiting for a mutation takes as long as the mutation runs, so the guard is not held for it.
+        /// It is re-acquired under the table locks and re-resolves the table, a concurrent DROP can win.
+        auto wait_for_mutation_unguarded = [&](Int64 version_to_wait)
+        {
+            const bool reacquire = ddl_guard != nullptr;
+            ddl_guard.reset();
+            waitForMutation(version_to_wait, /* from_another_mutation */ true);
+            if (reacquire)
+            {
+                ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+                    shared_from_this(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                table_id = getStorageID();
+            }
+        };
+
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
             int64_t prev_mutation = 0;
@@ -563,7 +602,7 @@ void StorageMergeTree::alter(
             if (prev_mutation != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
-                waitForMutation(prev_mutation, /* from_another_mutation */ true);
+                wait_for_mutation_unguarded(prev_mutation);
                 LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
             }
         }
@@ -585,7 +624,7 @@ void StorageMergeTree::alter(
             if (mutation_to_wait != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata while rename mutation {} is not finished, will wait for it", mutation_to_wait);
-                waitForMutation(mutation_to_wait, /* from_another_mutation */ true);
+                wait_for_mutation_unguarded(mutation_to_wait);
                 LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
             }
         }
@@ -797,6 +836,11 @@ void StorageMergeTree::alter(
                 throw;
             }
         }
+
+        /// Schema is committed and the mutation (if any) is queued; don't hold DDLGuard across
+        /// the wait, otherwise a blocked mutation (e.g. after SYSTEM STOP MERGES) would block
+        /// any concurrent DROP/RENAME on this table.
+        ddl_guard.reset();
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
             waitForMutation(mutation_version, false);
