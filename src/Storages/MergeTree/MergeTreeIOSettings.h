@@ -144,6 +144,7 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSerializationVersion object_serialization_version{};
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version{};
     size_t object_shared_data_buckets = 1;
+    double object_paths_sparse_default_ratio = 0.9375;
     size_t max_buckets_in_map = 1;
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;

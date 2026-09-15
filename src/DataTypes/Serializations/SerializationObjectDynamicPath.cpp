@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
 #include <DataTypes/Serializations/SerializationObjectSharedDataPath.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
+#include <DataTypes/Serializations/SerializationSparse.h>
 
 namespace DB
 {
@@ -36,6 +37,8 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     SerializationPtr shared_data_path_serialization;
+    SerializationPtr path_serialization;
+    bool sparse = false;
     bool read_from_shared_data{};
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
@@ -96,13 +99,13 @@ void SerializationObjectDynamicPath::enumerateStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        auto path_data = SubstreamData(nested_serialization)
-                             .withType(data.type)
-                             .withColumn(data.column)
+        auto path_data = SubstreamData(deserialize_state->path_serialization)
+                             .withType(deserialize_state->sparse ? dynamic_type : data.type)
+                             .withColumn(deserialize_state->sparse ? nullptr : data.column)
                              .withSerializationInfo(data.serialization_info)
                              .withDeserializeState(deserialize_state->nested_state);
         settings.path.back().data = path_data;
-        nested_serialization->enumerateStreams(settings, callback, path_data);
+        deserialize_state->path_serialization->enumerateStreams(settings, callback, path_data);
         settings.path.pop_back();
     }
     /// Otherwise we will have to read all shared data and try to find our path there.
@@ -163,7 +166,9 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        nested_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_path_state->nested_state, cache);
+        dynamic_path_state->sparse = object_structure_state->sparse_dynamic_paths.contains(path);
+        dynamic_path_state->path_serialization = dynamic_path_state->sparse ? SerializationSparse::create(dynamic_serialization) : nested_serialization;
+        dynamic_path_state->path_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
 
@@ -193,7 +198,24 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
+        if (dynamic_path_state->sparse)
+        {
+            if (path_subcolumn.empty())
+                SerializationObject::deserializeSparsePath(dynamic_path_state->path_serialization, result_column, limit, settings, dynamic_path_state->nested_state, cache);
+            else
+            {
+                /// Extract after expanding NULL defaults. In particular a type's .null
+                /// subcolumn defaults to 1, not the UInt8 default used by ColumnSparse.
+                size_t previous_size = result_column.size();
+                auto full_path = dynamic_type->createColumn();
+                full_path->insertManyDefaults(previous_size);
+                SerializationObject::deserializeSparsePath(dynamic_path_state->path_serialization, *full_path, limit, settings, dynamic_path_state->nested_state, cache);
+                auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, full_path->getPtr());
+                result_column.insertRangeFrom(*subcolumn, previous_size, subcolumn->size() - previous_size);
+            }
+        }
+        else
+            nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
     else

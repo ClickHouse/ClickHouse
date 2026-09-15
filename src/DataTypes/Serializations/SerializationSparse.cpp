@@ -290,7 +290,8 @@ void SerializationSparse::enumerateStreams(
     auto next_data = SubstreamData(nested)
                          .withType(data.type)
                          .withColumn(column_sparse ? column_sparse->getValuesPtr() : data.column)
-                         .withSerializationInfo(data.serialization_info);
+                         .withSerializationInfo(data.serialization_info)
+                         .withDeserializeState(data.deserialize_state ? checkAndGetState<DeserializeStateSparse>(data.deserialize_state)->nested : nullptr);
 
     nested->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();

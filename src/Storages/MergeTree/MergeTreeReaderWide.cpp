@@ -530,6 +530,31 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         deserialize_binary_bulk_state_map = deserialization_prefixes_cache->getOrSet(deserialize);
     else
         deserialize_binary_bulk_state_map = deserialize();
+
+    /// Prefixes can change the physical stream layout (e.g. a sparse JSON Nullable
+    /// path has offsets instead of a null-map stream). Recheck missing streams with
+    /// the actual serialization state before filling partially read columns.
+    for (size_t pos = 0; pos < num_columns && !partially_read_columns.empty(); ++pos)
+    {
+        const auto & name_and_type = columns_to_read[pos];
+        if (!partially_read_columns.contains(name_and_type.name))
+            continue;
+        bool has_all_streams = true;
+        auto callback = [&](const ISerialization::SubstreamPath & path)
+        {
+            if (!ISerialization::isEphemeralSubcolumn(path, path.size())
+                && !IMergeTreeDataPart::getStreamNameForColumn(name_and_type, path, ".bin", data_part_info_for_read->getChecksums(), storage_settings))
+                has_all_streams = false;
+        };
+        ISerialization::EnumerateStreamsSettings enumerate_settings;
+        const auto & serialization = serializations[pos];
+        auto data = ISerialization::SubstreamData(serialization)
+                        .withType(name_and_type.type)
+                        .withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
+        serialization->enumerateStreams(enumerate_settings, callback, data);
+        if (has_all_streams)
+            partially_read_columns.erase(name_and_type.name);
+    }
 }
 
 void MergeTreeReaderWide::deserializePrefixForAllColumns(size_t num_columns, size_t from_mark)
