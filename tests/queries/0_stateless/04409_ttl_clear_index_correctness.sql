@@ -38,6 +38,6 @@ SELECT count()
 FROM ttl_clear_index_correctness
 WHERE v = 2;
 
-CHECK TABLE ttl_clear_index_correctness;
+CHECK TABLE ttl_clear_index_correctness SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE ttl_clear_index_correctness;

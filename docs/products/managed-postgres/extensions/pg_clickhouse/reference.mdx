@@ -25,7 +25,7 @@ docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
 docker exec -it pg_clickhouse psql -U postgres
 ```
 
-See the [tutorial](/products/managed-postgres/extensions/pg_clickhouse/tutorial) 
+See the [tutorial](/products/managed-postgres/extensions/pg_clickhouse/tutorial)
 to get started importing ClickHouse tables and pushing down queries.
 
 ## Usage {#usage}
@@ -673,15 +673,6 @@ try=# EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');
 (5 rows)
 ```
 
-<Warning>
-Parameterized execution prevents the [http driver](#create-server) from
-properly converting DateTime time zones on ClickHouse versions prior to 25.8,
-when the [underlying bug] was [fixed]. Note that sometimes PostgreSQL will use
-a parameterized query plan even without using `PREPARE`. For any queries on
-that require accurate time zone conversion, and where upgrading to 25.8 or
-later is not an option, use the [binary driver](#create-server), instead.
-</Warning>
-
 pg_clickhouse pushes down the aggregations, as usual, as seen in the
 [EXPLAIN](#explain) verbose output:
 
@@ -957,7 +948,7 @@ should be mapped to the PostgreSQL [TEXT], but when using binary data, map it
 to [BYTEA]. Example:
 
 ```sql
--- Create clickHouse table with String columns.
+-- Create ClickHouse table with String columns.
 CALL clickhouse_perform('ch_srv', $$
     CREATE TABLE bytes (
         c1 Int8, c2 String, c3 String

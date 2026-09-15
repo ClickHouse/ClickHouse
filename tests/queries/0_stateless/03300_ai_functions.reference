@@ -1,5 +1,4 @@
--- Disabled by default
--- Enabled after setting
+-- Registered
 aiGenerate
 -- aiGenerate: too few arguments
 -- aiGenerate: too many arguments
@@ -48,13 +47,12 @@ ai_function_embedding_max_batch_size	100
 ai_function_max_api_calls_per_query	1000
 ai_function_max_input_tokens_per_query	1000000
 ai_function_max_output_tokens_per_query	500000
-ai_function_max_retries	0
+ai_function_max_retries	1
 ai_function_request_timeout_sec	60
 ai_function_retry_initial_delay_ms	1000
 ai_function_text_default_credentials	
 ai_function_throw_on_error	1
 ai_function_throw_on_quota_exceeded	1
-allow_experimental_ai_functions	0
 -- aiClassify: registered
 aiClassify
 -- aiClassify: too few arguments
@@ -193,4 +191,3 @@ result	Nullable(Float32)
 1
 -- aiSimilarity: DEFAULT survives INSERT (no exception)
 1	1
--- Re-disabled blocks function

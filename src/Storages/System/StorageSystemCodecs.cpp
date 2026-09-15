@@ -4,6 +4,8 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/SettingsTierType.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
@@ -25,7 +27,8 @@ ColumnsDescription StorageSystemCodecs::getColumnsDescription()
         { "is_generic_compression", std::make_shared<DataTypeUInt8>(), "The codec is a generic compression algorithm like lz4, zstd."},
         { "is_encryption",          std::make_shared<DataTypeUInt8>(), "The codec encrypts."},
         { "is_timeseries_codec",    std::make_shared<DataTypeUInt8>(), "The codec is for floating point timeseries codec."},
-        { "is_experimental",        std::make_shared<DataTypeUInt8>(), "The codec is experimental."},
+        { "is_experimental",        std::make_shared<DataTypeUInt8>(), "The codec is experimental."}, /// TODO: remove.
+        { "tier",                   getSettingsTierEnum(), "Support level for this codec (e.g. 'Production', 'Beta' or 'Experimental')."},
         { "description",            std::make_shared<DataTypeString>(), "A high-level description of the codec."},
     };
 }

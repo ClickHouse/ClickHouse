@@ -8,10 +8,20 @@
 namespace DB
 {
 
-void Group::addLogicalExpression(GroupExpressionPtr group_expression)
+bool Group::addLogicalExpression(GroupExpressionPtr group_expression)
 {
+    /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
+    auto & same_fingerprint = logical_expressions_by_fingerprint[group_expression->fingerprint()];
+    for (const auto * existing : same_fingerprint)
+    {
+        if (existing->structurallyEqualTo(*group_expression))
+            return false;
+    }
+
     group_expression->group_id = group_id;
+    same_fingerprint.push_back(group_expression.get());
     logical_expressions.push_back(std::move(group_expression));
+    return true;
 }
 
 bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)
@@ -70,8 +80,8 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
     /// chain with no acyclic alternative, so an enforcer never suppresses or evicts a distinct base.
     auto enforcer_over_provides_for = [](const GroupExpressionPtr & enforcer_candidate, const GroupExpressionPtr & base_candidate)
     {
-        return enforcer_candidate->enforcer_axis != EnforcerAxis::None
-            && base_candidate->enforcer_axis == EnforcerAxis::None
+        return enforcer_candidate->enforced_property != EnforcedProperty::None
+            && base_candidate->enforced_property == EnforcedProperty::None
             && !(enforcer_candidate->properties == base_candidate->properties);
     };
 
@@ -136,37 +146,32 @@ ExpressionWithCost Group::selectInputImplementation(
 {
     /// The wildcard-axis rejections below are what stop a self-referential enforcer from picking
     /// itself; the full contract is on the declaration in Group.h.
-    auto is_eligible = [&](const GroupExpressionPtr & candidate)
-    {
-        if (!candidate->cost.has_value())
-            return false;
-        if (active_path.contains(candidate.get()))
-            return false;
-        if (!required_properties.isSatisfiedBy(candidate->properties))
-            return false;
-
-        if (input_is_self_referential && candidate->enforcer_axis != EnforcerAxis::None)
-        {
-            /// Empty sort requirement: reject a sorted enforcer (it over-provides on the sort axis).
-            if (required_properties.sorting.empty() && !candidate->properties.sorting.empty())
-                return false;
-            /// Empty distribution-columns requirement: reject a keyed exchange. A sorting enforcer
-            /// carrying keyed columns is still needed to feed a sorted gather, so keep it eligible.
-            if (candidate->enforcer_axis == EnforcerAxis::Distribution
-                && required_properties.distribution.columns.empty()
-                && (!candidate->properties.distribution.columns.empty()
-                    || !candidate->properties.distribution.hash_type_names.empty()))
-                return false;
-        }
-        return true;
-    };
-
     GroupExpressionPtr found_best;
     auto consider = [&](const GroupExpressionPtr & candidate)
     {
-        if (is_eligible(candidate)
-            && (!found_best
-                || found_best->cost->subtree_cost.total(cost_config) > candidate->cost->subtree_cost.total(cost_config)))
+        if (!candidate->cost.has_value())
+            return;
+        if (active_path.contains(candidate.get()))
+            return;
+        if (!required_properties.isSatisfiedBy(candidate->properties))
+            return;
+
+        if (input_is_self_referential && candidate->enforced_property != EnforcedProperty::None)
+        {
+            /// Empty sort requirement: reject a sorted enforcer (it over-provides on the sort axis).
+            if (required_properties.sorting.empty() && !candidate->properties.sorting.empty())
+                return;
+            /// Empty distribution-columns requirement: reject a keyed exchange. A sorting enforcer
+            /// carrying keyed columns is still needed to feed a sorted gather, so keep it eligible.
+            if (candidate->enforced_property == EnforcedProperty::Distribution
+                && required_properties.distribution.columns.empty()
+                && (!candidate->properties.distribution.columns.empty()
+                    || !candidate->properties.distribution.hash_type_names.empty()))
+                return;
+        }
+
+        if (!found_best
+            || found_best->cost->subtree_cost.total(cost_config) > candidate->cost->subtree_cost.total(cost_config))
             found_best = candidate;
     };
 

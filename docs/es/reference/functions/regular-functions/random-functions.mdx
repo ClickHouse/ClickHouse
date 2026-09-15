@@ -83,8 +83,8 @@ Introducido en: v1.1.0
 
 Devuelve un número `UInt32` aleatorio con distribución uniforme.
 
-Utiliza un generador congruencial lineal con un estado inicial obtenido del sistema, lo que significa que, aunque parece aleatorio, no es verdaderamente aleatorio y puede resultar predecible si se conoce el estado inicial.
-En los casos en que la aleatoriedad real sea crucial, considere usar métodos alternativos, como llamadas a nivel del sistema o la integración con bibliotecas externas.
+Utiliza un generador pseudoaleatorio no criptográfico con un estado inicial obtenido del sistema, lo que significa que, aunque parece aleatorio, no es verdaderamente aleatorio y puede resultar predecible si se conoce el estado inicial.
+En los casos en que la aleatoriedad verdadera sea crucial, considere usar métodos alternativos, como llamadas a nivel del sistema o la integración con bibliotecas externas.
 
 <Note>
   Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
@@ -126,7 +126,7 @@ Introducido en: v1.1.0
 
 Devuelve un número `UInt64` aleatorio con distribución uniforme.
 
-Utiliza un generador congruencial lineal con un estado inicial obtenido del sistema, lo que significa que, aunque parece aleatorio, no es realmente aleatorio y puede ser predecible si se conoce el estado inicial.
+Utiliza un generador pseudoaleatorio no criptográfico con un estado inicial obtenido del sistema, lo que significa que, aunque parece aleatorio, no es realmente aleatorio y puede ser predecible si se conoce el estado inicial.
 En situaciones en las que la verdadera aleatoriedad sea crucial, considere usar métodos alternativos, como llamadas a nivel de sistema o la integración con bibliotecas externas.
 
 <Note>

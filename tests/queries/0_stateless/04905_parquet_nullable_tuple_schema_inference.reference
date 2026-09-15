@@ -1,0 +1,58 @@
+--- top-level: optional group, all-required subtree
+p	Nullable(Tuple(`1` Nullable(Float64), `2` Nullable(Float64)))					
+(1,2)
+\N
+--- named elements
+p	Nullable(Tuple(a Nullable(UInt8), b Nullable(String)))					
+(1,'x')
+\N
+--- Array element: an array level is not an optional struct ancestor
+p	Array(Nullable(Tuple(`1` Nullable(Float64), `2` Nullable(Float64))))					
+[]
+[(1,2),NULL]
+--- Map value struct
+p	Map(String, Nullable(Tuple(z Nullable(UInt8))))					
+{'k':(1)}
+{'k':NULL}
+--- the inferred type carries the struct NULL into a table, no hint anywhere
+Nullable(Tuple(`1` Nullable(Float64), `2` Nullable(Float64)))	0
+Nullable(Tuple(`1` Nullable(Float64), `2` Nullable(Float64)))	1
+--- allow_experimental_nullable_tuple_type = 0: the type must stay one CREATE TABLE accepts
+p	Tuple(\n    `1` Nullable(Float64),\n    `2` Nullable(Float64))					
+--- schema_inference_make_columns_nullable = 0
+p	Tuple(\n    `1` Float64,\n    `2` Float64)					
+(0,0)
+(1,2)
+--- nested optional group: plain Tuple
+p	Tuple(\n    a Nullable(UInt8),\n    b Tuple(\n        c Nullable(UInt8)))					
+--- optional leaf under an optional group: plain Tuple
+p	Tuple(\n    a Nullable(UInt8))					
+--- required group: no struct-level NULL exists
+p	Tuple(\n    `1` Float64,\n    `2` Float64)					
+(1,2)
+--- GeoParquet Point is a two-double group, but resolves as a geo type
+geometry Point
+name Nullable(String)
+--- a single tuple element requested by name is a leaf read
+1
+\N
+--- hinted read with every element missing still rejects: the null map is unrecoverable
+1
+--- sibling formats infer the same shape from the same data
+ORC	1
+Arrow	1
+Parquet	1
+--- optional group with all children skipped as unsupported
+p	Tuple(\n)					
+--- and without the skip setting it is still an error, not a silent empty tuple
+1
+--- optional group whose only child is a childless group
+p	Tuple(\n    q Tuple(\n))					
+0
+--- optional Map key group
+m	Map(Tuple(\n    kx Nullable(Int32)), Nullable(Int32))					
+{(1):5}
+--- JSON hint over a struct containing an optional all-required group
+{"a":1,"b":{"c":2}}
+--- JSON hint over a Map whose value is an optional all-required group
+{"k":{"z":1}}

@@ -9,6 +9,7 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     with_minio=True,
+    stay_alive=True,
     main_configs=["configs/storage.xml"],
     user_configs=["configs/enable_ttl_clear_index.xml"],
 )
@@ -16,6 +17,7 @@ node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     with_minio=True,
+    stay_alive=True,
     main_configs=["configs/storage.xml"],
     user_configs=["configs/enable_ttl_clear_index.xml"],
 )
@@ -457,8 +459,7 @@ def test_ttl_clear_index_fails_over_when_source_is_inactive(started_cluster):
     assert_eq_with_retry(
         node2,
         "SELECT count() > 0 FROM system.replication_queue "
-        f"WHERE table = '{table}' "
-        "AND positionCaseInsensitive(merge_type, 'clear') > 0",
+        f"WHERE table = '{table}' AND merge_type = 'TTL_CLEAR_INDEX'",
         "1",
         retry_count=60,
     )
