@@ -701,7 +701,14 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
     constexpr auto setting_name = "storage_policy";
     if (query_ptr && restore_settings.storage_policy.has_value())
     {
-        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+
+        /// A materialized view with an inner table keeps its engine (and thus its `storage_policy` setting)
+        /// in the target definition rather than in `storage`, so we have to look there too.
+        ASTStorage * storage = create_query.storage;
+        if (!storage && create_query.is_materialized_view_with_inner_table())
+            storage = create_query.getTargetInnerEngine(ViewTarget::To);
+
         if (storage && storage->settings)
         {
             if (restore_settings.storage_policy.value().empty())
