@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
@@ -782,9 +783,14 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
             auto node = std::move(pending.back());
             pending.pop_back();
             if (auto * settings = node->as<ASTSetQuery>())
+            {
                 for (auto & change : settings->changes)
                     if (change.name == "workload")
                         change.value = refresh_workload;
+                settings->default_settings.erase(
+                    std::remove(settings->default_settings.begin(), settings->default_settings.end(), "workload"),
+                    settings->default_settings.end());
+            }
             pending.insert(pending.end(), node->children.begin(), node->children.end());
         }
     }

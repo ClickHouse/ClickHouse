@@ -118,7 +118,9 @@ ProcessList::EntryPtr ProcessList::insert(
     ContextMutablePtr query_context,
     UInt64 watch_start_nanoseconds,
     bool is_internal,
-    QuerySlotPtr query_slot)
+    QuerySlotPtr query_slot,
+    bool use_workload_resources,
+    std::chrono::steady_clock::time_point workload_admission_deadline)
 {
     EntryPtr res;
 
@@ -141,16 +143,18 @@ ProcessList::EntryPtr ProcessList::insert(
     // and memory reservations together as a single allocation. Splitting their admission across the
     // `ProcessList` mutex would prevent that unification and is a worse design overall.
     MemoryReservationPtr memory_reservation;
-    if (!is_unlimited_query)
+    if (!is_unlimited_query || use_workload_resources)
     {
         // One deadline shared by the query slot and the memory reservation (acquired sequentially below),
         // so the whole pre-execution admission wait is bounded by a single `workload_admission_timeout_ms`
         // budget. `saturatedMilliseconds` caps the wait at ~1 year (the standard idiom — a longer timeout
         // is effectively no timeout); 0 is the explicit "no timeout" and maps to an infinite deadline.
         const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
-        const auto admission_deadline = admission_timeout_ms
-            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
-            : std::chrono::steady_clock::time_point::max();
+        const auto admission_deadline = workload_admission_deadline != std::chrono::steady_clock::time_point::max()
+            ? workload_admission_deadline
+            : admission_timeout_ms
+                ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
+                : std::chrono::steady_clock::time_point::max();
 
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();

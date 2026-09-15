@@ -23,6 +23,7 @@
 #include <Common/OvercommitTracker.h>
 #include <base/defines.h>
 
+#include <chrono>
 #include <condition_variable>
 #include <list>
 #include <memory>
@@ -489,7 +490,8 @@ public:
       * Don't count KILL QUERY queries or async insert flush queries
       */
     /// A supplied query slot must already be granted; its lifetime is transferred to QueryStatus.
-    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal, QuerySlotPtr query_slot = {});
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal, QuerySlotPtr query_slot = {}, bool use_workload_resources = false,
+        std::chrono::steady_clock::time_point workload_admission_deadline = std::chrono::steady_clock::time_point::max());
 
     /// Number of currently executing queries.
     /// WARNING: includes internal queries (e.g. those executed by dictionaries, RMVs, async inserts).
