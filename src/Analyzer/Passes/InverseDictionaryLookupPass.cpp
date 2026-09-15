@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 
 #include <Analyzer/ColumnNode.h>
@@ -147,6 +148,118 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
         if (isNullableOrLowCardinalityNullable(element))
             return true;
     }
+    return false;
+}
+
+/// Check whether `dictGet` accepts this key expression shape for the dictionary's key columns.
+/// It mirrors what `dictGet` does with its third argument: the outer `Nullable` is stripped
+/// (`columnGetNested`), a `Tuple` supplies one lookup column per element, and a non-tuple
+/// expression is the bare form that only a single key column accepts. `IDictionary::convertKeyColumns`
+/// then rejects any other shape - but it does so when the query executes, not when it is
+/// analyzed, so a mismatched probe reaches this pass. Rewriting it would replace the
+/// `TYPE_MISMATCH` (or `ILLEGAL_TYPE_OF_ARGUMENT`) that `dictGet` throws with a result, so the
+/// caller skips the rewrite entirely and leaves such a query unoptimized.
+bool keyExpressionMatchesDictionaryStructure(
+    const QueryTreeNodePtr & key_expr_node, const DictionaryStructure & dict_structure)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+
+    /// A simple-key dictionary takes the key value itself; `convertKeyColumns` cannot cast a
+    /// `Tuple` to the key type. Complex keys accept the tuple form with one element per key
+    /// column, and the bare form only when there is a single key column.
+    if (!dict_structure.key)
+        return !key_expr_tuple_type;
+
+    if (key_expr_tuple_type)
+        return key_expr_tuple_type->getElements().size() == dict_structure.key->size();
+
+    return dict_structure.key->size() == 1;
+}
+
+/// A complex-key dictionary with a single key column accepts both the bare key expression
+/// (`dictGet(..., k)`) and its one-element tuple wrapper (`dictGet(..., tuple(k))`). The
+/// rewrites compare the key expression with bare key values: scalar constants produced by
+/// `dictGetKeys` or a single-column `SELECT` from `dictionary(...)`. Unwrap the tuple,
+/// otherwise the rewrite pits `Tuple(T)` against `T` and fails with `ILLEGAL_TYPE_OF_ARGUMENT`.
+/// The tuple can also be `Nullable` (e.g. produced by `if(cond, tuple(k), NULL)`):
+/// `tupleElement` propagates the `NULL` to the extracted element, and a `NULL` key behaves
+/// the same on both sides of the rewrite (`dictGet` returns `NULL`, so the comparison is
+/// `NULL`; `NULL IN (...)` is `NULL` as well).
+/// Simple-key dictionaries are intentionally not affected: for them `dictGet` rejects the
+/// tuple form even without this optimization.
+void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextPtr & context)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+    if (!key_expr_tuple_type)
+        return;
+
+    chassert(key_expr_tuple_type->getElements().size() == 1);
+
+    /// Unwrap a syntactic `tuple(k)` expression to `k`. `tuple` produces one element per argument
+    /// and never returns `Nullable`, so a one-element tuple result means exactly one argument.
+    if (const auto * key_expr_function = key_expr_node->as<FunctionNode>();
+        key_expr_function && key_expr_function->getFunctionName() == "tuple")
+    {
+        chassert(key_expr_function->getArguments().getNodes().size() == 1);
+        key_expr_node = key_expr_function->getArguments().getNodes().front();
+        return;
+    }
+
+    /// Extract the element from other expressions with a possibly `Nullable` one-element tuple
+    /// type, such as a column of type `Tuple(UUID)`.
+    key_expr_node = createTupleElementFunction(context, key_expr_node, 1);
+}
+
+/// Check whether the key column type is the common supertype, so that the rewrite needs no explicit
+/// cast of the probe. For numeric types, this permits only total widening, such as a narrow integer
+/// expression against a wide key type. `getLeastSupertype` also checks floating-point precision:
+/// it refuses `Int64` with `Float64` because there are not enough mantissa bits, so an integer
+/// expression passes only when the float key type represents every input value exactly.
+/// `canReplaceWithDictGetKeys` uses the same common-supertype criterion for the attribute side.
+/// The caller checks nullable lookup semantics separately from this type comparison.
+bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr & key_col_type)
+{
+    const DataTypePtr stripped_expr_type = removeLowCardinalityAndNullable(expr_type);
+    const DataTypePtr stripped_key_col_type = removeLowCardinalityAndNullable(key_col_type);
+    const DataTypePtr supertype = tryGetLeastSupertype(DataTypes{stripped_expr_type, stripped_key_col_type});
+    return supertype && supertype->equals(*stripped_key_col_type);
+}
+
+/// Check every normalized key component against its dictionary column type. The expression must have
+/// a valid key shape, with any single-column tuple wrapper already removed.
+bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols)
+{
+    if (key_cols.size() == 1)
+        return canCompareKeyWithoutCast(key_expr_node->getResultType(), key_cols.front().type);
+
+    /// `keyExpressionMatchesDictionaryStructure` guarantees a tuple with one element per key column.
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+    chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
+
+    const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
+    for (size_t i = 0; i < key_cols.size(); ++i)
+    {
+        if (!canCompareKeyWithoutCast(key_expr_elements[i], key_cols[i].type))
+            return false;
+    }
+    return true;
+}
+
+/// Each key returned by `dictGetKeys` is a key-column value or a tuple of key-column values.
+/// Equality with a null key column can produce `NULL` for a non-null probe, whereas a dictionary
+/// lookup misses that key. Nulls inside `Array` or `Map` values do not propagate through the
+/// container comparison.
+bool hasNullKeyColumn(const Field & key)
+{
+    if (key.isNull())
+        return true;
+
+    if (key.getType() == Field::Types::Tuple)
+        return std::ranges::any_of(key.safeGet<Tuple>(), [](const Field & component) { return component.isNull(); });
+
     return false;
 }
 
@@ -373,6 +486,25 @@ public:
         if (dict_structure.key && hasNullableComponentInComplexKey(dictget_function_info.key_expr_node))
             return;
 
+        /// A key expression whose shape `dictGet` would reject must not be rewritten: the
+        /// rewrites below can turn the error it throws into a result.
+        if (!keyExpressionMatchesDictionaryStructure(dictget_function_info.key_expr_node, dict_structure))
+            return;
+
+        /// A complex-key dictionary with a single key column also accepts the `tuple`-wrapped
+        /// call form; normalize it to the bare key expression the rewrites compare against.
+        if (dict_structure.key && key_cols.size() == 1)
+            unwrapSingleColumnTupleKey(dictget_function_info.key_expr_node, getContext());
+
+        /// `dictGet` converts each key column with `castColumnAccurate`. Keep the lookup when a comparison
+        /// would need an explicit cast, such as `String` to `UUID` or `Int16` to `UInt8`.
+        /// Public `accurateCast` has different conversion settings and prepares conversions before execution,
+        /// so it cannot preserve the lookup's behavior for empty inputs and skipped branches. Replacement
+        /// expressions must also use functions understood by remote servers, which reanalyze generated SQL.
+        /// Comparisons that only widen key values need no cast and keep the expression usable for indices.
+        if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, key_cols))
+            return;
+
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
 
         if (!dict_structure.hasAttribute(attr_col_name))
@@ -453,6 +585,10 @@ public:
                 /// non-null `0` - observable via `isNull(predicate)`.
                 /// `SELECT count() WHERE isNull(predicate)` returns `1` without the rewrite and
                 /// `0` with it.
+                ///
+                /// Like any constant fold, this replaces the predicate without evaluating the
+                /// key expression. Exceptions from that expression, such as an explicit user-supplied
+                /// cast, are therefore skipped together with the lookup.
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
@@ -461,8 +597,10 @@ public:
                     return;
                 }
 
-                /// Single key -> key_expr = <that key>
-                if (keys_size == 1)
+                /// A single key without null components can use equality. Keep membership for
+                /// null keys and tuples containing `NULL`: equality would turn a false lookup
+                /// predicate into `NULL` for non-null probes.
+                if (keys_size == 1 && !hasNullKeyColumn(keys_array.front()))
                 {
                     const Field & single_key_field = keys_array.front();
 
@@ -480,7 +618,7 @@ public:
                     return;
                 }
 
-                /// Multiple keys -> key_expr IN <constant array-of-keys>
+                /// Multiple keys or a key containing `NULL` use membership in the constant array of keys.
                 /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
                 const auto in_function_name = getInFunctionNameForPassCreatedNode(
                     "in", dictget_function_info.key_expr_node->getResultType(), getContext());
