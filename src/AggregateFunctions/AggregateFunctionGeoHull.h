@@ -34,6 +34,7 @@ private:
         std::array<uint64_t, 6> mantissas;
         std::array<unsigned, 6> exponents;
         unsigned common_exponent = 2046;
+        unsigned largest_exponent = 0;
         for (size_t i = 0; i < coordinates.size(); ++i)
         {
             const auto bits = std::bit_cast<uint64_t>(coordinates[i]);
@@ -41,7 +42,32 @@ private:
             mantissas[i] = (bits & ((uint64_t{1} << 52) - 1)) | (exponent ? uint64_t{1} << 52 : 0);
             exponents[i] = exponent ? exponent - 1 : 0;
             if (mantissas[i])
+            {
                 common_exponent = std::min(common_exponent, exponents[i]);
+                largest_exponent = std::max(largest_exponent, exponents[i]);
+            }
+        }
+
+        /// Nearby binary exponents fit an exact determinant in native integer arithmetic.
+        /// With an exponent spread <= 9, scaled coordinates have magnitude < 2^62,
+        /// differences < 2^63, and the determinant < 2^127. This covers ordinary-scale
+        /// cancellation without paying for the full binary64-range integer backend.
+        if (largest_exponent - common_exponent <= 9)
+        {
+            auto narrow_integer = [&](size_t i) -> int64_t
+            {
+                if (!mantissas[i])
+                    return 0;
+                const auto value = static_cast<int64_t>(mantissas[i] << (exponents[i] - common_exponent));
+                return std::signbit(coordinates[i]) ? -value : value;
+            };
+
+            const __int128_t dx1 = static_cast<__int128_t>(narrow_integer(0)) - narrow_integer(4);
+            const __int128_t dy1 = static_cast<__int128_t>(narrow_integer(1)) - narrow_integer(5);
+            const __int128_t dx2 = static_cast<__int128_t>(narrow_integer(2)) - narrow_integer(4);
+            const __int128_t dy2 = static_cast<__int128_t>(narrow_integer(3)) - narrow_integer(5);
+            const __int128_t determinant = dx1 * dy2 - dy1 * dx2;
+            return determinant > 0 ? 1 : determinant < 0 ? -1 : 0;
         }
 
         auto integer = [&](size_t i) -> ExactInteger
