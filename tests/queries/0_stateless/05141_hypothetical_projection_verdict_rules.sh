@@ -73,7 +73,6 @@ for w in "_part_offset = 7" "b = 42 AND _part_offset = 7" "b = 42"; do
     plain=$($CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT count() FROM t_off_plain WHERE ${w} SETTINGS ${PIN}")
     echo "${w}: with $(echo "$plan" | grep -oE 'Granules: [0-9]+$' | head -1), without $(echo "$plain" | grep -oE 'Granules: [0-9]+$' | head -1), from projection $(echo "$plan" | grep -cE 'ReadFromMergeTree \(p_b\)')"
 done
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_off; DROP TABLE IF EXISTS t_off_plain;"
 
 # a commit_order projection is keyed on the commit order itself, which the scan cannot rebuild
 echo "--- a commit_order projection is not estimated ---"
@@ -92,7 +91,6 @@ $CLICKHOUSE_CLIENT -q "
         (SELECT b, _block_number, _block_offset ORDER BY (_block_number, _block_offset));
     EXPLAIN WHATIF SELECT count() FROM t_co WHERE b = 42 SETTINGS ${PIN};
 " | grep -E '^\s+reason:' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_co;"
 
 # storing `_block_number` without ordering by it is enough: the writer skips the projection on insert
 echo "--- a projection that merely stores _block_number is not estimated ---"
@@ -105,7 +103,6 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_bn ON t_bn (SELECT a, b, v, _block_number ORDER BY b);
     EXPLAIN WHATIF SELECT a, v FROM t_bn WHERE b = 42 SETTINGS ${PIN};
 " | grep -E '^\s+reason:' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_bn;"
 
 # the writer sizes a granule from the block it stores, so rows of differing width leave the layout
 # undetermined and the estimator must refuse a hard verdict rather than model one
@@ -121,7 +118,6 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_uw ON t_uw (SELECT a, b, s ORDER BY b);
     EXPLAIN WHATIF SELECT a, s FROM t_uw WHERE b >= 1500 SETTINGS ${PIN};
 " | grep -E '^\s+verdict:' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_uw;"
 
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "
@@ -191,7 +187,6 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_h ON t_lim (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF SELECT b, v FROM t_lim WHERE a < 500 AND b >= 15 SETTINGS ${PIN}, max_rows_to_read = 300;
 " 2>&1 | grep -E '^\s+(marks|rows|verdict|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_lim;"
 
 # the scan reads the projection columns, so SELECT is checked at estimate time
 echo "--- estimating needs SELECT on the projection columns ---"
@@ -211,5 +206,3 @@ $CLICKHOUSE_CLIENT --user "${user}" -q "
     EXPLAIN WHATIF SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_est WHERE b = 42 SETTINGS ${PIN};
 " 2>&1 | grep -E '^\s+status:' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real; DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;"
