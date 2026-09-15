@@ -1538,6 +1538,13 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
+    /// The inlined body is resolved on the node that expands the view, exactly like the
+    /// `StorageView::read` path (see `getViewContext`): on a shard (`SECONDARY_QUERY`) or on a
+    /// local plan of the initiator, `QueryAnalyzer::replaceNodesWithPositionalArguments` skips
+    /// positional arguments as already resolved by the initiator unless the context is marked
+    /// as a view inner query - the initiator never saw the view body, so `GROUP BY 1` inside it
+    /// would stay a literal and mis-group the rows or throw `NOT_AN_AGGREGATE`.
+    view_context->setIsViewInnerQuery(true);
     return view_context;
 }
 
