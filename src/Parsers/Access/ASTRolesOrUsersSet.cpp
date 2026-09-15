@@ -2,6 +2,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <unordered_set>
 
 
@@ -9,12 +10,14 @@ namespace DB
 {
 namespace
 {
-    void formatNameOrID(const String & str, bool is_id, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatNameOrID(const ASTUserNameWithHost & name, bool is_id, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         if (is_id)
-            ostr << "ID(" << quoteString(str) << ")";
+            ostr << "ID(" << quoteString(name.toString()) << ")";
+        else if (name.usernameWasQueryParameter())
+            name.format(ostr, settings);
         else
-            ostr << backQuoteIfNeed(str);
+            ostr << backQuoteIfNeed(name.toString());
     }
 }
 
@@ -37,11 +40,14 @@ void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     }
     else
     {
-        for (const auto & name : names)
+        if (names)
         {
-            if (std::exchange(need_comma, true))
-                ostr << ", ";
-            formatNameOrID(name, id_mode, ostr, settings);
+            for (const auto & name : *names)
+            {
+                if (std::exchange(need_comma, true))
+                    ostr << ", ";
+                formatNameOrID(name->as<const ASTUserNameWithHost &>(), id_mode, ostr, settings);
+            }
         }
 
         if (current_user)
@@ -52,16 +58,19 @@ void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         }
     }
 
-    if (except_current_user || !except_names.empty())
+    if (except_current_user || (except_names && !except_names->children.empty()))
     {
         ostr << " EXCEPT ";
         need_comma = false;
 
-        for (const auto & name : except_names)
+        if (except_names)
         {
-            if (std::exchange(need_comma, true))
-                ostr << ", ";
-            formatNameOrID(name, id_mode, ostr, settings);
+            for (const auto & name : *except_names)
+            {
+                if (std::exchange(need_comma, true))
+                    ostr << ", ";
+                formatNameOrID(name->as<const ASTUserNameWithHost &>(), id_mode, ostr, settings);
+            }
         }
 
         if (except_current_user)
@@ -78,22 +87,33 @@ void ASTRolesOrUsersSet::replaceCurrentUserTag(const String & current_user_name)
 {
     if (current_user)
     {
-        names.push_back(current_user_name);
+        if (!names)
+        {
+            names = make_intrusive<ASTUserNamesWithHost>();
+        }
+        names->children.push_back(make_intrusive<ASTUserNameWithHost>(current_user_name));
         current_user = false;
     }
 
     if (except_current_user)
     {
-        except_names.push_back(current_user_name);
+        if (!except_names)
+        {
+            except_names = make_intrusive<ASTUserNamesWithHost>();
+        }
+        except_names->children.push_back(make_intrusive<ASTUserNameWithHost>(current_user_name));
         except_current_user = false;
     }
 }
 
-AccessRightsElements ASTRolesOrUsersSet::collectRequiredGrants(AccessType access_type)
+
+AccessRightsElements ASTRolesOrUsersSet::collectRequiredGrants(AccessType access_type) const
 {
     AccessRightsElements res;
-    std::unordered_set<String> except(except_names.begin(), except_names.end());
-    for (const auto & name: names)
+    const Strings except_all = except_names ? except_names->toStrings() : Strings{};
+    std::unordered_set except(except_all.begin(), except_all.end());
+    const Strings all_names = names ? names->toStrings() : Strings{};
+    for (const auto & name : all_names)
     {
         if (except.contains(name))
             continue;
@@ -103,6 +123,30 @@ AccessRightsElements ASTRolesOrUsersSet::collectRequiredGrants(AccessType access
 
     if (all)
         res.push_back(AccessRightsElement(access_type));
+
+    return res;
+}
+
+
+ASTPtr ASTRolesOrUsersSet::clone() const
+{
+    auto res = make_intrusive<ASTRolesOrUsersSet>(*this);
+
+    res->children.clear();
+
+    if (names)
+    {
+        res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+        if (res->names->hasQueryParameters())
+            res->children.push_back(res->names);
+    }
+
+    if (except_names)
+    {
+        res->except_names = boost::static_pointer_cast<ASTUserNamesWithHost>(except_names->clone());
+        if (res->except_names->hasQueryParameters())
+            res->children.push_back(res->except_names);
+    }
 
     return res;
 }
