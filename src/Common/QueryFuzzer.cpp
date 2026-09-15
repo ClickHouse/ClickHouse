@@ -2930,11 +2930,14 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
         const bool was_query = (projection.query != nullptr);
 
         /// Clear children first to avoid orphaned nodes being visited during recursion.
+        /// `children` owns every child, so each raw member pointer dangles after this and every
+        /// one of them has to be reset; the index form below carries none of them over.
         projection.children.clear();
         projection.query = nullptr;
         projection.index = nullptr;
         projection.type = nullptr;
         projection.with_settings = nullptr;
+        projection.columns = nullptr;
 
         if (was_query)
         {

@@ -5,10 +5,15 @@
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
+#include <Common/quoteString.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -20,6 +25,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -55,6 +61,9 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int DUPLICATE_COLUMN;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace Setting
@@ -73,6 +82,137 @@ extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
 extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
 extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
 extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+
+}
+
+namespace
+{
+
+bool isLossyCodecForType(const ASTPtr & codec, const DataTypePtr & type)
+{
+    bool is_lossy = false;
+    ISerialization::StreamCallback callback = [&](const auto & substream_path)
+    {
+        if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+            return;
+
+        const auto substream_codec
+            = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get());
+        is_lossy = substream_codec->isLossyCompression();
+    };
+    type->getDefaultSerialization()->enumerateStreams(callback, type);
+    return is_lossy;
+}
+
+/// Everything about a projection's columns follows from its `SELECT`, so `CODEC` is the only property a
+/// declaration may override.
+std::unordered_map<String, ASTPtr> resolveDeclaredProjectionColumnCodecs(
+    const IAST & declared_columns,
+    const Block & sample_block,
+    const ColumnsDescription & columns,
+    const String & projection_name)
+{
+    std::unordered_map<String, ASTPtr> codecs;
+    NameSet declared_names;
+
+    for (const auto & child : declared_columns.children)
+    {
+        const auto & column_declaration = child->as<const ASTColumnDeclaration &>();
+        const auto & column_name = column_declaration.name;
+
+        /// First, so a repeated column reports as a duplicate rather than as whatever else it disagrees about.
+        if (!declared_names.emplace(column_name).second)
+            throw Exception(
+                ErrorCodes::DUPLICATE_COLUMN,
+                "Column {} is declared more than once in projection {}",
+                backQuote(column_name), backQuote(projection_name));
+
+        const auto * column_in_projection = sample_block.findByName(column_name);
+        if (!column_in_projection)
+            throw Exception(
+                ErrorCodes::THERE_IS_NO_COLUMN,
+                "Column {} is declared in projection {} but is not produced by its `SELECT`",
+                backQuote(column_name), backQuote(projection_name));
+
+        /// A subcolumn is not stored in its own right, so the loop that applies these codecs skips it.
+        /// Same predicate as that loop, so the two cannot disagree.
+        if (columns.hasSubcolumn(GetColumnsOptions::All, column_name))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column {} declared in projection {} is a subcolumn; a codec can only be declared on a "
+                "whole column",
+                backQuote(column_name), backQuote(projection_name));
+
+        /// By name, not `IDataType::equals`: that ignores parameters which do not change the binary
+        /// layout, so `DateTime('UTC')` would match `DateTime('Asia/Tokyo')` and `SHOW CREATE TABLE`
+        /// would print a declaration that disagrees with the data.
+        if (auto type_ast = column_declaration.getType())
+        {
+            const auto declared_type = DataTypeFactory::instance().get(type_ast);
+            if (declared_type->getName() != column_in_projection->type->getName())
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Column {} is declared in projection {} with type {}, but its `SELECT` produces type {}",
+                    backQuote(column_name),
+                    backQuote(projection_name),
+                    declared_type->getName(),
+                    column_in_projection->type->getName());
+        }
+
+        const char * unsupported_property = nullptr;
+        if (column_declaration.default_specifier != ColumnDefaultSpecifier::Empty
+            || column_declaration.getDefaultExpression())
+            unsupported_property = "a default expression";
+        else if (column_declaration.getComment())
+            unsupported_property = "a comment";
+        else if (column_declaration.getTTL())
+            unsupported_property = "a TTL expression";
+        else if (column_declaration.getStatisticsDesc())
+            unsupported_property = "statistics";
+        else if (column_declaration.getCollation())
+            unsupported_property = "a collation";
+        else if (column_declaration.getSettings())
+            unsupported_property = "settings";
+        else if (column_declaration.null_modifier.has_value())
+            unsupported_property = "a NULL modifier";
+        else if (column_declaration.primary_key_specifier)
+            unsupported_property = "a PRIMARY KEY specifier";
+
+        if (unsupported_property)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column {} declared in projection {} cannot have {}; only `CODEC` is supported",
+                backQuote(column_name),
+                backQuote(projection_name),
+                unsupported_property);
+
+        if (!column_declaration.getCodec() && !column_declaration.getType())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Column {} declared in projection {} has neither a type nor a `CODEC`, so it declares nothing",
+                backQuote(column_name), backQuote(projection_name));
+
+        /// Preprocess without session-dependent sanity or gate checks; see `validateDeclaredColumnCodecs`.
+        if (auto codec_ast = column_declaration.getCodec())
+        {
+            auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                codec_ast, column_in_projection->type, CodecValidationSettings::trusted());
+
+            if (isLossyCodecForType(codec, column_in_projection->type))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} in projection {} cannot use lossy codec {} because a projection must return "
+                    "the same values as its parent table",
+                    backQuote(column_name),
+                    backQuote(projection_name),
+                    codec_ast->formatForErrorMessage());
+
+            codecs.emplace(column_name, std::move(codec));
+        }
+    }
+
+    return codecs;
+}
 
 }
 
@@ -244,6 +384,26 @@ private:
 
 }
 
+void ProjectionDescription::validateDeclaredColumnCodecs(
+    const ProjectionDescription & projection, const ContextPtr & query_context, LoadingStrictnessLevel mode)
+{
+    /// As in `InterpreterCreateQuery::getColumnsDescription`.
+    if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
+        return;
+
+    /// Only a declared column carries a codec of its own, so this covers exactly the declaration.
+    for (const auto & column : projection.metadata->getColumns())
+    {
+        if (!column.codec)
+            continue;
+
+        CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+            column.codec,
+            column.type,
+            CodecValidationSettings(query_context->getSettingsRef()));
+    }
+}
+
 ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -298,11 +458,39 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     if (result.index)
     {
+        if (projection_definition->columns)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "A projection index cannot have an explicit column list");
+
         result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context, *merge_tree_settings);
     }
     else
     {
-        fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, *merge_tree_settings);
+        fillProjectionDescriptionByQuery(
+            result,
+            projection_definition->query->as<ASTProjectionSelectQuery &>(),
+            columns,
+            partition_key,
+            query_context,
+            *merge_tree_settings,
+            projection_definition->columns);
+
+        /// Substitute codec arguments for declarations whose explicit type pins those arguments, as
+        /// `ColumnsDescription` does for a table's own columns. Keep an untyped declaration unchanged so
+        /// type-dependent defaults are inferred again if the projection's output type changes. Applied to
+        /// the owned clone, never the caller's AST.
+        if (projection_definition->columns)
+        {
+            const auto & projection_columns = result.metadata->getColumns();
+            for (const auto & child : result.definition_ast->as<ASTProjectionDeclaration &>().columns->children)
+            {
+                auto & column_declaration = child->as<ASTColumnDeclaration &>();
+                if (!column_declaration.getCodec() || !column_declaration.getType())
+                    continue;
+
+                column_declaration.setCodec(projection_columns.get(column_declaration.name).codec->clone());
+            }
+        }
     }
 
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
@@ -365,7 +553,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
-    const MergeTreeSettings & projection_settings)
+    const MergeTreeSettings & projection_settings,
+    const IAST * declared_columns)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -516,6 +705,12 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
     result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
 
+    /// Resolved here because it needs the types the `SELECT` produces, which `result.sample_block` holds.
+    std::unordered_map<String, ASTPtr> declared_codecs;
+    if (declared_columns)
+        declared_codecs = resolveDeclaredProjectionColumnCodecs(
+            *declared_columns, result.sample_block, columns, result.name);
+
     ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
     {
@@ -538,6 +733,11 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             /// before the column was added reads the table default, not the column type's default.
             if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
                 column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
+            /// `IMergeTreeDataPartWriter::getCodecDescOrDefault` reads the codec back off this
+            /// `ColumnsDescription`, so nothing further is needed to apply it.
+            if (auto declared_codec = declared_codecs.find(column_with_type_name.name);
+                declared_codec != declared_codecs.end())
+                column_description.codec = declared_codec->second;
             metadata_columns.add(std::move(column_description));
         }
     }

@@ -1311,8 +1311,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
     ...
-    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
-    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
+    PROJECTION projection_name_1 [(name1 [type1] [CODEC(codec1)], ...) AS] (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    PROJECTION projection_name_2 [(name2 [type2] [CODEC(codec2)], ...) AS] (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -1911,6 +1911,103 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
 
 Projections can be modified or dropped with the [ALTER](/reference/statements/alter/projection) statement.
+
+### Projection column codecs {#projection-column-codecs}
+
+A projection stores its own copy of the data, so it can benefit from compression codecs that differ from
+the parent table's. A projection sorted by a different key, for example, may have long runs in a column
+that is scattered in the parent table, which `Delta` or `DoubleDelta` can exploit.
+
+To override the codec of a projection's column, list that column before the projection query:
+
+```sql
+CREATE TABLE t
+(
+    id UInt64,
+    ts DateTime,
+    PROJECTION p
+    (
+        ts CODEC(DoubleDelta, ZSTD)
+    )
+    AS
+    (
+        SELECT id, ts ORDER BY ts
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+The column list is partial: only the columns whose codec you are overriding need to appear in it. Any
+column the projection query produces but the list omits keeps the codec the projection would otherwise
+use. Every column that does appear must be produced by the projection query.
+
+A projection's columns are otherwise determined entirely by its query, so `CODEC` is the only property a
+column may declare. Declaring a default expression, `COMMENT`, `TTL`, `STATISTICS`, a collation, column
+settings, a `NULL` modifier, or `PRIMARY KEY` is rejected rather than silently ignored. A codec cannot be
+declared for a subcolumn such as `a.x`, because a subcolumn is not stored in its own right.
+
+#### Declaring the type {#projection-column-codecs-type}
+
+The type is optional, and whether you write it has a consequence worth understanding.
+
+Omitting it, as in the example above, declares only the codec. The column then remains free to change type
+along with the parent table, and type-dependent codec arguments are inferred again for the new type.
+
+Writing it asserts that the projection query produces exactly that type for that column, and that assertion
+is then enforced for as long as the projection exists. An `ALTER TABLE ... MODIFY COLUMN` that would change
+the type is rejected, so the only way to change it is to drop the projection, modify the column, and add the
+projection back — which rebuilds all of the projection's parts. Prefer to omit the type unless you
+specifically want the column pinned:
+
+```sql
+ALTER TABLE t ADD PROJECTION p (ts CODEC(DoubleDelta), id UInt64 CODEC(NONE)) AS (SELECT id, ts ORDER BY ts);
+
+ALTER TABLE t MODIFY COLUMN ts DateTime64(3);   -- allowed: `ts` was declared without a type
+ALTER TABLE t MODIFY COLUMN id Int64;           -- rejected: `id` was declared as UInt64
+```
+
+#### Aggregate projections {#projection-column-codecs-aggregate}
+
+An aggregate projection's columns are named and typed by the query, so a declaration must use the name the
+projection produces — the expression text itself — and the aggregate state type rather than the underlying
+one:
+
+```sql
+CREATE TABLE t
+(
+    id UInt64,
+    v UInt64,
+    PROJECTION p
+    (
+        `max(v)` CODEC(ZSTD(3))
+    )
+    AS
+    (
+        SELECT id, max(v) GROUP BY id
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+Omitting the type, as above, avoids having to spell out `AggregateFunction(max, UInt64)`.
+
+#### Validation {#projection-column-codecs-validation}
+
+Declared codecs are validated exactly as a table column's own codec is. Suspicious codecs require
+`allow_suspicious_codecs`, and gated codecs require their dedicated setting, such as `enable_sz3_codec`.
+This is checked only when the projection is declared: once accepted, a lossless codec is not re-checked
+when the table is loaded, so a later setting change cannot make an existing table fail to attach.
+
+Lossy codecs are rejected for projection columns. Projection selection is transparent, so storing altered
+values in a projection would make the same query return different results depending on whether the
+optimizer reads the projection or the parent table.
+
+A server older than this feature cannot parse a projection column list, so a table using one will not load
+on a downgrade, and `ALTER TABLE ... ADD PROJECTION` with a column list will fail on a replica that has not
+been upgraded yet. Upgrade every replica before using the syntax.
+
+The effective codecs of a projection's columns are exposed by the `codecs` column of
+[`system.projections`](/reference/system-tables/projections).
 
 ### Projection indexes {#projection-index}
 

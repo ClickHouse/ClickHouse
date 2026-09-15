@@ -105,13 +105,24 @@ struct ProjectionDescription
         /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
         bool attach_short_syntax = true);
 
+    /// Sanity-check declared codecs against the session's settings. Must be called from a query's
+    /// validation phase: `getProjectionFromAST` runs on stored metadata too, and on the `CREATE` path it
+    /// is reached with the global context, so a check placed there would both miss the user's settings
+    /// and make a table using a suspicious codec impossible to attach. Takes the built projection
+    /// because a declaration need not spell out the type, and the type-sensitive checks need it.
+    static void validateDeclaredColumnCodecs(
+        const ProjectionDescription & projection,
+        const ContextPtr & query_context,
+        LoadingStrictnessLevel mode);
+
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
         const ASTProjectionSelectQuery & query,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
         const ContextPtr & query_context,
-        const MergeTreeSettings & projection_settings);
+        const MergeTreeSettings & projection_settings,
+        const IAST * declared_columns = nullptr);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
