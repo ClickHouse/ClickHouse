@@ -61,4 +61,65 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
 }
 
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsColonInName)
+{
+    /// A ':' in the name is not equal to any forbidden entry, but a peer still parses a
+    /// forbidden header from it, so a name containing ':' is rejected.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"Cookie:j=\"x", "y\";session=abc"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturnInName)
+{
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-Foo\rX-Injected", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsLineFeedInName)
+{
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-Foo\nX-Injected", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
+{
+    /// ':' is legal in a value (for example "Host: example.com:8080"); only names reject it.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"Host", "example.com:8080"});
+    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationNormalizesWhitespaceInName)
+{
+    /// Whitespace/control in a name is still stripped rather than rejected, preserving the
+    /// historical behaviour for stored objects that are re-validated on ATTACH. Assert the
+    /// in-place normalized name, so a change that stopped normalizing would be caught here.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-A B", "value"});
+    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].name, "X-AB");
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationAcceptsNameEmptyAfterNormalization)
+{
+    /// A name that is only whitespace/control normalizes to "" and is accepted, not rejected: it
+    /// cannot forge a forbidden header or split the request, and rejecting it would break ATTACH
+    /// of a table stored with such a name. This matches the behaviour before this change.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({" \t ", "value"});
+    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].name, "");
+}
+
 }
