@@ -657,6 +657,11 @@ public:
     protected:
         NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+
+        /// Drops the commands that name partitions other than @partition_id: a command with
+        /// `IN PARTITION` applies to the partitions it names alone. Reads the partition ids resolved
+        /// on the command itself (`MutationCommand::partition_ids`) and evaluates nothing.
+        void filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -1412,6 +1417,18 @@ public:
     };
 
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
+
+    /** For every command that names partitions (`... IN PARTITION p`), resolves the partition ids into
+      * `MutationCommand::partition_ids`, so that the per-part command selection of a mutations snapshot
+      * can respect the scope without evaluating anything itself.
+      *
+      * A partition expression is arbitrary user SQL (`getPartitionIDFromQuery` ends in
+      * `evaluateConstantExpression`, and the expression may even contain a subquery over the table
+      * being read), so it is resolved exactly once - when the mutation entry is created or loaded -
+      * and never while a storage snapshot is being built. Only the commands that have a partition are
+      * parsed, so an entry of the ordinary kind pays nothing here.
+      */
+    void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context) const;
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
