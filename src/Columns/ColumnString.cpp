@@ -2,13 +2,14 @@
 
 #include <cstring>
 #include <Columns/Collator.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsView.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
@@ -626,16 +627,17 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
-        new_size += source_string_column.size();
-        new_chars_size += source_string_column.chars.size();
-    }
+    source_columns.forEach(
+        [&](const IColumn * source_column)
+        {
+            const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
+            new_size += source_string_column.size();
+            new_chars_size += source_string_column.chars.size();
+        });
 
     offsets.reserve_exact(new_size * factor);
     chars.reserve_exact(new_chars_size * factor);

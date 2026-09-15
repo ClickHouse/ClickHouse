@@ -35,4 +35,6 @@ using MutableColumnConstPtr = COW<IColumn>::mutable_ptr<ColumnConst>;
 using Columns = std::vector<ColumnPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using MutableColumns = std::vector<MutableColumnPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using ColumnRawPtrs = std::vector<const IColumn *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+class ColumnsView;
 }

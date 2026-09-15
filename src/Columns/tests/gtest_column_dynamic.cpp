@@ -1,5 +1,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsView.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -1176,4 +1177,48 @@ TEST(ColumnDynamic, InsertRangeFrom4)
         total_variants_sizes += variant->size();
 
     ASSERT_EQ(total_variants_sizes, column_to->getVariantColumn().getLocalDiscriminators().size());
+}
+
+TEST(ColumnDynamic, PrepareForSquashingFiltersMissingVariants)
+{
+    auto first_source = ColumnDynamic::create(10);
+    first_source->insert(Field(Int64(-10'000'000'000LL)));
+    first_source->insert(Field(Int64(-20'000'000'000LL)));
+
+    auto second_source = ColumnDynamic::create(10);
+    second_source->insert(Field("first"));
+    second_source->insert(Field("second"));
+    second_source->insert(Field("third"));
+
+    VectorWithMemoryTracking<ColumnPtr> sources;
+    sources.emplace_back(std::move(first_source));
+    sources.emplace_back(std::move(second_source));
+
+    auto target = ColumnDynamic::create(10);
+    static constexpr size_t factor = 3;
+    target->prepareForSquashing(sources, factor);
+
+    ASSERT_GE(target->capacity(), 5u * factor);
+    const auto & variant_info = target->getVariantInfo();
+    ASSERT_TRUE(variant_info.variant_name_to_discriminator.contains("Int64"));
+    ASSERT_TRUE(variant_info.variant_name_to_discriminator.contains("String"));
+    const auto int_discriminator = variant_info.variant_name_to_discriminator.at("Int64");
+    const auto string_discriminator = variant_info.variant_name_to_discriminator.at("String");
+    ASSERT_GE(target->getVariantColumn().getVariantByGlobalDiscriminator(int_discriminator).capacity(), 2u * factor);
+    ASSERT_GE(target->getVariantColumn().getVariantByGlobalDiscriminator(string_discriminator).capacity(), 3u * factor);
+
+    for (size_t batch = 0; batch != factor; ++batch)
+        for (const auto & source : sources)
+            target->insertRangeFrom(*source, 0, source->size());
+
+    ASSERT_EQ(target->size(), 5u * factor);
+    for (size_t batch = 0; batch != factor; ++batch)
+    {
+        size_t offset = batch * 5;
+        ASSERT_EQ((*target)[offset], Field(Int64(-10'000'000'000LL)));
+        ASSERT_EQ((*target)[offset + 1], Field(Int64(-20'000'000'000LL)));
+        ASSERT_EQ((*target)[offset + 2], Field("first"));
+        ASSERT_EQ((*target)[offset + 3], Field("second"));
+        ASSERT_EQ((*target)[offset + 4], Field("third"));
+    }
 }

@@ -652,13 +652,7 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const VectorWithMemoryTracking<Ptr> & source_columns, size_t factor)
-    {
-        size_t new_size = size();
-        for (const auto & source_column : source_columns)
-            new_size += source_column->size();
-        reserve(new_size * factor);
-    }
+    virtual void prepareForSquashing(const ColumnsView & source_columns, size_t factor);
 
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
@@ -855,7 +849,9 @@ public:
     /// May read source statistics to make structure decisions (e.g. which paths/variants to keep).
     /// Unlike `takeExactDynamicStructureFrom`, this method actively selects the best structure.
     /// Does NOT update statistics in the result — use `takeOrCalculateStatisticsFrom` for that.
-    virtual void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
+    virtual void chooseDynamicStructureForMerge(const ColumnsView & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/)
+    {
+    }
 
     /// For columns with dynamic structure fix current dynamic structure so later inserts into this column won't change it.
     virtual void fixDynamicStructure() {}
@@ -943,7 +939,7 @@ public:
     /// Merges/takes statistics from source columns. For multiple sources, computes merged statistics.
     /// For ColumnObject/ColumnDynamic, must be called AFTER `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom`,
     /// because statistics placement depends on the dynamic structure (e.g. which paths are dynamic vs shared).
-    virtual void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Ptr> & /*source_columns*/) {}
+    virtual void takeOrCalculateStatisticsFrom(const ColumnsView & /*source_columns*/) { }
 
 protected:
     template <typename Compare, typename Sort, typename PartialSort>

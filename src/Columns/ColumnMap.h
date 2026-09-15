@@ -112,7 +112,7 @@ public:
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
+    void prepareForSquashing(const ColumnsView & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -144,7 +144,7 @@ public:
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested->fixDynamicStructure(); }
 
     const StatisticsPtr & getStatistics() const { return statistics; }
@@ -152,7 +152,7 @@ public:
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
     Statistics calculateStatisticsForRange(size_t start, size_t end) const;
     bool hasStatistics() const override { return true; }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const ColumnsView & source_columns) override;
 };
 
 }
