@@ -515,10 +515,58 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     apply_patches(ColumnForPatch::Order::AfterConversions);
 
     /// If some columns absent in part, then evaluate default values
+    std::vector<size_t> positions_filled_by_defaults;
     if (should_evaluate_missing_defaults)
+    {
+        /// Exactly the columns left null by `fillMissingColumns` are the ones the pass below produces.
+        for (size_t pos = 0; pos < read_columns.size(); ++pos)
+        {
+            if (!read_columns[pos])
+                positions_filled_by_defaults.push_back(pos);
+        }
+
         evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+    }
 
     apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
+
+    /** A column the part does not store comes into existence only in the pass above, so a patch for it
+      * can be applied only after that pass, and a `DEFAULT` column whose expression reads such a column
+      * was computed from the value the default gave rather than from the patched one. For
+      * `a UInt64, z UInt64 DEFAULT a + 1000` with neither column stored in the part, a lightweight
+      * `UPDATE a = 5` left `z` at `1000`, where `ALTER TABLE ... UPDATE a = 5` gives `1005`.
+      *
+      * Evaluate the defaults once more, now that the patches are applied. The columns a patch produced
+      * keep their patched values; the rest are dropped so that the pass recomputes them.
+      */
+    if (!positions_filled_by_defaults.empty())
+    {
+        NameSet columns_patched_after_defaults;
+        for (const auto & columns_for_patch : columns_for_patches)
+        {
+            for (const auto & column_for_patch : columns_for_patch)
+            {
+                if (column_for_patch.order == ColumnForPatch::Order::AfterEvaluatingDefaults)
+                    columns_patched_after_defaults.insert(column_for_patch.column_name);
+            }
+        }
+
+        bool has_columns_to_reevaluate = false;
+        if (!columns_patched_after_defaults.empty())
+        {
+            for (size_t pos : positions_filled_by_defaults)
+            {
+                if (columns_patched_after_defaults.contains(result_header.getByPosition(pos).name))
+                    continue;
+
+                read_columns[pos] = nullptr;
+                has_columns_to_reevaluate = true;
+            }
+        }
+
+        if (has_columns_to_reevaluate)
+            evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+    }
 }
 
 void MergeTreeReadersChain::evaluateMissingDefaults(
