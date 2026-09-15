@@ -1,0 +1,8 @@
+analyzer=0: local duplicate and shorthand controls passed
+analyzer=0 serialized=0 hedged=0: duplicates, defaults, gating and invalid values preserved
+analyzer=0 serialized=0 hedged=1: duplicates, defaults, gating and invalid values preserved
+analyzer=1: local duplicate and shorthand controls passed
+analyzer=1 serialized=0 hedged=0: duplicates, defaults, gating and invalid values preserved
+analyzer=1 serialized=0 hedged=1: duplicates, defaults, gating and invalid values preserved
+analyzer=1 serialized=1 hedged=0: duplicates, defaults, gating and invalid values preserved
+analyzer=1 serialized=1 hedged=1: duplicates, defaults, gating and invalid values preserved

@@ -46,6 +46,7 @@ protected:
     void writeProgressPacket(const Progress & progress) override;
     void writeLogsPacket(const Block & block) override;
     void writeProfileEventsPacket(const Block & block) override;
+    void writeProfileTracesPacket(const Block & block) override;
     void writeExceptionPacket(const String & message) override;
 
 private:

@@ -16,6 +16,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/ProfileTraces.h>
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
@@ -87,6 +88,10 @@ struct QueryState
     InternalProfileEventsQueuePtr profile_queue;
     std::unique_ptr<NativeWriter> profile_events_block_out;
 
+    InternalProfileTracesQueuePtr profile_traces_queue;
+    std::unique_ptr<NativeWriter> profile_traces_block_out;
+    Stopwatch after_send_profile_traces;
+
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     std::unique_ptr<NativeReader> block_in;
@@ -118,7 +123,7 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
-    /// Data was read.
+    /// The current client upload ended: external tables/scalars, insertion rows, or `input` rows.
     bool read_all_data = true;
 
     /// Request requires data from client for function input()
@@ -345,7 +350,7 @@ private:
     void sendInteractiveUpdates(QueryState & state) TSA_REQUIRES(callback_mutex);
     static void sendLogs(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void sendEndOfStream(QueryState & state);
+    void sendEndOfStream(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
     void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
     void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);
@@ -355,6 +360,10 @@ private:
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    static void cancelProfileTracesQueue(QueryState & state);
+    void updateProfileTracesQueue(QueryState & state) const;
+    void sendPendingProfileTraces(QueryState & state, bool finish = false) TSA_REQUIRES(callback_mutex);
+    void sendProfileTraces(QueryState & state, const Block & block) TSA_REQUIRES(callback_mutex);
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
