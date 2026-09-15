@@ -1839,12 +1839,9 @@ public:
 
     std::optional<ModularDivisor> secondIntervalModularDivisor(UInt64 seconds) const
     {
-        if (seconds == 1)
-            return ModularDivisor{Int64(1), true};
-        if (seconds % 60 == 0)
-            return minuteIntervalModularDivisor(seconds / 60);
-        /// Every time zone, on both sides of the epoch - see `toStartOfSecondInterval`. The out-of-range
-        /// bail-out of the vectorized loop is then conservative: the generic path returns the same value.
+        /// Every interval count and every time zone, on both sides of the epoch - see
+        /// `toStartOfSecondInterval`. The out-of-range bail-out of the vectorized loop is then conservative:
+        /// the generic path returns the same value.
         return ModularDivisor{secondIntervalDivisor(seconds), true};
     }
 
@@ -1898,14 +1895,14 @@ public:
     {
         if (seconds == 1)
             return t;
-        if (seconds % 60 == 0)
-            return toStartOfMinuteInterval(t, seconds / 60);
 
         /// A second interval is measured from the epoch (see the table in the description of
-        /// `toStartOfInterval`), and every UTC offset is a whole number of seconds, so the modular result is
-        /// always on a local second boundary and no time zone needs the table. The minute interval above
-        /// cannot do the same: a sub-minute component (`Europe/Amsterdam` was +00:19:32 until 1937) would put
-        /// it off any local minute boundary.
+        /// `toStartOfInterval`) whatever the interval count, a whole number of minutes included: the `origin`
+        /// overload rounds the duration between the value and the origin, and measuring that from the start
+        /// of a local day would put the start of the bucket before the origin. Every UTC offset is a whole
+        /// number of seconds, so the modular result is always on a local second boundary and no time zone
+        /// needs the table. `toStartOfMinuteInterval` cannot do the same: a sub-minute component
+        /// (`Europe/Amsterdam` was +00:19:32 until 1937) would put it off any local minute boundary.
         return static_cast<DateOrTime>(roundDownToMultiple(t, secondIntervalDivisor(seconds)));
     }
 

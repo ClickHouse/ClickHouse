@@ -221,8 +221,9 @@ SELECT toString(t, 'Pacific/Chatham') AS local,
        toString(toStartOfInterval(t, INTERVAL 11 SECOND), 'Pacific/Chatham') AS eleven_second_interval
 FROM (SELECT toDateTime64('1970-01-01 12:45:03', 0, 'Pacific/Chatham') AS t);
 
--- The seam this leaves: a whole number of minutes is a minute interval and keeps measuring from the start of
--- the local day in `Europe/Amsterdam` (+00:19:32 until 1937), while one second more is measured from the epoch.
+-- A whole number of minutes is not a minute interval: it is measured from the epoch like every other second
+-- interval, so it agrees with one second more in `Europe/Amsterdam` (+00:19:32 until 1937). Local 12:52:00 is
+-- 12:32:28 UTC there, so the sixty-second bucket starts at 12:32:00 UTC, local 12:51:32.
 SELECT toString(t, 'Europe/Amsterdam') AS local,
        toString(toStartOfInterval(t, INTERVAL 60 SECOND), 'Europe/Amsterdam') AS sixty_second_interval,
        toString(toStartOfInterval(t, INTERVAL 61 SECOND), 'Europe/Amsterdam') AS sixty_one_second_interval
@@ -236,3 +237,16 @@ SELECT 'Asia/Kolkata',
     countIf(toStartOfInterval(t, INTERVAL 7 SECOND, origin)
             != origin + intDiv(toUnixTimestamp64Second(t) - toUnixTimestamp64Second(origin), 7) * 7) AS wrong_7s
 FROM (SELECT toDateTime64('2023-01-01 14:35:30', 0, 'Asia/Kolkata') + number AS t FROM numbers(100000));
+
+-- The same for an interval count that is a whole number of minutes, in a zone whose offset during the epoch
+-- has a sub-minute component - `Africa/Monrovia` was -00:44:30 until 1972. Measuring the duration from the
+-- start of a local day returned 07:39:51 here, half a minute before the origin.
+WITH toDateTime64('1970-06-17 07:39:21', 0, 'Africa/Monrovia') AS origin
+SELECT toString(toStartOfInterval(addSeconds(origin, 61), INTERVAL 60 SECOND, origin), 'Africa/Monrovia');
+
+WITH toDateTime64('1970-06-17 07:39:21', 0, 'Africa/Monrovia') AS origin
+SELECT 'Africa/Monrovia',
+    countIf(toStartOfInterval(t, INTERVAL 60 SECOND, origin) < origin) AS before_origin,
+    countIf(toStartOfInterval(t, INTERVAL 60 SECOND, origin)
+            != origin + intDiv(toUnixTimestamp64Second(t) - toUnixTimestamp64Second(origin), 60) * 60) AS wrong_60s
+FROM (SELECT toDateTime64('1970-06-17 07:39:21', 0, 'Africa/Monrovia') + number AS t FROM numbers(100000));

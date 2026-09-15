@@ -33,16 +33,20 @@ SELECT countIf(toUInt32(toStartOfInterval(t, INTERVAL 90 SECOND)) != toUInt32(t)
 FROM (SELECT toDateTime(1500000000 + number * 61, 'UTC') AS t FROM numbers(100000));
 
 -- The same identity where the offset is not a whole number of hours: `Asia/Kolkata` is +05:30,
--- `Australia/Lord_Howe` +10:30/+11:00 and `Africa/Monrovia` was -00:44:30 until 1972.
+-- `Australia/Lord_Howe` +10:30/+11:00 and `Africa/Monrovia` was -00:44:30 until 1972. An interval count that
+-- is a whole number of minutes is included: it is a second interval like any other.
 SELECT 'modular arithmetic for SECOND outside whole-hour zones';
 SELECT countIf(toUInt32(toStartOfInterval(t, INTERVAL 90 SECOND)) != toUInt32(t) - toUInt32(t) % 90)
      + countIf(toUInt32(toStartOfInterval(t, INTERVAL 7 SECOND)) != toUInt32(t) - toUInt32(t) % 7)
+     + countIf(toUInt32(toStartOfInterval(t, INTERVAL 60 SECOND)) != toUInt32(t) - toUInt32(t) % 60)
 FROM (SELECT toDateTime(1500000000 + number * 61, 'Asia/Kolkata') AS t FROM numbers(100000));
 SELECT countIf(toUInt32(toStartOfInterval(t, INTERVAL 90 SECOND)) != toUInt32(t) - toUInt32(t) % 90)
      + countIf(toUInt32(toStartOfInterval(t, INTERVAL 7 SECOND)) != toUInt32(t) - toUInt32(t) % 7)
+     + countIf(toUInt32(toStartOfInterval(t, INTERVAL 60 SECOND)) != toUInt32(t) - toUInt32(t) % 60)
 FROM (SELECT toDateTime(1500000000 + number * 61, 'Australia/Lord_Howe') AS t FROM numbers(100000));
 SELECT countIf(toUInt32(toStartOfInterval(t, INTERVAL 90 SECOND)) != toUInt32(t) - toUInt32(t) % 90)
      + countIf(toUInt32(toStartOfInterval(t, INTERVAL 7 SECOND)) != toUInt32(t) - toUInt32(t) % 7)
+     + countIf(toUInt32(toStartOfInterval(t, INTERVAL 60 SECOND)) != toUInt32(t) - toUInt32(t) % 60)
 FROM (SELECT toDateTime(1500000000 + number * 61, 'Africa/Monrovia') AS t FROM numbers(100000));
 
 -- The same equivalences for DateTime64 arguments.
