@@ -446,9 +446,11 @@ public:
     /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
     /// FUNCTION_NOT_IN_SET (1 element)
     ///
-    /// These atoms are relaxed only when the associated constants undergo
+    /// These atoms are relaxed when the associated constants undergo
     /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier.
+    /// mentioned earlier, and a right-unbounded FUNCTION_IN_RANGE atom is also
+    /// relaxed when its key column can hold a NaN inside a Tuple (see
+    /// relaxRangeAtomsOverNaNHidingTupleColumns).
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
@@ -462,6 +464,8 @@ public:
     /// on a given regular expression. Such an atom is relaxed unless the regular
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
+
+    void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }
 
