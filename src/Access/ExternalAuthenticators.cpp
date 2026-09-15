@@ -469,32 +469,39 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     LDAPParseErrors new_parse_errors;
     for (auto ldap_server_name : ldap_server_names)
     {
+        const auto bracket_pos = ldap_server_name.find('[');
+        if (bracket_pos != std::string::npos)
+            ldap_server_name.resize(bracket_pos);
+
+        /// Remember the error so that `checkLDAPCredentials` and `findLDAPUser` can surface
+        /// it at use. Without this the parsed-out server is dropped silently: every login
+        /// through it fails as "no such user" and `EXECUTE AS` collapses to `UNKNOWN_USER`,
+        /// hiding a real operator misconfiguration. The name is also removed from the
+        /// blueprint: with two entries sharing a name the first one has already been parsed
+        /// when the second fails, and it must not stay usable through the first entry.
+        const auto record_parse_error = [&](String message)
+        {
+            tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
+            new_blueprint.erase(ldap_server_name);
+            new_parse_errors[ldap_server_name] = std::move(message);
+        };
+
         try
         {
-            const auto bracket_pos = ldap_server_name.find('[');
-            if (bracket_pos != std::string::npos)
-                ldap_server_name.resize(bracket_pos);
-
-            if (new_blueprint.contains(ldap_server_name))
+            if (new_blueprint.contains(ldap_server_name) || new_parse_errors.contains(ldap_server_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple LDAP servers with the same name are not allowed");
 
             LDAPClient::Params ldap_client_params_tmp;
             parseLDAPServer(ldap_client_params_tmp, config, ldap_server_name);
-            new_blueprint.emplace(std::move(ldap_server_name), std::move(ldap_client_params_tmp));
+            new_blueprint.emplace(ldap_server_name, std::move(ldap_client_params_tmp));
         }
         catch (const Exception & e)
         {
-            tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
-            /// Remember the error so that `checkLDAPCredentials` and `findLDAPUser` can
-            /// surface it at use. Without this the parsed-out server is dropped silently:
-            /// every login through it fails as "no such user" and `EXECUTE AS` collapses to
-            /// `UNKNOWN_USER`, hiding a real operator misconfiguration.
-            new_parse_errors[ldap_server_name] = e.message();
+            record_parse_error(e.message());
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
-            new_parse_errors[ldap_server_name] = getCurrentExceptionMessage(/* with_stacktrace = */ false);
+            record_parse_error(getCurrentExceptionMessage(/* with_stacktrace = */ false));
         }
     }
     ldap_client_params_blueprint.swap(new_blueprint);
@@ -533,17 +540,19 @@ static UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPCl
 
 LDAPClient::Params ExternalAuthenticators::getLDAPServerParams(const String & server) const
 {
-    const auto pit = ldap_client_params_blueprint.find(server);
-    if (pit != ldap_client_params_blueprint.end())
-        return pit->second;
-
-    /// A server that failed to parse is deliberately absent from the blueprint; fail close
-    /// with the original reason instead of pretending it does not exist. Otherwise the
-    /// directory references a name with no `<ldap_servers>` block at all (e.g. a typo).
+    /// A recorded parse error wins over anything in the blueprint: a server that failed to
+    /// parse must fail closed with the original reason, never be served from an entry that
+    /// happened to parse under the same name (`setConfiguration` also drops such names from
+    /// the blueprint; checking the errors first keeps this true regardless of that).
     const auto eit = ldap_server_parse_errors.find(server);
     if (eit != ldap_server_parse_errors.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is misconfigured: {}", server, eit->second);
 
+    const auto pit = ldap_client_params_blueprint.find(server);
+    if (pit != ldap_client_params_blueprint.end())
+        return pit->second;
+
+    /// The directory references a name with no `<ldap_servers>` block at all (e.g. a typo).
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
 }
 

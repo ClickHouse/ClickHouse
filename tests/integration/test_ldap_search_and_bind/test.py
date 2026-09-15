@@ -353,6 +353,60 @@ def test_parse_error_fails_closed_at_login(ldap_cluster):
         )
 
 
+def test_duplicate_server_name_fails_closed(ldap_cluster):
+    """Two `ldap_servers` entries sharing a name (Poco keys `broken` and `broken[1]`): the
+    first parses, the second is rejected with "Multiple LDAP servers with the same name are
+    not allowed". The name must then be unusable altogether, not served from the first entry,
+    even though that entry alone would be a valid search-and-bind configuration."""
+    original_config = read_config("ldap_parse_error.xml")
+    valid_server = """
+        <broken>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>svcsecret</lookup_password>
+            <bind_dn>{user_dn}</bind_dn>
+            <user_dn_detection>
+                <base_dn>dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(uid={user_name}))</search_filter>
+            </user_dn_detection>
+        </broken>"""
+    duplicate_config = f"""<clickhouse>
+    <ldap_servers>{valid_server}{valid_server}
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>broken</server>
+        </ldap>
+    </user_directories>
+</clickhouse>
+"""
+    expected = "Multiple LDAP servers with the same name are not allowed"
+    try:
+        reload_config(instance_parse_error, "ldap_parse_error.xml", duplicate_config)
+        assert_logs_contain_with_retry(instance_parse_error, expected)
+
+        error = instance_parse_error.query_and_get_error(
+            "SELECT currentUser()", user="janedoe", password="qwerty"
+        )
+        assert "Authentication failed" in error, error
+        assert_logs_contain_with_retry(
+            instance_parse_error, f"LDAP server 'broken' is misconfigured: {expected}"
+        )
+
+        # The forced lookup of `EXECUTE AS` fails closed with the same reason instead of
+        # resolving the user through the entry that parsed.
+        error = instance_parse_error.query_and_get_error(
+            "EXECUTE AS janedoe SELECT 1", user="common_user", password="qwerty"
+        )
+        assert "is misconfigured" in error, error
+        assert expected in error, error
+        assert "UNKNOWN_USER" not in error, error
+    finally:
+        reload_config(instance_parse_error, "ldap_parse_error.xml", original_config)
+
+
 def test_service_password_rotation(ldap_cluster):
     """`verification_cooldown` answers cached logins without LDAP; every uncached login
     fails closed on the lookup bind until the configuration is reloaded; the lookup
