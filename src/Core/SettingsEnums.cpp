@@ -355,6 +355,15 @@ IMPLEMENT_SETTING_ENUM(
      {"both", AsynchronousMetricsKeyValuesMode::Both}})
 
 IMPLEMENT_SETTING_ENUM(
+    SeccompMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", SeccompMode::Disabled},
+     {"log", SeccompMode::Log},
+     {"errno", SeccompMode::Errno},
+     {"trap", SeccompMode::Trap},
+     {"kill", SeccompMode::Kill}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
