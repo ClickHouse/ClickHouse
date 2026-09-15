@@ -10,6 +10,7 @@ db=${CLICKHOUSE_DATABASE}
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS set_table;
 DROP TABLE IF EXISTS set_pair;
+DROP TABLE IF EXISTS set_pair_b;
 DROP TABLE IF EXISTS mt_table;
 DROP TABLE IF EXISTS ttl_table;
 DROP TABLE IF EXISTS proj_table;
@@ -17,6 +18,8 @@ CREATE TABLE set_table (n Int) ENGINE = Set;
 INSERT INTO set_table VALUES (4242), (31337);
 CREATE TABLE set_pair (a UInt64, b UInt64) ENGINE = Set;
 INSERT INTO set_pair VALUES (4242, 1), (31337, 1);
+CREATE TABLE set_pair_b (a UInt64, b UInt64) ENGINE = Set;
+INSERT INTO set_pair_b VALUES (4242, 1), (31337, 1);
 CREATE TABLE mt_table (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO mt_table VALUES (4242), (31337);
 
@@ -59,8 +62,13 @@ CREATE TABLE proj_table (n UInt64, v UInt64, PROJECTION pr (SELECT n WHERE n IN 
 # The check covers every physical column of the set table, so a grant on part of them is not enough.
 $CLICKHOUSE_CLIENT -m -q "GRANT SELECT(a) ON $db.set_pair TO $user"
 $CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE (number, 1) IN set_pair ORDER BY number; -- { serverError ACCESS_DENIED }"
+# ... and neither is a grant on the other column alone: the check covers every physical column.
+$CLICKHOUSE_CLIENT -m -q "GRANT SELECT(b) ON $db.set_pair_b TO $user"
+$CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE (number, 1) IN set_pair_b ORDER BY number; -- { serverError ACCESS_DENIED }"
 $CLICKHOUSE_CLIENT -m -q "GRANT SELECT(a, b) ON $db.set_pair TO $user"
 $CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE (number, 1) IN set_pair ORDER BY number"
+$CLICKHOUSE_CLIENT -m -q "GRANT SELECT(a, b) ON $db.set_pair_b TO $user"
+$CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE (number, 1) IN set_pair_b ORDER BY number"
 
 $CLICKHOUSE_CLIENT -m -q "GRANT SELECT ON $db.set_table TO $user"
 
