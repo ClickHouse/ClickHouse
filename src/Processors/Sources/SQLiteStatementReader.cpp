@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int INCORRECT_DATA;
     extern const int SQLITE_ENGINE_ERROR;
 }
 
@@ -38,6 +39,25 @@ static constexpr UInt64 sqlite_busy_retry_ms = 10;
 
 namespace
 {
+
+const char * storageClassName(int storage_class)
+{
+    switch (storage_class)
+    {
+        case SQLITE_INTEGER:
+            return "INTEGER";
+        case SQLITE_FLOAT:
+            return "REAL";
+        case SQLITE_TEXT:
+            return "TEXT";
+        case SQLITE_BLOB:
+            return "BLOB";
+        case SQLITE_NULL:
+            return "NULL";
+        default:
+            return "unknown";
+    }
+}
 
 std::string_view getTextValue(sqlite3_stmt * statement, int idx)
 {
@@ -249,6 +269,8 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
                 columns_info.size(),
                 column_count);
 
+        resolveUndeclaredColumns(statement);
+
         for (int column_index = 0; column_index != column_count; ++column_index)
         {
             const auto & info = columns_info[column_index];
@@ -287,6 +309,68 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
     return num_rows ? Chunk(std::move(columns), num_rows) : Chunk{};
 }
 
+void SQLiteStatementReader::resolveUndeclaredColumns(sqlite3_stmt * statement)
+{
+    if (undeclared_columns_resolved)
+        return;
+
+    /// `sqlite3_column_decltype` is valid as soon as the statement is prepared and does not change between
+    /// rows, so this is settled on the first row and holds for the lifetime of the statement.
+    for (size_t i = 0; i < columns_info.size(); ++i)
+        columns_info[i].requires_exact_storage_class = sqlite3_column_decltype(statement, static_cast<int>(i)) == nullptr;
+
+    undeclared_columns_resolved = true;
+}
+
+void SQLiteStatementReader::checkStorageClass(const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const
+{
+    const int storage_class = sqlite3_column_type(statement, idx);
+
+    bool matches = false;
+    switch (*info.native_value_type)
+    {
+        case ValueType::vtUInt8:
+        case ValueType::vtUInt16:
+        case ValueType::vtUInt32:
+        case ValueType::vtInt8:
+        case ValueType::vtInt16:
+        case ValueType::vtInt32:
+        case ValueType::vtInt64:
+            matches = storage_class == SQLITE_INTEGER;
+            break;
+        case ValueType::vtFloat32:
+        case ValueType::vtFloat64:
+        {
+            /// An INTEGER cell converts to a double exactly only within +-2^53; beyond that
+            /// `sqlite3_column_double` rounds it to the nearest double, so it is not the same value.
+            if (storage_class == SQLITE_INTEGER)
+            {
+                const Int64 value = sqlite3_column_int64(statement, idx);
+                matches = value >= -(1LL << 53) && value <= (1LL << 53);
+            }
+            else
+                matches = storage_class == SQLITE_FLOAT;
+            break;
+        }
+        default:
+            /// Every other value type is decoded from the text rendering of the cell, whatever its storage
+            /// class, so there is no coercing accessor to guard.
+            matches = true;
+            break;
+    }
+
+    if (!matches)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot read a value of the SQLite storage class {} into column {} of type {}: "
+            "the result column has no declared SQLite type, so its values must have the storage class of that type in every row. "
+            "Select the column as a string (for example, by declaring the column as `String`, or by casting it to text in the SQLite query) "
+            "to read values of mixed storage classes",
+            storageClassName(storage_class),
+            info.name,
+            info.data_type->getName());
+}
+
 void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const
 {
     if (!info.native_value_type)
@@ -294,6 +378,9 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
         insertTextValue(column, info, statement, idx);
         return;
     }
+
+    if (info.requires_exact_storage_class)
+        checkStorageClass(info, statement, idx);
 
     switch (*info.native_value_type)
     {

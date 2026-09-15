@@ -699,7 +699,7 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 
 ## Passing a query instead of a table name {#passing-a-query}
 
-Instead of a table name, the `table` argument can be a `SELECT` query that is passed to SQLite as is. The structure of the table is inferred from the query result. A result column that is a direct column of a SQLite table gets the type of its declared SQLite type (see the [type mapping](/reference/engines/database-engines/sqlite#data_types-support)). A result column without a declared type - an expression, a literal, an aggregate - is typed from the storage class of its value in the first row of the query result: an `INTEGER` value gives `Int64`, a `REAL` value gives `Float64`, and any other value (`TEXT`, `BLOB`, `NULL`), as well as an empty result, gives `String`. Inferring such a column starts the query in SQLite. Every inferred column is `Nullable`. The query can be written either as a subquery, or wrapped into the `query` function:
+Instead of a table name, the `table` argument can be a `SELECT` query that is passed to SQLite as is. The structure of the table is inferred from the query result. A result column that is a direct column of a SQLite table gets the type of its declared SQLite type (see the [type mapping](/reference/engines/database-engines/sqlite#data_types-support)). A result column without a declared type - an expression, a literal, an aggregate - is typed from the storage class of its value in the first row of the query result: an `INTEGER` value gives `Int64`, a `REAL` value gives `Float64`, and any other value (`TEXT`, `BLOB`, `NULL`), as well as an empty result, gives `String`. Inferring such a column starts the query in SQLite. SQLite is free to return a different storage class for such a column in every row (for example, `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`); because that would silently coerce the values, reading a value whose storage class does not match the inferred numeric type fails with an error. To read a column with values of mixed storage classes, declare it as `String` or cast it to text in the SQLite query. Every inferred column is `Nullable`. The query can be written either as a subquery, or wrapped into the `query` function:
 
 ```sql
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
@@ -775,7 +775,9 @@ namespace
 {
 /// The ClickHouse type for a result column that has no declared SQLite type, derived from the storage class
 /// of its value in the first result row. `TEXT`, `BLOB` and `NULL` are read as `String`, like a declared
-/// type without a numeric affinity.
+/// type without a numeric affinity. The first row is not a contract for the rest of the result: SQLite may
+/// return another storage class in a later row, and the read path fails closed on such a cell instead of
+/// coercing it (see `SQLiteStatementReader::checkStorageClass`).
 DataTypePtr typeFromStorageClass(int storage_class)
 {
     switch (storage_class)
@@ -798,7 +800,10 @@ ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & qu
     /// (`count(*)`). Such a column is typed from the storage class of its value in the first result row,
     /// which is the only type information SQLite has for it. That requires stepping the statement once, i.e.
     /// starting the query in SQLite. When the query returns no rows, or the value is `NULL`, the column is
-    /// `String`, like every declared type without a numeric affinity.
+    /// `String`, like every declared type without a numeric affinity. A numeric type inferred this way is
+    /// enforced by the read path: a later row of another storage class fails the read instead of being
+    /// coerced (`SQLiteStatementReader::checkStorageClass`), and the user can declare the column as `String`
+    /// to read mixed values.
     const auto wrapped = "SELECT * FROM (" + query + ") AS __subquery";
 
     /// Preparing loads the database schema and needs a shared lock; retry instead of failing while a

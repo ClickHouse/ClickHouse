@@ -50,6 +50,10 @@ private:
         SerializationPtr serialization;
         std::optional<ValueType> native_value_type;
         bool is_nullable = false;
+        /// Whether every cell read through a native numeric accessor must hold the storage class that the
+        /// accessor reads exactly. Set for a result column without a declared SQLite type (see
+        /// `resolveUndeclaredColumns`).
+        bool requires_exact_storage_class = false;
     };
 
     ColumnReadInfo createColumnReadInfoForNative(
@@ -58,12 +62,25 @@ private:
         bool is_nullable) const;
     ColumnReadInfo createColumnReadInfoForText(const ColumnWithTypeAndName & column) const;
 
+    /// A result column with a declared SQLite type (a direct column of a table) carries a contract for its
+    /// cells: the declared affinity, or the STRICT table, fixes what the ClickHouse type mapped from it
+    /// reads. A result column without one - an expression, a literal, an aggregate - has no such contract:
+    /// its ClickHouse type was inferred from a single row (see `doQueryResultStructure`), or declared by the
+    /// user, and SQLite is free to return a different storage class in every row (`CASE`, `UNION ALL`, an
+    /// aggregate over mixed data). Reading such a cell through a coercing accessor (`sqlite3_column_int64`
+    /// over a REAL cell truncates `1.5` to `1`, over a TEXT cell yields `0`) would silently produce wrong
+    /// values, so such a column is marked to be read fail-closed: a cell whose storage class does not match
+    /// the native type exactly makes the read fail (`checkStorageClass`).
+    void resolveUndeclaredColumns(sqlite3_stmt * statement);
+    void checkStorageClass(const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
+
     void insertValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
     void insertTextValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
 
     Block sample_block;
     FormatSettings format_settings;
     std::vector<ColumnReadInfo> columns_info;
+    bool undeclared_columns_resolved = false;
 };
 
 }
