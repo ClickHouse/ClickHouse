@@ -8,6 +8,8 @@ title: 'FileLog table engine'
 doc_type: 'reference'
 ---
 
+# FileLog table engine {#filelog-engine}
+
 This engine allows processing of application log files as a stream of records.
 
 `FileLog` lets you:
@@ -80,7 +82,7 @@ Example:
 
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
-    FROM logs GROUP BY day, level;
+    FROM queue GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```

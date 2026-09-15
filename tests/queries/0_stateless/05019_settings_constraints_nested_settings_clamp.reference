@@ -1,0 +1,25 @@
+-- the row filter installed by the profile is in force
+1
+-- a nested clause cannot override a CONST setting: the row filter stays, in a subquery and in a CTE
+1
+1
+-- every member of a nested compound query is clamped
+2
+2
+1
+-- a nested value above MAX is clamped into the bound, not applied as written
+-- a nested value inside the bounds still applies
+-- clamping still lets the subquery read up to the bound
+1
+-- an unconstrained nested clause still works
+1
+-- the session settings are untouched by a nested clause
+10
+-- a nested SETTINGS name = DEFAULT is still ignored
+1
+10
+-- a SQL SECURITY INVOKER view with an inner clause the invoker may not set reads with the constraints enforced
+1
+-- a SQL SECURITY DEFINER view still reads
+3
+-- a top-level SETTINGS clause overriding a CONST setting still throws

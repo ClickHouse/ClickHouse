@@ -21,7 +21,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLineWithInlines final : public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
+class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
 {
 public:
     static constexpr auto name = "addressToLineWithInlines";
@@ -58,7 +58,7 @@ protected:
         return result_column;
     }
 
-    void setResult(StringViews & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> & inline_frames) const override
+    void setResult(StringViews & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> & inline_frames) const override
     {
         appendLocationToResult(result, location, nullptr);
         for (const auto & inline_frame : inline_frames)

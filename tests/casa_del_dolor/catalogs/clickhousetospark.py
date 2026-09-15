@@ -19,7 +19,7 @@ from pyiceberg.transforms import (
 )
 
 try:
-    from pyspark.sql.types import VariantType  # noqa: F401  (import probe)
+    from pyspark.sql.types import VariantType
 
     HAS_VARIANT_TYPE = True
 except ImportError:

@@ -125,7 +125,7 @@ public:
 
     void convertToNullable() override
     {
-        column.type = makeNullableOrLowCardinalityNullableSafe(column.type);
+        column.type = makeNullableSafe(column.type);
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;

@@ -9,12 +9,8 @@ class IColumn;
 
 class SerializationBool final : public SerializationWrapper
 {
-private:
-    explicit SerializationBool(const SerializationPtr & nested_);
-
 public:
-    static UInt128 getHash(const SerializationPtr & nested_);
-    static SerializationPtr create(const SerializationPtr & nested_);
+    explicit SerializationBool(const SerializationPtr & nested_);
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 

@@ -63,7 +63,6 @@ AggregateFunctionPtr createAggregateFunctionUniqCombined(bool use_64_bit_hash,
 
 }
 
-void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {
     /// uniqCombined documentation

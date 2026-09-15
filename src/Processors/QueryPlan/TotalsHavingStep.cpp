@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -114,16 +113,11 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
-
-    settings.out << prefix << "Filter column: ";
-
-    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
-
-    if (!settings.pretty && remove_filter)
+    settings.out << prefix << "Filter column: " << filter_column_name;
+    if (remove_filter)
         settings.out << " (removed)";
-
     settings.out << '\n';
-    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)) << '\n';
+    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
     if (!settings.compact && actions_dag)
     {
@@ -141,7 +135,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
 
 void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Mode", totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)));
+    map.add("Mode", totalsModeToString(totals_mode, auto_include_threshold));
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
@@ -199,7 +193,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
 
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     bool final = bool(flags & 1);
@@ -231,7 +225,6 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
         final);
 }
 
-void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);

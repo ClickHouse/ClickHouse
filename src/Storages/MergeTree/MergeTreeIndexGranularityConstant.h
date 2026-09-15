@@ -9,8 +9,8 @@ namespace DB
 class MergeTreeIndexGranularityConstant final : public MergeTreeIndexGranularity
 {
 private:
-    size_t constant_granularity{};
-    size_t last_mark_granularity{};
+    size_t constant_granularity;
+    size_t last_mark_granularity;
 
     size_t num_marks_without_final = 0;
     bool has_final_mark = false;

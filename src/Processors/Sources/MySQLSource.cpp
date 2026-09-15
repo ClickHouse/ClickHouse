@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_DATA;
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
@@ -235,6 +236,13 @@ namespace
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
                     size_t n = value.size();
+                    /// A `BIT` column holds at most 64 bits, so a value of it never needs more than
+                    /// eight bytes. The length comes from the wire and is not otherwise validated,
+                    /// so a malicious or broken server could overflow `val` below.
+                    if (n > sizeof(UInt64))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
+                            n, sizeof(UInt64));
                     UInt64 val = 0UL;
                     char * to = reinterpret_cast<char *>(&val);
                     memcpy(to, const_cast<char *>(value.data()), n);
@@ -362,16 +370,16 @@ namespace
                 ReadBufferFromMemory payload(value.data(), value.size());
                 payload.ignore(4);
 
-                UInt8 endian = 0;
+                UInt8 endian;
                 readBinary(endian, payload);
 
-                Int32 point_type = 0;
+                Int32 point_type;
                 readBinary(point_type, payload);
                 if (point_type != 1)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only Point data type is supported");
 
-                Float64 x = 0;
-                Float64 y = 0;
+                Float64 x;
+                Float64 y;
                 if (endian == 1)
                 {
                     readBinaryLittleEndian(x, payload);

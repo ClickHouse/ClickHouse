@@ -70,7 +70,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
     {
         if (ast.id_mode)
             return parse<UUID>(name);
-        chassert(access_control);
+        assert(access_control);
         if (ast.allow_users && ast.allow_roles)
         {
             auto id = access_control->find<User>(name);
@@ -83,7 +83,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
             return access_control->getID<User>(name);
         }
 
-        chassert(ast.allow_roles);
+        assert(ast.allow_roles);
         return access_control->getID<Role>(name);
     };
 
@@ -96,7 +96,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 
     if (ast.current_user && !all)
     {
-        chassert(current_user_id);
+        assert(current_user_id);
         ids.insert(*current_user_id);
     }
 
@@ -109,7 +109,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 
     if (ast.except_current_user)
     {
-        chassert(current_user_id);
+        assert(current_user_id);
         except_ids.insert(*current_user_id);
     }
 

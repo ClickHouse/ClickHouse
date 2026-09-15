@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 
@@ -17,7 +16,7 @@ SELECT count() FROM tab WHERE col = 'config';
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE col = 'config'
-    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1, query_plan_direct_read_from_text_index = 1 -- CI may inject False; text index hint INPUT actions not added to EXPLAIN output
+    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1
 )
 WHERE explain LIKE '%INPUT%\_\_text_index%';
 
@@ -26,7 +25,7 @@ SELECT count() FROM tab WHERE hasToken(col, 'config');
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(col, 'config')
-    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1, query_plan_direct_read_from_text_index = 1 -- CI may inject False; text index hint INPUT actions not added to EXPLAIN output
+    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1
 )
 WHERE explain LIKE '%INPUT%\_\_text_index%';
 
