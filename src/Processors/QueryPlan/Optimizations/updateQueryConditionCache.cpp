@@ -126,7 +126,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
             String condition = filter_actions_dag->getNames()[0];
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            filter_step->setConditionForQueryConditionCache(condition_hash, condition, read_from_merge_tree->getContext());
             return;
         }
     }

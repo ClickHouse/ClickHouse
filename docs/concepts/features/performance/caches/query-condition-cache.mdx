@@ -52,6 +52,11 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+Cache entries are keyed by the table, the part, the filter condition, and the settings which are changed from their default values.
+Some settings change how a function evaluates without being visible in the filter condition itself, e.g. the `formatdatetime_*` settings change the value returned by `formatDateTime`.
+Two queries with the same filter condition but different values of such a setting therefore use different cache entries.
+As a consequence, a query only reuses entries recorded by queries which ran with the same changed settings, except for settings which cannot affect the filter result (e.g. `log_comment`, the `output_format_*` settings and the settings of the query condition cache and the query cache themselves).
+
 ### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
 
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.

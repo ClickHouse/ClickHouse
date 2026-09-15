@@ -2,7 +2,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
+#include <Common/SettingsChanges.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
@@ -21,12 +23,55 @@ namespace CurrentMetrics
 namespace DB
 {
 
-QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
+namespace
+{
+
+/// Settings which cannot influence which marks match a condition. They are excluded from the key so that they don't split
+/// otherwise identical entries. Mirrors `isSettingIgnoredInQueryResultCache` of the query result cache.
+bool isSettingIgnoredInQueryConditionCache(std::string_view setting_name)
+{
+    /// Settings of the query condition cache itself: they decide whether the cache is consulted, not what is found in it.
+    return setting_name.starts_with("use_query_condition_cache")
+        || setting_name.starts_with("query_condition_cache_")
+        /// Settings of the query result cache: they operate on the query result, not on the scanned marks.
+        || setting_name.starts_with("query_cache_")
+        || setting_name.ends_with("_query_cache")
+        /// The output format settings only affect the final output.
+        || setting_name.starts_with("output_format_")
+        /// Tunes the server response but does not affect the query behavior.
+        || setting_name == "http_response_headers"
+        || setting_name == "log_comment";
+}
+
+}
+
+QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash, const Settings & settings)
 {
     SipHash hash;
     hash.update(table_id);
     hash.update(part_name);
     hash.update(condition_hash);
+
+    /// Salt with the changed settings, see the comment in the header.
+    /// Note: `changes()` returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic
+    /// order. Therefore, collect and sort the settings first, then hash them.
+    std::vector<std::pair<std::string_view, String>> changed_settings_sorted; /// (name, value)
+    const SettingsChanges changed_settings = settings.changes();
+    changed_settings_sorted.reserve(changed_settings.size());
+    for (const auto & change : changed_settings)
+    {
+        if (!isSettingIgnoredInQueryConditionCache(change.name))
+            changed_settings_sorted.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+    }
+    std::sort(
+        changed_settings_sorted.begin(), changed_settings_sorted.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    for (const auto & [name, value] : changed_settings_sorted)
+    {
+        hash.update(name);
+        hash.update(value);
+    }
+
     return hash.get128();
 }
 
@@ -57,13 +102,13 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 }
 
 void QueryConditionCache::write(
-    const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, const Settings & settings, const String & condition,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
     if (table_id == UUIDHelpers::Nil)
         return; /// Issue #92863: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, settings);
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
@@ -120,12 +165,13 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, const Settings & settings, bool increment_profile_events)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, settings);
 
     if (auto entry = cache.get(key))
     {

@@ -1757,14 +1757,14 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// This is one logical cache consultation, so it must emit at most one
             /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
             /// the hit/miss ourselves and suppress the per-read events on every lookup.
-            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash, /*increment_profile_events=*/false);
-            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash, /*increment_profile_events=*/false);
+            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash, settings, /*increment_profile_events=*/false);
+            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash, settings, /*increment_profile_events=*/false);
             std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_row_level_marks_opt;
             std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_skip_index_marks_opt;
             if (also_probe_topk_reuse_predicate_only_hash)
             {
-                topk_reuse_predicate_only_row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, topk_reuse_predicate_only_hash, /*increment_profile_events=*/false);
-                topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false);
+                topk_reuse_predicate_only_row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, topk_reuse_predicate_only_hash, settings, /*increment_profile_events=*/false);
+                topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, topk_reuse_predicate_only_profiled_hash, settings, /*increment_profile_events=*/false);
             }
             if (!row_level_marks_opt && !skip_index_marks_opt
                 && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt)

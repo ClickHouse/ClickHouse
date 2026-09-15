@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
@@ -52,7 +53,9 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    /// Tag the filter for the query condition cache: `FilterTransform` records the marks which don't match the condition under
+    /// the given hash. `context_` is the context of the query, its settings are part of the cache key.
+    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_, ContextPtr context_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -83,7 +86,7 @@ private:
     bool remove_filter_column;
     bool prevent_input_removal = false;
 
-    std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    std::optional<QueryConditionCacheCondition> condition; /// for query condition cache
 };
 
 }

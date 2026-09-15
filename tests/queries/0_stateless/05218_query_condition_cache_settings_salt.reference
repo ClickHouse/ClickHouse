@@ -1,0 +1,13 @@
+--- formatDateTime
+0
+1000000
+0
+1000000
+--- locate
+1000000
+0
+--- the salt is stable: the same query with the same settings hits the cache
+0
+0
+05218_repeated_1	0	1
+05218_repeated_2	1	0
