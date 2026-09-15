@@ -1,0 +1,41 @@
+<clickhouse>
+<remote_servers>
+    <cluster>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster>
+</remote_servers>
+
+<macros>
+        <shard>01</shard>
+</macros>
+
+<!-- A chrooted auxiliary Keeper on the same ensemble: everything it stores lives under /aux_root in the
+     default Keeper, so which cluster a command was routed to is observable from the default one. -->
+<auxiliary_zookeepers>
+    <zookeeper_aux>
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+        </node>
+        <node index="2">
+            <host>zoo2</host>
+            <port>2181</port>
+        </node>
+        <node index="3">
+            <host>zoo3</host>
+            <port>2181</port>
+        </node>
+        <root>/aux_root</root>
+    </zookeeper_aux>
+</auxiliary_zookeepers>
+
+<!-- A name-based template, so a test can pre-create the exact path the conversion will mint. -->
+<default_replica_path>zookeeper_aux:/clickhouse/tables/{database}/{table}/{shard}</default_replica_path>
+
+</clickhouse>
