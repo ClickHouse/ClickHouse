@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS set_table;
 DROP TABLE IF EXISTS set_pair;
 DROP TABLE IF EXISTS set_pair_b;
 DROP TABLE IF EXISTS set_mat;
+DROP TABLE IF EXISTS set_rp;
 DROP TABLE IF EXISTS mt_table;
 DROP TABLE IF EXISTS ttl_table;
 DROP TABLE IF EXISTS proj_table;
@@ -23,6 +24,8 @@ CREATE TABLE set_pair_b (a UInt64, b UInt64) ENGINE = Set;
 INSERT INTO set_pair_b VALUES (4242, 1), (31337, 1);
 CREATE TABLE set_mat (a UInt64, m UInt64 MATERIALIZED a + 1) ENGINE = Set;
 INSERT INTO set_mat VALUES (4242);
+CREATE TABLE set_rp (n UInt64) ENGINE = Set;
+INSERT INTO set_rp VALUES (4242);
 CREATE TABLE mt_table (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO mt_table VALUES (4242), (31337);
 
@@ -95,5 +98,15 @@ $CLICKHOUSE_CLIENT --user "$user" -m -q "INSERT INTO ttl_table (x) SELECT 1"
 # The check is column-level, so a grant covering every column of the set table is enough.
 $CLICKHOUSE_CLIENT -m -q "REVOKE SELECT ON $db.set_table FROM $user; GRANT SELECT(n) ON $db.set_table TO $user"
 $CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE number IN set_table ORDER BY number"
+
+# A row policy on the set table cannot filter a set that is already built, so a probe against it is
+# refused for as long as the policy applies; an ordinary table there is filtered by the policy instead.
+$CLICKHOUSE_CLIENT -m -q "GRANT SELECT ON $db.set_rp TO $user; CREATE ROW POLICY rp_set ON $db.set_rp USING n > 4242 TO $user"
+$CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE number IN set_rp; -- { serverError ACCESS_DENIED }"
+$CLICKHOUSE_CLIENT --user "$user" --query_kind secondary_query --enable_analyzer 0 -m -q "SELECT number FROM numbers(100000) WHERE number IN set_rp; -- { serverError ACCESS_DENIED }"
+# A policy that hides nothing is not in the way of the probe.
+$CLICKHOUSE_CLIENT -m -q "DROP ROW POLICY rp_set ON $db.set_rp; CREATE ROW POLICY rp_set ON $db.set_rp USING 1 TO $user"
+$CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE number IN set_rp ORDER BY number"
+$CLICKHOUSE_CLIENT -m -q "DROP ROW POLICY rp_set ON $db.set_rp"
 
 $CLICKHOUSE_CLIENT -m -q "DROP USER $user"

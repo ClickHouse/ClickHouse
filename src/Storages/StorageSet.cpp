@@ -15,6 +15,7 @@
 #include <Common/StringUtils.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessType.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
@@ -38,6 +39,7 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -352,6 +354,18 @@ void checkAccessForSetTableOnRightOfIn(const ContextPtr & context, const IStorag
 {
     auto metadata_snapshot = table.getInMemoryMetadataPtr(context, false);
     context->checkAccess(AccessType::SELECT, table_id, metadata_snapshot->getColumns().getNamesOfPhysical());
+
+    /// The set is built once by INSERT and shared by every query, so a probe against it answers over
+    /// every row it holds and a row policy on the table cannot restrict what the probe observes.
+    auto row_policy_filter = context->getRowPolicyFilter(
+        table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Cannot use table {} on the right of IN because a row policy is applied on it. "
+            "The set holds the rows the policy hides",
+            table_id.getNameForLogs());
 }
 
 
