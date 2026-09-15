@@ -1,9 +1,12 @@
+#include <unordered_set>
+
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/isValidUTF8.h>
+#include <Common/quoteString.h>
 
 #include "config.h"
 
@@ -658,6 +661,27 @@ namespace
                     new_node->group_right = true;
                     if (auto * extra_labels_ctx = group_right_ctx->labelNameList())
                         new_node->extra_labels = getLabelNameList(extra_labels_ctx);
+                }
+
+                if (!error_listener.hasError() && new_node->on && !new_node->extra_labels.empty())
+                {
+                    std::unordered_set<std::string_view> extra_labels;
+                    extra_labels.reserve(new_node->extra_labels.size());
+                    for (const auto & extra_label : new_node->extra_labels)
+                        extra_labels.emplace(extra_label);
+
+                    for (const auto & label : new_node->labels)
+                    {
+                        if (extra_labels.contains(label))
+                        {
+                            const size_t error_pos = convertCodePointPositionToByteOffset(
+                                promql_query, grouping->getStart()->getStartIndex());
+                            error_listener.setError(
+                                "label " + doubleQuoteString(label) + " must not occur in ON and GROUP clause at once",
+                                error_pos);
+                            break;
+                        }
+                    }
                 }
             }
             new_node->bool_modifier = bool_modifier;
