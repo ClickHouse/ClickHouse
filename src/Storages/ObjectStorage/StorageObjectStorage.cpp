@@ -109,11 +109,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// This avoids a redundant HeadObject request that would otherwise be issued by
     /// creating a file iterator just to get a sample path string.
     if (containsOnlyEnumGlobs(path.path))
-    {
-        auto expanded = expandSelectionGlob(path.path);
-        if (!expanded.empty())
-            return expanded.front() + archive_suffix;
-    }
+        return expandSelectionGlobFirst(path.path) + archive_suffix;
 
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
