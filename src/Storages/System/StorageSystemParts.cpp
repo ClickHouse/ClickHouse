@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace
@@ -81,6 +82,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>(),    "Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>(),    "The size of the file with marks for secondary indices."},
+        {"secondary_indices_materialized",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of the secondary (data skipping) indices that are materialized in this data part. A secondary index declared on the table is only listed here for parts in which it has actually been written; an index added with `ALTER TABLE ... ADD INDEX` but not yet materialized into existing parts (see `ALTER TABLE ... MATERIALIZE INDEX`) is absent for those parts. The check follows the table's current `escape_index_filenames` setting, matching what the read path can actually use: after that setting is changed, an index written into an older part under the previous filename policy is reported as absent until it is rewritten with `ALTER TABLE ... MATERIALIZE INDEX`. Only index data that the part owns is counted, so an index file left in the part directory but missing from `checksums.txt` is reported as absent as well, and a multistream index (such as `text`) is only listed when the part holds every one of its streams together with their marks files."},
         {"modification_time",                           std::make_shared<DataTypeDateTime>(),  "The time the directory with the data part was modified. This usually corresponds to the time of data part creation."},
         {"remove_time",                                 std::make_shared<DataTypeDateTime>(),  "The time when the data part became inactive."},
         {"refcount",                                    std::make_shared<DataTypeUInt32>(),    "The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges."},
@@ -157,6 +159,20 @@ void StorageSystemParts::processNextStorage(
 
     all_parts = info.getParts(all_parts_state, has_state_column);
 
+    /// The skip-index objects of the table, built once for all its parts: `hasMaterializedSecondaryIndex`
+    /// needs the concrete index type to know which substreams the read path would open.
+    std::optional<MergeTreeIndices> skip_indices;
+    auto get_skip_indices = [&]() -> const MergeTreeIndices &
+    {
+        if (!skip_indices)
+        {
+            auto metadata_snapshot = info.storage->getInMemoryMetadataPtr(context, false);
+            skip_indices = MergeTreeIndexFactory::instance().getMany(
+                metadata_snapshot, metadata_snapshot->secondary_indices, *info.data->getSettings());
+        }
+        return *skip_indices;
+    };
+
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
         const auto & part = all_parts[part_number];
@@ -216,6 +232,23 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(get_secondary_indexes_size().data_uncompressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_secondary_indexes_size().marks);
+        if (columns_mask[src_index++])
+        {
+            /// The lookup deliberately uses the table's current `escape_index_filenames` policy:
+            /// an index file written under the other policy is invisible to the read path as well,
+            /// so reporting such an index as materialized would be a false positive. For the same
+            /// reason it uses `hasMaterializedSecondaryIndex` rather than `hasSecondaryIndex`:
+            /// only index data the part owns (per `checksums.txt`, or inside `skp_idx.packed`)
+            /// counts, never an orphan file left in the part directory, and every substream the
+            /// reader would open has to be there.
+            Array materialized_indices;
+            for (const auto & skip_index : get_skip_indices())
+            {
+                if (part->hasMaterializedSecondaryIndex(*skip_index))
+                    materialized_indices.push_back(skip_index->index.name);
+            }
+            columns[res_index++]->insert(materialized_indices);
+        }
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 
