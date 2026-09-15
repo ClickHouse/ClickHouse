@@ -1006,8 +1006,11 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     metadata_storage->applyNewSettings(config, config_prefix, context);
 
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
+    /// The client is rebuilt unconditionally on config reload: this is where a server disk picks up changes that the
+    /// settings comparison in `applyNewSettings` does not cover (e.g. the proxy configuration).
     for (const auto & [location, info] : cluster->getConfiguration())
-        object_storages->takePointingTo(location)->applyNewSettings(config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
+        object_storages->takePointingTo(location)->applyNewSettings(
+            config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true, .force_client_rebuild = true});
 
     {
         std::unique_lock lock(resource_mutex);
