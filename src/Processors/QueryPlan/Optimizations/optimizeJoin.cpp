@@ -418,7 +418,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
-        UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
+        UInt64 estimated_rows = reading->getStorage()->totalRows(reading->getContext()).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
     }

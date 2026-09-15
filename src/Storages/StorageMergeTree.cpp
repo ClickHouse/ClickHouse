@@ -421,29 +421,19 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) const
 {
-    /// `local_context` should not be nullptr, but still preserve the non-transaction-aware behavior in case there's code that
-    /// relies on it.
-    const auto txn = local_context ? local_context->getCurrentTransaction() : nullptr;
-    const auto is_visible = [&](const DataPartPtr & part) -> bool
-    {
-        return txn ? part->version->isVisible(txn->getSnapshot(), txn->tid) : true;
-    };
+    chassert(local_context);
 
-    /// `Outdated` parts may still be visible to a transaction's snapshot, so check them for the transactional case as well.
-    static constexpr std::array<DataPartState, 2> READABLE_STATES{DataPartState::Active, DataPartState::Outdated};
-    const std::span states(READABLE_STATES.data(), txn ? 2 : 1);
-
-    auto lock = readLockParts();
     UInt64 res = 0;
-    for (const auto state : states)
+    if (local_context->getCurrentTransaction())
     {
-        for (const auto & part : getDataPartsStateRange(state, MergeTreePartInfo::Kind::Regular))
-        {
-            if (is_visible(part))
-            {
-                res += part->rows_count;
-            }
-        }
+        for (const auto & part : getVisibleDataPartsVector(local_context))
+            res += part->rows_count;
+    }
+    else
+    {
+        auto lock = readLockParts();
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+            res += part->rows_count;
     }
 
     return res;
@@ -451,6 +441,8 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
+    chassert(local_context);
+
     auto parts = getVisibleDataPartsVector(local_context);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }

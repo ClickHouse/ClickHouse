@@ -6421,8 +6421,10 @@ void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_se
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRows(ContextPtr query_context) const
 {
+    chassert(query_context);
+
     /// Transactions are not supported for ReplicatedMergeTree.
-    if (unlikely(!query_context || query_context->getCurrentTransaction()))
+    if (unlikely(query_context->getCurrentTransaction()))
         return {};
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::totalRows");
@@ -6434,8 +6436,10 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(ContextPtr query_con
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
+    chassert(local_context);
+
     /// Transactions are not supported for ReplicatedMergeTree.
-    if (unlikely(!local_context || local_context->getCurrentTransaction()))
+    if (unlikely(local_context->getCurrentTransaction()))
         return {};
 
     DataPartsVector parts;
