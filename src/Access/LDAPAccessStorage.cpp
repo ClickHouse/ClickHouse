@@ -77,7 +77,7 @@ LDAPAccessStorage::~LDAPAccessStorage()
     /// must not throw, so a failure to join here can only be logged (same as `ZooKeeperReplicator`).
     try
     {
-        LDAPAccessStorage::shutdown();
+        stopSyncThread();
     }
     catch (...)
     {
@@ -996,6 +996,12 @@ void LDAPAccessStorage::startPeriodicReloading()
 
 void LDAPAccessStorage::stopPeriodicReloading()
 {
+    stopSyncThread();
+}
+
+
+void LDAPAccessStorage::stopSyncThread()
+{
     std::unique_ptr<ThreadFromGlobalPool> thread;
     {
         std::lock_guard lock(sync_thread_mutex);
@@ -1012,7 +1018,7 @@ void LDAPAccessStorage::stopPeriodicReloading()
 
 void LDAPAccessStorage::shutdown()
 {
-    stopPeriodicReloading();
+    stopSyncThread();
 }
 
 

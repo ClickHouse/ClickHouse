@@ -88,6 +88,9 @@ public:
     /// All four are no-ops without a `<sync>` section.
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
+    /// Non-virtual worker shared by `stopPeriodicReloading`, `shutdown` and the destructor
+    /// (a destructor must not reach the thread through a virtual call).
+    void stopSyncThread();
     void shutdown() override;
     void reload(ReloadMode reload_mode) override;
 
