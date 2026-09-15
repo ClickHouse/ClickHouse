@@ -23,6 +23,9 @@ if (ENABLE_SSL)
             -Wno-zero-as-null-pointer-constant
     )
     target_include_directories (_poco_net_ssl SYSTEM PUBLIC "include")
+    # `clickhouse_common_io` is needed for the TLS handshake profile events, the same way
+    # `_poco_foundation` depends on it. The resulting cycle is fine for static libraries.
+    target_link_libraries (_poco_net_ssl PRIVATE clickhouse_common_io)
     target_link_libraries (_poco_net_ssl PUBLIC Poco::Net Poco::Util OpenSSL::SSL OpenSSL::Crypto)
 else ()
     add_library (_poco_net_ssl INTERFACE)
