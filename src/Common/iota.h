@@ -18,8 +18,13 @@ template <typename T>
 concept iota_supported_types = (is_any_of<
                                 T,
                                 UInt8,
+                                UInt16,
                                 UInt32,
-                                UInt64
+                                UInt64,
+                                Int8,
+                                Int16,
+                                Int32,
+                                Int64
 #if defined(SIZE_T_IS_A_DISTINCT_TYPE)
                                 ,
                                 size_t
@@ -39,8 +44,13 @@ static_assert(
 template <iota_supported_types T> void iota(T * begin, size_t count, T first_value);
 
 extern template void iota(UInt8 * begin, size_t count, UInt8 first_value);
+extern template void iota(UInt16 * begin, size_t count, UInt16 first_value);
 extern template void iota(UInt32 * begin, size_t count, UInt32 first_value);
 extern template void iota(UInt64 * begin, size_t count, UInt64 first_value);
+extern template void iota(Int8 * begin, size_t count, Int8 first_value);
+extern template void iota(Int16 * begin, size_t count, Int16 first_value);
+extern template void iota(Int32 * begin, size_t count, Int32 first_value);
+extern template void iota(Int64 * begin, size_t count, Int64 first_value);
 #if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 extern template void iota(size_t * begin, size_t count, size_t first_value);
 #endif
@@ -49,8 +59,13 @@ template <iota_supported_types T>
 void iotaWithStep(T * begin, size_t count, T first_value, T step);
 
 extern template void iotaWithStep(UInt8 * begin, size_t count, UInt8 first_value, UInt8 step);
+extern template void iotaWithStep(UInt16 * begin, size_t count, UInt16 first_value, UInt16 step);
 extern template void iotaWithStep(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);
 extern template void iotaWithStep(UInt64 * begin, size_t count, UInt64 first_value, UInt64 step);
+extern template void iotaWithStep(Int8 * begin, size_t count, Int8 first_value, Int8 step);
+extern template void iotaWithStep(Int16 * begin, size_t count, Int16 first_value, Int16 step);
+extern template void iotaWithStep(Int32 * begin, size_t count, Int32 first_value, Int32 step);
+extern template void iotaWithStep(Int64 * begin, size_t count, Int64 first_value, Int64 step);
 #if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 extern template void iotaWithStep(size_t * begin, size_t count, size_t first_value, size_t step);
 #endif
