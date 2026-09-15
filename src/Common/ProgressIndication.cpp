@@ -185,8 +185,10 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     /// Display resource usage if possible.
     std::string profiling_msg;
 
-    double cpu_usage = getCPUUsage();
-    double waited = getWaitedUsage();
+    /// We don't want -0. that can appear due to rounding errors, and a query that is not waiting
+    /// at all must not count as stalled just because its CPU usage rounded to a negative value.
+    double cpu_usage = std::max(getCPUUsage(), 0.);
+    double waited = std::max(getWaitedUsage(), 0.);
     auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
 
@@ -196,9 +198,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
-
-        /// We don't want -0. that can appear due to rounding errors.
-        cpu_usage = std::max(cpu_usage, 0.);
 
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 
