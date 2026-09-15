@@ -1,0 +1,125 @@
+-- RENAME TABLE: policy follows the table
+before (eng only):
+1
+3
+after rename (still eng only, not the fin row):
+1
+3
+rp	data2
+-- EXCHANGE TABLES: each policy follows its data (so protection is preserved)
+before: ea has {1,2} with eng policy -> 1; eb has {10,20} with fin policy -> 20:
+1
+20
+after exchange the policies follow their data: name ea now holds {10,20} guarded by the fin policy -> 20; name eb now holds {1,2} guarded by the eng policy -> 1:
+20
+1
+-- EXCHANGE TABLES with the same policy short name on both tables (no transient name collision)
+after exchange the policies follow their data: name sa holds {10,20} guarded by fin -> 20; name sb holds {1,2} guarded by eng -> 1:
+20
+1
+-- cross-database RENAME: policy follows to the new database and table
+after cross-db rename (eng only):
+1
+default_2	cb
+-- cross-database EXCHANGE: each policy follows its data across the database boundary
+before: xa {1,2} with eng policy -> 1; xb {10,20} with fin policy -> 20:
+1
+20
+after cross-db exchange the policies followed their data: name xa now holds {10,20} guarded by the fin policy -> 20; name xb now holds {1,2} guarded by the eng policy -> 1:
+20
+1
+and both bindings moved to the other database:
+default_2	xb
+default	xa
+-- cross-database EXCHANGE rejected when only the DESTINATION has a database-wide policy
+NOT_IMPLEMENTED
+after rejected exchange nothing moved: ya still holds its own {1,2} unfiltered (no policy in that database) and yb still holds {10,20} filtered by the db-wide fin policy -> 20:
+1
+2
+20
+and the db-wide policy is still bound to its own database:
+default_2
+-- RENAME DATABASE: database-wide and per-table policies follow
+after database rename (db-wide policy still applies -> eng only):
+1
+and the per-table policy followed too, so t2 shows eng (3) plus the id=4 row it permits:
+3
+4
+default_2
+default_2	t2
+-- failed RENAME: policy binding is preserved
+TABLE_ALREADY_EXISTS
+after failed rename (policy stays, eng only):
+1
+ra
+-- RENAME rejected when destination row-policy name is taken (no commit-then-leak)
+ACCESS_ENTITY_ALREADY_EXISTS
+after rejected rename (table not renamed, policy stays on ka, eng only):
+1
+0
+ka
+kc
+-- RENAME rejected when the policy is in a read-only storage (users.xml), via clickhouse-local
+ACCESS_STORAGE_READONLY
+after rejected rename (table not renamed, read-only policy still bound to rt):
+0
+rt
+-- self-EXCHANGE of a table with a read-only (users.xml) policy still succeeds
+self-exchange accepted
+rt
+1
+-- self-EXCHANGE with a writable policy: succeeds, binding and filtering unchanged
+after self-exchange (policy still on selfx, still eng only):
+selfx
+1
+-- cross-database RENAME rejected when a database-wide (db.*) policy applies
+NOT_IMPLEMENTED
+after rejected cross-db rename (table not moved, db-wide policy still filters source -> eng only):
+1
+0
+-- RENAME rejected when the transient (phase-1) row-policy name is taken (no commit-then-leak)
+ACCESS_ENTITY_ALREADY_EXISTS
+after rejected rename (table not renamed, policy stays on ta, eng only):
+1
+0
+-- EXCHANGE rejected when a moving policy occupies another policy transient name
+ACCESS_ENTITY_ALREADY_EXISTS
+after rejected exchange (nothing moved: ma still holds {1,2}, and both policies are still bound):
+1
+2
+-- CREATE OR REPLACE TABLE: target row policy stays and keeps filtering
+before (eng only):
+1
+after CREATE OR REPLACE (policy still filters -> eng only, not the new fin rows):
+1
+cor
+-- REPLACE TABLE: target row policy stays and keeps filtering
+after REPLACE TABLE (policy still filters -> eng only):
+1
+rep
+-- refreshable materialized view: target row policy stays and keeps filtering
+refreshed target really has both rows:
+2
+after the first refresh (policy still filters -> eng only, not the fin row):
+1
+rmvt
+-- RENAME DICTIONARY: policy follows the dictionary
+before (eng only -> 1 row of 2):
+1
+after rename (policy followed -> still 1 row, and bound to dict2):
+1
+dict2
+-- EXCHANGE DICTIONARIES with the same policy short name on both dictionaries
+before (xdictA filtered to eng -> id 1, xdictB filtered to fin -> id 2):
+[1]
+[2]
+after exchange (both policies followed their data -> the two answers swapped):
+[2]
+[1]
+xdictA	dept = \'fin\'
+xdictB	dept = \'eng\'
+-- cross-database RENAME DICTIONARY rejected when a database-wide (db.*) policy applies
+NOT_IMPLEMENTED
+after rejected cross-db dictionary rename (dictionary not moved, db-wide policy still bound):
+dict2
+1

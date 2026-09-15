@@ -208,3 +208,74 @@ def test_drop_system_log():
         ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node.restart_clickhouse()
+
+
+def test_system_log_rotation_keeps_row_policy():
+    # Schema rotation renames the active log aside to system.query_log_<N> and recreates the
+    # replacement under system.query_log. That swap only replaces the storage behind the name, so a
+    # row policy on system.query_log must stay on it and keep filtering the new active log. If the
+    # policy followed the data to the archived name instead, the new active log would be unfiltered.
+    try:
+        node.query(
+            "CREATE ROW POLICY qlp ON system.query_log FOR SELECT USING type = 'QueryFinish' TO ALL"
+        )
+        node.query("SELECT 'before rotation'")
+        node.query("SYSTEM FLUSH LOGS")
+        assert (
+            node.query(
+                "SELECT count() = 0 FROM system.query_log WHERE type != 'QueryFinish'"
+            )
+            == "1\n"
+        )
+
+        # A different engine makes the stored CREATE query differ, which is what triggers rotation.
+        # <engine> carries PARTITION BY/ORDER BY itself, and the server refuses to start if the
+        # sibling <partition_by> is also set, so the one from config.xml has to be removed here.
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                """echo "
+        <clickhouse>
+            <query_log>
+                <engine>ENGINE = MergeTree ORDER BY (event_time)</engine>
+                <partition_by remove='remove'/>
+            </query_log>
+        </clickhouse>
+        " > /etc/clickhouse-server/config.d/zzz-override-query_log-policy.xml
+        """,
+            ]
+        )
+        node.restart_clickhouse()
+        node.query("SELECT 'after rotation'")
+        node.query("SYSTEM FLUSH LOGS")
+
+        # The rotation really happened: the archived table exists next to the recreated one.
+        assert node.query("EXISTS TABLE system.query_log_0") == "1\n"
+        # The policy stayed on the stable name rather than following the data to the archive.
+        assert (
+            node.query(
+                "SELECT table FROM system.row_policies WHERE short_name = 'qlp' AND database = 'system'"
+            )
+            == "query_log\n"
+        )
+        # And it still filters the new active log, which really does have rows.
+        assert node.query("SELECT count() > 0 FROM system.query_log") == "1\n"
+        assert (
+            node.query(
+                "SELECT count() = 0 FROM system.query_log WHERE type != 'QueryFinish'"
+            )
+            == "1\n"
+        )
+    finally:
+        node.query("DROP ROW POLICY IF EXISTS qlp ON system.query_log")
+        node.exec_in_container(
+            [
+                "rm",
+                "-f",
+                "/etc/clickhouse-server/config.d/zzz-override-query_log-policy.xml",
+            ]
+        )
+        node.restart_clickhouse()
+        for suffix in range(2):
+            node.query(f"DROP TABLE IF EXISTS system.query_log_{suffix} SYNC")
