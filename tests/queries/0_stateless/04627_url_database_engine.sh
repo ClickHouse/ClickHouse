@@ -54,8 +54,10 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${WEB_DB}.\`ping\`"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${WEB_DB}.\`${SERVER_URL}/ping\`"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${WEB_DB}"
 
-echo '--- the base URL must contain a scheme'
+echo '--- the base URL must contain a scheme, and the rejected value is not echoed back (last line counts the leaks)'
 ${CLICKHOUSE_LOCAL} -q "CREATE DATABASE bad ENGINE = URL('localhost/dir/')" 2>&1 | grep -oF 'must contain a scheme' | head -1
+${CLICKHOUSE_LOCAL} -q "CREATE DATABASE bad ENGINE = URL('user:SEKRIT_PW@localhost/dir/')" 2>&1 | grep -oF 'must contain a scheme' | head -1
+${CLICKHOUSE_LOCAL} -q "CREATE DATABASE bad ENGINE = URL('user:SEKRIT_PW@localhost/dir/')" 2>&1 | grep -c SEKRIT_PW
 
 echo '--- the base-url password is masked in the display surfaces (the last line counts the leaks)'
 SECRET_DB="${CLICKHOUSE_DATABASE}_04627_secret"
