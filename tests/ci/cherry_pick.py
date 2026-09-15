@@ -478,7 +478,7 @@ close it.
         # Forced refspecs: the bot force-pushes both of these branches, so a
         # non-forced fetch can leave stale remote-tracking refs behind
         git_runner(
-            f"{GIT_PREFIX} fetch {self.REMOTE} "
+            f"{GIT_PREFIX} fetch --no-tags --no-recurse-submodules {self.REMOTE} "
             + " ".join(
                 f"+refs/heads/{branch}:refs/remotes/{self.REMOTE}/{branch}"
                 for branch in (self.name, self.backport_branch, self.cherrypick_branch)
@@ -654,7 +654,7 @@ close it.
         # apply like they are only one cherry-pick commit on top of release
         logging.info("Creating backport for PR #%s", self.pr.number)
         git_runner(
-            f"{GIT_PREFIX} fetch {self.REMOTE} "
+            f"{GIT_PREFIX} fetch --no-tags --no-recurse-submodules {self.REMOTE} "
             f"+refs/heads/{self.backport_branch}:"
             f"refs/remotes/{self.REMOTE}/{self.backport_branch}"
         )
@@ -959,10 +959,38 @@ class BackportPRs:
     @property
     def remote(self) -> str:
         if not self._remote:
-            self._remote = self.remote_line.split(maxsplit=1)[0]
-            git_runner(f"git fetch {self._remote}")
-            ReleaseBranch.REMOTE = self._remote
+            remote = self.remote_line.split(maxsplit=1)[0]
+            self.fetch_branches(remote)
+            self._remote = remote
+            ReleaseBranch.REMOTE = remote
         return self._remote
+
+    def fetch_branches(self, remote: str) -> None:
+        """Refresh complete history for the active backport work only."""
+        if not self.release_branches:
+            raise BackportException("Discover active releases before fetching branches")
+        branches = [self.default_branch]
+        for release in self.release_branches:
+            branches.extend(
+                (release, f"backport/{release}/*", f"cherrypick/{release}/*")
+            )
+        refspecs = [
+            f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}"
+            for branch in branches
+        ]
+        # Explicit refspecs avoid fetching unrelated heads through the remote's
+        # usual wildcard configuration. Wildcards keep recovery independent of
+        # GitHub's PR search and also discover branches created between passes.
+        # Prune deleted automation refs before reconciliation inspects them.
+        unshallow = "--unshallow " if is_shallow() else ""
+        logging.info("Fetching backport branches: %s", ", ".join(branches))
+        git_runner(
+            f"{GIT_PREFIX} fetch --prune --no-tags --no-recurse-submodules "
+            f"{unshallow}{shlex.quote(remote)} "
+            + " ".join(shlex.quote(refspec) for refspec in refspecs)
+        )
+        if is_shallow():
+            raise BackportException("Backport automation requires complete Git history")
 
     @property
     def is_remote_ssh(self) -> bool:
@@ -993,17 +1021,19 @@ class BackportPRs:
 
     def update_local_release_branches(self):
         logging.info("Update local release branches")
+        # Fetch even when the bootstrap checkout has no local release branches.
+        remote = self.remote
         branches = git_runner("git branch").split()
         for branch in self.release_branches:
             if branch not in branches:
                 # the local branch is not exist, so continue
                 continue
             local_ref = git_runner(f"git rev-parse {branch}")
-            remote_ref = git_runner(f"git rev-parse {self.remote}/{branch}")
+            remote_ref = git_runner(f"git rev-parse {remote}/{branch}")
             if local_ref == remote_ref:
                 # Do not need to update, continue
                 continue
-            logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
+            logging.info("Resetting %s to %s/%s", branch, remote, branch)
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
     def oldest_commit_date(self) -> date:
@@ -1546,7 +1576,7 @@ def parse_args():
     parser.add_argument(
         "--interval",
         type=int,
-        default=20 * 60,
+        default=10 * 60,
         help="seconds between iteration starts",
     )
     parser.add_argument(
@@ -1573,16 +1603,15 @@ def run_once(args):
     gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
     gh_cache.download()
 
-    # First, check if some cherry-pick PRs are reopened and original PRs are mared as
-    # done
-    cpp = CherryPickPRs(gh, args.repo, args.dry_run)
-    cpp.check_open_prs()
-
     bpp = BackportPRs(gh, args.repo, args.dry_run)
 
     bpp.gh.cache_path = temp_path / "gh_cache"
     bpp.receive_release_prs()
     bpp.update_local_release_branches()
+    # Finish the targeted fetch before changing any PR labels or state. Then
+    # requeue reopened cherry-picks before searching for original PRs to process.
+    cpp = CherryPickPRs(gh, args.repo, args.dry_run)
+    cpp.check_open_prs()
     # Before the search, so a recovered PR is processed in this very run: it is
     # invisible to `receive_prs_for_backport` until GitHub reindexes the label
     bpp.reconcile_backport_branches()
@@ -1687,8 +1716,6 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     # Check prerequisites before fetching credentials or making API mutations.
     check_git_version()
-    if is_shallow():
-        raise BackportException("Backport automation requires a complete Git checkout")
     with stash():
         if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
             with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
