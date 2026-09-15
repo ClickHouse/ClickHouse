@@ -188,7 +188,14 @@ namespace
             case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
             case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
             case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
+#ifdef LDAP_OPT_X_TLS_PROTOCOL_TLS1_3
             case LDAPClient::Params::TLSProtocolVersion::TLS1_3: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_3; break;
+#else
+            /// The constant appeared in OpenLDAP 2.4.47; older builds have `LDAP_OPT_X_TLS_PROTOCOL_MIN`/`MAX` but no way to name
+            /// TLS 1.3 to them. Refuse the configured value instead of guessing, in line with the other extensions in `openConnection`.
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_3:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls1.3' is not supported by this build of libldap");
+#endif
         }
         return value;
     }
