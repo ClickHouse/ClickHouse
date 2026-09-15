@@ -20,6 +20,14 @@ using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
+/// Add the step that builds the `IN`-subquery sets referenced by a table expression's PREWHERE and
+/// row-level filters. A plan built only to `QueryProcessingStage::FetchColumns` returns before the
+/// planner reaches its own set building, so a caller that executes such a plan adds the step itself.
+void addBuildSubqueriesForTableFilterSets(
+    QueryPlan & query_plan,
+    const SelectQueryOptions & select_query_options,
+    const PlannerContextPtr & planner_context);
+
 class Planner
 {
 public:
