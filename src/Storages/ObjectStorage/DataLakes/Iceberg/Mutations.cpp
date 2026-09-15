@@ -378,7 +378,7 @@ static bool writeMetadataFiles(
 
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
     Int64 parent_snapshot = -1;
-    if (metadata->has(Iceberg::f_current_snapshot_id))
+    if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     auto sum_files = [](const DataFileWriteResultWithStats & set) -> std::tuple<Int64, Int64, Int64>
@@ -740,7 +740,7 @@ void mutate(
         current_iceberg_snapshot.metadata_file_path = metadata_path;
         current_iceberg_snapshot.metadata_version = last_version;
         current_iceberg_snapshot.schema_id = static_cast<Int32>(current_schema_id);
-        if (metadata->has(Iceberg::f_current_snapshot_id))
+        if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
         {
             Int64 snapshot_id_val = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
             if (snapshot_id_val >= 0)
