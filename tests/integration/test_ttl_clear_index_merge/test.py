@@ -273,6 +273,182 @@ def test_ttl_clear_index_leaves_patches_pending(started_cluster):
     node1.query("DROP TABLE ttl_clear_index_patches SYNC")
 
 
+def test_metadata_only_clear_preserves_unchanged_packed_index(started_cluster):
+    table = "ttl_clear_index_packed_accounting"
+    node1.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            d Date,
+            k UInt64,
+            s String,
+            INDEX idx_expired s TYPE text(tokenizer = ngrams(3)),
+            INDEX idx_keep k TYPE minmax GRANULARITY 64
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL d + INTERVAL 1 DAY CLEAR INDEX idx_expired
+        SETTINGS
+            columns_and_secondary_indices_sizes_lazy_calculation = 0,
+            index_granularity = 64,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0,
+            packed_skip_index_max_bytes = 4096,
+            storage_policy = 's3_only'
+        """
+    )
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(
+        f"INSERT INTO {table} "
+        "SELECT toDate('2000-01-01'), number, hex(cityHash64(number)) "
+        "FROM numbers(10000)"
+    )
+
+    # Text-index substreams are never packed; the coarse minmax index stays below the
+    # threshold, so clearing idx_expired must preserve an unchanged skp_idx.packed.
+    sizes = dict(
+        line.split("\t")
+        for line in node1.query(
+            "SELECT name, data_compressed_bytes "
+            "FROM system.data_skipping_indices "
+            f"WHERE database = currentDatabase() AND table = '{table}'"
+        )
+        .strip()
+        .splitlines()
+    )
+    assert int(sizes["idx_expired"]) > 0
+    assert 0 < int(sizes["idx_keep"]) < 4096
+
+    merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+    node1.query(f"SYSTEM START TTL MERGES {table}")
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(value) > {} FROM system.events "
+        "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(merges_before),
+        "1",
+        retry_count=60,
+    )
+    assert_eq_with_retry(
+        node1,
+        "SELECT data_compressed_bytes = 0 FROM system.data_skipping_indices "
+        f"WHERE database = currentDatabase() AND table = '{table}' "
+        "AND name = 'idx_expired'",
+        "1",
+        retry_count=60,
+    )
+    assert_eq_with_retry(
+        node1,
+        "SELECT data_compressed_bytes > 0 FROM system.data_skipping_indices "
+        f"WHERE database = currentDatabase() AND table = '{table}' "
+        "AND name = 'idx_keep'",
+        "1",
+        retry_count=60,
+    )
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_stop_ttl_merges_during_projection_finalization(started_cluster):
+    table = "ttl_clear_index_late_stop"
+    node1.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            d Date,
+            k UInt64,
+            v UInt64,
+            INDEX idx v TYPE minmax GRANULARITY 1,
+            PROJECTION by_v (SELECT k, v ORDER BY v)
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS
+            index_granularity = 64,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+        """
+    )
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(
+        f"INSERT INTO {table} SELECT toDate('2000-01-01'), number, number "
+        "FROM numbers(10000)"
+    )
+    node1.query(f"ALTER TABLE {table} MODIFY SETTING assign_part_uuids = 1")
+    part_before = node1.query(
+        "SELECT name FROM system.parts WHERE database = currentDatabase() "
+        f"AND table = '{table}' AND active"
+    )
+
+    node1.query("SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause")
+    try:
+        node1.query(f"SYSTEM START TTL MERGES {table}")
+        node1.query(
+            "SYSTEM WAIT FAILPOINT merge_task_projection_stage_pause PAUSE",
+            timeout=60,
+        )
+        node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT merge_task_projection_stage_pause")
+
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM system.merges "
+        f"WHERE database = currentDatabase() AND table = '{table}'",
+        "0",
+        retry_count=60,
+    )
+    assert (
+        node1.query(
+            "SELECT name FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active"
+        )
+        == part_before
+    )
+    assert (
+        node1.query(
+            "SELECT sum(secondary_indices_compressed_bytes) > 0 "
+            "FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active"
+        )
+        == "1\n"
+    )
+
+    node1.query("SYSTEM ENABLE FAILPOINT merge_task_pause_before_precommit")
+    try:
+        node1.query(f"SYSTEM START TTL MERGES {table}")
+        node1.query(
+            "SYSTEM WAIT FAILPOINT merge_task_pause_before_precommit PAUSE",
+            timeout=60,
+        )
+        node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT merge_task_pause_before_precommit")
+
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM system.merges "
+        f"WHERE database = currentDatabase() AND table = '{table}'",
+        "0",
+        retry_count=60,
+    )
+    assert (
+        node1.query(
+            "SELECT name FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active"
+        )
+        == part_before
+    )
+    assert (
+        node1.query(
+            "SELECT sum(secondary_indices_compressed_bytes) > 0 "
+            "FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active"
+        )
+        == "1\n"
+    )
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
 def test_replicas_execute_ttl_clear_index_merge(started_cluster):
     create_table(node1, "r1")
     create_table(node2, "r2")
@@ -459,7 +635,7 @@ def test_ttl_clear_index_fails_over_when_source_is_inactive(started_cluster):
     assert_eq_with_retry(
         node2,
         "SELECT count() > 0 FROM system.replication_queue "
-        f"WHERE table = '{table}' AND merge_type = 'TTL_CLEAR_INDEX'",
+        f"WHERE table = '{table}' AND merge_type = 'TTLClearIndex'",
         "1",
         retry_count=60,
     )

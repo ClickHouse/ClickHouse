@@ -122,6 +122,7 @@ namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
+    extern const char merge_task_pause_before_precommit[];
 }
 
 namespace Setting
@@ -717,6 +718,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
                 global_ctx->context->getReadSettings(),
                 global_ctx->new_data_part->checksums,
                 need_sync);
+        }
+        else if (auto * destination_disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&dst_storage))
+        {
+            destination_disk_storage->seedSkipIndicesPackedReaderFrom(src_storage);
         }
     }
 
@@ -2755,6 +2760,15 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
 
 bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 {
+    const auto check_ttl_cleanup_not_cancelled = [&]
+    {
+        global_ctx->checkOperationIsNotCanceled();
+        if (global_ctx->clear_expired_indexes && global_ctx->ttl_merges_blocker->isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
+    };
+
+    check_ttl_cleanup_not_cancelled();
+
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
@@ -2777,7 +2791,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         global_ctx->time_of_merge,
-        !global_ctx->ttl_merges_blocker->isCancelled(),
+        global_ctx->clear_expired_indexes,
         ctx->need_sync,
         global_ctx->context->getWriteSettings());
 
@@ -2792,6 +2806,8 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     global_ctx->new_data_part->getDataPartStorage().setPreferredFileOrder(
         global_ctx->new_data_part->getPreferredFileOrder());
 
+    FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_before_precommit);
+    check_ttl_cleanup_not_cancelled();
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
 

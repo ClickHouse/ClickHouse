@@ -53,13 +53,14 @@ ReplicatedMergeTreeMergeStrategyPicker::getTTLClearIndexExecutionRole(const Repl
     if (!storage.getZooKeeper()->exists(source_active_path))
         return TTLClearIndexExecutionRole::Failover;
 
-    if (storage.checkReplicaHavePart(entry.source_replica, entry.new_part_name))
-        return TTLClearIndexExecutionRole::WaitForSource;
-
     const auto source_preference_timeout
         = (*storage.getSettings())[MergeTreeSetting::execute_merges_on_single_replica_time_threshold].totalSeconds();
     if (source_preference_timeout == 0)
         return TTLClearIndexExecutionRole::NotApplicable;
+
+    if (storage.checkReplicaHavePart(entry.source_replica, entry.new_part_name))
+        return TTLClearIndexExecutionRole::WaitForSource;
+
     if (entry.create_time + source_preference_timeout <= time(nullptr))
         return TTLClearIndexExecutionRole::Failover;
 
