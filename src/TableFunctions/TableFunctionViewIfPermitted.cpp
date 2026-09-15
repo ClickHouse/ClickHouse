@@ -49,7 +49,7 @@ private:
 
     const char * getStorageEngineName() const override { return "View"; }
 
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -63,7 +63,7 @@ private:
 };
 
 
-VectorWithMemoryTracking<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+std::vector<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
 }
@@ -156,7 +156,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>({}, {.allow_readonly = true});
 }
 
 }

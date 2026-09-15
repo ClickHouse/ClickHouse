@@ -171,10 +171,6 @@ const ActionsDAG::Node * buildPredicateFromTemplate(ActionsDAG & full_dag, const
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns);
-std::optional<ActionsDAG> tryToExtractPartialPredicate(
-    const ActionsDAG & original_dag,
-    const std::string & filter_name,
     const Names & available_columns)
 {
     if (!original_dag.tryFindInOutputs(filter_name))
@@ -210,7 +206,6 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     return full_dag;
 }
 
-void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag)
 {
     auto & new_filter_node = nodes.emplace_back();

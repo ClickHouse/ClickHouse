@@ -14,6 +14,7 @@
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Interpreters/Context.h>
+#include <Storages/StorageFile.h>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -22,8 +23,6 @@
 #include <boost/program_options.hpp>
 
 #include <atomic>
-#include <filesystem>
-#include <functional>
 #include <optional>
 #include <string_view>
 #include <string>
@@ -121,7 +120,6 @@ protected:
     void runNonInteractive();
 
     char * argv0 = nullptr;
-    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
@@ -138,37 +136,12 @@ protected:
     }
 
     virtual void connect() = 0;
-
-    /// Make sure the connection is synchronized with the server after a failed query, reconnecting
-    /// if it is not. Unlike the check before every query, this one costs a round trip - it is the
-    /// only way to observe a connection that the server has already closed but whose close has not
-    /// been delivered yet.
-    void resynchronizeConnectionAfterError();
-
-    /// Start a query exchange: arm `connection_needs_resynchronization` for its duration and run
-    /// `send_query` (a `sendQuery` call on the shared connection). If the call fails before the
-    /// first byte of the query packet has been written, the flag is disarmed again: the protocol
-    /// never left sync, and the session must not pay for the failure with a round trip.
-    void armResynchronizationAndSendQuery(std::function<void()> send_query);
-
     virtual void processError(std::string_view query) const = 0;
     virtual String getName() const = 0;
 
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
-    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
-    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
-    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
-    void pinOutboundDialectForJSONDialect(const String & outbound_query);
-
-    /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
-    /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
-    /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
-    /// was derived from `compatibility`, so the caller can send the client settings without copying them.
-    std::optional<Settings> settingsWithoutCompatibilityDerived() const;
     void processParsedSingleQuery(
         std::string_view query_,
         ASTPtr parsed_query,
@@ -180,15 +153,6 @@ protected:
     virtual void setupSignalHandler() = 0;
 
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
-
-    /// Echo the query before execution, honoring the echo, echo-formatted and highlight settings.
-    void echoQuery(std::string_view full_query, const ASTPtr & parsed_query);
-
-    /// Resolve echo, echo-formatted, echo-query-id and highlight settings from the configuration,
-    /// using interactive-mode-aware defaults. Must be called after is_interactive is determined.
-    /// `clickhouse-local` historically makes `--verbose` imply query echoing; other clients do not,
-    /// so the implication is opt-in via `verbose_implies_echo`.
-    void setupEchoAndHighlightSettings(bool verbose_implies_echo = false);
 
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
@@ -237,17 +201,6 @@ protected:
     /// regular client and clickhouse-local. For any other specific option
     /// please use processOptions method.
     void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
-    /// Remap the underscore XML spellings of some boolean keys (e.g. <echo_query_id/>) to the
-    /// dashed keys the read sites use, unless the dashed key is already set (e.g. by a CLI
-    /// flag). Call it right after the config file is merged into the client configuration,
-    /// before validateClientConfiguration.
-    void remapClientConfigurationAliases();
-    /// Fail-fast validation of option values that may come from the client config file rather
-    /// than the command line. The config file is loaded after the command line is processed,
-    /// so the CLI-side validation in `addOptionsToTheClientConfiguration` never sees these
-    /// values. Call it right after the config file is merged into the client configuration,
-    /// so that an invalid value cannot let a query start before the error is reported.
-    void validateClientConfiguration();
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,
@@ -262,21 +215,8 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
-    /// The setting that the `--format` option and the `format` config key are mirrored into.
-    /// In `clickhouse-local`, `--format` has always set both the default input and the default output
-    /// format, so it maps to the bidirectional `format` setting. In `clickhouse-client` (including the
-    /// embedded client), `--format` is documented as output-only, so it maps to `output_format`:
-    /// mirroring it into `format` would make it override the `FORMAT` clause of `INSERT` queries
-    /// on the input side.
-    virtual std::string_view mappedFormatOptionSetting() const { return "output_format"; }
-
-    static std::filesystem::path getHistoryFilePath();
+    static fs::path getHistoryFilePath();
 private:
-    /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
-    /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
-    /// output path, so it neither prints anything nor disturbs the visible query state.
-    Block fetchDocumentation(const String & query, const String & word);
-
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
@@ -323,13 +263,6 @@ private:
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
-    virtual bool supportsLocalMetaCommands() const { return false; }
-
-    /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
-    /// and renders its embedded documentation, formatted from Markdown, in the terminal. When nothing
-    /// matches exactly, lists similar names and entities whose documentation mentions the word.
-    /// Always returns true: the input was consumed as a meta-command.
-    bool processHelpCommand(const String & word);
 
 protected:
 
@@ -382,30 +315,19 @@ protected:
     ContextMutablePtr global_context;
     ContextMutablePtr client_context;
 
-    /// The client local time zone, captured on the first connect() before it may switch the
-    /// process default to the server time zone. Used to seed `session_timezone` per query when
-    /// `use_client_time_zone` is set, so server-side literal parsing matches the client side.
-    String client_local_timezone;
-
     String default_database;
     String query_id;
-    Int32 suggestion_limit{};
+    Int32 suggestion_limit;
     bool enable_highlight = true;
     bool multiline = false;
-    bool rainbow_parentheses = true;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
 
-    bool echo_queries = false; /// Print queries before execution (defaults to on in interactive mode, off in batch mode).
-    bool echo_query_formatted = false; /// Format echoed queries (defaults to on in interactive mode, off in batch mode).
-    bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
-    String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
-    bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
+    bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
-    bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
@@ -457,9 +379,6 @@ protected:
     std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
-    /// Wrapper for hooking into the flush event.
-    std::unique_ptr<WriteBuffer> std_out_wrapper;
-
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
     std::shared_ptr<IOutputFormat> output_format;
@@ -475,9 +394,9 @@ protected:
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
 
-    std::filesystem::path home_path;
-    std::filesystem::path history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries{}; /// Maximum number of entries in the history file.
+    fs::path home_path;
+    fs::path history_file; /// Path to a file containing command history.
+    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
     String server_version;
@@ -488,9 +407,6 @@ protected:
     SettingsChanges settings_from_server;
 
     ProgressIndication progress_indication;
-    /// Progress received before the output format was created (e.g. from scalar subqueries during analysis).
-    /// Replayed into output_format once it's available.
-    Progress pending_progress;
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
@@ -514,19 +430,7 @@ protected:
     /// `client_exception` must be set.
     bool have_error = false;
 
-    /// A failed query can leave the protocol desynchronized: the server can throw before it reads
-    /// the block of external data of that query, and then close the connection. The close can
-    /// arrive with an arbitrary delay, so looking at the socket is not enough to notice it - the
-    /// connection has to be checked with a round trip before the next query of the same session.
-    /// The flag is armed when a query exchange starts (right before the query is sent) and cleared
-    /// when the exchange completes cleanly, so a purely local error that happens before anything
-    /// has been sent to the server does not force the round trip: the protocol never left sync,
-    /// and a reconnection could needlessly lose the session state (temporary tables, the current
-    /// database, session settings).
-    bool connection_needs_resynchronization = false;
-
     std::list<ExternalTable> external_tables; /// External tables info.
-    std::list<ExternalTable> external_scalars; /// External scalars info.
     bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 
@@ -563,40 +467,19 @@ protected:
         Block last_block;
     } profile_events;
 
-    QueryProcessingStage::Enum query_processing_stage{};
+    QueryProcessingStage::Enum query_processing_stage;
     ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
 
     struct HostAndPort
     {
         String host;
         std::optional<UInt16> port;
-        /// Whether TLS has to be used for this address. It is unset unless it was specified explicitly
-        /// for this address or it was determined by the automatic choice between the plain and the
-        /// secure port, which remembers its outcome here (and not in the global configuration,
-        /// so that the other addresses keep choosing their transport on their own).
-        std::optional<bool> secure;
-        /// Which of the addresses this host resolves to is known to answer. A host can resolve to several
-        /// addresses, and the connection tries them one by one, so an unresponsive address in front of the
-        /// list costs a whole connection timeout. The automatic choice between the plain and the secure
-        /// port learns the answering address and remembers it here, because a reconnect to this address
-        /// does not probe the ports again and would otherwise start from the first address once more.
-        std::optional<Poco::Net::SocketAddress> address;
-        /// Whether `port` and `secure` above were determined by the automatic choice between the plain
-        /// and the secure port rather than specified by the user. Such a choice is only valid for the
-        /// endpoints the host resolved to at the time of the probe, so it and the address above are
-        /// forgotten after a failed connection attempt, and the next attempt probes the ports again.
-        bool transport_auto_detected = false;
     };
 
     std::vector<HostAndPort> hosts_and_ports{};
 
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
-
-    /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
-    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
-    /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
-    bool current_query_parsed_as_json_dialect = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;

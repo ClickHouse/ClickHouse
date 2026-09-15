@@ -76,7 +76,7 @@ struct FunctionDetectLanguageImpl
         res_data.reserve(input_rows_count * 2);
         res_offsets.resize(input_rows_count);
 
-        bool is_reliable = false;
+        bool is_reliable;
         size_t res_offset = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -108,7 +108,7 @@ struct FunctionDetectLanguageImpl
     }
 };
 
-class FunctionDetectLanguageMixed final : public IFunction
+class FunctionDetectLanguageMixed : public IFunction
 {
 public:
     static constexpr auto name = "detectLanguageMixed";
@@ -171,7 +171,7 @@ public:
         values_data->reserve(total_elements);
         offsets->reserve(input_rows_count);
 
-        bool is_reliable = false;
+        bool is_reliable;
         CLD2::Language result_lang_top3[top_N];
         int32_t pc[top_N];
         int bytes[top_N];
@@ -233,14 +233,6 @@ using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLa
 REGISTER_FUNCTION(DetectLanguage)
 {
     FunctionDocumentation::Description description_detect = R"(
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
-
 Detects the language of the UTF8-encoded input string.
 The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
 
@@ -252,7 +244,7 @@ The longer the input, the more precise the language detection will be.
     };
     FunctionDocumentation::ReturnedValue returned_value_detect = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
     FunctionDocumentation::Examples examples_detect = {
-        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif.')", "fr"}
+        {"Mixed language text", "SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there\\'s a will, there\\'s a way.')", "fr"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_detect = {22, 2};
     FunctionDocumentation::Category category_detect = FunctionDocumentation::Category::NLP;
@@ -261,14 +253,6 @@ The longer the input, the more precise the language detection will be.
     factory.registerFunction<FunctionDetectLanguage>(documentation_detect);
 
     FunctionDocumentation::Description description_mixed = R"(
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
-
 Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 )";
     FunctionDocumentation::Syntax syntax_mixed = "detectLanguageMixed(s)";
@@ -277,7 +261,7 @@ Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguage
     };
     FunctionDocumentation::ReturnedValue returned_value_mixed = {"Returns a map with keys which are 2-letter ISO codes and corresponding values which are a percentage of the text found for that language", {"Map(String, Float32)"}};
     FunctionDocumentation::Examples examples_mixed = {
-        {"Mixed languages", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
+        {"Mixed languages", "SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mixed = {22, 2};
     FunctionDocumentation::Category category_mixed = FunctionDocumentation::Category::NLP;

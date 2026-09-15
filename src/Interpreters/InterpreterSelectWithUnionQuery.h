@@ -10,6 +10,8 @@ class InterpreterSelectQuery;
 class QueryPlan;
 class Block;
 
+using Blocks = std::vector<Block>;
+
 /** Interprets one or multiple SELECT queries inside UNION/UNION ALL/UNION DISTINCT chain.
   */
 class InterpreterSelectWithUnionQuery : public IInterpreterUnionOrSelectQuery
@@ -48,6 +50,8 @@ public:
     void ignoreWithTotals() override;
 
     bool supportsTransactions() const override { return true; }
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
