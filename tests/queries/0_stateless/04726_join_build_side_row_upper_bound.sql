@@ -141,6 +141,26 @@ SELECT 'one-row leaf preserves the composite bound',
     ) AS d JOIN fact_04726 ON d.id = fact_04726.id
 ) WHERE explain ILIKE '%Join:%';
 
+-- A join whose ON clause spans one input side only, or none, adds no binary edge, so the DPsub
+-- conflict-detector path links those relations through a branch of its own. A relation seeded only
+-- there must still carry its bound, or the fallback cannot see it. `name` is outside the index, so
+-- `cross_04726` has no row estimate, only a bound.
+CREATE TABLE cross_04726 (id Int32, name String) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO cross_04726 SELECT number, toString(number) FROM numbers(200);
+
+-- The first condition keeps the assertion non-vacuous if the relation stops appearing at all.
+SELECT 'degenerate-predicate leaf keeps orientation',
+        countIf(explain ILIKE '%cross\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM cross_04726 JOIN fact_04726 ON 1 WHERE cross_04726.name = 'nowhere'
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
+             query_plan_optimize_join_order_use_conflict_detector_c = 1
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE cross_04726;
+
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
 -- future change cannot keep the plan shape while losing the small build side at runtime.
 SELECT avg(val)
