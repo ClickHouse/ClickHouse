@@ -10,6 +10,7 @@ SET enable_join_transitive_predicates = 1;
 SET materialize_statistics_on_insert = 1;
 SET collect_hash_table_stats_during_joins = 0;
 
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 DROP TABLE IF EXISTS e1;
 DROP TABLE IF EXISTS e2;
 DROP TABLE IF EXISTS e3;
@@ -261,7 +262,10 @@ SELECT explain FROM (
     EXPLAIN actions = 1
     SELECT count() FROM nlc1, nu2, nlc3 WHERE nlc1.x = nu2.x AND nu2.x = nlc3.x
     SETTINGS query_plan_optimize_join_order_algorithm = 'greedy',
-             query_plan_join_swap_table = 'false'
+             query_plan_join_swap_table = 'false',
+             -- Unlike 14a and 14c these tables declare no statistics, so pin the reader too: CI randomizes
+             -- `auto_statistics_types`, which supplies some anyway and costs a different order for greedy.
+             use_statistics = 0
 ) WHERE explain LIKE '%Clauses%';
 
 DROP TABLE nlc1; DROP TABLE nu2; DROP TABLE nlc3;

@@ -2,6 +2,10 @@
 -- switching from `HashJoin` to `ConcurrentHashJoin` based on runtime statistics.
 SET explain_query_plan_default = 'legacy';
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
+-- Keep the first-run estimate driven by the hint below: with materialize_statistics_on_insert
+-- (randomized on) plus auto-statistics, rhs would gain real ~1e6 stats at insert time that
+-- override the 50000 hint, planning the first run as ConcurrentHashJoin instead of HashJoin.
+SET materialize_statistics_on_insert = 0;
 
 create table lhs(a UInt64) Engine=MergeTree order by ();
 create table rhs(a UInt64) Engine=MergeTree order by ();

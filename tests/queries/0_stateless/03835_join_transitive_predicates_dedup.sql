@@ -10,6 +10,7 @@ SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET enable_join_transitive_predicates = 1;
 
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 DROP TABLE IF EXISTS da;
 DROP TABLE IF EXISTS db;
 DROP TABLE IF EXISTS dc;
