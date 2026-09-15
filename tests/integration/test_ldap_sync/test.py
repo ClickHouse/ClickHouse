@@ -22,6 +22,10 @@ Nodes:
     directory is stale.
   - `node_mem`: a `memory` directory before `replicated` and no `roles_storage`: role creation must
     refuse the ephemeral pick.
+  - `node_manual`: `interval` 0 (startup run + `SYSTEM RELOAD USERS`), otherwise the search of
+    `node1` with the roles in `local_directory`. The guard tests read their exact numbers from it: a
+    directory that synchronises only when told to cannot pick up a half-applied LDAP change between
+    two steps of a test, which a periodic node does (see `wait_ldap_synced_entries`).
 
 Group `clickhouse-role_a`/`clickhouse-role_b` always keep the service account as a member
 (`groupOfNames` requires one), which is not an `inetOrgPerson` and therefore never synchronised.
@@ -118,6 +122,13 @@ node_mem = cluster.add_instance(
     with_zookeeper=True,
 )
 
+node_manual = cluster.add_instance(
+    "node_manual",
+    main_configs=["configs/ldap_server.xml", "configs/directories_manual.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
 
 def user_dn(cn):
     return f"cn={cn},{USERS_CONTAINER}"
@@ -125,6 +136,13 @@ def user_dn(cn):
 
 def group_dn(cn):
     return f"cn={cn},{GROUPS_CONTAINER}"
+
+
+# The `<sync>` search of every directory in this module (`&` is escaped in the XML configurations).
+SYNC_SEARCH_FILTER = (
+    "(&(objectClass=inetOrgPerson)"
+    f"(|(memberOf={group_dn(ROLE_A_GROUP)})(memberOf={group_dn(ROLE_B_GROUP)})))"
+)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -244,10 +262,47 @@ def ldap_set_bulk_membership(group_cn, count):
 
 
 def ldap_delete_bulk_users(count):
+    # `-c` carries on past entries that do not exist (32 = "No such object"): the cleanup must
+    # work whatever step of the test failed.
     ldap_exec(
         f"for i in $(seq 1 {count}); do printf 'cn=bulk%04d,{USERS_CONTAINER}\\n' $i; done"
-        f" > /tmp/bulk_dns.txt && {ldap_tool('ldapdelete', '-f /tmp/bulk_dns.txt')}"
+        f" > /tmp/bulk_dns.txt && {ldap_tool('ldapdelete', '-c -f /tmp/bulk_dns.txt')}",
+        ignore_codes=(32,),
     )
+
+
+def ldap_count_synced_entries():
+    """Number of entries the `<sync>` search returns right now, read as the service account: only
+    it may read `memberOf`, and it has no size limit, so a plain search lists every match.
+    """
+    output = ldap_exec(
+        f"/opt/bitnami/openldap/bin/ldapsearch -LLL -x -H ldap://localhost:{LDAP_PORT}"
+        f" -D {shlex.quote(LDAP_SERVICE_BIND_DN)} -w {LDAP_SERVICE_PASSWORD}"
+        f" -b {LDAP_SUFFIX} -s sub {shlex.quote(SYNC_SEARCH_FILTER)} dn"
+    )
+    return sum(1 for line in output.splitlines() if line.startswith("dn:"))
+
+
+def wait_ldap_synced_entries(expected, timeout=60):
+    """Wait until the `<sync>` search matches exactly `expected` entries.
+
+    The `memberof` overlay turns a bulk `add: member` or the deletion of a group into one internal
+    modification per member, each visible to concurrent searches as soon as it commits, so a search
+    that runs while such an operation is in progress sees a partial state (a periodic node applied
+    "107 removed" out of 1200 in CI, and the forced run that followed reported "1093 of 1095"
+    instead of "1200 of 1202"). Waiting for the directory itself, before forcing a run, is what
+    makes the numbers of that run exact. There is no harness helper for a condition on the LDAP
+    side (`assert_eq_with_retry` and `wait_for_log_line` observe a ClickHouse node), hence the
+    explicit bounded loop."""
+    deadline = time.time() + timeout
+    while True:
+        count = ldap_count_synced_entries()
+        if count == expected:
+            return
+        assert (
+            time.time() < deadline
+        ), f"the sync search matches {count} entries, expected {expected}"
+        time.sleep(0.5)
 
 
 def wait_openldap_strict_ready(timeout=180):
@@ -317,6 +372,13 @@ def wait_granted_roles(node, user_name, roles, **kwargs):
     )
 
 
+def sync_node_manual():
+    """`node_manual` synchronises on `SYSTEM RELOAD USERS` only: bring it to the current state
+    of the directory and return the number of users it holds."""
+    admin(node_manual, "SYSTEM RELOAD USERS")
+    return int(admin(node_manual, ldap_users_query()).strip())
+
+
 def event_value(node, event):
     return int(
         admin(
@@ -356,10 +418,7 @@ def sync_section(**overrides):
         "interval": "0",
         "base_dn": LDAP_SUFFIX,
         "scope": "subtree",
-        "search_filter": (
-            "(&amp;(objectClass=inetOrgPerson)"
-            f"(|(memberOf={group_dn(ROLE_A_GROUP)})(memberOf={group_dn(ROLE_B_GROUP)})))"
-        ),
+        "search_filter": SYNC_SEARCH_FILTER.replace("&", "&amp;"),
         "attribute": "uid",
     }
     values.update(overrides)
@@ -661,20 +720,24 @@ def test_params_expose_the_sync_section_without_secrets():
 
 
 # ---------------------------------------------------------------------------------------------
-# Guards.
+# Guards. Exercised on `node_manual`: with `interval` 0 the only runs are the forced ones, so what
+# a refused run reports cannot depend on whether a periodic run slipped in between two LDAP changes
+# of a test (and applied one of them). The periodic nodes see the same changes and converge on
+# their own; the fixtures wait for that.
 # ---------------------------------------------------------------------------------------------
 
 
 def test_min_users_guard(janedoe_in_role_a):
     """With every user out of both groups the run finds nobody: it is refused and applies
     nothing, so the synchronised users stay."""
+    sync_node_manual()
     ldap_set_memberships("janedoe", set())
     ldap_set_memberships("permanent", set())
     try:
-        error = admin_error(node1, "SYSTEM RELOAD USERS")
+        error = admin_error(node_manual, "SYSTEM RELOAD USERS")
         assert "found 0 users" in error and "fewer than min_users = 1" in error, error
-        assert admin(node1, ldap_users_query("permanent")) == "1\n"
-        assert admin(node1, ldap_users_query("janedoe")) == "1\n"
+        assert admin(node_manual, ldap_users_query("permanent")) == "1\n"
+        assert admin(node_manual, ldap_users_query("janedoe")) == "1\n"
     finally:
         ldap_set_memberships("permanent", {ROLE_A_GROUP})
 
@@ -682,72 +745,112 @@ def test_min_users_guard(janedoe_in_role_a):
 def test_duplicate_user_name_guard(janedoe_in_role_a):
     """`uid=dupuser` exists under `ou=users` and `ou=service`; with both in a group the
     enumeration returns two entries for one login and the run is refused."""
+    sync_node_manual()
     for container in (USERS_CONTAINER, SERVICE_CONTAINER):
         ldap_set_member(ROLE_A_GROUP, f"cn=dupuser,{container}", True)
     try:
-        error = admin_error(node1, "SYSTEM RELOAD USERS")
+        error = admin_error(node_manual, "SYSTEM RELOAD USERS")
         assert "share the user name 'dupuser' (ambiguous directory)" in error, error
-        assert admin(node1, ldap_users_query("dupuser")) == "0\n"
+        assert admin(node_manual, ldap_users_query("dupuser")) == "0\n"
     finally:
         for container in (USERS_CONTAINER, SERVICE_CONTAINER):
             ldap_set_member(ROLE_A_GROUP, f"cn=dupuser,{container}", False)
-    admin(node1, "SYSTEM RELOAD USERS")
+    # Nothing ambiguous is left: the next run succeeds again.
+    admin(node_manual, "SYSTEM RELOAD USERS")
 
 
 def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
     """1200 users in `clickhouse-role_b` need 13 pages of 100 and exceed the default OpenLDAP
     size limit of 500, which the fixture lifts for the service account. Deleting the group would
-    remove them all at once: `max_removed_fraction` refuses the run. Deleting the users afterwards
-    trips the same guard on purpose, on every node that synchronises the same search (`node_stale`
-    included; `node_dry` applies nothing and the others never got that far); those nodes are
-    restarted to start from an empty directory, which also covers the restart window."""
-    base = int(admin(node1, ldap_users_query()).strip())
-    ldap_add_bulk_users(BULK_USERS)
-    ldap_set_bulk_membership(ROLE_B_GROUP, BULK_USERS)
+    remove them all at once: `max_removed_fraction` refuses the run.
+
+    The exact numbers are read from `node_manual`, and every forced run is preceded by a wait for
+    the directory itself (see `wait_ldap_synced_entries`). The periodic nodes see the same changes
+    in whatever slices their runs happen to observe and are only required to converge. The cleanup
+    leaves them holding more bulk users than `max_removed_fraction` lets one run remove, so they
+    are restarted to start from an empty directory, which also covers the restart window.
+    """
+    base_users = sync_node_manual()
+    # `johndoe` matches the search but is excluded: one entry more than users.
+    base_entries = ldap_count_synced_entries()
+    assert base_entries == base_users + 1, (base_entries, base_users)
+    total_users = base_users + BULK_USERS
+    total_entries = base_entries + BULK_USERS
     try:
+        ldap_add_bulk_users(BULK_USERS)
+        ldap_set_bulk_membership(ROLE_B_GROUP, BULK_USERS)
+        wait_ldap_synced_entries(total_entries)
+
+        admin(node_manual, "SYSTEM RELOAD USERS")
+        assert admin(node_manual, ldap_users_query()) == f"{total_users}\n"
+        assert node_manual.contains_in_log(
+            f"Received page 13 of the LDAP search under '{LDAP_SUFFIX}' on server"
+            f" '{LDAP_SERVER_NAME}': {total_entries} entries so far"
+        )
+        assert node_manual.contains_in_log(
+            f": {total_entries} entries, {total_users} users ({BULK_USERS} added, 0 updated,"
+            " 0 removed, 1 excluded, 0 shadowed), 0 roles created, 0 roles missing"
+        )
+        assert admin(node_manual, granted_roles_query(bulk_user_cn(1200))) == TSV(
+            [["role_b"]]
+        )
+        assert login(node_manual, bulk_user_cn(777)) == TSV([[bulk_user_cn(777)]])
+        # The periodic nodes get there in as many runs as it takes them.
         for node in (node1, node2):
             assert_eq_with_retry(
                 node,
                 ldap_users_query(),
-                str(base + BULK_USERS),
+                str(total_users),
                 user="admin",
-                retry_count=60,
+                retry_count=120,
             )
-        assert admin(node1, granted_roles_query(bulk_user_cn(1200))) == TSV(
-            [["role_b"]]
-        )
-        assert login(node2, bulk_user_cn(777)) == TSV([[bulk_user_cn(777)]])
 
         ldap_delete(group_dn(ROLE_B_GROUP))
-        error = admin_error(node1, "SYSTEM RELOAD USERS")
-        assert f"would remove {BULK_USERS} of {base + BULK_USERS} users" in error, error
+        wait_ldap_synced_entries(base_entries)
+        failures_before = event_value(node_manual, "LDAPSyncFailures")
+        error = admin_error(node_manual, "SYSTEM RELOAD USERS")
+        assert f"would remove {BULK_USERS} of {total_users} users" in error, error
         assert "max_removed_fraction = 0.5" in error, error
-        assert admin(node1, ldap_users_query()) == f"{base + BULK_USERS}\n"
-        assert event_value(node1, "LDAPSyncFailures") > 0
+        assert admin(node_manual, ldap_users_query()) == f"{total_users}\n"
+        assert event_value(node_manual, "LDAPSyncFailures") > failures_before
 
-        # Restoring the group makes the next run succeed again (nothing to change).
+        # Restoring the group makes the next run succeed again, with nothing to change.
         ldap_add_group(ROLE_B_GROUP, [user_dn("johndoe")])
         ldap_set_bulk_membership(ROLE_B_GROUP, BULK_USERS)
-        admin(node1, "SYSTEM RELOAD USERS")
-        assert admin(node1, ldap_users_query()) == f"{base + BULK_USERS}\n"
+        wait_ldap_synced_entries(total_entries)
+        admin(node_manual, "SYSTEM RELOAD USERS")
+        assert admin(node_manual, ldap_users_query()) == f"{total_users}\n"
+        assert node_manual.contains_in_log(
+            f": {total_entries} entries, {total_users} users (0 added, 0 updated, 0 removed,"
+            " 1 excluded, 0 shadowed), 0 roles created, 0 roles missing"
+        )
     finally:
+        # Everything below runs whatever assertion failed, so that the tests that follow never
+        # start with a fixture full of bulk users or with a node that refuses every run.
         ldap_delete(group_dn(ROLE_B_GROUP), ignore_missing=True)
+        # Let the overlay finish dropping `memberOf` from the bulk users before deleting them.
+        wait_ldap_synced_entries(base_entries)
         ldap_delete_bulk_users(BULK_USERS)
         ldap_add_group(ROLE_B_GROUP, [user_dn("johndoe")])
 
-    # Every run now wants to remove 1200 of 1202 users and is refused. A restart starts from an
-    # empty directory: nobody logs in through it until the first run, then the users are back.
-    for node in (node1, node2, node_stale):
-        node.restart_clickhouse()
-    for node in (node1, node2):
-        assert_eq_with_retry(
-            node, ldap_users_query(), str(base), user="admin", retry_count=60
-        )
-        wait_granted_roles(node, "janedoe", ["role_a"])
-        assert login(node, "janedoe") == TSV([["janedoe"]])
-    # `node_stale` excludes nobody and syncs every second; it must be fresh again for the
-    # staleness test below.
-    wait_ldap_user(node_stale, "janedoe", present=True)
+        # A periodic node that applied the additions still holds the bulk users and now sees more
+        # than `max_removed_fraction` of them gone: it refuses every run and, with `max_staleness`,
+        # turns stale (`node_stale`). A restart starts from an empty directory: nobody logs in
+        # through it until the first run, then the base users are back. `node_manual` holds the
+        # bulk users as well and is restarted for the same reason.
+        for node in (node1, node2, node_stale, node_manual):
+            node.restart_clickhouse()
+        for node in (node1, node2):
+            assert_eq_with_retry(
+                node, ldap_users_query(), str(base_users), user="admin", retry_count=60
+            )
+            wait_granted_roles(node, "janedoe", ["role_a"])
+            assert login(node, "janedoe") == TSV([["janedoe"]])
+        assert sync_node_manual() == base_users
+        # `node_stale` excludes nobody and syncs every second; it must be fresh again for the
+        # staleness test below.
+        wait_ldap_user(node_stale, "janedoe", present=True, retry_count=60)
+        assert login(node_stale, "janedoe") == TSV([["janedoe"]])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -804,7 +907,9 @@ def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
     local user that follows and unknown names get the ordinary "not found" treatment, and
     `SYSTEM RELOAD USERS` returns the LDAP error while still reloading the other storages.
     """
-    wait_ldap_user(node_stale, "janedoe", present=True)
+    # The precondition is a fresh snapshot: `node_stale` syncs every second, so a directory that
+    # a previous test left refusing its runs fails here, not in the middle of the scenario.
+    wait_ldap_user(node_stale, "janedoe", present=True, retry_count=60)
     assert login(node_stale, "janedoe") == TSV([["janedoe"]])
     assert login(node_stale, "local_after", "local") == TSV([["local_after"]])
 
