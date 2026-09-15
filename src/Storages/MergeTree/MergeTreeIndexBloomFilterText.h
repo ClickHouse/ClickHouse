@@ -139,7 +139,8 @@ private:
         const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
-        RPNElement & out);
+        RPNElement & out,
+        const ActionsDAG::Node * predicate_node);
 
     std::optional<size_t> getKeyIndex(const std::string & key_column_name);
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
