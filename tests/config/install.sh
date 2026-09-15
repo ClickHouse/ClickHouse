@@ -22,6 +22,7 @@ NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
+BUILD_TYPE_CONFIGS_ONLY=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -49,6 +50,7 @@ while [[ "$#" -gt 0 ]]; do
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         --llvm-coverage) LLVM_COVERAGE=1 ;;
+        --build-type-configs-only) BUILD_TYPE_CONFIGS_ONLY=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -90,6 +92,83 @@ function is_fast_build()
     [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
+# Print 1 or 0 for a CXX_FLAGS pattern in the installed binary, or fail. An unanswered probe
+# must not read as false: the false arm below installs the config an msan server refuses to
+# start on. `countIf` keeps the query total, since restricting it to the row yields no output.
+function build_option_flag()
+{
+    local description=$1 pattern=$2 value rc=0
+    value=$(clickhouse local --query \
+        "SELECT countIf(name = 'CXX_FLAGS' AND value LIKE '$pattern') > 0 FROM system.build_options") || rc=$?
+    if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
+        echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
+        return 1
+    fi
+    echo "$value"
+}
+
+# Print 1 or 0 for whether a named system.build_options row is enabled, or fail. Flags that cmake
+# applies per-directory never reach CXX_FLAGS, so build_option_flag cannot probe them. A missing
+# row aborts the install instead of reading as false, so a renamed option cannot go unnoticed.
+function build_option_enabled()
+{
+    local description=$1 name=$2 value rc=0
+    value=$(clickhouse local --query \
+        "SELECT multiIf(count() = 0, 'missing', countIf(upper(value) IN ('ON', '1')) > 0, '1', '0') \
+         FROM system.build_options WHERE name = '$name'") || rc=$?
+    if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
+        echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
+        return 1
+    fi
+    echo "$value"
+}
+
+# Install the configs whose presence depends on the build flavour of the binary installed right
+# now. Idempotent in both directions, so a tree installed for one build type can be re-decided
+# for another (see --build-type-configs-only).
+function install_build_type_configs()
+{
+    local is_memory_sanitizer is_sanitizer is_coverage
+    # Resolve every probe before touching any file, so a failing probe cannot leave a
+    # half-adjusted tree.
+    is_memory_sanitizer=$(build_option_flag "MemorySanitizer build" '%-fsanitize=memory%')
+    # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test
+    # for -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on
+    # a bad vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
+    is_sanitizer=$(build_option_flag "sanitizer build" '%-DSANITIZER%')
+    # Coverage instrumentation slows in-flush symbolization as much as a sanitizer runtime does,
+    # and carries no -DSANITIZER, so the flavour is read from its own build_options row. That row
+    # exists from 26.2 on; the upgrade check installs these configs for an older released server.
+    if check_clickhouse_version 26.2; then
+        is_coverage=$(build_option_enabled "coverage build" 'WITH_COVERAGE')
+    else
+        is_coverage=0
+    fi
+
+    # A non-zero global_profiler_* period is rejected by an msan server while it parses its own
+    # settings, so the config must be absent rather than merely unused there.
+    if [ "$is_memory_sanitizer" = "1" ]; then
+        rm -f $DEST_SERVER_PATH/config.d/serverwide_trace_collector.xml
+    else
+        ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+    fi
+
+    if [ "$is_sanitizer" = "1" ] || [ "$is_coverage" = "1" ]; then
+        ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
+    else
+        rm -f $DEST_SERVER_PATH/config.d/trace_log_no_symbolize.xml
+    fi
+}
+
+# Re-decide the build-flavour-dependent configs of an already installed tree, leaving the rest
+# of it as it is, for callers that replace the binary underneath it. Must return before the
+# `rm -rf config.d` below, which would otherwise wipe the tree this mode was asked to adjust.
+if [ "$BUILD_TYPE_CONFIGS_ONLY" = "1" ]; then
+    echo "Going to install build-type-dependent test configs into $DEST_SERVER_PATH"
+    install_build_type_configs
+    exit 0
+fi
+
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
 mkdir -p $DEST_SERVER_PATH/users.d/
@@ -102,8 +181,18 @@ mkdir -p $DEST_CLIENT_PATH
 # Patching configs which are symbolic links can affect source files,
 # need to delete links created by previous script versions
 # Also this is generally good (least astonishment principle) not to retain any old configs
+# `system_logs_export.yaml` is the exception: it is not a config of the test suite. The
+# `Distributed` tables of the log export stay in the server metadata, and restoring a queued
+# insert of one resolves the cluster, so a start without the definition aborts (`Code: 701`).
+LOG_EXPORT_CONFIG=system_logs_export.yaml
+if [ -f "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG" ]; then
+    mv "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG" "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG"
+fi
 rm -rf "$DEST_SERVER_PATH"/config.d
 mkdir -p $DEST_SERVER_PATH/config.d/
+if [ -f "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG" ]; then
+    mv "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG" "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG"
+fi
 
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/core_dump.yaml $DEST_SERVER_PATH/config.d/
@@ -225,17 +314,7 @@ esac
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
-function is_sanitizer_build()
-{
-    # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test for
-    # -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on a bad
-    # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
-    [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
-}
-if is_sanitizer_build; then
-    ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
-fi
+install_build_type_configs
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/

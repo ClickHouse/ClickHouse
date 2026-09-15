@@ -9,6 +9,7 @@ from ci.jobs.scripts.docs.mintlify_docs_check import (
     DEFAULT_CHECKS,
     LOCALE_CHECKS,
     QUICKSTARTS_CHECK,
+    SDK_DOCS_CHECK,
 )
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -16,8 +17,9 @@ from ci.praktika.utils import Shell, Utils
 
 # The translated trees that docs.json ships (via `languages` + `$ref`s): both the
 # top-level locale pages and the localized snippet components they render. The
-# locale checks run only when a PR touches one of these folders -- or the
-# checkers themselves -- so ordinary English-only edits don't pay for them.
+# locale checks run only when a PR touches one of these folders, a global
+# customization with localized copy, or the checkers themselves -- so ordinary
+# English-only edits don't pay for them.
 LOCALE_DIRS = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
 LOCALE_CHECK_TRIGGERS = tuple(f"docs/{d}/" for d in LOCALE_DIRS) + (
     "ci/jobs/scripts/docs/lychee_check.py",
@@ -29,23 +31,51 @@ LOCALE_CHECK_TRIGGERS = tuple(f"docs/{d}/" for d in LOCALE_DIRS) + (
     #  - all of snippets/ (locale pages import/link both localized snippets and
     #    shared English snippets, e.g. /snippets/delete);
     #  - redirect sources, which count as valid locale link targets (e.g.
-    #    /<locale>/integrations resolves only via a redirect).
+    #    /<locale>/integrations resolves only via a redirect);
+    #  - global customizations whose navbar and sidebar copy is localized at
+    #    runtime and validated by locale_components_check.py.
     "docs/snippets/",
+    "docs/docs.json",
     "docs/_site/redirects.json",
+    "docs/_site/customizations/",
 )
 
-# The quickstarts check (frontmatter tags + generated explorer data freshness)
-# runs only when a PR touches a quickstarts tree, the generated data modules,
-# the generator, or the checker itself.
+# The quickstarts check covers the quickstarts trees plus their shared onboarding
+# entry points, navigation, redirects, and explorer components. Every input read
+# by quickstarts_check.py must trigger it, even when no quickstart page changed.
 QUICKSTARTS_CHECK_TRIGGERS = (
     ("docs/get-started/quickstarts/",)
     + tuple(f"docs/{d}/get-started/quickstarts/" for d in LOCALE_DIRS)
     + ("docs/snippets/components/QuickStartsGrid/",)
     + tuple(f"docs/snippets/{d}/components/QuickStartsGrid/" for d in LOCALE_DIRS)
+    + ("docs/snippets/components/SampleDatasetExplorer/",)
+    + tuple(
+        f"docs/snippets/{d}/components/SampleDatasetExplorer/"
+        for d in LOCALE_DIRS
+    )
+    + ("docs/index.mdx",)
+    + tuple(f"docs/{d}/index.mdx" for d in LOCALE_DIRS)
+    + ("docs/get-started/setup/",)
+    + tuple(f"docs/{d}/get-started/setup/" for d in LOCALE_DIRS)
+    + ("docs/get-started/navigation.json",)
+    + tuple(f"docs/{d}/get-started/navigation.json" for d in LOCALE_DIRS)
     + (
+        "docs/_site/redirects.json",
         "docs/_site/scripts/update_quickstarts.py",
         "ci/jobs/scripts/docs/quickstarts_check.py",
     )
+)
+
+# The SDK docs check covers only the ClickStack SDK guides, its own checker, and
+# the ClickStackIntegrates component the guides render, so it runs only when one
+# of those changes -- ordinary docs edits don't pay for it. In-app onboarding
+# mirrors these pages, so the checker guards the conventions it parses (the
+# ClickStackIntegrates signals, env-var placeholders, exact deployment tab
+# titles).
+SDK_DOCS_CHECK_TRIGGERS = (
+    "docs/clickstack/ingesting-data/sdks/",
+    "ci/jobs/scripts/docs/sdk_docs_check.py",
+    "docs/snippets/components/ClickStackIntegrates/",
 )
 
 CLICKHOUSE_CONNECT_SYNC_BRANCH = "robot/docs-sync-clickhouse-connect"
@@ -78,6 +108,15 @@ def _quickstarts_check_should_run():
     if changed_files is None:
         return True
     return any(f.startswith(QUICKSTARTS_CHECK_TRIGGERS) for f in changed_files)
+
+
+def _sdk_docs_check_should_run():
+    # Same gating idea: run only when the PR touches an SDK page or the checker;
+    # fail open toward coverage when the changed-file list is unavailable.
+    changed_files = Info().get_changed_files()
+    if changed_files is None:
+        return True
+    return any(f.startswith(SDK_DOCS_CHECK_TRIGGERS) for f in changed_files)
 
 
 def _is_trusted_clickhouse_connect_sync(info):
@@ -160,8 +199,8 @@ if __name__ == "__main__":
     ]
 
     # Locale checks: blocking, but only when the PR touches a locale tree,
-    # a localized snippet, or a checker. This is how a GT translation PR that
-    # reintroduces broken/unlocalized locale links gets caught before merge.
+    # snippets, redirects, localized global customizations, or a checker. This
+    # catches translated link and runtime-copy regressions before merge.
     if _locale_check_should_run():
         for locale_name, locale_command in LOCALE_CHECKS:
             if selected(locale_name):
@@ -171,15 +210,27 @@ if __name__ == "__main__":
                     )
                 )
 
-    # Quickstarts check: blocking, but only when the PR touches the quickstarts
-    # trees or their tooling. Validates frontmatter tags and fails when the
-    # generated explorer data was not regenerated and committed.
+    # Quickstarts check: blocking, but only when the PR touches one of its
+    # onboarding, navigation, explorer, redirect, or tooling inputs. Validates
+    # frontmatter tags and fails when generated data was not committed.
     if _quickstarts_check_should_run():
         qs_name, qs_command = QUICKSTARTS_CHECK
         if selected(qs_name):
             results.append(
                 Result.from_commands_run(
                     name=qs_name, command=qs_command, workdir=docs_dir
+                )
+            )
+
+    # ClickStack SDK docs check: blocking, but only when the PR touches an SDK
+    # page or the checker. Enforces the conventions in-app onboarding mirrors
+    # from these pages.
+    if _sdk_docs_check_should_run():
+        sdk_name, sdk_command = SDK_DOCS_CHECK
+        if selected(sdk_name):
+            results.append(
+                Result.from_commands_run(
+                    name=sdk_name, command=sdk_command, workdir=docs_dir
                 )
             )
 

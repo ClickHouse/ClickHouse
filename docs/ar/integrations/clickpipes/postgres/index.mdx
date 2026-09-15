@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.mdx';
 
 يمكنك استخدام ClickPipes لاستيراد البيانات من قاعدة بيانات Postgres المصدر لديك إلى ClickHouse Cloud. ويمكن استضافة قاعدة بيانات Postgres المصدر ضمن بنيتك التحتية المحلية أو في السحابة، بما في ذلك Amazon RDS وGoogle Cloud SQL وAzure Database for Postgres وSupabase وغيرها.
 
@@ -152,15 +153,13 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
   إذا كنت تحدد مفتاح الترتيب في ClickHouse بشكل مختلف عن المفتاح الأساسي في Postgres، فلا تنسَ قراءة جميع [الاعتبارات](/ar/integrations/clickpipes/postgres/ordering-keys) المتعلقة بذلك
 </Warning>
 
-8. بالإضافة إلى ذلك، يمكنك توفير تعبير `PARTITION BY <expr>` مخصص للتحكم في [تقسيم جداول ClickHouse](/ar/concepts/core-concepts/partitions).
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="التقسيم حسب" size="lg" border />
+8. <SettingPartitionBy />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### راجع الأذونات وابدأ ClickPipe
 </div>
 
-8. اختر دور &quot;وصول كامل&quot; من القائمة المنسدلة للأذونات، ثم انقر على &quot;إكمال الإعداد&quot;.
+9. اختر دور &quot;وصول كامل&quot; من القائمة المنسدلة للأذونات، ثم انقر على &quot;إكمال الإعداد&quot;.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الأذونات" size="lg" border />
 

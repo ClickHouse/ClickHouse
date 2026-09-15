@@ -11,7 +11,6 @@ CREATE TABLE t_agg_persisted (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_agg_persisted SELECT number % 500, number FROM numbers(50000);
 
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 
 SELECT k, count() AS c FROM t_agg_persisted GROUP BY k ORDER BY k LIMIT 5
