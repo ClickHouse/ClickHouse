@@ -341,4 +341,11 @@ for enabled in 0 1; do
         "date_time_overflow_behavior='throw'"
 done
 
+# Mixed `Date` / `Date32` literals convert exactly; one beyond the `Date` domain stays untranslated and scans everything.
+check t "toDate32(d) = toDate('2026-01-01')"
+check t "toDate(d) = toDate32('2026-01-01')"
+check t "toDate(d) != toDate32('2026-01-01')"
+check t "toDate32(d) < toDate('2026-01-02')"
+check t "toDate(d) = toDate32('2205-06-08')"
+
 run_all

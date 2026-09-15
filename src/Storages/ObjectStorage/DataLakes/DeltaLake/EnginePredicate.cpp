@@ -145,9 +145,10 @@ namespace
         if (column->result_type->isNullable() && !conversion->result_type->isNullable())
             return {};
 
-        /// Mixed temporal comparisons use a common type, not the conversion's result domain.
+        /// Mixed temporal comparisons use a common type; a `Date`/`Date32` literal converts exactly or not at all (rejected below), anything else stays untranslated.
         const auto literal_type = getTypeOrNestedType(literal);
-        if (!literal_type->equals(*result_type) && !isString(literal_type))
+        if (!literal_type->equals(*result_type) && !isString(literal_type)
+            && !DB::isDateOrDate32(literal_type->getTypeId()))
             return {};
 
         const auto value = DB::tryConvertFieldToType(literal->column->getField(), *result_type, literal_type.get());
