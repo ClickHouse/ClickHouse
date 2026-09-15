@@ -102,6 +102,8 @@ public:
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
+    UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
+
     MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 
     std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }

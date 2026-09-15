@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -700,6 +701,38 @@ This setting can be modified at runtime and will take effect immediately.
 )", 0) \
     DECLARE(UInt64, text_index_postings_cache_max_entries, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES, "Size of cache for text index posting list in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
+    DECLARE(String, columns_cache_policy, DEFAULT_COLUMNS_CACHE_POLICY, R"(Columns cache policy name.)", 0) \
+    DECLARE(UInt64, columns_cache_size, DEFAULT_COLUMNS_CACHE_MAX_SIZE, R"(
+Maximum size (in bytes) for the columns cache, which stores deserialized columns from MergeTree tables.
+
+The columns cache eliminates repeated decompression and deserialization for frequently accessed columns.
+The cache is used if the query-level option `use_columns_cache` is enabled.
+
+When this setting is not present in the server configuration, the cache is sized to `columns_cache_size_to_ram_ratio`
+of the memory available to the server (10% by default), so that a server with more memory gets a cache large enough
+to hold the working set of heavier queries. The built-in value of this setting is used only when the amount of
+memory cannot be determined. Like the other caches, the size is capped by `cache_size_to_ram_max_ratio`.
+
+The limit applies to the memory the cache retains: an entry is charged the allocated size of its column,
+which can exceed the logical size of the rows in it, plus a small per-entry overhead. `system.columns_cache`
+reports the same quantity per entry, and `CurrentMetrics.ColumnsCacheBytes` its total.
+
+:::note
+A value of `0` means disabled.
+
+This setting can be modified at runtime and will take effect immediately.
+:::
+)", 0) \
+    DECLARE(Double, columns_cache_size_to_ram_ratio, 0.1, R"(
+The size of the columns cache as a fraction of the memory available to the server. It is used when `columns_cache_size`
+is not present in the server configuration: the cache is then sized to this fraction of the RAM (subject to the
+`cache_size_to_ram_max_ratio` cap), so that a large server gets a cache that can hold the working set of heavier queries,
+while a small one gives up only a small part of its memory to it. Memory is allocated only on demand, and only when
+queries run with `use_columns_cache` enabled.
+
+A value of `0` disables the cache unless `columns_cache_size` is set explicitly.
+)", 0) \
+    DECLARE(Double, columns_cache_size_ratio, DEFAULT_COLUMNS_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the columns cache relative to the cache's total size.)", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
 Maximum size of cache for uncompressed blocks of `MergeTree` indices.
@@ -3637,6 +3670,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},

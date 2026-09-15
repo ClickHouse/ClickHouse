@@ -52,6 +52,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -136,6 +137,10 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsString columns_cache_policy;
+    extern const ServerSettingsUInt64 columns_cache_size;
+    extern const ServerSettingsDouble columns_cache_size_ratio;
+    extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
@@ -1572,6 +1577,18 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+    String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
+    /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
+    size_t columns_cache_size = config().getUInt64("columns_cache_size",
+        getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
+    double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
+    if (columns_cache_size > max_cache_size)
+    {
+        columns_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(columns_cache_size));
+    }
+    global_context->setColumnsCache(columns_cache_policy, columns_cache_size, columns_cache_size_ratio);
 
     /// UNIQUE KEY delete-bitmap cache. Zero size disables.
     String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];

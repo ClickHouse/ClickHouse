@@ -64,6 +64,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->storage_snapshot,
         main_reader_->storage_settings,
         Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
+        /*columns_cache=*/ nullptr,
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
         main_reader_->settings)
@@ -202,6 +203,14 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
 
     if (!fallback_columns_list.empty())
     {
+        /// The physical columns of the fallback expression are discovered here, long after
+        /// `MergeTreeReadPoolBase` sized the query's columns cache write estimate over the
+        /// columns of the read task. Writing them to the cache would therefore write bytes no
+        /// budget accounted for, so the fallback reader only reads from the cache (entries an
+        /// ordinary reader of the same columns put there) and never writes to it.
+        auto fallback_settings = main_reader->settings;
+        fallback_settings.enable_columns_cache_writes = false;
+
         fallback_reader = createMergeTreeReader(
             main_reader->data_part_info_for_read,
             fallback_columns_list,
@@ -210,9 +219,10 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             main_reader->all_mark_ranges,
             /*virtual_fields=*/{},
             main_reader->uncompressed_cache,
+            main_reader->columns_cache,
             main_reader->mark_cache,
             /*deserialization_prefixes_cache=*/nullptr,
-            main_reader->settings,
+            fallback_settings,
             /*avg_value_size_hints=*/{},
             /*profile_callback=*/{});
     }
@@ -413,6 +423,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
+    size_t current_range_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
     MutableColumns & res_columns)
@@ -476,7 +487,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
         MutableColumns fallback_cols(fallback_columns_list.size());
-        fallback_reader->readRows(from_mark, continue_reading, max_rows_to_read, fallback_cols);
+        fallback_reader->readRows(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
             fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});

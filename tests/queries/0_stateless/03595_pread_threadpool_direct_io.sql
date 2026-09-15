@@ -18,18 +18,23 @@ settings
     local_filesystem_read_method = 'pread_threadpool',
     min_bytes_to_use_direct_io = 1,
     log_query_threads = 1,
-    use_uncompressed_cache = 0;
+    use_uncompressed_cache = 0,
+    use_columns_cache = 0;
 
 -- If previous query was running w/o O_DIRECT (due to some bug) it may fill pagecache,
 -- and then subsequent query will read from cache (if it will ignore O_DIRECT flag as well) with RWF_NOWAIT,
--- so let's make sure that this is not the case
+-- so let's make sure that this is not the case.
+-- `use_columns_cache = 0` is needed for the same reason as `use_uncompressed_cache = 0`: the columns
+-- cache would serve the repeated read from the deserialized columns of the first one, so the second
+-- query would not issue any read syscall and `OSReadBytes` would stay at zero for its threads.
 select * from 03595_data
 format Null
 settings
     local_filesystem_read_method = 'pread_threadpool',
     min_bytes_to_use_direct_io = 1,
     log_query_threads = 1,
-    use_uncompressed_cache = 0;
+    use_uncompressed_cache = 0,
+    use_columns_cache = 0;
 
 system flush logs query_log, query_thread_log;
 
