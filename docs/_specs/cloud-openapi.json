@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1108755",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1120389",
       "email": "support@clickhouse.com"
     }
   },
@@ -37,6 +37,9 @@
     },
     {
       "name": "Backup"
+    },
+    {
+      "name": "Snapshot"
     },
     {
       "name": "API keys"
@@ -4781,6 +4784,253 @@
         "x-mint": {
           "content": "Returns a single backup info."
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/snapshots": {
+      "get": {
+        "summary": "List of service snapshots",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of all snapshots for the service. The most recent snapshots come first in the list.",
+        "operationId": "snapshotGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the snapshot.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service the snapshot was created from.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Snapshot"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Snapshot"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/snapshots/{snapshotId}": {
+      "get": {
+        "summary": "Get snapshot details",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a single snapshot info.",
+        "operationId": "snapshotGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the snapshot.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service the snapshot was created from.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "snapshotId",
+            "description": "ID of the requested snapshot.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/Snapshot"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Snapshot"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration": {
@@ -24618,6 +24868,12 @@
             ],
             "example": "cdc"
           },
+          "initialLoadParallelism": {
+            "description": "Number of parallel workers to use per collection in the initial snapshot phase.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 1
+          },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
             "type": "integer",
@@ -25449,6 +25705,12 @@
           "primaryKey": {
             "description": "Primary key of SQL expression.",
             "type": "string"
+          },
+          "ttl": {
+            "description": "TTL SQL expression of the destination table.",
+            "type": "string",
+            "example": "toDateTime(event_time) + INTERVAL 30 DAY",
+            "minLength": 1
           }
         }
       },
@@ -26723,6 +26985,72 @@
           },
           "bucket": {
             "description": "Backup bucket where the backup is stored.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AwsBackupBucketProperties"
+              },
+              {
+                "$ref": "#/components/schemas/GcpBackupBucketProperties"
+              },
+              {
+                "$ref": "#/components/schemas/AzureBackupBucketProperties"
+              }
+            ]
+          }
+        }
+      },
+      "Snapshot": {
+        "properties": {
+          "id": {
+            "description": "Unique snapshot ID.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "description": "Status of the snapshot: 'done', 'error', 'in_progress', 'throttled'. 'throttled' means snapshot creation was rate-limited and will be retried.",
+            "type": "string",
+            "enum": [
+              "done",
+              "error",
+              "in_progress",
+              "throttled"
+            ]
+          },
+          "serviceId": {
+            "description": "ID of the service the snapshot was created from.",
+            "type": "string"
+          },
+          "startedAt": {
+            "description": "Snapshot start timestamp. ISO-8601.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "description": "Snapshot finish timestamp. ISO-8601. Available only for finished snapshots",
+            "type": "string",
+            "format": "date-time"
+          },
+          "sizeInBytes": {
+            "description": "Size of the snapshot in bytes.",
+            "type": "number"
+          },
+          "durationInSeconds": {
+            "description": "Time in seconds it took to perform the snapshot. If the status is in_progress or throttled, this is the time in seconds since the snapshot started until now.",
+            "type": "number"
+          },
+          "type": {
+            "description": "Snapshot type. Always \"full\" — snapshots never chain off a parent.",
+            "type": "string",
+            "enum": [
+              "full"
+            ]
+          },
+          "backupName": {
+            "description": "Snapshot name on the external backup bucket.",
+            "type": "string"
+          },
+          "bucket": {
+            "description": "Backup bucket where the snapshot is stored.",
             "oneOf": [
               {
                 "$ref": "#/components/schemas/AwsBackupBucketProperties"
@@ -31786,7 +32114,7 @@
             "type": "string"
           },
           "expiration": {
-            "description": "Expiration timestamp. ISO-8601.",
+            "description": "Expiration timestamp, inherited from the organization's licensing terms. Absent when the organization has no licensing terms configured. ISO-8601.",
             "type": "string",
             "format": "date-time"
           },
@@ -36015,6 +36343,10 @@
           },
           "settings": {
             "$ref": "#/components/schemas/ClickPipeSettings"
+          },
+          "startPaused": {
+            "description": "Create the ClickPipe in the Stopped state instead of starting ingestion immediately. Start it later with the state endpoint. Not supported for database ClickPipes.",
+            "type": "boolean"
           }
         }
       },
@@ -37390,6 +37722,7 @@
       "tags": [
         "Service",
         "Backup",
+        "Snapshot",
         "Query API endpoints"
       ]
     },
