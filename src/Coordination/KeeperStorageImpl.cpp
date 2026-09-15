@@ -1537,11 +1537,21 @@ static Coordination::Error preprocess(
 /// it does not match the request that is being processed: the markers were lost, and stepping past
 /// the end of the range to look for them is undefined behavior. This runs on the raft commit and
 /// replay threads, so treat it like every other mismatch between a request and its deltas.
+///
+/// `FailedMultiDelta` is the other marker `preprocess` emits, and the callers handle it before they
+/// get here: it is the sole delta of a failed multi request. Inside a subrequest slice it is out of
+/// place, and `commit` would ignore it and report the subrequest as successful, so the walk stops on
+/// both markers and rejects the failure marker instead of passing it on as an ordinary delta.
 static KeeperStorage::DeltaRange extractSubdeltas(KeeperStorage::DeltaRange & deltas)
 {
-    auto it = std::ranges::find_if(deltas, [](const auto & delta) { return std::holds_alternative<SubDeltaEnd>(delta.operation); });
+    auto it = std::ranges::find_if(
+        deltas,
+        [](const auto & delta)
+        { return std::holds_alternative<SubDeltaEnd>(delta.operation) || std::holds_alternative<FailedMultiDelta>(delta.operation); });
     if (it == deltas.end())
         onStorageInconsistency("Missing SubDeltaEnd marker for a Multi subrequest");
+    if (std::holds_alternative<FailedMultiDelta>(it->operation))
+        onStorageInconsistency("Unexpected failure marker inside a subrequest of a Multi request");
 
     KeeperStorage::DeltaRange result{deltas.begin(), it};
     ++it;
