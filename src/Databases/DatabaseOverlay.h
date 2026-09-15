@@ -203,28 +203,39 @@ public:
     /// and the returned pointer owns the database, so it stays alive while the caller uses it.
     static std::shared_ptr<const DatabaseOverlay> tryGetReadonlyFacade(const String & written_database_name);
 
-    /// Fail-closed source-side visibility check for `EXISTS`-style queries through the facade:
-    /// returns true only when `table_name` resolves to a source table (the first listed source
-    /// database whose metadata contains the name) AND `access_to_check` is granted on that source
-    /// name. The resolution never loads the source table, and even the metadata existence probe
+    /// Whether `access_to_check` is granted on the facade name as written, i.e. on `table_name` in this database.
+    /// Reaching a name through a read-only facade requires the grant on both the written facade
+    /// name and the source name it resolves to; the two fail-closed checks below prove the facade
+    /// side first, so that no source is probed for a caller who could not see the name anyway.
+    bool isFacadeNameVisible(const String & table_name, const ContextPtr & context, AccessType access_to_check) const;
+
+    /// Fail-closed visibility check for `EXISTS`-style queries through the facade: returns true
+    /// only when `access_to_check` is granted on the written facade name AND `table_name` resolves
+    /// to a source table (the first listed source database whose metadata contains the name) AND
+    /// `access_to_check` is granted on that source name. Without the facade-side grant nothing is
+    /// probed. The resolution never loads the source table, and even the metadata existence probe
     /// itself is fenced: for source engines backed by a remote catalog (`MySQL`, `PostgreSQL`,
     /// data-lake catalogs) `isTableExist` can throw the source's own error, so a failed probe is
-    /// rethrown only when `access_to_check` is granted on the probed source name — otherwise the
-    /// answer is a masked `false`, exactly as for a hidden or missing name. This keeps the facade
-    /// from acting as an oracle for hidden broken sources: a user without the source-side grant
-    /// must not observe the source's own exception.
+    /// rethrown only when `access_to_check` is granted on the probed source name (and, as
+    /// established first, on the facade name) — otherwise the answer is a masked `false`, exactly
+    /// as for a hidden or missing name. This keeps the facade from acting as an oracle for hidden
+    /// broken sources: a user without one of the two grants must not observe the source's own
+    /// exception, nor learn from it which source the facade name resolves to.
     bool isSourceTableVisibleNoLoad(const String & table_name, ContextPtr context, AccessType access_to_check) const;
 
-    /// Fail-closed source-side grant check for metadata queries that must throw on denial
-    /// (`SHOW CREATE`, `DESCRIBE`): resolves `table_name` through the facade's sources without
-    /// loading the table and throws `ACCESS_DENIED` unless `access_to_check` is granted on the
-    /// resolved source name; returns silently when no source has the name (the caller's own
-    /// lookup then reports it as missing). Callers run this *before* any lookup that would load
-    /// the source table. The metadata probe is fenced the same way as in
-    /// `isSourceTableVisibleNoLoad`: a probe failure on a remote source is rethrown only when
-    /// `access_to_check` is granted on that source name, and is otherwise remasked as the same
-    /// `ACCESS_DENIED` a resolved-but-denied name would produce, so a broken hidden source and a
-    /// denied healthy one stay indistinguishable.
+    /// Fail-closed dual-grant check for queries that must throw on denial (`SHOW CREATE`,
+    /// `DESCRIBE`, and the data entrypoints): first throws the ordinary `ACCESS_DENIED` on the
+    /// written facade name unless `access_to_check` is granted on it, then resolves `table_name`
+    /// through the facade's sources without loading the table and throws `ACCESS_DENIED` unless
+    /// `access_to_check` is granted on the resolved source name; returns silently when no source
+    /// has the name (the caller's own lookup then reports it as missing). Callers run this
+    /// *before* any lookup that would load the source table. The metadata probe is fenced the
+    /// same way as in `isSourceTableVisibleNoLoad`: a probe failure on a remote source is rethrown
+    /// only when `access_to_check` is granted on that source name (the facade-side grant having
+    /// been proven first), and is otherwise remasked as the same `ACCESS_DENIED` a
+    /// resolved-but-denied name would produce, so a broken hidden source and a denied healthy one
+    /// stay indistinguishable, and a caller granted on the source alone learns nothing about
+    /// which source the facade name resolves to.
     void checkSourceTableAccess(const String & table_name, ContextPtr context, AccessType access_to_check) const;
 
     /// Convenience wrapper of `checkSourceTableAccess` for the catalog-lookup sites: when

@@ -1,8 +1,8 @@
 facade-only user: the view is indistinguishable from a missing one
 UNKNOWN_FUNCTION
 UNKNOWN_FUNCTION
-source-only user: denied on the facade side
-ACCESS_DENIED
+source-only user: without the facade-side grant the view is indistinguishable from a missing one, as for the facade-only user
+UNKNOWN_FUNCTION
 UNKNOWN_FUNCTION
 user with SHOW TABLES only on the source: sees the view, cannot read it
 ACCESS_DENIED
@@ -15,7 +15,7 @@ id	UInt32
 s	String
 EXPLAIN SYNTAX follows the same contract: only the dual-grant user sees the definition
 not inlined
-ACCESS_DENIED
+not inlined
 ACCESS_DENIED
 inlined
 === row policies of the source view and of the facade are combined ===

@@ -76,7 +76,7 @@ echo "facade-only user: the view is indistinguishable from a missing one"
 try "${USER_OVL}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
 try "${USER_OVL}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
 
-echo "source-only user: denied on the facade side"
+echo "source-only user: without the facade-side grant the view is indistinguishable from a missing one, as for the facade-only user"
 try "${USER_SRC}" "SELECT * FROM ${DB_OVL}.v(min = 0) ORDER BY id"
 try "${USER_SRC}" "DESCRIBE TABLE ${DB_OVL}.v(min = 0)"
 

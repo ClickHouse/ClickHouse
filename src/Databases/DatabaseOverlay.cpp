@@ -93,8 +93,21 @@ std::shared_ptr<const DatabaseOverlay> DatabaseOverlay::tryGetReadonlyFacade(con
     return std::static_pointer_cast<const DatabaseOverlay>(std::move(database));
 }
 
+bool DatabaseOverlay::isFacadeNameVisible(const String & table_name, const ContextPtr & context_, AccessType access_to_check) const
+{
+    return context_->getAccess()->isGranted(access_to_check, getDatabaseName(), table_name);
+}
+
 bool DatabaseOverlay::isSourceTableVisibleNoLoad(const String & table_name, ContextPtr context_, AccessType access_to_check) const
 {
+    /// Reaching a name through the facade requires the grant on both the facade name as written
+    /// and the source name it resolves to. Without the facade-side grant the name is not visible
+    /// through the facade at all, whatever the sources hold, so nothing is probed: the probes
+    /// below can throw a broken source's own error, and a caller granted on the source alone
+    /// must not learn from it which source the facade name resolves to.
+    if (!isFacadeNameVisible(table_name, context_, access_to_check))
+        return false;
+
     for (const auto & db : resolveDatabases())
     {
         bool exists = false;
@@ -108,8 +121,9 @@ bool DatabaseOverlay::isSourceTableVisibleNoLoad(const String & table_name, Cont
             /// data-lake catalogs) and throw that source's own error. The caller has not yet
             /// proven the source-side grant, so surfacing the error would turn the facade into
             /// an oracle for hidden broken sources. If the caller is granted on the name in this
-            /// source, the error is theirs to see — direct access to the source would surface
-            /// the same; otherwise fail closed and answer as for a hidden or missing name.
+            /// source (and, as established above, on the facade name), the error is theirs to
+            /// see — direct access to the source would surface the same; otherwise fail closed
+            /// and answer as for a hidden or missing name.
             if (context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name))
                 throw;
             return false;
@@ -139,6 +153,13 @@ void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextP
             backQuote(table_name));
     };
 
+    /// The facade-side grant is proven first, before any source is probed: the probes below can
+    /// throw a broken source's own error, and a caller granted on the source alone must not learn
+    /// from it which source the facade name resolves to. This denial is the ordinary one on the
+    /// facade name as written, identical for a hidden broken source and a hidden healthy one.
+    if (!isFacadeNameVisible(table_name, context_, access_to_check))
+        context_->checkAccess(access_to_check, getDatabaseName(), table_name);
+
     for (const auto & db : resolveDatabases())
     {
         bool exists = false;
@@ -151,8 +172,9 @@ void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextP
             /// Same fencing as in `isSourceTableVisibleNoLoad`: the probe can throw a remote
             /// source's own error before the source-side grant is proven. Deny exactly as if the
             /// name had resolved to this source and the grant check failed, keeping a broken
-            /// hidden source and a denied healthy one indistinguishable; for a granted caller the
-            /// source's own error is rethrown as theirs to see.
+            /// hidden source and a denied healthy one indistinguishable; for a caller granted on
+            /// this source (and, as established above, on the facade name) the source's own error
+            /// is rethrown as theirs to see.
             if (!context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name))
                 deny();
             throw;
@@ -684,13 +706,18 @@ void DatabaseOverlay::collectFromSourceDatabases(ContextPtr context_, const std:
         /// error before any source-side grant is proven, which would let a caller granted only on
         /// the facade use listings (`SHOW TABLES`, `system.tables`, `system.columns`, ...) as an
         /// oracle for hidden broken sources — the same fencing as in `isSourceTableVisibleNoLoad`.
-        /// A caller granted `SHOW TABLES` on the whole source database is entitled to the error
-        /// (listing the source directly would surface the same), so it propagates as theirs to see;
-        /// for anyone else a failing source contributes nothing and ends the walk, so the listing is
+        /// A caller granted `SHOW TABLES` on the whole source database and on the whole facade
+        /// is entitled to the error (listing the source directly would surface the same, and the
+        /// facade-side grant is what makes the facade's rows visible to them at all), so it
+        /// propagates as theirs to see; for anyone else — in particular a caller granted on the
+        /// source alone, who must not learn from the error which sources the facade lists — a
+        /// failing source contributes nothing and ends the walk, so the listing is
         /// indistinguishable from the one a hidden healthy source would produce. Per-table
         /// visibility of the collected names is still enforced by the
         /// metadata readers themselves against the owning source table.
-        if (readonly && context_ && !context_->getAccess()->isGranted(AccessType::SHOW_TABLES, db->getDatabaseName()))
+        if (readonly && context_
+            && !(context_->getAccess()->isGranted(AccessType::SHOW_TABLES, getDatabaseName())
+                 && context_->getAccess()->isGranted(AccessType::SHOW_TABLES, db->getDatabaseName())))
         {
             try
             {
@@ -1363,7 +1390,7 @@ System views and metrics that aggregate or enumerate tables across all databases
 
 For the same reason a read-only `Overlay` reports no detached tables in `system.detached_tables`: `ATTACH` and `DETACH` through the facade are rejected, so a table detached in a source database is not part of the facade's namespace and is reported for the source database only. A facade being present never makes a whole-server scan of the detached tables fail.
 
-The dual-grant checks are fail-closed even when a source database is broken or unreachable (for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that resolve a facade name to a source table (`SELECT`, `INSERT`, `CHECK TABLE`) prove source-side visibility **before** the source table is resolved and loaded — for every table of the query, including the tables of a `JOIN`, the right-hand side of an `IN` and the tables of the subqueries of a distributed query, and both with and without the analyzer — so a user without a grant on the source receives the same access-denied error for a hidden broken source as for a hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used as an oracle for the state of sources the user is not allowed to see. Once the source-side grant is present, the source's own error propagates as usual. The listing-style readers (`SHOW TABLES` / `system.tables`, `system.columns`, `system.data_skipping_indices`, and the other per-database enumerations) follow the same rule when they walk the facade: a source database that fails while being listed contributes no rows and ends the walk, so the sources after it are not listed either, unless the caller is granted `SHOW TABLES` on that source database, in which case the source's own error propagates, the same as when listing the source directly. Ending the walk is what keeps the listing of a hidden broken source identical to the listing of a hidden healthy one: a table that a hidden source owns is not visible through the facade anyway, so continuing to a later source could only advertise a name that the read path, which stops at the first source owning it, still refuses.
+The dual-grant checks are fail-closed even when a source database is broken or unreachable (for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that resolve a facade name to a source table (`SELECT`, `INSERT`, `CHECK TABLE`) prove the facade-side grant and then source-side visibility **before** the source table is resolved and loaded — for every table of the query, including the tables of a `JOIN`, the right-hand side of an `IN` and the tables of the subqueries of a distributed query — so a user who lacks either grant receives the same access-denied error for a hidden broken source as for a hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used as an oracle for the state of sources the user is not allowed to see, and a user granted on the source alone cannot learn from it which source a facade name resolves to. The same holds for a parameterized view read through the facade. Once both grants are present, the source's own error propagates as usual. The listing-style readers (`SHOW TABLES` / `system.tables`, `system.columns`, `system.data_skipping_indices`, and the other per-database enumerations) follow the same rule when they walk the facade: a source database that fails while being listed contributes no rows and ends the walk, so the sources after it are not listed either, unless the caller is granted `SHOW TABLES` on both the facade and that source database, in which case the source's own error propagates, the same as when listing the source directly. Ending the walk is what keeps the listing of a hidden broken source identical to the listing of a hidden healthy one: a table that a hidden source owns is not visible through the facade anyway, so continuing to a later source could only advertise a name that the read path, which stops at the first source owning it, still refuses.
 
 The fail-closed prechecks name only the facade, exactly as it was written in the query, and never the source database a name resolved to: a caller who lacks the facade-side grant, or who holds it but not the source-side `SELECT` / `INSERT` / `SHOW` grant that reaching the name through the facade requires, is denied on the facade name, so the denial does not disclose which source database owns the name. The runtime rejection of a facade that became nested through a late reconfiguration (a source database dropped and re-created as another read-only `Overlay`) names only the facade as well. This guarantee covers callers without source-side visibility. A caller who already holds enough source-side grants to reach the source table may see it named in later, more precise denials, exactly as a direct read of the source would name it: `CHECK TABLE` re-checks the `CHECK` privilege on the resolved source table under its own name, `KILL MUTATION` / `KILL PART_MOVE TO SHARD` list the required grants on both the facade and the source, and a column-level `SELECT` denial on a source table or view the caller can already reach reports the missing columns per source name. The source names remain available through `SHOW CREATE DATABASE` and `system.databases.engine_full` to a caller holding `SHOW DATABASES` on every source.
 
