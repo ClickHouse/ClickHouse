@@ -9,6 +9,7 @@
 #include <Common/HashTable/Prefetching.h>
 
 #include <cstring>
+#include <limits>
 
 namespace DB
 {
@@ -56,6 +57,15 @@ struct LastElementCacheStats
         hits += num_tries - num_misses;
         misses += num_misses;
     }
+};
+
+/// The rows of the block a hashing state will be asked about. A state whose constructor precomputes
+/// per-row key data must cover exactly this range: a caller that builds one state per sub-range of a
+/// block would otherwise pay whole-block work per sub-range. `end` is clamped to the block size.
+struct RowRange
+{
+    size_t begin = 0;
+    size_t end = std::numeric_limits<size_t>::max();
 };
 
 namespace columns_hashing_impl
