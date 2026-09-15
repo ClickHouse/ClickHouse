@@ -5,6 +5,8 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 
 #include <IO/ReadHelpers.h>
@@ -143,9 +145,86 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
     }
 }
 
-MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block_)
+namespace
+{
+
+/// Both ends of a `minmax` range must bound the granule under the order `KeyCondition` compares with,
+/// in which a `NaN` element is above every number. `IColumn::getExtremes` reports the `min` and `max`
+/// aggregates instead, and those exclude a value that contains a `NaN`.
+void getTotalOrderExtremes(const IColumn & column, size_t start, size_t end, Field & min_value, Field & max_value)
+{
+    /// A `Map` value is materialized through its nested array, which refuses more than a million elements.
+    if (const auto * column_map = typeid_cast<const ColumnMap *>(&column))
+    {
+        Field nested_min;
+        Field nested_max;
+        getTotalOrderExtremes(column_map->getNestedColumn(), start, end, nested_min, nested_max);
+
+        const auto & nested_min_value = nested_min.safeGet<Array>();
+        const auto & nested_max_value = nested_max.safeGet<Array>();
+        min_value = Map(nested_min_value.begin(), nested_min_value.end());
+        max_value = Map(nested_max_value.begin(), nested_max_value.end());
+        return;
+    }
+
+    min_value = Array();
+    max_value = Array();
+
+    if (start >= end)
+        return;
+
+    static constexpr int nan_direction_hint = 1;
+
+    size_t min_idx = start;
+    size_t max_idx = start;
+    for (size_t i = start + 1; i < end; ++i)
+    {
+        if (column.compareAt(i, min_idx, column, nan_direction_hint) < 0)
+            min_idx = i;
+        else if (column.compareAt(i, max_idx, column, nan_direction_hint) > 0)
+            max_idx = i;
+    }
+
+    column.get(min_idx, min_value);
+    column.get(max_idx, max_value);
+}
+
+/// `Field::operator<` compares the type tag before the value, so it agrees with `IColumn::compareAt`
+/// only while every node of the type tree yields a single tag. That is why this is an allow-list.
+bool needsTotalOrderExtremes(const IDataType & type)
+{
+    if (!isArray(type) && !isMap(type))
+        return false;
+
+    bool tag_stable = true;
+    bool has_float = false;
+
+    auto visit = [&](const IDataType & node)
+    {
+        if (isFloat(node))
+            has_float = true;
+
+        if (!(isArray(node) || isMap(node) || isTuple(node) || node.lowCardinality()
+              || node.isValueRepresentedByNumber() || isStringOrFixedString(node)
+              || isUUID(node) || isIPv6(node)))
+            tag_stable = false;
+    };
+
+    visit(type);
+    type.forEachChild(visit);
+
+    return tag_stable && has_float;
+}
+
+}
+
+MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(
+    const String & index_name_,
+    const Block & index_sample_block_,
+    std::shared_ptr<const std::vector<UInt8>> needs_total_order_extremes_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
+    , needs_total_order_extremes(std::move(needs_total_order_extremes_))
 {
 }
 
@@ -175,7 +254,9 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         /// sentinel; otherwise IS NULL wrongly prunes). getExtremes on LC materializes internally too,
         /// so this adds no extra work.
         const auto column = src_column->lowCardinality() ? src_column->convertToFullColumnIfLowCardinality() : src_column;
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+        if ((*needs_total_order_extremes)[i])
+            getTotalOrderExtremes(*column, range_start, range_end, field_min, field_max);
+        else if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
             column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
         else
             column->getExtremes(field_min, field_max, range_start, range_end);
@@ -239,6 +320,16 @@ std::string MergeTreeIndexConditionMinMax::getDescription() const
     return condition.getDescription().condition;
 }
 
+MergeTreeIndexMinMax::MergeTreeIndexMinMax(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
+{
+    auto flags = std::make_shared<std::vector<UInt8>>();
+    flags->reserve(index.sample_block.columns());
+    for (const auto & column : index.sample_block)
+        flags->push_back(needsTotalOrderExtremes(*column.type));
+    needs_total_order_extremes = std::move(flags);
+}
+
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {
     return std::make_shared<MergeTreeIndexGranuleMinMax>(index.name, index.sample_block);
@@ -247,7 +338,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
+    return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block, needs_total_order_extremes);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
