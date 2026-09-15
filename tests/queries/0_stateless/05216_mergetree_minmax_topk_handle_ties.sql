@@ -51,19 +51,19 @@ FROM (
     EXPLAIN indexes=1
     SELECT v FROM t_topk_handle_ties
     ORDER BY v ASC LIMIT 5
-    SETTINGS use_skip_indexes_for_top_k = 1
+    SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0
 )
 WHERE explain LIKE '%TopK%';
 
 -- Correctness: must return 5 rows all equal to 1.
 SELECT v FROM t_topk_handle_ties
 ORDER BY v ASC LIMIT 5
-SETTINGS use_skip_indexes_for_top_k = 1;
+SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
 
 -- DESC direction also exercises handle_ties (uses max values from index).
 SELECT v FROM t_topk_handle_ties
 ORDER BY v DESC LIMIT 5
-SETTINGS use_skip_indexes_for_top_k = 1;
+SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
 
 DROP TABLE t_topk_handle_ties;
 
@@ -93,12 +93,12 @@ FROM (
     EXPLAIN indexes=1
     SELECT v, w FROM t_topk_multi_col
     ORDER BY v ASC, w ASC LIMIT 5
-    SETTINGS use_skip_indexes_for_top_k = 1
+    SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0
 )
 WHERE explain LIKE '%TopK%';
 
 SELECT v, w FROM t_topk_multi_col
 ORDER BY v ASC, w ASC LIMIT 5
-SETTINGS use_skip_indexes_for_top_k = 1;
+SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
 
 DROP TABLE t_topk_multi_col;
