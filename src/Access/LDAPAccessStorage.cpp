@@ -25,6 +25,7 @@
 #include <random>
 #include <sstream>
 
+#include <string_view>
 
 namespace ProfileEvents
 {
@@ -630,7 +631,7 @@ bool LDAPAccessStorage::areLDAPCredentialsValidNoLock(const User & user, const C
 }
 
 
-void LDAPAccessStorage::checkNotStale(const String & user_name) const
+void LDAPAccessStorage::checkNotStale(const String & user_name, std::string_view action) const
 {
     const auto & params = *sync_params;
     if (params.max_staleness == std::chrono::seconds{0})
@@ -645,11 +646,11 @@ void LDAPAccessStorage::checkNotStale(const String & user_name) const
 
     String message;
     if (never_synced)
-        message = fmt::format("LDAP directory {} has never been synchronised successfully (max_staleness = {} s), refusing to authenticate user '{}'",
-            backQuote(getStorageName()), params.max_staleness.count(), user_name);
+        message = fmt::format("LDAP directory {} has never been synchronised successfully (max_staleness = {} s), refusing to {} user '{}'",
+            backQuote(getStorageName()), params.max_staleness.count(), action, user_name);
     else
-        message = fmt::format("LDAP directory {} has not been synchronised for {} s (max_staleness = {} s), refusing to authenticate user '{}'",
-            backQuote(getStorageName()), age_s, params.max_staleness.count(), user_name);
+        message = fmt::format("LDAP directory {} has not been synchronised for {} s (max_staleness = {} s), refusing to {} user '{}'",
+            backQuote(getStorageName()), age_s, params.max_staleness.count(), action, user_name);
 
     /// During an outage every login of every synced user fails with this; one line per minute is enough.
     Int64 last_log_s = last_staleness_log_time_s.load();
@@ -795,13 +796,25 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
 
     if (sync_params)
     {
-        /// A synced directory serves the synchronised snapshot: with `only_synced_users` a name outside it
-        /// does not exist here, whatever the directory says (same gate as `authenticateImpl`). Roles never
-        /// come from a lookup in a synced directory, so an existing entry is not refreshed either, and a
-        /// lazily materialised one (only without `only_synced_users`) waits for the next run to get its roles.
-        if (id || sync_params->only_synced_users)
+        /// The gates of `authenticateImpl`, in the same order: a name in the synchronised snapshot is refused
+        /// while the snapshot is stale, and with `only_synced_users` a name outside it does not exist here,
+        /// whatever the directory says. Without the staleness gate `EXECUTE AS` would keep resolving a user,
+        /// with the roles of the last run, while the same user's password logins are refused as stale.
+        /// Roles never come from a lookup in a synced directory, so an existing entry is not refreshed
+        /// either, and a lazily materialised one (only without `only_synced_users`) waits for the next run
+        /// to get its roles.
+        if (id)
+        {
+            checkNotStale(name, "resolve");
             return id;
 
+        }
+
+        if (sync_params->only_synced_users)
+        {
+            LOG_DEBUG(getLogger(), "User {} is not in the synchronised snapshot of directory {}", name, backQuote(getStorageName()));
+            return {};
+        }
         if (!access_control.getExternalAuthenticators().findLDAPUser(ldap_server_name, name, nullptr, nullptr))
             return {};
 
@@ -927,7 +940,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         }
 
         if (id)
-            checkNotStale(user_name);
+            checkNotStale(user_name, "authenticate");
     }
 
     UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;

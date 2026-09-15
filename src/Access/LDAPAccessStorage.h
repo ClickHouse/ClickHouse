@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <string_view>
 #include <vector>
 
 
@@ -118,7 +119,9 @@ private: // IAccessStorage implementations.
 
     /// Throws `LDAP_ERROR` when `max_staleness` is set and the last successful synchronisation is older than it.
     /// Only called for names present in `memory_storage`, so it can never refuse a user of another storage.
-    void checkNotStale(const String & user_name) const;
+    /// `action` names the refused operation in the message: "authenticate" for a login, "resolve" for the
+    /// forced lookup of `EXECUTE AS`.
+    void checkNotStale(const String & user_name, std::string_view action) const;
 
     /// The synchronisation, see `sync`.
     struct SyncPlan

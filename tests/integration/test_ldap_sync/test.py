@@ -941,10 +941,38 @@ def test_ephemeral_roles_storage_is_refused():
 
 
 def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
+def test_execute_as_resolves_synced_users_only(janedoe_in_role_a):
+    """`EXECUTE AS` resolves its target through the forced lookup of the directory, which applies the
+    login gates: a synchronised user is impersonated with the roles of the last run; a name outside
+    the snapshot is unknown, although the directory could resolve it, and nothing is materialised
+    (a lazy directory would look the name up and create the user here)."""
+    sync_node_manual()
+    assert admin(node_manual, "EXECUTE AS janedoe SELECT currentUser()") == TSV(
+        [["janedoe"]]
+    )
+    assert admin(
+        node_manual,
+        "EXECUTE AS janedoe SELECT role_name FROM system.current_roles ORDER BY role_name",
+    ) == TSV([["role_a"]])
+
+    # `lazyonly` exists in the directory but is in no group, so the snapshot does not have them.
+    ldap_add_user("lazyonly")
+    try:
+        error = admin_error(node_manual, "EXECUTE AS lazyonly SELECT currentUser()")
+        assert "UNKNOWN_USER" in error, error
+        assert admin(node_manual, ldap_users_query("lazyonly")) == "0\n"
+        assert node_manual.contains_in_log(
+            "User lazyonly is not in the synchronised snapshot of directory .ldap."
+        )
+    finally:
+        ldap_delete(user_dn("lazyonly"), ignore_missing=True)
+
+
     """`node_stale`: `ldap` (interval 1, max_staleness 3) is declared before `users_xml`. While
-    the directory cannot be synchronised, janedoe is refused with the staleness error, but the
-    local user that follows and unknown names get the ordinary "not found" treatment, and
-    `SYSTEM RELOAD USERS` returns the LDAP error while still reloading the other storages.
+    the directory cannot be synchronised, janedoe is refused with the staleness error, for a login
+    and for `EXECUTE AS` alike, but the local user that follows and unknown names get the ordinary
+    "not found" treatment, and `SYSTEM RELOAD USERS` returns the LDAP error while still reloading
+    the other storages.
     """
     # The precondition is a fresh snapshot: `node_stale` syncs every second, so a directory that
     # a previous test left refusing its runs fails here, not in the middle of the scenario.
@@ -977,6 +1005,12 @@ def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
         assert node_stale.contains_in_log("refusing to authenticate user 'janedoe'")
 
         # Gate order: the local user behind the directory and an unknown name are unaffected.
+        # `EXECUTE AS` goes through the same gate; the lookup is not hidden behind the generic
+        # authentication error, so the reason reaches the client.
+        error = admin_error(node_stale, "EXECUTE AS janedoe SELECT currentUser()")
+        assert "LDAP_ERROR" in error and "has not been synchronised for" in error, error
+        assert "refusing to resolve user 'janedoe'" in error, error
+
         assert login(node_stale, "local_after", "local") == TSV([["local_after"]])
         login_error(node_stale, "nosuchuser")
         assert not node_stale.contains_in_log(
