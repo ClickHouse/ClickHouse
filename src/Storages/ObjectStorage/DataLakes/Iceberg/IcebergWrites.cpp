@@ -1035,6 +1035,9 @@ IcebergStorageSink::IcebergStorageSink(
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
+    /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
+    /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
+    /// rather than let the first commit build on a file the table never committed.
     auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
@@ -1046,7 +1049,7 @@ IcebergStorageSink::IcebergStorageSink(
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
-        /* ignore_explicit_metadata_file_path */ false);
+        /* ignore_metadata_pointer_overrides */ true);
 
     metadata = getMetadataJSONObject(
         metadata_path,
@@ -1352,7 +1355,7 @@ bool IcebergStorageSink::initializeMetadata()
                 getLogger("IcebergWrites").get(),
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
-                /* ignore_explicit_metadata_file_path */ true);
+                /* ignore_metadata_pointer_overrides */ true);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
