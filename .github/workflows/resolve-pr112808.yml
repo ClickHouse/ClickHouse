@@ -15,8 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2000
           filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/workflows/resolve-pr112808.yml
+            .github/scripts/resolve-pr112808.py
+            src/Core/Settings.cpp
+            src/Core/SettingsChangesHistory.cpp
+            src/Storages/MaterializedView/RefreshTask.cpp
+            src/Storages/MaterializedView/RefreshTask.h
+            src/Storages/StorageMaterializedView.cpp
+            src/Storages/StorageMaterializedView.h
       - name: Merge upstream master and resolve conflicts
         shell: bash
         run: |
@@ -24,7 +34,17 @@ jobs:
           git config user.name clickhouse-gh
           git config user.email clickhouse-gh@users.noreply.github.com
           git remote add upstream https://github.com/ClickHouse/ClickHouse.git || true
-          git fetch --no-tags --filter=blob:none upstream master
+          git fetch --no-tags --filter=blob:none --depth=2000 upstream master
+          depth=2000
+          while ! git merge-base HEAD upstream/master >/dev/null 2>&1; do
+            if (( depth >= 16000 )); then
+              echo 'Unable to reach merge base with bounded shallow history.' >&2
+              exit 1
+            fi
+            git fetch --no-tags --filter=blob:none --deepen=2000 origin agent/refreshable-mv-workload
+            git fetch --no-tags --filter=blob:none --deepen=2000 upstream master
+            depth=$((depth + 2000))
+          done
           if git merge-base --is-ancestor upstream/master HEAD; then
             echo 'upstream/master is already merged'
             exit 0
