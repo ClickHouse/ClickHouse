@@ -1779,6 +1779,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         table_expression_query_info.trivial_limit = max_block_size_limited;
                     }
                 }
+                else
+                {
+                    table_expression_query_info.small_limit_above_array_join = true;
+                }
             }
 
             if (!max_block_size)
