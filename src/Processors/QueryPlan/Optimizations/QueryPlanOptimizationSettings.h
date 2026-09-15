@@ -78,7 +78,14 @@ struct QueryPlanOptimizationSettings
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
+    /// `query_plan_merge_filter_into_join_condition`: applies to `INNER` and `CROSS` joins.
     bool merge_filter_into_join_condition;
+    /// `cross_to_inner_join_rewrite != 0`: comma joins are turned into `INNER` joins even when the above is off.
+    bool cross_to_inner_join_rewrite;
+    /// Runs `mergeFilterIntoJoinCondition` when either of the two applies.
+    bool run_merge_filter_into_join_condition;
+    /// `cross_to_inner_join_rewrite >= 2`: a comma join that stays a cross product is an error
+    bool force_comma_join_rewrite;
     bool merge_expression_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;

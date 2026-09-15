@@ -349,6 +349,25 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             const bool is_in_operator = functionIsInOperator(func_name);
 
+            /// Both sides are the same column: the comparison is decided for every non-NULL row, and there is no
+            /// constant to build a range from. Such an atom comes from the filter pushdown, which copies
+            /// `t1.k = t2.k` to the other side of a join on `t1.k = t3.k AND t2.k = t3.k` as `t3.k = t3.k`; taken
+            /// as unknown, several copies multiply the estimate of `t3` down to nothing.
+            if (!is_in_operator && !func.getArgumentAt(0).isConstant()
+                && func.getArgumentAt(0).getColumnName() == func.getArgumentAt(1).getColumnName())
+            {
+                if (func_name == "equals" || func_name == "lessOrEquals" || func_name == "greaterOrEquals")
+                {
+                    out.function = RPNElement::ALWAYS_TRUE;
+                    return true;
+                }
+                if (func_name == "notEquals" || func_name == "less" || func_name == "greater")
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+            }
+
             /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
             /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
             /// and extract constant value from it.

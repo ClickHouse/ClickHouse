@@ -144,10 +144,13 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
-inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, double selectivity)
+/// A cross product is never preferred to a join of the same inputs. The constant only decides ties,
+/// which arise without statistics, where every pair costs the same.
+inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, double selectivity, bool connected = true)
 {
     return left->cost + right->cost
-        + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+        + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1))
+        + (connected ? 0.0 : 1.0);
 }
 
 }

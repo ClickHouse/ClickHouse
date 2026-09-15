@@ -64,6 +64,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
 }
 
@@ -624,6 +625,9 @@ struct QueryGraphBuilder
     /// See QueryGraph::conflict_ops / ConflictJoinOp.
     std::vector<ConflictJoinOp> conflict_ops;
 
+    /// `cross_to_inner_join_rewrite = 2` applies to a graph with a comma join in it.
+    bool has_comma_join = false;
+
     struct BuilderContext
     {
         const QueryPlanOptimizationSettings & optimization_settings;
@@ -697,6 +701,8 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
         op.nr_rels.shift(shift);
         lhs.conflict_ops.push_back(std::move(op));
     }
+
+    lhs.has_comma_join |= rhs.has_comma_join;
 
     for (auto & [sources, nodes] : rhs.type_changes)
         lhs.type_changes[sources + shift] = std::move(nodes);
@@ -1011,6 +1017,13 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     auto [lhs_label, rhs_label] = join_step->getInputLabels();
     auto join_kind = join_step->getJoinOperator().kind;
 
+    /// Apart from the force-mode check, a comma join is a cross join.
+    if (join_kind == JoinKind::Comma)
+    {
+        query_graph.has_comma_join = true;
+        join_kind = JoinKind::Cross;
+    }
+
     auto type_changing_sides = join_step->typeChangingSides();
     bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
     bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
@@ -1261,6 +1274,14 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+[[noreturn]] static void throwCommaJoinNotRewritten(const String & left_relations, const String & right_relations)
+{
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
+        "Failed to rewrite comma join of {} and {} to INNER JOIN: no equi-join conditions found in WHERE clause. "
+        "You may set setting `cross_to_inner_join_rewrite` to `1` to allow slow CROSS JOIN for this case",
+        left_relations, right_relations);
+}
+
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     QueryGraph query_graph;
@@ -1428,6 +1449,20 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 join_operator.kind = JoinKind::Inner;
             auto left_rels = entry->left->relations;
             auto right_rels = entry->right->relations;
+
+            /// `cross_to_inner_join_rewrite = 2`: the reordering had every equality of the graph at hand, so a
+            /// cross product left among comma joins has no keys anywhere.
+            if (query_graph_builder.has_comma_join && optimization_settings.force_comma_join_rewrite && join_operator.kind == JoinKind::Cross)
+            {
+                auto relation_names = [&](const BitSet & rels)
+                {
+                    Strings names;
+                    for (size_t rel : rels)
+                        names.push_back(relation_infos.at(BitSet().set(rel)).name);
+                    return fmt::format("'{}'", fmt::join(names, ", "));
+                };
+                throwCommaJoinNotRewritten(relation_names(left_rels), relation_names(right_rels));
+            }
 
             bool has_prepared_storage_at_right = bool(typeid_cast<const JoinStepLogicalLookup *>(right_child_node->step.get()));
             bool has_prepared_storage_at_left = bool(typeid_cast<const JoinStepLogicalLookup *>(left_child_node->step.get()));
@@ -1782,6 +1817,22 @@ static bool joinGraphHasOverlappingColumnNames(
     return false;
 }
 
+/// A comma join the optimizer leaves in place has no keys: an error in force mode, a plain cross join otherwise.
+static void resolveUnreorderedCommaJoin(JoinStepLogical & join_step, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    auto & join_operator = join_step.getJoinOperator();
+    if (join_operator.kind != JoinKind::Comma)
+        return;
+
+    if (optimization_settings.force_comma_join_rewrite)
+    {
+        auto [left_label, right_label] = join_step.getInputLabels();
+        throwCommaJoinNotRewritten(fmt::format("'{}'", left_label.get()), fmt::format("'{}'", right_label.get()));
+    }
+
+    join_operator.kind = JoinKind::Cross;
+}
+
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -1814,6 +1865,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         || !join_operator.residual_filter.empty()
     )
     {
+        resolveUnreorderedCommaJoin(*join_step, optimization_settings);
         join_step->setOptimized();
         return;
     }
@@ -1837,6 +1889,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
             node, query_graph_size_limit, join_step->getJoinSettings(),
             optimization_settings.merge_expression_into_join, conflictDetectorReordersSemiAnti(optimization_settings)))
     {
+        resolveUnreorderedCommaJoin(*join_step, optimization_settings);
         join_step->setOptimized();
         return;
     }

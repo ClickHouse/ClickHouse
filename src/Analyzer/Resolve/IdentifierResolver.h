@@ -132,11 +132,6 @@ private:
         const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
-    IdentifierResolveResult tryResolveIdentifierFromCrossJoin(
-        const IdentifierLookup & identifier_lookup,
-        const TableExpressionNodePtr & table_expression_node,
-        IdentifierResolveScope & scope);
-
     IdentifierResolveResult tryResolveIdentifierFromJoin(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,
