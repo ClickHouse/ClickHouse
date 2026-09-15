@@ -1,5 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/SettingsObsoleteMacros.h>
 #include <Core/Settings.h>
 #include <IO/S3AuthSettings.h>
 #include <IO/S3Defines.h>
@@ -17,7 +18,6 @@ namespace DB
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
-    DECLARE(UInt64, max_connections, S3::DEFAULT_MAX_CONNECTIONS, "", 0) \
     DECLARE(UInt64, http_keep_alive_timeout, S3::DEFAULT_KEEP_ALIVE_TIMEOUT, "", 0) \
     DECLARE(UInt64, http_keep_alive_max_requests, S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS, "", 0) \
     DECLARE(UInt64, expiration_window_seconds, S3::DEFAULT_EXPIRATION_WINDOW_SECONDS, "", 0) \
@@ -46,9 +46,18 @@ namespace DB
     DECLARE(String, google_adc_client_secret, "", "", 0) \
     DECLARE(String, google_adc_refresh_token, "", "", 0) \
 
+/// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
+/// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
+/// `storage_connections_*` and `http_connections_*` server settings instead. The name is still
+/// accepted - in a disk configuration, in a named collection, and over the wire, where these
+/// settings are serialized by name - so that an existing configuration keeps working.
+#define OBSOLETE_S3AUTH_SETTINGS(M, ALIAS) \
+    MAKE_OBSOLETE(M, UInt64, max_connections, 1024) \
+
 #define CLIENT_SETTINGS_LIST(M, ALIAS) \
     CLIENT_SETTINGS(M, ALIAS) \
-    AUTH_SETTINGS(M, ALIAS)
+    AUTH_SETTINGS(M, ALIAS) \
+    OBSOLETE_S3AUTH_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AuthSettings, S3AuthSetting)

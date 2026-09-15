@@ -56,7 +56,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool gcs_issue_compose_request;
     extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
     extern const S3AuthSettingsUInt64 http_keep_alive_timeout;
-    extern const S3AuthSettingsUInt64 max_connections;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
     extern const S3AuthSettingsUInt64 request_timeout_ms;
@@ -167,7 +166,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
 
     client_configuration.connectTimeoutMs = auth_settings[S3AuthSetting::connect_timeout_ms];
     client_configuration.requestTimeoutMs = auth_settings[S3AuthSetting::request_timeout_ms];
-    client_configuration.maxConnections = static_cast<uint32_t>(auth_settings[S3AuthSetting::max_connections]);
     client_configuration.http_keep_alive_timeout = auth_settings[S3AuthSetting::http_keep_alive_timeout];
     client_configuration.http_keep_alive_max_requests = auth_settings[S3AuthSetting::http_keep_alive_max_requests];
 
