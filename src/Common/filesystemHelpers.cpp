@@ -428,6 +428,17 @@ bool isSymlinkNoThrow(const fs::path & path)
     return fs::is_symlink(path, dummy);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
 }
 
+bool existsNoFollow(const fs::path & path)
+{
+    /// Trailing slash removed for the same reason as in `isSymlink`. Only `not_found` is absence;
+    /// any other inspection failure throws, so "cannot tell" is never reported as "free".
+    std::error_code ec;
+    auto status = fs::symlink_status(path.filename().empty() ? path.parent_path() : path, ec);
+    if (ec && status.type() != fs::file_type::not_found)
+        throw fs::filesystem_error("Cannot determine whether the path exists", path, ec);
+    return fs::exists(status);
+}
+
 fs::path readSymlink(const fs::path & path)
 {
     /// See the comment for isSymlink
