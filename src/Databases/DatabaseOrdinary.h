@@ -29,6 +29,9 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
+    UInt64 getMaxRows() const override { return max_rows.load(std::memory_order_relaxed); }
+    std::optional<UInt64> getCurrentRowCount() const override;
+
     void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
@@ -78,6 +81,10 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool validate_new_create_query) override;
 
+    /// `ALTER DATABASE ... MODIFY SETTING max_rows = N`. Supported only by the `Atomic` and
+    /// `Ordinary` engines; other engines throw.
+    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
+
     Strings getNamesOfPermanentlyDetachedTables() const override
     {
         std::lock_guard lock(mutex);
@@ -93,6 +100,9 @@ public:
     static void checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
 
 protected:
+    /// `max_rows` limit (0 = unlimited), published from database settings. `Atomic`
+    /// inherits this implementation; other database engines deliberately do not.
+    std::atomic<UInt64> max_rows = 0;
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
     void eraseAsyncLoadState(const String & table_name) TSA_REQUIRES(mutex);
