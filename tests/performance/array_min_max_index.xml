@@ -16,6 +16,9 @@
         <substitution>
             <name>matrix_length</name>
             <values>
+                <value>8</value>
+                <value>16</value>
+                <value>24</value>
                 <value>31</value>
                 <value>32</value>
                 <value>33</value>
@@ -298,6 +301,22 @@
                 arrayMap(x -&gt; toFloat64(x), range(1024)),
                 arrayMap(x -&gt; nan, range(1024)),
                 arrayMap(x -&gt; toFloat64(x), range(15360)))
+        FROM numbers(32)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT
+            11,
+            16384,
+            arrayMap(x -&gt; if(x = 0, -inf, toFloat64(x)), range(16384))
+        FROM numbers(32)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float
+        SELECT
+            12,
+            16384,
+            arrayMap(x -&gt; if(x = 0, inf, -toFloat64(x)), range(16384))
         FROM numbers(32)
     </fill_query>
 
