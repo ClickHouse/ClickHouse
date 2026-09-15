@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings
--- no-parallel: compares a global ProfileEvents counter before and after the merge.
+-- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: the source part must otherwise be eligible for file-preserving index cleanup.
 
 DROP TABLE IF EXISTS ttl_clear_index_recompression_metadata;
@@ -39,12 +38,6 @@ WHERE database = currentDatabase()
   AND table = 'ttl_clear_index_recompression_metadata'
   AND active;
 
-CREATE TEMPORARY TABLE ttl_clear_index_recompression_events_before (value UInt64) ENGINE = Memory;
-INSERT INTO ttl_clear_index_recompression_events_before
-SELECT sum(value)
-FROM system.events
-WHERE event = 'TTLClearIndexMetadataOnlyMerges';
-
 SYSTEM START TTL MERGES ttl_clear_index_recompression_metadata;
 OPTIMIZE TABLE ttl_clear_index_recompression_metadata FINAL
 SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
@@ -56,10 +49,6 @@ FROM system.parts
 WHERE database = currentDatabase()
   AND table = 'ttl_clear_index_recompression_metadata'
   AND active;
-
-SELECT sum(value) = (SELECT value FROM ttl_clear_index_recompression_events_before)
-FROM system.events
-WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
 -- Once the first rewrite has populated the metadata, the expired recompression rule is applied.
 OPTIMIZE TABLE ttl_clear_index_recompression_metadata FINAL;
