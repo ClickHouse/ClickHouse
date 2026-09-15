@@ -1,18 +1,31 @@
 #include <iostream>
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <chrono>
-#include <thread>
+#include <cerrno>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_CREATE_CHILD_PROCESS;
+    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
+}
 
 
 TEST(ShellCommand, Execute)
@@ -39,6 +52,46 @@ TEST(ShellCommand, ExecuteDirect)
     EXPECT_EQ(res, "Hello, world!\n");
 }
 
+/// A command that cannot be started is reported at once, with the reason, rather than as a process
+/// that produces nothing and then exits with a code that has to be recognised.
+TEST(ShellCommand, ExecFailureIsReportedWithItsReason)
+{
+    ShellCommand::Config config("/nonexistent/binary/for/this/test");
+    try
+    {
+        ShellCommand::executeDirect(config);
+        FAIL() << "a command that cannot be executed was started";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
+        EXPECT_NE(e.message().find("Cannot execv in child process"), std::string::npos) << e.message();
+        EXPECT_NE(e.message().find("No such file or directory"), std::string::npos) << e.message();
+    }
+}
+
+/// The exit code of a command that did start is its own, whatever the value: none of them is taken
+/// for a failure to start it.
+TEST(ShellCommand, AnyExitCodeOfTheCommandIsItsOwn)
+{
+    for (int code : {1, 85, 88, 96, 98, 255})
+    {
+        auto command = ShellCommand::execute("exit " + std::to_string(code));
+        std::string res;
+        readStringUntilEOF(res, command->out);
+        try
+        {
+            command->wait();
+            FAIL() << "exit " << code << " passed as success";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY) << e.message();
+            EXPECT_NE(e.message().find("exited with return code " + std::to_string(code)), std::string::npos) << e.message();
+        }
+    }
+}
+
 TEST(ShellCommand, ExecuteWithInput)
 {
     auto command = ShellCommand::execute("cat");
@@ -53,4 +106,333 @@ TEST(ShellCommand, ExecuteWithInput)
     command->wait();
 
     EXPECT_EQ(res, "Hello, world!\n");
+}
+
+
+namespace
+{
+
+/// A close-on-exec descriptor with `content` behind it, the way a shared-memory region's `memfd` is
+/// held in the server: the child gets it only through `inherited_fds`, never by accident.
+int makeInheritableSource(const std::string & content)
+{
+    int fds[2];
+    if (0 != ::pipe(fds))
+        return -1;
+    if (::write(fds[1], content.data(), content.size()) != static_cast<ssize_t>(content.size()))
+        return -1;
+    ::close(fds[1]);
+    if (-1 == ::fcntl(fds[0], F_SETFD, FD_CLOEXEC))
+        return -1;
+    return fds[0];
+}
+
+/// The child opens the inherited descriptors as `/dev/fd/N` rather than with `<&N`: a POSIX shell
+/// only redirects single-digit descriptors, and the numbers here are whatever the test process
+/// has free.
+std::string readInheritedInChild(const std::vector<std::pair<int, int>> & inherited_fds, const std::string & script)
+{
+    ShellCommand::Config config("/bin/sh");
+    config.arguments = {"-c", script};
+    config.inherited_fds = inherited_fds;
+    auto command = ShellCommand::executeDirect(config);
+
+    std::string res;
+    readStringUntilEOF(res, command->out);
+    command->wait();
+    return res;
+}
+
+}
+
+/// The descriptor the child is told to expect may be the very number it has in the parent: a
+/// region's `memfd` created as 3 is handed over as 3. A plain `dup2(3, 3)` is a no-op that keeps
+/// the close-on-exec flag, and the child would find the descriptor closed.
+TEST(ShellCommand, InheritsADescriptorUnderItsOwnNumber)
+{
+    const int source = makeInheritableSource("same number");
+    ASSERT_NE(source, -1);
+
+    EXPECT_EQ(readInheritedInChild({{source, source}}, "cat /dev/fd/" + std::to_string(source)), "same number");
+    ::close(source);
+}
+
+/// Two descriptors handed over as each other's number: whichever is copied first must not destroy
+/// the other's source before it is copied.
+TEST(ShellCommand, InheritsCrossingDescriptors)
+{
+    const int first = makeInheritableSource("first");
+    const int second = makeInheritableSource("second");
+    ASSERT_NE(first, -1);
+    ASSERT_NE(second, -1);
+
+    /// The child reads `first`'s number and gets `second`'s content, and the other way round.
+    const std::string script = "cat /dev/fd/" + std::to_string(first) + "; echo; cat /dev/fd/" + std::to_string(second);
+    EXPECT_EQ(readInheritedInChild({{first, second}, {second, first}}, script), "second\nfirst");
+
+    ::close(first);
+    ::close(second);
+}
+
+/// A descriptor that is not close-on-exec reaches the child only under the number it was told,
+/// never under its own as well: for a pipe, a second copy would be an extra reader or writer
+/// that keeps the other side from ever seeing EOF.
+TEST(ShellCommand, DoesNotLeakTheOriginalOfAnInheritedDescriptor)
+{
+    const int source = makeInheritableSource("only once");
+    ASSERT_NE(source, -1);
+    /// Deliberately inheritable, unlike the region descriptors: the helper must not rely on it.
+    ASSERT_EQ(::fcntl(source, F_SETFD, 0), 0);
+
+    int probe = ::dup(source);
+    ASSERT_NE(probe, -1);
+    const int target = probe + 1;
+    ::close(probe);
+
+    /// `/dev/fd` rather than `/proc/self/fd`, which only Linux has.
+    const std::string script = "cat /dev/fd/" + std::to_string(target)
+        + "; echo; if [ -e /dev/fd/" + std::to_string(source) + " ]; then echo leaked; else echo closed; fi";
+    EXPECT_EQ(readInheritedInChild({{target, source}}, script), "only once\nclosed\n");
+    ::close(source);
+}
+
+/// The ordinary case, and the one where a target number happens to be free in the parent.
+TEST(ShellCommand, InheritsADescriptorUnderAnotherNumber)
+{
+    const int source = makeInheritableSource("relocated");
+    ASSERT_NE(source, -1);
+
+    /// A number that is certainly not open here.
+    int probe = ::dup(source);
+    ASSERT_NE(probe, -1);
+    const int free_number = probe + 1;
+    ::close(probe);
+
+    EXPECT_EQ(readInheritedInChild({{free_number, source}}, "cat /dev/fd/" + std::to_string(free_number)), "relocated");
+    ::close(source);
+}
+
+/// The number an original has in the parent can be where something else is installed in the
+/// child - here a `read_fds` pipe. Closing "the original" then would close that pipe instead:
+/// what is under that number now is what the child was told to have, and it stays.
+TEST(ShellCommand, KeepsAPipeInstalledOnTheNumberOfAnOriginal)
+{
+    const int source = makeInheritableSource("via the region");
+    ASSERT_NE(source, -1);
+
+    int probe = ::dup(source);
+    ASSERT_NE(probe, -1);
+    const int target = probe + 1;
+    ::close(probe);
+
+    ShellCommand::Config config("/bin/sh");
+    config.arguments = {"-c", "cat /dev/fd/" + std::to_string(target) + "; echo via the pipe >/dev/fd/" + std::to_string(source)};
+    config.inherited_fds = {{target, source}};
+    config.read_fds = {source};
+    auto command = ShellCommand::executeDirect(config);
+
+    std::string from_stdout;
+    readStringUntilEOF(from_stdout, command->out);
+    std::string from_pipe;
+    readStringUntilEOF(from_pipe, command->read_fds.at(source));
+    command->wait();
+
+    EXPECT_EQ(from_stdout, "via the region");
+    EXPECT_EQ(from_pipe, "via the pipe\n");
+    ::close(source);
+}
+
+/// One original may be handed over under two numbers. It is one descriptor, and it is closed once:
+/// a second close would fail on a number that is already free and end the child before `exec`.
+TEST(ShellCommand, InheritsOneDescriptorUnderTwoNumbers)
+{
+    const int source = makeInheritableSource("twice");
+    ASSERT_NE(source, -1);
+
+    int probe = ::dup(source);
+    ASSERT_NE(probe, -1);
+    const int first = probe + 1;
+    const int second = probe + 2;
+    ::close(probe);
+
+    /// Both numbers reach the same pipe: reading through either drains it for the other, so what
+    /// the child sees is the content once and then EOF, whichever number it reads first.
+    const std::string script = "cat /dev/fd/" + std::to_string(first) + "; cat /dev/fd/" + std::to_string(second)
+        + "; echo; if [ -e /dev/fd/" + std::to_string(source) + " ]; then echo leaked; else echo closed; fi";
+    EXPECT_EQ(readInheritedInChild({{first, source}, {second, source}}, script), "twice\nclosed\n");
+    ::close(source);
+}
+
+namespace
+{
+
+/// The lowest free descriptor number: what the next `pipe` (or `dup`) will get. `executeImpl`
+/// opens its pipes in a fixed order - stdin, stdout, stderr, then one per `read_fds` entry, then
+/// one per `write_fds` entry, each taking the next two numbers - so the number of any of their
+/// ends can be predicted from here, which is how the tests below aim a target at one.
+int lowestFreeFd()
+{
+    int probe = ::dup(STDOUT_FILENO);
+    if (probe == -1)
+        return -1;
+    ::close(probe);
+    return probe;
+}
+
+}
+
+/// The pipe ends have whatever numbers `pipe` got, and a caller's target can be one of them - here
+/// the very number of the pipe's own end in the parent. A plain `dup2(fd, fd)` would be a no-op
+/// that keeps the close-on-exec flag on, and the child would find the pipe closed by `exec`.
+TEST(ShellCommand, KeepsAPipeWhoseEndHasTheNumberOfItsTarget)
+{
+    const int lowest = lowestFreeFd();
+    ASSERT_NE(lowest, -1);
+    /// Three standard-stream pipes take six numbers; the `read_fds` pipe's write end - the child's
+    /// side - is the eighth.
+    const int target = lowest + 7;
+
+    ShellCommand::Config config("/bin/sh");
+    config.arguments = {"-c", "echo via the pipe >/dev/fd/" + std::to_string(target)};
+    config.read_fds = {target};
+    auto command = ShellCommand::executeDirect(config);
+
+    std::string from_pipe;
+    readStringUntilEOF(from_pipe, command->read_fds.at(target));
+    command->wait();
+
+    EXPECT_EQ(from_pipe, "via the pipe\n");
+}
+
+/// A target can also be the number of a pipe that is installed later: `dup2` onto it would destroy
+/// that pipe's end before it was copied, and the second target would end up on the first pipe.
+TEST(ShellCommand, KeepsAPipeWhoseEndHasTheNumberOfAnEarlierTarget)
+{
+    const int lowest = lowestFreeFd();
+    ASSERT_NE(lowest, -1);
+    /// The first `read_fds` pipe takes the seventh and eighth numbers, the second the ninth and
+    /// tenth; the first pipe's target is the second pipe's write end.
+    const int first_target = lowest + 9;
+    const int second_target = lowest + 20;
+
+    ShellCommand::Config config("/bin/sh");
+    config.arguments = {"-c", "echo one >/dev/fd/" + std::to_string(first_target) + "; echo two >/dev/fd/" + std::to_string(second_target)};
+    config.read_fds = {first_target, second_target};
+    auto command = ShellCommand::executeDirect(config);
+
+    std::string from_first;
+    readStringUntilEOF(from_first, command->read_fds.at(first_target));
+    std::string from_second;
+    readStringUntilEOF(from_second, command->read_fds.at(second_target));
+    command->wait();
+
+    EXPECT_EQ(from_first, "one\n");
+    EXPECT_EQ(from_second, "two\n");
+}
+
+/// A number the child would have two things installed under - a pipe and an inherited descriptor,
+/// or one descriptor twice - is refused before the child exists: the later `dup2` would silently
+/// replace the earlier, and the parent would go on reading a pipe nobody writes into. So is a
+/// standard stream: the child's 0, 1 and 2 are the pipes the parent talks to it through.
+TEST(ShellCommand, RefusesADescriptorNumberClaimedTwice)
+{
+    const int source = makeInheritableSource("twice");
+    ASSERT_NE(source, -1);
+    const int target = source + 1;
+
+    ShellCommand::Config pipe_and_inherited("cat");
+    pipe_and_inherited.read_fds = {target};
+    pipe_and_inherited.inherited_fds = {{target, source}};
+    EXPECT_THROW(ShellCommand::execute(pipe_and_inherited), DB::Exception);
+
+    ShellCommand::Config inherited_twice("cat");
+    inherited_twice.inherited_fds = {{target, source}, {target, source}};
+    EXPECT_THROW(ShellCommand::execute(inherited_twice), DB::Exception);
+
+    ShellCommand::Config both_pipes("cat");
+    both_pipes.read_fds = {target};
+    both_pipes.write_fds = {target};
+    EXPECT_THROW(ShellCommand::execute(both_pipes), DB::Exception);
+
+    /// And the standard streams are nobody's to claim, whichever list does it.
+    ShellCommand::Config pipe_on_stdout("cat");
+    pipe_on_stdout.read_fds = {STDOUT_FILENO};
+    EXPECT_THROW(ShellCommand::execute(pipe_on_stdout), DB::Exception);
+
+    ::close(source);
+}
+
+namespace
+{
+
+/// Blocks until the child has actually exited, without reaping it.
+///
+/// Not a fixed pause: what these tests need is the state where the very first `waitpid` succeeds,
+/// and sleeping "long enough" for that is exactly the kind of synchronization-by-sleep that turns
+/// into a flaky test on a loaded machine. `waitpid` cannot be used to check, because reaping is the
+/// thing under test - so `waitid` with `WNOWAIT` is used instead: it returns once the child has
+/// exited and leaves it a zombie for the wait under test to collect. Returns false on error.
+bool waitUntilZombie(pid_t pid)
+{
+    /// Without `WNOHANG` a zero return means exactly one thing: the child named by `P_PID` has
+    /// exited. Nothing in `info` needs reading.
+    siginfo_t info{};
+    while (0 != ::waitid(P_PID, static_cast<id_t>(pid), &info, WEXITED | WNOWAIT))
+        if (errno != EINTR)
+            return false;
+    return true;
+}
+
+}
+
+/// Reaping a child closes its pipes, and everything it had written and nobody had read goes with
+/// them. `waitDrainingOutput` exists for a caller that owes those bytes to something - an executable
+/// UDF with `stderr_reaction` `throw` fails the query on them - so it has to read them out before it
+/// lets the descriptors go, not after.
+///
+/// The command here writes its diagnostic and exits at once, and the test waits until it is provably
+/// gone before asking for the wait. So the very first `waitpid` succeeds, and there is no polling
+/// loop to pick the bytes up along the way: either the wait reads them after reaping, or they are
+/// lost. That ordering is impossible to force from an integration test, where the server reads the
+/// command's stderr while it is still reading its response.
+TEST(ShellCommand, WaitDrainingOutputKeepsStderrWrittenJustBeforeExit)
+{
+    auto command = ShellCommand::execute("printf 'boom-boom-boom' >&2; exit 0");
+
+    ASSERT_TRUE(waitUntilZombie(command->getPid()));
+
+    std::string collected;
+    EXPECT_TRUE(command->waitDrainingOutput([&](std::string_view chunk) { collected += chunk; }));
+    EXPECT_EQ(collected, "boom-boom-boom");
+}
+
+
+/// The same, for a command whose exit status the caller is not checking (`check_exit_code = 0`):
+/// the two settings are independent, so a non-zero exit must not be raised while the diagnostic is
+/// still delivered.
+TEST(ShellCommand, WaitDrainingOutputKeepsStderrWithoutCheckingTheExitStatus)
+{
+    auto command = ShellCommand::execute("printf 'boom' >&2; exit 3");
+
+    ASSERT_TRUE(waitUntilZombie(command->getPid()));
+
+    std::string collected;
+    EXPECT_TRUE(command->waitDrainingOutput(
+        [&](std::string_view chunk) { collected += chunk; }, /*check_exit_status=*/ false));
+    EXPECT_EQ(collected, "boom");
+}
+
+
+/// A child killed by a signal reports that as an exception, and decoding the status is what raises
+/// it - so decoding before reading the pipes loses whatever the command said on its way out. The
+/// query then gets "terminated by signal 15" and no idea why.
+TEST(ShellCommand, WaitDrainingOutputKeepsStderrOfASignalledChild)
+{
+    auto command = ShellCommand::execute("printf 'boom' >&2; kill -TERM $$");
+
+    ASSERT_TRUE(waitUntilZombie(command->getPid()));
+
+    std::string collected;
+    EXPECT_THROW(command->waitDrainingOutput([&](std::string_view chunk) { collected += chunk; }), DB::Exception);
+    EXPECT_EQ(collected, "boom");
 }

@@ -1,0 +1,54 @@
+<!-- Executable dictionaries have no shared-memory transport. A config that asks for one must be
+     rejected when the dictionary is created, not accepted and quietly run over the pipes. -->
+<dictionaries>
+    <dictionary>
+        <name>executable_shared_memory_rejected_python</name>
+        <source>
+            <executable>
+                <format>TabSeparated</format>
+                <command>input.py</command>
+                <execute_direct>1</execute_direct>
+                <use_shared_memory>1</use_shared_memory>
+                <shared_memory_size>1048576</shared_memory_size>
+            </executable>
+        </source>
+        <layout>
+            <direct/>
+        </layout>
+        <structure>
+            <id>
+                <name>input</name>
+            </id>
+            <attribute>
+                <name>result</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>executable_pool_shared_memory_rejected_python</name>
+        <source>
+            <executable_pool>
+                <format>TabSeparated</format>
+                <command>input.py</command>
+                <execute_direct>1</execute_direct>
+                <shared_memory_size>1048576</shared_memory_size>
+            </executable_pool>
+        </source>
+        <layout>
+            <direct/>
+        </layout>
+        <structure>
+            <id>
+                <name>input</name>
+            </id>
+            <attribute>
+                <name>result</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>

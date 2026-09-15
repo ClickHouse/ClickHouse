@@ -269,6 +269,11 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             command_arguments.erase(command_arguments.begin());
         }
 
+        /// Executable dictionaries run over the pipes. Reject the shared-memory options rather
+        /// than ignoring them: a dictionary configured for that transport would otherwise load and
+        /// silently use a different one.
+        checkSharedMemoryIsNotConfigured(config, settings_config_prefix, "Executable dictionary source");
+
         ExecutableDictionarySource::Configuration configuration
         {
             .command = std::move(command_value),
@@ -288,7 +293,9 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
-            .execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false)
+            .execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false),
+            .use_shared_memory = false,
+            .shared_memory_size = 0
         };
 
         auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);

@@ -191,6 +191,28 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
 
     assert TSV(result) == TSV([["test_working_pool_udf", "Success", "executable_pool", "JSONEachRow", "String", "['UInt64']", "['value']", 4, 30, 1, 1]])
 
+    # Neither of these functions uses the shared-memory transport, and this is where that has to be
+    # readable from SQL. Every column has to be at its own "off" value.
+    result = node.query(
+        """
+        SELECT
+            name,
+            use_shared_memory,
+            shared_memory_size,
+            shared_memory_max_size,
+            shared_memory_pipeline
+        FROM system.user_defined_functions
+        WHERE name IN ('test_working_udf', 'test_working_pool_udf')
+        ORDER BY name
+        FORMAT TSV
+        """
+    )
+
+    assert TSV(result) == TSV([
+        ["test_working_pool_udf", 0, 0, 0, 0],
+        ["test_working_udf", 0, 0, 0, 0],
+    ])
+
 
 def test_system_user_defined_functions_failed_status(started_cluster):
     """Test querying FAILED UDFs and their error messages"""
@@ -297,6 +319,11 @@ def test_system_user_defined_functions_columns(started_cluster):
         "execute_direct",
         "lifetime",
         "deterministic",
+        # Shared-memory transport
+        "use_shared_memory",
+        "shared_memory_size",
+        "shared_memory_max_size",
+        "shared_memory_pipeline",
     ]
 
     actual_columns = result.strip().split('\n')
