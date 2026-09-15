@@ -856,7 +856,9 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     addToEncodingStats(s, header);
 }
 
-void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolded_data, const WriteOptions & options)
+/// `clamped` says that the unfolded filter was capped at the 128 MiB readers accept instead of being sized for all
+/// hashed values, so it may hold more distinct values than it has room for at the requested `bits_per_value`.
+void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolded_data, bool clamped, const WriteOptions & options)
 {
     /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
     const size_t num_blocks = unfolded_data.size() / 8;
@@ -878,10 +880,18 @@ void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolde
     if (total_set_bits == 0)
         return;
 
+    const double fill_rate = static_cast<double>(total_set_bits) / (static_cast<double>(num_blocks) * 256);
+
+    /// A filter sized for all hashed values stays below the implied fpp by construction, so it is always kept. A clamped
+    /// filter only makes sense while the values it actually received fit: duplicate-heavy data leaves it sparse and it
+    /// is folded down like any other, but when the chunk really had more distinct values than the cap allows for, the
+    /// filter is denser than requested. Writing it would cost up to 128 MiB in the file for a filter that prunes almost
+    /// nothing, so behave like the former distinct-count check and emit no bloom filter for such a column chunk.
+    if (clamped && std::pow(fill_rate, 8) > fpp)
+        return;
+
     indexes.bloom_filter_data = std::move(unfolded_data);
     PODArray<UInt32> & data = indexes.bloom_filter_data;
-
-    const double fill_rate = static_cast<double>(total_set_bits) / (static_cast<double>(num_blocks) * 256);
     const int max_folds = std::countr_zero(num_blocks);
     double one_minus_fill_rate = 1.0 - fill_rate;
     UInt32 folds = 0;
@@ -1007,6 +1017,7 @@ void writeColumnImpl(
     /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
     /// from the dictionary instead.
     std::optional<PODArray<UInt32>> bloom_data;
+    bool bloom_data_clamped = false;
     if (options.write_bloom_filter)
     {
         /// There appear to be undocumented requirements:
@@ -1018,23 +1029,25 @@ void writeColumnImpl(
         /// maximum definition level are hashed into the filter, so size it for the number of leaf values in the
         /// primitive column, not for `num_values`, which also counts the null and empty-array placeholders of a
         /// repeated or nullable leaf (a sparse `Array(Nullable(T))` may have hundreds of placeholders per value).
+        /// A column chunk with more leaf values than the cap allows for (about 100M at the default `bits_per_value`,
+        /// reachable for the elements of an `Array`) still gets the largest filter readers accept: the values are
+        /// usually far from unique at that scale, so `finishBloomFilter` folds the clamped filter down like any other
+        /// and only drops it when the chunk really held too many distinct values for the cap.
+        constexpr size_t max_num_blocks = 4 * 1024 * 1024;
         const double requested_num_blocks = static_cast<double>(s.primitive_column->size()) * options.bloom_filter_bits_per_value / 256;
         size_t num_blocks = 1;
         while (static_cast<double>(num_blocks) < requested_num_blocks)
         {
-            if (num_blocks >= 4 * 1024 * 1024)
+            if (num_blocks >= max_num_blocks)
             {
-                num_blocks = 0;
+                bloom_data_clamped = true;
                 break;
             }
             num_blocks *= 2;
         }
-        if (num_blocks > 0)
-        {
-            bloom_data.emplace();
-            bloom_data->reserve_exact(num_blocks * 8);
-            bloom_data->resize_fill(num_blocks * 8);
-        }
+        bloom_data.emplace();
+        bloom_data->reserve_exact(num_blocks * 8);
+        bloom_data->resize_fill(num_blocks * 8);
     }
 
     /// Start of current page.
@@ -1343,7 +1356,7 @@ void writeColumnImpl(
 
     if (bloom_data.has_value())
     {
-        finishBloomFilter(s.indexes, *std::move(bloom_data), options);
+        finishBloomFilter(s.indexes, *std::move(bloom_data), bloom_data_clamped, options);
     }
 }
 

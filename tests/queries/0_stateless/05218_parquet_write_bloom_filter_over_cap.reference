@@ -1,0 +1,4 @@
+-- row groups with a small folded filter for 'few', without a filter for 'many', total
+2	2	2
+-- values of 'few' with exactly one row group worth of rows, distinct values
+16	16
