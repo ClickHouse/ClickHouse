@@ -10,6 +10,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <base/hex.h>
 
 #include <optional>
@@ -119,6 +120,27 @@ void checkPathComponents(ZnodeString what, const String & str)
 
         remaining.remove_prefix(slash_pos + 1);
     }
+}
+
+/// Returns the position right after the last path component that is a UUID, or npos if there is none.
+size_t findEndOfLastUUIDComponent(const String & path)
+{
+    size_t end = path.size();
+    while (end > 0)
+    {
+        const size_t slash_pos = path.find_last_of('/', end - 1);
+        const size_t begin = slash_pos == String::npos ? 0 : slash_pos + 1;
+        const std::string_view component(path.data() + begin, end - begin);
+
+        UUID uuid;
+        if (component.size() == 36 && tryParseUUID({reinterpret_cast<const UInt8 *>(component.data()), component.size()}, uuid))
+            return end;
+
+        if (slash_pos == String::npos)
+            break;
+        end = slash_pos;
+    }
+    return String::npos;
 }
 
 }
@@ -252,6 +274,17 @@ TableZnodeInfo TableZnodeInfo::resolve(
         while (i < res.path.size() && res.path[i] != '/')
             i += 1;
         res.path_prefix_for_drop = res.path.substr(0, i);
+    }
+    else if (table_id.uuid == UUIDHelpers::Nil)
+    {
+        /// A table without a UUID of its own (one in an `Ordinary` database) may still live under a
+        /// UUID-named znode: converting such a table to a replicated engine mints a UUID for the {uuid}
+        /// macro and stores the fully expanded path as a literal, because the metadata of the table has
+        /// no place for the UUID itself. That literal is the only record of the UUID, so the owned prefix
+        /// is recovered from the path: it ends with the last path component that is a UUID. (A component
+        /// the user wrote by hand may be picked up as well; harmless, as only emptied znodes are removed.)
+        if (const size_t i = findEndOfLastUUIDComponent(res.path); i != String::npos)
+            res.path_prefix_for_drop = res.path.substr(0, i);
     }
 
     return res;
