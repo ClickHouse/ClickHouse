@@ -3,6 +3,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
+#include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -524,7 +525,7 @@ void IPAddressDictionary::loadData()
                 uint8_t a_buf[IPV6_BINARY_LENGTH];
                 uint8_t b_buf[IPV6_BINARY_LENGTH];
 
-                auto cmpres = memcmp(record_a.asIPv6Binary(a_buf), record_b.asIPv6Binary(b_buf), IPV6_BINARY_LENGTH);
+                auto cmpres = memcmp16(record_a.asIPv6Binary(a_buf), record_b.asIPv6Binary(b_buf));
 
                 if (cmpres == 0)
                     return compareTo(record_a.prefixIPv6(), record_b.prefixIPv6());
@@ -753,7 +754,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     const auto * ipv6_col = std::get_if<IPv6Container>(&ip_column);
     auto comp_v6 = [&](size_t i, const IPv6Subnet & target)
     {
-        auto cmpres = memcmp(getIPv6FromOffset(*ipv6_col, i), target.addr, IPV6_BINARY_LENGTH);
+        auto cmpres = memcmp16(getIPv6FromOffset(*ipv6_col, i), target.addr);
         if (cmpres == 0)
             return mask_column[i] < target.prefix;
         return cmpres < 0;
@@ -770,7 +771,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
 
         if (likely(found_it != range.end() &&
-            memcmp(getIPv6FromOffset(*ipv6_col, *found_it), target.addr, IPV6_BINARY_LENGTH) == 0 &&
+            memequal16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) &&
             mask_column[*found_it] == mask))
             set_value(i, vec[row_idx[*found_it]]);
         else
@@ -841,7 +842,7 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
     const auto * ipv6_col = std::get_if<IPv6Container>(&ip_column);
     auto comp_v6 = [&](size_t i, const IPv6Subnet & target)
     {
-        auto cmpres = memcmp(getIPv6FromOffset(*ipv6_col, i), target.addr, IPV6_BINARY_LENGTH);
+        auto cmpres = memcmp16(getIPv6FromOffset(*ipv6_col, i), target.addr);
         if (cmpres == 0)
             return mask_column[i] < target.prefix;
         return cmpres < 0;
@@ -858,7 +859,7 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
 
         if (likely(found_it != range.end() &&
-            memcmp(getIPv6FromOffset(*ipv6_col, *found_it), target.addr, IPV6_BINARY_LENGTH) == 0 &&
+            memequal16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) &&
             mask_column[*found_it] == mask))
         {
             set_value(i, vec[row_idx[*found_it]]);
@@ -1185,7 +1186,7 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
         if constexpr (std::is_same_v<IPContainerType, IPv4Container>)
             return value < (*ipv4or6_col)[idx];
         else
-            return memcmp(value, getIPv6FromOffset(*ipv4or6_col, idx), IPV6_BINARY_LENGTH) < 0;
+            return memcmp16(value, getIPv6FromOffset(*ipv4or6_col, idx)) < 0;
     };
 
     auto range = collections::range(0, row_idx.size());
