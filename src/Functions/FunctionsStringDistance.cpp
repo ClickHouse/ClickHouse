@@ -1256,7 +1256,9 @@ struct ByteJaroSimilarityImpl
             return TargetSpecific::x86_64_v3::jaroScan(s1, s1len, s2, s2len, max_range);
         }
 #endif
+#if !defined(__aarch64__) || !defined(__ARM_NEON)
         return processScalar(haystack, needle, s1len, s2len, max_range);
+#endif
     }
 };
 
