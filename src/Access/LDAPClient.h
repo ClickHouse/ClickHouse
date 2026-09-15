@@ -68,7 +68,7 @@ public:
         /// Normalized group DN (`LDAPClient::normalizeDN`) -> the `rdn_attribute` value as spelled in the configured DN.
         std::map<String, String> dn_groups;
 
-        static bool isGroupDN(const String & group) { return group.find('=') != String::npos; }
+        static bool isGroupDN(const String & group) { return group.contains('='); }
 
         void updateHash(SipHash & hash) const;
     };
