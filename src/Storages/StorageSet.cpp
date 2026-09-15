@@ -13,6 +13,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
@@ -343,6 +345,13 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 
     path = new_path_to_table_data;
     renameInMemory(new_table_id);
+}
+
+
+void checkAccessForSetTableOnRightOfIn(const ContextPtr & context, const IStorage & table, const StorageID & table_id)
+{
+    auto metadata_snapshot = table.getInMemoryMetadataPtr(context, false);
+    context->checkAccess(AccessType::SELECT, table_id, metadata_snapshot->getColumns().getNamesOfPhysical());
 }
 
 
