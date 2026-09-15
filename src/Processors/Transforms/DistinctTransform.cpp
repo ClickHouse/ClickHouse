@@ -89,8 +89,21 @@ void DistinctTransform::transform(Chunk & chunk)
         const UInt64 available_memory = max_bytes_before_pass_through - std::min(max_bytes_before_pass_through, query_memory_usage);
 
         const size_t filtering_memory = distinct_set->estimateFilteringMemory(chunk);
-        if (filtering_memory > available_memory || distinct_set->estimateGrowthMemory(chunk) > available_memory - filtering_memory)
+        const size_t growth_memory = distinct_set->estimateGrowthMemory(chunk);
+        if (filtering_memory > available_memory || growth_memory > available_memory - filtering_memory)
         {
+            LOG_TRACE(getLogger("DistinctTransform"),
+                "Switching preliminary DISTINCT to pass-through: {} "
+                "(query memory: {}, spill threshold: {}, "
+                "estimated peak extra memory for growth: {}, filtering workspace: {})",
+                query_memory_usage > max_bytes_before_pass_through
+                    ? "query memory exceeded the spill threshold"
+                    : "projected allocations exceed the remaining spill-threshold budget",
+                formatReadableSizeWithBinarySuffix(query_memory_usage),
+                formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through),
+                formatReadableSizeWithBinarySuffix(growth_memory),
+                formatReadableSizeWithBinarySuffix(filtering_memory));
+
             distinct_set.reset();
             ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
             return;
@@ -115,6 +128,10 @@ void DistinctTransform::transform(Chunk & chunk)
         /// unique - dropping the `NULL` rows is exactly the reduction the consumer benefits from.
         if (abandon_controller->update(num_rows, chunk.getNumRows(), distinct_set->getTotalByteCount()))
         {
+            LOG_TRACE(getLogger("DistinctTransform"),
+                "Switching DISTINCT to pass-through: input is mostly unique (retained keys: {}, set memory: {})",
+                distinct_set->getTotalRowCount(), formatReadableSizeWithBinarySuffix(distinct_set->getTotalByteCount()));
+
             /// The new rows of the current chunk are still emitted (the following chunks flow
             /// through unfiltered).
             distinct_set.reset();
@@ -126,16 +143,21 @@ void DistinctTransform::transform(Chunk & chunk)
     /// Preliminary hashing can release its set under memory pressure because a downstream step
     /// deduplicates the output exactly. This also gives up any remaining local limit hint. The set
     /// can be released even when the current chunk produces no new rows.
-    if (max_bytes_before_pass_through && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_pass_through))
+    if (max_bytes_before_pass_through)
     {
-        LOG_DEBUG(
-            getLogger("DistinctTransform"),
-            "Query memory usage exceeded the threshold ({}), preliminary DISTINCT switches to pass-through",
-            formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through));
+        const Int64 query_memory_usage = getCurrentQueryMemoryUsage();
+        if (query_memory_usage > static_cast<Int64>(max_bytes_before_pass_through))
+        {
+            LOG_TRACE(getLogger("DistinctTransform"),
+                "Switching preliminary DISTINCT to pass-through: query memory exceeded the spill threshold after insertion "
+                "(query memory: {}, spill threshold: {})",
+                formatReadableSizeWithBinarySuffix(query_memory_usage),
+                formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through));
 
-        distinct_set.reset();
-        ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
-        return;
+            distinct_set.reset();
+            ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
+            return;
+        }
     }
 }
 
