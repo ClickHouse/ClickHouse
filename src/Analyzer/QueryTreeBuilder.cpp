@@ -301,22 +301,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
-        /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
-        /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
-        /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
-        /// Clamp it instead of throwing, as done for other settings crossing execution contexts
-        /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
-        /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
-        /// reader's constraints keeps working. A top-level clause still throws
-        /// (`applySettingsFromQuery`). Clamp a copy: the `QueryNode` keeps the clause as written, so
-        /// the tree's AST and hash are unchanged, and every node executing the subquery clamps it
-        /// against its own constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
+        /// A nested `SETTINGS` clause is clamped to the session's settings constraints: violating changes are
+        /// dropped or clamped (a top-level clause still throws in `applySettingsFromQuery`), while an unknown
+        /// name or an uncastable value throws as for a top-level clause, on every server that executes the
+        /// query. The node records the effective `changes`: the ones that survive, with their clamped values
+        /// and the literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
+        /// subquery see what was applied. `name = DEFAULT` in a nested clause is not applied on this path,
+        /// as before (see 05019_settings_constraints_nested_settings_clamp).
         if (!set_query.changes.empty())
         {
-            auto checked_changes = set_query.changes;
-            updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
-            updated_context->applySettingsChanges(checked_changes);
             settings_changes = set_query.changes;
+            updated_context->clampToSettingsConstraintsRejectingInvalidChanges(settings_changes, SettingSource::QUERY);
+            updated_context->applySettingsChanges(settings_changes);
         }
     }
 
