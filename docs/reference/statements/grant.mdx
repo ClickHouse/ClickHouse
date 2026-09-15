@@ -51,6 +51,15 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 Using the `CURRENT GRANTS` statement allows you to give all specified privileges to the given user or role.
 If none of the privileges were specified, then the given user or role will receive all available privileges for `CURRENT_USER`.
 
+The statement has two modes, which differ in how the granted privileges are derived from the grantor:
+
+- The named form `GRANT CURRENT GRANTS(privilege, ...) ON ...` grants exactly the requested privileges, limited to what
+  `CURRENT_USER` is allowed to grant. That limit includes privileges held only through implicit expansion, so a user holding
+  `CREATE TABLE ... WITH GRANT OPTION` can grant `CREATE VIEW` this way, because they could also grant it by hand.
+- The copy-all form `GRANT CURRENT GRANTS ON ...` (and its equivalent `GRANT CURRENT GRANTS(ALL ON ...)`) copies the grants of
+  `CURRENT_USER` as they are stored, so the resulting grants keep the same shape as the grantor's own grants and do not
+  materialize implicitly derived privileges as separate explicit grants.
+
 ## Usage {#usage}
 
 To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can grant privileges only inside the scope of your account privileges.
