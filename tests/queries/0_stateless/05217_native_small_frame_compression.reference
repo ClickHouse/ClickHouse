@@ -1,0 +1,11 @@
+ZSTD default mixed frames and compatibility passed
+LZ4 default mixed frames and compatibility passed
+LZ4HC default mixed frames and compatibility passed
+compression disabled passed
+logs and ProfileEvents passed
+threshold boundary passed
+default boundary with compressible and incompressible values passed
+client mixed frames passed
+mixed frames within a large block passed
+empty result passed
+chunked protocol passed
