@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <optional>
 
 namespace DB
 {
@@ -31,6 +32,16 @@ struct Regexps
     /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
     re2::RE2 enum_regex{R"({([^{}*,]+[^{}*]*[^{}*,])})"};
 };
+
+/// Bounds on what a path pattern is allowed to expand to. A `{a,b,c}` selector glob is enumerated
+/// into separate paths - a Cartesian product of the groups - and a `{N..M}` range glob into a regexp
+/// alternation of every number of the range, so a pattern of a few hundred bytes can ask for more
+/// than could ever be listed. It has to bound itself: the expansion runs while a table function is
+/// being resolved, where the query is not cancellable and is not stopped by `max_memory_usage`.
+constexpr size_t MAX_SELECTOR_GLOBS = 1000;
+constexpr size_t MAX_EXPANDED_PATHS = 100000;
+constexpr size_t MAX_EXPANDED_BYTES = 64 * 1024 * 1024;
+constexpr size_t MAX_RANGE_GLOB_VALUES = 100000;
 }
 
 bool containsRangeGlob(const std::string & input)
@@ -114,6 +125,12 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
                 leading_zeros = buffer[buffer.find_last_of('.') + 1] == '0';
                 std::swap(range_begin_width,range_end_width);
             }
+
+            if (range_end - range_begin >= MAX_RANGE_GLOB_VALUES)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The range glob '{{{}}}' in the path covers more than {} values.",
+                                buffer, MAX_RANGE_GLOB_VALUES);
+
             if (range_begin_width == 1 && leading_zeros)
                 output_width = 1; /// Special Case: {0..10} {0..999}
             else
@@ -211,52 +228,82 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 namespace
 {
 
-/// Bounds on the `{a,b,c}` selector glob expansion below.
-///
-/// The expansion is a Cartesian product: `{a,b}{c,d}{e,f}...` produces as many paths as the product
-/// of the group sizes, so a pattern of a few hundred bytes is enough to ask for more paths than
-/// could ever be listed. The expansion happens while a table function is being resolved, where the
-/// query is not cancellable and is not stopped by `max_memory_usage`, so it has to bound itself.
-constexpr size_t MAX_SELECTOR_GLOBS = 1000;
-constexpr size_t MAX_EXPANDED_PATHS = 100000;
-constexpr size_t MAX_EXPANDED_BYTES = 64 * 1024 * 1024;
-
-/// Whether `path` has no `{a,b,c}` selector glob left to enumerate. A `{N..M}` range glob anywhere
-/// in the path also stops the enumeration: ranges are turned into a regexp by
-/// `makeRegexpPatternFromGlobs` instead of being expanded into separate paths.
-bool noSelectorGlobsToExpand(std::string_view path)
-{
-    /// enum_regexp does not match elements of one char, e.g. {a}.tsv
-    bool definitely_no_selector_globs = path.find_first_of("{}") == std::string_view::npos;
-    if (!definitely_no_selector_globs)
-    {
-        auto left_bracket_pos = path.find_first_of('{');
-        auto right_bracket_pos = path.find_first_of('}');
-
-        auto is_this_enum_of_one_char =
-            left_bracket_pos != std::string_view::npos
-            && right_bracket_pos != std::string_view::npos
-            && (right_bracket_pos - left_bracket_pos) == 2;
-
-        definitely_no_selector_globs = !is_this_enum_of_one_char;
-    }
-
-    if (!definitely_no_selector_globs)
-        return false;
-
-    /// range_glob regex is stricter than enum_glob, so we need to check
-    /// if whatever matched enum_glob is also range_glob. If it does match it too -- this is a range glob.
-    bool is_this_enum_glob = RE2::PartialMatch(path, Regexps::instance().enum_regex);
-    bool is_this_range_glob = RE2::PartialMatch(path, Regexps::instance().range_regex);
-    return !is_this_enum_glob || is_this_range_glob;
-}
-
 /// One `{a,b,c}` selector glob of a path, together with the literal text preceding it.
 /// Both are views into the path.
 struct SelectorGlob
 {
     std::string_view literal_before;
     std::vector<std::string_view> alternatives;
+};
+
+/// Answers "does this tail still have a `{a,b,c}` selector glob to enumerate?" for tails that only
+/// ever move forward. A regexp that does not match early scans to the end of the tail, so asking one
+/// per glob would cost the product of the number of globs and the length of the pattern.
+class SelectorGlobScanner
+{
+public:
+    explicit SelectorGlobScanner(std::string_view pattern_)
+        : pattern(pattern_)
+        /// A `{N..M}` range glob anywhere stops the enumeration - ranges become a regexp in
+        /// `makeRegexpPatternFromGlobs` - and a tail cannot hold one the whole pattern does not.
+        , has_range_glob(RE2::PartialMatch(pattern, Regexps::instance().range_regex))
+    {
+    }
+
+    bool noSelectorGlobsToExpand(std::string_view tail)
+    {
+        /// enum_regexp does not match elements of one char, e.g. {a}.tsv
+        bool definitely_no_selector_globs = tail.find_first_of("{}") == std::string_view::npos;
+        if (!definitely_no_selector_globs)
+        {
+            auto left_bracket_pos = tail.find_first_of('{');
+            auto right_bracket_pos = tail.find_first_of('}');
+
+            auto is_this_enum_of_one_char =
+                left_bracket_pos != std::string_view::npos
+                && right_bracket_pos != std::string_view::npos
+                && (right_bracket_pos - left_bracket_pos) == 2;
+
+            definitely_no_selector_globs = !is_this_enum_of_one_char;
+        }
+
+        if (!definitely_no_selector_globs)
+            return false;
+
+        /// range_glob regex is stricter than enum_glob, so we need to check
+        /// if whatever matched enum_glob is also range_glob. If it does match it too -- this is a range glob.
+        if (has_range_glob)
+            return true;
+
+        return !hasEnumGlob(tail);
+    }
+
+private:
+    std::string_view pattern;
+    bool has_range_glob;
+
+    /// Where the leftmost glob matched by `enum_regex` starts, as an offset in `pattern`.
+    std::optional<size_t> enum_glob_offset;
+
+    /// A match is still ahead of every tail that starts at or before it, so it is searched for again
+    /// only once consumed past. Successive searches then cover disjoint parts of the pattern.
+    bool hasEnumGlob(std::string_view tail)
+    {
+        const size_t tail_offset = pattern.size() - tail.size();
+        if (enum_glob_offset && *enum_glob_offset >= tail_offset)
+            return true;
+
+        std::string_view matched;
+        if (!RE2::PartialMatch(tail, Regexps::instance().enum_regex, &matched))
+        {
+            enum_glob_offset.reset();
+            return false;
+        }
+
+        /// `matched` is the text between the braces, a view into `pattern`; hence the -1.
+        enum_glob_offset = static_cast<size_t>(matched.data() - pattern.data()) - 1;
+        return true;
+    }
 };
 
 }
@@ -268,11 +315,12 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
     /// picked for the globs before it, so the path is split once and not once per expanded path.
     std::vector<SelectorGlob> globs;
     std::string_view tail(path);
+    SelectorGlobScanner scanner(path);
 
     /// The number of paths the globs seen so far expand to, a running Cartesian product.
     size_t num_paths = 1;
 
-    while (!noSelectorGlobsToExpand(tail))
+    while (!scanner.noSelectorGlobsToExpand(tail))
     {
         if (globs.size() >= MAX_SELECTOR_GLOBS)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -350,18 +398,30 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
     std::vector<size_t> alternative_indices(globs.size(), 0);
     size_t expanded_bytes = 0;
 
+    /// The length every expanded path has in common: the literal text around the globs.
+    size_t literal_size = tail.size();
+    for (const auto & glob : globs)
+        literal_size += glob.literal_before.size();
+
     for (size_t path_index = 0; path_index < num_paths; ++path_index)
     {
-        std::string expanded;
-        expanded.reserve(path.size());  /// An expanded path is never longer than the pattern.
+        /// Charged and allocated by the length of the path itself, not of the pattern: one long
+        /// alternative among many short ones makes the two differ without bound, so reserving the
+        /// pattern per path would hold `num_paths * path.size()` while the charged amount stays small.
+        size_t expanded_size = literal_size;
         for (size_t i = 0; i < globs.size(); ++i)
-            expanded.append(globs[i].literal_before).append(globs[i].alternatives[alternative_indices[i]]);
-        expanded.append(tail);
+            expanded_size += globs[i].alternatives[alternative_indices[i]].size();
 
-        expanded_bytes += expanded.size();
+        expanded_bytes += expanded_size;
         if (expanded_bytes > MAX_EXPANDED_BYTES)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "The '{{}}' globs in the path expand to more than {} bytes of paths.", MAX_EXPANDED_BYTES);
+
+        std::string expanded;
+        expanded.reserve(expanded_size);
+        for (size_t i = 0; i < globs.size(); ++i)
+            expanded.append(globs[i].literal_before).append(globs[i].alternatives[alternative_indices[i]]);
+        expanded.append(tail);
 
         result.push_back(std::move(expanded));
 

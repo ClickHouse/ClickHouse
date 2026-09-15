@@ -11,6 +11,8 @@ namespace DB
     bool hasExactlyOneBracketsExpansion(const std::string & input);
 
     /// Parse globs in string and make a regexp for it.
+    /// A `{N..M}` range glob becomes an alternation of every number of the range, so it throws
+    /// instead of building a regexp for an unreasonably long range.
     std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs);
 
     /// Process {a,b,c...} globs:

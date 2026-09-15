@@ -140,4 +140,28 @@ TEST(Common, expandSelectionGlob)
     {
         EXPECT_NE(std::string(e.message()).find("expand to more than"), std::string::npos) << e.message();
     }
+
+    /// A group with one long alternative among many short ones: within every limit, so it must be
+    /// expanded, but holding the whole pattern for each of the short paths would take gigabytes.
+    {
+        std::string one_long_alternative = "{" + std::string(64 * 1024, 'A') + "," + repeat("a,", 19998) + "a}";
+        auto expanded = expandSelectionGlob(one_long_alternative);
+        ASSERT_EQ(expanded.size(), 20000u);
+        EXPECT_EQ(expanded.front().size(), 64u * 1024u);
+        EXPECT_EQ(expanded.back(), "a");
+
+        size_t capacity = 0;
+        for (const auto & one : expanded)
+            capacity += one.capacity();
+        EXPECT_LT(capacity, 4u * 1024 * 1024) << "The expansion holds much more memory than the paths it produced.";
+    }
+}
+
+TEST(Common, rangeGlobIsBounded)
+{
+    /// A `{N..M}` range glob becomes an alternation of every number of the range, so the regexp is
+    /// as long as the range and a 20-byte path can ask for hundreds of gigabytes of it.
+    EXPECT_EQ(makeRegexpPatternFromGlobs("f{1..3}"), "f(1|2|3)");
+    EXPECT_THROW(makeRegexpPatternFromGlobs("f{1..1000000}"), DB::Exception);
+    EXPECT_THROW(makeRegexpPatternFromGlobs("f{1000000..1}"), DB::Exception);
 }
