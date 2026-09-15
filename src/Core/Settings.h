@@ -16,6 +16,7 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace boost
@@ -214,7 +215,13 @@ struct Settings
     static bool hasBuiltin(std::string_view name);
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
-    static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
+    /// `exempt_names` lists the top-level keys that must not be reported even though they are also
+    /// user-level setting names, because in that config they mean something else (see the call in the
+    /// server, where a top-level key can be the name of a server setting).
+    static void checkNoSettingNamesAtTopLevel(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_path,
+        const std::unordered_set<String> & exempt_names = {});
 
 private:
     std::unique_ptr<SettingsImpl> impl;
