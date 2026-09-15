@@ -154,7 +154,9 @@ SELECT trim(explain) FROM (
     SETTINGS use_skip_indexes = 0
 ) WHERE explain LIKE '%Key range tracking%';
 
--- `FINAL` is read through a merging pipeline, so granules cannot be dropped by the runtime filter.
+-- `FINAL` is read through a merging pipeline, so granules cannot be dropped by the runtime filter. (The
+-- lazy `FINAL` rewrite, off here, replaces such a read with non-`FINAL` ones that can prune again; see
+-- `05222_join_runtime_filter_index_analysis_lazy_final`.)
 SELECT 'FINAL';
 SELECT trim(explain) FROM (
     EXPLAIN actions = 1 SELECT count() FROM probe_final AS p FINAL INNER JOIN build_side AS b ON p.k = b.k

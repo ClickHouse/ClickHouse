@@ -714,9 +714,9 @@ void disableUnusedRuntimeFilterKeyRangeTracking(QueryPlan::Node & root)
     /// Match probe-side reads with the build steps of the filters they registered, in one walk over the
     /// final plan. It has to be the final plan: the read step a descriptor was registered on can be
     /// replaced afterwards (parallel replicas, distributed reads), and then nothing consumes the filter
-    /// any more. The projection rewrites replace the read as well, but they re-register the descriptors
-    /// on the projection read (`ReadFromMergeTree::inheritJoinRuntimeFiltersForIndexAnalysis`), so a
-    /// prunable projection key keeps the tracking on.
+    /// any more. The projection and lazy `FINAL` rewrites replace the read as well, but they re-register
+    /// the descriptors on the new read (`ReadFromMergeTree::inheritJoinRuntimeFiltersForIndexAnalysis`), so
+    /// a prunable projection key, or a `FINAL` read split into non-`FINAL` ones, keeps the tracking on.
     std::unordered_map<String, std::vector<ReadFromMergeTree *>> reads_by_filter_key;
     std::vector<BuildRuntimeFilterStep *> build_steps;
 

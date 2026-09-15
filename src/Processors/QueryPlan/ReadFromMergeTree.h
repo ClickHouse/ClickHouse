@@ -556,10 +556,12 @@ public:
     }
 
     /// Re-register the join runtime filter keys of a read this step replaces (the projection rewrites
-    /// build a fresh `ReadFromMergeTree` over the projection parts). Every key the replaced read was
-    /// offered goes through `addJoinRuntimeFilterIndexAnalysisOnDataRead` again, so it is kept only if
-    /// this step's own primary key or skip indexes can prune with it - a projection has its own of both,
-    /// and may prune a key the base table cannot, or the other way round.
+    /// build a fresh `ReadFromMergeTree` over the projection parts, the lazy `FINAL` rewrite builds
+    /// non-`FINAL` reads over the parts of a `FINAL` one). Every key the replaced read was offered goes
+    /// through `addJoinRuntimeFilterIndexAnalysisOnDataRead` again, so it is kept only if this step can
+    /// prune with it: a projection has a primary key and skip indexes of its own, and may prune a key the
+    /// base table cannot, or the other way round; a read that dropped `FINAL` passes a veto the replaced
+    /// read failed.
     void inheritJoinRuntimeFiltersForIndexAnalysis(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
