@@ -8,12 +8,14 @@
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/VarInt.h>
 
 #include <limits>
 
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -211,6 +213,46 @@ GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
     ASSERT_EQ(settings.get("custom_unknown_here"), Field(String("kept")));
 }
 
+GTEST_TEST(Settings, LegacyBinaryFormatRejectsZeroForANonZeroSetting)
+{
+    /// The legacy binary format decodes each value through the setting's own readBinary. A query
+    /// arriving over TCP is additionally passed through the settings constraints, which re-validate,
+    /// but a persisted distributed batch header and a deserialized query plan read this format with
+    /// nothing after it, so readBinary is where a non-zero setting's restriction has to hold.
+    auto wire = [](UInt64 value)
+    {
+        WriteBufferFromOwnString out;
+        BaseSettingsHelpers::writeString("grace_hash_join_initial_buckets", out);
+        writeVarUInt(value, out);
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    /// Each buffer of wire bytes is named: ReadBufferFromString does not copy, so a temporary would
+    /// leave it reading freed memory, where an empty name reads as the end-of-settings marker.
+    const String zero_bytes = wire(0);
+    Settings rejected;
+    ReadBufferFromString zero(zero_bytes);
+    try
+    {
+        rejected.read(zero, SettingsWriteFormat::BINARY);
+        FAIL() << "zero was accepted for a non-zero setting";
+    }
+    catch (const Exception & e)
+    {
+        /// Pinned, so that a misspelled setting name failing as SETTING_NOT_FOUND cannot pass here.
+        ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    /// A permitted value must still be decoded and applied through the same path.
+    const String two_bytes = wire(2);
+    Settings accepted;
+    ReadBufferFromString two(two_bytes);
+    accepted.read(two, SettingsWriteFormat::BINARY);
+    ASSERT_TRUE(accepted.isChanged("grace_hash_join_initial_buckets"));
+    ASSERT_EQ(accepted.get("grace_hash_join_initial_buckets"), Field(UInt64(2)));
+}
+
 GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
 {
     constexpr Int64 max_ms = std::numeric_limits<Int64>::max() / 1000;
@@ -252,6 +294,35 @@ GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
 
     /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
     ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
+}
+GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheValues)
+{
+    /// The client passes such a Settings object to `Connection::sendQuery`: the values that
+    /// `compatibility` derived must keep acting locally (the client-side network codec is picked
+    /// from them by value), but they must not be serialized to the server, which sends only
+    /// changed settings and re-derives these from `compatibility` itself.
+    DB::Settings settings;
+    settings.set("compatibility", "26.6");
+    ASSERT_TRUE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_TRUE(settings.isChanged("network_compression_method"));
+    const auto derived_method = settings.get("network_compression_method");
+    const auto derived_level = settings.get("network_zstd_compression_level");
+
+    settings.markSettingsChangedByCompatibilityAsUnchanged();
+
+    ASSERT_FALSE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_FALSE(settings.isChanged("network_compression_method"));
+    ASSERT_FALSE(settings.isChanged("network_zstd_compression_level"));
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+    ASSERT_EQ(settings.get("network_zstd_compression_level"), derived_level);
+
+    /// The explicitly set `compatibility` itself stays changed and is still serialized.
+    ASSERT_TRUE(settings.isChanged("compatibility"));
+
+    /// The demoted settings no longer count as compatibility-derived: a later
+    /// `resetSettingsChangedByCompatibility` must not touch them.
+    settings.resetSettingsChangedByCompatibility();
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
 }
 
 GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)

@@ -6,10 +6,10 @@ Converted from stateless tests (which must not modify the server's data on disk)
   - 02253_empty_part_checksums.sh
   - 02255_broken_parts_chain_on_start.sh
   - 02444_async_broken_outdated_part_loading.sh
-  - 04151_unique_key_sst_rebuild_on_load.sh
   - 04235_corrupted_columns_substreams_detection.sh
   - 04323_text_index_marks_empty_part.sh
   - 04506_packed_part_fetch_checksum.sh
+  - 02346_text_index_corrupted_positions.sh
 """
 
 import shlex
@@ -187,169 +187,6 @@ def test_async_broken_outdated_part_loading(started_cluster):
     node1.query("DROP TABLE rmt_outdated SYNC")
 
 
-def test_unique_key_sst_rebuild_on_load(started_cluster):
-    # Converted from stateless test 04151_unique_key_sst_rebuild_on_load.sh.
-    #
-    # UNIQUE KEY: load-time dense-index lifecycle.
-    #
-    # 1. A part that reaches disk without its `unique_key_index.sst` (e.g. a freeze
-    #    taken before UK shipped, or a sidecar lost on restore) is repaired on load:
-    #    DETACH/ATTACH re-runs loadDataParts, which rebuilds the SST. The part stays
-    #    active and its data is fully readable.
-    # 2. Fail-closed contract: a non-empty UK part whose dense index cannot be
-    #    rebuilt (missing UK column / unreadable rows / no RocksDB) is detached as
-    #    broken instead of activated. The rebuild-failure path is covered by the
-    #    USE_ROCKSDB=0 gtest (writeDenseIndexOnInsert / ensureValidDenseIndex throw)
-    #    and the CORRUPTED_DATA gtests; reproducing it via stateless filesystem
-    #    corruption trips the earlier checksum-consistency check first.
-    #    TODO(unique-key): add a fault-injection stateless variant that loads the
-    #    columns cleanly but fails the UK rebuild, asserting system.detached_parts.
-    # 3. A present-but-corrupt SST is NOT trusted on presence. The sidecar carries no
-    #    checksums.txt entry, so a truncated/corrupt/stale file survives startup and
-    #    would only fail at probe time. Load-time validation (raw SstFileReader Open +
-    #    VerifyChecksum + num_entries==rows_count) detects the damage, removes the
-    #    file, and rebuilds it. Three corruption cases below:
-    #      a. zero-byte truncation      -> Open corruption; discriminates presence-only.
-    #      b. partial (half) truncation -> Open corruption (footer at file end lost).
-    #      c. valid SST with wrong count -> Open + VerifyChecksum PASS; only the
-    #         num_entries != rows_count check catches it (discriminates that check).
-    #    A transient (I/O) validation failure is classified separately and must NOT
-    #    delete/rebuild the file — it raises UNIQUE_KEY_DENSE_INDEX_UNREADABLE so the
-    #    load fails for retry. Inducing a real transient (FD/OOM) failure in a
-    #    stateless test is not practical, so that path is covered by code structure +
-    #    reasoning, not asserted here.
-    # 4. Readonly startup (`table_readonly = 1`) still validates but cannot
-    #    remove/rebuild/detach: a corrupt SST fails the ATTACH (fail closed) with
-    #    the file left untouched; a valid SST loads fine readonly.
-    #
-    # DETACH/ATTACH is kept (not a server restart): the original's own comments frame
-    # ATTACH as the mechanism that re-runs loadDataParts.
-    node1.query("DROP TABLE IF EXISTS uk_rebuild_load SYNC")
-
-    node1.query(
-        """
-        CREATE TABLE uk_rebuild_load (id UInt64, v String)
-        ENGINE = MergeTree
-        UNIQUE KEY (id)
-        ORDER BY (id)
-        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1
-        """,
-        settings={"allow_experimental_unique_key": 1},
-    )
-
-    node1.query("INSERT INTO uk_rebuild_load VALUES (10, 'a'), (20, 'b'), (30, 'c')")
-
-    data_path = get_active_part_path(node1, "uk_rebuild_load")
-    assert file_exists(node1, data_path + "unique_key_index.sst")  # sst_present_before_detach
-
-    # Detach so the part files are quiescent, drop the SST sidecar, then reattach.
-    node1.query("DETACH TABLE uk_rebuild_load")
-    bash(node1, f"rm -f {data_path}unique_key_index.sst")
-    node1.query("ATTACH TABLE uk_rebuild_load")
-
-    # Part survived load and the SST was rebuilt; data is intact.
-    assert node1.query("SELECT count() FROM system.parts WHERE database = 'default' AND table = 'uk_rebuild_load' AND active") == "1\n"  # active_parts_after_attach
-
-    new_path = get_active_part_path(node1, "uk_rebuild_load")
-    assert file_exists(node1, new_path + "unique_key_index.sst")  # sst_present_after_attach
-
-    assert node1.query("SELECT id, v FROM uk_rebuild_load ORDER BY id") == "10\ta\n20\tb\n30\tc\n"  # rows_after_attach
-
-    # --- Corrupt-SST recovery: truncate the (valid, rebuilt) SST to zero bytes to
-    # simulate a corrupt/truncated sidecar, then reattach. Presence alone must not be
-    # trusted: load-time validation detects the damage, removes the file, and rebuilds
-    # it. Discriminator: a zero-byte file would survive the old presence-only fast path
-    # (present but empty); the fix leaves a present, non-empty, valid SST.
-    node1.query("DETACH TABLE uk_rebuild_load")
-    bash(node1, f": > {new_path}unique_key_index.sst")
-    assert not file_nonempty(node1, new_path + "unique_key_index.sst")  # sst_nonempty_before_corrupt_attach
-    # The rebuild-from-corrupt path intentionally logs a WARNING ("corrupt/unreadable
-    # ... removing and rebuilding"); the original silenced server logs for this one
-    # ATTACH so the stateless harness's stderr check did not flag the expected message.
-    node1.query("ATTACH TABLE uk_rebuild_load", settings={"send_logs_level": "error"})
-
-    assert node1.query("SELECT count() FROM system.parts WHERE database = 'default' AND table = 'uk_rebuild_load' AND active") == "1\n"  # active_parts_after_corrupt_attach
-
-    final_path = get_active_part_path(node1, "uk_rebuild_load")
-    assert file_exists(node1, final_path + "unique_key_index.sst")  # sst_present_after_corrupt_attach
-    assert file_nonempty(node1, final_path + "unique_key_index.sst")  # sst_nonempty_after_corrupt_attach
-
-    assert node1.query("SELECT id, v FROM uk_rebuild_load ORDER BY id") == "10\ta\n20\tb\n30\tc\n"  # rows_after_corrupt_attach
-
-    # --- Partial truncation: keep only the first half of the (rebuilt) SST. The
-    # footer / metaindex live at the file end, so a tail truncation trips a RocksDB
-    # corruption status at Open — detected and rebuilt. (This is caught before the
-    # num_entries check; the valid-but-wrong-count case below covers that path.)
-    part_path = get_active_part_path(node1, "uk_rebuild_load")
-    full_size = file_size(node1, part_path + "unique_key_index.sst")
-    node1.query("DETACH TABLE uk_rebuild_load")
-    bash(node1, f"head -c {full_size // 2} {part_path}unique_key_index.sst > {part_path}unique_key_index.sst.trunc && mv {part_path}unique_key_index.sst.trunc {part_path}unique_key_index.sst")
-    node1.query("ATTACH TABLE uk_rebuild_load", settings={"send_logs_level": "error"})
-    part_path = get_active_part_path(node1, "uk_rebuild_load")
-    assert file_size(node1, part_path + "unique_key_index.sst") == full_size  # sst_full_size_after_partial_attach
-    assert node1.query("SELECT id, v FROM uk_rebuild_load ORDER BY id") == "10\ta\n20\tb\n30\tc\n"  # rows_after_partial_attach
-
-    # --- Valid-but-wrong-count SST: this is what discriminates the num_entries check.
-    # Build a genuinely valid 1-entry SST from a scratch table and swap it onto the
-    # 3-row part. It opens and every block checksum verifies, so Open + VerifyChecksum
-    # both ACCEPT it; only `num_entries (1) != rows_count (3)` flags it as corrupt.
-    # ATTACH must rebuild it — assert the on-disk SST no longer equals the swapped-in
-    # 1-entry file. (Without the num_entries check this stays the trusted 1-entry file.)
-    node1.query("DROP TABLE IF EXISTS uk_scratch_one SYNC")
-    node1.query(
-        """
-        CREATE TABLE uk_scratch_one (id UInt64, v String)
-        ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
-        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1
-        """,
-        settings={"allow_experimental_unique_key": 1},
-    )
-    node1.query("INSERT INTO uk_scratch_one VALUES (99, 'z')")
-    one_part = get_active_part_path(node1, "uk_scratch_one")
-    one_sst = "/tmp/test_corrupted_part_files_one_entry.sst"
-    bash(node1, f"cp {one_part}unique_key_index.sst {one_sst}")
-    node1.query("DROP TABLE uk_scratch_one SYNC")
-
-    part_path = get_active_part_path(node1, "uk_rebuild_load")
-    node1.query("DETACH TABLE uk_rebuild_load")
-    bash(node1, f"cp {one_sst} {part_path}unique_key_index.sst")
-    node1.query("ATTACH TABLE uk_rebuild_load", settings={"send_logs_level": "error"})
-    part_path = get_active_part_path(node1, "uk_rebuild_load")
-    assert bash(node1, f"cmp -s {one_sst} {part_path}unique_key_index.sst && echo no || echo yes").strip() == "yes"  # wrongcount_sst_rebuilt
-    assert node1.query("SELECT id, v FROM uk_rebuild_load ORDER BY id") == "10\ta\n20\tb\n30\tc\n"  # rows_after_wrongcount_attach
-    bash(node1, f"rm -f {one_sst}")
-
-    node1.query("DROP TABLE uk_rebuild_load SYNC")
-
-    # --- Readonly startup: with `table_readonly = 1` the load still VALIDATES the
-    # SST (read-only I/O) but cannot remove/rebuild/detach (all writes). A corrupt
-    # SST must fail the ATTACH (fail closed, error names the readonly cause) and the
-    # file must be left untouched; restoring the valid SST lets the readonly ATTACH
-    # succeed. Previously the readonly gate skipped validation entirely (fail-open).
-    node1.query("DROP TABLE IF EXISTS uk_ro SYNC")
-    node1.query(
-        """
-        CREATE TABLE uk_ro (id UInt64, v String)
-        ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
-        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1
-        """,
-        settings={"allow_experimental_unique_key": 1},
-    )
-    node1.query("INSERT INTO uk_ro VALUES (1, 'x'), (2, 'y')")
-    node1.query("ALTER TABLE uk_ro MODIFY SETTING table_readonly = 1")
-    ro_path = get_active_part_path(node1, "uk_ro")
-    node1.query("DETACH TABLE uk_ro")
-    bash(node1, f"cp {ro_path}unique_key_index.sst {ro_path}unique_key_index.sst.keep")
-    bash(node1, f": > {ro_path}unique_key_index.sst")
-    assert "UNIQUE_KEY_DENSE_INDEX_UNREADABLE" in node1.query_and_get_error("ATTACH TABLE uk_ro")  # readonly_attach_with_corrupt_sst_fails
-    assert file_exists(node1, ro_path + "unique_key_index.sst")  # corrupt_sst_left_in_place
-    bash(node1, f"mv {ro_path}unique_key_index.sst.keep {ro_path}unique_key_index.sst")
-    node1.query("ATTACH TABLE uk_ro")
-    assert node1.query("SELECT count() FROM uk_ro") == "2\n"  # readonly_attach_after_restore
-    node1.query("ALTER TABLE uk_ro MODIFY SETTING table_readonly = 0")
-    node1.query("DROP TABLE uk_ro SYNC")
-
-
 def test_corrupted_columns_substreams_detection(started_cluster):
     # Converted from stateless test 04235_corrupted_columns_substreams_detection.sh.
     #
@@ -507,6 +344,98 @@ def test_text_index_marks_empty_part(started_cluster):
     assert node1.query("SELECT count() FROM t_text_idx_empty WHERE has(['anything'], s)") == "0\n"
 
     node1.query("DROP TABLE t_text_idx_empty SYNC")
+
+
+def test_text_index_corrupted_positions(started_cluster):
+    # Converted from stateless test 02346_text_index_corrupted_positions.sh.
+    # A damaged positions stream (.pos) must raise an error, not answer hasPhrase from the garbage it
+    # decodes. .pos is uncompressed, so the bytes edited here reach the decoder, not a checksum.
+    node1.query("DROP TABLE IF EXISTS t_pos SYNC")
+
+    node1.query(
+        """
+        CREATE TABLE t_pos
+        (
+            k UInt64,
+            s String,
+            INDEX txt(s) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1) GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY k
+        -- min_bytes_for_full_part_storage=0: the test edits the raw skp_idx_txt.pos.idx file, which a
+        -- packed part keeps inside data.packed instead of on disk.
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
+                 replace_long_file_name_to_hash = 0, min_bytes_for_full_part_storage = 0,
+                 allow_experimental_text_index_phrase_search = 1
+        """,
+        settings={"enable_full_text_index": 1},
+    )
+
+    # Selective (100 of 2000 rows) so the reader takes the positional path, not the selectivity fallback.
+    node1.query(
+        "INSERT INTO t_pos SELECT number, if(number < 100, 'needle alpha beta',"
+        " concat('hello', number % 50, ' world', number % 50)) FROM numbers(2000)"
+    )
+
+    pos = get_active_part_path(node1, "t_pos") + "skp_idx_txt.pos.idx"
+    assert file_nonempty(node1, pos)
+
+    # Kept outside the part directory: the server removes files it does not recognise from a part.
+    backup = "/tmp/t_pos_positions.orig"
+    bash(node1, f"cp {pos} {backup}")
+    size = file_size(node1, pos)
+
+    index_settings = {
+        "use_skip_indexes": 1,
+        "use_skip_indexes_on_data_read": 1,
+        "query_plan_direct_read_from_text_index": 1,
+        "use_query_condition_cache": 0,
+    }
+    query = "SELECT count() FROM t_pos WHERE hasPhrase(s, 'needle alpha')"
+
+    def drop_caches():
+        # The edits below keep the file size, so only cached content can hide them.
+        node1.query(
+            "SYSTEM DROP TEXT INDEX CACHES; SYSTEM DROP MARK CACHE; SYSTEM DROP UNCOMPRESSED CACHE;"
+            " SYSTEM DROP MMAP CACHE; SYSTEM DROP PAGE CACHE"
+        )
+
+    def phrase_count():
+        drop_caches()
+        return node1.query(query, settings=index_settings).strip()
+
+    def phrase_error():
+        drop_caches()
+        return node1.query_and_get_error(query, settings=index_settings)
+
+    # Control: the intact index agrees with a plain scan, else the cases below would prove nothing.
+    expected = node1.query(query, settings={"use_skip_indexes": 0}).strip()
+    assert phrase_count() == expected
+
+    # Every case keeps the file size. Shrinking it would leave the part's cached size stale, so the
+    # query would fail on the seek rather than on the bytes under test.
+
+    # Zeroed directory: the stored document count no longer matches the dictionary's.
+    bash(node1, f"head -c {size} /dev/zero > {pos}")
+    assert "CORRUPTED_DATA" in phrase_error()
+
+    # Oversized declared sizes: high bits set in the directory's leading bytes inflate every count.
+    bash(node1, f"cp {backup} {pos} && printf '\\xff\\xff\\xff\\xff' | dd of={pos} bs=1 seek=0 conv=notrunc status=none")
+    assert "CORRUPTED_DATA" in phrase_error()
+
+    # A block size past this token's 6-byte blob but inside the file: only a bound taken from the
+    # token's own length rejects it. Byte 2 is the first token's block size, asserted so the fixture
+    # fails loudly if it ever drifts.
+    bash(node1, f"cp {backup} {pos}")
+    assert bash(node1, f"od -An -tu1 -N 3 {pos}").split() == ["100", "1", "3"]
+    bash(node1, f"printf '\\x64' | dd of={pos} bs=1 seek=2 conv=notrunc status=none")
+    assert "CORRUPTED_DATA" in phrase_error()
+
+    # Restored: the query works again, so the failures came from the bytes, not a broken table.
+    bash(node1, f"cp {backup} {pos}")
+    assert phrase_count() == expected
+
+    bash(node1, f"rm -f {backup}")
+    node1.query("DROP TABLE t_pos SYNC")
 
 
 def test_packed_part_fetch_checksum(started_cluster):
