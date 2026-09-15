@@ -269,7 +269,9 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 /// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
 /// `SpillingHashJoin` (`src/Planner/PlannerJoins.cpp`, `src/Interpreters/ExpressionAnalyzer.cpp`). Whatever follows
 /// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
-/// the same order.
+/// the same order. Note that `prefer_partial_merge` stops the walk, but not always with a hash join: it tries
+/// `MergeJoin` first and falls back to the hash family only where that one declines the step
+/// (see `runsStepWithHashFamily`).
 static bool alwaysProducesJoin(JoinAlgorithm algorithm)
 {
     return algorithm == JoinAlgorithm::HASH
@@ -339,6 +341,21 @@ static bool producesJoinForStep(JoinAlgorithm algorithm, const JoinOperator & jo
         return MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
 
     return false;
+}
+
+/// Whether `algorithm`, once it has produced a join for `join_operator` (see `producesJoinForStep`), ran it with
+/// the hash family - the only algorithms whose spill trigger the size limits used to be. `prefer_partial_merge`
+/// is the one entry that stops the walk with either: `chooseJoinAlgorithm` tries `MergeJoin` first and falls back
+/// to the hash branch only when `MergeJoin::isSupported` declines the step. For a plain equi-join `MergeJoin`
+/// decides on the kind and strictness alone, on both sides, so the step stays on it there, and the size limits are
+/// hard caps on both sides. For any other `ON` clause (a residual condition, a mixed non-equi predicate) whether
+/// `MergeJoin` declines depends on more than the step tells, so the hash fallback is assumed: the caller then
+/// refuses the plan, which is the safe side.
+static bool runsStepWithHashFamily(JoinAlgorithm algorithm, const JoinOperator & join_operator)
+{
+    if (algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
+        return !(isPlainEquiJoin(join_operator) && MergeJoin::isSupported(join_operator.kind, join_operator.strictness));
+    return alwaysProducesJoin(algorithm);
 }
 
 /// Whether the `ON` clause has an equality between one expression of the left side and one of the right side at
@@ -411,8 +428,9 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
         if (producesJoinForStep(algorithm, join_operator))
         {
             /// The hash family becomes a `SpillingHashJoin` on the old peer once it has a threshold, and that is
-            /// where the size limits used to trigger the spill instead of capping.
-            if (alwaysProducesJoin(algorithm))
+            /// where the size limits used to trigger the spill instead of capping. A merge algorithm that takes
+            /// the step checks them as hard caps there too.
+            if (runsStepWithHashFamily(algorithm, join_operator))
                 return size_limits_set && spill_threshold_set;
             return false;
         }

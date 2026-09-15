@@ -282,8 +282,8 @@ TEST(JoinSpillTriggerPlanSetting, TrailingGraceHashBehindAnAlgorithmThatRunsTheS
     /// `grace_hash` listed behind one is never consulted - not here, and not on an old peer walking the same list.
     /// Both sides build the same join, with or without a spill threshold, so the plan may be downgraded.
     ///
-    /// `hash`, `parallel_hash`, `prefer_partial_merge` and `auto` end in a hash join for whatever step reaches them.
-    /// `full_sorting_merge` and `partial_merge` run a plain `INNER ALL` equi-join too.
+    /// `hash`, `parallel_hash` and `auto` end in a hash join for whatever step reaches them. `full_sorting_merge`,
+    /// `partial_merge` and `prefer_partial_merge` run a plain `INNER ALL` equi-join too.
     for (const auto & algorithms : {"hash,grace_hash", "parallel_hash,grace_hash", "prefer_partial_merge,grace_hash",
                                     "auto,grace_hash", "direct,hash,grace_hash", "full_sorting_merge,grace_hash",
                                     "parallel_full_sorting_merge,grace_hash", "partial_merge,grace_hash",
@@ -302,8 +302,7 @@ TEST(JoinSpillTriggerPlanSetting, TrailingGraceHashBehindAnAlgorithmThatRunsTheS
 
     /// The size limits diverge behind a hash-family entry with the default, non-zero spill ratio: the old peer
     /// spills on them once the collected right side crosses the threshold, this side caps.
-    for (const auto & algorithms : {"hash,grace_hash", "parallel_hash,grace_hash", "prefer_partial_merge,grace_hash",
-                                    "auto,grace_hash", "direct,hash,grace_hash"})
+    for (const auto & algorithms : {"hash,grace_hash", "parallel_hash,grace_hash", "auto,grace_hash", "direct,hash,grace_hash"})
     {
         EXPECT_THROW(
             serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version),
@@ -311,13 +310,55 @@ TEST(JoinSpillTriggerPlanSetting, TrailingGraceHashBehindAnAlgorithmThatRunsTheS
             << algorithms;
     }
 
-    /// Behind a merge algorithm that runs the step they are hard caps on both sides.
+    /// Behind a merge algorithm that runs the step they are hard caps on both sides - and `prefer_partial_merge`
+    /// stays on `MergeJoin` for a plain `INNER ALL` equi-join, on both sides.
     for (const auto & algorithms : {"full_sorting_merge,grace_hash", "parallel_full_sorting_merge,grace_hash",
-                                    "partial_merge,grace_hash", "direct,full_sorting_merge,grace_hash"})
+                                    "partial_merge,grace_hash", "direct,full_sorting_merge,grace_hash",
+                                    "prefer_partial_merge,grace_hash", "prefer_partial_merge"})
     {
         EXPECT_NO_THROW(
             serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version))
             << algorithms;
+    }
+}
+
+TEST(JoinSpillTriggerPlanSetting, PreferPartialMergeFallsBackToTheHashFamilyOnlyWhereMergeJoinDeclines)
+{
+    /// `prefer_partial_merge` tries `MergeJoin` first and takes the hash branch only where `MergeJoin::isSupported`
+    /// declines the step - on both sides. Where it stays on `MergeJoin` the size limits are hard caps there too;
+    /// where it falls back, the old peer's `SpillingHashJoin` spills on them once it has a threshold (the default,
+    /// non-zero ratio counts), so a size limit refuses the downgrade.
+    for (const auto & algorithms : {"prefer_partial_merge", "prefer_partial_merge,grace_hash"})
+    {
+        const auto with_size_limit = makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}});
+
+        /// `MergeJoin` runs ALL joins of the four outer kinds, and ANY / SEMI ones for INNER and LEFT.
+        const Step inner_all(JoinKind::Inner, JoinStrictness::All);
+        const Step full_all(JoinKind::Full, JoinStrictness::All);
+        const Step left_any(JoinKind::Left, JoinStrictness::Any);
+        const Step left_semi(JoinKind::Left, JoinStrictness::Semi);
+        for (const auto * step : std::initializer_list<const Step *>{&inner_all, &full_all, &left_any, &left_semi})
+            EXPECT_NO_THROW(serializeAt(with_size_limit, pre_setting_version, step->join_operator)) << algorithms;
+
+        /// It declines ANY / SEMI joins of the other kinds, and the hash family runs them.
+        const Step right_any(JoinKind::Right, JoinStrictness::Any);
+        const Step full_any(JoinKind::Full, JoinStrictness::Any);
+        const Step right_semi(JoinKind::Right, JoinStrictness::Semi);
+        for (const auto * step : std::initializer_list<const Step *>{&right_any, &full_any, &right_semi})
+            EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, step->join_operator), Exception) << algorithms;
+
+        /// Whether `MergeJoin` takes a step whose `ON` clause is more than plain equalities depends on more than the
+        /// step tells, so the hash fallback is assumed and the plan is refused.
+        const Step mixed(JoinKind::Inner, JoinStrictness::All, {JoinConditionOperator::Equals, JoinConditionOperator::Less});
+        EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, mixed.join_operator), Exception) << algorithms;
+        Step residual(JoinKind::Inner, JoinStrictness::All);
+        residual.onEqualityAndDisjunction();
+        EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, residual.join_operator), Exception) << algorithms;
+
+        /// Without a spill threshold the hash fallback never spills either, on either side.
+        const auto no_threshold = makeJoinSettings(
+            {{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}, {"max_bytes_ratio_before_external_join", 0.0}});
+        EXPECT_NO_THROW(serializeAt(no_threshold, pre_setting_version, right_any.join_operator)) << algorithms;
     }
 }
 
