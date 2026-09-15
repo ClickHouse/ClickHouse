@@ -1,0 +1,15 @@
+bounded numbers on the broadcast side: the join is shipped
+1
+10	45
+an offset range is shipped too
+1
+10	45
+a filtered read is shipped too
+1
+10	45
+an unbounded read is not shipped
+0
+10
+the shipped filter still prunes the domain
+10
+1

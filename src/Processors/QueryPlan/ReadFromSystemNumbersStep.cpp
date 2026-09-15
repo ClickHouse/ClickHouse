@@ -1,5 +1,11 @@
 #include <memory>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Core/ProtocolDefines.h>
+#include <Interpreters/ActionsDAG.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/numbersLikeUtils.h>
 
 #include <Core/ColumnWithTypeAndName.h>
@@ -19,6 +25,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 namespace
 {
 
@@ -456,6 +467,132 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
 {
     return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
+}
+
+
+bool ReadFromSystemNumbersStep::isSerializable() const
+{
+    const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
+
+    /// The generated domain has to be reproducible on the replica. The source filter is shipped
+    /// along with the table's parameters, so a filtered read is fine; an unbounded one is not,
+    /// because nothing then bounds what the replica generates.
+    return numbers_storage.limit.has_value();
+}
+
+
+void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
+{
+    /// The step name is only registered since this version; an older peer would not know it and
+    /// would fail on the stream, so fail closed rather than write bytes it cannot parse.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a ReadFromSystemNumbers step requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS);
+
+    const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
+    chassert(numbers_storage.limit.has_value());
+
+    writeStringBinary(numbers_storage.column_name, ctx.out);
+    writeBinaryLittleEndian(*numbers_storage.limit, ctx.out);
+    writeBinaryLittleEndian(numbers_storage.offset, ctx.out);
+    writeBinaryLittleEndian(numbers_storage.step, ctx.out);
+
+    UInt8 flags = 0;
+    if (numbers_storage.multithreaded)
+        flags |= 1;
+    if (numbers_storage.descending)
+        flags |= 2;
+    if (limit.has_value())
+        flags |= 4;
+    if (filter_actions_dag)
+        flags |= 8;
+    writeIntBinary(flags, ctx.out);
+
+    /// A LIMIT pushed into the read is only a hint - the plan keeps its own limiting steps - but
+    /// carrying it keeps the replica from generating rows that are thrown away.
+    if (limit.has_value())
+        writeBinaryLittleEndian(static_cast<UInt64>(*limit), ctx.out);
+
+    writeBinaryLittleEndian(static_cast<UInt64>(max_block_size), ctx.out);
+
+    /// The filter is what prunes the generated domain: `numbers(1e12) WHERE number = 5` generates a
+    /// single value with it and the whole domain without it. The plan keeps its own filtering step,
+    /// so dropping it here would still answer correctly - it would just make the replica generate
+    /// arbitrarily more rows than the initiator does.
+    if (filter_actions_dag)
+        filter_actions_dag->serialize(ctx.out, ctx.registry);
+}
+
+
+QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
+{
+    /// Mirrors the guard in `serialize`: a peer below this version cannot have written this step.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Deserializing a ReadFromSystemNumbers step requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS);
+
+    String column_name;
+    readStringBinary(column_name, ctx.in);
+
+    UInt128 storage_limit = 0;
+    readBinaryLittleEndian(storage_limit, ctx.in);
+
+    UInt64 offset = 0;
+    readBinaryLittleEndian(offset, ctx.in);
+
+    UInt64 step = 0;
+    readBinaryLittleEndian(step, ctx.in);
+
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    const bool multithreaded = flags & 1;
+    const bool descending = flags & 2;
+
+    std::optional<size_t> pushed_down_limit;
+    if (flags & 4)
+    {
+        UInt64 value = 0;
+        readBinaryLittleEndian(value, ctx.in);
+        pushed_down_limit = value;
+    }
+
+    UInt64 max_block_size = 0;
+    readBinaryLittleEndian(max_block_size, ctx.in);
+
+    std::shared_ptr<const ActionsDAG> filter;
+    if (flags & 8)
+        filter = std::make_shared<const ActionsDAG>(
+            ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity));
+
+    auto storage = std::make_shared<StorageSystemNumbers>(
+        StorageID{"system", "numbers"}, multithreaded, column_name, storage_limit, offset, step, descending);
+    /// The handle's conversion to `StorageMetadataPtr` is deleted for rvalues, so keep it alive here.
+    const auto metadata = storage->getInMemoryMetadataPtr(ctx.context, false);
+    auto storage_snapshot = storage->getStorageSnapshot(metadata, ctx.context);
+
+    /// The query info is only read for a pushed-down LIMIT and for storage limits, both of which the
+    /// replica applies through its own plan, so an empty one is what the read needs here.
+    SelectQueryInfo query_info;
+
+    auto step_ptr = std::make_unique<ReadFromSystemNumbersStep>(
+        Names{column_name}, query_info, storage_snapshot, ctx.context, storage, max_block_size, /*num_streams_=*/1);
+
+    if (pushed_down_limit.has_value())
+        step_ptr->setLimit(*pushed_down_limit);
+
+    step_ptr->filter_actions_dag = std::move(filter);
+
+    ctx.storage_holders.push_back(std::move(storage));
+    return step_ptr;
+}
+
+
+void registerReadFromSystemNumbersStep(QueryPlanStepRegistry & registry);
+void registerReadFromSystemNumbersStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("ReadFromSystemNumbers", &ReadFromSystemNumbersStep::deserialize);
 }
 
 Pipe ReadFromSystemNumbersStep::makePipe()

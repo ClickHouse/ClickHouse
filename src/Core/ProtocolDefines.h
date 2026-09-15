@@ -118,12 +118,19 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 18 registers the `Filling` step and adds the `WITH FILL` bounds (`FROM`, `TO`, `STEP`,
 /// `STALENESS` and the column alias) to a serialized sort description, so a plan with
 /// `ORDER BY ... WITH FILL` can be shipped in full.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 18;
+/// Version 19 registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
+/// reads `system.one` or `numbers(...)` can be shipped. An older peer does not know those step names.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that registers the "ReadFromSystemOne" and
+/// "ReadFromSystemNumbers" steps. Used to gate serializing them for `make_distributed_plan`; the
+/// parallel-replicas path excludes an older replica up front through
+/// DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS = 19;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;

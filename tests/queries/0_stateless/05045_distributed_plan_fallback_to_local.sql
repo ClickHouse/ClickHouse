@@ -16,6 +16,10 @@ DROP TABLE IF EXISTS t_fallback;
 CREATE TABLE t_fallback (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_fallback SELECT number % 10, number FROM numbers(1000);
 
+DROP TABLE IF EXISTS t_fallback_memory;
+CREATE TABLE t_fallback_memory (v UInt64) ENGINE = Memory;
+INSERT INTO t_fallback_memory SELECT number FROM numbers(10);
+
 SELECT '-- WITH TOTALS falls back';
 SELECT k, sum(v) FROM t_fallback GROUP BY k WITH TOTALS ORDER BY k
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
@@ -58,10 +62,17 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- Accepted semantics: strict mode asserts "this query WAS distributed", so a plan with no
--- distributable source at all legitimately fails it too. Under the analyzer `SELECT 1` reads
--- through `ReadFromSystemOneStep`, which is not serializable.
+-- distributable source at all legitimately fails it too. A `Memory` table is such a source: its
+-- data lives only on the node holding it, so `ReadFromMemoryStorage` is not serializable and the
+-- plan cannot be shipped. `SELECT 1` is no longer an example - `ReadFromSystemOneStep` serializes
+-- the single dummy row now, so that plan does ship.
 SELECT '-- strict mode also refuses a plan with no distributable source';
-SELECT 1 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+SELECT count() FROM t_fallback_memory SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+SELECT '-- a plan whose only source is system.one now ships';
+SELECT 1 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_fallback_to_local_execution = 0;
+
 DROP TABLE t_fallback;
+DROP TABLE t_fallback_memory;
