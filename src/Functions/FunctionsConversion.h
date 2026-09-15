@@ -4499,12 +4499,52 @@ struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
+
+            /// Rescaling a day number to seconds wraps the `UInt32` result outside a bounded window, and
+            /// this trait cannot read `date_time_overflow_behavior`, so the window must hold for the
+            /// wrapping default. `Date32` also needs a floor: its raw day 0 is negative ahead of UTC.
+            if constexpr (std::is_same_v<T, DataTypeDateTime>)
+            {
+                const auto * source_type = &type;
+                if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(source_type))
+                    source_type = low_cardinality->getDictionaryType().get();
+
+                const WhichDataType which_source(*source_type);
+                if (which_source.isDateOrDate32())
+                {
+                    const Int64 min_day_num = which_source.isDate32() ? 1 : 0;
+
+                    /// An absent or non-integer bound is outside the window: the range may then hold any day.
+                    auto is_within_window = [&](const Field & bound)
+                    {
+                        if (bound.getType() == Field::Types::UInt64)
+                        {
+                            const UInt64 day_num = bound.safeGet<UInt64>();
+                            return day_num <= static_cast<UInt64>(MAX_DATETIME_DAY_NUM)
+                                && static_cast<Int64>(day_num) >= min_day_num;
+                        }
+                        if (bound.getType() == Field::Types::Int64)
+                        {
+                            const Int64 day_num = bound.safeGet<Int64>();
+                            return day_num >= min_day_num && day_num <= static_cast<Int64>(MAX_DATETIME_DAY_NUM);
+                        }
+                        return false;
+                    };
+
+                    if (!is_within_window(left) || !is_within_window(right))
+                        return {};
+
+                    /// Not strict: a timezone may skip a civil day, mapping two day numbers to one instant.
+                    return {.is_monotonic = true};
+                }
+            }
+
+            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isUInt8() || which.isUInt16()
                 || which.isUInt32()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
