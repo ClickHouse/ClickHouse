@@ -12,6 +12,10 @@
         expression optimizer hash the operands of every comparison in a chain and
         compare their sources, so any per-call cost attached to the table node
         (like hashing the substituted view query) is multiplied here.
+
+        The view parameter is written as {{ts:DateTime64(3)}}: perf.py expands
+        {name} as a substitution placeholder, so the braces of the
+        parameterized-view syntax must be doubled to reach the server verbatim.
     -->
     <create_query>
 CREATE TABLE pv_events
@@ -109,26 +113,26 @@ WITH
         argMax(a30, ts) AS a30,
         argMax(a31, ts) AS a31
         FROM pv_events
-        WHERE ts &lt;= {ts:DateTime64(3)} AND ts &gt; {ts:DateTime64(3)} - INTERVAL 6 HOUR
+        WHERE ts &lt;= {{ts:DateTime64(3)}} AND ts &gt; {{ts:DateTime64(3)}} - INTERVAL 6 HOUR
         GROUP BY host
     ),
     meta AS
     (
         SELECT host, argMax(v, ts) AS v
         FROM pv_meta
-        WHERE ts &lt;= {ts:DateTime64(3)} AND ts &gt; {ts:DateTime64(3)} - INTERVAL 30 DAY AND k = 'owner'
+        WHERE ts &lt;= {{ts:DateTime64(3)}} AND ts &gt; {{ts:DateTime64(3)}} - INTERVAL 30 DAY AND k = 'owner'
         GROUP BY host
     ),
     gone AS
     (
         SELECT host
         FROM pv_events
-        WHERE ts &lt;= {ts:DateTime64(3)} AND ts &gt; {ts:DateTime64(3)} - INTERVAL 30 DAY
+        WHERE ts &lt;= {{ts:DateTime64(3)}} AND ts &gt; {{ts:DateTime64(3)}} - INTERVAL 30 DAY
         GROUP BY host
-        HAVING max(ts) &lt; {ts:DateTime64(3)} - INTERVAL 6 HOUR
+        HAVING max(ts) &lt; {{ts:DateTime64(3)}} - INTERVAL 6 HOUR
     )
 SELECT
-    {ts:DateTime64(3)} AS ts,
+    {{ts:DateTime64(3)}} AS ts,
     l.host AS host,
     l.cluster AS cluster,
     multiIf(l.status = 'down', 'DOWN', l.host IN (SELECT host FROM gone), 'GONE', coalesce(m.v, '') = '', 'UNOWNED', 'OK') AS state,
@@ -207,8 +211,8 @@ SELECT
     a.n29 - b.n29 AS d29,
     a.n30 - b.n30 AS d30,
     a.n31 - b.n31 AS d31
-FROM pv_inner(ts = {ts:DateTime64(3)}) AS a
-LEFT JOIN pv_inner(ts = {ts:DateTime64(3)} - INTERVAL 1 HOUR) AS b ON b.host = a.host AND b.cluster = a.cluster
+FROM pv_inner(ts = {{ts:DateTime64(3)}}) AS a
+LEFT JOIN pv_inner(ts = {{ts:DateTime64(3)}} - INTERVAL 1 HOUR) AS b ON b.host = a.host AND b.cluster = a.cluster
     AND b.n00 = a.n00
     AND b.n04 = a.n04
     AND b.n08 = a.n08
@@ -217,7 +221,7 @@ LEFT JOIN pv_inner(ts = {ts:DateTime64(3)} - INTERVAL 1 HOUR) AS b ON b.host = a
     AND b.n20 = a.n20
     AND b.n24 = a.n24
     AND b.n28 = a.n28
-LEFT JOIN pv_inner(ts = {ts:DateTime64(3)} - INTERVAL 1 DAY) AS c ON c.host = a.host AND c.cluster = a.cluster
+LEFT JOIN pv_inner(ts = {{ts:DateTime64(3)}} - INTERVAL 1 DAY) AS c ON c.host = a.host AND c.cluster = a.cluster
 WHERE a.state = 'DOWN' AND b.state = 'OK' AND c.state = 'OK'
     AND a.n00 >= 0 AND a.n00 &lt; 1000000 AND b.n00 &lt;= a.n00
     AND a.n01 >= 0 AND a.n01 &lt; 1000000 AND b.n01 &lt;= a.n01
