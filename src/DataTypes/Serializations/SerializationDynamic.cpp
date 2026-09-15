@@ -669,18 +669,11 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         return;
     }
 
-    /// ColumnSparse keeps a default value at position zero even before reading any data.
-    /// Initialize the Dynamic structure for that sentinel just as for an empty column.
-    const bool has_default_sentinel = column_dynamic.size() == 1 && column_dynamic.isDefaultAt(0);
-    if (column.empty() || has_default_sentinel)
+    if (column.empty())
     {
-        if (has_default_sentinel)
-            column_dynamic.popBack(1);
         column_dynamic.setMaxDynamicPaths(structure_state->num_dynamic_types);
         column_dynamic.setVariantType(structure_state->variant_type);
         column_dynamic.setStatistics(structure_state->statistics);
-        if (has_default_sentinel)
-            column_dynamic.insertDefault();
     }
 
     const auto & variant_info = column_dynamic.getVariantInfo();

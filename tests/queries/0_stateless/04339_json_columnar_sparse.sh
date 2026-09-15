@@ -8,17 +8,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 query() { ${CLICKHOUSE_CLIENT} --query "$1"; }
 
-# The first blocks are sparse; later blocks/granules are dense. Nullable zero and
-# Dynamic zero are present values, while UInt64 zero is an implicit default.
+# The first blocks have sparse typed paths; later blocks/granules are dense.
+# `Nullable` zero and `Dynamic` zero are present values, while `UInt64` zero is a default.
+# Dynamic paths retain compact `Variant` encoding even alongside sparse typed paths.
 query "DROP TABLE IF EXISTS json_sparse_source; CREATE TABLE json_sparse_source
 (id UInt64, j JSON(t UInt64, n Nullable(Int64), z UInt8, half UInt8, nest.v UInt64, s String)) ENGINE=Memory;
 INSERT INTO json_sparse_source SELECT number,
 concat('{\"always\":0,\"half\":', toString(number % 2),
        if(number % 128 = 0 OR number >= 3072,
-          ',\"t\":7,\"n\":0,\"d\":0,\"nest\":{\"v\":9},\"s\":\"abc\"', ''), '}')
+          ',\"t\":7,\"n\":0,\"d\":0,\"nest\":{\"v\":9,\"d\":0},\"s\":\"abc\"', ''), '}')
 FROM numbers(4096);"
 
 check_reads() {
+    # Check every read stage, including mixed versions, merges and mutations.
+    query "SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0
+                       AND (startsWith(x, 'j.d.') OR startsWith(x, 'j.always.') OR startsWith(x, 'j.nest.d.')),
+                       substreams)) != 0)
+           FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
+                AND active AND column='j'" >/dev/null
     for block_size in 1 7 1000; do
         # Whole JSON, direct paths, .null, and a subobject share substream caches.
         query "SELECT throwIf(countIf(toString(a.j) != toString(b.j)
@@ -70,13 +77,14 @@ for part in Wide Compact; do
         if [[ $ratio == 0 ]]; then half_sparse_parts=8; else half_sparse_parts=0; fi
         query "SELECT throwIf(NOT (countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) $sparse_condition)),
                       throwIf(countIf(has(substreams, 'j.half.sparse.idx')) != $half_sparse_parts),
-                      throwIf(countIf(has(substreams, 'j.always.sparse.idx')) != 0)
+                      throwIf(countIf(has(substreams, 'j.always.sparse.idx')) != 0),
+                      throwIf(countIf(has(substreams, 'j.d.sparse.idx')) != 0)
                FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
                     AND active AND column='j'" >/dev/null
         if [[ $ratio != 1 ]]; then
             query "SELECT throwIf(countIf(has(substreams, 'j.t.sparse.idx')) != 6),
                           throwIf(countIf(has(substreams, 'j.n.sparse.idx')) != 6),
-                          throwIf(countIf(has(substreams, 'j.d.sparse.idx')) != 6),
+                          throwIf(countIf(has(substreams, 'j.d.sparse.idx')) != 0),
                           throwIf(countIf(has(substreams, 'j.z.sparse.idx')) != 8)
                    FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
                         AND active AND column='j'" >/dev/null
@@ -120,7 +128,7 @@ for part in Wide Compact; do
     query "SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) != 0)
            FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
                 AND active AND column='j'" >/dev/null
-    # Re-enable Sparse for all paths with defaults, then rewrite to the old format.
+    # Re-enable sparse encoding for eligible typed paths with defaults, then rewrite to the old format.
     query "ALTER TABLE json_sparse_test MODIFY SETTING ratio_of_defaults_for_sparse_serialization=0;
            ALTER TABLE json_sparse_test UPDATE j=j WHERE 1 SETTINGS mutations_sync=2;"
     check_reads
@@ -169,6 +177,10 @@ for part in Wide Compact; do
         if [[ $stage == after ]]; then
             query "SYSTEM START MERGES json_sparse_nested; OPTIMIZE TABLE json_sparse_nested FINAL"
         fi
+        query "SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0
+                           AND (startsWith(x, 'j.x.') OR startsWith(x, 'j.y.')), substreams)) != 0)
+               FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_nested'
+                    AND active AND column='j'" >/dev/null
         query "SELECT throwIf(sum(j.inner.t) != 112), throwIf(sum(j.inner.n.null) != 2032),
                       throwIf(countIf(isNotNull(j.x)) != 8), throwIf(countIf(isNotNull(j.y)) != 8)
                FROM json_sparse_nested SETTINGS max_threads=1, max_block_size=7" >/dev/null
@@ -181,6 +193,7 @@ for part in Wide Compact; do
     query "DROP TABLE json_sparse_nested"
     echo "$part nested and shared paths OK"
 
+    # Purely dynamic V4 has an empty typed sparse list, including after a merge.
     query "CREATE TABLE json_sparse_dynamic (id UInt64, j JSON(max_dynamic_types=1))
            ENGINE=MergeTree ORDER BY id SETTINGS object_serialization_version='v4',
                ratio_of_defaults_for_sparse_serialization=0.9375,
@@ -197,6 +210,9 @@ for part in Wide Compact; do
         if [[ $stage == after ]]; then
             query "SYSTEM START MERGES json_sparse_dynamic; OPTIMIZE TABLE json_sparse_dynamic FINAL"
         fi
+        query "SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) != 0)
+               FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_dynamic'
+                    AND active AND column='j'" >/dev/null
         query "SELECT throwIf(countIf(isNotNull(j.d)) != 32),
                       throwIf(countIf(isNotNull(j.d.:Int64)) != 16),
                       throwIf(countIf(isNotNull(j.d.:String)) != 16),
@@ -207,5 +223,5 @@ for part in Wide Compact; do
     done
     query "CHECK TABLE json_sparse_dynamic SETTINGS check_query_single_value_result=1" | grep -qx 1
     query "DROP TABLE json_sparse_dynamic"
-    echo "$part Dynamic mixed types OK"
+    echo "$part Dynamic mixed types without sparse streams OK"
 done

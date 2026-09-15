@@ -14,6 +14,6 @@ v1 unchanged OK
 v2 unchanged OK
 v3 unchanged OK
 Wide nested and shared paths OK
-Wide Dynamic mixed types OK
+Wide Dynamic mixed types without sparse streams OK
 Compact nested and shared paths OK
-Compact Dynamic mixed types OK
+Compact Dynamic mixed types without sparse streams OK

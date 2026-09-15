@@ -158,19 +158,18 @@ SerializationPtr pathSerialization(const SerializationPtr & dense, bool sparse)
 }
 }
 
-std::unordered_set<String> SerializationObject::chooseSparsePaths(const ColumnObject & column, double threshold, bool typed) const
+std::unordered_set<String> SerializationObject::chooseSparseTypedPaths(const ColumnObject & column, double threshold) const
 {
     std::unordered_set<String> result;
-    if (threshold >= 1.0)
+    if (threshold >= 1.0 || column.getTypedPaths().empty())
         return result;
     auto statistics = column.getOrCalculateStatistics();
-    const auto & paths = typed ? column.getTypedPaths() : column.getDynamicPaths();
-    for (const auto & [path, _] : paths)
+    for (const auto & [path, _] : column.getTypedPaths())
     {
-        if (typed && !typed_paths_types.at(path)->canBeInsideSparseColumns())
+        if (!typed_paths_types.at(path)->canBeInsideSparseColumns())
             continue;
-        auto it = statistics->path_serialization_statistics.find(path);
-        if (it != statistics->path_serialization_statistics.end() && it->second.num_rows
+        auto it = statistics->typed_path_serialization_statistics.find(path);
+        if (it != statistics->typed_path_serialization_statistics.end() && it->second.num_rows
             && static_cast<double>(it->second.num_defaults) / static_cast<double>(it->second.num_rows) > threshold)
             result.insert(path);
     }
@@ -187,9 +186,6 @@ void SerializationObject::deserializeSparsePath(
     sparse->insertManyDefaults(previous_size);
     serialization->deserializeBinaryBulkWithMultipleStreams(*sparse, limit, settings, state, cache);
     auto dense = sparse->convertToFullColumnIfSparse();
-    /// Preserve the column object: ColumnObject also retains raw pointers to its Dynamic paths.
-    if (!previous_size && column.hasDynamicStructure())
-        column.takeExactDynamicStructureFrom(*dense);
     column.insertRangeFrom(*dense, previous_size, dense->size() - previous_size);
 }
 
@@ -198,7 +194,6 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     SerializationObject::SerializationVersion serialization_version;
     std::vector<String> sorted_dynamic_paths;
     std::unordered_set<String> sparse_typed_paths;
-    std::unordered_set<String> sparse_dynamic_paths;
     std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> typed_path_states;
     std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> dynamic_path_states;
     ISerialization::SerializeBinaryBulkStatePtr shared_data_state;
@@ -259,9 +254,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     const bool select_sparse = settings.object_serialization_version == MergeTreeObjectSerializationVersion::V4
         && settings.data_part_type != MergeTreeDataPartType::Unknown;
     const auto sparse_typed_paths = structure_state ? structure_state->sparse_typed_paths
-        : column_object && select_sparse ? chooseSparsePaths(*column_object, settings.object_paths_sparse_default_ratio, true) : std::unordered_set<String>{};
-    const auto sparse_dynamic_paths = structure_state ? structure_state->sparse_dynamic_paths
-        : column_object && select_sparse ? chooseSparsePaths(*column_object, settings.object_paths_sparse_default_ratio, false) : std::unordered_set<String>{};
+        : column_object && select_sparse ? chooseSparseTypedPaths(*column_object, settings.object_paths_sparse_default_ratio) : std::unordered_set<String>{};
     settings.path.push_back(Substream::ObjectData);
 
     /// First, iterate over typed paths in sorted order, we will always serialize them.
@@ -306,14 +299,13 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            auto serialization = pathSerialization(dynamic_serialization, sparse_dynamic_paths.contains(path));
-            auto path_data = SubstreamData(serialization)
+            auto path_data = SubstreamData(dynamic_serialization)
                                  .withType(dynamic_type)
                                  .withColumn(dynamic_paths ? dynamic_paths->at(path) : nullptr)
                                  .withSerializationInfo(data.serialization_info)
                                  .withDeserializeState(deserialize_state ? deserialize_state->dynamic_path_states.at(path) : nullptr);
             settings.path.back().data = path_data;
-            serialization->enumerateStreams(settings, callback, path_data);
+            dynamic_serialization->enumerateStreams(settings, callback, path_data);
             settings.path.pop_back();
         }
 
@@ -380,10 +372,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     auto object_state = std::make_shared<SerializeBinaryBulkStateObject>(serialization_version);
     if (!settings.native_format && serialization_version.value == SerializationVersion::V4
         && settings.data_part_type != MergeTreeDataPartType::Unknown)
-    {
-        object_state->sparse_typed_paths = chooseSparsePaths(column_object, settings.object_paths_sparse_default_ratio, true);
-        object_state->sparse_dynamic_paths = chooseSparsePaths(column_object, settings.object_paths_sparse_default_ratio, false);
-    }
+        object_state->sparse_typed_paths = chooseSparseTypedPaths(column_object, settings.object_paths_sparse_default_ratio);
     writeBinaryLittleEndian(static_cast<UInt64>(serialization_version.value), *stream);
     if (serialization_version.value == SerializationVersion::STRING)
     {
@@ -405,7 +394,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         {
             settings.path.push_back(Substream::ObjectTypedPath);
             settings.path.back().object_path_name = path;
-            pathSerialization(typed_paths_serializations.at(path), object_state->sparse_typed_paths.contains(path))->serializeBinaryBulkStatePrefix(*typed_paths.at(path), settings, object_state->typed_path_states[path]);
+            typed_paths_serializations.at(path)->serializeBinaryBulkStatePrefix(*typed_paths.at(path), settings, object_state->typed_path_states[path]);
             settings.path.pop_back();
         }
 
@@ -441,15 +430,10 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
 
     if (serialization_version.value == SerializationVersion::V4)
     {
-        auto write_paths = [&](const auto & sorted_paths, const auto & sparse_paths)
-        {
-            writeVarUInt(sparse_paths.size(), *stream);
-            for (const auto & path : sorted_paths)
-                if (sparse_paths.contains(path))
-                    writeStringBinary(path, *stream);
-        };
-        write_paths(sorted_typed_paths, object_state->sparse_typed_paths);
-        write_paths(object_state->sorted_dynamic_paths, object_state->sparse_dynamic_paths);
+        writeVarUInt(object_state->sparse_typed_paths.size(), *stream);
+        for (const auto & path : sorted_typed_paths)
+            if (object_state->sparse_typed_paths.contains(path))
+                writeStringBinary(path, *stream);
     }
 
     const auto & statistics = column_object.getOrCalculateStatistics();
@@ -542,7 +526,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        pathSerialization(dynamic_serialization, object_state->sparse_dynamic_paths.contains(path))->serializeBinaryBulkStatePrefix(*dynamic_paths.at(path), settings, object_state->dynamic_path_states[path]);
+        dynamic_serialization->serializeBinaryBulkStatePrefix(*dynamic_paths.at(path), settings, object_state->dynamic_path_states[path]);
         settings.path.pop_back();
     }
 
@@ -585,8 +569,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         {
             enumerate_settings.path.push_back(Substream::ObjectDynamicPath);
             enumerate_settings.path.back().object_path_name = path;
-            auto serialization = pathSerialization(dynamic_serialization, structure_state_concrete->sparse_dynamic_paths.contains(path));
-            serialization->enumerateStreams(enumerate_settings, settings.dynamic_subcolumns_callback, SubstreamData(serialization));
+            dynamic_serialization->enumerateStreams(enumerate_settings, settings.dynamic_subcolumns_callback, SubstreamData(dynamic_serialization));
             enumerate_settings.path.pop_back();
         }
     }
@@ -606,8 +589,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         {
             enumerate_settings.path.push_back(Substream::ObjectDynamicPath);
             enumerate_settings.path.back().object_path_name = path;
-            auto serialization = pathSerialization(dynamic_serialization, structure_state_concrete->sparse_dynamic_paths.contains(path));
-            serialization->enumerateStreams(enumerate_settings, enumerate_callback, SubstreamData(serialization));
+            dynamic_serialization->enumerateStreams(enumerate_settings, enumerate_callback, SubstreamData(dynamic_serialization));
             enumerate_settings.path.pop_back();
         }
     }
@@ -626,7 +608,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            pathSerialization(dynamic_serialization, structure_state_concrete->sparse_dynamic_paths.contains(path))->deserializeBinaryBulkStatePrefix(settings, object_state->dynamic_path_states[path], cache);
+            dynamic_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->dynamic_path_states[path], cache);
             settings.path.pop_back();
         }
 
@@ -733,7 +715,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);
                     settings_copy.path.back().object_path_name = (*structure_state_concrete->sorted_dynamic_paths)[j];
-                    pathSerialization(dynamic_serialization, structure_state_concrete->sparse_dynamic_paths.contains((*structure_state_concrete->sorted_dynamic_paths)[j]))->deserializeBinaryBulkStatePrefix(settings_copy, object_state->dynamic_path_states.at((*structure_state_concrete->sorted_dynamic_paths)[j]), cache_ptr);
+                    dynamic_serialization->deserializeBinaryBulkStatePrefix(settings_copy, object_state->dynamic_path_states.at((*structure_state_concrete->sorted_dynamic_paths)[j]), cache_ptr);
                     settings_copy.path.pop_back();
                 }
             };
@@ -780,7 +762,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            pathSerialization(dynamic_serialization, structure_state_concrete->sparse_dynamic_paths.contains(path))->deserializeBinaryBulkStatePrefix(settings, object_state->dynamic_path_states[path], cache);
+            dynamic_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->dynamic_path_states[path], cache);
             settings.path.pop_back();
         }
     }
@@ -854,25 +836,17 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
 
             if (structure_state->serialization_version.value == SerializationVersion::V4)
             {
-                auto read_paths = [&](auto & paths)
+                size_t count = 0;
+                readVarUInt(count, *structure_stream);
+                if (count > DataTypeObject::MAX_TYPED_PATHS)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Too many sparse typed Object paths: {}", count);
+                for (size_t i = 0; i != count; ++i)
                 {
-                    size_t count = 0;
-                    readVarUInt(count, *structure_stream);
-                    if (count > DataTypeObject::MAX_TYPED_PATHS + DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT)
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many sparse Object paths: {}", count);
-                    for (size_t i = 0; i != count; ++i)
-                    {
-                        String path;
-                        readStringBinary(path, *structure_stream);
-                        if (!paths.insert(std::move(path)).second)
-                            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate sparse Object path");
-                    }
-                };
-                read_paths(structure_state->sparse_typed_paths);
-                read_paths(structure_state->sparse_dynamic_paths);
-                for (const auto & path : structure_state->sparse_dynamic_paths)
-                    if (!structure_state->dynamic_paths.contains(path))
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown sparse dynamic Object path: {}", path);
+                    String path;
+                    readStringBinary(path, *structure_stream);
+                    if (!structure_state->sparse_typed_paths.insert(std::move(path)).second)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate sparse typed Object path");
+                }
             }
 
             /// If we have V3 or later Object serialization, read shared data serialization version.
@@ -977,7 +951,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::ObjectTypedPath);
             settings.path.back().object_path_name = path;
-            pathSerialization(typed_paths_serializations.at(path), object_state->sparse_typed_paths.contains(path))->serializeBinaryBulkWithMultipleStreams(*typed_paths.at(path), offset, limit, settings, object_state->typed_path_states[path]);
+            typed_paths_serializations.at(path)->serializeBinaryBulkWithMultipleStreams(*typed_paths.at(path), offset, limit, settings, object_state->typed_path_states[path]);
             settings.path.pop_back();
         }
 
@@ -1018,17 +992,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         auto it = dynamic_paths.find(path);
         if (it == dynamic_paths.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dynamic structure mismatch for Object column: dynamic path '{}' is not found in the column", path);
-        if (object_state->sparse_dynamic_paths.contains(path))
-        {
-            SerializationSparse::create(dynamic_serialization)->serializeBinaryBulkWithMultipleStreams(*it->second, offset, limit, settings, object_state->dynamic_path_states[path]);
-            if (object_state->recalculate_statistics)
-            {
-                IColumn::Offsets non_default_rows;
-                it->second->getIndicesOfNonDefaultRows(non_default_rows, offset, limit);
-                object_state->statistics.dynamic_paths_statistics[path] += non_default_rows.size();
-            }
-        }
-        else if (object_state->recalculate_statistics)
+        if (object_state->recalculate_statistics)
         {
             size_t number_of_non_null_values = 0;
             dynamic_serialization_typed->serializeBinaryBulkWithMultipleStreamsAndCountTotalSizeOfVariants(*it->second, offset, limit, settings, object_state->dynamic_path_states[path], number_of_non_null_values);
@@ -1126,7 +1090,7 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        pathSerialization(dynamic_serialization, object_state->sparse_dynamic_paths.contains(path))->serializeBinaryBulkStateSuffix(settings, object_state->dynamic_path_states[path]);
+        dynamic_serialization->serializeBinaryBulkStateSuffix(settings, object_state->dynamic_path_states[path]);
         settings.path.pop_back();
     }
 
@@ -1226,10 +1190,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        if (structure_state->sparse_dynamic_paths.contains(path))
-            deserializeSparsePath(SerializationSparse::create(dynamic_serialization), *dynamic_paths[path], limit, settings, object_state->dynamic_path_states[path], cache);
-        else
-            dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_paths[path], limit, settings, object_state->dynamic_path_states[path], cache);
+        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_paths[path], limit, settings, object_state->dynamic_path_states[path], cache);
         settings.path.pop_back();
     }
 
