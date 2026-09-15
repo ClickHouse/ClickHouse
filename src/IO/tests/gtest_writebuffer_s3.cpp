@@ -667,7 +667,8 @@ inline Aws::Client::AWSError<Aws::Client::CoreErrors> makePreconditionFailedErro
 /// Replays the lost-response scenario for a conditional (`If-None-Match: *`) PutObject: the first
 /// attempt lands the object server-side but its response is lost, reported as the bogus MinIO
 /// NO_SUCH_KEY that WriteBufferFromS3 retries; the replay then sees the object it just wrote and gets
-/// 412. Records the metadata of every request so a test can assert what was stamped.
+/// 412. Records the metadata and both conditional headers of every request, so a test can assert what
+/// was stamped and which condition its own mode is supposed to send.
 struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
 {
     PutObjectLostResponseThenPreconditionFailed(std::shared_ptr<S3MemStrore> store_, bool store_first_attempt_)
@@ -682,6 +683,8 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
         for (const auto & [name, value] : request.GetMetadata())
             metadata[name] = value;
         seen_metadata.push_back(metadata);
+        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_match.push_back(request.GetIfMatch());
 
         if (calls++ > 0)
             return makePreconditionFailedError();
@@ -700,11 +703,14 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
     bool store_first_attempt;
     size_t calls = 0;
     std::vector<BucketMemStore::Metadata> seen_metadata;
+    std::vector<std::string> seen_if_none_match;
+    std::vector<std::string> seen_if_match;
 };
 
 /// Every PutObject attempt fails with 412 -- a genuinely pre-existing object, written by somebody
-/// else. Records the metadata and the `If-None-Match` of every request; this injection serves both
-/// the conditional and the unconditional arms, so each asserts the header it expects.
+/// else. Records the metadata and both conditional headers of every request; this injection serves
+/// the `If-None-Match`, the `If-Match` and the unconditional arms, so each asserts the exact pair of
+/// headers its own mode is supposed to send.
 struct PutObjectPreconditionFailedInjection : InjectionModel
 {
     std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
@@ -714,11 +720,13 @@ struct PutObjectPreconditionFailedInjection : InjectionModel
             metadata[name] = value;
         seen_metadata.push_back(metadata);
         seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_match.push_back(request.GetIfMatch());
         return makePreconditionFailedError();
     }
 
     std::vector<BucketMemStore::Metadata> seen_metadata;
     std::vector<std::string> seen_if_none_match;
+    std::vector<std::string> seen_if_match;
 };
 
 /// A conditional PutObject that gets 412 while the HEAD used to verify the write token also fails.
@@ -953,7 +961,7 @@ public:
         return write_settings;
     }
 
-    /// The Iceberg conditional replace-this-version write: `If-Match: <etag>`, no token minted.
+    /// The Iceberg conditional replace-this-version write: `If-Match: <etag>`.
     static WriteSettings conditionalReplaceWriteSettings()
     {
         WriteSettings write_settings;
@@ -1516,6 +1524,14 @@ TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
     EXPECT_FALSE(token.empty());
     EXPECT_EQ(injection->seen_metadata[1].at("clickhouse-idempotency-id"), token);
     EXPECT_EQ(bStore.object_metadata["conditional_put_lost_response"].at("clickhouse-idempotency-id"), token);
+
+    /// This mode conditions on absence, so it sends `If-None-Match` and no `If-Match`.
+    ASSERT_EQ(injection->seen_if_none_match.size(), 2u);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(injection->seen_if_none_match[i], "*");
+        EXPECT_TRUE(injection->seen_if_match[i].empty());
+    }
 }
 
 /// A 412 caused by an object this request did NOT write must still fail. The pre-existing object is
@@ -1544,11 +1560,12 @@ TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
         }
       }, DB::S3Exception);
 
-    /// The foreign object is untouched, and the PUT really was conditional.
+    /// The foreign object is untouched, and the PUT really was conditional on absence.
     EXPECT_EQ(bStore.objects["conditional_put_foreign"], "1");
     EXPECT_EQ(bStore.object_metadata["conditional_put_foreign"].at("clickhouse-idempotency-id"), "written-by-somebody-else");
     ASSERT_FALSE(injection->seen_if_none_match.empty());
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
+    EXPECT_TRUE(injection->seen_if_match[0].empty());
 }
 
 /// An ordinary (unconditional) S3 write sends no `If-None-Match`, and a 412 over an object this buffer
@@ -1582,6 +1599,8 @@ TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
         EXPECT_FALSE(metadata.at("clickhouse-idempotency-id").empty());
     for (const auto & if_none_match : injection->seen_if_none_match)
         EXPECT_TRUE(if_none_match.empty());
+    for (const auto & if_match : injection->seen_if_match)
+        EXPECT_TRUE(if_match.empty());
     EXPECT_GE(client->counters.headObject, 1u);
 }
 
@@ -1602,6 +1621,16 @@ TEST_P(SyncAsync, SinglepartIfMatchPutRecoversLostResponse) {
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_put_if_match"], "A");
     EXPECT_FALSE(bStore.object_metadata["conditional_put_if_match"].at("clickhouse-idempotency-id").empty());
+
+    /// Both attempts really carried the caller's `If-Match` etag, and no `If-None-Match` beside it.
+    /// Without this the test would also pass on a buffer that never sends `If-Match` at all, and the
+    /// recovery it proves would not be the one Iceberg's CAS on `version-hint.text` depends on.
+    ASSERT_EQ(injection->seen_if_match.size(), 2u);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(injection->seen_if_match[i], "some-etag");
+        EXPECT_TRUE(injection->seen_if_none_match[i].empty());
+    }
 }
 
 /// The protective half: the same 412 over an object somebody else wrote is a real conflict.
@@ -1609,7 +1638,8 @@ TEST_P(SyncAsync, SinglepartIfMatchPutDoesNotMaskForeignObject) {
     auto & bStore = client->store->GetBucketStore(bucket);
     bStore.PutObject("conditional_put_if_match_foreign", "1", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
-    setInjectionModel(std::make_shared<MockS3::PutObjectPreconditionFailedInjection>());
+    auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
+    setInjectionModel(injection);
 
     EXPECT_THROW({
         try {
@@ -1631,6 +1661,12 @@ TEST_P(SyncAsync, SinglepartIfMatchPutDoesNotMaskForeignObject) {
     EXPECT_EQ(
         bStore.object_metadata["conditional_put_if_match_foreign"].at("clickhouse-idempotency-id"),
         "written-by-somebody-else");
+
+    /// The 412 was refused on a request that really was an `If-Match` CAS, not on an unconditional one
+    /// that this injection would have failed anyway.
+    ASSERT_FALSE(injection->seen_if_match.empty());
+    EXPECT_EQ(injection->seen_if_match[0], "some-etag");
+    EXPECT_TRUE(injection->seen_if_none_match[0].empty());
 }
 
 /// A caller-supplied `object_metadata` must survive next to the write token -- the token is merged in,
