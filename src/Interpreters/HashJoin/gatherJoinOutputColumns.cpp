@@ -316,8 +316,72 @@ void insertRowsDefault(IColumn & dst, const GatherNode & node)
         dst.insertDefault();
 }
 
+/// `Nullable` over a fixed-width column in one pass: each word is read once and serves both planes,
+/// with one lead prefetch per plane, instead of a null-map pass and a value pass over the same words.
+template <size_t STRIDE>
+void gatherNullableFixedStride(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
+{
+    const GatherNode & nested = node.children[0];
+    const size_t stride = STRIDE ? STRIDE : nested.stride;
+    const void * const * null_by_block = node.data_by_block.data();
+    const void * const * value_by_block = nested.data_by_block.data();
+    const char * default_pattern = nested.default_pattern.data();
+
+    const std::span<char> null_span = dst.getNullMapColumn().insertRawUninitialized(count);
+    const std::span<char> value_span = dst.getNestedColumn().insertRawUninitialized(count);
+    chassert(null_span.size() == count && value_span.size() == count * stride);
+    char * null_out = null_span.data();
+    char * value_out = value_span.data();
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (i + look_ahead < count)
+        {
+            const UInt64 ahead = words[i + look_ahead];
+            if (ahead)
+            {
+                const UInt32 ahead_block = refWordBlockNo(ahead);
+                const size_t ahead_row = refWordRowNo(ahead);
+                __builtin_prefetch(static_cast<const char *>(null_by_block[ahead_block]) + ahead_row);
+                __builtin_prefetch(static_cast<const char *>(value_by_block[ahead_block]) + ahead_row * stride);
+            }
+        }
+        const UInt64 word = words[i];
+        if (!word)
+        {
+            null_out[i] = null_map_default;
+            memcpy(value_out, default_pattern, stride);
+            value_out += stride;
+            continue;
+        }
+        const UInt32 block_no = refWordBlockNo(word);
+        const size_t row = refWordRowNo(word);
+        null_out[i] = static_cast<const char *>(null_by_block[block_no])[row];
+        memcpy(value_out, static_cast<const char *>(value_by_block[block_no]) + row * stride, stride);
+        value_out += stride;
+    }
+    chassert(value_out == value_span.data() + value_span.size());
+}
+
 void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
+    const GatherNode & nested = node.children[0];
+    if (nested.kind == GatherNode::Kind::Fixed)
+    {
+        switch (nested.stride)
+        {
+#define M(STRIDE) \
+    case (STRIDE): gatherNullableFixedStride<(STRIDE)>(dst, node, words, count); return;
+            M(1)
+            M(2)
+            M(4)
+            M(8)
+            M(16)
+            M(32)
+#undef M
+            default: gatherNullableFixedStride<0>(dst, node, words, count); return;
+        }
+    }
     gatherFixedDispatch<false>(dst.getNullMapColumn(), node.data_by_block.data(), 1, words, words + count, count, &null_map_default);
     gatherNodeRows(dst.getNestedColumn(), node.children[0], words, count);
 }
