@@ -65,7 +65,7 @@ FROM
         arrayMap(i -> if(i % 7 = 0, toUInt32(1000000), if(i % 11 = 0, toUInt32(0), toUInt32(i % 97))), range(n)) AS u32,
         arrayMap(i -> if(i % 7 = 0, toUInt64(1000000), if(i % 11 = 0, toUInt64(0), toUInt64(i % 97))), range(n)) AS u64,
         arrayMap(i -> if(i % 7 = 0, toFloat64(1000000), if(i % 11 = 0, toFloat64(-1000000), toFloat64(i % 97))), range(n)) AS f64
-    FROM (SELECT arrayJoin([1, 48, 49, 64, 65, 256, 257, 1023, 1024, 4095, 4096, 4097, 8191, 8192, 8193, 16383, 16384, 16385]) AS n)
+    FROM (SELECT arrayJoin([1, 31, 32, 33, 35, 36, 37, 48, 49, 64, 65, 256, 257, 1023, 1024, 4095, 4096, 4097, 8191, 8192, 8193, 12287, 12288, 12289, 16383, 16384, 16385]) AS n)
 );
 SELECT min(if(
     arrayMinIndex(a) = arrayMinIndex(x -> tuple(x), a)
@@ -111,7 +111,7 @@ SELECT
     arrayMinIndex(arrayMap(i -> if(i = 0, toInt64(-100000), toInt64(i)), range(n))),
     arrayMinIndex(arrayMap(i -> if(i = intDiv(n, 2), toInt64(-100000), toInt64(i)), range(n))),
     arrayMinIndex(arrayMap(i -> if(i = n - 1, toInt64(-100000), toInt64(i)), range(n)))
-FROM (SELECT arrayJoin([1, 2, 3, 7, 8, 15, 16, 31, 32, 47, 48, 49, 63, 64, 65, 95, 96, 127, 128, 129, 191, 192, 255, 256, 257, 511, 512, 513, 1023, 1024, 2047, 2048, 4095, 4096, 4097, 8191, 8192, 8193, 16383, 16384, 16385, 32768]) AS n)
+FROM (SELECT arrayJoin([1, 2, 3, 7, 8, 15, 16, 31, 32, 33, 35, 36, 37, 47, 48, 49, 63, 64, 65, 95, 96, 127, 128, 129, 191, 192, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 2047, 2048, 4095, 4096, 4097, 8191, 8192, 8193, 12287, 12288, 12289, 16383, 16384, 16385, 32768]) AS n)
 ORDER BY n;
 SELECT min(if(
     arrayMinIndex(arrayMap(x -> nan, range(n))) = 1
