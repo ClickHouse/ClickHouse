@@ -15,6 +15,8 @@ Instances:
     backing the directory, plus a valid legacy server `plain` for a local user.
   - `instance_mode2`: `bind_dn` template + `lookup_bind_dn` (direct bind, searches as the
     service account).
+  - `instance_mode2_bind_dn_base`: like `instance_mode2`, but `user_dn_detection.base_dn` is
+    `{bind_dn}`, so the detection depends on the login only through the `bind_dn` template.
 
 Clients always receive the generic `Authentication failed` message; the exact reason is
 only in the server log, which is what the assertions below inspect.
@@ -67,6 +69,12 @@ instance_parse_error = cluster.add_instance(
 instance_mode2 = cluster.add_instance(
     "instance_mode2",
     main_configs=["configs/ldap_mode2.xml"],
+    user_configs=["configs/users.xml"],
+)
+
+instance_mode2_bind_dn_base = cluster.add_instance(
+    "instance_mode2_bind_dn_base",
+    main_configs=["configs/ldap_mode2_bind_dn_base.xml"],
     user_configs=["configs/users.xml"],
 )
 
@@ -422,6 +430,36 @@ def test_direct_bind_with_lookup_identity_searches_as_service_account(ldap_clust
         )
 
 
+def test_detection_base_from_bind_dn_treats_missing_base_as_unknown_user(ldap_cluster):
+    """Mode 2 with `user_dn_detection.base_dn` = `{bind_dn}`: the base depends on the login
+    only through the `bind_dn` template. For an unknown user it does not exist in the
+    directory, which answers the search with `LDAP_NO_SUCH_OBJECT`; that is the same "user
+    not found" signal as for `{user_name}` written directly into `base_dn`, so a login must be
+    a plain authentication failure and `EXECUTE AS` must give `UNKNOWN_USER`, never
+    `LDAP_ERROR`. `common_user` has `access_management`, which includes `IMPERSONATE`."""
+    # Known users resolve through the substituted base, both at login and on the forced
+    # lookup of `EXECUTE AS` (johndoe has never logged in on this instance).
+    assert instance_mode2_bind_dn_base.query(
+        "SELECT currentUser()", user="janedoe", password="qwerty"
+    ) == TSV([["janedoe"]])
+    assert instance_mode2_bind_dn_base.query(
+        "EXECUTE AS johndoe SELECT currentUser()",
+        user="common_user",
+        password="qwerty",
+    ) == TSV([["johndoe"]])
+
+    login_fails_without_ldap_error(instance_mode2_bind_dn_base, "nosuchuser", "qwerty")
+
+    ldap_errors_before = count_in_log(instance_mode2_bind_dn_base, "LDAP_ERROR")
+    error = instance_mode2_bind_dn_base.query_and_get_error(
+        "EXECUTE AS nosuchuser SELECT 1", user="common_user", password="qwerty"
+    )
+    assert "UNKNOWN_USER" in error or "There is no user" in error, error
+    assert "LDAP_ERROR" not in error, error
+    assert "No such object" not in error, error
+    assert count_in_log(instance_mode2_bind_dn_base, "LDAP_ERROR") == ldap_errors_before
+
+
 def test_neither_bind_dn_nor_lookup_bind_dn_is_rejected(ldap_cluster):
     """Without any bind DN the client would perform an unauthenticated bind."""
     original_config = read_config("ldap_parse_error.xml")
@@ -540,8 +578,8 @@ def test_search_and_bind_requires_user_name_in_detection(ldap_cluster):
 def test_nonexistent_detection_base_dn_is_an_ldap_error(ldap_cluster):
     """A static `base_dn` that does not exist (mistyped naming context) makes the directory
     answer `user_dn_detection` with `LDAP_NO_SUCH_OBJECT`. That is a misconfiguration and
-    must be logged as `LDAP_ERROR`; only a `base_dn` that substitutes `{user_name}` may
-    treat it as "user not found"."""
+    must be logged as `LDAP_ERROR`; only a `base_dn` that depends on the login (`{user_name}`,
+    or `{bind_dn}`/`{user_dn}` from a `bind_dn` template) may treat it as "user not found"."""
     original_config = read_config("ldap_parse_error.xml")
     nonexistent_base_config = original_config.replace(
         "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>",

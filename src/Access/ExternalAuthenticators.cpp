@@ -170,7 +170,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         const String & udd_base_dn = params.user_dn_detection->base_dn;
         const String & udd_search_filter = params.user_dn_detection->search_filter;
 
-        if (!udd_base_dn.contains("{user_name}") && !udd_search_filter.contains("{user_name}"))
+        /// With `bind_dn` = `{user_dn}` the helper reduces to the literal `{user_name}` check.
+        if (!params.templateDependsOnUserName(udd_base_dn) && !params.templateDependsOnUserName(udd_search_filter))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'bind_dn' = '{}' requires 'user_dn_detection.base_dn' or 'user_dn_detection.search_filter' to contain '{{user_name}}'",
                 LDAPClient::Params::DETECTED_USER_DN_PLACEHOLDER);
@@ -219,16 +220,11 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
 
         /// `user_dn_detection` must depend on the requested user name; otherwise a static
         /// query (e.g. `search_filter=(cn=janedoe)`) returning a single entry would let
-        /// `EXECUTE AS some_other_name` resolve to that entry's DN.
+        /// `EXECUTE AS some_other_name` resolve to that entry's DN. The same rule decides in
+        /// `detectUserDN` whether `LDAP_NO_SUCH_OBJECT` for the base means "user not found".
         const String & udd_base_dn = params.user_dn_detection->base_dn;
         const String & udd_search_filter = params.user_dn_detection->search_filter;
-        const bool depends_on_user_name =
-            udd_base_dn.contains("{user_name}") || udd_search_filter.contains("{user_name}");
-        const bool bind_dn_carries_user_name = params.bind_dn.contains("{user_name}");
-        const bool depends_via_bind_dn = bind_dn_carries_user_name &&
-            (udd_base_dn.contains("{bind_dn}") || udd_search_filter.contains("{bind_dn}") ||
-             udd_base_dn.contains("{user_dn}") || udd_search_filter.contains("{user_dn}"));
-        if (!depends_on_user_name && !depends_via_bind_dn)
+        if (!params.templateDependsOnUserName(udd_base_dn) && !params.templateDependsOnUserName(udd_search_filter))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'lookup_bind_dn' requires 'user_dn_detection' to depend on the requested user name; "
                 "use '{{user_name}}' in 'user_dn_detection.base_dn' or '.search_filter', "

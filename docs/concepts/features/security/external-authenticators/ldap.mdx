@@ -150,6 +150,7 @@ The following rules are checked when the configuration is loaded. A violation is
 How failures are reported:
 
 - A wrong password, or in search and bind a login that `user_dn_detection` does not find, is a regular authentication failure: the user is treated as not existing in this directory, so the following user directories still get their chance. Active Directory sub-codes (`data 52e` wrong password, `data 533` disabled account, `data 775` locked out, ...) are logged at debug level; the client only ever sees `Authentication failed`.
+- A `user_dn_detection` search answered with `No such object` is treated as "login not found" only when its `base_dn` depends on the login, that is when it contains `{user_name}`, or `{bind_dn}` / `{user_dn}` while the `bind_dn` template contains `{user_name}`: the substituted base legitimately does not exist for an unknown login. A static `base_dn` that does not exist is a misconfiguration and is logged as `LDAP_ERROR`.
 - More than one entry matching `user_dn_detection`, a rejected service account bind (`LDAP lookup bind as ... failed for server ...: invalid credentials`) and every other LDAP error are logged as `LDAP_ERROR` and the login fails.
 - The login is escaped exactly once for the context it is substituted into: as an RFC 4514 DN component for `{user_name}` in `bind_dn` and `base_dn`, as an RFC 4515 filter value for `{user_name}` in `search_filter`. Logins such as `o'neil,doe` or `a=b` therefore match in filters, and characters like `*`, `(` and `)` cannot alter the filter.
 

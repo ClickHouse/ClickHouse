@@ -150,6 +150,17 @@ public:
         /// True for search-and-bind (`bind_dn` is exactly `{user_dn}`).
         bool bindsAsDetectedUserDN() const { return bind_dn == DETECTED_USER_DN_PLACEHOLDER; }
 
+        /// True when substituting the placeholders into `search_template` (a `base_dn` or
+        /// `search_filter` of `user_dn_detection`) makes the result depend on the login:
+        /// directly through `{user_name}`, or through `{bind_dn}`/`{user_dn}` while `bind_dn`
+        /// is a template that carries `{user_name}`. In search-and-bind `bind_dn` is `{user_dn}`
+        /// itself, so only the literal `{user_name}` counts there (and `parseLDAPServer` rejects
+        /// the DN placeholders in the detection, because no DN is known before it has run).
+        /// This is the single definition of "target-specific" shared by the configuration check
+        /// in `parseLDAPServer` and by `detectUserDN`, which treats `LDAP_NO_SUCH_OBJECT` as
+        /// "user not found" only for such a `base_dn`.
+        bool templateDependsOnUserName(const String & search_template) const;
+
         void updateHash(SipHash & hash) const;
     };
 
@@ -199,9 +210,9 @@ protected:
     /// Runs `params.user_dn_detection` and returns the single DN it yields. Throws
     /// `LDAP_ERROR` when more than one entry matches. When `tolerate_missing_user` is set an
     /// empty result yields nullopt, otherwise it throws. `LDAP_NO_SUCH_OBJECT` counts as an
-    /// empty result only when `base_dn` substitutes `{user_name}` (the base then legitimately
-    /// does not exist for an unknown user); for a static `base_dn` it is a misconfiguration
-    /// and always throws.
+    /// empty result only when `base_dn` depends on the login as defined by
+    /// `Params::templateDependsOnUserName` (the base then legitimately does not exist for an
+    /// unknown user); for a static `base_dn` it is a misconfiguration and always throws.
     MAYBE_NORETURN std::optional<String> detectUserDN(bool tolerate_missing_user);
 
     void closeConnection() noexcept;
