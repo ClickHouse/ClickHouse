@@ -142,9 +142,14 @@ public:
     }
 
 protected:
-    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position, bool include_shared_block = true);
+    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
     std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
+
+private:
+    size_t getRightMarkIncluded(size_t right_mark_non_included, size_t column_position);
+    size_t getRightOffsetInStripe(size_t right_mark_included, size_t column_position, const MarkInCompressedFile & stripe_end);
+    size_t estimateRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
 };
 
 /// Class for reading a single column from file that contains multiple columns
