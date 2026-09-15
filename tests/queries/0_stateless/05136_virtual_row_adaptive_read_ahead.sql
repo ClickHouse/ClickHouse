@@ -1,7 +1,7 @@
 -- Exercise coalesced announcements, buffered data at end of input, and cancellation.
 SET max_threads = 4, max_block_size = 128;
 SET optimize_read_in_order = 1, read_in_order_use_buffering = 1, max_parallel_replicas = 1;
-SET read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1;
+SET read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 SET read_in_order_virtual_row_prefetch_window = 2, read_in_order_two_level_merge_threshold = 1000000;
 SET optimize_move_to_prewhere = 0, use_query_condition_cache = 0, use_statistics_for_part_pruning = 0;
 SET use_skip_indexes = 0, log_queries = 1;

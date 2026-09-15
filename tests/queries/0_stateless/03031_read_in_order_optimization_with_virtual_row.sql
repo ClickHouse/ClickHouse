@@ -2,7 +2,7 @@
 -- ^ because we are using query_log
 -- add_minmax_index_for_numeric_columns=0: Different read rows
 
-SET read_in_order_use_virtual_row = 1;
+SET read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
@@ -108,9 +108,8 @@ ORDER BY query_start_time DESC
 LIMIT 1;
 
 SELECT '========';
--- Expecting two chunks (8192*2) filtered out + one chunk for result (8192) from the first
--- part. Per-block virtual rows announce the filtered-out intervals, which lets the
--- read-ahead read the second part (8192*3) in parallel instead of waiting for demand.
+-- Expecting 2 virtual rows + two chunks (8192*2) get filtered out + one chunk for result (8192),
+-- all chunks come from the same part. With one thread nothing reads ahead of the merge.
 SELECT k
 FROM t
 WHERE k > 8192 * 2

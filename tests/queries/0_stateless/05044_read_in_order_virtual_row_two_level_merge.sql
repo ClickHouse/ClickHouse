@@ -24,7 +24,7 @@ settings read_in_order_two_level_merge_threshold = 0, max_threads = 16,
 
 select x from tab order by x limit 3
 settings read_in_order_two_level_merge_threshold = 0, max_threads = 16,
-         read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
+         read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
          use_query_condition_cache = 0,
          log_comment = '05044_two_level_lazy_per_block';
 

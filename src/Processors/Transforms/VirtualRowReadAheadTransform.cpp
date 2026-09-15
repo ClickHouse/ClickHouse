@@ -43,6 +43,7 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
     for (const auto & column : description)
         sort_positions.push_back(header->getPositionByName(column.column_name));
     candidates.reserve(num_lanes);
+    data_lanes.reserve(num_lanes);
     ready_lanes.reserve(num_lanes);
 }
 
@@ -106,6 +107,35 @@ bool VirtualRowReadAheadTransform::needsMoreSources(size_t lane_num, const Chunk
     return false;
 }
 
+const Columns * VirtualRowReadAheadTransform::coverageBoundary()
+{
+    if (!limit)
+        return nullptr;
+
+    /// A chunk still sitting in the output port is held data too: the merge has not taken it yet.
+    auto held_rows = [](const Lane & lane)
+    {
+        return lane.buffered_rows + (lane.output->hasData() ? lane.pushed_rows : 0);
+    };
+
+    data_lanes.clear();
+    for (size_t i = 0; i < lanes.size(); ++i)
+        if (!lanes[i].finished && held_rows(lanes[i]) && !lanes[i].boundary.empty())
+            data_lanes.push_back(i);
+
+    /// A lane's boundary is at or past its last held row, so accumulating in boundary
+    /// order counts every held row that precedes the returned boundary.
+    std::sort(data_lanes.begin(), data_lanes.end(), [this](size_t lhs, size_t rhs) { return earlier(lhs, rhs); });
+    size_t covered_rows = 0;
+    for (size_t lane_num : data_lanes)
+    {
+        covered_rows += held_rows(lanes[lane_num]);
+        if (covered_rows >= limit)
+            return &lanes[lane_num].boundary;
+    }
+    return nullptr;
+}
+
 IProcessor::Status VirtualRowReadAheadTransform::prepare()
 {
     candidates.clear();
@@ -137,11 +167,13 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
         if (output.canPush() && !lane.chunks.empty())
         {
             auto & next = lane.chunks.front();
+            lane.pushed_rows = 0;
             if (!isVirtualRow(next))
             {
                 lane.buffered_rows -= next.getNumRows();
                 lane.buffered_bytes -= next.bytes();
                 lane.demanded = true;
+                lane.pushed_rows = next.getNumRows();
             }
             output.push(std::move(next));
             lane.output_started = true;
@@ -179,8 +211,14 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
             lane.read_requested = true;
         else if (canBuffer(lane))
         {
+            /// An unconsumed announcement already answers the merge's next request for this
+            /// lane; reading on before it is taken only replaces it and keeps the reader busy.
+            bool announcement_pending = !lane.chunks.empty() && isVirtualRow(lane.chunks.back());
             if (lane.demanded)
-                lane.read_requested = true;
+            {
+                if (!announcement_pending)
+                    lane.read_requested = true;
+            }
             else if (!lane.boundary.empty())
                 candidates.push_back(i);
         }
@@ -189,6 +227,15 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
     /// Account for completed reads before granting more speculative work.
     if (ready_lanes.empty() && read_ahead_window && read_ahead_started)
     {
+        /// Buffered rows alone may already satisfy the limit up to some boundary; the merge
+        /// consumes them before it needs anything announced past that point, so reading
+        /// there is wasted if the limit ends the query. Lanes below the point stay eligible.
+        if (const Columns * coverage = coverageBoundary())
+            std::erase_if(candidates, [&](size_t lane_num)
+            {
+                return compareBoundaries(lanes[lane_num].boundary, *coverage) > 0;
+            });
+
         /// Lanes already holding a slot may keep filling their buffers. Only the free
         /// slots go to lanes that have not read anything yet, earliest boundary first.
         auto fresh = std::partition(candidates.begin(), candidates.end(),

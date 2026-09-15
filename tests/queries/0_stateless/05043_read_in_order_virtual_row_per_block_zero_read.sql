@@ -18,7 +18,7 @@ insert into tab select number from numbers(200000);
 insert into tab select number from numbers(200000, 200000);
 
 select x from tab order by x limit 100000 format Null
-settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
+settings read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
          log_processors_profiles = 1, max_threads = 2;
 
 system flush logs query_log, processors_profile_log;

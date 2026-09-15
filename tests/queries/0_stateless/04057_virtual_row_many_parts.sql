@@ -17,7 +17,7 @@ INSERT INTO t_vrow SELECT sipHash64(number, 7) % 100000, rand32() % 100000 FROM 
 INSERT INTO t_vrow SELECT sipHash64(number, 8) % 100000, rand32() % 100000 FROM numbers(100000);
 INSERT INTO t_vrow SELECT sipHash64(number, 9) % 100000, rand32() % 100000 FROM numbers(100000);
 
-SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1;
+SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 
 SELECT CounterID FROM t_vrow ORDER BY CounterID DESC LIMIT 100;
 SELECT CounterID FROM t_vrow ORDER BY CounterID ASC LIMIT 100;
