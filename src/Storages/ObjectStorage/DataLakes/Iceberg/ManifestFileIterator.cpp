@@ -639,9 +639,7 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
         *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), *this, context);
-    auto * raw_ptr = pruner.get();
-    pruners_by_schema_id.emplace(schema_id, std::move(pruner));
-    return raw_ptr;
+    return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
 bool ManifestFileIterator::isInitialized() const
