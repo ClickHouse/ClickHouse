@@ -43,8 +43,6 @@ namespace FailPoints
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
-    extern const char plain_object_storage_fail_on_directory_move_undo[];
-    extern const char plain_object_storage_fail_on_file_move_undo[];
     extern const char plain_object_storage_fail_after_copy_on_file_move[];
 }
 
@@ -273,14 +271,6 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
         /// One stage per directory, so a marker that is back under its old path is never rewritten again.
         undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", sub_path_from), [&]
         {
-            /// Injected here rather than in `rewriteSingleDirectory`, which the forward pass calls first: a fault there
-            /// can never leave a move half reversed.
-            fiu_do_on(FailPoints::plain_object_storage_fail_on_directory_move_undo,
-            {
-                throw Exception(
-                    ErrorCodes::FAULT_INJECTED, "Injecting fault when reversing the move from '{}' to '{}'", sub_path_to, sub_path_from);
-            });
-
             auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/std::nullopt);
             rewriteSingleDirectory(sub_path_to, sub_path_from, *write_buf);
         });
@@ -674,12 +664,6 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
     undoWithRetries(log, fmt::format("restore the blob of the target file '{}'", path_to), [&]
     {
-        fiu_do_on(FailPoints::plain_object_storage_fail_on_file_move_undo,
-        {
-            throw Exception(
-                ErrorCodes::FAULT_INJECTED, "Injecting fault when reversing the move from '{}' to '{}'", path_from, path_to);
-        });
-
         if (!had_existing_target)
         {
             /// The move published the source blob under a key that held no file of this filesystem, so the key has to
