@@ -787,16 +787,21 @@ StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
 StoragePtr DatabaseOrdinary::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
     ensurePopulated();
-    std::lock_guard lock(mutex);
-    auto table = detachTableUnlocked(table_name);
-    /// Never overwrite: a previous detached instance of this name may still be alive (see the member comment).
-    /// Expired entries are dropped here as well, so the container does not grow with tables nobody re-attaches.
-    forgetExpiredDetachedTablesByName();
-    detached_tables_by_name.emplace(table_name, table);
+    /// Outlives the lock below: the strong references taken by the sweep must die after `mutex` is released.
+    std::vector<StoragePtr> keep_alive;
+    StoragePtr table;
+    {
+        std::lock_guard lock(mutex);
+        table = detachTableUnlocked(table_name);
+        /// Never overwrite: a previous detached instance of this name may still be alive (see the member comment).
+        /// Expired entries are dropped here as well, so the container does not grow with tables nobody re-attaches.
+        forgetExpiredDetachedTablesByName(keep_alive);
+        detached_tables_by_name.emplace(table_name, table);
+    }
     return table;
 }
 
-void DatabaseOrdinary::forgetExpiredDetachedTablesByName()
+void DatabaseOrdinary::forgetExpiredDetachedTablesByName(std::vector<StoragePtr> & keep_alive)
 {
     for (auto it = detached_tables_by_name.begin(); it != detached_tables_by_name.end();)
     {
@@ -807,19 +812,26 @@ void DatabaseOrdinary::forgetExpiredDetachedTablesByName()
             it = detached_tables_by_name.erase(it);
         else
             ++it;
+
+        /// Another thread may drop the last external reference at any moment, which would make this `storage`
+        /// the final owner; the caller destroys it after unlocking `mutex`.
+        if (storage)
+            keep_alive.push_back(std::move(storage));
     }
 }
 
-bool DatabaseOrdinary::isDetachedTableByNameInUse(const String & table_name)
+bool DatabaseOrdinary::isDetachedTableByNameInUse(const String & table_name, std::vector<StoragePtr> & keep_alive)
 {
-    forgetExpiredDetachedTablesByName();
+    forgetExpiredDetachedTablesByName(keep_alive);
     return detached_tables_by_name.contains(table_name);
 }
 
 void DatabaseOrdinary::checkDetachedTableByNameNotInUse(const String & table_name)
 {
+    /// Declared before the lock, so it is destroyed after the lock is released.
+    std::vector<StoragePtr> keep_alive;
     std::lock_guard lock(mutex);
-    if (isDetachedTableByNameInUse(table_name))
+    if (isDetachedTableByNameInUse(table_name, keep_alive))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{}, "
                         "because it was detached but still used by some query. Retry later.",
                         backQuote(database_name), backQuote(table_name));
@@ -831,16 +843,21 @@ void DatabaseOrdinary::waitDetachedTableByNameNotInUse(const String & table_name
     /// last owner going away, so the wait polls, the same way `DatabaseAtomic::waitDetachedTableNotInUse` does.
     LOG_DEBUG(log, "Waiting for detached table {} to be no longer in use", backQuote(table_name));
 
+    /// The references taken while polling are released outside the lock, once per iteration.
+    auto is_in_use = [&]()
+    {
+        std::vector<StoragePtr> keep_alive;
+        std::lock_guard lock(mutex);
+        return isDetachedTableByNameInUse(table_name, keep_alive);
+    };
+
     unsigned iterations = 0;
     while (!DatabaseCatalog::instance().isShuttingDown())
     {
+        if (!is_in_use())
         {
-            std::lock_guard lock(mutex);
-            if (!isDetachedTableByNameInUse(table_name))
-            {
-                LOG_DEBUG(log, "Detached table {} is no longer in use", backQuote(table_name));
-                return;
-            }
+            LOG_DEBUG(log, "Detached table {} is no longer in use", backQuote(table_name));
+            return;
         }
 
         /// Checked after the liveness test, so that a wait that has already succeeded does not throw.
@@ -854,13 +871,10 @@ void DatabaseOrdinary::waitDetachedTableByNameNotInUse(const String & table_name
         ++iterations;
     }
 
+    if (!is_in_use())
     {
-        std::lock_guard lock(mutex);
-        if (!isDetachedTableByNameInUse(table_name))
-        {
-            LOG_DEBUG(log, "Detached table {} is no longer in use (resolved during shutdown)", backQuote(table_name));
-            return;
-        }
+        LOG_DEBUG(log, "Detached table {} is no longer in use (resolved during shutdown)", backQuote(table_name));
+        return;
     }
 
     throw Exception(ErrorCodes::UNFINISHED,

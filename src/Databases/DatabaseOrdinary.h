@@ -123,10 +123,14 @@ protected:
     /// (no UUID) does not wait for the previous instance, so `DETACH` -> `ATTACH` -> `DETACH` leaves two of them.
     /// Every instance is kept until it expires, so that none of them is forgotten while its parts are alive.
     std::unordered_multimap<String, std::weak_ptr<IStorage>> detached_tables_by_name TSA_GUARDED_BY(mutex);
-    /// Forgets the storages that are gone or were renamed away.
-    void forgetExpiredDetachedTablesByName() TSA_REQUIRES(mutex);
+    /// Forgets the storages that are gone or were renamed away. Every strong reference the sweep takes is
+    /// handed to `keep_alive`, so that the caller lets it go only after releasing `mutex`: had the sweep been the
+    /// last owner of a storage, the storage would otherwise be destroyed under the database mutex, which
+    /// `DatabaseAtomic::cleanupDetachedTables` avoids for the same reason (that destruction can deadlock).
+    void forgetExpiredDetachedTablesByName(std::vector<StoragePtr> & keep_alive) TSA_REQUIRES(mutex);
     /// Forgets the storages that are gone or were renamed away, then tells whether `table_name` is still in use.
-    bool isDetachedTableByNameInUse(const String & table_name) TSA_REQUIRES(mutex);
+    /// `keep_alive` has the same contract as above.
+    bool isDetachedTableByNameInUse(const String & table_name, std::vector<StoragePtr> & keep_alive) TSA_REQUIRES(mutex);
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);
