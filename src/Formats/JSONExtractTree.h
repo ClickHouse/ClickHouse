@@ -45,6 +45,9 @@ public:
     virtual bool insertResultToColumn(IColumn &, const typename JSONParser::Element &, const JSONExtractInsertSettings & insert_setting, const FormatSettings & format_settings, String & error) const = 0;
 };
 
+/// Check the extraction-tree schema without allocating nodes or parsing state.
+void validateJSONType(const DataTypePtr & type, const char * source_for_exception_message);
+
 /// Build a tree for insertion JSON element into a column with provided data type.
 template <typename JSONParser>
 std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message);

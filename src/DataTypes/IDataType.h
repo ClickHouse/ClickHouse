@@ -380,6 +380,16 @@ protected:
         size_t initial_array_level,
         bool throw_if_null);
 
+    /// Resolves a subcolumn by enumerating the streams of `data.serialization`. With `prune_typed_paths`
+    /// serializations may skip streams that cannot contribute to this lookup (see
+    /// `SerializationObject::enumerateStreams`); the result must not depend on it.
+    static std::unique_ptr<SubcolumnInfo> getSubcolumnInfoFromStreams(
+        std::string_view subcolumn_name,
+        const SubstreamData & data,
+        size_t initial_array_level,
+        bool prune_typed_paths,
+        size_t & array_level);
+
     /// "sizeN" counts `Array` wrappers from the root of the column, so the array sizes get a
     /// different number once the name is resolved against the type of a dynamically typed value
     /// alone, which is what a serialization keeping the name does later: the inner sizes of an

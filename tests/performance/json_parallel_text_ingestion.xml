@@ -1,0 +1,30 @@
+<test>
+    <settings>
+        <max_threads>8</max_threads>
+        <max_insert_threads>8</max_insert_threads>
+        <max_parsing_threads>8</max_parsing_threads>
+        <input_format_parallel_parsing>1</input_format_parallel_parsing>
+    </settings>
+
+    <create_query>CREATE TABLE json_parallel_input (j JSON(x UInt64)) ENGINE = File(JSONEachRow)</create_query>
+    <create_query>CREATE TABLE json_parallel_sink (j JSON(x UInt64)) ENGINE = Null</create_query>
+    <fill_query>
+        INSERT INTO json_parallel_input SELECT CAST(toJSONString(map('x', number)), 'JSON(x UInt64)')
+        FROM numbers(1000000)
+    </fill_query>
+
+    <query>INSERT INTO json_parallel_sink SELECT * FROM json_parallel_input SETTINGS session_timezone = ''</query>
+    <query>INSERT INTO json_parallel_sink SELECT * FROM json_parallel_input SETTINGS session_timezone = 'Asia/Tokyo'</query>
+
+    <query>
+        INSERT INTO json_parallel_sink SELECT CAST(toJSONString(map('x', number)), 'JSON(x UInt64)')
+        FROM numbers_mt(1000000) SETTINGS session_timezone = ''
+    </query>
+    <query>
+        INSERT INTO json_parallel_sink SELECT CAST(toJSONString(map('x', number)), 'JSON(x UInt64)')
+        FROM numbers_mt(1000000) SETTINGS session_timezone = 'Asia/Tokyo'
+    </query>
+
+    <drop_query>DROP TABLE json_parallel_sink</drop_query>
+    <drop_query>DROP TABLE json_parallel_input</drop_query>
+</test>

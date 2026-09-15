@@ -1,7 +1,16 @@
+#include <algorithm>
+#include <unordered_map>
 #include <Common/SipHash.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeObject.h>
+#include <Formats/JSONExtractTree.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <base/scope_guard.h>
 
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
@@ -17,21 +26,199 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
-template <typename Parser>
-SerializationJSON<Parser>::SerializationJSON(
+namespace Setting
+{
+    extern const SettingsBool allow_simdjson;
+}
+
+SerializationJSON::SerializationJSON(
     const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
-    std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
+    size_t max_dynamic_paths_)
     : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
-    , json_extract_tree(std::move(json_extract_tree_))
+    , max_dynamic_paths(max_dynamic_paths_)
+    , supports_pooling(dynamic_serialization_->supportsPooling()
+        && std::ranges::all_of(typed_paths_serializations_, [](const auto & path) { return path.second->supportsPooling(); }))
 {
+}
+
+SerializationPtr SerializationJSON::create(
+    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+    const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
+    const std::unordered_set<String> & paths_to_skip_,
+    const std::vector<String> & path_regexps_to_skip_,
+    const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_,
+    size_t max_dynamic_paths_,
+    const SerializationInfoSettings & settings)
+{
+    auto creator = [&]
+    {
+        return new SerializationJSON(typed_paths_types_, typed_paths_serializations_, paths_to_skip_,
+            path_regexps_to_skip_, dynamic_type_, dynamic_serialization_, max_dynamic_paths_);
+    };
+    if (!dynamic_serialization_->supportsPooling()
+        || !std::ranges::all_of(typed_paths_serializations_, [](const auto & path) { return path.second->supportsPooling(); }))
+        return SerializationPtr(creator());
+
+    SipHash hash;
+    auto hash_string = [&](const String & value)
+    {
+        hash.update(value.size());
+        hash.update(value);
+    };
+    hash.update("JSON");
+    settings.updateHash(hash);
+    hash.update(max_dynamic_paths_);
+    hash_string(dynamic_type_->getName());
+    hash.update(dynamic_serialization_->getHash());
+    Strings sorted_paths;
+    sorted_paths.reserve(typed_paths_types_.size());
+    for (const auto & [path, _] : typed_paths_types_)
+        sorted_paths.push_back(path);
+    std::ranges::sort(sorted_paths);
+    hash.update(sorted_paths.size());
+    for (const auto & path : sorted_paths)
+    {
+        hash_string(path);
+        hash_string(typed_paths_types_.at(path)->getName());
+        hash.update(typed_paths_serializations_.at(path)->getHash());
+    }
+    sorted_paths.assign(paths_to_skip_.begin(), paths_to_skip_.end());
+    std::ranges::sort(sorted_paths);
+    hash.update(sorted_paths.size());
+    for (const auto & path : sorted_paths)
+        hash_string(path);
+    hash.update(path_regexps_to_skip_.size());
+    for (const auto & regexp : path_regexps_to_skip_)
+        hash_string(regexp);
+    return pooled(hash.get128(), creator);
+}
+
+namespace
+{
+
+#if USE_RAPIDJSON
+using FallbackJSONParser = RapidJSONParser;
+#else
+using FallbackJSONParser = DummyJSONParser;
+#endif
+
+template <typename Parser>
+struct JSONParserState
+{
+    Parser parser;
+    std::unique_ptr<JSONExtractTreeNode<Parser>> tree;
+
+    explicit JSONParserState(const DataTypePtr & type) : tree(buildJSONExtractTree<Parser>(type, "JSON serialization")) {}
+};
+
+/// Parsers and extraction trees are mutable and expensive to build, so they stay out of the immutable,
+/// pooled serialization and are cached per thread instead. A thread-local cache needs no locking.
+///
+/// Entries are released when the effective session timezone changes, a map reaches `MAX_ELEMENTS` schemas,
+/// or an object larger than `DBMS_DEFAULT_BUFFER_SIZE` is parsed.
+/// An idle thread keeps the state of its last query until then.
+class JSONParserStateCache
+{
+public:
+    template <typename Parser>
+    struct Entry
+    {
+        /// Owning the serialization guarantees that its address is not reused by another schema while cached.
+        SerializationPtr owner;
+        std::unique_ptr<JSONParserState<Parser>> state;
+    };
+
+    template <typename Parser>
+    struct Pools
+    {
+        void clear()
+        {
+            entries.clear();
+            last_serialization = nullptr;
+            last_state = nullptr;
+        }
+
+        std::unordered_map<const ISerialization *, Entry<Parser>> entries;
+        const ISerialization * last_serialization = nullptr;
+        JSONParserState<Parser> * last_state = nullptr;
+    };
+
+    void clearIfTimezoneChanged(const DateLUTImpl * current_session_timezone)
+    {
+        if (session_timezone == current_session_timezone)
+            return;
+
+#if USE_SIMDJSON
+        simdjson_pools.clear();
+#endif
+        fallback_pools.clear();
+        session_timezone = current_session_timezone;
+    }
+
+    template <typename Parser, typename Factory>
+    JSONParserState<Parser> & get(Pools<Parser> & pools, const ISerialization & serialization, Factory && factory)
+    {
+        if (pools.last_serialization == &serialization)
+            return *pools.last_state;
+
+        auto it = pools.entries.find(&serialization);
+        if (it == pools.entries.end())
+            return add(pools, serialization, std::forward<Factory>(factory));
+        pools.last_serialization = &serialization;
+        pools.last_state = it->second.state.get();
+        return *pools.last_state;
+    }
+
+    template <typename Parser>
+    Pools<Parser> & getPools()
+    {
+#if USE_SIMDJSON
+        if constexpr (std::is_same_v<Parser, SimdJSONParser>)
+            return simdjson_pools;
+        else
+            return fallback_pools;
+#else
+        return fallback_pools;
+#endif
+    }
+
+#if USE_SIMDJSON
+    Pools<SimdJSONParser> simdjson_pools;
+#endif
+    Pools<FallbackJSONParser> fallback_pools;
+
+private:
+    static constexpr size_t MAX_ELEMENTS = 64;
+
+    template <typename Parser, typename Factory>
+    NO_INLINE JSONParserState<Parser> & add(Pools<Parser> & pools, const ISerialization & serialization, Factory && factory)
+    {
+        if (pools.entries.size() >= MAX_ELEMENTS)
+            pools.clear();
+        auto [it, _] = pools.entries.emplace(
+            &serialization, Entry<Parser>{serialization.shared_from_this(), factory()});
+        pools.last_serialization = &serialization;
+        pools.last_state = it->second.state.get();
+        return *pools.last_state;
+    }
+
+    const DateLUTImpl * session_timezone = nullptr;
+};
+
+JSONParserStateCache & getJSONParserStateCache()
+{
+    static thread_local JSONParserStateCache cache;
+    return cache;
+}
+
 }
 
 namespace
@@ -113,8 +300,7 @@ void writeJSONKey(std::string_view key, WriteBuffer & ostr, const FormatSettings
 
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent) const
+void SerializationJSON::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent) const
 {
     const auto & column_object = assert_cast<const ColumnObject &>(column);
 
@@ -276,11 +462,29 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 }
 
 template <typename Parser>
-void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
+NO_INLINE void SerializationJSON::deserializeObjectWithParser(
+    IColumn & column, std::string_view object, const FormatSettings & settings, const DateLUTImpl * session_timezone) const
 {
+    auto & cache = getJSONParserStateCache();
+    cache.clearIfTimezoneChanged(session_timezone);
+    auto & state = cache.get(cache.getPools<Parser>(), *this, [&]
+    {
+        /// The tree is rebuilt from the type instead of keeping a reference to it: a strong
+        /// reference would form a cycle with the serialization cached inside `DataTypeObject`.
+        Strings regexps;
+        for (const auto & regexp : path_regexps_to_skip)
+            regexps.push_back(regexp.pattern());
+        auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
+            typed_paths_types, paths_to_skip, std::move(regexps), max_dynamic_paths,
+            assert_cast<const DataTypeDynamic &>(*dynamic_type).getMaxDynamicTypes());
+        return std::make_unique<JSONParserState<Parser>>(type);
+    });
+    SCOPE_EXIT(
+        if (unlikely(object.size() > DBMS_DEFAULT_BUFFER_SIZE))
+            cache.getPools<Parser>().clear();
+    );
     typename Parser::Element document;
-    auto parser = parsers_pool.get([] { return new Parser; });
-    if (!parser->parse(object, document))
+    if (!state.parser.parse(object, document))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}{}", object.substr(0, std::min(object.size(), 1000uz)), object.size() > 1000 ? "... (JSON object is too long to display as a whole)" : "");
 
     String error;
@@ -288,42 +492,63 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
     insert_settings.escape_dots_in_json_keys = settings.json.json_type_escape_dots_in_keys;
     insert_settings.skip_invalid_typed_paths = settings.json.type_json_skip_invalid_typed_paths;
     insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
-    if (!json_extract_tree->insertResultToColumn(column, document, insert_settings, settings, error))
+    if (!state.tree->insertResultToColumn(column, document, insert_settings, settings, error))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationJSON::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
+{
+    const DateLUTImpl * session_timezone = settings.json.session_timezone;
+    if (!session_timezone)
+        session_timezone = &DateLUT::instance();
+
+#if USE_SIMDJSON
+    bool allow_simdjson = false;
+    if (settings.json.allow_simdjson)
+        allow_simdjson = *settings.json.allow_simdjson;
+    else
+    {
+        auto context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            context = Context::getGlobalContextInstance();
+        allow_simdjson = !context || context->getSettingsRef()[Setting::allow_simdjson];
+    }
+    if (allow_simdjson)
+    {
+        deserializeObjectWithParser<SimdJSONParser>(column, object, settings, session_timezone);
+        return;
+    }
+#endif
+    deserializeObjectWithParser<FallbackJSONParser>(column, object, settings, session_timezone);
+}
+
+void SerializationJSON::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, row_num, ostr, settings);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationJSON::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
     readStringUntilEOF(object, istr);
     deserializeObject(column, object, settings);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationJSON::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
     writeEscapedString(buf.str(), ostr);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationJSON::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
     readEscapedString(object, istr);
     deserializeObject(column, object, settings);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationJSON::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
@@ -333,8 +558,7 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
         writeQuotedString(buf.str(), ostr);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationJSON::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
     /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
@@ -344,68 +568,42 @@ void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuff
     deserializeObject(column, object, settings);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationJSON::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
     writeCSVString(buf.str(), ostr);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationJSON::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
     readCSVString(object, istr, settings.csv);
     deserializeObject(column, object, settings);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationJSON::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
     writeXMLStringForTextElement(buf.str(), ostr);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationJSON::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, row_num, ostr, settings);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+void SerializationJSON::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
     serializeTextImpl(column, row_num, ostr, settings, true, indent);
 }
 
-template <typename Parser>
-void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationJSON::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object_buffer;
     auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer, settings.json.max_row_size_for_json_each_row);
     deserializeObject(column, object_view, settings);
 }
-
-template <typename Parser>
-UInt128 SerializationJSON<Parser>::getHash(
-    const std::unordered_map<String, DataTypePtr> &,
-    const std::unordered_set<String> &,
-    const std::vector<String> &,
-    const DataTypePtr &)
-{
-    /// Check the comment in the ::create method.
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method getHash is not implemented for SerializationJSON");
-}
-
-#if USE_SIMDJSON
-template class SerializationJSON<SimdJSONParser>;
-#endif
-#if USE_RAPIDJSON
-template class SerializationJSON<RapidJSONParser>;
-#else
-template class SerializationJSON<DummyJSONParser>;
-#endif
 
 }
