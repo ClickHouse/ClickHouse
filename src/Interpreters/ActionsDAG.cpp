@@ -966,8 +966,9 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                     tryFoldFunctionToConstant(*node, arguments, all_const, /*best_effort=*/true);
                 }
 
-                /// Constant folding.
-                if (allow_constant_folding && !node->children.empty() && node->column)
+                /// Constant folding. A lambda that captures nothing has no children, but its folded value is a
+                /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
+                if (allow_constant_folding && node->column && (!node->children.empty() || WhichDataType(node->result_type).isFunction()))
                 {
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
