@@ -1,0 +1,17 @@
+-- The reference behavior of the same reset outside BACKUP/RESTORE
+accepted
+rejected
+rejected
+-- BACKUP/RESTORE resets a core setting on the same context, so it is checked the same way
+rejected
+rejected
+-- Controls: the check rejects the violation only, not every clause and not every reset
+accepted
+accepted
+accepted
+-- A BACKUP/RESTORE-specific reset is resolved in the settings layer and never reaches the context
+accepted
+accepted
+-- Neither rejected query left a table behind, and the accepted restore did its work
+1	1
+10
