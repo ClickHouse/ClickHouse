@@ -26,9 +26,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Only ReadBufferFromS3 adds "while reading key:", so a match line raised elsewhere
-# contributes no key and no group.
-KEY_PATTERN = re.compile(r"while reading key: ([^\s,]+)")
+# The whole suffix ReadBufferFromS3 appends, not just its first field: the failing query's
+# text and id are on this line too, unescaped, and may name keys this read never touched.
+KEY_PATTERN = re.compile(r"while reading key: ([^\s,]+), from bucket:")
 
 # A log line opens with "<date> <time>", whose text sorts chronologically. grep reports one
 # file at a time, so file order is not time order.
@@ -37,6 +37,13 @@ TIMESTAMP_PATTERN = re.compile(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+")
 # Lines are selected by LOGGER NAME rather than by message wording, so rewording
 # "Writing blob for path" or "were removed from S3" cannot silently empty the report.
 LIFECYCLE_LOGGERS = ("DiskObjectStorageTransaction", "deleteFileFromS3")
+
+# The logger has its own slot after the level; matching the name anywhere on the line
+# instead lets a query that merely mentions it pass. Nothing before the level is anchored:
+# the query id is unescaped, so a pattern spanning it drops lines whose id holds a brace.
+LIFECYCLE_LINE_PATTERN = re.compile(
+    r"<\w+> (?:" + "|".join(re.escape(logger) for logger in LIFECYCLE_LOGGERS) + "): "
+)
 
 # The characters the emit sites put on either side of a key: "key <K>," / "[<K1>, <K2>]" /
 # "path <K> was removed" / "for blob <K>"<EOL>. A closed set, unlike the key alphabet, so a
@@ -154,7 +161,7 @@ def collect_lifecycle_lines(keys, logs):
         # Filtered and retained line by line, so the caps bound what is held in memory too.
         for line in grep.stdout:
             line = line.rstrip("\n")
-            if not any(logger in line for logger in LIFECYCLE_LOGGERS):
+            if not LIFECYCLE_LINE_PATTERN.search(line):
                 continue
             for group in groups.values():
                 group.offer(line)

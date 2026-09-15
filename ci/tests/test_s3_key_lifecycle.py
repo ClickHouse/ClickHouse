@@ -19,10 +19,14 @@ from ci.jobs.scripts.s3_key_lifecycle import MAX_EXPANDED_KEYS, MAX_LINES_PER_KE
 _KEY = "test/hbh/aaaaaaaaaaaaaaaaaaaaaaaaa"
 _OTHER = "test/hbh/bbbbbbbbbbbbbbbbbbbbbbbbb"
 
+# Field order as executeQuery assembles it: the exception text, whose tail is the suffix
+# ReadBufferFromS3 appended, and only then the query. Reversing the two would make the
+# match line's own key unreachable from any test that trusts this fixture.
 _MATCH = (
     "2026.09.14 12:00:09.100000 [ 1111 ] {q-1} <Error> executeQuery: Code: 499. "
-    "DB::Exception: The specified key does not exist. (S3_ERROR) "
-    f"(in query: SELECT * FROM t): while reading key: {_KEY}, from bucket: b"
+    "DB::Exception: The specified key does not exist. This error happened for S3 disk: "
+    f"while reading key: {_KEY}, from bucket: b. (S3_ERROR) (from 1.2.3.4:5678) "
+    "(in query: SELECT * FROM t)"
 )
 
 
@@ -291,6 +295,86 @@ def test_the_key_cap_never_drops_a_key(tmp_path):
     assert _group(report, keys[MAX_EXPANDED_KEYS]) == [
         f"not expanded: per-report key cap {MAX_EXPANDED_KEYS} reached"
     ]
+
+
+def test_keys_named_by_the_failing_query_text_are_not_treated_as_matched_keys(tmp_path):
+    # A query may name anything, including this suffix. Counting its text as keys spends the
+    # report's key cap on strings no read touched, so a later match line's real key is the
+    # one that ends up unexpanded.
+    spoof = " ".join(
+        f"while reading key: spoof/k{i:04d}" for i in range(MAX_EXPANDED_KEYS + 50)
+    )
+    poisoned = _MATCH.replace("SELECT * FROM t", f"SELECT '{spoof}'")
+    matches = _logs(tmp_path)
+    matches.write_text(
+        f"{poisoned}\n{_MATCH.replace(_KEY, _OTHER)}\n", encoding="utf-8"
+    )
+
+    report = report_for(matches, tmp_path)
+
+    assert not any("spoof/" in line for line in report), report
+    # The second match line's key is real and must still be expanded, not capped out.
+    assert _group(report, _OTHER) != [
+        f"not expanded: per-report key cap {MAX_EXPANDED_KEYS} reached"
+    ], report
+
+
+def test_a_lifecycle_logger_named_by_the_query_text_is_not_a_lifecycle_line(tmp_path):
+    # The logger is a field, not a substring: a query that merely mentions one must not make
+    # its own failure line read as this object's history.
+    quoted = _MATCH.replace("SELECT * FROM t", "SELECT 'deleteFileFromS3'")
+    matches = _logs(tmp_path)
+    matches.write_text(f"{quoted}\n", encoding="utf-8")
+    # The failure line is in the logs too, which is how grep reaches it.
+    (tmp_path / "clickhouse-server.stress.log").write_text(
+        f"2026.09.14 12:00:01.000000 [ 1001 ] {{q-0}} <Test> DiskObjectStorageTransaction: "
+        f"Writing blob for path all_1_1_0/data.bin, key {_KEY}, size 4096\n"
+        f"{quoted}\n",
+        encoding="utf-8",
+    )
+
+    body = _group(report_for(matches, tmp_path), _KEY)
+
+    assert not any("executeQuery" in line for line in body), body
+    assert any("Writing blob for path" in line for line in body), body
+
+
+def test_a_query_id_holding_a_brace_still_gets_its_lifecycle(tmp_path):
+    # A client may set any query id and the formatter writes it unescaped, so the fields
+    # before the logger cannot be parsed. This is the silent direction: anchoring across the
+    # id would drop a real upload line rather than report a wrong one.
+    matches = _logs(tmp_path)
+    # Written after _logs, which lays down both log files: the hostile id is the whole point.
+    (tmp_path / "clickhouse-server.stress.log").write_text(
+        "2026.09.14 12:00:01.000000 [ 1001 ] {has}brace} <Test> DiskObjectStorageTransaction: "
+        f"Writing blob for path all_1_1_0/data.bin, key {_KEY}, size 4096\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "clickhouse-server.final.log").write_text("", encoding="utf-8")
+    matches.write_text(f"{_MATCH}\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), _KEY)
+
+    assert any("Writing blob for path all_1_1_0/data.bin" in line for line in body), body
+
+
+def test_a_query_id_naming_a_key_does_not_displace_the_matched_one(tmp_path):
+    # The id is as untrusted as the query text, and is printed before the exception. A full
+    # replica of the suffix in either is indistinguishable from the real thing, so what is
+    # guaranteed is that the read's own key is still found and expanded.
+    ids = " ".join(
+        f"while reading key: spoof/k{i:04d}" for i in range(MAX_EXPANDED_KEYS + 50)
+    )
+    poisoned = _MATCH.replace("{q-1}", f"{{qid {ids}}}")
+    matches = _logs(tmp_path)
+    matches.write_text(f"{poisoned}\n", encoding="utf-8")
+
+    report = report_for(matches, tmp_path)
+
+    assert not any("spoof/" in line for line in report), report
+    assert _group(report, _KEY) != [
+        f"not expanded: per-report key cap {MAX_EXPANDED_KEYS} reached"
+    ], report
 
 
 def test_the_per_key_line_cap_says_how_many_lines_it_omitted(tmp_path):
