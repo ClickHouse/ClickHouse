@@ -716,6 +716,8 @@ public:
 
     static String getSubcolumnNameForStream(const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, size_t initial_array_level = 0);
+    /// Rejects a stale `(path, true)` call, which would otherwise silently bind `true` to `prefix_len`.
+    static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
 
     /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
     static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
