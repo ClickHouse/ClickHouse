@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- Regression test for the "Virtual row does not cover sort column" logical error.
 -- ORDER BY matches only the key prefix (a): the collated constant stops the match. The virtual row
 -- conversion it builds reads one key column but outputs two, since the leading constant is emitted as
