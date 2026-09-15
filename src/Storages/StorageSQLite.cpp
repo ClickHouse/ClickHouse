@@ -173,9 +173,8 @@ StorageSQLite::StorageSQLite(
 
 StorageSQLite::SQLitePtr StorageSQLite::openConnectionIfNeeded(bool throw_on_error, bool allow_create)
 {
-    /// Guard the one-time lazy connection bootstrap. `read`, `write`, and the
-    /// `updateExternalDynamicMetadataIfExists` metadata hook all funnel through here, so the `sqlite_db`
-    /// shared_ptr member is only ever written under this mutex - a plain unsynchronized
+    /// Guard the one-time lazy connection bootstrap. `read` and `write` both funnel through here, so the
+    /// `sqlite_db` shared_ptr member is only ever written under this mutex - a plain unsynchronized
     /// `if (!sqlite_db) sqlite_db = openSQLiteDB(...)` in each of them would be a data race on the shared_ptr
     /// when two first queries run concurrently (e.g. after an `ATTACH`-while-unavailable).
     std::lock_guard lock(connection_mutex);
@@ -189,7 +188,7 @@ StorageSQLite::SQLitePtr StorageSQLite::openConnectionIfNeeded(bool throw_on_err
     return sqlite_db;
 }
 
-void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_context)
+void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_context, sqlite3 * connection)
 {
     if (!generated_columns_reclassification_pending.load(std::memory_order_acquire))
         return;
@@ -198,9 +197,15 @@ void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_contex
     if (!generated_columns_reclassification_pending.load(std::memory_order_relaxed))
         return;
 
-    /// The caller has just opened `sqlite_db`, so the remote schema that was unavailable at construction time
-    /// is now reachable and the pending generated-column classification can be re-derived and stored in the
-    /// in-memory metadata, where subsequent reads and writes pick it up.
+    /// The caller has just opened `connection` on the database file, so the remote schema that was unavailable
+    /// at construction time is now reachable and the pending generated-column classification can be re-derived
+    /// and stored in the in-memory metadata, where subsequent reads and writes pick it up.
+    ///
+    /// `connection` must be a freshly opened one, never the long-lived `sqlite_db` handle: that handle keeps
+    /// the file it was first opened on, so after the database file has been replaced at the same path it still
+    /// sees the old, unlinked file. If the table (or its generated column) only exists in the replacement, a
+    /// repair probing through the cached handle would keep observing the stale schema and never complete,
+    /// while `read`/`write` - which already run on fresh per-query connections - see the replacement.
     auto old_metadata = getInMemoryMetadataPtr(query_context, false);
     ColumnsDescription columns = old_metadata->getColumns();
 
@@ -208,7 +213,7 @@ void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_contex
     /// database that does not contain the table (e.g. an empty database that would be created in place of a
     /// still-missing file) must leave the flag set, otherwise the repair would be lost permanently once the
     /// real file becomes reachable.
-    if (!markRemoteGeneratedColumns(sqlite_db.get(), remote_table_or_query.getTableName(), columns, log))
+    if (!markRemoteGeneratedColumns(connection, remote_table_or_query.getTableName(), columns, log))
         return;
 
     StorageInMemoryMetadata new_metadata = *old_metadata;
@@ -235,12 +240,17 @@ void StorageSQLite::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
     /// operation runs on a stale classification silently.
     /// Non-creating probe: if the database file is still missing, keep the classification pending rather
     /// than opening a freshly created empty database (which contains no table and would otherwise mark the
-    /// repair as done). The real file becoming reachable later then still repairs the classification. The
-    /// guarded helper keeps this open race-free against a concurrent first `read`/`write`.
-    if (!openConnectionIfNeeded(/* throw_on_error */ false, /* allow_create */ false))
+    /// repair as done). The real file becoming reachable later then still repairs the classification.
+    ///
+    /// The probe is a fresh connection rather than the cached `sqlite_db` handle: the cached handle is pinned
+    /// to the file it was first opened on, so after a same-path replacement of the database file it would keep
+    /// observing the old schema and the repair would never complete (see `reclassifyGeneratedColumnsFromRemote`).
+    /// The lazy bootstrap of `sqlite_db` itself stays with the first `read`/`write`.
+    auto probe_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false, /* allow_create */ false);
+    if (!probe_connection)
         return;
 
-    reclassifyGeneratedColumnsFromRemote(query_context);
+    reclassifyGeneratedColumnsFromRemote(query_context, probe_connection.get());
 }
 
 VirtualColumnsDescription StorageSQLite::createVirtuals()
@@ -300,7 +310,8 @@ Pipe StorageSQLite::read(
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
-    reclassifyGeneratedColumnsFromRemote(context_);
+    /// Probes through the fresh per-query connection, i.e. the database the scan will actually run against.
+    reclassifyGeneratedColumnsFromRemote(context_, read_connection.get());
 
     storage_snapshot->check(column_names);
     NameSet local_only_columns = getLocalOnlyColumnNames(storage_snapshot->metadata);
@@ -570,10 +581,16 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
     /// Fail closed on a missing file, exactly like the read path and the `sqlite` table function.
     openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
 
+    /// A transaction is connection-wide in SQLite. Give every sink its own connection so chunk transactions from
+    /// concurrent inserts cannot overlap on the shared metadata connection (which can also be shared by all tables
+    /// of a `DatabaseSQLite`). The database was opened above, so this connection must not create a missing file.
+    auto write_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
+
     /// Last-resort repair for a path that reaches `write` without the pre-snapshot metadata hook. The snapshot
     /// passed to this call is already frozen, so this cannot repair the current pipeline, but it prevents the
     /// stale classification from persisting into later queries. Idempotent once the classification is repaired.
-    reclassifyGeneratedColumnsFromRemote(context_);
+    /// Probes through the fresh per-query connection, i.e. the database the sink will actually write to.
+    reclassifyGeneratedColumnsFromRemote(context_, write_connection.get());
 
     Names explicitly_inserted_columns;
     /// The context records the explicit column list of the INSERT being executed. Adopt it when this storage
@@ -594,11 +611,6 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
         if (insertion_column_names)
             explicitly_inserted_columns = *insertion_column_names;
     }
-
-    /// A transaction is connection-wide in SQLite. Give every sink its own connection so chunk transactions from
-    /// concurrent inserts cannot overlap on the shared metadata connection (which can also be shared by all tables
-    /// of a `DatabaseSQLite`). The database was opened above, so this connection must not create a missing file.
-    auto write_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
     return std::make_shared<SQLiteSink>(
         *this, metadata_snapshot, write_connection, remote_table_or_query.getTableName(), explicitly_inserted_columns);

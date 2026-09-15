@@ -63,15 +63,17 @@ public:
 
 private:
     /// Lazily open the SQLite connection on first use. Guards the one-time initialization so that concurrent
-    /// first queries (`read`, `write`, and the `updateExternalDynamicMetadataIfExists` metadata hook) do not
-    /// race on the `sqlite_db` shared_ptr member. Returns the open connection (also stored in `sqlite_db`), or
-    /// nullptr when the file is still unavailable and `throw_on_error` is false.
+    /// first queries (`read` and `write`) do not race on the `sqlite_db` shared_ptr member. Returns the open
+    /// connection (also stored in `sqlite_db`), or nullptr when the file is still unavailable and
+    /// `throw_on_error` is false.
     SQLitePtr openConnectionIfNeeded(bool throw_on_error, bool allow_create);
 
-    /// Re-derive the generated-column classification from the remote schema on the first successful open,
-    /// when it could not be applied at construction time because the database file was unavailable. Runs at
-    /// most once. See the constructor and `generated_columns_reclassification_pending`.
-    void reclassifyGeneratedColumnsFromRemote(ContextPtr query_context);
+    /// Re-derive the generated-column classification from the remote schema observed through `connection`, when
+    /// it could not be applied at construction time because the database file or table was unavailable. Runs at
+    /// most once. `connection` must be a freshly opened connection on `database_path` (never the cached
+    /// `sqlite_db` handle, which is pinned to the file it was first opened on and would miss a same-path
+    /// replacement of the database file). See the constructor and `generated_columns_reclassification_pending`.
+    void reclassifyGeneratedColumnsFromRemote(ContextPtr query_context, sqlite3 * connection);
 
     TableNameOrQuery remote_table_or_query;
     String database_path;
