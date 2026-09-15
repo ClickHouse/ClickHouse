@@ -72,6 +72,8 @@ private:
 
     /// Copies the parameters of the named LDAP server. Throws `BAD_ARGUMENTS` when the server
     /// is unknown or, with the original error attached, when its configuration failed to parse.
+    /// `ldap_server_parse_errors` is consulted before the blueprint, so a name that is in both
+    /// (two `ldap_servers` entries sharing it) fails closed.
     LDAPClient::Params getLDAPServerParams(const String & server) const TSA_REQUIRES(mutex);
 
     struct LDAPCacheEntry
@@ -90,7 +92,8 @@ private:
     LDAPParams ldap_client_params_blueprint TSA_GUARDED_BY(mutex) ;
     /// LDAP servers declared in config but rejected by `parseLDAPServer`, with the error.
     /// `checkLDAPCredentials` and `findLDAPUser` rethrow it so a misconfigured server fails
-    /// loud at use instead of degrading to "no such user". Rebuilt on every `setConfiguration`.
+    /// loud at use instead of degrading to "no such user". A name recorded here is never in
+    /// `ldap_client_params_blueprint`. Rebuilt on every `setConfiguration`.
     LDAPParseErrors ldap_server_parse_errors TSA_GUARDED_BY(mutex) ;
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;

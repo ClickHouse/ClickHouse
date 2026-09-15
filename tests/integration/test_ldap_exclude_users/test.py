@@ -9,6 +9,12 @@ locally in `users.xml`; `instance_b` defines only `app_user1`, so on that node a
 excluded `janedoe` has nowhere to fall through to and every login attempt must fail
 closed.
 
+The LDAP server is configured with `lookup_bind_dn`, so the forced lookup that `EXECUTE AS`
+performs for a target who has not logged in yet (`LDAPAccessStorage::findImpl` with
+`force_external_lookup`) is live on both nodes: a non-excluded LDAP user can be impersonated
+before ever logging in. The `test_execute_as_*` tests check that the exclusion refuses that
+lookup for `janedoe` before the server is contacted.
+
 The last test restarts `instance_b` with an invalid `exclude_users` entry, which
 discards its in-memory LDAP directory, so it must stay last in this module.
 """
@@ -102,6 +108,60 @@ def delete_ldap_group(ldap_cluster, group_cn):
     assert code == 0
 
 
+def add_ldap_user(ldap_cluster, user_cn):
+    # No `userPassword`: the entry only has to be found by the `user_dn_detection` search
+    # that the service bind runs, it never logs in itself.
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """echo "dn: cn={user_cn},ou=users,dc=example,dc=org
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+cn: {user_cn}
+sn: {user_cn}" | \
+ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_exclude_users code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def delete_ldap_user(ldap_cluster, user_cn):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """ldapdelete 'cn={user_cn},ou=users,dc=example,dc=org' \
+-H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+            """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_exclude_users code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert code == 0
+
+
 def query_as_admin(instance, sql):
     return instance.query(sql, user="common_user", password="qwerty")
 
@@ -114,9 +174,7 @@ def ldap_user_count(instance, user_name):
 
 
 def count_skip_log_lines(instance, user_name):
-    return len(
-        instance.grep_in_log(f"Skipping excluded user {user_name}").splitlines()
-    )
+    return len(instance.grep_in_log(f"Skipping excluded user {user_name}").splitlines())
 
 
 def setup_distributed_tables():
@@ -263,6 +321,60 @@ def test_interserver_query_as_excluded_user_fails_on_remote_node():
         assert ldap_user_count(instance_b, "janedoe") == "0"
     finally:
         drop_distributed_tables()
+
+
+def test_execute_as_excluded_user_resolves_to_local_definition():
+    """
+    `EXECUTE AS` resolves its target with `find(..., force_external_lookup = true)`, which
+    lets the LDAP directory service-bind with `lookup_bind_dn` and materialise a user who has
+    never logged in. On instance_a the excluded `janedoe` must come out as the local
+    `users.xml` definition, and the LDAP directory must not have created her.
+    """
+    assert query_as_admin(instance_a, "EXECUTE AS janedoe SELECT currentUser()") == TSV(
+        [["janedoe"]]
+    )
+    assert query_as_admin(
+        instance_a, "SELECT storage FROM system.users WHERE name = 'janedoe'"
+    ) == TSV([["users_xml"]])
+    assert ldap_user_count(instance_a, "janedoe") == "0"
+
+
+def test_execute_as_excluded_user_without_local_definition_fails_closed():
+    """
+    instance_b has no local `janedoe`, so the first, in-memory pass of the `EXECUTE AS`
+    resolver misses everywhere and the forced pass reaches the LDAP directory. With
+    `lookup_bind_dn` configured that pass would materialise her from LDAP; the exclusion must
+    refuse the name before the server is contacted, leaving `UNKNOWN_USER`.
+    """
+    skip_lines_before = count_skip_log_lines(instance_b, "janedoe")
+    error = instance_b.query_and_get_error(
+        "EXECUTE AS janedoe SELECT currentUser()",
+        user="common_user",
+        password="qwerty",
+    )
+    assert "UNKNOWN_USER" in error, error
+    assert "There is no user `janedoe`" in error, error
+    # Nobody authenticates as janedoe here, so the only source of this line is the forced
+    # overload of `findImpl`: the forced pass reached the directory and was refused there.
+    assert count_skip_log_lines(instance_b, "janedoe") > skip_lines_before
+    assert ldap_user_count(instance_b, "janedoe") == "0"
+
+
+def test_execute_as_forced_lookup_materializes_non_excluded_ldap_user(ldap_cluster):
+    """
+    Positive control for the previous test: the same statement on the same node, for an LDAP
+    user who is not excluded and has never logged in, does go through the service bind and
+    materialises the user in the LDAP directory. So `janedoe` is refused because of
+    `exclude_users` alone, not because the directory never looks anything up.
+    """
+    add_ldap_user(ldap_cluster, user_cn="ldap_only_user")
+    try:
+        assert query_as_admin(
+            instance_b, "EXECUTE AS ldap_only_user SELECT currentUser()"
+        ) == TSV([["ldap_only_user"]])
+        assert ldap_user_count(instance_b, "ldap_only_user") == "1"
+    finally:
+        delete_ldap_user(ldap_cluster, user_cn="ldap_only_user")
 
 
 def test_excluded_user_can_be_defined_locally_with_ldap_authentication():

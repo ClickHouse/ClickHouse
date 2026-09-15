@@ -195,12 +195,16 @@ public:
         std::chrono::seconds verification_cooldown{0};
 
         /// How long to wait for the result of a bind or of a StartTLS negotiation on an established connection (`LDAP_OPT_TIMEOUT`).
-        /// Searches are bounded by `search_timeout` instead.
-        std::chrono::seconds operation_timeout{40};
+        /// Searches are bounded by `search_timeout` instead. Unset means `default_operation_timeout`; the value is kept optional
+        /// so that a build of libldap without the option can reject an explicitly configured value instead of ignoring it.
+        static constexpr std::chrono::seconds default_operation_timeout{40};
+        std::optional<std::chrono::seconds> operation_timeout;
         /// How long to wait for the TCP connection to the server to be established, including the TLS handshake
-        /// (`LDAP_OPT_NETWORK_TIMEOUT`).
-        std::chrono::seconds network_timeout{30};
-        /// Time limit passed with each search request (`ldap_search_ext_s`): requested from the server and enforced on the client.
+        /// (`LDAP_OPT_NETWORK_TIMEOUT`). Unset means `default_network_timeout`; optional for the same reason as `operation_timeout`.
+        static constexpr std::chrono::seconds default_network_timeout{30};
+        std::optional<std::chrono::seconds> network_timeout;
+        /// Time limit passed with each search request (`ldap_search_ext_s`) and set as `LDAP_OPT_TIMELIMIT`: requested from the
+        /// server and enforced on the client. Not optional because both are part of the base LDAP API, unlike the two options above.
         std::chrono::seconds search_timeout{20};
         UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
 
@@ -212,6 +216,21 @@ public:
         /// True for search-and-bind (`bind_dn` is exactly `{user_dn}`).
         bool bindsAsDetectedUserDN() const { return bind_dn == DETECTED_USER_DN_PLACEHOLDER; }
 
+        /// True when substituting the placeholders into `search_template` (a `base_dn` or
+        /// `search_filter` of `user_dn_detection`) makes the result depend on the login:
+        /// directly through `{user_name}`, or through `{bind_dn}`/`{user_dn}` while `bind_dn`
+        /// is a template that carries `{user_name}`. In search-and-bind `bind_dn` is `{user_dn}`
+        /// itself, so only the literal `{user_name}` counts there (and `parseLDAPServer` rejects
+        /// the DN placeholders in the detection, because no DN is known before it has run).
+        /// This is the single definition of "target-specific" shared by the configuration check
+        /// in `parseLDAPServer` and by `detectUserDN`, which treats `LDAP_NO_SUCH_OBJECT` as
+        /// "user not found" only for such a `base_dn`.
+        bool templateDependsOnUserName(const String & search_template) const;
+
+        /// Feeds every field that influences the outcome of a bind or a search into `hash`. `ExternalAuthenticators` uses
+        /// the result as the key of the `verification_cooldown` cache and to detect a configuration reload that raced with
+        /// an authentication in flight, so a field left out here lets a result obtained under the old policy survive a change.
+        /// `verification_cooldown` itself is deliberately not hashed: it bounds the lifetime of a result, not its meaning.
         void updateHash(SipHash & hash) const;
     };
 
@@ -271,9 +290,9 @@ protected:
     /// Runs `params.user_dn_detection` and returns the single DN it yields. Throws
     /// `LDAP_ERROR` when more than one entry matches. When `tolerate_missing_user` is set an
     /// empty result yields nullopt, otherwise it throws. `LDAP_NO_SUCH_OBJECT` counts as an
-    /// empty result only when `base_dn` substitutes `{user_name}` (the base then legitimately
-    /// does not exist for an unknown user); for a static `base_dn` it is a misconfiguration
-    /// and always throws.
+    /// empty result only when `base_dn` depends on the login as defined by
+    /// `Params::templateDependsOnUserName` (the base then legitimately does not exist for an
+    /// unknown user); for a static `base_dn` it is a misconfiguration and always throws.
     MAYBE_NORETURN std::optional<String> detectUserDN(bool tolerate_missing_user);
 
     void closeConnection() noexcept;

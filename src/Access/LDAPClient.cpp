@@ -82,8 +82,25 @@ void LDAPClient::RoleSearchParams::updateHash(SipHash & hash) const
 
 void LDAPClient::Params::updateHash(SipHash & hash) const
 {
+    ::updateHash(hash, static_cast<int>(protocol_version));
+
     ::updateHash(hash, host);
     ::updateHash(hash, port);
+
+    ::updateHash(hash, static_cast<int>(enable_tls));
+    ::updateHash(hash, static_cast<int>(tls_minimum_protocol_version));
+    ::updateHash(hash, tls_maximum_protocol_version.has_value());
+    if (tls_maximum_protocol_version)
+        ::updateHash(hash, static_cast<int>(*tls_maximum_protocol_version));
+    ::updateHash(hash, static_cast<int>(tls_require_cert));
+    ::updateHash(hash, tls_cert_file);
+    ::updateHash(hash, tls_key_file);
+    ::updateHash(hash, tls_ca_cert_file);
+    ::updateHash(hash, tls_ca_cert_dir);
+    ::updateHash(hash, tls_cipher_suite);
+
+    ::updateHash(hash, static_cast<int>(sasl_mechanism));
+
     ::updateHash(hash, bind_dn);
     ::updateHash(hash, user);
     ::updateHash(hash, password);
@@ -91,10 +108,33 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     /// service credentials (i.e. one in flight during a reload) is not cached.
     ::updateHash(hash, lookup_bind_dn);
     ::updateHash(hash, lookup_password);
-    ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
 
+    ::updateHash(hash, operation_timeout.has_value());
+    if (operation_timeout)
+        ::updateHash(hash, operation_timeout->count());
+    ::updateHash(hash, network_timeout.has_value());
+    if (network_timeout)
+        ::updateHash(hash, network_timeout->count());
+    ::updateHash(hash, search_timeout.count());
+    ::updateHash(hash, search_limit);
+
+    ::updateHash(hash, static_cast<int>(follow_referrals));
+
+    ::updateHash(hash, user_dn_detection.has_value());
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
+}
+
+bool LDAPClient::Params::templateDependsOnUserName(const String & search_template) const
+{
+    if (search_template.contains("{user_name}"))
+        return true;
+
+    /// `{bind_dn}`, and `{user_dn}` (which equals the bind DN until the detection has run), are
+    /// substituted from the `bind_dn` template, so they carry the login exactly when that
+    /// template does. In search-and-bind `bind_dn` is `{user_dn}` itself and carries nothing.
+    return bind_dn.contains("{user_name}")
+        && (search_template.contains("{bind_dn}") || search_template.contains("{user_dn}"));
 }
 
 LDAPClient::LDAPClient(const Params & params_)
@@ -185,7 +225,14 @@ namespace
             case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
             case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
             case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
+#ifdef LDAP_OPT_X_TLS_PROTOCOL_TLS1_3
             case LDAPClient::Params::TLSProtocolVersion::TLS1_3: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_3; break;
+#else
+            /// The constant appeared in OpenLDAP 2.4.47; older builds have `LDAP_OPT_X_TLS_PROTOCOL_MIN`/`MAX` but no way to name
+            /// TLS 1.3 to them. Refuse the configured value instead of guessing, in line with the other extensions in `openConnection`.
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_3:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls1.3' is not supported by this build of libldap");
+#endif
         }
         return value;
     }
@@ -483,22 +530,31 @@ void LDAPClient::connect()
     handleError(ldap_set_option(handle, LDAP_OPT_KEEPCONN, LDAP_OPT_ON));
 #endif
 
+    /// The options below are extensions that not every libldap provides. When one is missing, the default behaviour
+    /// is left to the library as before, but a value that was configured explicitly is refused rather than ignored:
+    /// the operator asked for a bound that this build cannot enforce.
 #ifdef LDAP_OPT_TIMEOUT
     {
         ::timeval operation_timeout{};
-        operation_timeout.tv_sec = params.operation_timeout.count();
+        operation_timeout.tv_sec = params.operation_timeout.value_or(Params::default_operation_timeout).count();
         operation_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
     }
+#else
+    if (params.operation_timeout)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'operation_timeout' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_NETWORK_TIMEOUT
     {
         ::timeval network_timeout{};
-        network_timeout.tv_sec = params.network_timeout.count();
+        network_timeout.tv_sec = params.network_timeout.value_or(Params::default_network_timeout).count();
         network_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
     }
+#else
+    if (params.network_timeout)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'network_timeout' is not supported by this build of libldap");
 #endif
 
     {
@@ -526,6 +582,9 @@ void LDAPClient::connect()
         int value = toLDAPTLSProtocolVersion(*params.tls_maximum_protocol_version);
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MAX, &value));
     }
+#else
+    if (params.tls_maximum_protocol_version)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_maximum_protocol_version' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_REQUIRE_CERT
@@ -664,13 +723,15 @@ std::optional<String> LDAPClient::detectUserDN(bool tolerate_missing_user)
     if (!params.user_dn_detection)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP user DN detection requested while 'user_dn_detection' is not configured");
 
-    /// A `base_dn` that substitutes `{user_name}` (e.g. `cn={user_name},ou=users,...`) does
-    /// not exist for an unknown user and the directory answers the search itself with
-    /// `LDAP_NO_SUCH_OBJECT`; that is the same "user does not exist" signal as an empty result.
-    /// A static `base_dn` (e.g. `dc=example,dc=org`) must exist, so the same code there means
-    /// the configuration points at a wrong naming context; tolerating it would turn every login
-    /// through this server into a silent "user not found" instead of an `LDAP_ERROR`.
-    const bool base_dn_depends_on_user = params.user_dn_detection->base_dn.contains("{user_name}");
+    /// A `base_dn` that depends on the login (`cn={user_name},ou=users,...`, or `{bind_dn}`
+    /// with a `bind_dn` template carrying `{user_name}`) does not exist for an unknown user
+    /// and the directory answers the search itself with `LDAP_NO_SUCH_OBJECT`; that is the
+    /// same "user does not exist" signal as an empty result. A static `base_dn` (e.g.
+    /// `dc=example,dc=org`) must exist, so the same code there means the configuration points
+    /// at a wrong naming context; tolerating it would turn every login through this server
+    /// into a silent "user not found" instead of an `LDAP_ERROR`. The rule is the one
+    /// `parseLDAPServer` accepts the configuration with, so the two can never disagree.
+    const bool base_dn_depends_on_user = params.templateDependsOnUserName(params.user_dn_detection->base_dn);
     const auto results = search(*params.user_dn_detection, /* tolerate_no_such_object = */ tolerate_missing_user && base_dn_depends_on_user);
 
     if (results.empty())

@@ -11,6 +11,18 @@
             <port>1389</port>
             <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
             <enable_tls>no</enable_tls>
+            <!-- Service-bind credentials opt the server in to the forced lookup that `EXECUTE AS`
+                 performs for a target who has not logged in yet (`LDAPAccessStorage::findImpl`
+                 with `force_external_lookup`). Without them `findLDAPUser` reports "not found"
+                 for every name before contacting the server, and the `EXECUTE AS` tests could
+                 not tell the `exclude_users` gate apart from a directory that never looks
+                 anything up. -->
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn={user_name}))</search_filter>
+            </user_dn_detection>
         </openldap>
     </ldap_servers>
     <!-- Worst-case order: the LDAP directory is consulted FIRST. Without `exclude_users`
