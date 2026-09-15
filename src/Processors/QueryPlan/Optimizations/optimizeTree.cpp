@@ -1,6 +1,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -15,8 +17,11 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
+#include <fmt/ranges.h>
 
+#include <algorithm>
 #include <memory>
+#include <ranges>
 #include <stack>
 #include <unordered_map>
 #include <utility>
@@ -89,6 +94,18 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.lower_array_join_function,
         optimization_settings.enable_lazy_columns_replication,
     };
+}
+
+static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
+{
+    if (reject_reasons.empty())
+        return "no projection was considered";
+
+    std::vector<String> formatted_reasons;
+    for (const auto & [projection, reason] : reject_reasons)
+        formatted_reasons.push_back(fmt::format("projection {} is rejected because {}", projection, reason));
+
+    return fmt::format("{}", fmt::join(formatted_reasons, "; "));
 }
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
@@ -222,6 +239,7 @@ void optimizeTreeSecondPass(
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
+    std::unordered_map<String, String> projection_reject_reasons;
     bool has_reading_from_mt = false;
 
     const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
@@ -459,11 +477,15 @@ void optimizeTreeSecondPass(
             if (frame.next_child == 0)
             {
                 has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+                const bool is_aggregation_step = typeid_cast<const AggregatingStep *>(frame.node->step.get()) || typeid_cast<const DistinctStep *>(frame.node->step.get());
 
-                /// Projection optimization relies on PK optimization
-                if (optimization_settings.optimize_projection)
-                    if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
-                        applied_projection_names.insert(*applied_projection);
+                if (optimization_settings.optimize_projection && is_aggregation_step)
+                {
+                    auto result = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings);
+                    projection_reject_reasons.merge(result.projection_reject_reasons);
+                    if (result.applied_projection)
+                        applied_projection_names.insert(*result.applied_projection);
+                }
 
                 if (optimization_settings.query_plan_optimize_count_from_text_index)
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
@@ -484,12 +506,14 @@ void optimizeTreeSecondPass(
             }
         }
 
-        if (optimization_settings.optimize_projection)
+        const auto * reading = typeid_cast<const ReadFromMergeTree *>(stack.back().node->step.get());
+        if (reading && optimization_settings.optimize_projection)
         {
-            /// Projection optimization relies on PK optimization
-            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes, optimization_settings))
+            auto result = optimizeUseNormalProjections(stack, nodes, optimization_settings);
+            projection_reject_reasons.merge(result.projection_reject_reasons);
+            if (result.applied_projection)
             {
-                applied_projection_names.insert(*applied_projection);
+                applied_projection_names.insert(*result.applied_projection);
 
                 if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
                 {
@@ -796,14 +820,20 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
         throw Exception(
-            ErrorCodes::PROJECTION_NOT_USED, "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+            ErrorCodes::PROJECTION_NOT_USED,
+            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1: {}",
+            describeProjectionRejections(projection_reject_reasons));
 
     if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt
         && !applied_projection_names.contains(optimization_settings.force_projection_name))
+    {
+        auto it = projection_reject_reasons.find(optimization_settings.force_projection_name);
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Projection {} is specified in setting force_optimize_projection_name but not used",
-            optimization_settings.force_projection_name);
+            "Projection {} is specified in setting force_optimize_projection_name but not used: {}",
+            optimization_settings.force_projection_name,
+            it != projection_reject_reasons.end() ? it->second : "the projection was not considered by any read");
+    }
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
