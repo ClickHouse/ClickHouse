@@ -106,6 +106,14 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
+    /** Whether the function answers the same for the same input within one query. The shortcut for a
+      * single sparse argument executes the function once for the column's default value and stamps that
+      * one result onto every default row, which only stands for a function that does. `rand`,
+      * `generateUUIDv4` and friends take an argument precisely to defeat common subexpression
+      * elimination, so their per-row draws must survive a sparse argument.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+
     /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
       * Otherwise, convert all replicated columns to ordinary columns.
       */
