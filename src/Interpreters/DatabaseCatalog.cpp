@@ -2322,8 +2322,15 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
 
         LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
 
-        /// We have to set these access rights to make recursive removal work
-        disk->chmod(unused_dir, S_IRWXU);
+        /// We have to set these access rights to make recursive removal work.
+        /// Only for a directory: removal needs write and execute permissions on the directory whose
+        /// entries are unlinked, not any permission on the entry itself. The entries that reach this
+        /// function are exactly the ones that failed the "is a directory" test in
+        /// `cleanupStoreDirectoryTask`, so this can be a regular file - and widening its mode to
+        /// `S_IRWXU` would make it executable, which is all that `executable()` asks of a script
+        /// planted under `user_scripts/`.
+        if (S_ISDIR(st.st_mode))
+            disk->chmod(unused_dir, S_IRWXU);
 
         disk->removeRecursive(unused_dir);
 
