@@ -90,7 +90,8 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     for (const auto & arg : args)
     {
         const IAST * arg_raw = arg.get();
-        if (const auto * func = arg_raw->as<const ASTFunction>(); func && func->name == "_CAST")
+        if (const auto * func = arg_raw->as<const ASTFunction>();
+            func && func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2)
             arg_raw = func->arguments->children.at(0).get();
 
         if (!arg_raw->as<const ASTLiteral>())
