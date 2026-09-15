@@ -6,8 +6,9 @@
 -- primary key did not exclude was read.
 --
 -- The query condition cache hides this after the first execution - whichever run does apply the index
--- records the granules it discarded, and later runs prune up front from the cache - so the cache is
--- dropped here to measure the cold path, which is the one that was wrong.
+-- records the granules it discarded, and later runs prune up front from the cache. The cache is turned
+-- off for this test rather than dropped, because dropping it is server-wide and would perturb whatever
+-- else is running against the same server.
 
 DROP TABLE IF EXISTS t_autopr_skip_index;
 
@@ -25,8 +26,7 @@ SET use_skip_indexes_on_data_read = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
-
-SYSTEM DROP QUERY CONDITION CACHE;
+SET use_query_condition_cache = 0;
 
 SELECT sum(key) FROM t_autopr_skip_index WHERE np < 20000
 FORMAT Null SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
@@ -42,10 +42,6 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 -- The decision needs statistics from an earlier execution, so this run only collects them.
 SELECT sum(key) FROM t_autopr_skip_index WHERE np < 20000
 FORMAT Null SETTINGS log_comment = '05100_warmup';
-
--- Measure on a cold condition cache, so the rows read reflect the index being applied rather than a
--- cache entry left behind by one of the runs above.
-SYSTEM DROP QUERY CONDITION CACHE;
 
 SELECT sum(key) FROM t_autopr_skip_index WHERE np < 20000
 FORMAT Null SETTINGS log_comment = '05100_with_replicas';
