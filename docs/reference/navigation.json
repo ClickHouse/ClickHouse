@@ -945,6 +945,7 @@
           ]
         },
         "reference/formats/SQLInsert",
+        "reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",

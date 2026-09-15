@@ -43,6 +43,33 @@ void convertToHeader(QueryPlan & query_plan, const Block & header, ContextPtr co
 
 }
 
+NameSet StorageWithCommonVirtualColumns::getPlanVirtualColumnNames(const StorageMetadataPtr & metadata)
+{
+    NameSet result;
+    for (const auto & column : metadata->virtuals.getNamesAndTypes(VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan))
+        result.insert(column.name);
+    return result;
+}
+
+NameSet StorageWithCommonVirtualColumns::getLocalOnlyColumnNames(const StorageMetadataPtr & metadata)
+{
+    NameSet result = getPlanVirtualColumnNames(metadata);
+    for (const auto & column : metadata->getColumns())
+    {
+        /// Only an `ALIAS` column is local: it has no storage anywhere and is expanded into its expression
+        /// on read. A `MATERIALIZED` column is a physical column of the external data source, whatever its
+        /// classification carries: with an expression, the value is computed at `INSERT` time and written to
+        /// the source like any other physical column, and read back from there; without an expression, the
+        /// classification is the marker an external storage puts on a column the source generates itself
+        /// (`StorageSQLite` does that for SQLite `GENERATED ALWAYS AS` columns). Either way the column is
+        /// both projected from the source and pushdown-eligible, so it must not be local-only: otherwise a
+        /// predicate over it would be evaluated locally while the projection still comes from the source.
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            result.insert(column.name);
+    }
+    return result;
+}
+
 void StorageWithCommonVirtualColumns::read(
     QueryPlan & query_plan,
     const Names & column_names,

@@ -1,0 +1,10 @@
+enable_analyzer = 1
+generated filter, default	1
+generated filter, strict	1
+generated column values	1	2
+generated column values	2	3
+enable_analyzer = 0
+generated filter, default	1
+generated filter, strict	1
+generated column values	1	2
+generated column values	2	3
