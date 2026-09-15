@@ -144,6 +144,10 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 /// replica puts on the wire is a sorted block, and pricing an unsorted sample of the very same rows
 /// misses by the whole difference between the two - a monotonic `UInt64` key column compresses 7.8x
 /// sorted and 3.0-3.9x in hash order.
+///
+/// The description is rebuilt ascending here instead of carrying the replica's own
+/// `group_by_sort_description` down: what the ratio responds to is equal and neighbouring keys
+/// ending up adjacent, which every direction and null placement gives equally.
 static IColumn::Permutation keyOrderPermutation(
     const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types)
 {
