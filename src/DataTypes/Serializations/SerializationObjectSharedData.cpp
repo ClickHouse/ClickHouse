@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnMap.h>
@@ -667,15 +668,21 @@ void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     if (structure_state.need_all_paths)
         reserveOrThrowTooMany(structure_granule.all_paths, structure_granule.num_paths, "paths");
 
+    /// The per-granule path list is read in full before any row of the granule is produced and the
+    /// stream chooses its length, so the loop must observe cancellation from inside.
+    PrefixReadCancellationChecker cancellation_checker;
+
     /// Read list of paths.
     for (size_t i = 0; i != structure_granule.num_paths; ++i)
     {
-        readStringBinary(path, buf);
+        readStringBinaryCancellable(path, buf, cancellation_checker);
         if (structure_state.requested_paths.contains(path) || structure_state.requested_paths_subcolumns.contains(path) || structure_state.checkIfPathMatchesAnyRequestedPrefix(path))
             structure_granule.position_to_requested_path[i] = path;
 
         if (structure_state.need_all_paths)
             structure_granule.all_paths.push_back(path);
+
+        cancellation_checker.check();
     }
 }
 
@@ -915,6 +922,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 size_t num_substreams = 0;
                 readVarUInt(num_substreams, *paths_substreams_stream);
                 reserveOrThrowTooMany(path_info.substreams, num_substreams, "substreams for a path");
+                /// Not checkpointed, unlike the path-name reads above: the enclosing loop covers only
+                /// the paths whose subcolumns the query asked for, and a substream name is derived by
+                /// the writer from the type's substream path rather than taken from user data.
                 for (size_t i = 0; i != num_substreams; ++i)
                 {
                     path_info.substreams.emplace_back();

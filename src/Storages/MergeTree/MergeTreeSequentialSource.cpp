@@ -305,7 +305,9 @@ try
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (!isRetryableException(std::current_exception()))
+    /// A cancellation raised inside the Object prefix read says nothing about the part's health,
+    /// and a query-driven pipeline can run this source, so the source type is not a safe proxy.
+    if (!isCancelledPrefixRead() && !isRetryableException(std::current_exception()))
         read_task_info->data_part_info->reportBroken();
     throw;
 }
