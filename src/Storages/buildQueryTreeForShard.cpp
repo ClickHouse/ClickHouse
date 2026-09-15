@@ -32,6 +32,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <IO/WriteHelpers.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -77,6 +78,17 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The side of a global join that is materialized into a temporary table on the initiator, the other
+/// one being read by each replica: the right side, except for a RIGHT JOIN reached through a path
+/// that allows the right table to be the one read with replicas.
+QueryTreeNodePtr & getMaterializedTableExpressionNode(JoinNode & join_node, bool allow_global_join_for_right_table)
+{
+    if (allow_global_join_for_right_table && join_node.getKind() == JoinKind::Right)
+        return join_node.getLeftTableExpressionNode();
+
+    return join_node.getRightTableExpressionNode();
+}
 
 /// Return a clone of the defining expression of an inlineable `ALIAS` column node, or nullptr otherwise.
 /// A JOIN / CROSS_JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
@@ -279,8 +291,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_)
+    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool allow_global_join_for_right_table_)
         : Base(context_)
+        , allow_global_join_for_right_table(allow_global_join_for_right_table_)
     {}
 
     struct InFunctionOrJoin
@@ -299,14 +312,15 @@ public:
         return global_in_or_join_nodes;
     }
 
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child) const
     {
         auto * function_node = parent->as<FunctionNode>();
         if (function_node && isNameOfGlobalInFunction(function_node->getFunctionName()))
             return false;
 
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getLocality() == JoinLocality::Global && join_node->getRightTableExpressionNode() == child)
+        if (join_node && join_node->getLocality() == JoinLocality::Global
+            && getMaterializedTableExpressionNode(*join_node, allow_global_join_for_right_table) == child)
             return false;
 
         return true;
@@ -416,6 +430,7 @@ private:
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
+    bool allow_global_join_for_right_table = false;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -893,7 +908,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     const auto & column_source_to_columns = collect_column_source_to_columns_visitor.getColumnSourceToColumns();
 
-    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext());
+    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext(), allow_global_join_for_right_table);
     visitor.visit(query_tree_to_modify);
 
     auto replacement_map = visitor.getReplacementMap();
@@ -1035,18 +1050,44 @@ public:
     void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto * table_node = node->as<TableNode>())
+        {
             storages.push_back(table_node->getStorage());
+            table_nodes.push_back(table_node);
+        }
         else if (auto * table_func_node = node->as<TableFunctionNode>())
         {
             /// See https://github.com/ClickHouse/ClickHouse/issues/77990
             /// Now that parallel replicas support TableFunctionRemote, GlobalJoin also needs to support TableFunctionRemote.
             const auto & name = table_func_node->getTableFunctionName();
             if (name == "cluster" || name == "clusterAllReplicas" || name == "remote" || name == "remoteSecure")
+            {
                 storages.push_back(table_func_node->getStorage());
+                table_nodes.push_back(nullptr);
+            }
+            else
+                has_uncollected_table_function = true;
         }
     }
 
+    /// The materialized side of a GLOBAL join and the arguments of a GLOBAL IN are read on the
+    /// initiator and shipped as temporary tables, so no replica reads the storages under them.
+    /// Same two cases, in the same order, as the collector that does the materializing.
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        auto * function_node = parent->as<FunctionNode>();
+        if (function_node && isNameOfGlobalInFunction(function_node->getFunctionName()))
+            return false;
+
+        auto * join_node = parent->as<JoinNode>();
+        return !(join_node && join_node->getLocality() == JoinLocality::Global
+            && getMaterializedTableExpressionNode(*join_node, /*allow_global_join_for_right_table=*/true) == child);
+    }
+
     std::vector<StoragePtr> storages;
+    /// Parallel to `storages`; null where the storage came from a table function, which has no TableNode.
+    std::vector<const TableNode *> table_nodes;
+    /// Set when a table function was left out of `storages`, which on its own reads as "no storages".
+    bool has_uncollected_table_function = false;
 };
 
 class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>
@@ -1055,13 +1096,34 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>;
     using Base::Base;
 
-    static bool allStoragesAreMergeTree(QueryTreeNodePtr & node)
+    /// Whether the materialized side may be left for each replica to read on its own.
+    bool materializedSideCanStayLocal(JoinNode & join_node)
     {
         CollectStoragesVisitor collect_storages;
-        collect_storages.visit(node);
-        for (const auto & storage : collect_storages.storages)
-            if (!storage->isMergeTree())
+        collect_storages.visit(getMaterializedTableExpressionNode(join_node, /*allow_global_join_for_right_table=*/true));
+
+        const bool is_right_join = join_node.getKind() == JoinKind::Right;
+
+        /// An uncollected table function leaves `storages` empty, which the loop below would read
+        /// as all-MergeTree.
+        if (is_right_join && collect_storages.has_uncollected_table_function)
+            return false;
+
+        for (size_t i = 0; i < collect_storages.storages.size(); ++i)
+        {
+            const auto & storage = collect_storages.storages[i];
+            const auto * table_node = collect_storages.table_nodes[i];
+
+            /// Nothing else checks eligibility on a RIGHT JOIN's materialized side: the candidate
+            /// walk admits it by node type alone.
+            if (is_right_join && table_node)
+            {
+                if (!canUseTableForParallelReplicas(*table_node, getContext()))
+                    return false;
+            }
+            else if (!storage->isMergeTree())
                 return false;
+        }
 
         return true;
     }
@@ -1071,7 +1133,7 @@ public:
         if (auto * join_node = node->as<JoinNode>())
         {
             bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
-            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpressionNode());
+            bool should_use_global_join = !prefer_local_join || !materializedSideCanStayLocal(*join_node);
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
         }
@@ -1080,7 +1142,7 @@ public:
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getRightTableExpressionNode() == child)
+        if (join_node && getMaterializedTableExpressionNode(*join_node, /*allow_global_join_for_right_table=*/true) == child)
             return false;
 
         return true;
