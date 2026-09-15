@@ -53,6 +53,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -113,6 +114,21 @@ static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 // No idea why
 namespace
 {
+
+bool isNaNPartitionValue(const Field & field, DataTypePtr type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            return !field.isNull()
+                && isNaNPartitionValue(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+            return !field.isNull() && std::isnan(field.safeGet<Float64>());
+        default:
+            return false;
+    }
+}
 
 bool canDumpIcebergStats(const Field & field, DataTypePtr type)
 {
@@ -443,7 +459,8 @@ void generateManifestList(
     Int64 manifest_length,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots)
+    bool use_previous_snapshots,
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries)
 {
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -460,8 +477,52 @@ void generateManifestList(
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
-    for (const auto & manifest_entry_name : manifest_entry_names)
+    /// Writes the `partitions` field summary of one manifest-list entry. Every manifest written here holds
+    /// exactly one partition tuple, so `lower_bound == upper_bound` per partition field; readers use these
+    /// bounds to skip whole manifests. Left null when no summaries are supplied (unpartitioned table).
+    auto write_partition_summary = [&](avro::GenericRecord & entry, size_t entry_idx)
     {
+        if (entry_partition_summaries.empty())
+            return;
+
+        auto & partitions_field = entry.field(Iceberg::f_partitions);
+        partitions_field.selectBranch(1);
+        auto & summaries = partitions_field.value<avro::GenericArray>();
+        auto summary_schema = summaries.schema()->leafAt(0);
+        for (const auto & [partition_value, partition_type] : entry_partition_summaries[entry_idx])
+        {
+            avro::GenericDatum summary_datum(summary_schema);
+            auto & summary_record = summary_datum.value<avro::GenericRecord>();
+            const bool is_null = partition_value.isNull();
+            summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
+            if (!is_null)
+            {
+                if (isNaNPartitionValue(partition_value, partition_type))
+                {
+                    /// NaN float/double partition value: record it via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
+                    auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
+                    contains_nan.selectBranch(1);
+                    contains_nan.value<bool>() = true;
+                }
+                else if (canDumpIcebergStats(partition_value, partition_type))
+                {
+                    auto bound = dumpFieldToBytes(partition_value, partition_type);
+                    auto & lower = summary_record.field(Iceberg::f_lower_bound);
+                    lower.selectBranch(1);
+                    lower.value<std::vector<uint8_t>>() = bound;
+                    auto & upper = summary_record.field(Iceberg::f_upper_bound);
+                    upper.selectBranch(1);
+                    upper.value<std::vector<uint8_t>>() = bound;
+                }
+                /// else: a partition type whose bounds we cannot serialize (e.g. `Float`); leave the bounds null, matching the data-file statistics path.
+            }
+            summaries.value().push_back(summary_datum);
+        }
+    };
+
+    for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
+    {
+        const auto & manifest_entry_name = manifest_entry_names[entry_idx];
         avro::GenericDatum entry_datum(schema.root());
         avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
 
@@ -530,6 +591,8 @@ void generateManifestList(
             0,
             Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
+
+        write_partition_summary(entry, entry_idx);
 
         writer.write(entry_datum);
     }
@@ -894,6 +957,7 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries_in_storage;
     Strings manifest_entries;
     Int64 manifest_lengths = 0;
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
@@ -970,6 +1034,17 @@ bool IcebergStorageSink::initializeMetadata()
             manifest_entries_in_storage.push_back(storage_manifest_entry_name);
             manifest_entries.push_back(manifest_entry_name);
 
+            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
+            if (partitioner)
+            {
+                const auto & partition_types = partitioner->getResultTypes();
+                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+                partition_summary.reserve(partition_key.size());
+                for (size_t i = 0; i < partition_key.size(); ++i)
+                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                entry_partition_summaries.push_back(std::move(partition_summary));
+            }
+
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(storage_manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
@@ -1004,7 +1079,9 @@ bool IcebergStorageSink::initializeMetadata()
             try
             {
                 generateManifestList(
-                    filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA);
+                    filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA,
+                    /* use_previous_snapshots = */ true,
+                    entry_partition_summaries);
                 buffer_manifest_list->finalize();
             }
             catch (...)
