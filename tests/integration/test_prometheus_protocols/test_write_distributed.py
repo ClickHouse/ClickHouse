@@ -97,12 +97,11 @@ def start_cluster():
         )
 
         # The cluster entry names this user, so it exists before the wrapper is first used. Its
-        # grants are the databases': the selector and the sink of a TimeSeries table read and write
-        # its inner tables by name, on the caller's own context.
+        # grants are the databases' and nothing more: the selector and the sink of a TimeSeries
+        # table read and write its inner tables by name, on the caller's own context.
         node.query(f"CREATE USER {CLUSTER_SHARD_USER} IDENTIFIED WITH no_password")
         node.query(f"GRANT SELECT, INSERT ON shard_0.* TO {CLUSTER_SHARD_USER}")
         node.query(f"GRANT SELECT, INSERT ON shard_1.* TO {CLUSTER_SHARD_USER}")
-        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {CLUSTER_SHARD_USER}")
         # Its own shard tables, so the exact counts of the other tests are untouched.
         node.query("CREATE TABLE shard_0.ts_restricted ENGINE=TimeSeries")
         node.query("CREATE TABLE shard_1.ts_restricted ENGINE=TimeSeries")
@@ -424,6 +423,38 @@ def test_remote_write_refuses_another_time_series_type_swapped_after_the_check()
         ).strip()
         == "1"
     )
+
+
+def test_the_cluster_user_needs_no_temporary_table_grant():
+    """The read ships `timeSeriesSelector(...)` to every shard, where it runs as the cluster's user:
+    a selector that is not readonly would ask that user for CREATE TEMPORARY TABLE on every read.
+    """
+    # The premise: this user holds the two shard databases and nothing else.
+    denied = node.query_and_get_error(
+        "CREATE TEMPORARY TABLE t (x UInt8) ENGINE = Memory", user=CLUSTER_SHARD_USER
+    )
+    assert "CREATE TEMPORARY TABLE" in denied, denied
+
+    response = write("/restricted/write", "no_temp_table_metric", HOSTS)
+    assert response.status_code == 204, response.text
+    assert count_on_the_shards(
+        "prom_restricted", "no_temp_table_metric", table="ts_restricted"
+    ) == len(HOSTS)
+
+    # And every sample reads back over that same connection, in SQL and over HTTP.
+    evaluation_time = START_TIME + len(HOSTS)
+    sql_result = node.query(
+        f"SELECT count() FROM prometheusQuery(prom_restricted, 'no_temp_table_metric', {evaluation_time})"
+    )
+    assert int(sql_result) == len(HOSTS)
+    http_result = execute_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/restricted_api/v1/query",
+        "count(no_temp_table_metric)",
+        evaluation_time,
+    )
+    assert f'"{len(HOSTS)}"' in http_result
 
 
 def test_the_probe_asks_the_cluster_user_no_more_than_the_shards_do():

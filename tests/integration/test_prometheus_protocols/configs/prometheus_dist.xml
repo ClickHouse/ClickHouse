@@ -82,6 +82,14 @@
                     <table>default.prom_dist</table>
                 </handler>
             </dist_query>
+            <!-- The read side of that same restricted cluster entry. -->
+            <restricted_query>
+                <url>/restricted_api/v1/query</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prom_restricted</table>
+                </handler>
+            </restricted_query>
         </handlers>
     </prometheus>
 </clickhouse>

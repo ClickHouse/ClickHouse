@@ -45,13 +45,15 @@ CALLER_PARAMS = {"user": "prom_metrics", "password": ""}
 # server itself is checked, written and read in-process on the caller's context, never as them.
 CLUSTER_NOBODY = "prom_cluster_nobody"
 
-# Callers whose current database is `default`, where `ts_local` is the MergeTree table, each
-# missing one grant that the in-process read of the local shard enforces.
+# Callers whose current database is `default`, where `ts_local` is the MergeTree table. The
+# in-process read of the local shard enforces the second grant on either surface; the first is what
+# naming a table function that is not readonly costs, and the query endpoints name none.
 NO_TEMP_TABLE_USER = "prom_no_temp_table"
 NO_SHARD_SELECT_USER = "prom_no_shard_select"
+SHARD_SELECT_GRANT = "SELECT ON default.ts_local"
 RESTRICTED_CALLERS = [
     (NO_TEMP_TABLE_USER, "CREATE TEMPORARY TABLE"),
-    (NO_SHARD_SELECT_USER, "SELECT ON default.ts_local"),
+    (NO_SHARD_SELECT_USER, SHARD_SELECT_GRANT),
 ]
 
 # What the shard probe says about that table, in the words no denied caller may see.
@@ -188,20 +190,28 @@ def assert_denied_without_leaking(error, grant):
         assert fragment not in error, error
 
 
-@pytest.mark.parametrize("user, grant", RESTRICTED_CALLERS)
 @pytest.mark.parametrize("endpoint", ["query", "query_range"])
-def test_query_endpoints_deny_the_local_shard_grants_before_probing(
-    endpoint, user, grant
-):
-    """The local shard is read in-process, so its selector enforces the caller's grants on the table
-    it resolves: those are checked before the probe, which would otherwise describe that table.
+def test_query_endpoints_deny_the_local_shard_grant_before_probing(endpoint):
+    """The local shard is read in-process, so its selector enforces the caller's grant on the table
+    it resolves: it is checked before the probe, which would otherwise describe that table.
     """
     # A caller holding every grant is told what the probe found under its own database...
     allowed = query_as(endpoint, "default")
     assert "are not TimeSeries tables" in allowed, allowed
 
-    # ...while one missing a grant the local shard needs later learns only that it has no grant.
-    assert_denied_without_leaking(query_as(endpoint, user), grant)
+    # ...while one missing the grant the local shard needs later learns only that it has no grant.
+    assert_denied_without_leaking(
+        query_as(endpoint, NO_SHARD_SELECT_USER), SHARD_SELECT_GRANT
+    )
+
+
+@pytest.mark.parametrize("endpoint", ["query", "query_range"])
+def test_query_endpoints_ask_for_no_temporary_table_grant(endpoint):
+    """The endpoints name no table function of their own, and the selector the rewrite names inside
+    the cluster() call is readonly: this caller reads the local shard as any other does.
+    """
+    answered = query_as(endpoint, NO_TEMP_TABLE_USER)
+    assert "are not TimeSeries tables" in answered, answered
 
 
 @pytest.mark.parametrize("user, grant", RESTRICTED_CALLERS)
@@ -212,9 +222,8 @@ def test_query_endpoints_deny_the_local_shard_grants_before_probing(
         f"prometheusQueryRange(metrics.prom_local, 'local_metric', {START_TIME}, {START_TIME + 10}, 10)",
     ],
 )
-def test_table_functions_deny_the_local_shard_grants_before_probing(
-    table_function, user, grant
-):
+def test_table_functions_deny_their_grants_before_probing(table_function, user, grant):
+    """These functions are not readonly, so each caller is denied one grant or the other here."""
     sql = f"SELECT count() FROM {table_function}"
     allowed = node.query_and_get_error(sql)
     assert "are not TimeSeries tables" in allowed, allowed
@@ -254,7 +263,7 @@ def test_reads_keep_the_local_shard_in_process_whatever_the_caller_fans_out(
 
     # And the grants of that in-process read are still asked for first.
     denied = query_as("query", NO_SHARD_SELECT_USER, settings)
-    assert_denied_without_leaking(denied, "SELECT ON default.ts_local")
+    assert_denied_without_leaking(denied, SHARD_SELECT_GRANT)
 
 
 def test_local_shard_is_checked_on_the_callers_context_not_the_cluster_users():

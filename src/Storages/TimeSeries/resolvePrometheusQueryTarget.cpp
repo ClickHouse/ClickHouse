@@ -348,14 +348,13 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     context->checkAccess(AccessType::READ, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::REMOTE));
 
     /// The read pins prefer_localhost_replica on and parallel replicas off, so a shard that is this server itself
-    /// runs in-process on the caller's context: the selector's own grants are asked for here, before the probe.
+    /// runs in-process on the caller's context: the selector's own grant is asked for here, before the probe.
+    /// A name that resolves to nothing is left to the probe, which reports it as a target the read has not got.
     const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
     if (cluster->getLocalShardCount())
     {
-        /// A name that resolves to nothing is left to the probe, which reports it as a target the read has not got.
         if (const auto local_id = context->tryResolveStorageID(target->remote_time_series_storage_id))
             context->checkAccess(AccessType::SELECT, local_id);
-        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
     }
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
