@@ -1,0 +1,4 @@
+-9	0	0
+-9	0	0
+SELECT sum(multiply(a, 4294967296))\nFROM t_aggregate_arithmetic_decimal_old
+SELECT multiply(sum(a), 2)\nFROM t_aggregate_arithmetic_decimal_old
