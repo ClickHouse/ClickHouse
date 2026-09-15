@@ -610,9 +610,6 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
     }
 }
 
-/** Execute subquery node and put result in mutable context temporary table.
-  * Returns table node that is initialized with temporary table storage.
-  */
 /// `buildQueryPlanForAutomaticParallelReplicas` arms the deferral flag on the context it builds from and
 /// on the query context. The context that reaches here is derived from one of them, but it was copied
 /// before the arming, so it does not carry the flag itself - consult the query context as well.
@@ -629,6 +626,9 @@ ContextMutablePtr contextHoldingDeferralFlag(const ContextMutablePtr & context)
     return nullptr;
 }
 
+/** Execute subquery node and put result in mutable context temporary table.
+  * Returns table node that is initialized with temporary table storage.
+  */
 TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
