@@ -275,23 +275,22 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
             specs->size());
 
     auto partition_spec = specs->getObject(0);
-    if (!partition_spec || partition_spec->getValue<Int64>(f_spec_id) == state.partition_spec_id)
-        state.partition_spec = partition_spec;
-
-    if (!state.partition_spec)
+    if (!partition_spec || partition_spec->getValue<Int64>(f_spec_id) != state.partition_spec_id)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Default partition spec {} not found in metadata {}",
             state.partition_spec_id,
             state.table_state.metadata_file_path);
 
-    if (!state.partition_spec->has(f_fields))
+    if (!partition_spec->has(f_fields))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Default partition spec {} doesn't have '{}' key, metadata {}",
             state.partition_spec_id,
             f_fields,
             state.table_state.metadata_file_path);
+
+    state.partition_spec = partition_spec;
 
     auto partition_fields = state.partition_spec->getArray(f_fields);
     for (size_t i = 0; i < partition_fields->size(); ++i)
