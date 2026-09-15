@@ -1,0 +1,40 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            if(number % 2 = 0, repeat('AB', 32), repeat('BA', 32)),
+            if(number % 2 = 0, repeat('BA', 32), repeat('AB', 32))))
+        FROM numbers(1000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            repeat('ABCD', 15),
+            if(number % 2 = 0, repeat('ABCD', 50), repeat('DCBA', 50))))
+        FROM numbers(1000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            if(number % 2 = 0, repeat('XYZ', 66), repeat('ZYX', 66)),
+            if(number % 2 = 0, repeat('ZYX', 66), repeat('XYZ', 66))))
+        FROM numbers(300000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroWinklerSimilarity(
+            if(number % 2 = 0, repeat('AB', 32), repeat('BA', 32)),
+            if(number % 2 = 0, repeat('BA', 32), repeat('AB', 32))))
+        FROM numbers(1000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroWinklerSimilarity(
+            if(number % 2 = 0, repeat('XYZ', 66), repeat('ZYX', 66)),
+            if(number % 2 = 0, repeat('ZYX', 66), repeat('XYZ', 66))))
+        FROM numbers(300000) FORMAT Null
+    ]]></query>
+</test>

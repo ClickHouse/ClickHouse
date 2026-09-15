@@ -177,7 +177,7 @@ jaroWinklerSimilarity	我是谁	我是我	0.8666666666666666
 128	128
 120	120
 215	215
--- jaroSimilarity/jaroWinklerSimilarity: AVX2 kernel boundary and match-order coverage
+-- jaroSimilarity/jaroWinklerSimilarity: SIMD kernel boundary and match-order coverage
 0.8333333333333333
 0.8333333333333333
 0.8358974358974358
