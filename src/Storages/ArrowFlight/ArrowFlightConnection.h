@@ -33,7 +33,9 @@ public:
     std::shared_ptr<ArrowFlightConnection> cloneWithHostAndPort(const String & host_, int port_) const;
 
 private:
-    void connect(arrow::flight::TimeoutDuration timeout) const TSA_REQUIRES(mutex);
+    /// Authenticates without holding `mutex`, so a query waits for its own deadline rather than for
+    /// another query's handshake. Racing callers each build a client and the first to publish wins.
+    void connect(arrow::flight::TimeoutDuration timeout) const;
     static arrow::flight::TimeoutDuration toTimeoutDuration(UInt64 timeout_sec);
     static String loadCertificate(const String & path);
 

@@ -44,17 +44,18 @@ arrow::flight::TimeoutDuration ArrowFlightConnection::toTimeoutDuration(UInt64 t
 
 std::shared_ptr<arrow::flight::FlightClient> ArrowFlightConnection::getClient(UInt64 timeout_sec) const
 {
-    std::lock_guard lock{mutex};
     connect(toTimeoutDuration(timeout_sec));
+
+    std::lock_guard lock{mutex};
     return client;
 }
 
 arrow::flight::FlightCallOptions ArrowFlightConnection::getCallOptions(UInt64 timeout_sec) const
 {
     auto timeout = toTimeoutDuration(timeout_sec);
+    connect(timeout);
 
     std::lock_guard lock{mutex};
-    connect(timeout);
     auto call_options = *options;
     call_options.timeout = timeout;
     return call_options;
@@ -62,8 +63,11 @@ arrow::flight::FlightCallOptions ArrowFlightConnection::getCallOptions(UInt64 ti
 
 void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) const
 {
-    if (client)
-        return;
+    {
+        std::lock_guard lock{mutex};
+        if (client)
+            return;
+    }
 
     auto location_result = enable_ssl ? arrow::flight::Location::ForGrpcTls(host, port) : arrow::flight::Location::ForGrpcTcp(host, port);
     if (!location_result.ok())
@@ -106,10 +110,20 @@ void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) cons
         new_options->headers.push_back(auth_token);
     }
 
-    /// Published only now: a connection whose handshake failed must not be reused, otherwise
-    /// every later query on it would go out without the authentication header.
-    client = std::move(new_client);
-    options = std::move(new_options);
+    /// Destroyed after the lock below is released: dropping a client shuts its gRPC transport down,
+    /// which is the kind of call this function keeps off the locked path.
+    std::shared_ptr<arrow::flight::FlightClient> superseded;
+    std::lock_guard lock{mutex};
+
+    /// Published only now, and only if nobody published first: a connection whose handshake failed
+    /// must not be reused, and every query has to see the same authenticated client.
+    if (client)
+        superseded = std::move(new_client);
+    else
+    {
+        client = std::move(new_client);
+        options = std::move(new_options);
+    }
 }
 
 String ArrowFlightConnection::loadCertificate(const String & path)

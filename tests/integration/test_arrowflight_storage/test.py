@@ -26,6 +26,15 @@ DOGET_REQUEST_TIMEOUT_SEC = 45
 # DOGET_REQUEST_TIMEOUT_SEC when it is left running.
 DOGET_STOP_BOUND_SEC = (DOGET_DELAY_SEC + DOGET_REQUEST_TIMEOUT_SEC) // 2
 
+# The deadline of the query that holds a shared connection's handshake. Long enough that the second
+# query's much shorter one is what ends it, short enough to keep the test brief.
+SHARED_HOLDER_TIMEOUT_SEC = 20
+# Midway between the second query's two outcomes: its own deadline, or the holder's deadline
+# followed by its own, which is what a handshake on the connection's locked path costs it.
+SHARED_SECOND_QUERY_BOUND_SEC = (
+    2 * STALL_REQUEST_TIMEOUT_SEC + SHARED_HOLDER_TIMEOUT_SEC
+) // 2
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
@@ -482,6 +491,67 @@ def test_timed_out_handshake_does_not_poison_a_reused_connection():
             assert elapsed < STALL_QUERY_BOUND_SEC, f"attempt {attempt} took {elapsed:.1f}s"
     finally:
         node.query("DROP TABLE arrow_stall_handshake_reuse")
+
+
+def test_request_timeout_is_per_query_on_a_shared_connection():
+    # Every query on an engine table uses the table's one connection, so a handshake run while that
+    # connection is locked would decide how long the other queries wait: they reach their own RPC,
+    # and the deadline on it, only once the holder is done. Neither waiter can be interrupted there,
+    # in ISink::work for an INSERT and while the read pipeline is built for a SELECT.
+    query_id = uuid.uuid4().hex
+    node.query(
+        """
+        CREATE TABLE arrow_stall_handshake_shared (
+            column1 String,
+            column2 String
+        ) ENGINE=ArrowFlight('arrowflight1:5006', 'ABC', 'stall_handshake', 'x')
+        """
+    )
+    holder = node.get_query_request(
+        "SELECT * FROM arrow_stall_handshake_shared",
+        query_id=query_id,
+        settings={"arrow_flight_request_timeout_sec": SHARED_HOLDER_TIMEOUT_SEC},
+        timeout=SHARED_HOLDER_TIMEOUT_SEC + 30,
+        ignore_error=True,
+    )
+    try:
+        # Wait for the holder to have been executing a while, so its handshake is already in flight:
+        # nothing else that query does takes anywhere near a second.
+        assert_eq_with_retry(
+            node,
+            f"SELECT elapsed >= 2 FROM system.processes WHERE query_id = '{query_id}'",
+            "1",
+            retry_count=SHARED_HOLDER_TIMEOUT_SEC,
+            sleep_time=1,
+        )
+
+        start = time.time()
+        error = node.query_and_get_error(
+            "SELECT * FROM arrow_stall_handshake_shared",
+            settings={"arrow_flight_request_timeout_sec": STALL_REQUEST_TIMEOUT_SEC},
+        )
+        elapsed = time.time() - start
+        holders_left = node.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+        )
+
+        assert "ARROWFLIGHT_CONNECTION_FAILURE" in error, error
+        assert "TimedOut" in error, error
+        assert (
+            elapsed >= STALL_REQUEST_TIMEOUT_SEC - 0.5
+        ), f"query returned after {elapsed:.1f}s, before its own deadline"
+        assert (
+            elapsed < SHARED_SECOND_QUERY_BOUND_SEC
+        ), f"query took {elapsed:.1f}s, so it waited for the holder's deadline"
+        # Only meaningful with the bounds above: the holder outlived this query, so the connection
+        # really was still unpublished throughout it. Had the holder finished first, this query
+        # would have been the one running the handshake and bounded by its own deadline anyway.
+        assert (
+            holders_left == "1\n"
+        ), "the holder was already gone, so this query did not share an unfinished handshake"
+    finally:
+        holder.get_answer_and_error()
+        node.query("DROP TABLE arrow_stall_handshake_shared")
 
 
 def test_stalled_flight_server_insert_does_not_hang():
