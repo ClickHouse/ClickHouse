@@ -1,0 +1,29 @@
+index must not change the result
+fs3 needle	1
+fs5 needle	1
+str needle	1
+skip index setting must not change the result
+fs3 needle	1
+matching rows
+fs3 needle	[0,1,2]
+fs5 needle	[0,1,2]
+str needle	[0]
+fixed string column
+wider needle	1
+narrower needle	1
+exact needle	1
+other skip indexes must not change the result
+ngrambf has	1
+ngrambf hasAny	1
+ngrambf hasAll	1
+tokenbf has	1
+text has	1
+text hasAny	1
+text hasAll	1
+matching rows are 0 1 2	1
+map subcolumn indexes
+ngrambf mapContains	1
+text mapContains	1
+string needle still uses the index
+ngrambf has Str	1
+text has Str	1
