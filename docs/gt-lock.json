@@ -10723,53 +10723,6 @@
       "fileName": "get-started/quickstarts/create-your-first-projection.mdx"
     },
     {
-      "fileId": "d45d766f8bd646ade7688edd74d53646e9c87eda67cb5a78406447574745db12",
-      "versionId": "818d1cfcef79eab8112423301ab609de3b10d9c7edda234403030ad440208b84",
-      "translations": {
-        "fr": {
-          "updatedAt": "2026-08-27T18:24:13.794Z",
-          "fileName": "fr/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "6271669e7bde714503fd4d6534ba044920efd3a2eb58e33ab40139f4a2b777a1"
-        },
-        "ko": {
-          "updatedAt": "2026-08-27T18:24:13.802Z",
-          "fileName": "ko/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "53ee154c53f707a070c4f4ad041488cccd3e833df110a55ba87bac1e232f1b24"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-27T18:24:13.802Z",
-          "fileName": "pt-BR/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "1d17174bed8ccb3d04bd9dc4f905cd2d910dbee2645be1effa447c6481de2172"
-        },
-        "zh": {
-          "updatedAt": "2026-08-27T18:24:13.803Z",
-          "fileName": "zh/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "01954f0af9c1c1e46edd7c13c552be5566de2d705858d100cca63054ba9f5149"
-        },
-        "ru": {
-          "updatedAt": "2026-08-27T18:24:13.807Z",
-          "fileName": "ru/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "974c92f0d844c9a511792721c27727776c4f0a0791e2ff05a9d4513ceae78574"
-        },
-        "ja": {
-          "updatedAt": "2026-08-27T18:24:13.808Z",
-          "fileName": "ja/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "3bb5ce95f32acc4fec0162eca44e12d89d44f0ecf4bb3bfbaae745ac0063f561"
-        },
-        "es": {
-          "updatedAt": "2026-08-27T18:24:13.820Z",
-          "fileName": "es/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "4888ac4f74ceaf3ce5642e38ee246a27f11af922304a9450283e41e7582dd02e"
-        },
-        "ar": {
-          "updatedAt": "2026-08-27T18:24:14.789Z",
-          "fileName": "ar/get-started/quickstarts/create-your-first-service-on-cloud.mdx",
-          "postProcessHash": "a1c24aa976d5ec219ed1c2cc5a11fd57b84e0e6d87c7b2079e76dcd92b3326af"
-        }
-      },
-      "fileName": "get-started/quickstarts/create-your-first-service-on-cloud.mdx"
-    },
-    {
       "fileId": "b150ecd26903891f9e7e5f1def7d7ee3e6f08567396d9722f4c21c60ca2c8fa1",
       "versionId": "0ee042e26e856393aa942f5712723cb8c664d9adf53d5ccd89e790e5598f23c2",
       "translations": {

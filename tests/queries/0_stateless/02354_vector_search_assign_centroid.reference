@@ -1,0 +1,26 @@
+-- inline centroids: the id is the position in the array
+1
+2
+0
+-- any float width is accepted; plain literals are Array(Float64)
+1
+1
+2
+-- a single centroid captures everything
+0
+-- ties resolve to the lowest id, so identical centroids never split a group
+0
+-- the scoring kernel matches a brute-force argmin exactly
+0	1003
+-- 1 and 7 rows, either side of the 6-row block, also agree with brute force
+0
+0
+-- the dictionary form returns the dictionary cid, not the row position
+250
+-- inline and dictionary forms agree when the ids line up
+0
+-- the cached centroid matrix is invalidated by a dictionary reload
+1
+0
+-- errors
+1
