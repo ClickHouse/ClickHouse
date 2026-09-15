@@ -7,6 +7,9 @@
 
 DROP TABLE IF EXISTS tab;
 
+-- Not the default in the test configuration, see tests/config/users.d/allow_introspection_functions.yaml.
+SET allow_introspection_functions = 0;
+
 SELECT '1. The boundary: a direct call is denied.';
 
 SELECT demangle('_ZNK2DB7Context9getAccessEv'); -- { serverError FUNCTION_NOT_ALLOWED }

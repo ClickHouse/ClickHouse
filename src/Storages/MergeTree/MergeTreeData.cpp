@@ -1043,9 +1043,11 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
             "{} is greater than the sorting key length: {}", primary_key_size, sorting_key_size);
 
+    /// Either source permitting is enough, as for `allow_minmax_index_for_json` below: in `CREATE TABLE
+    /// ... SETTINGS allow_suspicious_indices = 1` the clause sets the MergeTree setting, not the query one.
     bool allow_suspicious_indices = (*getSettings())[MergeTreeSetting::allow_suspicious_indices];
     if (local_context)
-        allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
+        allow_suspicious_indices |= local_context->getSettingsRef()[Setting::allow_suspicious_indices];
 
     bool allow_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
     if (local_context)
