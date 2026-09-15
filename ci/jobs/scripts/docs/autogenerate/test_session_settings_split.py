@@ -288,6 +288,8 @@ def main():
     complex_explorer = mod._settings_explorer_component(
         complex_pages, server_family
     )
+    assert "settingAliases" not in complex_explorer
+    assert "matchesSearch(setting.name)" in complex_explorer
     assert (
         '"name":"openSSL.client.caConfig",'
         '"path":"/other'

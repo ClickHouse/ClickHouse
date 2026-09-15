@@ -1627,15 +1627,20 @@ def _settings_legacy_routes_script(anchor_routes, family, alias_routes=None):
     routes = json.dumps(
         anchor_routes, separators=(",", ":")).replace("<", "\\u003c")
     alias_routes = alias_routes or {}
-    aliases = json.dumps(
-        alias_routes, separators=(",", ":")).replace("<", "\\u003c")
+    aliases_script = ""
+    if alias_routes:
+        aliases = json.dumps(
+            alias_routes, separators=(",", ":")).replace("<", "\\u003c")
+        aliases_script = (
+            "window.clickhouseSettingsLegacyAliases = "
+            "window.clickhouseSettingsLegacyAliases || {};\n"
+            f"window.clickhouseSettingsLegacyAliases[{base_route}] = {aliases};\n"
+        )
     return (
         "window.clickhouseSettingsLegacyRoutes = "
         "window.clickhouseSettingsLegacyRoutes || {};\n"
-        "window.clickhouseSettingsLegacyAliases = "
-        "window.clickhouseSettingsLegacyAliases || {};\n"
-        f"window.clickhouseSettingsLegacyAliases[{base_route}] = {aliases};\n"
-        f"window.clickhouseSettingsLegacyRoutes[{base_route}] = {routes};\n"
+        + aliases_script
+        + f"window.clickhouseSettingsLegacyRoutes[{base_route}] = {routes};\n"
     )
 
 
@@ -1701,13 +1706,24 @@ def _settings_explorer_component(pages, family=None):
         }.items())),
         separators=(",", ":"),
     )
+    aliases_state = ""
+    matches_search = "matchesSearch(setting.name)"
+    if aliases_json != "{}":
+        aliases_state = (
+            "  const [settingAliases] = useState(() => ("
+            + aliases_json + "));\n"
+        )
+        matches_search = (
+            "matchesSearch(\n"
+            "      [setting.name, ...(settingAliases[setting.name] || [])].join(\" \"),\n"
+            "    )"
+        )
     template = '''const __COMPONENT_NAME__ = ({ href: baseRoute }) => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
   const [entries] = useState(() => (__SESSION_SETTINGS_ENTRIES__));
-  const [settingAliases] = useState(() => (__SETTINGS_ALIASES__));
-  const [allGroupKeys] = useState(() => {
+__SETTING_ALIASES_STATE__  const [allGroupKeys] = useState(() => {
     const collectGroupKeys = (items, path = []) => items.flatMap((entry) => {
       const key = [...path, entry.label].join("/");
       return [key, ...collectGroupKeys(entry.children, [...path, entry.label])];
@@ -1761,9 +1777,7 @@ def _settings_explorer_component(pages, family=None):
   };
 
   const filterEntry = (entry) => {
-    const settings = entry.settings.filter((setting) => matchesSearch(
-      [setting.name, ...(settingAliases[setting.name] || [])].join(" "),
-    ));
+    const settings = entry.settings.filter((setting) => __SETTING_MATCHES_SEARCH__);
     const children = entry.children.map(filterEntry).filter(Boolean);
     const count = settings.length + children.reduce(
       (total, child) => total + child.count,
@@ -1974,7 +1988,8 @@ export default __COMPONENT_NAME__;
     return (
         template
         .replace("__SESSION_SETTINGS_ENTRIES__", entries_json)
-        .replace("__SETTINGS_ALIASES__", aliases_json)
+        .replace("__SETTING_ALIASES_STATE__", aliases_state)
+        .replace("__SETTING_MATCHES_SEARCH__", matches_search)
         .replace("__COMPONENT_NAME__", family["component_name"])
         .replace("__EXPLORER_ROOT__", family["explorer_root"])
     )
