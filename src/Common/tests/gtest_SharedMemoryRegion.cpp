@@ -445,6 +445,29 @@ TEST(SharedMemoryRegion, HolePunchedByTheCommandIsNotASigbus)
     EXPECT_EQ(region.refreshBackingSize(), size);
 }
 
+/// The seals stop the file getting shorter, not pages being committed past its end: `fallocate`
+/// with `FALLOC_FL_KEEP_SIZE` beyond EOF allocates pages that the length never shows. The
+/// footprint is what a cap or a charge has to go by, and it sees them.
+TEST(SharedMemoryRegion, PagesCommittedPastTheEndOfTheFileShowInTheFootprintButNotInTheLength)
+{
+    constexpr size_t size = 16 * 4096;
+    SharedMemoryRegion region(size);
+    EXPECT_EQ(region.refreshFootprint(), size);
+
+    /// What a command could do through its inherited descriptor.
+    ASSERT_EQ(::fallocate(region.fd(), FALLOC_FL_KEEP_SIZE, size, 2 * size), 0);
+
+    EXPECT_EQ(region.refreshBackingSize(), size);
+    EXPECT_EQ(region.size(), size);
+    EXPECT_GE(region.refreshFootprint(), 3 * size);
+
+    /// And the other way round: a sparse tail is length without pages, and the footprint is the
+    /// length then.
+    ASSERT_EQ(::ftruncate(region.fd(), 8 * size), 0);
+    EXPECT_EQ(region.refreshBackingSize(), 8 * size);
+    EXPECT_EQ(region.refreshFootprint(), 8 * size);
+}
+
 TEST(SharedMemoryRegion, SynchronizedHandoff)
 {
     SharedMemoryRegion region(4096);

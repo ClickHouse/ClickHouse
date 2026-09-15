@@ -722,17 +722,20 @@ bool ShellCommand::tryWaitWithoutStatusCheck()
 }
 
 
-void ShellCommand::drainOutputPipes(int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms) const
+void ShellCommand::drainOutputPipes(
+    int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms, bool budget_is_quiet_time, UInt64 max_total_ms) const
 {
     static constexpr UInt64 poll_step_ms = 5;
     char discard_buffer[4096];
 
-    const UInt64 deadline_ns = clock_gettime_ns() + budget_ms * 1000000ULL;
+    const UInt64 start_ns = clock_gettime_ns();
+    UInt64 deadline_ns = start_ns + budget_ms * 1000000ULL;
+    const UInt64 hard_deadline_ns = max_total_ms ? start_ns + max_total_ms * 1000000ULL : std::numeric_limits<UInt64>::max();
 
     while (drain_fds[0] >= 0 || drain_fds[1] >= 0)
     {
         const UInt64 now_ns = clock_gettime_ns();
-        if (now_ns >= deadline_ns)
+        if (now_ns >= deadline_ns || now_ns >= hard_deadline_ns)
             return;
 
         const UInt64 step_ms = std::min<UInt64>(poll_step_ms, (deadline_ns - now_ns) / 1000000ULL + 1);
@@ -775,6 +778,12 @@ void ShellCommand::drainOutputPipes(int (&drain_fds)[2], const StderrSink & stde
                     /// reading it is the whole reason this loop exists.
                     if (i == 1 && stderr_sink)
                         stderr_sink(std::string_view(discard_buffer, static_cast<size_t>(res)));
+
+                    /// Bytes arrived, so the quiet time starts over: a full pipe is read whole
+                    /// however long the reads take to get scheduled, and the budget is only ever
+                    /// spent waiting for bytes that do not come.
+                    if (budget_is_quiet_time)
+                        deadline_ns = clock_gettime_ns() + budget_ms * 1000000ULL;
                     continue;
                 }
 
@@ -842,12 +851,17 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
             /// Given a budget of its own rather than what is left of `command_termination_timeout`.
             /// That budget is about how long the command is allowed to take to *exit*, and it has
             /// already exited - it is routinely zero by this point, and zero here would mean the
-            /// bytes are read only when the command happened to be slow. What bounds this read is
-            /// that the pipes hold at most their own capacity now that the writer is gone; the
-            /// timeout is only for the case where a grandchild inherited the write end and the end
-            /// never comes.
-            static constexpr UInt64 post_reap_drain_ms = 100;
-            drainOutputPipes(drain_fds, stderr_sink, post_reap_drain_ms);
+            /// bytes are read only when the command happened to be slow. And it is a budget of
+            /// quiet time, not of wall time: what the pipes hold is read whole - a pipe of a
+            /// megabyte, a sink that takes its time, a thread that is not scheduled for a while,
+            /// none of that may cost the command its last words under `stderr_reaction` `throw`.
+            /// Only the wait for bytes that do not come is bounded, for the case where a
+            /// grandchild inherited the write end and the end never comes; and a grandchild that
+            /// keeps the pipe fed instead runs into the hard cap, because what it writes ten
+            /// seconds after the command exited is not the command's.
+            static constexpr UInt64 post_reap_quiet_ms = 100;
+            static constexpr UInt64 post_reap_max_total_ms = 10000;
+            drainOutputPipes(drain_fds, stderr_sink, post_reap_quiet_ms, /*budget_is_quiet_time=*/ true, post_reap_max_total_ms);
             closeStreams();
 
             if (check_exit_status)

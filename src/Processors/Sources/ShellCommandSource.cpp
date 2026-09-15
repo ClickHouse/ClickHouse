@@ -962,16 +962,17 @@ public:
         return shared_memory[index];
     }
 
-    /// What the region at `index` costs - the length of its file, re-read now - or zero if it has
-    /// not been created yet. Lets the borrower charge its query memory tracker for the right number
-    /// of bytes BEFORE the region is created or reused, because creating one commits its pages. The
-    /// file's length rather than the mapped size: a growth that reserved its pages but could not
-    /// map them, or a command that extended the file behind the server's back, leaves the file
-    /// larger than the mapping, and those pages cost what any others do. Re-read at every borrow,
-    /// so that a command's extension is charged from the next borrow on.
+    /// What the region at `index` costs - its footprint, re-read now - or zero if it has not been
+    /// created yet. Lets the borrower charge its query memory tracker for the right number of
+    /// bytes BEFORE the region is created or reused, because creating one commits its pages. The
+    /// footprint rather than the mapped size: a growth that reserved its pages but could not map
+    /// them, a command that extended the file behind the server's back, or one that committed
+    /// pages past its end, all leave the region costing more than the mapping shows, and those
+    /// pages cost what any others do (`SharedMemoryRegion::refreshFootprint`). Re-read at every
+    /// borrow, so that whatever the command added is charged from the next borrow on.
     size_t getSharedMemorySize(size_t index) const
     {
-        return shared_memory[index] ? shared_memory[index]->refreshBackingSize() : 0;
+        return shared_memory[index] ? shared_memory[index]->refreshFootprint() : 0;
     }
 
     void growSharedMemory(size_t index, size_t new_size)
@@ -984,14 +985,14 @@ public:
         shared_memory[index].reset();
     }
 
-    /// The length of the longest region's file, re-read now; zero without regions. What a borrow
-    /// checks against `shared_memory_max_size` before it builds anything on the worker.
-    size_t largestSharedMemoryBackingSize() const
+    /// The largest region footprint, re-read now; zero without regions. What a borrow checks
+    /// against `shared_memory_max_size` before it builds anything on the worker.
+    size_t largestSharedMemoryFootprint() const
     {
         size_t largest = 0;
         for (const auto & region : shared_memory)
             if (region)
-                largest = std::max(largest, region->refreshBackingSize());
+                largest = std::max(largest, region->refreshFootprint());
         return largest;
     }
 
@@ -1055,7 +1056,7 @@ public:
                 continue;
             try
             {
-                bytes += std::min(region->refreshBackingSize(), cap);
+                bytes += std::min(region->refreshFootprint(), cap);
             }
             catch (...)
             {
@@ -2016,14 +2017,14 @@ namespace
                 /// command that extends the file inside that window costs its worker the borrow.
                 if (command_holder)
                 {
-                    const size_t largest = command_holder->largestSharedMemoryBackingSize();
+                    const size_t largest = command_holder->largestSharedMemoryFootprint();
                     if (largest > shared_memory_max_size)
                     {
                         LOG_WARNING(
                             getLogger("ShellCommandSharedMemorySource"),
-                            "The process of an executable UDF has extended its shared-memory region to {} bytes, "
-                            "past shared_memory_max_size ({} bytes); the process and its regions are discarded and "
-                            "this borrow starts a fresh one",
+                            "The process of an executable UDF has grown its shared-memory region to {} bytes "
+                            "(its length, or the pages it committed), past shared_memory_max_size ({} bytes); the "
+                            "process and its regions are discarded and this borrow starts a fresh one",
                             largest, shared_memory_max_size);
                         command_holder->discardWorkerAndRegions();
                     }
@@ -2304,7 +2305,7 @@ namespace
                 /// Join the background producer: generate() stops taking items from it as soon as
                 /// enough rows were read, so a failure of the producer after that point is still
                 /// unobserved here and is rethrown below.
-                producer.stop();
+                stopProducer();
 
                 /// Decided once and used twice below: the answer includes a probe of the child's
                 /// stdout, so asking again could give a different one, and closing stdin for a
@@ -2426,6 +2427,21 @@ namespace
             }
         }
 
+        /// Stops the background producer and joins it. The order is what makes the join safe: the
+        /// request first, so that a callback between blocks returns at once; then the input
+        /// pipeline is cancelled, so that a callback inside `pull` - a source that is waiting for
+        /// data - comes out of it (`cancel` makes `pull` return false, not throw, so the callback
+        /// reports exhaustion and leaves no error behind for `prepare` to rethrow); and only then
+        /// the join. Today's single-block input never blocks in `pull`, so the middle step is
+        /// there for the caller that will feed more than one block. Idempotent.
+        void stopProducer() noexcept
+        {
+            producer.requestStop();
+            if (pipeline_mode && input_executor)
+                input_executor->cancel();
+            producer.stop();
+        }
+
         /// Pulls the next non-empty input block and serializes it into regions[index] (growing the
         /// region on demand). Returns the serialized size, or std::nullopt when input is exhausted.
         /// In pipelined mode this runs on the background producer thread; otherwise inline.
@@ -2449,12 +2465,6 @@ namespace
             if (!have_input)
                 return std::nullopt;
 
-            /// Serialize into the region itself, growing it on demand (up to shared_memory_max_size)
-            /// whenever it fills up. The command asks for more room later if its result does not fit
-            /// next to the input.
-            /// Deliberately not auto-finalized: on the exception path the buffer is destroyed while
-            /// the stack unwinds, which holds nothing back (everything written is already in the
-            /// region), and a `finalize` from a destructor could not report a problem anyway.
             /// Serialize into the region itself, growing it on demand (up to shared_memory_max_size)
             /// whenever it fills up. The command asks for more room later if its result does not fit
             /// next to the input.
@@ -2805,16 +2815,17 @@ namespace
             /// ago, and the command can have extended the file since. Sizing the growth by an
             /// unchecked length would let a command that races the borrow have the server commit
             /// whatever it made the file - which is exactly what the cap exists to prevent.
-            const size_t backing = region.refreshBackingSize();
-            if (backing > shared_memory_max_size)
-                failBorrowOnRegionOverTheCap(backing);
+            const size_t footprint = region.refreshFootprint();
+            if (footprint > shared_memory_max_size)
+                failBorrowOnRegionOverTheCap(footprint);
+            const size_t backing = region.backingSize();
 
-            /// The query was charged for the length read a moment earlier; a file that grew in
-            /// between - within the cap - is charged for the rest before it is mapped, so that
-            /// what this borrow holds mapped is what it is charged for. May throw the memory
-            /// limit, in which case nothing has been touched yet and the worker keeps its regions.
-            if (backing > charged_size)
-                chargeQueryMemory(backing - charged_size);
+            /// The query was charged for the footprint read a moment earlier; a region that grew
+            /// in between - within the cap - is charged for the rest before it is mapped, so that
+            /// what this borrow holds is what it is charged for. May throw the memory limit, in
+            /// which case nothing has been touched yet and the worker keeps its regions.
+            if (footprint > charged_size)
+                chargeQueryMemory(footprint - charged_size);
 
             if (backing > region.size())
             {
@@ -2897,10 +2908,10 @@ namespace
                 if (!region)
                     continue;
 
-                size_t backing = 0;
+                size_t footprint = 0;
                 try
                 {
-                    backing = region->refreshBackingSize();
+                    footprint = region->refreshFootprint();
                 }
                 catch (...)
                 {
@@ -2908,13 +2919,14 @@ namespace
                     return false;
                 }
 
-                if (backing > shared_memory_max_size)
+                if (footprint > shared_memory_max_size)
                 {
                     LOG_WARNING(
                         getLogger("ShellCommandSharedMemorySource"),
-                        "The process of an executable UDF has extended its shared-memory region to {} bytes, "
-                        "past shared_memory_max_size ({} bytes); the process will not be reused",
-                        backing, shared_memory_max_size);
+                        "The process of an executable UDF has grown its shared-memory region to {} bytes "
+                        "(its length, or the pages it committed), past shared_memory_max_size ({} bytes); the "
+                        "process will not be reused",
+                        footprint, shared_memory_max_size);
                     return false;
                 }
             }
@@ -3189,7 +3201,7 @@ namespace
             /// Stop and join the background producer before touching any state it shares (the input
             /// pipeline, the serialize buffer and the regions). Idempotent and a no-op if it was
             /// never started (synchronous mode or a failure early in the constructor).
-            producer.stop();
+            stopProducer();
 
             /// Tear down the output pipeline first. Its parsing threads (input_format_parallel_parsing)
             /// read straight out of the shared-memory region through output_read_buffer, so they must be

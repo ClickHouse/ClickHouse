@@ -129,6 +129,19 @@ public:
       */
     size_t refreshBackingSize();
 
+    /** Re-reads the file and returns what it costs: the larger of its length and the pages it has
+      * committed (`st_blocks`), updating `backingSize` on the way.
+      *
+      * The two differ in both directions, and the command controls both. A file it extended is
+      * longer than it is committed - a sparse tail. And a file can have more pages committed than
+      * its length says: `fallocate(FALLOC_FL_KEEP_SIZE)` past the end of the file allocates pages
+      * without moving the end, which a length-only figure never sees. Those pages are as real as
+      * any others and live as long as the region does, so a cap or a charge that went by the
+      * length alone could be walked around with one call. A page the command committed cannot
+      * hide from `st_blocks`, whichever side of the end of the file it is on.
+      */
+    size_t refreshFootprint();
+
     /// The descriptor, for handing to the command's process at `exec`. Close-on-exec in this
     /// process; the hand-over `dup2`s it into the child, which clears the flag on the copy.
     int fd() const { return region_fd; }

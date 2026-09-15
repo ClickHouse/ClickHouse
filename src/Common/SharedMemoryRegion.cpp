@@ -320,6 +320,21 @@ size_t SharedMemoryRegion::refreshBackingSize()
     return backing_size;
 }
 
+size_t SharedMemoryRegion::refreshFootprint()
+{
+    struct stat st{};
+    if (0 != ::fstat(region_fd, &st))
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(ErrorCodes::CANNOT_FCNTL, saved_errno, "SharedMemoryRegion: Cannot fstat the region");
+    }
+
+    backing_size = std::max(backing_size, static_cast<size_t>(st.st_size));
+    /// `st_blocks` is in 512-byte units whatever the page size, and for a `memfd` it is exactly
+    /// the pages the file holds - inside its length or past it.
+    return std::max(backing_size, static_cast<size_t>(st.st_blocks) * 512);
+}
+
 SharedMemoryRegion::~SharedMemoryRegion()
 {
     /// The destructor is implicitly noexcept and logs below, so block memory-limit exceptions: the
@@ -355,6 +370,12 @@ void SharedMemoryRegion::grow(size_t)
 }
 
 size_t SharedMemoryRegion::refreshBackingSize()
+{
+    checkSupported();
+    return 0;
+}
+
+size_t SharedMemoryRegion::refreshFootprint()
 {
     checkSupported();
     return 0;

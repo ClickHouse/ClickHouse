@@ -922,8 +922,12 @@ def test_shared_memory_udf_idle_pooled_region_counts_against_the_server_limit(st
             )
         node.query("SYSTEM RELOAD CONFIG")
 
-    set_server_limit(base + region_size + region_size // 2)
     try:
+        # Inside the `try`, so that a limit that was written but whose reload failed - or a reload
+        # that failed halfway - is still taken back below: nothing after this test may run under
+        # a server limit it did not set.
+        set_server_limit(base + region_size + region_size // 2)
+
         # An idle worker sits in the pool holding a region no query is charged for. It went under
         # the limit: its creation is charged to the query that made it, and one region fits.
         assert node.query(f"SELECT {first}(1)") == "Key 1\n"
@@ -1033,6 +1037,34 @@ def test_shared_memory_udf_command_extending_the_region_past_the_cap_costs_it_th
     # again, with the same outcome.
     assert node.query("SELECT test_function_shm_extend_past_cap_pool_python(2)") == "Key 2\n"
     wait_for_pooled_shared_memory_bytes(pooled_before, "the region extended past the cap stayed with the pool")
+
+
+def test_shared_memory_udf_pages_committed_past_the_end_of_the_file_count_against_the_cap(started_cluster):
+    skip_test_msan(node)
+
+    # The cap is on what a region holds, not on how long its file is. `fallocate` with
+    # `FALLOC_FL_KEEP_SIZE` past the end of the file commits pages without moving the end - the seals
+    # allow it - so a server that judged its regions by their length alone would let a command park
+    # any amount of memory in a pooled region, unseen by every check and every charge. The region's
+    # footprint is the larger of its length and its committed pages, and it is that which is
+    # measured against `shared_memory_max_size` where the worker is handed back: the command here
+    # commits twice the file's length past its end, so the worker is discarded with the region
+    # and nothing of it stays charged - or held - in the pool. The region size is one no other
+    # function in this file uses.
+    region_size = 1572864
+
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_alloc_beyond_eof_pool_python")
+    pooled_before = pooled_shared_memory_baseline(region_size)
+
+    assert node.query("SELECT test_function_shm_alloc_beyond_eof_pool_python(1)") == "Key 1\n"
+
+    wait_for_pooled_shared_memory_bytes(pooled_before, "a region with pages committed past its end stayed with the pool")
+    assert region_size not in shm_region_sizes()
+    assert node.contains_in_log("(its length, or the pages it committed), past shared_memory_max_size")
+
+    # A fresh worker serves the next query, with the same outcome.
+    assert node.query("SELECT test_function_shm_alloc_beyond_eof_pool_python(2)") == "Key 2\n"
+    wait_for_pooled_shared_memory_bytes(pooled_before, "a region with pages committed past its end stayed with the pool")
 
 
 def test_shared_memory_udf_hole_punched_by_the_command_is_not_fatal(started_cluster):

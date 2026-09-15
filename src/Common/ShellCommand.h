@@ -251,7 +251,12 @@ private:
 
     /// Reads both output pipes until they end or `budget_ms` runs out, handing what comes off
     /// stderr to `stderr_sink`. Does not reap and does not touch the termination deadline.
-    void drainOutputPipes(int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms) const;
+    /// Reads what the pipes hold, for at most `budget_ms`. With `budget_is_quiet_time` the budget
+    /// is spent only while nothing arrives: every read pushes the deadline forward, so what is
+    /// already in the pipes is read whole however long that takes, and only the wait for more is
+    /// bounded - within a hard cap of `max_total_ms`, for a grandchild that keeps the pipe fed.
+    void drainOutputPipes(
+        int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms, bool budget_is_quiet_time = false, UInt64 max_total_ms = 0) const;
 
     void handleProcessRetcode(int retcode) const;
 

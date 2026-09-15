@@ -7,7 +7,7 @@ This benchmark compares the data transports used by executable user-defined func
 * `bench_shm`          — shared-memory transport (`use_shared_memory`);
 * `bench_shm_busy` — shared-memory transport with artificial per-request CPU work in the command.
 
-The pipe and plain shared-memory functions are functionally identical echoes (see [`functions.xml`](functions.xml) and [`user_scripts/`](user_scripts)), and both clients move a chunk with one bulk read and one bulk write, so their differences are attributable to the transport rather than to per-row work in the command. `bench_shm_busy` additionally measures artificial command-side CPU work.
+The pipe and plain shared-memory functions are functionally identical echoes (see [`functions.xml`](functions.xml) and [`user_scripts/`](user_scripts)), and both clients handle a chunk as a whole rather than row by row - the pipe client reads it in bulk (in reads of up to a megabyte, as many as the chunk takes, since a pipe hands over what has arrived) and writes it back with one write; the shared-memory client reads and writes it in place - so their differences are attributable to the transport rather than to per-row work in the command. `bench_shm_busy` additionally measures artificial command-side CPU work.
 
 ## Running
 
@@ -63,8 +63,10 @@ the command `mmap`. The server serializes the input straight into its mapping an
 where the command left it; the command reads and writes in a mapping of its own. No payload byte is
 copied and no payload byte goes through `read`/`write`, so `OSReadChars`/`OSWriteChars` show only
 the control messages. Writing through a mapping of a file the command holds open for writing is
-safe only because the file is sealed with `F_SEAL_SHRINK` - the command cannot take pages out from
-under the server (see `SharedMemoryRegion`). What is saved against a pipe is two copies per
+safe only because the file is sealed with `F_SEAL_SHRINK` - the command cannot make the file
+shorter than the server's mapping, which is the one thing that would turn an access into a
+`SIGBUS`; what the seal does not prevent (extending the file, freeing pages inside it) cannot
+crash the server and is bounded by `shared_memory_max_size` (see `SharedMemoryRegion`). What is saved against a pipe is two copies per
 direction plus the per-pipeful syscalls; how much of that shows up as wall-clock time depends on how
 large a share of the query the transport is at all - measure it with the runner instead of assuming.
 
