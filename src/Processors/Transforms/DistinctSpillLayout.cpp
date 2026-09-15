@@ -198,6 +198,18 @@ DistinctSpillLayout::DistinctSpillLayout(
 {
 }
 
+ColumnNumbers DistinctSpillLayout::getSerializedKeyIndices() const
+{
+    ColumnNumbers indices;
+    for (size_t i = 0; i < key_columns_pos.size(); ++i)
+    {
+        if (std::find(serialized_key_columns_pos.begin(), serialized_key_columns_pos.end(), key_columns_pos[i])
+            != serialized_key_columns_pos.end())
+            indices.push_back(i);
+    }
+    return indices;
+}
+
 Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const
 {
     if (spill_columns_pos.size() != input_header->columns())
@@ -213,7 +225,16 @@ Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_n
         chunk.setColumns(std::move(columns), num_rows);
     }
 
-    return serializeKeysAndAddServiceColumns(std::move(chunk), /*already_emitted=*/ false, first_arrival_number);
+    /// The temporary files use `Native`, which cannot retain special column representations.
+    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfConst(chunk);
+
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (const auto pos : serialized_key_columns_pos)
+        columns[pos] = serializeValues(*columns[pos]);
+
+    return addServiceColumns(std::move(columns), num_rows, /*already_emitted=*/ false, first_arrival_number);
 }
 
 Chunk DistinctSpillLayout::prepareSuppressionChunk(MutableColumns key_columns) const
@@ -230,24 +251,17 @@ Chunk DistinctSpillLayout::prepareSuppressionChunk(MutableColumns key_columns) c
             columns[i] = input_header->getByPosition(spill_columns_pos[i]).type->createColumn()->cloneResized(num_rows);
     }
 
-    /// Arrival numbers do not affect rows that are never emitted.
-    return serializeKeysAndAddServiceColumns(
-        Chunk(std::move(columns), num_rows), /*already_emitted=*/ true, /*first_arrival_number=*/ 0);
-}
-
-Chunk DistinctSpillLayout::serializeKeysAndAddServiceColumns(
-    Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const
-{
-    const size_t num_rows = chunk.getNumRows();
-
-    /// The temporary files use `Native`, which cannot retain special column representations.
+    Chunk chunk(std::move(columns), num_rows);
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);
 
-    auto columns = chunk.detachColumns();
-    for (const auto pos : serialized_key_columns_pos)
-        columns[pos] = serializeValues(*columns[pos]);
+    /// Arrival numbers do not affect rows that are never emitted.
+    return addServiceColumns(chunk.detachColumns(), num_rows, /*already_emitted=*/ true, /*first_arrival_number=*/ 0);
+}
 
+Chunk DistinctSpillLayout::addServiceColumns(
+    Columns columns, size_t num_rows, bool already_emitted, UInt64 first_arrival_number) const
+{
     if (arrival_number_column_pos)
     {
         auto arrival_numbers = ColumnUInt64::create(num_rows);

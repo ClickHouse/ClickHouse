@@ -341,7 +341,7 @@ void ExternalDistinctTransform::startSpilling(Hashing & hashing)
 
     if (hashing.set.getTotalRowCount())
     {
-        auto keys = std::move(hashing.set).extractKeys();
+        auto keys = std::move(hashing.set).extractKeys(spill_layout.getSerializedKeyIndices());
         auto & extracting = state.emplace<ExtractingSuppression>(std::move(keys));
         extractSuppressionRun(extracting);
     }

@@ -28,18 +28,22 @@ public:
     size_t getFlagColumnPosition() const { return flag_column_pos; }
     bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
 
+    /// Returns indices within `input_key_columns_pos` of keys whose original encodings are used for sorting.
+    ColumnNumbers getSerializedKeyIndices() const;
+
     /// Converts an input chunk to the spill layout, with unflagged rows and their arrival numbers.
     Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
 
-    /// Converts extracted keys to flagged suppression rows. Non-key payload columns contain defaults
-    /// because these rows suppress previously emitted keys and are never returned to the caller.
+    /// Converts extracted keys to flagged suppression rows. Keys selected by `getSerializedKeyIndices`
+    /// must already contain their original encodings in `String` columns. Non-key payload columns contain
+    /// defaults because these rows suppress previously emitted keys and are never returned to the caller.
     Chunk prepareSuppressionChunk(MutableColumns key_columns) const;
 
     /// Converts a merged chunk, whose flag has already been removed, to the original input layout.
     Chunk restoreOutputChunk(Chunk chunk) const;
 
 private:
-    Chunk serializeKeysAndAddServiceColumns(Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const;
+    Chunk addServiceColumns(Columns columns, size_t num_rows, bool already_emitted, UInt64 first_arrival_number) const;
 
     const SharedHeader input_header;
     /// Stores input-header positions of non-constant columns in their original order.

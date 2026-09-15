@@ -119,7 +119,8 @@ public:
     /// The memory occupied by the set and by the `LowCardinality` fast path.
     size_t getTotalByteCount() const;
 
-    /// Reads owning key columns from a frozen set in hash-table iteration order.
+    /// Reads owning key columns from a frozen set in hash-table iteration order. Requested serialized
+    /// components are returned as `String` columns containing their original encodings.
     class KeyExtractor
     {
     public:
@@ -134,9 +135,12 @@ public:
     /// Transfers the hash table, arena, and key metadata into an extractor. The columns it returns
     /// follow `getKeyColumnsPositions` and own their values independently of the extractor. The table
     /// is released after its final key is materialized, or when the extractor is destroyed early.
-    /// Requires at least one retained key, an extractable set method, and `skip_null_keys_ = false`.
-    /// Passing `require_extractable_keys_ = true` guarantees the method choice.
-    std::unique_ptr<KeyExtractor> extractKeys() &&;
+    /// `serialized_key_indices` selects components whose original encodings must be retained, indexed
+    /// within `getKeyColumnsPositions`. A nonempty selection requires `SetMethodSerialized`; unselected
+    /// components keep their original types. Requires at least one retained key, an extractable method,
+    /// and `skip_null_keys_ = false`. Passing `require_extractable_keys_ = true` guarantees an extractable
+    /// method.
+    std::unique_ptr<KeyExtractor> extractKeys(const ColumnNumbers & serialized_key_indices = {}) &&;
 
     /// Normalizes input columns and initializes the set on first use, without inserting keys.
     /// The prepared chunk exposes the materialized column memory needed to estimate filtering copies.

@@ -10,7 +10,6 @@
 #include <Common/HashTable/FixedClearableHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
 #include <Common/HashTable/FixedHashMap.h>
-#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -238,17 +237,10 @@ struct SetMethodSerialized
 
     using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, SetMethodMapped<Data>, false, false>;
 
-    /// `State` serializes keys with the default settings, which `insertKeyIntoColumns` also uses.
+    /// Uses the default serialization settings so consumers can decode the retained key bytes.
     static ColumnsHashing::HashMethodContextPtr createContext()
     {
         return State::createContext(ColumnsHashing::HashMethodContextSettings{});
-    }
-
-    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
-    {
-        ReadBufferFromString in(key);
-        for (auto & column : key_columns)
-            column->deserializeAndInsertFromArena(in, /*settings=*/ nullptr);
     }
 };
 
