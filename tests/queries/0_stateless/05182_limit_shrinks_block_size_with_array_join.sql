@@ -1,4 +1,4 @@
--- With arrayJoin a small LIMIT still shrinks the block size (only the hard source limit stays off, see 04320).
+-- LIMIT still shrinks the block size with arrayJoin, only the source-side limit stays off (#82279)
 DROP TABLE IF EXISTS t_aj_limit;
 CREATE TABLE t_aj_limit (k UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
 INSERT INTO t_aj_limit SELECT number, [number] FROM numbers(20000);

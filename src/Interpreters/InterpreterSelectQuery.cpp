@@ -2879,8 +2879,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_threads_execute_query = max_streams = 1;
         }
 
-        /// `arrayJoin` expands rows after the source has run, and StorageLoop, system.zeros and generateRandom
-        /// stop producing at `trivial_limit`, so with `arrayJoin` only the block size shrinks (#82279).
+        /// Some sources stop at `trivial_limit`, and `arrayJoin` may not fill the LIMIT from that many rows (#82279).
         if (!(astContainsArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first))
         {
             if (local_limits.local_limits.size_limits.max_rows != 0)
