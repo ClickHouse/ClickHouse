@@ -780,9 +780,10 @@ void AllocationQueue::processActivation()
             });
         if (claimed_suction != increasing_allocations.end())
         {
-            consumeSuctionClaim(*claimed_suction);
-            if (claimed_suction->increasing_hook.is_linked() && claimed_suction->memory_growth_suction_priority)
-                preferred_suction = &claimed_suction->increase;
+            ResourceAllocation * claimed_allocation = &*claimed_suction;
+            consumeSuctionClaim(*claimed_allocation);
+            if (claimed_allocation->increasing_hook.is_linked() && claimed_allocation->memory_growth_suction_priority)
+                preferred_suction = &claimed_allocation->increase;
             suction_changed = true;
         }
 
@@ -931,6 +932,17 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     }
     suspended_growth = nullptr;
     memory_growth_suspension_retry_requested = false;
+
+    /// Ending an owner round must also make every request hidden behind that owner visible again.
+    /// Otherwise owner cancellation/self-eviction can leave unrelated work permanently suspended.
+    for (ResourceAllocation & pending : pending_allocations)
+    {
+        pending.memory_growth_suspended = false;
+        pending.memory_growth_suspension_attempted = false;
+    }
+    for (ResourceAllocation & increasing : increasing_allocations)
+        increasing.memory_growth_suspended = false;
+    memory_growth_suspension_changed = true;
 }
 
 bool AllocationQueue::setDecrease() // TSA_REQUIRES(mutex)
