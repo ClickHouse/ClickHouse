@@ -194,7 +194,14 @@ def run_tests(
     # fires only for a genuinely frozen process and never pre-empts the graceful
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
     outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
-    return Shell.run(command, verbose=True, timeout=outer_timeout)
+    try:
+        return Shell.run(command, verbose=True, timeout=outer_timeout)
+    finally:
+        # Reap tests that escaped `clickhouse-test`'s own cleanup, so they stop
+        # querying the server while the job tears down and collects logs. In the
+        # `finally` to cover every invocation: bugfix validation runs one per
+        # build type.
+        Shell.check("clickhouse-test --cleanup", verbose=True)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
