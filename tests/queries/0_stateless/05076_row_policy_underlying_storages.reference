@@ -1,0 +1,8 @@
+Target policy through Alias, old analyzer	[1,2]
+Target policy through Alias, analyzer	[1,2]
+Target policy through Merge over Alias	[1,2]
+Count through Alias, trivial count disabled	2
+Count through Alias, trivial count enabled	2
+Combined policies, old analyzer	[1]
+Combined policies, analyzer	[1]
+Alias policy only	[1,3]

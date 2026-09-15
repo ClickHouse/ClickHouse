@@ -20,7 +20,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -437,9 +437,7 @@ bool hasLateAttachedTableFilter(
 
     const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
     {
-        const auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+        return getEffectiveRowPolicyFilter(*table->getStorage(), context) != nullptr;
     };
 
     /// A scalar query can have its own context. Check both contexts even though they normally

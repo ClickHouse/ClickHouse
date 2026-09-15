@@ -1,7 +1,7 @@
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 
 #include <Access/Common/RowPolicyDefs.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -173,9 +173,7 @@ namespace
         /// A row policy and the `additional_table_filters` setting are not part of the query tree, so their
         /// expressions are scanned separately. (`additional_result_filter` needs no scan: it sees only the
         /// query's result columns, so any use of `tags` in it is already visible to the query tree scan.)
-        auto storage_id = storage.getStorageID();
-        auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        auto row_policy_filter = getRowPolicyFilterForStorage(storage, context);
         if (row_policy_filter
             && (!row_policy_filter->expression || !findRequestedTagsInAST(*row_policy_filter->expression, requested_tags)))
             return {};

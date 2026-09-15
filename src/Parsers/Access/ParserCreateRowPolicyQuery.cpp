@@ -471,6 +471,12 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
+## Tables that read from other tables {#tables-that-read-from-other-tables}
+
+A row policy filters rows where the data is actually read. An `Alias` table returns the rows of its target table as its own, so the row policies of the target apply to reads through the alias as well, combined with the policies of the alias itself using a logical `AND`. A `Merge` table applies the policies of the tables it reads from. One exception: when a matched table reads remotely, such as a `Distributed` table, its policy is applied above that table's read, so a query that aggregates without selecting the policy's columns fails instead of returning a filtered result.
+
+This does not extend to every table that reads from another table. A `Buffer` table and a materialized view read through their destination or target table do **not** inherit that table's row policies: the policy is written against the target's schema and, for a view with `SQL SECURITY DEFINER`, is evaluated for a different user than the one running the read. Define the policy on the table users actually query in those cases.
+
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 
 A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](/reference/engines/table-engines/special/distributed) table or a wrapper over one (for example, a materialized view with a `Distributed` target), only ships the query text to the remote servers and cannot apply the policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
