@@ -1988,6 +1988,9 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
+The parts already present under the path are trusted to match the columns and the sorting
+key this table declares. Nothing records the sorting key a part was written with, so a
+table declaring a different one over the same parts returns wrong results or an error.
 )", 0) \
     DECLARE(Bool, allow_nullable_key, false, R"(
 Allow Nullable types as primary keys.
