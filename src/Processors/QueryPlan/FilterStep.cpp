@@ -414,9 +414,9 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
+void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_, ContextPtr context_)
 {
-    condition = {condition_hash_, condition_};
+    condition = {.hash = condition_hash_, .condition = condition_, .context = context_};
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)

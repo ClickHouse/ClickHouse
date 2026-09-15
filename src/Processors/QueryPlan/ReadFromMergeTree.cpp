@@ -695,6 +695,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             index_read_tasks,
             actions_settings,
             reader_settings,
+            getContext(),
             index_build_context,
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
@@ -812,6 +813,7 @@ Pipe ReadFromMergeTree::readFromPool(
             index_read_tasks,
             actions_settings,
             reader_settings,
+            getContext(),
             index_build_context,
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
@@ -995,6 +997,7 @@ Pipe ReadFromMergeTree::readInOrder(
             index_read_tasks,
             actions_settings,
             reader_settings,
+            getContext(),
             index_build_context,
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
@@ -3827,6 +3830,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     data_part->storage.getStorageID().uuid,
                     part_name,
                     profiled_condition_hash,
+                    context_->getSettingsRef(),
                     output->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
@@ -5292,7 +5296,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                         context),
                     read_info.prewhere_info,
                     actions_settings,
-                    reader_settings));
+                    reader_settings,
+                    context));
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));

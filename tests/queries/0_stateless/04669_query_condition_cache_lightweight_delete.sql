@@ -98,8 +98,10 @@ SELECT count() FROM t_qcc_lwd WHERE v < 10;
 DROP TABLE t_qcc_lwd;
 
 -- A pending on-fly mutation of a column the query does not read produces no read step, so it must
--- not disable the cache write either. Only an `apply_mutations_on_fly = 0` query can consume the
--- entry: the read path skips the cache while a data mutation is pending.
+-- not disable the cache write either. No query in this test can consume the entry: the read path
+-- skips the cache while a data mutation is pending, and a query with `apply_mutations_on_fly = 0`
+-- has a different cache key because the changed settings are part of it. The write is therefore
+-- checked through the system table.
 
 SELECT '--- a pending mutation on an unread column must not disable the cache';
 
@@ -119,15 +121,13 @@ ALTER TABLE t_qcc_lwd_pending UPDATE w = 0 WHERE id = 1 SETTINGS mutations_sync 
 SYSTEM DROP QUERY CONDITION CACHE;
 
 -- The prime reads only `v`, so the pending `UPDATE` of `w` is irrelevant to it and the write must
--- still happen; the reuse with `apply_mutations_on_fly = 0` must consume it and prune.
+-- still happen.
 SELECT count() FROM t_qcc_lwd_pending WHERE v = 123456789
 SETTINGS apply_mutations_on_fly = 1, log_comment = '04669_lwd_pending_prime';
-SELECT count() FROM t_qcc_lwd_pending WHERE v = 123456789
-SETTINGS apply_mutations_on_fly = 0, log_comment = '04669_lwd_pending_reuse';
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT '--- pending-mutation prime reads everything, reuse prunes';
+SELECT '--- pending-mutation prime reads everything and writes the cache';
 SELECT
     log_comment,
     ProfileEvents['QueryConditionCacheHits'] > 0,
@@ -136,7 +136,7 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND log_comment IN ('04669_lwd_pending_prime', '04669_lwd_pending_reuse')
-ORDER BY event_time_microseconds;
+    AND log_comment = '04669_lwd_pending_prime';
+SELECT count() > 0 FROM system.query_condition_cache;
 
 DROP TABLE t_qcc_lwd_pending;
