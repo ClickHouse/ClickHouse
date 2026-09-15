@@ -200,6 +200,24 @@ public:
     /// Default values must be a the 0-th positions in columns.
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
 
+    /// Whether merging states built from consecutive row ranges gives the same result
+    /// as adding all the rows into one state (up to floating-point rounding).
+    /// WindowTransform relies on this to re-aggregate sliding frames from partial
+    /// states. Opt-in: override to true only after verifying the equivalence — it does
+    /// not hold e.g. for randomized reservoirs, lossy sketches, or results exposing
+    /// hash-table order. As this is only consumed to choose between two correct
+    /// evaluation strategies, implementations where the equivalence holds but merging
+    /// partial states is reliably slower than re-adding the rows (merge cost
+    /// proportional to the state size combined with cheap adds) also keep it false.
+    virtual bool mergeIsEquivalentToAddingRows() const { return false; }
+
+    /// Whether addBatchSinglePlace processes a row range in constant time regardless of
+    /// its length (count just adds the row count, any/anyLast look at a single row).
+    /// WindowTransform then keeps re-aggregating sliding frames, which cannot be beaten
+    /// by merging partial states. Combinators must not forward the nested value: their
+    /// flag/null scans make the batch linear in the range length again.
+    virtual bool addBatchSinglePlaceIsConstant() const { return false; }
+
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 
     constexpr static bool parallelizeMergeWithKey() { return false; }

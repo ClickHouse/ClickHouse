@@ -282,6 +282,11 @@ public:
         return nested_function->allocatesMemoryInArena();
     }
 
+    bool mergeIsEquivalentToAddingRows() const override
+    {
+        return nested_function->mergeIsEquivalentToAddingRows();
+    }
+
     bool isState() const override
     {
         return nested_function->isState();
