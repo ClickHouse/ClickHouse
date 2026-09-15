@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -237,6 +239,45 @@ def test_backup_restore_invalid_query_setting(peer_name, operation, clause, rest
 def stored_select(table):
     definition = current.query(f"SHOW CREATE TABLE {table}", settings=SETTINGS, timeout=30)
     return definition.split("AS SELECT", 1)[1]
+
+
+@pytest.mark.parametrize("peer_name", ["older", "current"])
+@pytest.mark.parametrize("operation", ["view", "materialized_view", "alter"])
+def test_stored_ddl_profile_request(peer_name, operation):
+    peer = PEERS[peer_name]
+    prefix = f"profile_request_{operation}_{peer_name}"
+    local_name, cluster_name = prefix + "_local", prefix + "_cluster"
+    kind = "VIEW" if operation == "view" else "MATERIALIZED VIEW"
+    engine = "" if operation == "view" else " ENGINE=Memory"
+    select = "SELECT x FROM default.source"
+    request_settings = dict(
+        SETTINGS,
+        send_profile_traces=1,
+        send_profile_events=0,
+        send_logs_level="none",
+        framing_output_format="JSONEachPacketString",
+    )
+    try:
+        peer.query(f"CREATE {kind} {local_name}{engine} AS {select}", settings=SETTINGS, timeout=30)
+        if operation == "alter":
+            peer.query(f"CREATE {kind} {cluster_name}{engine} AS {select}", settings=SETTINGS, timeout=30)
+            select += " WHERE x > 0"
+            alter_settings = dict(SETTINGS, allow_experimental_alter_materialized_view_structure=1)
+            peer.query(f"ALTER TABLE {local_name} MODIFY QUERY {select}", settings=alter_settings, timeout=30)
+            request_settings["allow_experimental_alter_materialized_view_structure"] = 1
+            query = f"ALTER TABLE {cluster_name} ON CLUSTER {peer_name}_cluster MODIFY QUERY {select}"
+        else:
+            query = f"CREATE {kind} {cluster_name} ON CLUSTER {peer_name}_cluster{engine} AS {select}"
+
+        response = coordinator.http_query(query, method="POST", params=request_settings, timeout=30)
+        packets = [json.loads(line) for line in response.splitlines() if line]
+        assert packets and packets[-1]["packet"] == "progress", packets
+        definition = peer.query(f"SHOW CREATE TABLE {cluster_name}", settings=SETTINGS, timeout=30)
+        reference = peer.query(f"SHOW CREATE TABLE {local_name}", settings=SETTINGS, timeout=30)
+        assert "send_profile_traces" not in definition
+        assert definition.split("AS SELECT", 1)[1] == reference.split("AS SELECT", 1)[1]
+    finally:
+        peer.query(f"DROP TABLE IF EXISTS {cluster_name} SYNC; DROP TABLE IF EXISTS {local_name} SYNC", settings=SETTINGS, timeout=30)
 
 
 @pytest.mark.parametrize("kind", ["VIEW", "MATERIALIZED VIEW"])
