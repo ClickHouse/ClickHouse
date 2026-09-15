@@ -76,6 +76,10 @@ private:
     /// Execute a scalar query (returns a single value) and return the Field.
     static Field executeScalar(const String & query, const ContextMutablePtr & context);
 
+    /// Whether a repeat execution of a reference read reproduced the rows the first one returned.
+    static bool referenceReproduces(
+        const std::optional<std::vector<String>> & again, const std::vector<String> & previous);
+
     /// Build a fresh context for oracle sub-queries.
     static ContextMutablePtr makeOracleContext(const ContextMutablePtr & base_context);
 
