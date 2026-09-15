@@ -58,5 +58,6 @@ for spill_threshold in 0 41943040; do
         SYSTEM FLUSH LOGS query_log;
         SELECT count(), countIf(ProfileEvents['ExternalDistinctWritePart'] > 0)
         FROM system.query_log
-        WHERE type = 'QueryFinish' AND log_comment = 'generic_key_threshold'"
+        WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+            AND log_comment = 'generic_key_threshold'"
 done
