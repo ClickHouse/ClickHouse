@@ -17,7 +17,10 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
+
+#include <base/scope_guard.h>
 
 #include <Core/Defines.h>
 #include <Core/ServerUUID.h>
@@ -144,8 +147,15 @@ namespace FailPoints
 {
     extern const char disk_object_storage_fail_commit_metadata_transaction[];
     extern const char write_file_operation_fail_on_read[];
+    extern const char local_object_storage_fail_remove_object[];
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event BlobKillerThreadRuns;
+    extern const Event BlobKillerThreadRemoveBlobsErrors;
 }
 
 class DiskObjectStorageTest : public testing::Test
@@ -1147,6 +1157,45 @@ try
     EXPECT_EQ(via_read_file, file_content);
     EXPECT_EQ(via_pipeline, file_content);
     EXPECT_EQ(via_read_file, via_pipeline);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, BlobRemovalWaitStopsWhenRemovalFails)
+try
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    waitBlobsCount(disk, 1);
+
+    const auto rounds_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns];
+    const auto errors_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors];
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object);
+    SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object); });
+
+    /// Commits the metadata change and then waits for the blob to be removed, which cannot succeed.
+    disk->removeFile(file_name);
+
+    const auto rounds = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns] - rounds_before;
+    const auto errors = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors] - errors_before;
+    std::cout << "Cleanup rounds: " << rounds << ", removal errors: " << errors << std::endl;
+
+    /// Without this the round count proves nothing: it is also low when the injection is never reached.
+    EXPECT_GT(errors, 0u);
+    EXPECT_LT(rounds, 20u);
 }
 catch (...)
 {

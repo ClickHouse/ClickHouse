@@ -31,7 +31,9 @@ public:
 
     void startup();
     void shutdown();
-    void triggerAndWait();
+    /// Returns false when no cleanup round succeeded while waiting, which means removals are currently
+    /// being rejected and the queued blobs were left for a later round.
+    bool triggerAndWait();
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
 private:
@@ -48,6 +50,8 @@ private:
     std::atomic<bool> started{false};
     std::atomic<bool> enabled{true};
     std::atomic<int64_t> finished_rounds{0};
+    /// Rounds that finished without a blob removal or metadata error.
+    std::atomic<int64_t> succeeded_rounds{0};
 
     /// Runtime parameters
     std::atomic<int64_t> reschedule_interval_sec{0};
