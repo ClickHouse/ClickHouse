@@ -18,6 +18,7 @@ DROP VIEW IF EXISTS v_untuple_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_limit_by_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_with_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_stateful_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_nondet_pr_rewrite_shapes;
 
 CREATE TABLE t_pr_rewrite_shapes (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
     SETTINGS index_granularity = 128;
@@ -37,9 +38,17 @@ CREATE VIEW v_limit_by_pr_rewrite_shapes AS
 CREATE VIEW v_with_pr_rewrite_shapes AS
     WITH 7 AS seven, (SELECT max(ts) FROM t_pr_rewrite_shapes) AS mx
     SELECT tenant, ts, seven, mx FROM t_pr_rewrite_shapes ORDER BY ts;
--- A stateful function in the `SELECT` list is refused as well, and leaves nothing to withhold.
+-- A stateful function in the `SELECT` list is refused as well, and leaves nothing to withhold: a
+-- condition may not be pushed below one, because filtering first would change what the function
+-- computes. Both sides key on the same `isStateful`, so this holds for every such function rather
+-- than for the one picked here - including a deterministic one, which cannot be written here because
+-- the ones that exist need credentials or a `TimeSeries` context to be planned at all.
 CREATE VIEW v_stateful_pr_rewrite_shapes AS
-    SELECT tenant, ts, generateSerialID('05183') AS sid FROM t_pr_rewrite_shapes ORDER BY ts;
+    SELECT tenant, ts, rowNumberInAllBlocks() AS rn FROM t_pr_rewrite_shapes ORDER BY ts;
+-- The control: non-deterministic but not stateful. A condition does go below this one, so the read
+-- orders itself off it - which is what tells statefulness apart from non-determinism as the reason.
+CREATE VIEW v_nondet_pr_rewrite_shapes AS
+    SELECT tenant, ts, rand() AS r FROM t_pr_rewrite_shapes ORDER BY ts;
 
 -- For runs with the old analyzer
 SET enable_analyzer = 1;
@@ -98,15 +107,25 @@ WHERE explain LIKE '%Read type%';
 SELECT count() FROM (SELECT tenant, ts, seven, mx FROM v_with_pr_rewrite_shapes WHERE tenant = 5);
 SET allow_push_predicate_when_subquery_contains_with = 1;
 
-SELECT 'stateful select list: nothing is ordered either way';
+SELECT 'stateful select list: the condition cannot go below it, so nothing is ordered';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (
     EXPLAIN description = 0, actions = 1
-    SELECT tenant, ts, sid FROM v_stateful_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
+    SELECT tenant, ts, rn FROM v_stateful_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
 )
 WHERE explain LIKE '%Read type%';
-SELECT count() FROM (SELECT tenant, ts, sid FROM v_stateful_pr_rewrite_shapes WHERE tenant = 5);
+SELECT count() FROM (SELECT tenant, ts, rn FROM v_stateful_pr_rewrite_shapes WHERE tenant = 5);
 
+SELECT 'non-deterministic but not stateful: the condition does go below it';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts, r FROM v_nondet_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
+SELECT count() FROM (SELECT tenant, ts, r FROM v_nondet_pr_rewrite_shapes WHERE tenant = 5);
+
+DROP VIEW v_nondet_pr_rewrite_shapes;
 DROP VIEW v_stateful_pr_rewrite_shapes;
 DROP VIEW v_with_pr_rewrite_shapes;
 DROP VIEW v_limit_by_pr_rewrite_shapes;

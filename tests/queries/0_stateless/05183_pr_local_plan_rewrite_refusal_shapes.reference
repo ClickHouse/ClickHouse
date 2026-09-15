@@ -12,6 +12,10 @@ Prewhere filter column:  tenant = 5
 a with list never reaches the rewrite, so the read is ordered as the replicas order theirs
 Read type: InOrder
 1000
-stateful select list: nothing is ordered either way
+stateful select list: the condition cannot go below it, so nothing is ordered
 Read type: Default
+1000
+non-deterministic but not stateful: the condition does go below it
+Read type: InOrder
+Prewhere filter column:  tenant = 5
 1000
