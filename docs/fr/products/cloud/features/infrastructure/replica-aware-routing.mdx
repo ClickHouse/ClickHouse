@@ -2,13 +2,16 @@
 title: 'Routage tenant compte des répliques'
 slug: /manage/replica-aware-routing
 description: 'Acheminez les requêtes associées vers la même réplique ClickHouse Cloud pour les tables temporaires, les sessions, la réutilisation du cache et la cohérence lecture après écriture'
-keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'routage sticky', 'routage', 'routage tenant compte des répliques', 'X-ClickHouse-Replica-Tag', 'session_id', 'affinité de session', 'tables temporaires', 'cohérence lecture après écriture']
+keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'routage sticky', 'routage', 'routage tenant compte des répliques', 'X-ClickHouse-Replica-Tag', 'affinité de session', 'tables temporaires', 'cohérence lecture après écriture']
 doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="Routage tenant compte des répliques" support="true" />
 
 Le routage tenant compte des répliques (également appelé sessions sticky, routage sticky ou affinité de session) achemine les requêtes liées vers la même réplique ClickHouse. Utilisez-le lorsque des [tables temporaires](/fr/reference/statements/create/table/temporary-table) ou un [état de session nommé](/fr/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) doivent rester accessibles d’une requête à l’autre, lorsque vous souhaitez que des requêtes liées réutilisent les caches locaux d’une même réplique, ou lorsque vous avez besoin d’une [cohérence lecture après écriture](#read-after-write-consistency) entre une écriture et les lectures qui suivent.
 
@@ -17,7 +20,7 @@ Il est fourni au mieux et ne garantit pas l’isolation. Le proxy associe chaque
 <Warning>
   **Nécessite l’interface HTTP**
 
-  Le routage tenant compte des répliques est appliqué au niveau du proxy via l’[interface HTTP/HTTPS](/fr/concepts/features/interfaces/http). ClickHouse Cloud est en train de faire passer le routage tenant compte des répliques de `session_id` à l’en-tête `X-ClickHouse-Replica-Tag`. Les onglets ci-dessous décrivent les deux méthodes pendant le déploiement.
+  Le routage tenant compte des répliques est appliqué au niveau du proxy via l’[interface HTTP/HTTPS](/fr/concepts/features/interfaces/http) à l’aide de l’en-tête `X-ClickHouse-Replica-Tag`.
 
   Le routage tenant compte des répliques est **actuellement indisponible via le protocole natif** (port natif, par exemple avec le driver [clickhouse-go](/fr/integrations/language-clients/go/index) dans son mode natif par défaut). Les clients utilisant le protocole natif doivent passer à HTTP et envoyer la valeur de routage avec chaque requête.
 </Warning>
@@ -34,92 +37,45 @@ Il est fourni au mieux et ne garantit pas l’isolation. Le proxy associe chaque
   ## Configuration du routage tenant compte des répliques
 </div>
 
-Ouvrez un ticket [d&#39;assistance](https://clickhouse.com/support/program) et demandez l&#39;activation du routage sticky HTTP vers les répliques. Indiquez l&#39;ID de votre service et la raison pour laquelle vous en avez besoin (tables temporaires, état de la session, réutilisation du cache ou cohérence lecture après écriture). Avant de migrer un service existant, demandez à l&#39;assistance de confirmer que le routage basé sur les en-têtes est activé pour celui-ci. Continuez à utiliser `session_id` jusqu&#39;à ce que vous receviez une confirmation ; `X-ClickHouse-Replica-Tag` ne fournira pas de routage sticky tant que le déploiement progressif n&#39;aura pas atteint votre service. Aucun redémarrage n&#39;est nécessaire.
+Ouvrez un ticket [d&#39;assistance](https://clickhouse.com/support/program) et demandez l&#39;activation du routage sticky HTTP vers les répliques. Indiquez l&#39;ID de votre service et la raison pour laquelle vous en avez besoin (tables temporaires, état de la session, réutilisation du cache ou cohérence lecture après écriture). Aucun redémarrage n&#39;est nécessaire.
 
 <div id="http-based-routing">
   ## Routage HTTP
 </div>
 
-<Tabs>
-  <Tab title="X-ClickHouse-Replica-Tag (recommandé)">
-    Pour associer une charge de travail à une réplique, envoyez un en-tête `X-ClickHouse-Replica-Tag` via l’[interface HTTPS](/fr/concepts/features/interfaces/http). Le proxy applique un hachage cohérent à la valeur de l’en-tête : les requêtes partageant cette valeur sont donc dirigées vers la même réplique tant que le nombre de répliques reste inchangé. Une valeur différente est hachée indépendamment et peut être associée à la même réplique ou à une autre, mais vous ne choisissez pas *à quelle* réplique une valeur est associée.
+Pour associer une charge de travail à une réplique, envoyez un en-tête `X-ClickHouse-Replica-Tag` via l’[interface HTTPS](/fr/concepts/features/interfaces/http). Le proxy applique un hachage cohérent à la valeur de l’en-tête : les requêtes partageant cette valeur sont donc dirigées vers la même réplique tant que le nombre de répliques reste inchangé. Une valeur différente est hachée indépendamment et peut être associée à la même réplique ou à une autre, mais vous ne choisissez pas *à quelle* réplique une valeur est associée.
 
-    Utilisez le hostname existant de votre service. Aucun hostname sticky spécifique ni aucune modification DNS ne sont nécessaires. La valeur de l’en-tête peut être n’importe quelle chaîne de votre choix, par exemple un nom d’application, un ID utilisateur ou un label de charge de travail. Les requêtes sans cet en-tête conservent l’équilibrage de charge habituel.
+Utilisez le nom d’hôte existant de votre service. Aucun nom d’hôte sticky spécifique ni aucune modification DNS ne sont nécessaires. La valeur de l’en-tête peut être n’importe quelle chaîne de votre choix, par exemple un nom d’application, un ID utilisateur ou un label de charge de travail. Les requêtes sans cet en-tête conservent l’équilibrage de charge habituel.
 
-    Définissez l’en-tête `X-ClickHouse-Replica-Tag` pour chaque requête :
+Définissez l’en-tête `X-ClickHouse-Replica-Tag` pour chaque requête :
 
-    ```bash
-    echo 'SELECT hostName()' | curl \
-      -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
-      -H 'X-ClickHouse-User: default' \
-      -H 'X-ClickHouse-Key: <password>' \
-      'https://<host>:8443/' -d @-
-    ```
+```bash
+echo 'SELECT hostName()' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
 
-    Pour clickhouse-go (v2), définissez `Protocol: clickhouse.HTTP` et transmettez l’en-tête à l’aide de l’[option de connexion `HttpHeaders`](/fr/integrations/language-clients/go/configuration#connection-settings).
+Pour clickhouse-go (v2), définissez `Protocol: clickhouse.HTTP` et transmettez l’en-tête à l’aide de l’[option de connexion `HttpHeaders`](/fr/integrations/language-clients/go/configuration#connection-settings).
 
-    <Info>
-      `X-ClickHouse-Replica-Tag` assure une affinité avec une réplique sans créer de session HTTP ClickHouse. Les requêtes concurrentes peuvent réutiliser le même tag sans rencontrer l’erreur `SESSION_IS_LOCKED`.
-    </Info>
+<Info>
+  `X-ClickHouse-Replica-Tag` assure une affinité avec une réplique sans créer de session HTTP ClickHouse. Les requêtes concurrentes peuvent réutiliser le même tag sans rencontrer l’erreur `SESSION_IS_LOCKED`.
+</Info>
 
-    ### Cohérence lecture après écriture
-
-    Dans un service comportant plusieurs répliques, une écriture effectuée sur une réplique peut ne pas être visible sur les autres tant que la réplication n’a pas rattrapé son retard. Envoyez votre écriture avec un en-tête `X-ClickHouse-Replica-Tag`, puis réutilisez la même valeur d’en-tête pour les lectures suivantes. Le proxy achemine les deux requêtes vers la même réplique : vous lisez donc votre propre écriture, même si les autres répliques sont encore en retard. Ce modèle convient aux workloads qui écrivent des données, puis les relisent immédiatement, comme les applications interactives ou les jobs ETL qui valident les inserts avant de poursuivre.
-
-    Pour des garanties plus étendues sur l’ensemble des répliques, vous pouvez également définir [`select_sequential_consistency`](/fr/reference/settings/session-settings#select_sequential_consistency) sur `1` dans ClickHouse Cloud.
-
-    ### Vérifier quelle réplique est utilisée
-
-    Exécutez à nouveau l’exemple `SELECT hostName()` avec la même valeur `X-ClickHouse-Replica-Tag`. Vous devriez obtenir le même hostname tant que le nombre de répliques reste inchangé. Une valeur d’en-tête différente peut être associée à une autre réplique.
-  </Tab>
-
-  <Tab title="session_id (legacy)">
-    <Warning>
-      `X-ClickHouse-Replica-Tag` remplace `session_id` pour le routage tenant compte des répliques. Continuez à utiliser `session_id` jusqu’à ce que le support confirme que le routage basé sur les en-têtes est activé pour votre service.
-    </Warning>
-
-    **Les requêtes concurrentes échouent avec `SESSION_IS_LOCKED`**
-
-    * Comme `session_id` crée une session HTTP ClickHouse, une seule requête peut s’exécuter à la fois dans une même session.
-    * Une fois le routage basé sur les en-têtes activé pour votre service, les charges de travail qui nécessitent uniquement une affinité de réplique peuvent passer à `X-ClickHouse-Replica-Tag`. Les requêtes concurrentes peuvent partager le même tag de réplique.
-    * Si vous avez besoin de l’état de session HTTP de ClickHouse, sérialisez les requêtes qui partagent un `session_id`.
-
-    Pour associer une charge de travail à une réplique, envoyez un paramètre de requête `session_id` sur l’[interface HTTPS](/fr/concepts/features/interfaces/http). Le proxy utilise un hachage cohérent de la valeur du paramètre afin que les requêtes qui la partagent soient envoyées vers la même réplique tant que le nombre de répliques reste inchangé. Une valeur différente est hachée indépendamment et peut être envoyée vers la même réplique ou vers une autre, mais vous ne choisissez pas *vers quelle* réplique une valeur est routée.
-
-    Utilisez le hostname existant de votre service. Aucun hostname sticky spécifique ni aucune modification DNS ne sont nécessaires. Le `session_id` peut être n’importe quelle chaîne de caractères de votre choix, par exemple un nom d’application, un ID utilisateur ou un label de charge de travail. Les requêtes sans `session_id` conservent l’équilibrage de charge habituel.
-
-    Définissez le paramètre de requête `session_id` dans chaque requête :
-
-    ```bash
-    echo 'SELECT hostName()' | curl \
-      -H 'X-ClickHouse-User: default' \
-      -H 'X-ClickHouse-Key: <password>' \
-      'https://<host>:8443/?session_id=my-workload-1' -d @-
-    ```
-
-    Pour clickhouse-go (v2), définissez `Protocol: clickhouse.HTTP` et transmettez `session_id` en tant que [paramètre](/fr/integrations/language-clients/go/database-sql-api#sessions). Le driver l’envoie sous forme de paramètre de requête URL.
-
-    ### Cohérence lecture après écriture avec `session_id`
-
-    Dans un service comportant plusieurs répliques, une écriture effectuée sur une réplique peut ne pas être visible sur les autres tant que la réplication n&#39;a pas rattrapé son retard. Envoyez votre écriture avec un `session_id`, puis réutilisez ce même `session_id` lors des lectures suivantes. Le proxy achemine les deux vers la même réplique, ce qui vous permet de lire votre propre écriture, même si les autres répliques accusent encore un retard. Ce modèle convient aux charges de travail qui écrivent, puis relisent immédiatement les mêmes données, telles que les applications interactives ou les jobs ETL qui valident les inserts avant de continuer.
-
-    Pour des garanties plus étendues sur l&#39;ensemble des répliques, vous pouvez également définir [`select_sequential_consistency`](/fr/reference/settings/session-settings#select_sequential_consistency) sur `1` dans ClickHouse Cloud.
-
-    ### Vérifier quelle réplique est utilisée avec `session_id`
-
-    Exécutez à nouveau l&#39;exemple `SELECT hostName()` avec le même `session_id`. Vous devriez obtenir le même hostname tant que le nombre de répliques reste inchangé. Un `session_id` différent peut être associé à une autre réplique.
-  </Tab>
-</Tabs>
-
-<div id="subdomain-based-routing-deprecated">
-  ## Routage legacy basé sur les sous-domaines
+<div id="read-after-write-consistency">
+  ### Cohérence lecture après écriture
 </div>
 
-Le routage basé sur les sous-domaines n’est plus activé pour les nouveaux services. Si vous utilisez déjà des sous-domaines sticky, contactez le [support](https://clickhouse.com/support/program) pour migrer vers la [méthode utilisant l’en-tête HTTP](#http-based-routing).
+Dans un service comportant plusieurs répliques, une écriture effectuée sur une réplique peut ne pas être visible sur les autres tant que la réplication n’a pas rattrapé son retard. Envoyez votre écriture avec un en-tête `X-ClickHouse-Replica-Tag`, puis réutilisez la même valeur d’en-tête pour les lectures suivantes. Le proxy achemine les deux requêtes vers la même réplique : vous lisez donc votre propre écriture, même si les autres répliques sont encore en retard. Ce modèle convient aux charges de travail qui écrivent des données, puis les relisent immédiatement, comme les applications interactives ou les jobs ETL qui valident les inserts avant de poursuivre.
 
-<Accordion title="Fonctionnement du routage legacy basé sur les sous-domaines">
-  Auparavant, l’activation du routage tenant compte des répliques permettait d’utiliser un sous-domaine générique au-dessus du nom d’hôte du service. Pour un service dont le nom d’hôte est `abcxyz123.us-west-2.aws.clickhouse.cloud`, tout nom d’hôte correspondant à `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud` (par exemple `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`) était associé par hachage par Envoy à une réplique déterminée. Le nom d’hôte d’origine continuait d’utiliser l’équilibrage de charge `LEAST_CONNECTION`, l’algorithme de routage par défaut.
-</Accordion>
+Pour des garanties plus étendues sur l’ensemble des répliques, vous pouvez également définir [`select_sequential_consistency`](/fr/reference/settings/session-settings#select_sequential_consistency) sur `1` dans ClickHouse Cloud.
+
+<div id="check-which-replica">
+  ### Vérifier quelle réplique est utilisée
+</div>
+
+Exécutez à nouveau l’exemple `SELECT hostName()` avec la même valeur `X-ClickHouse-Replica-Tag`. Vous devriez obtenir le même nom d’hôte tant que le nombre de répliques reste inchangé. Une valeur d’en-tête différente peut être associée à une autre réplique.
 
 <div id="limitations-of-replica-aware-routing">
   ## Limites du routage tenant compte des réplicas
@@ -137,19 +93,17 @@ La mise à l’échelle horizontale, à la hausse comme à la baisse, modifie l�
 
 Le routage sticky contrôle uniquement *quelle* réplique traite une requête. Cette réplique peut tout de même servir d&#39;autres requêtes. Pour un compute dédié, utilisez la [séparation compute-compute](/fr/products/cloud/features/infrastructure/warehouses).
 
-<div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
-  ### Private Link et la méthode de sous-domaine legacy
+<div id="private-networking">
+  ### Mise en réseau privée
 </div>
 
 Le routage HTTP fonctionne avec la [mise en réseau privée](/fr/products/cloud/guides/security/connectivity/private-networking) sur le nom d’hôte habituel de votre service. Aucune entrée DNS supplémentaire n’est requise.
-
-Ce n’est pas le cas de la méthode legacy par sous-domaine : vous devez ajouter des entrées DNS pour le motif de nom d’hôte `*.sticky.*`, et une configuration incorrecte peut déséquilibrer la charge entre les répliques.
 
 <div id="replica-aware-routing-requires-http">
   ### Le routage tenant compte des répliques nécessite le protocole HTTP
 </div>
 
-Le routage sticky repose sur un en-tête HTTP ou un paramètre de requête, selon la méthode de routage disponible pour votre service. Le protocole binaire natif ne transporte aucune de ces deux valeurs sur lesquelles le proxy HTTP puisse calculer un hash ; le routage tenant compte des répliques n’est donc pas disponible avec le protocole natif. Les clients utilisant le protocole natif doivent faire passer la charge de travail concernée par l’interface HTTP pour utiliser cette fonctionnalité.
+Le routage sticky repose sur l’en-tête HTTP `X-ClickHouse-Replica-Tag`. Le protocole binaire natif ne transporte pas cette valeur sur laquelle le proxy HTTP puisse calculer un hash ; le routage tenant compte des répliques n’est donc pas disponible avec le protocole natif. Les clients utilisant le protocole natif doivent faire passer la charge de travail concernée par l’interface HTTP pour utiliser cette fonctionnalité.
 
 <div id="troubleshooting">
   ## Résolution des problèmes
@@ -157,7 +111,8 @@ Le routage sticky repose sur un en-tête HTTP ou un paramètre de requête, selo
 
 **Les requêtes sont toujours dirigées vers différentes répliques avec la même valeur de routage**
 
-* Vérifiez que vous utilisez la méthode de routage disponible pour votre service : l’en-tête `X-ClickHouse-Replica-Tag` ou le paramètre de requête URL `session_id` legacy.
-* Vérifiez que chaque requête utilise exactement la même valeur de routage.
-* Attendez un instant après l’activation. La modification peut prendre moins d’une minute avant de prendre effet.
-* Vérifiez si le nombre de répliques a récemment changé ; un remappage est attendu après une mise à l’échelle. Utilisez `SELECT hostName()` pour déterminer le nouveau mappage.
+* Vérifiez que chaque requête inclut l’en-tête `X-ClickHouse-Replica-Tag`.
+
+- Vérifiez que chaque requête utilise exactement la même valeur de routage.
+- Attendez un instant après l’activation. La modification peut prendre moins d’une minute avant de prendre effet.
+- Vérifiez si le nombre de répliques a récemment changé ; un remappage est attendu après une mise à l’échelle. Utilisez `SELECT hostName()` pour déterminer la nouvelle association.

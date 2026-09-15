@@ -1,14 +1,14 @@
 ---
 slug: /use-cases/AI/ai-powered-sql-generation
-sidebarTitle: 'AI による SQL 生成'
-title: 'AI による SQL 生成'
+sidebarTitle: 'AI による SQL クエリ生成'
+title: 'AI による SQL クエリ生成'
 description: 'このガイドでは、ClickHouse Client または clickhouse-local で AI を使って SQL クエリを生成する方法を説明します。'
-keywords: ['AI', 'SQL generation']
+keywords: ['AI', 'SQL クエリ生成']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-ClickHouse 25.7 以降、[ClickHouse Client](/ja/concepts/features/interfaces/cli) と [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) には、自然言語による説明を SQL クエリに変換する [AI 搭載機能](/ja/concepts/features/interfaces/client#ai-sql-generation) が含まれています。この機能を使うと、必要なデータを平易なテキストで記述でき、システムがそれを対応する SQL ステートメントに変換します。
+ClickHouse 25.7 以降、[ClickHouse Client](/ja/concepts/features/interfaces/client) と [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) には、自然言語による説明を SQL クエリに変換する [AI 搭載機能](/ja/concepts/features/interfaces/client#ai-sql-generation) が含まれています。この機能を使うと、必要なデータを平易なテキストで記述でき、システムがそれを対応する SQL ステートメントに変換します。
 
 この機能は、複雑な SQL 構文に不慣れな場合や、探索的データ分析のためのクエリをすばやく生成したい場合に特に便利です。標準的な ClickHouse テーブルで動作し、フィルタリング、集約、JOIN など、一般的なクエリパターンをサポートします。
 
