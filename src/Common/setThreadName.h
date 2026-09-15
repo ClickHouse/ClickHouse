@@ -149,6 +149,7 @@ namespace DB
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
     M(SIGNAL_LISTENER, "SignalListnr") \
+    M(SNAPSHOT_ASYNC, "SnapshotAsync") \
     M(SSH_HANDLER, "SSHHandler") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
@@ -159,7 +160,6 @@ namespace DB
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
-    M(UDF_DRIVER, "UDFDriver") \
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \

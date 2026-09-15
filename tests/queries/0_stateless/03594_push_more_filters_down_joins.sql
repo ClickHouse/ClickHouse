@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET optimize_trivial_insert_select = 0;
 
 CREATE TABLE t1

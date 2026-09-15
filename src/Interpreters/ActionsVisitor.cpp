@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 
 #include <Common/assert_cast.h>
@@ -58,6 +59,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/misc.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -484,6 +486,14 @@ void ScopeStack::addFunction(
     const auto & node = stack[level].actions_dag.addFunction(function, std::move(children), std::move(result_name));
     stack[level].index->addNode(&node);
 
+    {
+        auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
+        bool node_has_secret = FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets();
+        bool child_has_secret = std::any_of(
+            node.children.begin(), node.children.end(), [](const ActionsDAG::Node * child) { return child->is_masked_secret; });
+        mutable_node.is_masked_secret = node_has_secret || (node.column && child_has_secret);
+    }
+
     for (size_t j = level + 1; j < stack.size(); ++j)
     {
         const auto & input = stack[j].actions_dag.addInput({node.column, node.result_type, node.result_name});
@@ -798,10 +808,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
                 /// Do not evaluate subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
+                /// Pass the left operand alone: the `IgnoreSet` variants never read the set, and the
+                /// real `in` always gets its set as a constant column, so a constant is what the
+                /// `LowCardinality` bookkeeping in `IFunctionOverloadResolver::getReturnType` expects
+                /// to see there. Passing the left operand twice instead would count two full
+                /// `LowCardinality` columns and type the expression as plain `UInt8` while execution
+                /// yields `LowCardinality(UInt8)`, so a query reading such a column across a subquery
+                /// boundary would fail the type check in `ActionsDAG::updateHeader`. A stand-in
+                /// constant column is not an option either: it would become part of the captured
+                /// arguments of an enclosing lambda and be looked up in later analysis passes that
+                /// never created it.
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
                 data.addFunction(
                     FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
-                    {argument_name, argument_name},
+                    {argument_name},
                     column_name);
             }
             return;

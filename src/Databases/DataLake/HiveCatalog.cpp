@@ -171,6 +171,27 @@ DB::Names HiveCatalog::getTables() const
     return result;
 }
 
+DataLake::ICatalog::Namespaces HiveCatalog::getNamespaces() const
+{
+    /// HMS databases are flat — they cannot contain nested namespaces.
+    DB::Names databases;
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
+    return databases;
+}
+
+DB::Names HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    DB::Names current_tables;
+    /// Retry transient `TTransportException` (same wrapper as `getTables`) rather
+    /// than letting it bubble up and become an empty table list.
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, namespace_name); });
+    DB::Names result;
+    result.reserve(current_tables.size());
+    for (const auto & table : current_tables)
+        result.push_back(namespace_name + "." + table);
+    return result;
+}
+
 bool HiveCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     Apache::Hadoop::Hive::Table table;

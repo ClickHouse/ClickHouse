@@ -82,7 +82,12 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(pruning_status ? *pruning_status : iceberg_pruning_status_datatype_nullable->getDefault());
 }
 
-void insertRowToLogTable(
+IcebergMetadataLogLevel getIcebergMetadataLogLevel(const ContextPtr & local_context)
+{
+    return local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
+}
+
+void insertRowToLogTableImpl(
     const ContextPtr & local_context,
     String row,
     IcebergMetadataLogLevel row_log_level,
@@ -91,9 +96,6 @@ void insertRowToLogTable(
     std::optional<UInt64> row_in_file,
     std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
-    IcebergMetadataLogLevel set_log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
-    if (set_log_level < row_log_level)
-        return;
     timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");

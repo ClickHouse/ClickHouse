@@ -59,9 +59,6 @@ public:
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
-    void setLimitHint(size_t limit) { limit_hint = limit; }
-    size_t getLimitHint() const { return limit_hint; }
-    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     const SortDescription & getSortDescription() const override;
 
@@ -100,11 +97,9 @@ public:
     bool hasCorrelatedExpressions() const override { return false; }
 
     Aggregator::Params getAggregatorParameters() const { return params; }
-    /// Set during query-plan optimization (see setAggregationHashTableCacheKeys). A non-zero key
-    /// enables hash-table-size preallocation; StatsCollectingParams treats key == 0 as disabled.
-    void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
+    void setProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
     size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
     size_t getMergeThreads() const noexcept { return merge_threads; }
@@ -140,12 +135,10 @@ private:
     SortDescription group_by_sort_description;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
-    const bool should_produce_results_in_order_of_bucket_number;
+    bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
     bool enable_sharding_aggregator;
-
-    size_t limit_hint = 0;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;

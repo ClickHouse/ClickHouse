@@ -69,23 +69,13 @@ SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVA
 And to compare values with different intervals:
 
 ```sql
-SELECT toIntervalMicrosecond(179999999) < toIntervalMinute(3);
+SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 ```
 
 ```text
 ┌─less(toIntervalMicrosecond(179999999), toIntervalMinute(3))─┐
 │                                                           1 │
 └─────────────────────────────────────────────────────────────┘
-```
-
-```sql
-SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
-```
-
-```text
-┌─equals(toIntervalMicrosecond(3600000000), toIntervalHour(1))─┐
-│                                                            1 │
-└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Mixed-type Intervals {#mixed-type-intervals}

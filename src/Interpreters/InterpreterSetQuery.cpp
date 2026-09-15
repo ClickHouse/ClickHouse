@@ -1,9 +1,7 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/RestoreSettings.h>
 #include <Core/Settings.h>
-#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -25,13 +23,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsDefaultTableEngine default_table_engine;
-    extern const SettingsDefaultTableEngine default_temporary_table_engine;
 }
 
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+    /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
+    getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
@@ -44,7 +43,10 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     if (!ignore_setting_constraints)
+    {
         getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
+    }
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
@@ -65,59 +67,12 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
 
 namespace
 {
-/// For `CREATE TABLE dst AS src [storage_clauses]` without an explicit ENGINE, the engine is inherited from the
-/// source table `src` (see `InterpreterCreateQuery::setEngine`). Resolve that engine's name so the SETTINGS clause
-/// is split (engine settings vs query settings) against the engine the table will actually have, rather than the
-/// default one: otherwise an engine-specific setting of the inherited engine (for example `join_use_nulls` for a
-/// `Join` source) would be misclassified as a query setting, hoisted into the context, and dropped from the
-/// persisted table definition. Returns nullopt when the source cannot be inspected or has no engine of its own
-/// (for example a table function source); the caller then falls back to the default engine, which matches what
-/// `setEngine` does in those cases.
-std::optional<String> getInheritedEngineName(const ASTCreateQuery & create, ContextMutablePtr context)
-{
-    if (create.as_table.empty())
-        return {};
-
-    auto database = DatabaseCatalog::instance().tryGetDatabase(context->resolveDatabase(create.as_database));
-    if (!database)
-        return {};
-
-    auto as_create_ptr = database->tryGetCreateTableQuery(create.as_table, context);
-    if (!as_create_ptr)
-        return {};
-
-    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
-
-    /// For a materialized view source the engine and keys live in the inner storage definition.
-    const ASTStorage * as_storage = as_create.is_materialized_view ? as_create.getTargetInnerEngine(ViewTarget::To) : as_create.storage;
-    if (as_storage && as_storage->engine)
-        return as_storage->engine->name;
-
-    return {};
-}
-
 std::optional<String> getTableStorageName(const ASTCreateQuery & create, ContextMutablePtr context)
 {
     if ((create.database && !create.table) || create.isView())
         return {};
     if (create.storage->engine)
         return create.storage->engine->name;
-
-    /// Temporary tables never inherit the source engine: `InterpreterCreateQuery::setEngine` resolves their
-    /// engine to `default_temporary_table_engine` regardless of the `AS` source. Mirror that here so the SETTINGS
-    /// clause is split against the engine the temporary table will actually have, instead of the inherited source
-    /// engine. Otherwise an engine-specific setting of the source (for example `join_use_nulls` for a `Join` source)
-    /// would be kept in the storage definition and then rejected by the actual engine (for example `Memory`).
-    if (create.isTemporary())
-    {
-        auto default_temporary_engine = context->getSettingsRef()[Setting::default_temporary_table_engine];
-        if (default_temporary_engine == DefaultTableEngine::None)
-            return {};
-        return default_temporary_engine.toString();
-    }
-
-    if (auto inherited_engine = getInheritedEngineName(create, context))
-        return inherited_engine;
 
     auto default_engine = context->getSettingsRef()[Setting::default_table_engine];
     if (default_engine == DefaultTableEngine::None)

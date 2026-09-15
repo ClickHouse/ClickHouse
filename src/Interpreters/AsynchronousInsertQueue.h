@@ -84,7 +84,8 @@ public:
     {
     public:
         ASTPtr query;
-        String query_str;
+        /// Never log it, use `serializeQuery` on `query` instead.
+        String query_str_with_secrets;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
         /// Client identity of the originating INSERT query (ClientInfo user names).
@@ -116,7 +117,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -235,7 +236,8 @@ private:
     /// Ordered container
     /// Key is a timestamp of the first insert into batch.
     /// Used to detect for how long the batch is active, so we can dump it by timer.
-    using Queue = std::map<std::chrono::steady_clock::time_point, Container>;
+    /// Must be a multimap: two queries with different keys may theoretically compute the same deadline.
+    using Queue = std::multimap<std::chrono::steady_clock::time_point, Container>;
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 

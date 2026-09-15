@@ -269,9 +269,6 @@ namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
-        /// Accept both the clean `auto(N)` form and the legacy `'auto(N)'` form (quotes included in the
-        /// value). The latter is what older replicas send over the wire; keeping it parseable is what lets
-        /// `toString` emit the clean form without breaking mixed-version clusters. Do not remove it.
         if (startsWith(str, "auto") || startsWith(str, "'auto"))
             return 0;
         return parseFromString<UInt64>(str);
@@ -298,13 +295,8 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        /// The surrounding quotes are an unfortunate historical artifact: for a long time this returned the
-        /// string `'auto(N)'` (quotes included in the value itself), which leaks into `system.settings` and
-        /// looks like garbage. We emit the clean `auto(N)` form now. This is safe across versions because
-        /// `stringToMaxThreads` accepts both `auto(...)` and the legacy `'auto(...)'` form, so a server
-        /// receiving settings from an older replica still parses them, and every released version can parse
-        /// the unquoted form we send (see issue #68748 and the history below).
-        return "auto(" + ::DB::toString(value) + ")";
+        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
+        return "'auto(" + ::DB::toString(value) + ")'";
     return ::DB::toString(value);
 }
 
@@ -577,8 +569,12 @@ void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
 }
 
-String SettingFieldCustom::toString() const
+String SettingFieldCustom::toString(bool show_secrets) const
 {
+    CustomType custom;
+    if (!show_secrets && value.tryGet<CustomType>(custom) && custom.isSecret())
+        return custom.toString(/* show_secrets */ false);
+
     return value.dump();
 }
 

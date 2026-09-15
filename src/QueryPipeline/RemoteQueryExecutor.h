@@ -4,7 +4,6 @@
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/UniqueLock.h>
-#include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
@@ -225,11 +224,6 @@ public:
 
     bool needToSkipUnavailableShard();
 
-    /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
-    /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
-    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
-    void reportShardSkipped();
-
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
     /// return true if parallel replica packet was processed
@@ -306,34 +300,19 @@ private:
       */
     bool got_exception_from_replica = false;
 
-    /** Whether the shard has already returned any data block with rows.
-      * Used by `skip_unavailable_shards_mode = unavailable_or_exception_before_processing`
-      * to decide whether an exception arrived before the shard started returning results.
-      */
-    bool got_data_from_replica = false;
-
-    /// Cached `skip_unavailable_shards` settings, read once at construction time.
-    const bool skip_unavailable_shards;
-    const SkipUnavailableShardsMode skip_unavailable_shards_mode;
-
-    /** Returns true if an exception packet received from the shard should be silently
-      * ignored according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
-      */
-    bool shouldIgnoreShardException(int exception_code) const;
-
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
       */
     bool got_unknown_packet_from_replica = false;
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     bool packet_in_progress = false;
 #endif
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    LoggerPtr log = getLogger("RemoteQueryExecutor");
+    LoggerPtr log = nullptr;
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     bool shard_skip_reported = false;

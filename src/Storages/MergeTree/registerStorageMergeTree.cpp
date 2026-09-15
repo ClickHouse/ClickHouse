@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -669,6 +670,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
+    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+
     if (is_extended_storage_def)
     {
         ASTPtr partition_by_key;
@@ -718,7 +721,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, metadata.virtuals, context);
+            metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
+                args.storage_def->primary_key->ptr(), metadata.sorting_key, metadata.columns, metadata.virtuals, context);
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by.
         {
@@ -823,17 +827,28 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// table was originally created.
         /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
         /// still be subject to these checks.
-        storage_settings->loadFromQuery(
-            *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
+        storage_settings->loadFromQuery(*args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode));
+
+        /// What this query changes from the settings the server has in effect, which already include the
+        /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
+        /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
+        if (is_fresh_definition)
+            args.getLocalContext()->checkMergeTreeSettingsConstraints(
+                initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
+        /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
+        /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
+        /// such as `index_granularity = 0` that the same `CREATE` refuses, and the table is created broken.
+        if (is_fresh_definition && args.mode > LoadingStrictnessLevel::CREATE)
+        {
+            context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+            storage_settings->sanityCheck(
+                context->getMergeMutateExecutor()->getMaxTasksCount(), context->wasBackgroundPoolAutoLowered());
+        }
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-        {
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
-        }
 
         /// UNIQUE KEY tables must reside on local-only storage policies.
         /// CREATE only; ATTACH must still load existing tables.
@@ -917,7 +932,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -998,7 +1014,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             (*storage_settings)[MergeTreeSetting::index_granularity] = ast->value.safeGet<UInt64>();
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            /// The old syntax states `index_granularity` as an engine argument instead of a setting
+            if (is_fresh_definition)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));
@@ -1560,7 +1577,7 @@ For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter in
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
 :::
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
@@ -1632,7 +1649,7 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
 :::
 
 ```text title="Syntax"
@@ -1649,11 +1666,11 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](/engines/table-engines/mergetree-family/textindexes) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
-Supports approximate nearest neighbor search, see [here](/engines/table-engines/mergetree-family/annindexes) for details.
+Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
 
 ### Functions support {#functions-support}
 
@@ -3765,8 +3782,8 @@ The settings for rollup are defined by the [graphite_rollup](../../../operations
 
 Rollup configuration structure:
 
-- required-columns
-- patterns
+      required-columns
+      patterns
 
 ### Required columns {#required-columns}
 

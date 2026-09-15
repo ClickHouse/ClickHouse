@@ -702,11 +702,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::doScheduling");
     std::unique_lock lock(mutex);
 
-    /// shutdown() runs doScheduling(is_shutdown=true) without holding the mutex, so a parallel
-    /// shutdown() can null `view` before we enter. Bail before dereferencing it below.
-    if (!view)
-        return;
-
     /// The way this function generally works is:
     ///  * Look at state in zookeeper and in memory and at current time.
     ///  * If some change is needed (e.g. write to zookeeper or start a refresh), make that change,
@@ -989,15 +984,7 @@ void RefreshTask::executeRefresh()
 
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
     if (execution.znode.attempt_number > 1)
-    {
-        Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
-        if (retries < 0)
-            /// Infinite retries: no fixed total to show.
-            log_comment += fmt::format(" (attempt {})", execution.znode.attempt_number);
-        else
-            /// Total attempts = retries + 1. Compute in UInt64 to avoid signed overflow at INT64_MAX.
-            log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, static_cast<UInt64>(retries) + 1);
-    }
+        log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1);
 
     std::vector<StorageID> deps = set_handle.getDependencies();
 
@@ -1098,10 +1085,20 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
-            /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
-            /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
-            /// pattern's bucket instead of the shared hash-0 bucket.
-            refresh_context->setNormalizedQueryHash(normalized_query_hash);
+
+            /// Publish the query status before interpreting the query, not just around the pipeline executor
+            /// below: planning runs nested pipelines for `IN (subquery)` sets, and only the status cancels those.
+            {
+                std::unique_lock exec_lock(execution.executor_mutex);
+                if (execution.interrupt_execution.load())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                execution.executing_query_status = process_list_entry->getQueryStatus();
+            }
+            SCOPE_EXIT({
+                std::unique_lock exec_lock(execution.executor_mutex);
+                execution.executing_query_status = nullptr;
+            });
+
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
                 execution.progress.incrementPiecewiseAtomically(prog);
@@ -1139,12 +1136,10 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     if (execution.interrupt_execution.load())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
                     execution.executor = &executor;
-                    execution.executing_query_status = process_list_entry ? process_list_entry->getQueryStatus() : nullptr;
                 }
                 SCOPE_EXIT({
                     std::unique_lock exec_lock(execution.executor_mutex);
                     execution.executor = nullptr;
-                    execution.executing_query_status = nullptr;
                 });
 
                 executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
@@ -1219,17 +1214,9 @@ void RefreshTask::notifyDependentsIfNeeded(std::unique_lock<std::mutex> & lock)
     auto info = getInfoForDependentViewsLocked(lock);
     if (info != coordination.notified_dependents)
     {
-        /// Our callers (readZnodesIfNeeded, updateCoordinationState) release the mutex before
-        /// reaching here, so a parallel shutdown() may have nulled `view`. Bail in that case
-        /// (shutdown() does its own final notifyDependents()), and snapshot the accessors before
-        /// unlocking so they can't turn into a null deref while we are unlocked.
-        if (!view)
-            return;
         coordination.notified_dependents = info;
-        ContextPtr context = view->getContext();
-        StorageID view_storage_id = view->getStorageID();
         lock.unlock();
-        context->getRefreshSet().notifyDependents(view_storage_id);
+        view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
         lock.lock();
     }
 }
@@ -1545,9 +1532,9 @@ void RefreshTask::interruptExecution()
 
     /// Also mark the refresh query killed, not just cancel the pipeline: a refresh blocked in I/O
     /// (e.g. a filesystem-cache download wait) doesn't observe pipeline cancellation and would keep
-    /// running, so shutdown()'s deactivate() — and any DROP / SYSTEM STOP VIEW driving it — would
-    /// block until the I/O returned on its own. Done outside executor_mutex because cancelQuery()
-    /// cancels registered executors, which take their own locks.
+    /// running, so shutdown()'s deactivate() — and any DROP driving it, including SharedCatalog
+    /// state apply — would block until the I/O returned on its own. Done outside executor_mutex
+    /// because cancelQuery() cancels registered executors, which take their own locks.
     if (query_status)
         query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }

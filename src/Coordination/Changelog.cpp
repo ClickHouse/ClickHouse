@@ -81,7 +81,6 @@ void moveChangelogBetweenDisks(
                     description->disk = disk_to;
                     description->path = path_to;
                 });
-            return true;
         },
         getLogger("Changelog"),
         keeper_context);
@@ -2746,8 +2745,6 @@ void Changelog::backgroundChangelogOperationsThread()
             chassert(false);
         }
         changelog_operation->done = true;
-        /// Wake up `waitAllAsyncOperations`; a bare store does not wake an `std::atomic::wait`.
-        changelog_operation->done.notify_all();
     }
 }
 

@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
 
@@ -527,7 +526,7 @@ private:
         constexpr String separators=", ";
 
         ValueType result;
-        UnorderedSetWithMemoryTracking<EnumType> values_set;
+        std::unordered_set<EnumType> values_set;
 
         //to avoid allocating memory on substr()
         const std::string_view str_view{str};
@@ -617,7 +616,7 @@ struct SettingFieldCustom final
 
     explicit operator Field() const { return value; }
 
-    String toString() const;
+    String toString(bool show_secrets = true) const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;

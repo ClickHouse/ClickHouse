@@ -190,7 +190,7 @@ public:
         type_serialization_ptr->serializeBinaryBulkStateSuffix(settings, state);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(rhs);
 

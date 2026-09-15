@@ -14,6 +14,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -175,6 +176,8 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
+    /// Reached when loading already-validated metadata, which stores no column list for this engine.
+    /// A freshly created table infers its structure in `registerStorageBuffer` under the user's context.
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
@@ -912,6 +915,13 @@ bool StorageBuffer::supportsPrewhere() const
     return false;
 }
 
+bool StorageBuffer::supportsOptimizationToSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToSubcolumns();
+    return false;
+}
+
 bool StorageBuffer::checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
     time_t time_passed = 0;
@@ -1387,9 +1397,22 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
+        /// An omitted structure is inferred here, under the user's context: `StorageBuffer` holds only
+        /// a long-lived context and would read the destination's columns with no user at all. Loading
+        /// of already-validated metadata has no user either, so it keeps inferring in the constructor.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !destination_id.empty()
+            && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
+            auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            columns = destination_metadata->getColumns();
+        }
+
         return std::make_shared<StorageBuffer>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             args.getContext(),

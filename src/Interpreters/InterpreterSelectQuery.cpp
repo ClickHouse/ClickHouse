@@ -80,6 +80,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -240,6 +241,40 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
+}
+
+/// Builds `SELECT <select_expressions> FROM db.table`.
+static ASTPtr makeSelectFromTable(const StorageID & table_id, ASTs select_expressions)
+{
+    ASTPtr query_ast = make_intrusive<ASTSelectQuery>();
+    auto * select_ast = query_ast->as<ASTSelectQuery>();
+
+    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+    select_ast->select()->children = std::move(select_expressions);
+
+    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
+    auto tables = select_ast->tables();
+    auto tables_elem = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_expr = make_intrusive<ASTTableExpression>();
+    tables->children.push_back(tables_elem);
+    tables_elem->table_expression = table_expr;
+    tables_elem->children.push_back(table_expr);
+    table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id.getDatabaseName(), table_id.getTableName());
+    table_expr->children.push_back(table_expr->database_and_table_name);
+
+    return query_ast;
+}
+
+/// The table the synthetic `SELECT <filter> FROM db.table` is resolved against: the first table of the query, with
+/// its alias and columns. Without it, `TreeRewriter` cannot resolve qualified names such as `db.table.column`
+/// or `alias.column`, while the same names are resolved in a `WHERE` predicate.
+static TablesWithColumns getTablesWithColumnsForFilter(const JoinedTables & joined_tables)
+{
+    const auto & tables_with_columns = joined_tables.tablesWithColumns();
+    if (tables_with_columns.empty())
+        return {};
+    return {tables_with_columns.front()};
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -250,33 +285,26 @@ static FilterDAGInfoPtr generateFilterActions(
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
+    const TablesWithColumns & tables_with_columns,
     Names & prerequisite_columns,
     PreparedSetsPtr prepared_sets)
 try
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
-    const auto & db_name = table_id.getDatabaseName();
-    const auto & table_name = table_id.getTableName();
-
-    /// TODO: implement some AST builders for this kind of stuff
-    ASTPtr query_ast = make_intrusive<ASTSelectQuery>();
-    auto * select_ast = query_ast->as<ASTSelectQuery>();
-
-    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
-    auto expr_list = select_ast->select();
+    ASTs select_expressions;
 
     /// The first column is our filter expression.
     /// the row_policy_filter_expression should be cloned, because it may be changed by TreeRewriter.
     /// which make it possible an invalid expression, although it may be valid in whole select.
-    expr_list->children.push_back(row_policy_filter_expression->clone());
+    select_expressions.push_back(row_policy_filter_expression->clone());
 
     /// Keep columns that are required after the filter actions.
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
         /// We should add back quotes around column name as it can contain dots.
-        expr_list->children.push_back(parseQuery(
+        select_expressions.push_back(parseQuery(
             expr_parser,
             backQuoteIfNeed(column_str),
             0,
@@ -284,18 +312,11 @@ try
             context->getSettingsRef()[Setting::max_parser_backtracks]));
     }
 
-    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
-    auto tables = select_ast->tables();
-    auto tables_elem = make_intrusive<ASTTablesInSelectQueryElement>();
-    auto table_expr = make_intrusive<ASTTableExpression>();
-    tables->children.push_back(tables_elem);
-    tables_elem->table_expression = table_expr;
-    tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(db_name, table_name);
-    table_expr->children.push_back(table_expr->database_and_table_name);
+    ASTPtr query_ast = makeSelectFromTable(table_id, std::move(select_expressions));
+    auto expr_list = query_ast->as<ASTSelectQuery &>().select();
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
+    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, tables_with_columns);
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot, {}, false, {}, prepared_sets);
     filter_info->actions = std::move(analyzer.simpleSelectActions()->dag);
 
@@ -451,6 +472,16 @@ void checkAccessRightsForSelect(
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
+/// Settings-provided filters are user-controlled expressions over table columns and need the same check as the query.
+void checkAccessRightsForFilter(const ContextPtr & context, const StorageID & table_id, const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot, const StorageMetadataPtr & metadata_snapshot,
+    const TablesWithColumns & tables_with_columns, const ASTPtr & filter_ast)
+{
+    ASTPtr query_ast = makeSelectFromTable(table_id, {filter_ast->clone()});
+    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, tables_with_columns);
+    checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_result);
+}
+
 ASTPtr parseAdditionalFilterConditionForTable(
     const Map & additional_table_filters,
     const DatabaseAndTableWithAlias & target,
@@ -577,6 +608,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
+    if (getSelectQuery().recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
@@ -610,7 +646,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor(context).visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -776,6 +812,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
+    /// Set when this server only ships the custom key to the replicas instead of applying it itself.
+    ASTPtr parallel_replicas_custom_key_ast_to_check = nullptr;
     if (storage && context->canUseParallelReplicasCustomKey() && !joined_tables.tablesWithColumns().empty())
     {
         if (settings[Setting::parallel_replicas_count] > 1)
@@ -811,6 +849,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
                  distributed && context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
         {
+            /// The key is evaluated on the replicas on behalf of this user.
+            parallel_replicas_custom_key_ast_to_check
+                = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
+
             context->setSetting("distributed_group_by_no_merge", 2);
             context->setSetting("prefer_localhost_replica", Field(0));
         }
@@ -819,6 +861,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             && context->getClientInfo().distributed_depth == 0
             && context->canUseParallelReplicasCustomKeyForCluster(*context->getClusterForParallelReplicas()))
         {
+            /// The key is evaluated on the replicas on behalf of this user.
+            parallel_replicas_custom_key_ast_to_check
+                = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
+
             context->setSetting("prefer_localhost_replica", Field(0));
         }
     }
@@ -865,7 +911,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             && !query.hasJoin()) /// Join may produce rows with nulls or default values, it's difficult to analyze if they affected or not.
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
+            Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
+            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -875,8 +922,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
-
-                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
                 RangesInDataParts parts_for_estimator;
@@ -981,12 +1026,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (storage)
         {
             query_info.filter_asts.clear();
+            const auto filter_tables_with_columns = getTablesWithColumnsForFilter(joined_tables);
 
             /// Fix source_header for filter actions.
             if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
                 row_policy_info = generateFilterActions(
-                    table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, required_columns,
                     prepared_sets);
 
                 query_info.filter_asts.push_back(row_policy_filter->expression);
@@ -995,7 +1041,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (query_info.additional_filter_ast)
             {
                 additional_filter_info = generateFilterActions(
-                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, required_columns,
                     prepared_sets);
 
                 additional_filter_info->do_remove_column = true;
@@ -1006,7 +1052,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (parallel_replicas_custom_filter_ast)
             {
                 parallel_replicas_custom_filter_info = generateFilterActions(
-                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, required_columns,
                         prepared_sets);
 
                 parallel_replicas_custom_filter_info->do_remove_column = true;
@@ -1097,6 +1143,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// function we don't check access rights here because in this case they have been already
         /// checked in ITableFunction::execute().
         checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_analyzer_result);
+
+        const auto filter_tables_with_columns = getTablesWithColumnsForFilter(joined_tables);
+
+        if (query_info.additional_filter_ast)
+            checkAccessRightsForFilter(
+                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, query_info.additional_filter_ast);
+
+        if (parallel_replicas_custom_filter_ast)
+            checkAccessRightsForFilter(
+                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_filter_ast);
+
+        if (parallel_replicas_custom_key_ast_to_check)
+            checkAccessRightsForFilter(
+                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
@@ -1205,12 +1265,34 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, std::move(input_pipe));
 
+    /// The old analyzer computes result_header from the ExpressionAnalyzer sample block,
+    /// independently of the actual query plan. A plan step may legitimately materialize a
+    /// column the sample considered constant (e.g. a remote(...) UnionStep whose shards fold
+    /// randConstant() to different values). Forcing such a full column back to a Const in the
+    /// convert target would fail in makeConvertingActions. Reconcile a local convert target:
+    /// where a column is full in the plan but Const of the same type in the result header,
+    /// take the plan's full column so the conversion keeps it full. result_header itself is
+    /// left untouched so getSampleBlock() (seen by an enclosing subquery) is unchanged.
+    ColumnsWithTypeAndName convert_target = result_header->getColumnsWithTypeAndName();
+    {
+        const auto & plan_header = *query_plan.getCurrentHeader();
+        for (auto & res_col : convert_target)
+        {
+            if (!res_col.column || !isColumnConst(*res_col.column))
+                continue;
+            const auto * plan_col = plan_header.findByName(res_col.name);
+            if (plan_col && plan_col->column && !isColumnConst(*plan_col->column)
+                && res_col.type->equals(*plan_col->type))
+                res_col.column = plan_col->column;
+        }
+    }
+
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
+    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), Block(convert_target)))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-            result_header->getColumnsWithTypeAndName(),
+            convert_target,
             ActionsDAG::MatchColumnsMode::Name,
             context,
             true);
@@ -1900,6 +1982,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
                 if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
                 {
+                    /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+                    /// because in order to correctly calculate the number of rows to be produced
+                    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+                    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
                     LimitInfo lim_info = getLimitLengthAndOffset(query, context);
                     if (lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0)
                         executePreLimit(query_plan, true);
@@ -3240,10 +3326,26 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             /// would produce incomplete data and cause the pipeline to get stuck.
             sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
+            SortDescription scatter_partition_by = window.partition_by;
+            const auto & sort_input_header = query_plan.getCurrentHeader();
+            for (const auto & partition_column : window.partition_by)
+            {
+                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                        *sort_input_header->getByName(partition_column.column_name).type))
+                {
+                    scatter_partition_by.clear();
+                    break;
+                }
+            }
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window.full_sort_description,
-                window.partition_by,
+                scatter_partition_by,
                 0 /* LIMIT */,
                 sort_settings);
             sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
@@ -3563,6 +3665,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
             order_descr = getSortDescription(query, context);
 
+            if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
         if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
@@ -3603,11 +3707,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         }
         else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
-            auto limit = std::make_unique<NegativeLimitStep>(
-                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, query.limit_with_ties, order_descr);
-
-            if (query.limit_with_ties)
-                limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
 
             query_plan.addStep(std::move(limit));
         }
@@ -3616,12 +3716,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
 
-            auto limit = std::make_unique<NegativeLimitStep>(
-                query_plan.getCurrentHeader(), lim_info.limit_length, 0, query.limit_with_ties, order_descr);
-
-            if (query.limit_with_ties)
-                limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
-
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
             query_plan.addStep(std::move(limit));
         }
         else if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)

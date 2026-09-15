@@ -183,7 +183,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if ((isMin && data(place).data().setIfSmaller(data(rhs).data(), arena))
             || (!isMin && data(place).data().setIfGreater(data(rhs).data(), arena)))

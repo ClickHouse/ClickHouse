@@ -128,7 +128,7 @@ private:
 };
 
 /// Only needed for S3 server side object copy
-struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
+struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction
 {
     ClusterConfigurationPtr source_cluster;
     MetadataStoragePtr source_metadata_storage;

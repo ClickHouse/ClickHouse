@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -273,20 +272,24 @@ public:
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
-        /// Guard against allocation bombs: a crafted state can declare a huge
-        /// length and make resize_exact allocate gigabytes before any data is read.
-        if (sampled_len > 100'000'000)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large array size ({}) in quantileGK deserialization", sampled_len);
-        sampled.resize_exact(sampled_len);
+
+        static constexpr size_t serialized_stats_size = sizeof(T) + sizeof(Int64) + sizeof(Int64);
+        sampled.clear();
+        /// The loop appends, so reserving is only an optimization: derive it from payload that arrived.
+        sampled.reserve_exact(std::min(sampled_len, buf.available() / serialized_stats_size));
 
         for (size_t i = 0; i < sampled_len; ++i)
         {
-            auto & stats = sampled[i];
+            Stats stats;
             readBinaryLittleEndian(stats.value, buf);
             readBinaryLittleEndian(stats.g, buf);
             readBinaryLittleEndian(stats.delta, buf);
+            if (sampled.size() == sampled.capacity())
+                sampled.reserve_exact(std::min(sampled_len, std::max<size_t>(2 * sampled.capacity(), 1)));
+            sampled.push_back(stats);
         }
+        /// A valid state holds the capacity it serialized, whatever the payload arrived in.
+        chassert(sampled.capacity() <= sampled_len);
     }
 
 private:

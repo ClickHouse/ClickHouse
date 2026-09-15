@@ -270,10 +270,6 @@ struct DataType
                 type.root_type = RootDataType::ARRAY;
                 auto nested_type = parse(inner_json_object, "element");
                 type.clickhouse_data_type = std::make_shared<DataTypeArray>(nested_type.clickhouse_data_type);
-                if (nullable)
-                {
-                    type.clickhouse_data_type = std::make_shared<DataTypeNullable>(type.clickhouse_data_type);
-                }
             }
             else if (real_type == "MAP")
             {
@@ -281,14 +277,16 @@ struct DataType
                 auto key_type = parse(inner_json_object, "key");
                 auto value_type = parse(inner_json_object, "value");
                 type.clickhouse_data_type = std::make_shared<DataTypeMap>(key_type.clickhouse_data_type, value_type.clickhouse_data_type);
-                if (nullable)
-                {
-                    type.clickhouse_data_type = std::make_shared<DataTypeNullable>(type.clickhouse_data_type);
-                }
             }
             else
             {
                 throw Exception();
+            }
+            /// ClickHouse forbids Nullable(Array) and Nullable(Map), so a nullable composite is kept
+            /// unwrapped; the reader maps a NULL composite to an empty one.
+            if (nullable)
+            {
+                type.clickhouse_data_type = makeNullableSafe(type.clickhouse_data_type);
             }
             return type;
         }

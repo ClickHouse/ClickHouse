@@ -70,15 +70,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         if (recursive_with)
             ostr << " RECURSIVE";
 
-        if (s.one_line)
-            with()->format(ostr, s, state, frame);
-        else
-        {
-            /// Put every CTE on its own indented line, even a single one, for consistent formatting.
-            FormatStateStacked with_frame = frame;
-            with_frame.expression_list_always_start_on_new_line = true;
-            with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, with_frame);
-        }
+        s.one_line
+            ? with()->format(ostr, s, state, frame)
+            : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
         ostr << s.nl_or_ws;
     }
 
@@ -521,14 +515,27 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.contains(expr))
+    else
     {
-        size_t pos = positions[expr];
-        children.erase(children.begin() + pos);
-        positions.erase(expr);
-        for (auto & pr : positions)
-            if (pr.second > pos)
-                --pr.second;
+        /// Removing the ORDER BY clause must also reset the `order_by_all` flag, because the flag
+        /// without the clause is a malformed state: a later (re-)analysis of such a query would try
+        /// to expand ALL over the missing clause. This cannot be done for `group_by_all`: unlike
+        /// ORDER BY ALL, which is always parsed into a one-element ORDER BY list, GROUP BY ALL is
+        /// legitimately represented as the flag with no GROUP BY expression until `expandGroupByAll`
+        /// materializes the list (and the parser itself ends with `setExpression(GROUP_BY, nullptr)`
+        /// for such queries), so the code that removes GROUP BY resets that flag explicitly.
+        if (expr == Expression::ORDER_BY)
+            order_by_all = false;
+
+        if (positions.contains(expr))
+        {
+            size_t pos = positions[expr];
+            children.erase(children.begin() + pos);
+            positions.erase(expr);
+            for (auto & pr : positions)
+                if (pr.second > pos)
+                    --pr.second;
+        }
     }
 }
 

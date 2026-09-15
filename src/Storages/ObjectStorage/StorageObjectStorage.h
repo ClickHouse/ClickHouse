@@ -18,6 +18,7 @@
 #include <Storages/MutationCommands.h>
 
 #include <memory>
+#include <mutex>
 
 #include <Storages/IPartitionStrategy.h>
 namespace DB
@@ -78,6 +79,15 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         bool async_insert) override;
+
+    static SinkToStoragePtr createSink(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const StorageID & storage_id,
+        const std::optional<FormatSettings> & format_settings,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context);
 
     void truncate(
         const ASTPtr & query,
@@ -148,7 +158,7 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+    std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
@@ -205,6 +215,11 @@ protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
+    /// Resolve the deferred hive partitioning sample path. Requires listing the object storage.
+    void resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context);
+
+    VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
+
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -229,6 +244,12 @@ protected:
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
+
+    /// Set only in the constructor when hive partitioning detection is deferred to the first use.
+    bool hive_partitioning_sample_path_deferred = false;
+    std::mutex hive_partitioning_resolution_mutex;
+    /// Stays false on a failed resolution, so the next query retries it.
+    bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 
     LoggerPtr log;
 

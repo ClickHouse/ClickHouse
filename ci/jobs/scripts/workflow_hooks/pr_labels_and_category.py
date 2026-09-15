@@ -83,7 +83,6 @@ class Labels:
     CI_FUNCTIONAL_FLAKY = "ci-functional-test-flaky"
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
-    CI_NO_COVERAGE = "ci-no-coverage"
 
     # Gates the PromQL compliance PR comment from integration-test post-hooks (see promql_compliance_hook.py).
     COMP_PROMQL = "comp-promql"

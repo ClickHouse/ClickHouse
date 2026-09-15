@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
@@ -109,6 +111,11 @@ std::optional<Columns> IMergeTreeDataPartWriter::releaseIndexColumns()
     /// The memory for index was allocated without thread memory tracker.
     /// We need to deallocate it in shrinkToFit without memory tracker as well.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    /// `shrinkToFit` reallocates each index column to a right-sized buffer, and that buffer is the
+    /// resident primary index kept for the part's whole lifetime. Route it into the dedicated arena
+    /// (the reload path does the same in `loadIndex`).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     Columns result;
     result.reserve(index_columns.size());
