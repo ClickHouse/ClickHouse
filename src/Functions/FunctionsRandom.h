@@ -60,6 +60,9 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// The result type does not depend on the arguments, and the only argument is an ignored
+    /// tag, so a Nothing-typed argument must not rewrite the declared return type.
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isVariadic() const override { return true; }

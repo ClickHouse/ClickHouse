@@ -34,6 +34,7 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
+    bool useDefaultImplementationForNothing() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
 
