@@ -23,6 +23,8 @@
 
 #include <Core/AccurateComparison.h>
 
+#include <Functions/DateTimeTransforms.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
@@ -504,7 +506,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isDateTime64()
             && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {
-            const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
+            const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+            if (src.getType() == Field::Types::UInt64
+                && src.safeGet<UInt64>() > static_cast<UInt64>(maxWholeSecondsForDateTime64(date_time64_type.getScaleMultiplier().value)))
+            {
+                /// Check the UInt64 in its source domain before narrowing it to Int64. The target's whole-seconds
+                /// range depends on the scale because DateTime64 ticks are stored in an Int64.
+                return {};
+            }
+
+            const auto scale = date_time64_type.getScale();
             const auto decimal_value
                 = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<DateTime64>(decimal_value, scale));
@@ -513,7 +524,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isTime64()
             && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {
-            const auto scale = static_cast<const DataTypeTime64 &>(type).getScale();
+            const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
+            if (src.getType() == Field::Types::UInt64
+                && src.safeGet<UInt64>() > static_cast<UInt64>(MAX_TIME_TIMESTAMP))
+            {
+                /// Check the UInt64 in its source domain before narrowing it to Int64. Time64 represents
+                /// values only in the [-999:59:59, 999:59:59] range.
+                return {};
+            }
+
+            const auto scale = time64_type.getScale();
             const auto decimal_value
                 = DecimalUtils::decimalFromComponents<Time64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<Time64>(decimal_value, scale));
