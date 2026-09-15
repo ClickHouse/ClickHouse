@@ -1,0 +1,76 @@
+CUBE over a repeated key
+0	1
+0	1
+0	1
+0	2
+1	1
+1	1
+1	1
+ROLLUP over a repeated key
+0	1
+0	1
+0	2
+1	1
+1	1
+the same sets written out explicitly agree
+0	1
+0	1
+1	1
+1	1
+GROUPING reports the key as present while any occurrence of it is
+0	1	0
+0	1	0
+0	1	0
+1	1	0
+1	1	0
+1	1	0
+0	2	1
+a key repeated among others
+0	0	2
+0	0	2
+0	0	2
+0	0	2
+0	0	2
+0	0	2
+0	0	2
+0	0	4
+0	1	2
+1	0	2
+1	0	2
+1	0	2
+1	1	2
+1	1	2
+1	1	2
+ROLLUP with the repeat in the middle
+0	0	2
+0	0	2
+0	0	2
+0	0	4
+1	0	2
+1	1	2
+1	1	2
+no repetition is unchanged
+0	1
+0	2
+1	1
+0	1
+0	2
+1	1
+group_by_use_nulls keeps the extra sets
+0	1
+0	1
+0	1
+1	1
+1	1
+1	1
+\N	2
+WITH TOTALS still works over a repeated key
+0	1
+0	1
+0	1
+0	2
+1	1
+1	1
+1	1
+
+0	2

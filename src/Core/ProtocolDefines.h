@@ -118,12 +118,17 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 18 registers the `Filling` step and adds the `WITH FILL` bounds (`FROM`, `TO`, `STEP`,
 /// `STALENESS` and the column alias) to a serialized sort description, so a plan with
 /// `ORDER BY ... WITH FILL` can be shipped in full.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 18;
+/// Version 19 adds the GROUP BY positions of repeated keys to the Cube and Rollup steps
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version in which `CubeStep` and `RollupStep` carry the positions of
+/// the GROUP BY list, which is what tells them a key was written more than once. An older peer reads
+/// only the deduplicated key list, and so keeps the behaviour it had before those positions existed.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS = 19;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
