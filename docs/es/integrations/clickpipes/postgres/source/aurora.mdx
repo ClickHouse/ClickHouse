@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/es/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Versiones de Postgres compatibles
@@ -103,14 +104,11 @@ La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambi
   ### Uso de la autenticación con IAM (opcional)
 </div>
 
-En lugar de una contraseña, puedes autenticar al usuario de ClickPipes mediante acceso basado en roles de AWS IAM. Para ello, el parámetro `rds.iam_auth_for_replication` debe estar establecido en `1`. Crea el usuario de la siguiente manera y luego concédele los mismos privilegios de esquema y replicación que se muestran arriba:
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-Consulta [la autenticación de base de datos con AWS IAM (RDS/Aurora)](/es/integrations/clickpipes/postgres/auth) para ver todos los pasos necesarios para configurar el rol y la política de IAM que ClickPipes necesita para autenticarse de esta manera.
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    La autenticación con IAM para la replicación requiere que el parámetro `rds.iam_auth_for_replication` se establezca en `1`.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## Configurar el acceso a la red
@@ -120,7 +118,7 @@ Consulta [la autenticación de base de datos con AWS IAM (RDS/Aurora)](/es/integ
   ### Control de acceso basado en IP
 </div>
 
-Si desea restringir el tráfico a su clúster de Aurora, añada las [IP estáticas de NAT documentadas](/es/integrations/clickpipes/home#list-of-static-ips) a las `Inbound rules` de su grupo de seguridad de Aurora.
+Si desea restringir el tráfico a su clúster de Aurora, añada las [IP estáticas de NAT documentadas](/es/integrations/clickpipes/networking/static-ips) a las `Inbound rules` de su grupo de seguridad de Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="¿Dónde encontrar el grupo de seguridad en Aurora PostgreSQL?" size="lg" border />
 

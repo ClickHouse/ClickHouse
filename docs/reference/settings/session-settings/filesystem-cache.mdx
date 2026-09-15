@@ -94,6 +94,14 @@ Limit on size of a single batch of file segments that a read buffer can request 
 
 Skip download from remote filesystem if exceeds query cache size
 
+## filesystem_cache_verbose_logging {#filesystem_cache_verbose_logging}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}]}]}/>
+
+Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
+
 ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds {#filesystem_cache_wait_for_concurrent_download_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

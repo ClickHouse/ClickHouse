@@ -11,7 +11,9 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
 您可以跟踪所耗费的 CPU 时间和挂钟时间，包括空闲时间。
 
 在 ClickHouse Cloud 中，查询分析器默认自动启用。
-下面的示例查询会找出某个已分析查询中最常见的堆栈跟踪，并解析出函数名称和源代码位置：
+下面的示例查询会找出某个已分析查询中最常见的堆栈跟踪，并解析出函数名称和源代码位置。
+
+默认情况下，分析器会在采集时对堆栈跟踪进行符号解析，并将结果存储在 [`system.trace_log`](/zh/reference/system-tables/trace_log) 的 `symbols` 和 `lines` 列中，因此以下示例会直接读取这些列，无需使用内部信息函数。符号解析由 `trace_log` 服务器配置部分中的 `symbolize` 设置控制 (默认启用) ，支持 ELF 平台 (如 Linux) 和 macOS；在 FreeBSD 上，`symbols` 和 `lines` 列始终为空。`symbols` 中的函数名称来自二进制文件的符号表，默认可用。`lines` 中的源代码位置会尽力解析：它们需要调试信息 (在 macOS 上，需要二进制文件旁的 `.dSYM` 包) ；在 ELF 平台上，仅会解析主 ClickHouse 二进制文件内的帧，因此无法解析的帧 (例如共享库中的帧) 对应条目将保留为空。如果禁用了符号解析，请改用 `addressToSymbol`、`demangle` 和 `addressToLine` [内部信息函数](/zh/reference/functions/regular-functions/introspection) 来解析 `trace` 列中的原始地址。这些函数支持与符号解析相同的平台 (如 Linux 等 ELF 平台及 macOS) ；在 FreeBSD 上它们同样未被编译，因此必须在服务器外部解析 `trace` 中的地址。
 
 <Tip>
   将 `query_id` 的值替换为您要分析的查询 ID。
@@ -26,13 +28,12 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM clusterAllReplicas(default, system.trace_log)
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 
@@ -40,13 +41,12 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM system.trace_log
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 </Tabs>
@@ -61,18 +61,18 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
   <Step title="安装带调试信息的 ClickHouse" id="debug-info">
     安装 `clickhouse-common-static-dbg` 软件包：
 
-    1. 按照步骤 [“设置 Debian 仓库”](/zh/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository) 中的说明操作
+    1. 按照步骤 [&quot;设置 Debian 仓库&quot;](/zh/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository) 中的说明操作
     2. 运行 `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg`，安装包含调试信息的 ClickHouse 已编译二进制文件
     3. 运行 `sudo service clickhouse-server start` 启动服务器
     4. 运行 `clickhouse-client`。`clickhouse-common-static-dbg` 中的调试符号会被服务器自动加载，无需执行任何额外操作来启用它们
   </Step>
 
   <Step title="检查服务器配置" id="server-config">
-    确保 [服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中的 [`trace_log`](/zh/reference/settings/server-settings/settings#trace_log) 部分已配置。默认情况下它处于启用状态：
+    确保 [服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中的 [`trace_log`](/zh/reference/settings/server-settings/settings/other#trace_log) 部分已配置。默认情况下它处于启用状态：
 
     ```xml
-    <!-- Trace 日志。存储由查询分析器收集的堆栈跟踪。
-         参见 query_profiler_real_time_period_ns 和 query_profiler_cpu_time_period_ns 设置。 -->
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>
@@ -82,19 +82,25 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <!-- 指示发生崩溃时是否应将日志转储到磁盘 -->
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
         <symbolize>true</symbolize>
     </trace_log>
     ```
 
     此部分用于配置 [trace&#95;log](/zh/reference/system-tables/trace_log) 系统表，该表包含分析器运行的结果。
-    请注意，此表中的数据仅对当前正在运行的服务器有效。
-    服务器重启后，ClickHouse 不会清理该表，之前存储的所有虚拟内存地址都可能失效。
+    `symbolize` 选项 (默认启用) 会让 ClickHouse 在收集时解析每个堆栈帧，并将反修饰后的函数名称和源代码位置存储在 `symbols` 和 `lines` 列中。
+    `symbols` 中的函数名称来自符号表，默认可用；而 `lines` 中的源代码位置需要调试信息 (macOS 上为 `.dSYM` 包) ，且在 ELF 平台上仅会解析主 ClickHouse 二进制文件内的帧；未解析帧的 `lines` 条目为空。
+
+    请注意，与预先符号化的列相比，`trace` 列中的原始地址在重启和升级后稳定性较差。
+    在除 FreeBSD 外的 ELF 平台上，主 ClickHouse 二进制文件中的帧会存储为物理文件偏移量，因此只要二进制文件未发生变化，重启后仍可解析；在 macOS 和 FreeBSD 上，它们会存储为运行时虚拟地址，重启后可能失效。
+    主二进制文件外的帧 (例如共享库中的帧) 始终存储为运行时虚拟地址，重启后可能失效；而由于代码布局发生变化，二进制文件升级后所有原始地址都将无法解析。
+    ClickHouse 不会在重启时清理该表，因此可能会保留过时的原始地址。
+    相反，预先符号化的 `symbols` 和 `lines` 列在重启和升级后仍然有效，因此分析历史数据时应优先使用它们。
   </Step>
 
   <Step title="配置分析器计时器" id="configure-profile-timers">
-    设置 [`query_profiler_cpu_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 或 [`query_profiler_real_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_real_time_period_ns)。
+    设置 [`query_profiler_cpu_time_period_ns`](/zh/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) 或 [`query_profiler_real_time_period_ns`](/zh/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns)。
     这两个设置可以同时使用。
 
     这些设置可用于配置分析器计时器。
@@ -106,7 +112,12 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
   </Step>
 
   <Step title={<>分析 <code>trace_log</code> 系统表</>} id="analyze-trace-log-system-table">
-    要分析 `trace_log` 系统表，请通过 [`allow_introspection_functions`](/zh/reference/settings/session-settings#allow_introspection_functions) 设置启用内部信息函数：
+    要获取某个查询的 profile，需要对 `trace_log` 表中的数据进行聚合。
+    你可以按单个函数或整个堆栈跟踪聚合数据。
+
+    启用符号化时 (默认启用) ，`symbols` 和 `lines` 列中已提供反修饰后的函数名称和源代码位置，因此无需额外设置。FreeBSD 不支持符号化，在该系统上这些列始终为空。对于缺少调试信息或位于主 ClickHouse 二进制文件之外的帧，`lines` 条目可能为空 (参见[上文](#server-config)) 。
+
+    如果禁用了符号化，或者想动态解析 `trace` 列中的原始地址 (例如，展开内联帧) ，请通过 [`allow_introspection_functions`](/zh/reference/settings/session-settings/allow#allow_introspection_functions) 设置启用内部信息函数：
 
     ```sql
     SET allow_introspection_functions=1
@@ -116,9 +127,7 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
       出于安全原因，默认情况下内部信息函数处于禁用状态
     </Note>
 
-    使用 `addressToLine`、`addressToLineWithInlines`、`addressToSymbol` 和 `demangle` [内部信息函数](/zh/reference/functions/regular-functions/introspection) 获取函数名称及其在 ClickHouse 代码中的位置。
-    要获取某个查询的 profile，需要对 `trace_log` 表中的数据进行聚合。
-    你可以按单个函数或整个堆栈跟踪聚合数据。
+    使用 `addressToLine`、`addressToLineWithInlines`、`addressToSymbol` 和 `demangle` [内部信息函数](/zh/reference/functions/regular-functions/introspection) 获取函数名称及其在 ClickHouse 代码中的位置。与符号化功能一样，这些函数可在 ELF 平台 (如 Linux) 和 macOS 上使用，但不支持 FreeBSD。
 
     <Tip>
       如果需要将 `trace_log` 信息可视化，可尝试使用 [flamegraph](/zh/integrations/connectors/tools/gui#clickhouse-flamegraph) 和 [speedscope](https://www.speedscope.app)。
@@ -306,18 +315,18 @@ clickhouse client --allow_introspection_functions=1 \
   ## 示例
 </div>
 
-下面的代码片段：
+以下代码片段：
 
 * 按查询标识符和当前日期过滤 `trace_log` 数据。
-* 按栈跟踪进行聚合。
-* 使用内部信息函数获取以下报告：
-  * 符号名称及其对应的源代码函数名称。
+* 读取已预先符号化的 `symbols` 和 `lines` 列，以生成包含以下内容的报告：
+  * 符号名称及对应的源代码函数。
   * 这些函数在源代码中的位置。
+* 按原始堆栈跟踪 (`trace` 列) 聚合，已符号化的列仅用于显示，确保不同的堆栈跟踪不会因尽力而为的符号化而被合并。
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
 GROUP BY trace

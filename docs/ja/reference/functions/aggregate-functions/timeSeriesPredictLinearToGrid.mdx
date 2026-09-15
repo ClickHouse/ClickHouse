@@ -13,10 +13,12 @@ doc_type: 'reference'
 
 導入バージョン: v25.6.0
 
-時系列データをタイムスタンプと値のペアとして受け取り、開始タイムスタンプ・終了タイムスタンプ・stepで定義された規則的な時間グリッド上で、指定された予測タイムスタンプのOFFSETを用いて[PromQL風の線形予測](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear)を計算する集約関数です。グリッド上の各点において、`predict_linear`の計算に使用するサンプルは指定された時間ウィンドウ内のものが対象となります。
+タイムスタンプと値のペアからなる時系列データを受け取り、開始タイムスタンプ、終了タイムスタンプ、step で定義される規則的な時間グリッド上で、指定した予測タイムスタンプオフセットに対する [PromQL ライクな線形予測](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear)を計算する集約関数です。グリッド上の各ポイントについて、`predict_linear` の計算には指定した時間ウィンドウ内のサンプルが使用されます。
+
+複数のサンプルが同じタイムスタンプを持つ場合は、値が最大のサンプルのみが使用されます。NaN 値は他のすべての値より優先度が低いため、そのタイムスタンプのすべてのサンプルが NaN である場合にのみ使用されます。
 
 <Note>
-  この関数は実験的です。`allow_experimental_ts_to_grid_aggregate_function=true` を設定して有効にしてください。
+  この関数は Experimental です。有効にするには、`allow_experimental_time_series_aggregate_functions=true` を設定してください。
 </Note>
 
 **構文**
@@ -25,21 +27,25 @@ doc_type: 'reference'
 timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, staleness, predict_offset)(timestamp, value)
 ```
 
-**パラメーター**
+**パラメータ**
 
-* `start_timestamp` — グリッドの開始を指定します。 - `end_timestamp` — グリッドの終了を指定します。 - `grid_step` — グリッドのステップを秒単位で指定します。 - `staleness` — 対象とするサンプルの最大&quot;古さ&quot;を秒単位で指定します。staleness ウィンドウは左開右閉の区間です。 - `predict_offset` — 予測時刻に加算するオフセットの秒数を指定します。
+* `start_timestamp` — グリッドの開始時刻を指定します。`DateTime64` タイムスタンプ引数の場合は、小数値、数値を含む文字列、または日時テキストも指定できます。[`UInt32`](/ja/reference/data-types/int-uint)、[`DateTime`](/ja/reference/data-types/datetime)、[`DateTime64`](/ja/reference/data-types/datetime64)、[`Float*`](/ja/reference/data-types/float)、[`Decimal*`](/ja/reference/data-types/decimal)、または [`String`](/ja/reference/data-types/string)
+* `end_timestamp` — グリッドの終了時刻を指定します。`DateTime64` タイムスタンプ引数の場合は、小数値、数値を含む文字列、または日時テキストも指定できます。[`UInt32`](/ja/reference/data-types/int-uint)、[`DateTime`](/ja/reference/data-types/datetime)、[`DateTime64`](/ja/reference/data-types/datetime64)、[`Float*`](/ja/reference/data-types/float)、[`Decimal*`](/ja/reference/data-types/decimal)、または [`String`](/ja/reference/data-types/string)
+* `grid_step` — グリッドのステップを秒単位で指定します。`DateTime64` タイムスタンプ引数の場合は、小数値、数値を含む文字列、または &#39;15s&#39; や &#39;1m&#39; のような期間も指定できます。[`UInt32`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`Decimal*`](/ja/reference/data-types/decimal)、または [`String`](/ja/reference/data-types/string)
+* `staleness` — 対象となるサンプルの最大 staleness を秒単位で指定します。staleness ウィンドウは左開右閉区間です。`DateTime64` タイムスタンプ引数の場合は、小数値、数値を含む文字列、または &#39;15s&#39; や &#39;1m&#39; のような期間も指定できます。[`UInt32`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`Decimal*`](/ja/reference/data-types/decimal)、または [`String`](/ja/reference/data-types/string)
+* `predict_offset` — 予測時刻に加算するオフセットの秒数を指定します。[`UInt32`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`Decimal*`](/ja/reference/data-types/decimal)、または [`String`](/ja/reference/data-types/string)
 
 **引数**
 
-* `timestamp` — サンプルのタイムスタンプ。単一の値または配列を指定できます。- `value` — タイムスタンプに対応する時系列の値。単一の値または配列を指定できます。
+* `timestamp` — サンプルのタイムスタンプです。単一の値または配列を指定できます。- `value` — タイムスタンプに対応する時系列の値です。単一の値または配列を指定できます。
 
 **戻り値**
 
-指定されたグリッド上の `predict_linear` の値を `Array(Nullable(Float64))` として返します。返される配列には、各時間グリッドポイントに対して1つの値が含まれます。特定のグリッドポイントのレート値を計算するのに十分なサンプルがウィンドウ内に存在しない場合、その値は NULL になります。
+指定したグリッド上の `predict_linear` の値を `Array(Nullable(Float64))` として返します。返される配列には、各時間グリッドポイントに対応する値が 1 つずつ含まれます。特定のグリッドポイントでレート値を計算するのに十分なサンプルがウィンドウ内にない場合、その値は NULL になります。
 
 **例**
 
-**グリッド [90, 105, 120, 135, 150, 165, 180, 195, 210] 上で60秒のOFFSETを使用してpredict&#95;linearの値を計算する**
+**60 秒のオフセットを指定して、グリッド [90, 105, 120, 135, 150, 165, 180, 195, 210] 上の predict&#95;linear 値を計算する**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;
@@ -65,7 +71,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
-│ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
+│ [NULL,NULL,1,9.166667,11.6,12.5,NULL,NULL,16.5]                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,9 +91,9 @@ SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seco
 ```
 
 ```response title=Response
-┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
-│ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamps, values)─┐
+│ [NULL,NULL,1,9.166667,11.6,12.5,NULL,NULL,16.5]                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

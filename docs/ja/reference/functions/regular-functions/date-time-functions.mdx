@@ -113,9 +113,9 @@ SELECT YYYYMMDDToDate(20230911);
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(20230911)─┐
-│           2023-09-11 │
-└──────────────────────┘
+┌─YYYYMMDDToDate(20230911)─┐
+│               2023-09-11 │
+└──────────────────────────┘
 ```
 
 <div id="YYYYMMDDToDate32">
@@ -186,13 +186,13 @@ YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
 **例**
 
 ```sql title=Query
-SELECT YYYYMMDDToDateTime(20230911131415);
+SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
 ```
 
 ```response title=Response
-┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                           2023-09-11 13:14:15 │
-└───────────────────────────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                      2023-09-11 13:14:15 │
+└──────────────────────────────────────────┘
 ```
 
 <div id="YYYYMMDDhhmmssToDateTime64">
@@ -230,9 +230,9 @@ SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
 ```
 
 ```response title=Response
-┌─YYYYMMDDhhmm⋯/Istanbul')─┐
-│  2023-09-11 13:14:15.000 │
-└──────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
+│                                        2023-09-11 13:14:15.000 │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addDate">
@@ -241,7 +241,7 @@ SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
 
 導入バージョン: v23.9.0
 
-指定した日付、日時、または文字列で表現された日付もしくは日時に、時間間隔を加算します。
+指定した日付、日時、または文字列で表現された日付もしくは日時に、時間インターバルを加算します。
 加算した結果がデータ型の範囲外の値になる場合、結果は未定義です。
 
 **構文**
@@ -253,7 +253,7 @@ addDate(datetime, interval)
 **引数**
 
 * `datetime` — `interval` を加算する日付または日時。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`String`](/ja/reference/data-types/string)
-* `interval` — 加算する間隔。[`Interval`](/ja/reference/data-types/int-uint)
+* `interval` — 加算するインターバル。[`Interval`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -261,16 +261,16 @@ addDate(datetime, interval)
 
 **例**
 
-**日付に interval を加算**
+**日付に インターバル を加算**
 
 ```sql title=Query
 SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
 ```
 
 ```response title=Response
-┌─addDate(toDa⋯valYear(3))─┐
-│               2021-01-01 │
-└──────────────────────────┘
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="addDays">
@@ -279,7 +279,7 @@ SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
 
 導入バージョン: v1.1.0
 
-指定した日数を、日付、日時、または文字列形式の日付もしくは日時に加算します。
+指定した日数を、日付、日時、または文字列で表現された日付もしくは日時に加算します。
 
 **構文**
 
@@ -324,9 +324,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯valDay(10))─┐
-│               1998-06-26 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                          1998-06-26 │
+└─────────────────────────────────────────────────────┘
 ```
 
 <div id="addHours">
@@ -335,7 +335,7 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 day)
 
 導入バージョン: v1.1.0
 
-指定した時間数を、日付、日時、または文字列として表現された日付もしくは日時に加算します。
+指定した時間数を、日付、日時、または文字列で表現された日付もしくは日時に加算します。
 
 **構文**
 
@@ -380,9 +380,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alHour(10))─┐
-│      1998-06-16 10:00:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                  1998-06-16 10:00:00 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="addInterval">
@@ -483,9 +483,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('19⋯osecond(10))─┐
-│ 1998-06-16 00:00:00.000010 │
-└────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                      1998-06-16 00:00:00.000010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMilliseconds">
@@ -494,7 +494,7 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 
 導入バージョン: v22.6.0
 
-指定したミリ秒数を日時、または文字列として表された日時に加算します。
+指定したミリ秒数を日時、または文字列で表現された日時に加算します。
 
 **構文**
 
@@ -537,9 +537,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯second(10))─┐
-│  1998-06-16 00:00:00.010 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                         1998-06-16 00:00:00.010 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMinutes">
@@ -548,7 +548,7 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 
 導入バージョン: v1.1.0
 
-指定した分数を、日付、日時、または文字列として表現された日付もしくは日時に加算します。
+指定した分数を、日付、日時、または文字列で表現された日付もしくは日時に加算します。
 
 **構文**
 
@@ -593,9 +593,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯Minute(10))─┐
-│      1998-06-16 00:10:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                    1998-06-16 00:10:00 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="addMonths">
@@ -604,7 +604,7 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 minute)
 
 導入バージョン: v1.1.0
 
-指定した月数を、日付、日時、または文字列で表された日付もしくは日時に加算します。
+指定した月数を、日付、日時、または文字列で表現された日付もしくは日時に加算します。
 
 **構文**
 
@@ -649,9 +649,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯lMonth(10))─┐
-│               1999-04-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                            1999-04-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="addNanoseconds">
@@ -660,7 +660,7 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 month)
 
 導入バージョン: v22.6.0
 
-指定したナノ秒数を、日時または文字列としてエンコードされた日時に加算します。
+指定したナノ秒数を、日時または文字列で表現された日時に加算します。
 
 **構文**
 
@@ -703,9 +703,9 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 1000 nanosecond)
 ```
 
 ```response title=Response
-┌─plus(CAST('199⋯osecond(1000))─┐
-│ 1998-06-16 00:00:00.000001000 │
-└───────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(1000))─┐
+│                                    1998-06-16 00:00:00.000001000 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="addQuarters">
@@ -714,7 +714,7 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 1000 nanosecond)
 
 導入バージョン: v20.1.0
 
-日付、日時、または文字列で表された日付もしくは日時に、指定した数の四半期を加算します。
+日付、日時、または文字列で表現された日付もしくは日時に、指定した数の四半期を加算します。
 
 **構文**
 
@@ -759,9 +759,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯uarter(10))─┐
-│               2000-12-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                              2000-12-16 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="addSeconds">
@@ -815,9 +815,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─dateAdd('1998-06-16'::Date, INTERVAL 10 second)─┐
-│                             1998-06-16 00:00:10 │
-└─────────────────────────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                    1998-06-16 00:00:10 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="addTupleOfIntervals">
@@ -909,9 +909,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alWeek(10))─┐
-│               1998-08-25 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                           1998-08-25 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="addYears">
@@ -965,9 +965,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─plus(CAST('1⋯alYear(10))─┐
-│               2008-06-16 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                           2008-06-16 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="age">
@@ -1555,7 +1555,7 @@ SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
 
 ```response title=Response
 ┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
-│ 1234560                                                             │
+│ 123456                                                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1789,7 +1789,7 @@ fromModifiedJulianDayOrNull(day)
 
 **引数**
 
-* `day` — 修正ユリウス日番号。[`(U)Int*`](/ja/reference/data-types/int-uint)
+* `day` — 修正ユリウス日の日数。[`(U)Int*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -1801,16 +1801,16 @@ fromModifiedJulianDayOrNull(day)
 
 ```sql title=Query
 SELECT fromModifiedJulianDayOrNull(58849);
-SELECT fromModifiedJulianDayOrNull(60000000); -- 無効な引数、NULLを返す
+SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
 ```
 
 ```response title=Response
-┌─fromModified⋯Null(58849)─┐
-│ 2020-01-01               │
-└──────────────────────────┘
-┌─fromModified⋯l(60000000)─┐
-│ ᴺᵁᴸᴸ                     │
-└──────────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+┌─fromModifiedJulianDayOrNull(60000000)─┐
+│ ᴺᵁᴸᴸ                                  │
+└───────────────────────────────────────┘
 ```
 
 <div id="fromUTCTimestamp">
@@ -1878,8 +1878,8 @@ fromUnixTimestamp(timestamp[, format[, timezone]])
 **引数**
 
 * `timestamp` — Unixタイムスタンプ または date/日時の値。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `format` — 任意。出力のフォーマットに使用する定数の format string。[`String`](/ja/reference/data-types/string)
-* `timezone` — 任意。定数の time zone 文字列。[`String`](/ja/reference/data-types/string)
+* `format` — 任意。出力のフォーマットに使用する定数のフォーマット文字列。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。定数のタイムゾーン文字列。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -1895,7 +1895,7 @@ SELECT fromUnixTimestamp(423543535)
 
 ```response title=Response
 ┌─fromUnixTimestamp(423543535)─┐
-│          1983-06-04 10:58:55 │
+│          1983-06-04 02:58:55 │
 └──────────────────────────────┘
 ```
 
@@ -1907,7 +1907,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 
 ```response title=Response
 ┌─DateTime────────────┐
-│ 2009-02-11 14:42:23 │
+│ 2009-02-11 06:42:23 │
 └─────────────────────┘
 ```
 
@@ -2248,7 +2248,7 @@ SELECT monthName(date_value)
 now([timezone])
 ```
 
-**別名**: `current_timestamp`, `localtimestamp`
+**別名**: `localtimestamp`, `current_timestamp`
 
 **引数**
 
@@ -2444,7 +2444,7 @@ FORMAT PrettyCompactMonoBlock
 
 導入バージョン: v23.6.0
 
-server のタイムゾーン、つまり [`timezone`](/ja/reference/settings/server-settings/settings#timezone) 設定の値を返します。
+server のタイムゾーン、つまり [`timezone`](/ja/reference/settings/server-settings/settings/other#timezone) 設定の値を返します。
 この関数が分散テーブルのコンテキストで実行される場合、各分片に対応する値を持つ通常のカラムを返します。そうでない場合は、定数値を返します。
 
 <Note>
@@ -2477,7 +2477,7 @@ SELECT serverTimeZone()
 
 ```response title=Response
 ┌─serverTimeZone()─┐
-│ UTC              │
+│ Etc/UTC          │
 └──────────────────┘
 ```
 
@@ -2570,9 +2570,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 day)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯valDay(10))─┐
-│               1998-06-06 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                           1998-06-06 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractHours">
@@ -2626,9 +2626,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 hour)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alHour(10))─┐
-│      1998-06-15 14:00:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                   1998-06-15 14:00:00 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractInterval">
@@ -2728,9 +2728,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯osecond(10))─┐
-│ 1998-06-15 23:59:59.999990 │
-└────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                       1998-06-15 23:59:59.999990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMilliseconds">
@@ -2739,7 +2739,7 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 
 導入バージョン: v22.6.0
 
-日時、または文字列形式でエンコードされた日時から、指定したミリ秒数を減算します。
+日時、または文字列としてエンコードされた日時から、指定したミリ秒数を減算します。
 
 **構文**
 
@@ -2782,9 +2782,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯second(10))─┐
-│  1998-06-15 23:59:59.990 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalMillisecond(10))─┐
+│                                          1998-06-15 23:59:59.990 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMinutes">
@@ -2838,9 +2838,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 minute)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Minute(10))─┐
-│      1998-06-15 23:50:00 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMinute(10))─┐
+│                                     1998-06-15 23:50:00 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractMonths">
@@ -2894,9 +2894,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 month)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯lMonth(10))─┐
-│               1997-08-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalMonth(10))─┐
+│                                             1997-08-16 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractNanoseconds">
@@ -2905,7 +2905,7 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 month)
 
 導入バージョン: v20.1.0
 
-日時、または日時を表す文字列から、指定したナノ秒数を減算します。
+日時、または文字列としてエンコードされた日時から、指定したナノ秒数を減算します。
 
 **構文**
 
@@ -2948,9 +2948,9 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
 ```
 
 ```response title=Response
-┌─minus(CAST('19⋯anosecond(10))─┐
-│ 1998-06-15 23:59:59.999999990 │
-└───────────────────────────────┘
+┌─minus(CAST('1998-06-16', 'DateTime'), toIntervalNanosecond(10))─┐
+│                                   1998-06-15 23:59:59.999999990 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractQuarters">
@@ -3060,9 +3060,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 second)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯Second(10))─┐
-│      1998-06-15 23:59:50 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                     1998-06-15 23:59:50 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractTupleOfIntervals">
@@ -3071,7 +3071,7 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 second)
 
 導入バージョン: v22.11.0
 
-日付または日時から、複数のインターバルからなるタプルを順に減算します。
+日付または日時から、タプルを順に減算します。
 
 **構文**
 
@@ -3082,7 +3082,7 @@ subtractTupleOfIntervals(datetime, intervals)
 **引数**
 
 * `datetime` — ここからインターバルを減算する日付または日時。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `intervals` — `datetime` から減算するインターバルの タプル。[`Tuple(Interval)`](/ja/reference/data-types/tuple)
+* `intervals` — `datetime` から減算するタプル。[`Tuple(Interval)`](/ja/reference/data-types/tuple)
 
 **戻り値**
 
@@ -3090,16 +3090,16 @@ subtractTupleOfIntervals(datetime, intervals)
 
 **例**
 
-**日付からインターバルの タプル を減算する**
+**日付からタプルを減算する**
 
 ```sql title=Query
 WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
 ```
 
 ```response title=Response
-┌─subtractTupl⋯alYear(1)))─┐
-│               2016-12-31 │
-└──────────────────────────┘
+┌─subtractTupleOfIntervals(date, (toIntervalDay(1), toIntervalYear(1)))─┐
+│                                                            2016-12-31 │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractWeeks">
@@ -3153,9 +3153,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 week)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alWeek(10))─┐
-│               1998-04-07 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalWeek(10))─┐
+│                                            1998-04-07 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractYears">
@@ -3209,9 +3209,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 year)
 ```
 
 ```response title=Response
-┌─minus(CAST('⋯alYear(10))─┐
-│               1988-06-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                            1988-06-16 │
+└───────────────────────────────────────────────────────┘
 ```
 
 <div id="timeDiff">
@@ -3502,7 +3502,7 @@ SELECT timezoneOf(now());
 
 ```response title=Response
 ┌─timezoneOf(now())─┐
-│ Europe/Amsterdam  │
+│ Etc/UTC           │
 └───────────────────┘
 ```
 
@@ -3752,9 +3752,9 @@ SELECT toDaysSinceYearZero(toDate('2023-09-08'))
 ```
 
 ```response title=Response
-┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
-│                                     713569 │
-└────────────────────────────────────────────┘
+┌─toDaysSinceYearZero(toDate('2023-09-08'))─┐
+│                                    739136 │
+└───────────────────────────────────────────┘
 ```
 
 <div id="toHour">
@@ -3884,8 +3884,8 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 ```response title=Response
-┌─week1─┬─week2─┐
-│    40 │    40 │
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
 └───────┴───────┘
 ```
 
@@ -3898,7 +3898,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 日付または日時を、その月の末日に切り上げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) を設定することで指定できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) を設定することで指定できます。
 </Note>
 
 **構文**
@@ -3940,7 +3940,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 日付または日時を、最も近い土曜日または日曜日まで切り上げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) を設定することで変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) を設定することで変更できます。
 </Note>
 
 **構文**
@@ -3975,10 +3975,10 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
-toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
-toLastDayOfWeek(toDate('2023-04-23')):                   2023-04-23
-toLastDayOfWeek(toDate('2023-04-23'), 1):                2023-04-23
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-22
+toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-23
+toLastDayOfWeek(toDate('2023-04-23')):                 2023-04-29
+toLastDayOfWeek(toDate('2023-04-23'), 1):              2023-04-23
 ```
 
 <div id="toMicrosecond">
@@ -4052,9 +4052,9 @@ SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));
 ```
 
 ```response title=Response
-┌──toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
-│                                                        456 │
-└────────────────────────────────────────────────────────────┘
+┌─toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
+│                                                       456 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toMinute">
@@ -4159,16 +4159,16 @@ toModifiedJulianDayOrNull(date)
 
 ```sql title=Query
 SELECT toModifiedJulianDayOrNull('2020-01-01');
-SELECT toModifiedJulianDayOrNull('0000-00-00'); -- 無効な日付、NULLを返す
+SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
 ```
 
 ```response title=Response
-┌─toModifiedJu⋯020-01-01')─┐
-│                    58849 │
-└──────────────────────────┘
-┌─toModifiedJu⋯000-00-00')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+┌─toModifiedJulianDayOrNull('0000-00-00')─┐
+│                                    ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┘
 ```
 
 <div id="toMonday">
@@ -4180,7 +4180,7 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- 無効な日付、NULLを返�
 日付または日時を、同じ週の月曜日に切り下げます。日付を返します。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -4394,9 +4394,9 @@ SELECT toRelativeDayNum(toDate('2023-04-01')) - toRelativeDayNum(toDate('2023-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯3-01-01')))─┐
-│                       90 │
-└──────────────────────────┘
+┌─minus(toRelativeDayNum(toDate('2023-04-01')), toRelativeDayNum(toDate('2023-01-01')))─┐
+│                                                                                    90 │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toRelativeHourNum">
@@ -4649,7 +4649,7 @@ toRelativeYearNum(date)
 
 **戻り値**
 
-過去の固定基準時点からの年数を返します。[`UInt16`](/ja/reference/data-types/int-uint)
+過去のある固定された基準時点からの年数を返します。[`UInt16`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -4660,9 +4660,9 @@ SELECT toRelativeYearNum('2010-10-01'::DateTime) - toRelativeYearNum('2000-01-01
 ```
 
 ```response title=Response
-┌─minus(toRela⋯ateTime')))─┐
-│                       10 │
-└──────────────────────────┘
+┌─minus(toRelativeYearNum(CAST('2010-10-01', 'DateTime')), toRelativeYearNum(CAST('2000-01-01', 'DateTime')))─┐
+│                                                                                                          10 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toSecond">
@@ -4712,7 +4712,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 日時をその日の開始時刻に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -4752,7 +4752,7 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 日時を15分間隔の開始時点に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) を設定することで変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) を設定することで変更できます。
 </Note>
 
 **構文**
@@ -4798,7 +4798,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 日時を直前の5分間隔の開始時点に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -4846,7 +4846,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 日時をその時間の開始時刻に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -4873,9 +4873,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────────res─┬─toTypeName(res)─┐
-│ 2023-04-21 10:00:00 │ DateTime        │
-└─────────────────────┴─────────────────┘
+┌─toStartOfHour(toDateTime('2023-04-21 10:20:30'))─┐
+│                              2023-04-21 10:00:00 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="toStartOfISOYear">
@@ -4887,7 +4887,7 @@ SELECT
 日付または日時を ISO 年の最初の日まで切り下げます。これは通常の暦年とは異なる場合があります。[ISO 週日付](https://en.wikipedia.org/wiki/ISO_week_date)を参照してください。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -4967,7 +4967,7 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 **引数**
 
 * `value` — 切り下げる日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `x` — インターバルの長さを表す数値。- `unit` — インターバルの単位: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — 任意。文字列で指定するタイムゾーン名。- `origin` — 任意。計算の始点 (2 番目のオーバーロードのみ) 。
+* `x` — インターバルの長さを表す数値。- `unit` — インターバルの単位: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — 任意。文字列で指定するタイムゾーン名。- `origin` — 任意。計算の始点 (2 番目のオーバーロードのみ)。
 
 **戻り値**
 
@@ -4982,9 +4982,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯alMonth(1))─┐
-│               2023-01-01 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
+│                                                               2023-01-01 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 **始点を使用する**
@@ -4994,9 +4994,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 ```
 
 ```response title=Response
-┌─toStartOfInt⋯14:35:30'))─┐
-│      2023-01-01 14:44:30 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
+│                                                                                          2023-01-01 14:44:30 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toStartOfMicrosecond">
@@ -5005,7 +5005,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 
 導入バージョン: v22.6.0
 
-日時をマイクロ秒の開始時点に切り捨てます。
+日時をマイクロ秒の開始時点に切り下げます。
 
 **構文**
 
@@ -5046,7 +5046,7 @@ SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999999000 │
+│               2020-01-01 13:20:30.999999000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -5097,7 +5097,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999000000 │
+│               2020-01-01 13:20:30.999000000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -5110,7 +5110,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 日時をその分の先頭に切り捨てます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5154,7 +5154,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 日付または日時をその月の初日に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5191,7 +5191,7 @@ SELECT toStartOfMonth(toDateTime('2023-04-21 10:20:30'))
 
 導入バージョン: v22.6.0
 
-日時をナノ秒単位の先頭に切り捨てます。
+日時をナノ秒単位の先頭に切り下げます。
 
 **構文**
 
@@ -5232,7 +5232,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 ```response title=Response
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 12:20:30.999999999 │
+│              2020-01-01 13:20:30.999999999 │
 └────────────────────────────────────────────┘
 ```
 
@@ -5245,7 +5245,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 日付または日時を、その四半期の初日に切り下げます。四半期の初日は、1月1日、4月1日、7月1日、または10月1日です。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5336,7 +5336,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 日時を、その時刻を含む10分間隔の開始時刻に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5382,7 +5382,7 @@ toStartOfTenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 日付または日時を、直前の日曜日または月曜日に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -5416,11 +5416,11 @@ SELECT
 
 ```response title=Response
 Row 1:
-    ──────
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
-    toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
-    toStartOfWeek(toDate('2023-04-24')):                   2023-04-24
-    toStartOfWeek(toDate('2023-04-24'), 1):                2023-04-24
+──────
+toStartOfWeek(toDateTime('2023-04-21 10:20:30')):    2023-04-16
+toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-17
+toStartOfWeek(toDate('2023-04-24')):                 2023-04-23
+toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
 ```
 
 <div id="toStartOfYear">
@@ -5432,7 +5432,7 @@ Row 1:
 日付または日時を、その年の最初の日に切り下げます。結果は `Date` オブジェクトとして返されます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5467,33 +5467,40 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
   ## toTimeWithFixedDate
 </div>
 
-導入バージョン: v1.1.0
+導入バージョン: v25.5.0
 
-日付または日時から時間部分を抽出します。
-返される値は固定された時点からのオフセットで、現在は `1970-01-02` が使われていますが、
-どの時点を基準とするかは実装の詳細であり、将来変更される可能性があります。
+日時から時刻部分を抽出します。
+返される結果は、現在は `1970-01-02` という固定時点からのオフセットですが、
+正確な時点は実装の詳細であり、将来変更される可能性があります。
 
-したがって、`toTime` を単独で使用するべきではありません。
-この関数の主な用途は、2 つの日付または日時の時間差を計算することです。たとえば、`toTime(dt1) - toTime(dt2)` のように使用します。
+したがって、`toTimeWithFixedDate` を単独で使用すべきではありません。
+この関数の主な目的は、2つの日時の時刻差を計算することです。例: `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`。
+
+これは従来の `toTime` 関数であり、値を [`Time`](/ja/reference/data-types/time) データ型に変換する
+[`toTime`](/ja/reference/functions/regular-functions/type-conversion-functions#toTime) が `toTime` という名前を使用するようになったため、v25.5 でリネームされました。
+設定
+[`use_legacy_to_time`](/ja/reference/settings/session-settings#use_legacy_to_time) が有効な場合は、旧名称の `toTime` でも引き続き使用できます (v26.7 以降のデフォルトは `0` ですが、v25.6 から v26.6 までは `1` がデフォルトでした) 。
+
+`datetime` 引数に秒未満の部分が含まれる場合、それらは削除され、秒精度の `DateTime` 値が返されます。
 
 **構文**
 
 ```sql
-toTimeWithFixedDate(date[, timezone])
+toTimeWithFixedDate(datetime[, timezone])
 ```
 
 **引数**
 
-* `date` — 時刻に変換する日付または日時。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 省略可。戻り値に使用するタイムゾーン。[`String`](/ja/reference/data-types/string)
+* `datetime` — 時刻に変換する日時。[`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+* `timezone` — 省略可能。戻り値のタイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-固定の時点 (現在は 1970-01-02) からのオフセットとして、日付または日時の時刻部分を返します。[`DateTime`](/ja/reference/data-types/datetime)
+日時の時刻部分を、固定時点 (現在は 1970-01-02) からのオフセットとして返します。[`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
-**2 つの日付の時刻差を計算する**
+**2 つの日付間の時差を計算する**
 
 ```sql title=Query
 SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDate('2024-05-10 11:00:00'::DateTime) AS result, toTypeName(result)
@@ -5503,6 +5510,31 @@ SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDat
 ┌─result─┬─toTypeName(result)─┐
 │   3600 │ Int32              │
 └────────┴────────────────────┘
+```
+
+**秒未満の部分は切り捨てられます**
+
+```sql title=Query
+SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
+```
+
+**legacy 名で呼び出した場合も同じ関数**
+
+```sql title=Query
+SET use_legacy_to_time = 1;
+SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
 ```
 
 <div id="toTimezone">
@@ -5687,7 +5719,7 @@ from_date32:     1509840000
 その週に新年の日数が何日含まれているかは関係なく、たとえ 1 日しか含まれていなくても同様です。
 つまり、12 月の最後の週に翌年の 1 月 1 日が含まれている場合、それは翌年の第 1 週になります。
 
-最初の引数は、[`parseDateTime64BestEffort()`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) でサポートされる形式の [`String`](/ja/reference/data-types/string) として指定することもできます。文字列引数のサポートは、特定のサードパーティーツールが想定する MySQL との互換性のためにのみ存在します。文字列引数のサポートは、将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また一般に文字列のパースは低速であるため、使用しないことを推奨します。
+最初の引数は、[`parseDateTime64BestEffort`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) でサポートされる形式の [`String`](/ja/reference/data-types/string) として指定することもできます。文字列引数のサポートは、特定のサードパーティーツールが想定する MySQL との互換性のためにのみ存在します。文字列引数のサポートは、将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また一般に文字列のパースは低速であるため、使用しないことを推奨します。
 
 **構文**
 
@@ -5727,7 +5759,7 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 導入バージョン: v1.1.0
 
 日付または日時を、年と月の数値 (YYYY * 100 + MM) を含む `UInt32` 型の値に変換します。
-省略可能な2番目の引数としてタイムゾーンを指定できます。指定する場合、タイムゾーンは文字列定数である必要があります。
+任意の2番目の引数としてタイムゾーンを指定できます。指定する場合、タイムゾーンは文字列定数である必要があります。
 
 この関数は、関数 `YYYYMMDDToDate()` の逆です。
 
@@ -5740,7 +5772,7 @@ toYYYYMM(datetime[, timezone])
 **引数**
 
 * `datetime` — 変換する日付または日時。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 省略可能。変換に使用するタイムゾーン。指定する場合、タイムゾーンは文字列定数である必要があります。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。変換に使用するタイムゾーン。指定する場合、タイムゾーンは文字列定数である必要があります。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -5756,7 +5788,7 @@ SELECT toYYYYMM(now(), 'US/Eastern')
 
 ```response title=Response
 ┌─toYYYYMM(now(), 'US/Eastern')─┐
-│                        202303 │
+│                        202608 │
 └───────────────────────────────┘
 ```
 
@@ -5785,16 +5817,16 @@ toYYYYMMDD(datetime[, timezone])
 
 **例**
 
-**現在の日付を YYYYMMDD フォーマットに変換する**
+**別のタイムゾーンで日付を YYYYMMDD フォーマットに変換する**
 
 ```sql title=Query
-SELECT toYYYYMMDD(now(), 'US/Eastern')
+SELECT toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDD(now(), 'US/Eastern')─┐
-│                        20230302 │
-└─────────────────────────────────┘
+┌─toYYYYMMDD(toDateTime('2026-01-02 03:04:05', 'UTC'), 'US/Eastern')─┐
+│                                                           20260101 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toYYYYMMDDhhmmss">
@@ -5804,7 +5836,7 @@ SELECT toYYYYMMDD(now(), 'US/Eastern')
 導入バージョン: v1.1.0
 
 日付または日時を、年、月、日、時、分、秒を含む `UInt64` の数値 (YYYY * 10000000000 + MM * 100000000 + DD * 1000000 + hh * 10000 + mm * 100 + ss) に変換します。
-2 番目の省略可能な引数として タイムゾーン を受け取ります。指定する場合、タイムゾーン は文字列定数である必要があります。
+2 番目の任意の引数として タイムゾーン を受け取ります。指定する場合、タイムゾーン は文字列定数である必要があります。
 
 **構文**
 
@@ -5815,7 +5847,7 @@ toYYYYMMDDhhmmss(datetime[, timezone])
 **引数**
 
 * `datetime` — 変換する日付または日時。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 省略可。変換に使用するタイムゾーンです。指定する場合、タイムゾーンは文字列定数である必要があります。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。変換に使用するタイムゾーンです。指定する場合、タイムゾーンは文字列定数である必要があります。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -5823,16 +5855,16 @@ toYYYYMMDDhhmmss(datetime[, timezone])
 
 **例**
 
-**現在の日付と時刻を YYYYMMDDhhmmss 形式に変換**
+**日付と時刻を YYYYMMDDhhmmss 形式に変換**
 
 ```sql title=Query
-SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
+SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
-│                        20230302112209 │
-└───────────────────────────────────────┘
+┌─toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')─┐
+│                                                           20230302112209 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toYear">
@@ -5869,7 +5901,7 @@ SELECT toYear(toDateTime('2023-04-21 10:20:30'))
 
 ```response title=Response
 ┌─toYear(toDateTime('2023-04-21 10:20:30'))─┐
-│                                     2023  │
+│                                      2023 │
 └───────────────────────────────────────────┘
 ```
 
@@ -5919,7 +5951,7 @@ SELECT toYearNumSinceEpoch(toDate('2024-10-01'))
 
 警告: `toYearWeek()` が返す週番号は、`toWeek()` が返すものと異なる場合があります。`toWeek()` は常に指定された年における週番号を返しますが、`toWeek()` が `0` を返す場合、`toYearWeek()` は前年の最後の週に対応する値を返します。以下の例の `prev_yearWeek` を参照してください。
 
-最初の引数には、[`parseDateTime64BestEffort()`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) がサポートするフォーマットの [`String`](/ja/reference/data-types/string) も指定できます。文字列引数のサポートは、特定のサードパーティツールで想定されている MySQL との互換性のためにのみ提供されています。文字列引数のサポートは将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また文字列のパースは一般に低速であるため、使用しないことを推奨します。
+最初の引数には、[`parseDateTime64BestEffort`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) がサポートするフォーマットの [`String`](/ja/reference/data-types/string) も指定できます。文字列引数のサポートは、特定のサードパーティツールで想定されている MySQL との互換性のためにのみ提供されています。文字列引数のサポートは将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また文字列のパースは一般に低速であるため、使用しないことを推奨します。
 
 **構文**
 
@@ -5992,7 +6024,7 @@ SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FO
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -6003,10 +6035,8 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ```
 
 ```response title=Response
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 ```
 
@@ -6047,10 +6077,10 @@ SELECT today() - 1;
 
 ```response title=Response
 ┌─yesterday()─┐
-│  2025-06-09 │
+│  2026-08-01 │
 └─────────────┘
 ┌─minus(today(), 1)─┐
-│        2025-06-09 │
+│        2026-08-01 │
 └───────────────────┘
 ```
 

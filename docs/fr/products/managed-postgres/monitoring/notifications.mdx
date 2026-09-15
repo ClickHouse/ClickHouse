@@ -1,0 +1,36 @@
+---
+slug: /cloud/managed-postgres/monitoring/notifications
+sidebarTitle: 'Notifications'
+title: 'Notifications de ClickHouse Managed Postgres'
+description: 'Notifications de la Cloud Console pour les services ClickHouse Managed Postgres'
+keywords: ['managed postgres', 'notifications', 'alertes', 'stockage', 'utilisation du disque']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-notifications-beta" />
+
+ClickHouse Cloud envoie des notifications lorsqu&#39;un service Managed Postgres
+requiert une attention particulière. Elles sont envoyées via le
+[système de notifications de la console Cloud](/fr/products/cloud/features/monitoring/notifications) :
+la boîte de réception de la console, l&#39;e-mail et Slack. Vous pouvez personnaliser chaque
+notification depuis la section **Postgres** de la page des paramètres de
+notification. Cette section s&#39;affiche pour les organisations disposant de services Managed Postgres.
+
+<div id="supported-notifications">
+  ## Notifications prises en charge
+</div>
+
+| Notifier lorsque                              | Condition d’alerte spécifique                                                                                                                                  | Canaux de notification par défaut | Étapes de résolution                                                                                                                                                                                                  |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Le stockage Postgres dépasse le seuil de 85 % | Lorsque l’utilisation du stockage d’un service Managed Postgres atteint 85 % de sa capacité. La notification n’est déclenchée qu’une fois par jour calendaire. | UI, e-mail                        | Le stockage est automatiquement mis à l’échelle lorsque l’utilisation atteint 90 % (brève interruption de service lors du basculement). Aucune action n’est requise, sauf si l’Auto-scaling a déjà atteint sa limite. |
+
+<div id="related">
+  ## Pages associées
+</div>
+
+* [Notifications Cloud](/fr/products/cloud/features/monitoring/notifications) — canaux, niveaux de gravité et
+  personnalisation de la diffusion
+* [Tableau de bord Monitoring](/fr/products/managed-postgres/monitoring/dashboard) —
+  graphiques en temps réel de l’utilisation du disque, du CPU et de la mémoire pour chaque instance

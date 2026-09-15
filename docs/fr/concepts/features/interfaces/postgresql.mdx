@@ -11,12 +11,12 @@ import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupporte
 <CloudNotSupportedBadge />
 
 <Tip>
-  Découvrez notre service [Managed Postgres](/fr/products/managed-postgres/overview). Basé sur un stockage NVMe physiquement colocalisé avec le compute, il offre des performances jusqu’à 10 fois supérieures pour les workloads limités par le disque par rapport aux alternatives utilisant du stockage réseau comme EBS, et vous permet de répliquer vos données Postgres vers ClickHouse à l’aide du connecteur Postgres CDC dans ClickPipes.
+  Découvrez notre service [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview). Basé sur un stockage NVMe physiquement colocalisé avec le compute, il offre des performances jusqu’à 10 fois supérieures pour les workloads limités par le disque par rapport aux alternatives utilisant du stockage réseau comme EBS, et vous permet de répliquer vos données Postgres vers ClickHouse à l’aide du connecteur Postgres CDC dans ClickPipes.
 </Tip>
 
 ClickHouse prend en charge le protocole PostgreSQL wire, ce qui vous permet d’utiliser des clients Postgres pour vous connecter à ClickHouse. Dans un certain sens, ClickHouse peut se faire passer pour une instance PostgreSQL, ce qui vous permet de connecter à ClickHouse une application cliente PostgreSQL qui n’est pas déjà directement prise en charge par ClickHouse (par exemple, Amazon Redshift).
 
-Pour activer le protocole PostgreSQL wire, ajoutez le paramètre [postgresql&#95;port](/fr/reference/settings/server-settings/settings#postgresql_port) au fichier de configuration de votre serveur. Par exemple, vous pouvez définir le port dans un nouveau fichier XML dans votre dossier `config.d` :
+Pour activer le protocole PostgreSQL wire, ajoutez le paramètre [postgresql&#95;port](/fr/reference/settings/server-settings/settings/postgresql#postgresql_port) au fichier de configuration de votre serveur. Par exemple, vous pouvez définir le port dans un nouveau fichier XML dans votre dossier `config.d` :
 
 ```xml
 <clickhouse>

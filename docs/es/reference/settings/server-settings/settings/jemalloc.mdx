@@ -24,6 +24,12 @@ Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Número máximo de hilos en segundo plano de jemalloc que se pueden crear; establezca 0 para usar el valor predeterminado de jemalloc
 
+<div id="jemalloc_merge_tree_arenas">
+  ## jemalloc_merge_tree_arenas
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />Número de arenas jemalloc dedicadas a los metadatos persistentes de MergeTree, tanto por parte como por tabla. `0` desactiva la arena dedicada (los metadatos usan las arenas predeterminadas por CPU). `1` utiliza una única arena compartida. `N > 1` crea un grupo de `N` arenas y asigna la asignación de memoria por CPU; en máquinas con muchos núcleos, esto evita serializar la asignación de metadatos en los bloqueos de una única arena. El valor se limita al número de CPU en las que puede ejecutarse el proceso (su máscara de afinidad), por lo que un valor elevado (o el número de núcleos) proporciona una arena por cada CPU permitida. Se aplica al inicio.
+
 <div id="jemalloc_profiler_sampling_rate">
   ## jemalloc_profiler_sampling_rate
 </div>
