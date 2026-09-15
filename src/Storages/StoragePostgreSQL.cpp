@@ -221,10 +221,14 @@ public:
 
             /// Connection is already made to the needed database, so it should not be present in the query;
             /// remote_table_schema is empty if it is not specified, will access only table_name.
+            ///
+            /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote
+            /// table (its value is written there on `INSERT` and read back from there), so a predicate over it
+            /// is pushed down like one over an ordinary column.
             query = transformQueryForExternalDatabase(
                 query_info,
                 required_source_columns,
-                storage_snapshot->metadata->getColumns().getOrdinary(),
+                storage_snapshot->metadata->getColumns().getAllPhysical(),
                 IdentifierQuotingStyle::DoubleQuotesStandard,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,

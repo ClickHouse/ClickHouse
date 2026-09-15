@@ -15,10 +15,11 @@ CREATE TABLE t(i INTEGER NOT NULL, m INTEGER NOT NULL) STRICT;
 INSERT INTO t VALUES (1, 2), (2, 3);
 "
 
-# `MATERIALIZED` and `ALIAS` columns belong to this source, but are not part of the set of columns whose
-# predicates are pushed down to the external database: a filter over one of them is applied locally. Such
-# a filter must be rejected under `external_table_strict_query` instead of being silently dropped as if it
-# belonged to another table. A filter over an ordinary column is still pushed down and accepted.
+# A `MATERIALIZED` column of an external table is a physical column of the remote table: it is read from
+# there, and a filter over it is pushed down like one over an ordinary column, so `external_table_strict_query`
+# accepts it. An `ALIAS` column belongs to this source too, but it exists only locally: a filter over it is
+# applied locally, and must be rejected under `external_table_strict_query` instead of being silently dropped
+# as if it belonged to another table.
 for analyzer in 1 0
 do
     echo "enable_analyzer = ${analyzer}"
@@ -36,12 +37,11 @@ do
         SETTINGS external_table_strict_query = 1, enable_analyzer = ${analyzer};
     "
 
-    echo -n 'materialized filter, strict: '
     ${CLICKHOUSE_LOCAL} --multiquery --query="
     CREATE TABLE ext (i Int64, m Int64 MATERIALIZED i + 1) ENGINE = SQLite('${DB_PATH}', 't');
-    SELECT count() FROM ext WHERE m = 2
+    SELECT 'materialized filter, strict', count() FROM ext WHERE m = 2
         SETTINGS external_table_strict_query = 1, enable_analyzer = ${analyzer};
-    " 2>&1 | grep -c 'INCORRECT_QUERY'
+    "
 
     echo -n 'alias filter, strict: '
     ${CLICKHOUSE_LOCAL} --multiquery --query="

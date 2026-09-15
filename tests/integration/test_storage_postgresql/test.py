@@ -1384,10 +1384,11 @@ def test_postgres_query_passing_edge_cases(started_cluster):
 
 
 def test_postgres_strict_query_local_only_column(started_cluster):
-    # A `MATERIALIZED` / `ALIAS` column of the table-backed engine belongs to this source, but its
-    # predicates are not pushed down to PostgreSQL - such a filter is applied locally. Under
-    # `external_table_strict_query` it must be rejected instead of being silently dropped as if it
-    # belonged to another table, while a filter over an ordinary column is still pushed down.
+    # A `MATERIALIZED` column of the table-backed engine is a physical column of the remote table: its
+    # value is read from PostgreSQL, and a filter over it is pushed down like one over an ordinary column,
+    # so `external_table_strict_query` accepts it. An `ALIAS` column belongs to this source too, but exists
+    # only locally: its filter is applied locally and must be rejected under `external_table_strict_query`
+    # instead of being silently dropped as if it belonged to another table.
     cursor = started_cluster.postgres_conn.cursor()
     host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
     table_name = "test_strict_local_only_column"
@@ -1410,8 +1411,13 @@ def test_postgres_strict_query_local_only_column(started_cluster):
         ).rstrip()
         == "1"
     )
-    assert "INCORRECT_QUERY" in node1.query_and_get_error(
-        "SELECT count() FROM pg_strict_local_only WHERE m = 2 SETTINGS external_table_strict_query = 1"
+    # The `MATERIALIZED` column is read from the remote table, not computed from its expression.
+    assert node1.query("SELECT a, m FROM pg_strict_local_only ORDER BY a").splitlines() == ["1\t2", "2\t3"]
+    assert (
+        node1.query(
+            "SELECT count() FROM pg_strict_local_only WHERE m = 2 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
     )
     assert "INCORRECT_QUERY" in node1.query_and_get_error(
         "SELECT count() FROM pg_strict_local_only WHERE l = 10 SETTINGS external_table_strict_query = 1"

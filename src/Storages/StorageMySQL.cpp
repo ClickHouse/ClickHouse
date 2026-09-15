@@ -168,10 +168,13 @@ void StorageMySQL::readImpl(
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
+        /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote table
+        /// (its value is written there on `INSERT` and read back from there), so a predicate over it is pushed
+        /// down like one over an ordinary column.
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
-            storage_snapshot->metadata->getColumns().getOrdinary(),
+            storage_snapshot->metadata->getColumns().getAllPhysical(),
             IdentifierQuotingStyle::BackticksMySQL,
             LiteralEscapingStyle::Regular,
             remote_database_name,

@@ -56,17 +56,15 @@ NameSet StorageWithCommonVirtualColumns::getLocalOnlyColumnNames(const StorageMe
     NameSet result = getPlanVirtualColumnNames(metadata);
     for (const auto & column : metadata->getColumns())
     {
-        /// Only a column whose value this storage computes on its own is local. An `ALIAS` column always has
-        /// an expression; a `MATERIALIZED` one normally has it too, but an external storage may also use the
-        /// expressionless `MATERIALIZED` classification as a marker for a column that the data source itself
-        /// generates (`StorageSQLite` does that for SQLite `GENERATED ALWAYS AS` columns). Such a column is
-        /// read from the source like any other physical column, so it is not local-only: a predicate over it
-        /// is pushed down, and `external_table_strict_query = 1` must keep accepting it.
-        const bool is_local = (column.default_desc.kind == ColumnDefaultKind::Materialized
-                               || column.default_desc.kind == ColumnDefaultKind::Alias)
-            && column.default_desc.expression != nullptr;
-
-        if (is_local)
+        /// Only an `ALIAS` column is local: it has no storage anywhere and is expanded into its expression
+        /// on read. A `MATERIALIZED` column is a physical column of the external data source, whatever its
+        /// classification carries: with an expression, the value is computed at `INSERT` time and written to
+        /// the source like any other physical column, and read back from there; without an expression, the
+        /// classification is the marker an external storage puts on a column the source generates itself
+        /// (`StorageSQLite` does that for SQLite `GENERATED ALWAYS AS` columns). Either way the column is
+        /// both projected from the source and pushdown-eligible, so it must not be local-only: otherwise a
+        /// predicate over it would be evaluated locally while the projection still comes from the source.
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
             result.insert(column.name);
     }
     return result;
