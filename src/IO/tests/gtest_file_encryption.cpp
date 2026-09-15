@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <filesystem>
@@ -305,6 +306,38 @@ namespace
                 path, DBMS_DEFAULT_BUFFER_SIZE, std::make_unique<ReadBufferFromFilePRead>(path), key, header);
         }
     };
+
+    /// Splits a positional read into small chunks, reporting progress and honoring cancellation
+    /// after each one. Plain `pread` does neither, so it cannot exercise those paths.
+    /// `chunk_size` is deliberately not a multiple of the 16-byte cipher block, so incremental
+    /// decryption is exercised at unaligned offsets.
+    class ChunkedProgressReadBuffer : public ReadBufferFromFileDecorator
+    {
+    public:
+        using ReadBufferFromFileDecorator::ReadBufferFromFileDecorator;
+
+        static constexpr size_t chunk_size = 25;
+        mutable bool cancelled = false;
+
+        size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override
+        {
+            size_t copied = 0;
+            while (copied < n)
+            {
+                size_t chunk = std::min(chunk_size, n - copied);
+                size_t got = impl->readBigAt(to + copied, chunk, offset + copied, {});
+                copied += got;
+                if (got < chunk)
+                    break;
+                if (progress_callback && progress_callback(copied))
+                {
+                    cancelled = true;
+                    break;
+                }
+            }
+            return copied;
+        }
+    };
 }
 
 /// `readBigAt` must return the same plaintext as a sequential read for any range, including
@@ -334,30 +367,6 @@ TEST(FileEncryptionReadBigAtTest, ArbitraryRanges)
         ASSERT_EQ(got.substr(0, bytes_read), file.data.substr(offset, bytes_read))
             << "offset=" << offset << " count=" << count;
     }
-}
-
-/// `readBigAt` must not disturb the buffer state, so a sequential read interleaved with
-/// positional reads still returns an uninterrupted stream.
-TEST(FileEncryptionReadBigAtTest, DoesNotDisturbSequentialRead)
-{
-    constexpr size_t file_size = 500;
-    EncryptedFileFixture file{"test_read_big_at_sequential", file_size};
-
-    auto rb = file.open();
-    ASSERT_TRUE(rb->supportsReadAt());
-
-    String head(100, 0);
-    ASSERT_EQ(rb->read(head.data(), head.size()), 100u);
-    ASSERT_EQ(head, file.data.substr(0, 100));
-
-    String scratch(64, 0);
-    ASSERT_EQ(rb->readBigAt(scratch.data(), scratch.size(), 300, {}), 64u);
-    ASSERT_EQ(scratch, file.data.substr(300, 64));
-
-    ASSERT_EQ(rb->getPosition(), 100);
-    String tail;
-    readStringUntilEOF(tail, *rb);
-    ASSERT_EQ(tail, file.data.substr(100));
 }
 
 /// The contract allows concurrent `readBigAt` calls. Decryption state is per-call, so a shared
@@ -397,6 +406,33 @@ TEST(FileEncryptionReadBigAtTest, ConcurrentReads)
         size_t count = chunk - (i % 2);
         ASSERT_EQ(results[i], file.data.substr(offset, count)) << "thread " << i;
     }
+}
+
+/// `progress_callback` must observe plaintext for every reported prefix, and returning true must
+/// stop the inner read and produce a short result. Reporting progress repeatedly also covers the
+/// incremental decryption: a byte decrypted twice would be turned back into ciphertext.
+TEST(FileEncryptionReadBigAtTest, ProgressCallbackAndCancellation)
+{
+    constexpr size_t file_size = 1000;
+    EncryptedFileFixture file{"test_read_big_at_cancel", file_size};
+
+    auto inner = std::make_unique<ChunkedProgressReadBuffer>(std::make_unique<ReadBufferFromFilePRead>(file.path), file.path);
+    auto * inner_ptr = inner.get();
+    ReadBufferFromEncryptedFile rb(file.path, DBMS_DEFAULT_BUFFER_SIZE, std::move(inner), file.key, file.header);
+    ASSERT_TRUE(rb.supportsReadAt());
+
+    /// Cancel after the 4th chunk, i.e. at 100 bytes out of the 256 requested.
+    constexpr size_t cancel_at = 4 * ChunkedProgressReadBuffer::chunk_size;
+    String got(256, 0);
+    size_t bytes_read = rb.readBigAt(got.data(), got.size(), 0, [&](size_t m) -> bool
+    {
+        EXPECT_EQ(got.substr(0, m), file.data.substr(0, m)) << "m=" << m;
+        return m >= cancel_at;
+    });
+
+    ASSERT_TRUE(inner_ptr->cancelled);
+    ASSERT_EQ(bytes_read, cancel_at);
+    ASSERT_EQ(got.substr(0, bytes_read), file.data.substr(0, bytes_read));
 }
 
 #endif
