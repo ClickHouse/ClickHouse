@@ -2052,7 +2052,7 @@ private:
     bool traverseAndInsert(
         ColumnObject & column_object,
         const typename JSONParser::Element & element,
-        const String & current_path,
+        String current_path,
         const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         std::vector<std::pair<String, typename JSONParser::Element>> & paths_and_values_for_shared_data,
@@ -2158,7 +2158,7 @@ private:
                     && typed_path_nodes.contains(path)
                     && !canParseObjectValue(typed_paths_types.at(path));
 
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, skip_typed))
+                if (!traverseAndInsert(column_object, value, std::move(path), insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, skip_typed))
                     return false;
             }
 
@@ -2197,7 +2197,7 @@ private:
         /// Don't check for dynamic paths if max_dynamic_paths=0 and add this path and value to shared data.
         else if (column_object.getMaxDynamicPaths() == 0)
         {
-            paths_and_values_for_shared_data.emplace_back(current_path, element);
+            paths_and_values_for_shared_data.emplace_back(std::move(current_path), element);
         }
         /// Check if we have this path in dynamic paths.
         else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
@@ -2229,7 +2229,7 @@ private:
         /// Otherwise this path should go to the shared data.
         else
         {
-            paths_and_values_for_shared_data.emplace_back(current_path, element);
+            paths_and_values_for_shared_data.emplace_back(std::move(current_path), element);
         }
 
         return true;
@@ -2242,7 +2242,7 @@ private:
         if (!is_root)
             path.append(".");
         if (insert_settings.escape_dots_in_json_keys)
-            path += escapeDotInJSONKey(String(key));
+            escapeDotInJSONKey(path, key);
         else
             path += key;
         return path;
