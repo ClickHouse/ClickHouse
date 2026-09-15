@@ -87,10 +87,19 @@ static bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
     constexpr size_t max_probe_points = 1024;
     const size_t probe_stride = (size - 1) / max_probe_points + 1;
 
+    /// Probe a bounded number of evenly spaced bytes from both directions. This keeps mixed
+    /// filters with an interior or near-tail outlier on the regular path in the common case
+    /// while keeping the probe much cheaper than the later filter-counting pass.
     if ((filter.back() != 0) != value)
         return false;
 
     for (size_t i = 0; i < size; i += probe_stride)
+    {
+        if ((filter[i] != 0) != value)
+            return false;
+    }
+
+    for (size_t i = size - 1; i >= probe_stride; i -= probe_stride)
     {
         if ((filter[i] != 0) != value)
             return false;

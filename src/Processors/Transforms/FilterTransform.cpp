@@ -263,7 +263,7 @@ bool filterRangeHasValue(const IColumn::Filter & filter, size_t begin, size_t en
     return true;
 }
 
-bool filterHasUniformValue(const IColumn::Filter & filter, bool value)
+bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
 {
     const size_t size = filter.size();
     if (size == 0)
@@ -272,19 +272,33 @@ bool filterHasUniformValue(const IColumn::Filter & filter, bool value)
     constexpr size_t max_probe_points = 1024;
     const size_t probe_stride = (size - 1) / max_probe_points + 1;
 
+    /// Probe a bounded number of evenly spaced bytes from both directions. This keeps mixed
+    /// filters with an interior or near-tail outlier on the regular path in the common case
+    /// while keeping the probe much cheaper than filtering a wide payload column.
     if ((filter.back() != 0) != value)
         return false;
 
-    /// Probe a bounded number of evenly spaced bytes before the full confirmation scan. This
-    /// keeps a mixed filter with an interior outlier on the regular path in the common case
-    /// while keeping the probe much cheaper than filtering a wide payload column.
     for (size_t i = 0; i < size; i += probe_stride)
     {
         if ((filter[i] != 0) != value)
             return false;
     }
 
-    return filterRangeHasValue(filter, 0, size, value);
+    for (size_t i = size - 1; i >= probe_stride; i -= probe_stride)
+    {
+        if ((filter[i] != 0) != value)
+            return false;
+    }
+
+    return true;
+}
+
+bool filterHasUniformValue(const IColumn::Filter & filter, bool value)
+{
+    if (!filterSampleHasValue(filter, value))
+        return false;
+
+    return filterRangeHasValue(filter, 0, filter.size(), value);
 }
 
 std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
