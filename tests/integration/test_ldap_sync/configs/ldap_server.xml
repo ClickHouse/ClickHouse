@@ -1,0 +1,23 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap_strict>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <!-- The synchronisation enumerates the directory under this service account; logins are
+                 search-and-bind: the user is found under the same account and the password is verified
+                 by binding as the DN that was found. -->
+            <lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>svcsecret</lookup_password>
+            <bind_dn>{user_dn}</bind_dn>
+            <user_dn_detection>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(uid={user_name}))</search_filter>
+            </user_dn_detection>
+            <!-- Long on purpose: a cached login must not be able to re-apply the role set of an earlier
+                 login over what the synchronisation wrote. -->
+            <verification_cooldown>300</verification_cooldown>
+        </openldap_strict>
+    </ldap_servers>
+</clickhouse>

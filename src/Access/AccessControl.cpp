@@ -596,6 +596,15 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
+void AccessControl::dropReferencesToRemovedEntities(const std::unordered_set<UUID> & removed_ids)
+{
+    /// Not inside `remove`, so the depth guard of `IAccessStorage::remove` does not apply: the cascade runs
+    /// exactly once, from this outermost storage, and `updateImpl` above notifies after every write.
+    IAccessStorage::removeReferencesToRemovedIDs(removed_ids);
+    changes_notifier->sendNotifications();
+}
+
+
 AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const
 {
     // NOTE: In the case where the user has never been logged in using LDAP,
