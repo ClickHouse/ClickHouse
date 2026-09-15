@@ -431,12 +431,19 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     /// next tab stop - so widening a column to fit the name of a Tuple invalidates the widths of the
     /// columns to its right. Calculate the widths again, with the widened columns as a lower bound,
     /// until they stop changing. Two passes are enough unless tabs shift the widths back and forth.
+    ///
+    /// `calculateWidths` shifts `row_number_width` into `prev_row_number_width` on every call, so
+    /// both are restored before each pass: otherwise a second pass would replace the row number
+    /// width of the previous chunk with the width of the current one, and the chunks would be glued
+    /// even when the row numbers have become wider.
     static constexpr size_t max_width_calculation_passes = 4;
     size_t prev_row_number_width_before = prev_row_number_width;
+    size_t row_number_width_before = row_number_width;
     Widths min_widths;
     for (size_t pass = 0; pass < max_width_calculation_passes; ++pass)
     {
         prev_row_number_width = prev_row_number_width_before;
+        row_number_width = row_number_width_before;
         has_newlines = false;
         calculateWidths(
             header, displayed_chunk, format_settings.pretty.multiline_fields, cut_to_width, min_widths,
