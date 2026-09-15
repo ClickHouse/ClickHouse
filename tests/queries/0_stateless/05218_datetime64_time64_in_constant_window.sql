@@ -76,6 +76,40 @@ select 1 where toDateTime64('1970-01-01 00:00:01', 0, 'UTC') in (toDecimal128('1
 select toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (toUInt128('99999999999999999999'), 1);
 select toNullable(toTime64('00:00:01', 3)) in (toDecimal256('99999999999999999999999999', 0), toDecimal256('1', 0));
 
+select 'A Float64 literal is a carrier too';
+-- `1.5` is a `Float64` `Field`. It matches on the `IN` path when it is exactly representable at the scale, like its `CAST`.
+select 1 where toDateTime64('1970-01-01 00:00:01.5', 1, 'UTC') in (1.5);
+select 1 where toDateTime64('1970-01-01 00:00:01.25', 3, 'UTC') in (1.25);
+select 1 where toDateTime64(1735689600, 3, 'UTC') in (1735689600.0);
+select 1 where toDateTime64('1900-01-01 00:00:00', 3, 'UTC') in (-2208988800.0);
+select 1 where toTime64('00:00:01.5', 1) in (1.5);
+select 1 where toTime64('-00:00:01.5', 6) in (-1.5);
+select 1 where toTime64('-999:59:59.5', 1) in (-3599999.5);
+-- A lossy `Float64` (the ticks do not read back as the literal) cannot equal a stored value: `IN (1.25)` at scale 1 is 0,
+-- the same rule as `CAST('33.3', 'Decimal64(1)') IN (33.33)`.
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC') in (1.25));
+select count() from (select 1 where toTime64('00:00:01.2', 1) in (1.25));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 0, 'UTC') in (1.5));
+-- Outside the `Int64` ticks or the calendar / clock window, or not finite: excluded, not `TYPE_MISMATCH` or `DECIMAL_OVERFLOW`.
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (1e30));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (-1e30));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (253402207200.5));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (nan));
+select count() from (select 1 where toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (inf));
+select count() from (select 1 where toTime64('00:00:01', 6) in (3600000.5));
+select count() from (select 1 where toTime64('00:00:01', 6) in (-3600000.5));
+select count() from (select 1 where toTime64('00:00:01', 6) in (-inf));
+-- Mixed sets and Nullable arguments take the same path.
+select toDateTime64('1970-01-01 00:00:01.5', 1, 'UTC') in (1e30, 1.5);
+select toNullable(toTime64('00:00:01.5', 3)) in (nan, 1.5);
+-- The `INSERT ... VALUES` expression fallback goes through `convertFieldToType` too: a `Float64` literal that is not parsed
+-- by the streaming path materializes the same value as `CAST` (truncated to the scale, like `CAST(1.25 AS DateTime64(1))`).
+drop table if exists t_05218_float;
+create table t_05218_float (dt DateTime64(1, 'UTC'), t Time64(1)) engine = Memory;
+insert into t_05218_float values (1.5 + 0, -1.5 + 0), (1.25 + 0, 1.25 + 0), (1735689600.0 + 0, -3599999.5 + 0);
+select * from t_05218_float order by dt;
+drop table t_05218_float;
+
 select 'Nullable and multi-element sets';
 select toNullable(toDateTime64('1970-01-01 00:00:01', 3, 'UTC')) in (1, 99999999999999999);
 select toNullable(toTime64('00:00:01', 3)) in (253402207200000::Decimal64(0), 1);
@@ -94,4 +128,8 @@ select count() from t_05218 where dt in (toUInt128('99999999999999999999'));
 select count() from t_05218 where dt in (toInt256(1), toUInt128('99999999999999999999'));
 select count() from t_05218 where t in (toDecimal32('3599999', 0));
 select count() from t_05218 where t in (toDecimal256('1.000000', 6), toDecimal128('-3600000', 0));
+select count() from t_05218 where dt in (1.0);
+select count() from t_05218 where dt in (1e30, 946684800.0);
+select count() from t_05218 where t in (3599999.0, nan);
+select count() from t_05218 where (dt, t) in ((1.0, 1.0), (946684800.0, 3600000.5));
 drop table t_05218;

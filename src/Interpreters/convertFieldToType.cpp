@@ -229,8 +229,9 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 
 
 /// The constant sources a `DateTime64` / `Time64` accepts on the `Field` path: a plain `Decimal` of any width (already
-/// a tick count at some scale) or an integer count of whole seconds of any width - the same carriers `ConvertImpl`
-/// accepts, so an exact `IN` constant behaves like its `CAST`.
+/// a tick count at some scale), an integer count of whole seconds of any width, or a `Float64` count of seconds (the
+/// carrier of a literal such as `1.5`) - the same carriers `ConvertImpl` accepts, so an exact `IN` constant and the
+/// `VALUES` expression fallback behave like their `CAST`.
 bool isDateTime64TicksSourceFieldType(Field::Types::Which which)
 {
     switch (which)
@@ -245,6 +246,7 @@ bool isDateTime64TicksSourceFieldType(Field::Types::Which which)
         case Field::Types::Decimal64:
         case Field::Types::Decimal128:
         case Field::Types::Decimal256:
+        case Field::Types::Float64:
             return true;
         default:
             return false;
@@ -305,6 +307,27 @@ std::optional<Int64> ticksFromIntegerField(const T & whole_seconds, Int64 scale_
     return result;
 }
 
+/// The ticks of a `Float64` count of seconds at the target scale, or nullopt when the value is not finite or the
+/// ticks do not fit the `Int64`. The scaled product is truncated toward zero, exactly as `convertToDecimal` does on
+/// the `CAST` path (`CAST(1.25 AS DateTime64(1))` is `00:00:01.2`), so the `VALUES` expression fallback materializes
+/// the same value as `CAST`. Under `strict`, this follows the `Float64` -> `Decimal` rule of `convertDecimalType`:
+/// ticks that do not read back as the original `Float64` lost precision and cannot equal any stored value, so
+/// `toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC') IN (1.25)` is 0 while `IN (1.5)` at scale 1 is 1.
+std::optional<Int64> ticksFromFloatField(Float64 from, Int64 scale_multiplier_to, bool strict)
+{
+    if (!isFinite(from))
+        return std::nullopt;
+
+    const Float64 scaled = from * static_cast<Float64>(scale_multiplier_to);
+    if (scaled <= static_cast<Float64>(std::numeric_limits<Int64>::min()) || scaled >= static_cast<Float64>(std::numeric_limits<Int64>::max()))
+        return std::nullopt;
+
+    const Int64 ticks = static_cast<Int64>(scaled);
+    if (strict && static_cast<Float64>(ticks) / static_cast<Float64>(scale_multiplier_to) != from)
+        return std::nullopt;
+    return ticks;
+}
+
 /// The ticks of `src` at the target scale, or nullopt when they do not fit the `Int64` ticks. Whether the ticks are
 /// inside the calendar / clock window is up to the caller. `src` must satisfy `isDateTime64TicksSourceFieldType`.
 std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_multiplier_to, bool strict)
@@ -331,6 +354,8 @@ std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_mul
             return ticksFromDecimalField(src.safeGet<DecimalField<Decimal128>>(), scale_multiplier_to, strict);
         case Field::Types::Decimal256:
             return ticksFromDecimalField(src.safeGet<DecimalField<Decimal256>>(), scale_multiplier_to, strict);
+        case Field::Types::Float64:
+            return ticksFromFloatField(src.safeGet<Float64>(), scale_multiplier_to, strict);
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected field type {} for a DateTime64 / Time64 constant", src.getTypeName());
     }
