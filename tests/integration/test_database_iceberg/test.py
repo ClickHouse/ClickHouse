@@ -447,14 +447,12 @@ def test_iceberg_history_namespace_filter_pushdown(started_cluster):
         ).strip()
 
         assert result == target_table_name
-        for _ in range(30):
-            if int(node.count_in_log(target_log_message)) > target_requests_before:
-                break
-            time.sleep(0.5)
-        else:
-            raise AssertionError(
-                f"History query did not fetch the table list of '{target_namespace}': {predicate}"
-            )
+        node.wait_for_log_line(
+            re.escape(target_log_message),
+            repetitions=target_requests_before + 1,
+            look_behind_lines="+1",
+            timeout=15,
+        )
 
         assert int(node.count_in_log(target_log_message)) == target_requests_before + 1
         assert int(node.count_in_log(sibling_log_message)) == sibling_requests_before
