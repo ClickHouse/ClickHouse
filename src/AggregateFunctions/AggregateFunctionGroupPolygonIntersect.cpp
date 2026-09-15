@@ -121,7 +121,7 @@ struct GroupPolygonIntersectData
             for (size_t i = 0; i + 1 < n; i += 2)
             {
                 CartesianMultiPolygon tmp;
-                boost::geometry::intersection(chunks[i], chunks[i + 1], tmp);
+                intersectPolygonalGeometries(chunks[i], chunks[i + 1], tmp);
                 if (tmp.empty())
                 {
                     mode = IntersectMode::Empty;
@@ -129,7 +129,8 @@ struct GroupPolygonIntersectData
                     total_points = 0;
                     return;
                 }
-                normalizeAndValidatePolygonalResult(tmp, function_name);
+                normalizeAndValidatePolygonalResult(
+                    tmp, function_name, n == 2 ? std::optional{MAX_POINTS_IN_POLYGONAL_STATE} : std::nullopt);
                 chunks[out++] = std::move(tmp);
             }
             if (n % 2 == 1)

@@ -64,7 +64,12 @@ GeometryColumnValue getGeometryColumnValue(
 /// typed columns.
 GeometryColumnType normalizePolygonalVariantType(GeometryColumnType type);
 
-void normalizeAndValidatePolygonalResult(CartesianMultiPolygon & geometry, const char * function_name);
+void normalizeAndValidatePolygonalResult(
+    CartesianMultiPolygon & geometry, const char * function_name, std::optional<size_t> max_result_points = {});
+
+/// Evaluate overlays with wider coordinates when `Float64` intermediates could overflow.
+void unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
+void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
 
 size_t countMultiPolygonPoints(const CartesianMultiPolygon & mp);
 size_t recountPolygonalPointsAndCheck(

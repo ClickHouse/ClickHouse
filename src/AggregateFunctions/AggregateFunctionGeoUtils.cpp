@@ -12,9 +12,12 @@
 #include <IO/WriteHelpers.h>
 
 #include <boost/geometry.hpp>
+#include <boost/multiprecision/cpp_bin_float.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <type_traits>
 
 
 namespace DB
@@ -90,10 +93,111 @@ void validateFinitePoint(const CartesianPoint & point, const char * function_nam
 }
 
 
-void validateValidPolygonalGeometry(const CartesianMultiPolygon & geometry, const char * function_name)
+/// The exponent range of `long double` is unchanged from `double` on some targets, including
+/// the IBM format on PPC64LE and the ARM64 Darwin ABI. Use a portable fixed-precision type there.
+using WideCoordinate = std::conditional_t<
+    std::numeric_limits<long double>::max_exponent >= 8 * std::numeric_limits<Float64>::max_exponent
+        && std::numeric_limits<long double>::min_exponent <= 8 * std::numeric_limits<Float64>::min_exponent
+        && std::numeric_limits<long double>::digits >= std::numeric_limits<Float64>::digits,
+    long double,
+    boost::multiprecision::cpp_bin_float_quad>;
+using WideCartesianPoint = boost::geometry::model::d2::point_xy<WideCoordinate>;
+using WideCartesianMultiPolygon = MultiPolygon<WideCartesianPoint>;
+
+/// `Boost.Geometry` computes determinants, products of determinants, and determinant * segment
+/// differences before division. Keep half the `Float64` exponent range available for differences
+/// and accumulation in the ordinary path, and use wider coordinates beyond that range. Widening
+/// only the strategy's calculation type is insufficient: segment ratios still use the point type.
+constexpr Float64 MAX_ORDINARY_POLYGONAL_COORDINATE = 0x1p128;
+static_assert(std::numeric_limits<Float64>::max_exponent == 1024);
+static_assert(std::numeric_limits<WideCoordinate>::max_exponent >= 8 * std::numeric_limits<Float64>::max_exponent);
+static_assert(std::numeric_limits<WideCoordinate>::min_exponent <= 8 * std::numeric_limits<Float64>::min_exponent);
+static_assert(std::numeric_limits<WideCoordinate>::digits >= std::numeric_limits<Float64>::digits);
+
+bool needsWideCoordinates(const CartesianMultiPolygon & geometry)
+{
+    auto is_large = [](const CartesianPoint & point)
+    {
+        return std::abs(point.get<0>()) > MAX_ORDINARY_POLYGONAL_COORDINATE
+            || std::abs(point.get<1>()) > MAX_ORDINARY_POLYGONAL_COORDINATE;
+    };
+    for (const auto & polygon : geometry)
+    {
+        if (std::ranges::any_of(polygon.outer(), is_large))
+            return true;
+        for (const auto & inner : polygon.inners())
+            if (std::ranges::any_of(inner, is_large))
+                return true;
+    }
+    return false;
+}
+
+template <typename Geometry>
+void checkPolygonalPointBudget(const Geometry & geometry, std::optional<size_t> max_result_points, const char * function_name)
+{
+    if (!max_result_points)
+        return;
+
+    size_t points = 0;
+    for (const auto & polygon : geometry)
+    {
+        points += polygon.outer().size();
+        for (const auto & inner : polygon.inners())
+            points += inner.size();
+    }
+    if (points > *max_result_points)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Aggregate function {} state has too many points after reduction: {} (limit {})",
+            function_name,
+            points,
+            *max_result_points);
+}
+
+bool correctAndValidatePolygonalGeometry(
+    CartesianMultiPolygon & geometry, String & reason, std::optional<size_t> max_result_points = {}, const char * function_name = nullptr)
+{
+    if (needsWideCoordinates(geometry))
+    {
+        WideCartesianMultiPolygon wide;
+        boost::geometry::convert(geometry, wide);
+        boost::geometry::correct(wide);
+        checkPolygonalPointBudget(wide, max_result_points, function_name);
+        if (!boost::geometry::is_valid(wide, reason))
+            return false;
+        boost::geometry::convert(wide, geometry);
+        return true;
+    }
+
+    boost::geometry::correct(geometry);
+    checkPolygonalPointBudget(geometry, max_result_points, function_name);
+    return boost::geometry::is_valid(geometry, reason);
+}
+
+template <typename Operation>
+void evaluatePolygonalOverlay(
+    const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result, Operation operation)
+{
+    if (needsWideCoordinates(left) || needsWideCoordinates(right))
+    {
+        /// These containers retain the throwing `AllocatorWithMemoryTracking` used by ordinary
+        /// geometry. State coordinates and their serialized representation remain `Float64`.
+        WideCartesianMultiPolygon wide_left;
+        WideCartesianMultiPolygon wide_right;
+        WideCartesianMultiPolygon wide_result;
+        boost::geometry::convert(left, wide_left);
+        boost::geometry::convert(right, wide_right);
+        operation(wide_left, wide_right, wide_result);
+        boost::geometry::convert(wide_result, result);
+    }
+    else
+        operation(left, right, result);
+}
+
+void validateValidPolygonalGeometry(CartesianMultiPolygon & geometry, const char * function_name)
 {
     String reason;
-    if (!boost::geometry::is_valid(geometry, reason))
+    if (!correctAndValidatePolygonalGeometry(geometry, reason))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Argument of aggregate function {} must be a valid polygonal geometry: {}", function_name, reason);
 }
@@ -385,8 +489,13 @@ GeometryColumnType normalizePolygonalVariantType(GeometryColumnType type)
 }
 
 
-void normalizeAndValidatePolygonalResult(CartesianMultiPolygon & geometry, const char * function_name)
+void normalizeAndValidatePolygonalResult(
+    CartesianMultiPolygon & geometry, const char * function_name, std::optional<size_t> max_result_points)
 {
+    /// A caller can bound a final state before the more expensive topology validation. Intermediate
+    /// overlays may still shrink in a later reduction and retain their existing uncapped contract.
+    checkPolygonalPointBudget(geometry, max_result_points, function_name);
+
     auto validate_result_point = [function_name](const CartesianPoint & point)
     {
         if (!std::isfinite(point.get<0>()) || !std::isfinite(point.get<1>()))
@@ -410,16 +519,31 @@ void normalizeAndValidatePolygonalResult(CartesianMultiPolygon & geometry, const
         for (const auto & inner : polygon.inners())
             for (const auto & point : inner)
                 validate_result_point(point);
-        boost::geometry::correct(polygon);
     }
 
     String reason;
-    if (!boost::geometry::is_valid(geometry, reason))
+    if (!correctAndValidatePolygonalGeometry(geometry, reason, max_result_points, function_name))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Aggregate function {} produced invalid polygonal geometry during reduction: {}",
             function_name,
             reason);
+}
+
+void unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
+{
+    evaluatePolygonalOverlay(left, right, result, [](const auto & first, const auto & second, auto & output)
+    {
+        boost::geometry::union_(first, second, output);
+    });
+}
+
+void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
+{
+    evaluatePolygonalOverlay(left, right, result, [](const auto & first, const auto & second, auto & output)
+    {
+        boost::geometry::intersection(first, second, output);
+    });
 }
 
 
@@ -605,11 +729,8 @@ CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const char * 
 void validateDeserializedMultiPolygon(CartesianMultiPolygon & mp, const char * function_name)
 {
     /// Restore the same corrected-and-valid invariant enforced by the add path.
-    for (auto & polygon : mp)
-        boost::geometry::correct(polygon);
-
     String reason;
-    if (!boost::geometry::is_valid(mp, reason))
+    if (!correctAndValidatePolygonalGeometry(mp, reason))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Corrupted state of aggregate function {}: deserialized geometry is invalid: {}",
@@ -671,7 +792,6 @@ CartesianMultiPolygon columnToMultiPolygon(const IColumn & column, size_t row_nu
             auto ring = getRingFromColumn(column, row_num, function_name);
             CartesianPolygon polygon;
             polygon.outer() = std::move(ring);
-            boost::geometry::correct(polygon);
             result.push_back(std::move(polygon));
             break;
         }
@@ -683,7 +803,6 @@ CartesianMultiPolygon columnToMultiPolygon(const IColumn & column, size_t row_nu
                     throwEmptyOuterWithInner(function_name);
                 break;
             }
-            boost::geometry::correct(polygon);
             result.push_back(std::move(polygon));
             break;
         }
@@ -701,7 +820,6 @@ CartesianMultiPolygon columnToMultiPolygon(const IColumn & column, size_t row_nu
                         throwEmptyOuterWithInner(function_name);
                     continue;
                 }
-                boost::geometry::correct(polygon);
                 result.push_back(std::move(polygon));
             }
             break;
