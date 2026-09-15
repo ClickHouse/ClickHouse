@@ -558,10 +558,14 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         ///
         /// Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
         /// and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
-        /// The last one runs as an internal query in plain `ATTACH` mode, so neither of the first two conditions
-        /// covers it - and it is exactly the path that has to load metadata an older server rewrote.
+        /// The last one runs in plain `ATTACH` mode, so neither of the first two conditions covers it - and it is
+        /// exactly the path that has to load metadata an older server rewrote.
+        ///
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user
+        /// statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must neither
+        /// skip the source authorization nor get its locator accepted in the form the secret masker cannot redact.
         const bool has_real_user = args.context->getAccess()->getUserID().has_value();
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
         const bool from_existing_metadata
             = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
 
