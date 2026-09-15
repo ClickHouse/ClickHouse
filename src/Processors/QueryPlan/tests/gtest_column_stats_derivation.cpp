@@ -11,7 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 
 using namespace DB;
 using namespace DB::QueryPlanOptimizations;

@@ -5,7 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -457,11 +457,6 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
         if (hint)
             statistics.column_statistics[column_name].avg_bytes = *hint;
     }
-}
-
-namespace QueryPlanOptimizations
-{
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 }
 
 /// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.

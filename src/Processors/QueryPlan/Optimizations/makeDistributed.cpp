@@ -30,7 +30,7 @@
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <fmt/ranges.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
@@ -120,8 +120,6 @@ void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & o
     validateBucketCount(optimization_settings.distributed_plan_default_reader_bucket_count,
         "distributed_plan_default_reader_bucket_count");
 }
-
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
