@@ -96,7 +96,7 @@ void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool is_metadata_replay)
 {
     const auto engine_name = create.storage->engine->name;
     /// check if the database engine is a valid one before proceeding
@@ -113,7 +113,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     validate(create);
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    DatabasePtr impl = getImpl(create, metadata_path, context, mode);
+    DatabasePtr impl = getImpl(create, metadata_path, context, mode, is_metadata_replay);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
@@ -137,7 +137,7 @@ DatabaseFactory & DatabaseFactory::instance()
     return db_fact;
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool is_metadata_replay)
 {
     auto * storage = create.storage;
     const String & database_name = create.getDatabase();
@@ -156,7 +156,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .metadata_path = metadata_path,
         .uuid = create.uuid,
         .context = context,
-        .mode = mode};
+        .mode = mode,
+        .is_metadata_replay = is_metadata_replay};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name).creator_fn;

@@ -194,6 +194,14 @@ public:
         return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
     }
 
+    void check(ContextPtr context) override
+    {
+        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+            this->checkFormat();
+        else
+            BaseStorageConfiguration::check(context);
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
@@ -416,9 +424,10 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+            const auto & table_path = this->getPathForRead().path;
+            if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
         }
     }
 

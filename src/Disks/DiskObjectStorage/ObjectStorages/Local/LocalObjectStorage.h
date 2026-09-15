@@ -94,10 +94,12 @@ private:
     void removeObjects(const StoredObjects &  objects) const;
 
     void throwIfReadonly() const;
+    String resolvePathRelativelyToKeyPrefix(const String & path) const;
 
     LocalObjectStorageSettings settings;
     LoggerPtr log;
     std::string description;
 };
 
+String resolvePathRelativelyToBase(const String & path, const String & base_path);
 }

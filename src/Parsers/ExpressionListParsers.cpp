@@ -1813,17 +1813,8 @@ public:
                 if (!mergeElement())
                     return false;
 
-                /// Trimming an empty string is a no-op. (shortcut that works when we supply an empty string as the first argument)
-                ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
-                if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
-                {
-                    noop = true;
-                }
-                else
-                {
-                    to_remove = std::move(elements[0]);
-                    elements.clear();
-                }
+                to_remove = std::move(elements[0]);
+                elements.clear();
 
                 state = 2;
             }
@@ -1842,10 +1833,6 @@ public:
                 if (!mergeElement())
                     return false;
 
-                if (noop)
-                {
-                    /// The operation does nothing.
-                }
                 if (trim_left && trim_right)
                     function_name = "trimBoth";
                 else if (trim_left)
@@ -1867,10 +1854,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        if (noop)
-            node = std::move(elements.at(1));
-        else
-            node = makeASTFunction(function_name, std::move(elements));
+        node = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -1878,7 +1862,6 @@ private:
     bool trim_left;
     bool trim_right;
     bool char_override = false;
-    bool noop = false;
 
     ASTPtr to_remove;
     String function_name;
@@ -2516,6 +2499,7 @@ bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Callers downcast the result without checking, so a layer must build a function, never reduce to an operand.
     ASTPtr identifier;
 
     if (ParserFunctionName().parse(pos, identifier, expected)

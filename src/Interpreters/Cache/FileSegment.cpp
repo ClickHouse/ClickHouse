@@ -49,6 +49,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char cache_filesystem_failure[];
     extern const char file_segment_pause_before_write[];
 }
 
@@ -426,6 +427,11 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
         }
 
+        fiu_do_on(FailPoints::cache_filesystem_failure,
+        {
+            throw ErrnoException(EIO, "Failpoint: simulated cache disk IO failure");
+        });
+
         /// Size is equal to offset as offset for write buffer points to data end.
         cache_writer->set(from, /* size */size, /* offset */size);
         /// Reset the buffer when finished.
@@ -474,6 +480,14 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
         throw;
+    }
+    catch (const fs::filesystem_error & e)
+    {
+        auto lk = lock();
+        setDownloadFailedUnlocked(lk);
+        throw ErrnoException(e.code().value(),
+            "Filesystem error in cache write ({}), current cache state: {}",
+            e.what(), getInfoForLogUnlocked(lk));
     }
 
     chassert(getCurrentWriteOffset() == offset_in_file + size);
