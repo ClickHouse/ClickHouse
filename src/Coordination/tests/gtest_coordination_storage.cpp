@@ -1099,6 +1099,193 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     }
 }
 
+TEST_P(CoordinationTest, TestListWithOptionsRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    KeeperStorage & storage = *storage_ptr;
+    int32_t zxid = 0;
+
+    const auto create = [&](const String & path, const String & data = "", bool ephemeral = false)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->data = data;
+        request->is_ephemeral = ephemeral;
+        const int32_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    };
+    const auto list = [&](const String & path, const ListOptions & options)
+    {
+        auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->options = options;
+        request->xid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, 1, request->xid);
+        EXPECT_EQ(responses.size(), 1);
+        return dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*responses[0].response);
+    };
+
+    create("/list_with_options");
+    create("/list_with_options/a", "data-a");
+    create("/list_with_options/a/x", "data-x");
+    create("/list_with_options/b", "data-b");
+    create("/list_with_options/b/x", "data-bx");
+    create("/list_with_options_shuffle");
+    for (const auto * child_name : {"a", "b", "c", "d", "e", "f", "g", "h"})
+        create("/list_with_options_shuffle/" + String(child_name));
+
+    {
+        const auto & response = list("/list_with_options", {});
+        ASSERT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(response.names.begin(), response.names.end()), (std::unordered_set<String>{"a", "b"}));
+        EXPECT_TRUE(response.stats.empty());
+        EXPECT_TRUE(response.data.empty());
+        EXPECT_FALSE(response.truncated);
+    }
+
+    {
+        ListOptions options;
+        options.recursive = true;
+        options.with_stat = true;
+        options.with_data = true;
+        const auto & response = list("/list_with_options", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(response.names.begin(), response.names.end()), (std::unordered_set<String>{"a", "a/x", "b", "b/x"}));
+        ASSERT_EQ(response.names.size(), response.stats.size());
+        ASSERT_EQ(response.names.size(), response.data.size());
+        EXPECT_TRUE(std::ranges::none_of(response.names, [](const String & name) { return name.starts_with('/'); }));
+    }
+
+    {
+        ListOptions options;
+        options.filter = ListRequestType::PERSISTENT_ONLY;
+        options.max_results = 1;
+        const auto & response = list("/list_with_options", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        ASSERT_EQ(response.names.size(), 1);
+        EXPECT_TRUE(response.names[0] == "a" || response.names[0] == "b");
+        EXPECT_TRUE(response.truncated);
+    }
+
+    {
+        ListOptions options;
+        options.shuffle = true;
+        const auto make_list_request = [&]
+        {
+            auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+            request->path = "/list_with_options_shuffle";
+            request->options = options;
+            return request;
+        };
+        const Requests list_requests {make_list_request(), make_list_request()};
+        const auto request = std::make_shared<ZooKeeperMultiRequest>(list_requests, ACLs{});
+        request->xid = ++zxid;
+
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 1, .request = request}};
+        const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
+        ASSERT_EQ(responses.size(), 1);
+        const auto & multi_response = dynamic_cast<const ZooKeeperMultiReadResponse &>(*responses[0].response);
+        ASSERT_EQ(multi_response.responses.size(), 2);
+        const auto & first_response = dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*multi_response.responses[0]);
+        const auto & second_response = dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*multi_response.responses[1]);
+        EXPECT_EQ(first_response.error, Error::ZOK);
+        EXPECT_EQ(second_response.error, Error::ZOK);
+        EXPECT_NE(first_response.names, second_response.names);
+    }
+
+    {
+        ListOptions options;
+        options.recursive = true;
+        const auto & response = list("/", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        const auto names = std::unordered_set<String>(response.names.begin(), response.names.end());
+        EXPECT_TRUE(names.contains("list_with_options"));
+        EXPECT_TRUE(names.contains("list_with_options/a"));
+        EXPECT_TRUE(names.contains("list_with_options/a/x"));
+        EXPECT_TRUE(names.contains("list_with_options/b"));
+        EXPECT_TRUE(names.contains("list_with_options/b/x"));
+        EXPECT_TRUE(std::ranges::none_of(response.names, [](const String & name) { return name.starts_with('/'); }));
+    }
+}
+
+TEST_P(CoordinationTest, TestListWithOptionsAcls)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    constexpr int64_t authorized_session_id = 1;
+    constexpr int64_t unauthorized_session_id = 2;
+    const auto storage_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    KeeperStorage & storage = *storage_ptr;
+    int32_t zxid = 0;
+
+    {
+        const auto request = std::make_shared<ZooKeeperAuthRequest>();
+        request->scheme = "digest";
+        request->data = "test_user:test_password";
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, authorized_session_id, zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    }
+
+    const auto create = [&](const String & path, ACLs acls = {})
+    {
+        const auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->acls = std::move(acls);
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, authorized_session_id, zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    };
+    const auto list = [&](const String & path, const ListOptions & options, int64_t session_id)
+    {
+        const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->options = options;
+        request->xid = ++zxid;
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = session_id, .request = request}};
+        const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
+        EXPECT_EQ(responses.size(), 1);
+        return dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*responses[0].response);
+    };
+
+    const ACLs unreadable_acls {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
+    create("/list_with_options_denied_root", unreadable_acls);
+    create("/list_with_options_acl");
+    create("/list_with_options_acl/visible");
+    create("/list_with_options_acl/hidden", unreadable_acls);
+    create("/list_with_options_acl/hidden/grandchild");
+
+    {
+        const auto & response = list("/list_with_options_denied_root", {}, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZNOAUTH);
+    }
+
+    {
+        ListOptions options;
+        options.with_stat = true;
+        const auto & response = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZNOAUTH);
+    }
+
+    {
+        ListOptions options;
+        options.recursive = true;
+        const auto & response = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names, std::vector<String>({"visible"}));
+    }
+}
+
 TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
 {
     using namespace DB;
