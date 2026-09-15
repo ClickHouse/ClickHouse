@@ -47,7 +47,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an S3 engine table or into the `s3` table function into multiple numbered objects of the specified size."},
             {"azure_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an Azure Blob Storage engine table or into the `azureBlobStorage` table function into multiple numbered blobs of the specified size."},
             {"hdfs_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an HDFS engine table or into the `hdfs` table function into multiple numbered files of the specified size."},
-||||||| bc4d16fc92c4
             {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
             {"enable_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."},
