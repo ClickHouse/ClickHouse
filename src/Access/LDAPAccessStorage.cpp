@@ -1165,6 +1165,15 @@ void LDAPAccessStorage::sync()
     last_sync_success_time_s.store(steadyNowSeconds());
     succeeded = true;
 
+    /// Phase 5: a removed user may still be named by entities of other storages: `TO` lists of row policies,
+    /// quotas and settings profiles, grantees and default roles of other users. `memory_storage.remove` cleaned
+    /// such references inside this directory only; left in the other storages, they would point at a dead id and
+    /// silently stop matching the same login when a later run materialises it again under a new id. This is what
+    /// `DROP USER` does through `IAccessStorage::remove`, and it runs without `mutex` like phase 3: the writes go
+    /// to other storages, whose notifications come back to this directory's subscriptions.
+    if (!result.removed_ids.empty())
+        access_control.removeReferencesToRemovedIDs(result.removed_ids);
+
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersAdded, result.added);
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersUpdated, result.updated);
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersRemoved, result.removed);
@@ -1464,6 +1473,7 @@ LDAPAccessStorage::SyncApplyResult LDAPAccessStorage::applySyncPlanNoLock(const 
     {
         memory_storage.remove(id);
         removeUserNoLock(name);
+        result.removed_ids.insert(id);
         LOG_INFO(getLogger(), "Removed LDAP user '{}' from directory {}: no longer returned by the directory", name, backQuote(getStorageName()));
     }
     result.removed = diff.to_remove.size();

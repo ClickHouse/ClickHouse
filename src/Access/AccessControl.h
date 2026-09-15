@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 
 #include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
@@ -266,6 +267,14 @@ public:
 
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
+
+    /// Strips the references to the given, already removed, entities from every entity of every storage (the `TO`
+    /// lists of row policies, quotas and settings profiles, grantees and default roles of users, ...), as `remove`
+    /// does after dropping an entity through this facade (`DROP USER` and friends), and delivers the notifications.
+    /// For a storage that removes entities of its own outside `remove`, such as an `ldap` directory whose
+    /// synchronisation removes the users who left the directory: its own `remove` only cleans the references
+    /// inside that storage.
+    void removeReferencesToRemovedIDs(const std::unordered_set<UUID> & removed_ids);
 
     /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
     void allowAllSettings();

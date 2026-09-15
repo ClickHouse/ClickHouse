@@ -975,6 +975,72 @@ def test_execute_as_resolves_synced_users_only(janedoe_in_role_a):
         ldap_delete(user_dn("lazyonly"), ignore_missing=True)
 
 
+def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_role_a):
+    """A row policy `TO janedoe` lives in `local_directory` and names the user by id. The removal by the
+    synchronisation strips that reference exactly as `DROP USER` does; left in place, it would point at a
+    dead id, and when janedoe rejoins the group and is materialised under a new id the policy would silently
+    not apply to her. Now it visibly does not: the table has row policies, none of them for the new janedoe
+    (`throw_on_unmatched_row_policies` is set by the harness), and `apply_to_list` no longer names her.
+    """
+    sync_node_manual()
+    policy_query = (
+        "SELECT apply_to_all, apply_to_list FROM system.row_policies"
+        " WHERE short_name = 'sync_policy'"
+    )
+    admin(node_manual, "DROP TABLE IF EXISTS policy_table SYNC")
+    admin(
+        node_manual,
+        "CREATE TABLE policy_table (id UInt32) ENGINE = MergeTree ORDER BY id",
+    )
+    try:
+        admin(node_manual, "INSERT INTO policy_table VALUES (1), (2), (3)")
+        admin(node_manual, "GRANT SELECT ON default.policy_table TO role_a")
+        admin(
+            node_manual,
+            "CREATE ROW POLICY sync_policy ON default.policy_table FOR SELECT USING id < 2 TO janedoe",
+        )
+        assert admin(node_manual, policy_query) == TSV([["0", "['janedoe']"]])
+        assert node_manual.query(
+            "SELECT count() FROM policy_table", user="janedoe", password="qwerty"
+        ) == TSV([["1"]])
+        id_before = admin(
+            node_manual, "SELECT id FROM system.users WHERE name = 'janedoe'"
+        )
+
+        ldap_set_memberships("janedoe", set())
+        admin(node_manual, "SYSTEM RELOAD USERS")
+        assert admin(node_manual, ldap_users_query("janedoe")) == "0\n"
+        assert node_manual.contains_in_log("Removed LDAP user 'janedoe'")
+        assert admin(node_manual, policy_query) == TSV([["0", "[]"]])
+        assert "janedoe" not in admin(
+            node_manual, "SHOW CREATE ROW POLICY sync_policy ON default.policy_table"
+        )
+
+        ldap_set_memberships("janedoe", {ROLE_A_GROUP})
+        admin(node_manual, "SYSTEM RELOAD USERS")
+        assert admin(node_manual, ldap_users_query("janedoe")) == "1\n"
+        assert (
+            admin(node_manual, "SELECT id FROM system.users WHERE name = 'janedoe'")
+            != id_before
+        )
+        assert admin(node_manual, policy_query) == TSV([["0", "[]"]])
+        error = node_manual.query_and_get_error(
+            "SELECT count() FROM policy_table", user="janedoe", password="qwerty"
+        )
+        assert (
+            "Table default.policy_table has row policies, but none of them are for the current user"
+            in error
+        ), error
+    finally:
+        ldap_set_memberships("janedoe", {ROLE_A_GROUP})
+        admin(
+            node_manual,
+            "DROP ROW POLICY IF EXISTS sync_policy ON default.policy_table",
+        )
+        admin(node_manual, "DROP TABLE IF EXISTS policy_table SYNC")
+        admin(node_manual, "REVOKE SELECT ON default.policy_table FROM role_a")
+
+
 def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
     """`node_stale`: `ldap` (interval 1, max_staleness 3) is declared before `users_xml`. While
     the directory cannot be synchronised, janedoe is refused with the staleness error, for a login

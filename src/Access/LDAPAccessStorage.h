@@ -15,6 +15,7 @@
 #include <optional>
 #include <set>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 
@@ -157,6 +158,8 @@ private: // IAccessStorage implementations.
         size_t added = 0;
         size_t updated = 0;
         size_t removed = 0;
+        /// Ids of the removed users, for the cleanup of the references other storages hold to them (see `sync`).
+        std::unordered_set<UUID> removed_ids;
         std::set<String> missing_roles;
     };
 
