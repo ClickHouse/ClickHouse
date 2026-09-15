@@ -25,6 +25,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <base/EnumReflection.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -191,8 +193,19 @@ protected:
             const String & database_name = databases_cursor.getDatabaseName();
 
             if (!databases_cursor.hasTablesIterator())
+            {
+                const auto & database = databases_cursor.getDatabase();
+                auto allowed = tablesAllowedIn(database_name);
+                /// A data lake catalog lists its tables over the network, and only the hinted iterator passes the
+                /// table-name hint on, as `system.tables` does - the plain one walks the whole catalog to resolve a
+                /// single table. It also keeps a table whose metadata cannot be resolved as a null storage, which
+                /// the loop below skips, instead of failing the query. Other databases keep the plain iterator: for
+                /// `Remote` the hinted one would turn an unreachable server from no rows into an error.
                 databases_cursor.setTablesIterator(
-                    databases_cursor.getDatabase()->getTablesIterator(context, tablesAllowedIn(database_name)));
+                    DatabaseCatalog::instance().isDatalakeCatalog(database_name)
+                        ? database->getTablesIteratorWithHint(context, allowed, /* skip_not_loaded */ false, tables_filter)
+                        : database->getTablesIterator(context, allowed));
+            }
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
@@ -340,7 +353,10 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
         { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
     };
-    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context))
+    /// Only a predicate that reads `table` can narrow a database's tables. One on `database` alone is already
+    /// applied above, and listing a data lake catalog's names just to keep all of them costs a full catalog walk.
+    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context);
+        dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "table"; }))
         table_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
 
     /// A namespace-pushdown hint for catalogs that can restrict what they list server-side. The
