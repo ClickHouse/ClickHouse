@@ -43,6 +43,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 
 namespace CurrentMetrics
@@ -554,9 +555,15 @@ void registerDatabaseBackup(DatabaseFactory & factory)
 
         /// Authorize only a newly introduced definition: one read back from this server's metadata was
         /// already validated, and a context with no user cannot be checked per user.
+        ///
+        /// Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
+        /// and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
+        /// The last one runs as an internal query in plain `ATTACH` mode, so neither of the first two conditions
+        /// covers it - and it is exactly the path that has to load metadata an older server rewrote.
         const bool has_real_user = args.context->getAccess()->getUserID().has_value();
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
         const bool from_existing_metadata
-            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax;
+            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
 
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
         if (has_real_user && !from_existing_metadata)
