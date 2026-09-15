@@ -7,6 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <unordered_set>
 
@@ -22,7 +23,8 @@ namespace ErrorCodes
 
 
 #define LIST_OF_TIME_SERIES_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags.", 0) \
+    DECLARE(DataType, id_type, String{}, "The type of the 'id' column of the target tables. Normally it's declared in the INNER COLUMNS clauses of the inner tables or in an external 'tags' table; the setting is set automatically when the table is created if the type isn't kept in the definition otherwise: if the 'tags' target is an external table, or if the 'id_generator' setting is set. Requires 'version' to be at least 2", 0) \
+    DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags. If the 'tags' target is an external table and 'version' is at least 2, the setting is set automatically when the table is created: to the DEFAULT expression of the 'id' column of that table if any, otherwise to the expression chosen automatically for the 'id' type", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
     DECLARE(Bool, use_all_tags_column_to_generate_id, false, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series", 0) \
@@ -33,6 +35,7 @@ namespace ErrorCodes
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
@@ -105,6 +108,20 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {
+    UInt64 version = settings[TimeSeriesSetting::version];
+
+    if (!isTimeSeriesVersionSupported(version))
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} of the `version` setting: this server supports TimeSeries versions from {} to {}. "
+            "A table definition with another version was written by a different version of ClickHouse",
+            version, TimeSeriesVersion::MIN_SUPPORTED, TimeSeriesVersion::LATEST);
+
+    /// A table of an earlier version must be readable by a server which doesn't know the `id_type` setting.
+    if ((version < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING) && settings[TimeSeriesSetting::id_type].value)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting `id_type` requires `version` to be at least {}, but the table has version {}",
+            TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING, version);
+
     if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds])
     {
         /// Settings of the recent samples table make no sense without the table itself.
@@ -192,6 +209,37 @@ UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query)
         }
     }
     return TimeSeriesSettings{}[TimeSeriesSetting::recent_samples_ttl_seconds];
+}
+
+UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query)
+{
+    if (query.storage && query.storage->settings)
+    {
+        if (const auto * value = query.storage->settings->changes.tryGet("version"))
+            return SettingFieldUInt64{*value}.value;
+    }
+    return TimeSeriesVersion::LATEST;
+}
+
+bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query)
+{
+    return query.storage && query.storage->settings
+        && query.storage->settings->changes.tryGet("version");
+}
+
+void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version)
+{
+    if (!query.storage)
+        query.set(query.storage, make_intrusive<ASTStorage>());
+
+    if (!query.storage->settings)
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        query.storage->set(query.storage->settings, settings_ast);
+    }
+
+    query.storage->settings->changes.setSetting("version", Field{version});
 }
 
 }
