@@ -77,6 +77,43 @@ TEST(HTTPHeaderFilter, ExactMatchLowerCaseConfigMixedCaseInput)
     EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
 }
 
+/// An operator who writes the name in upper case blocks the lower-case header too. The exact set
+/// holds the configured name lower-cased, so the spelling in the config does not matter.
+TEST(HTTPHeaderFilter, ExactMatchUpperCaseConfigBlocksEveryCase)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>AUTHORIZATION</header>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    EXPECT_TRUE(isForbidden(filter, "authorization"));
+    EXPECT_TRUE(isForbidden(filter, "Authorization"));
+    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
+}
+
+/// The same for a regexp written in upper case. The pattern is not lower-cased -- that would
+/// corrupt a metacharacter such as \D or [A-Z] -- so the case insensitivity comes from the RE2
+/// option instead.
+TEST(HTTPHeaderFilter, RegexpUpperCaseConfigBlocksEveryCase)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header_regexp>AUTHORIZATION</header_regexp>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    EXPECT_TRUE(isForbidden(filter, "authorization"));
+    EXPECT_TRUE(isForbidden(filter, "Authorization"));
+    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
+}
+
 /// A regexp pattern without an explicit (?i) flag must still match
 /// case-insensitively, because header names are case-insensitive.
 TEST(HTTPHeaderFilter, RegexpMatchIsCaseInsensitiveWithoutFlag)
@@ -113,26 +150,82 @@ TEST(HTTPHeaderFilter, RegexpMatchExplicitInlineFlagStillWorks)
     EXPECT_TRUE(isForbidden(filter, "Secret_Header"));
 }
 
-/// An inline (?-i) scope re-enables case-sensitive matching for that literal.
-/// On master the regexp matched the original-case header, so such a config must
-/// keep blocking it: the regexp is matched against the original-case name, not a
-/// lower-cased one, otherwise an existing (?-i) blocklist would silently weaken.
-TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeStillBlocksOriginalCase)
+/// A header name is matched in lower case, so an inline (?-i) scope cannot be honoured. Such a
+/// config is rejected rather than accepted as a rule that blocks less than it appears to.
+TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeIsRejected)
+{
+    HTTPHeaderFilter filter;
+
+    auto configureWith = [&](const std::string & pattern)
+    {
+        configure(filter,
+            "<clickhouse><http_forbid_headers><header_regexp>"
+            + pattern
+            + "</header_regexp></http_forbid_headers></clickhouse>");
+    };
+
+    EXPECT_THROW(configureWith("(?-i)Authorization"), Exception);
+    EXPECT_THROW(configureWith("(?-i)authorization"), Exception);
+    EXPECT_THROW(configureWith("(?-i:authorization)"), Exception);
+}
+
+/// A pattern that does not compile forbids nothing, so it is rejected rather than skipped.
+TEST(HTTPHeaderFilter, RegexpThatDoesNotCompileIsRejected)
+{
+    HTTPHeaderFilter filter;
+
+    EXPECT_THROW(configure(filter,
+        "<clickhouse><http_forbid_headers><header_regexp>x-custom-[</header_regexp>"
+        "</http_forbid_headers></clickhouse>"), Exception);
+}
+
+/// A rejected config leaves the blocklist that is already loaded in place.
+TEST(HTTPHeaderFilter, RejectedConfigKeepsThePreviousBlocklist)
 {
     HTTPHeaderFilter filter;
     configure(filter, R"(
         <clickhouse>
             <http_forbid_headers>
-                <header_regexp>(?-i)Authorization</header_regexp>
+                <header>Authorization</header>
             </http_forbid_headers>
         </clickhouse>
     )");
 
-    /// The case-sensitive literal still matches the header it matched on master.
-    EXPECT_TRUE(isForbidden(filter, "Authorization"));
-    /// And the (?-i) scope keeps its case-sensitive semantics for other cases.
-    EXPECT_FALSE(isForbidden(filter, "authorization"));
-    EXPECT_FALSE(isForbidden(filter, "AUTHORIZATION"));
+    EXPECT_THROW(configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>x-other</header>
+                <header_regexp>(?-i)authorization</header_regexp>
+            </http_forbid_headers>
+        </clickhouse>
+    )"), Exception);
+
+    EXPECT_TRUE(isForbidden(filter, "authorization"));
+    EXPECT_FALSE(isForbidden(filter, "x-other"));
+}
+
+/// The filter also guards a collection that already holds lower-cased names. The verdict must be
+/// the same there, and the collection must still hold lower-cased names afterwards.
+TEST(HTTPHeaderFilter, ChecksNormalizedEntries)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>Authorization</header>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    NormalizedHTTPHeaderEntries forbidden(HTTPHeaderEntries{{"Authorization", "Bearer token"}});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(forbidden), Exception);
+
+    NormalizedHTTPHeaderEntries allowed(HTTPHeaderEntries{{"X-Amz-Meta\tOwner", "analytics"}});
+    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(allowed));
+
+    const HTTPHeaderEntries seen(allowed.begin(), allowed.end());
+    ASSERT_EQ(seen.size(), 1u);
+    EXPECT_EQ(seen[0].name, "x-amz-metaowner");
 }
 
 /// Case normalization must compose with whitespace/control-character stripping:
