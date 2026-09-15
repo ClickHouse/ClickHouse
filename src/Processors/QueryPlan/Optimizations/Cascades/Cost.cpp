@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
@@ -212,6 +213,21 @@ Cost ReplicatedReadStrategy::estimateOperatorCost(const CostInputs & inputs) con
     return fullReadCost(inputs);
 }
 
+/// Per-row window work, 1/N per node when the data is split across N nodes. A window
+/// emits one output row per input row and writes every row with the columns it appends.
+static Cost windowCost(const CostInputs & inputs)
+{
+    Cost cost;
+    cost.work = inputs.output_stats.estimated_row_count
+        * (1.0 + inputs.output_stats.estimated_bytes_per_row) / inputs.parallelism;
+    return cost;
+}
+
+Cost WindowStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return windowCost(inputs);
+}
+
 static Cost mergingAggregatedCost(const CostInputs & inputs)
 {
     Cost cost;
@@ -256,8 +272,36 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// sends or receives them sequentially, so their transfer stays undivided and each row
     /// pays the funnel cost. Without it a gather of a large input looks as cheap as a
     /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
+    /// A sorted gather under a limit funnels only the consumed rows: the receiver pulls
+    /// merged rows until the limit is satisfied and cancels the senders. The network term
+    /// above keeps the shipped rows - the senders push eagerly until the cancel arrives.
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
+    {
+        Float64 funnel_rows = rows;
+        if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
+            sorted_gather && sorted_gather->getMaintainSortDescription())
+            funnel_rows = std::min(funnel_rows, inputs.output_stats.estimated_row_count);
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnel_rows;
+    }
+    if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
+        gather && gather->getMaintainSortDescription())
+    {
+        /// The receiver of a sorted gather merges the sorted bucket streams into one
+        /// (`GatherReceiveStep`): a serial per-row merge on one node, like a full sort's
+        /// final phase; without this charge a sorted gather would cost the same as an
+        /// unordered one. The merge advances only while the consumer pulls, so a limit
+        /// above stops it at the trimmed output rows - the group statistics, not the
+        /// shipped `rows`.
+        if (gather->getSourceBucketCount() > 1)
+            cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count;
+        /// The sender also merges when its node has several streams (`GatherSendStep`);
+        /// a single-stream source ships as is. The senders merge concurrently, so each
+        /// one sees its node's share of the rows.
+        if (inputs.first_input_properties
+            && inputs.first_input_properties->stream_layout != StreamLayout::Single)
+            cost.sequential += inputs.config.merge_sequential_cost_per_row * rows
+                / std::max(1.0, Float64(inputs.first_input_properties->distribution.node_count));
+    }
     return cost;
 }
 
@@ -274,8 +318,11 @@ static Cost sortCost(const CostInputs & inputs, const SortingStep & sorting_step
         : rows;
     Cost cost;
     cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / inputs.parallelism;
-    /// N-way merge is single-threaded and sees only the rows the sort emits.
-    cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
+    /// N-way merge is single-threaded and sees only the rows the sort emits. A partitioned
+    /// sort keeps its per-partition streams instead of merging them into one, so it pays no
+    /// merge.
+    if (!sorting_step.hasPartitions())
+        cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
     return cost;
 }
 
@@ -315,6 +362,13 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
 
     if (typeid_cast<const MergingAggregatedStep *>(step))
         return mergingAggregatedCost(inputs);
+
+    if (typeid_cast<const WindowStep *>(step))
+    {
+        if (const auto * window_strategy = dynamic_cast<const IWindowStrategy *>(strategy))
+            return window_strategy->estimateOperatorCost(inputs);
+        return windowCost(inputs);
+    }
 
     if (dynamic_cast<const BroadcastExchangeStep *>(step))
         return broadcastExchangeCost(inputs);
@@ -391,6 +445,9 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         .parallelism = parallelism,
         .node_count = distribution_node_count,
         .exchange_rows_override = exchange_rows_override,
+        .first_input_properties = selected_inputs.empty() || !selected_inputs[0].expression
+            ? nullptr
+            : &selected_inputs[0].expression->properties,
         .config = memo.getContext().cost_config,
     };
     inputs.input_stats.reserve(expression->inputs.size());
