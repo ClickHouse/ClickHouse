@@ -9410,6 +9410,12 @@ Allows to set a default value for SQL SECURITY option when creating a materializ
 The default value is `DEFINER`.
 )", 0, \
         {"24.2", "DEFINER", "DEFINER", "Allows to set a default value for SQL SECURITY option when creating a materialized view"}) \
+    DECLARE(SQLSecurityType, default_time_series_sql_security, SQLSecurityType::DEFINER, R"(
+Allows to set a default value for the `SQL SECURITY` option when creating a [TimeSeries](/reference/engines/table-engines/integrations/time-series#sql-security) table. [More about SQL security](/reference/statements/create/view#sql_security).
+
+The default value is `DEFINER`.
+)", PRIVATE_PREVIEW, \
+        {"26.10", "INVOKER", "DEFINER", "New setting to set a default value for the SQL SECURITY option when creating a TimeSeries table. Before, a TimeSeries table had no SQL security type and accessed its target tables with the permissions of the caller, which corresponds to INVOKER."}) \
     DECLARE(String, default_view_definer, "CURRENT_USER", R"(
 Allows to set default `DEFINER` option while creating a view. [More about SQL security](/reference/statements/create/view#sql_security).
 

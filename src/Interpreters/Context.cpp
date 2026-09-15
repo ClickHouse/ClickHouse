@@ -3136,22 +3136,34 @@ void Context::addQueryAccessInfo(
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
 
-std::shared_ptr<ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector()
+std::shared_ptr<ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector() const
 {
+    auto query_ctx = getQueryContext();
     {
-        SharedLockGuard lock(mutex);
-        if (time_series_tags_collector)
-            return time_series_tags_collector;
+        SharedLockGuard lock(query_ctx->mutex);
+        if (query_ctx->time_series_tags_collector)
+            return query_ctx->time_series_tags_collector;
     }
-    std::lock_guard lock(mutex);
-    if (!time_series_tags_collector)
-        time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
-    return time_series_tags_collector;
+    std::lock_guard lock(query_ctx->mutex);
+    if (!query_ctx->time_series_tags_collector)
+        query_ctx->time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
+    return query_ctx->time_series_tags_collector;
 }
 
-std::shared_ptr<const ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector() const
+std::shared_ptr<ContextTimeSeriesTagsCollector> Context::tryGetTimeSeriesTagsCollector() const
 {
-    return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
+    auto query_ctx = query_context.lock();
+    if (!query_ctx)
+        return nullptr;
+    SharedLockGuard lock(query_ctx->mutex);
+    return query_ctx->time_series_tags_collector;
+}
+
+void Context::setTimeSeriesTagsCollector(std::shared_ptr<ContextTimeSeriesTagsCollector> collector) const
+{
+    auto query_ctx = getQueryContext();
+    std::lock_guard lock(query_ctx->mutex);
+    query_ctx->time_series_tags_collector = std::move(collector);
 }
 
 

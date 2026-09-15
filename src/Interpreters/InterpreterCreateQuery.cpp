@@ -144,6 +144,7 @@ namespace Setting
     extern const SettingsBool data_type_default_nullable;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
+    extern const SettingsSQLSecurityType default_time_series_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
@@ -1900,7 +1901,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
 
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, mode);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, create.is_time_series_table, mode);
 
     DDLGuardPtr ddl_guard;
 
@@ -2133,6 +2134,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
+
+    /// A TimeSeries table always gets an SQL security type (see `default_time_series_sql_security`). It's set after
+    /// the normalization because `CREATE TABLE ... AS <TimeSeries table>` finds out that it's a TimeSeries table only in `setEngine`.
+    if (create.is_time_series_table && !create.sql_security)
+    {
+        create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
+        processSQLSecurityOption(
+            getContext(), create.sql_security->as<ASTSQLSecurity &>(), /* is_materialized_view = */ false, /* is_time_series_table = */ true, mode);
+    }
 
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
@@ -4012,14 +4022,17 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, LoadingStrictnessLevel mode)
+void InterpreterCreateQuery::processSQLSecurityOption(
+    ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, bool is_time_series_table, LoadingStrictnessLevel mode)
 {
-    /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
+    /// If no SQL security is specified, apply the default from the default_*_sql_security setting for this kind of object.
     if (!sql_security.type)
     {
         SQLSecurityType default_security = {};
 
-        if (is_materialized_view)
+        if (is_time_series_table)
+            default_security = context_->getSettingsRef()[Setting::default_time_series_sql_security];
+        else if (is_materialized_view)
             default_security = context_->getSettingsRef()[Setting::default_materialized_view_sql_security];
         else
             default_security = context_->getSettingsRef()[Setting::default_normal_view_sql_security];

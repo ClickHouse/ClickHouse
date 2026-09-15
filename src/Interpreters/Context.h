@@ -1143,8 +1143,10 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
-    std::shared_ptr<const ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector() const;
-    std::shared_ptr<ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector();
+    /// The collector belongs to the query context; `tryGetTimeSeriesTagsCollector` returns nullptr if it isn't created yet.
+    std::shared_ptr<ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector() const;
+    std::shared_ptr<ContextTimeSeriesTagsCollector> tryGetTimeSeriesTagsCollector() const;
+    void setTimeSeriesTagsCollector(std::shared_ptr<ContextTimeSeriesTagsCollector> collector) const;
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }

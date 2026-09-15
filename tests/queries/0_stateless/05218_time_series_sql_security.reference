@@ -1,0 +1,33 @@
+== The definition records the SQL security, the default type comes from the default_time_series_sql_security setting
+ts: DEFINER = default SQL SECURITY DEFINER
+ts_invoker: SQL SECURITY INVOKER
+== Privileges on ts are enough to read and write the table and to use timeSeriesSelector and prometheusQuery
+1
+1
+1
+2
+== The table functions returning a target table require the privileges on that target table
+user_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.`.inner_id.tags.<uuid>`
+user_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.`.inner_id.samples.<uuid>`
+user_db: Not enough privileges. To execute this query, it's necessary to have the grant INSERT ON db.`.inner_id.metricfamilies.<uuid>`
+== A user with the privileges on the target tables can use the table functions, also in the readonly mode
+2
+2
+2
+2
+== Without privileges on ts the table can't be read through the table functions and its target tables can't be found
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.ts
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SHOW COLUMNS ON db.ts
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SHOW COLUMNS ON db.ts
+== Privileges on some of the columns of ts aren't enough for timeSeriesSelector and prometheusQuery
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.ts
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SHOW COLUMNS ON db.ts
+== With SQL SECURITY INVOKER the privileges on the target tables are required to read the table
+ts: SQL SECURITY INVOKER
+user_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.`.inner_id.tags.<uuid>`
+ts: DEFINER = default SQL SECURITY DEFINER
+== The definer's privileges on the target tables are checked when the table is read
+ts: DEFINER = default SQL SECURITY DEFINER
+ts2: DEFINER = definer_db SQL SECURITY DEFINER
+definer_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.`.inner_id.tags.<uuid>`
+0

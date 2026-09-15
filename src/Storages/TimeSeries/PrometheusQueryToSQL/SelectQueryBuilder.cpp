@@ -23,12 +23,17 @@ ASTPtr SelectQueryBuilder::getSelectQuery()
     select_list_exp->children = select_list;
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
 
-    if (!from_table.empty() || from_table_function)
+    if (!from_table.empty() || from_table_id || from_table_function)
     {
         auto table_exp = make_intrusive<ASTTableExpression>();
         if (!from_table.empty())
         {
             table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(std::move(from_table));
+            table_exp->children.emplace_back(table_exp->database_and_table_name);
+        }
+        else if (from_table_id)
+        {
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(from_table_id);
             table_exp->children.emplace_back(table_exp->database_and_table_name);
         }
         else if (from_table_function)

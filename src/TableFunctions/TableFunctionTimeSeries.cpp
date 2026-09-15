@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -69,6 +70,10 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+
+    /// Finding the target table means reading the definition of the TimeSeries table, the same as SHOW CREATE TABLE does.
+    context->checkAccess(AccessType::SHOW_COLUMNS, time_series_storage_id);
+
     target_table_type_name = getTargetTable(context)->getName();
 }
 
@@ -82,20 +87,34 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
 
 
 template <ViewTarget::Kind target_kind>
+StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTableWithAccessCheck(const ContextPtr & context, bool is_insert_query) const
+{
+    auto target_table = getTargetTable(context);
+
+    /// The returned storage is the target table itself and the caller reads or writes it with their own permissions,
+    /// so the SELECT or INSERT privilege on the target table is required. The SQL security of the TimeSeries table doesn't apply here.
+    auto access_type = is_insert_query ? AccessType::INSERT : AccessType::SELECT;
+    context->checkAccess(access_type, target_table->getStorageID());
+
+    return target_table;
+}
+
+
+template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         const ASTPtr & /* ast_function */,
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
-    return getTargetTable(context);
+    return getTargetTableWithAccessCheck(context, is_insert_query);
 }
 
 template <ViewTarget::Kind target_kind>
-ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
+ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getTargetTableWithAccessCheck(context, is_insert_query)->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
     return metadata_snapshot->columns;
 }
 
@@ -135,7 +154,12 @@ SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
 <Note>
 The function `timeSeriesSamples` has an alias `timeSeriesData` which is kept for backwards compatibility.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+
+The function requires the `SHOW COLUMNS` privilege on the `TimeSeries` table (to find its target table) and the `SELECT` privilege
+on the target table (or the `INSERT` privilege when it's used in `INSERT INTO FUNCTION`).
+Any `SELECT` or `INSERT` privilege on the `TimeSeries` table implies `SHOW COLUMNS` on it.
+The [SQL security](/reference/engines/table-engines/integrations/time-series#sql-security) of the `TimeSeries` table doesn't apply to this function.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 
     factory.registerAlias("timeSeriesData", "timeSeriesSamples");
 
@@ -161,7 +185,12 @@ SELECT * FROM timeSeriesTags(db_name.time_series_table);
 SELECT * FROM timeSeriesTags('db_name.time_series_table');
 SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+
+The function requires the `SHOW COLUMNS` privilege on the `TimeSeries` table (to find its target table) and the `SELECT` privilege
+on the target table (or the `INSERT` privilege when it's used in `INSERT INTO FUNCTION`).
+Any `SELECT` or `INSERT` privilege on the `TimeSeries` table implies `SHOW COLUMNS` on it.
+The [SQL security](/reference/engines/table-engines/integrations/time-series#sql-security) of the `TimeSeries` table doesn't apply to this function.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::TimeRanges>>(
         {.description = R"DOCS_MD(
@@ -191,7 +220,12 @@ The _time ranges_ table exists if the `store_time_ranges` setting is enabled.
 Tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 7 or earlier keep the columns `min_time` and `max_time`
 in the [tags](/reference/engines/table-engines/integrations/time-series#tags-table) table.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+
+The function requires the `SHOW COLUMNS` privilege on the `TimeSeries` table (to find its target table) and the `SELECT` privilege
+on the target table (or the `INSERT` privilege when it's used in `INSERT INTO FUNCTION`).
+Any `SELECT` or `INSERT` privilege on the `TimeSeries` table implies `SHOW COLUMNS` on it.
+The [SQL security](/reference/engines/table-engines/integrations/time-series#sql-security) of the `TimeSeries` table doesn't apply to this function.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
@@ -219,7 +253,12 @@ SELECT * FROM timeSeriesMetricFamilies('db_name', 'time_series_table');
 <Note>
 The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which is kept for backwards compatibility.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+
+The function requires the `SHOW COLUMNS` privilege on the `TimeSeries` table (to find its target table) and the `SELECT` privilege
+on the target table (or the `INSERT` privilege when it's used in `INSERT INTO FUNCTION`).
+Any `SELECT` or `INSERT` privilege on the `TimeSeries` table implies `SHOW COLUMNS` on it.
+The [SQL security](/reference/engines/table-engines/integrations/time-series#sql-security) of the `TimeSeries` table doesn't apply to this function.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 
     factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
@@ -261,7 +300,7 @@ There is no specific order for returned data.
 ```sql
 SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(
@@ -341,7 +380,7 @@ Unary operators `+` and `-`.
 ```sql
 SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
         {.description = R"DOCS_MD(
 Evaluates a prometheus query using data from a TimeSeries table over a range of evaluation times.
@@ -422,7 +461,7 @@ Unary operators `+` and `-`.
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

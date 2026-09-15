@@ -22,6 +22,7 @@ struct SelectQueryInfo;
 /// with just those keys is built) and the `FINAL` flag (with `FINAL` unmerged rows of the
 /// "tags" table are deduplicated so a series is returned exactly once; without it a series may be
 /// returned once per unmerged part, but the read is cheaper).
+/// `context` is the context of the caller: its row policy on the TimeSeries table is one of the filters applied outside.
 ASTPtr makeASTSelectFromTimeSeries(
     const StorageTimeSeries & storage,
     const NameSet & requested_columns,
@@ -29,7 +30,7 @@ ASTPtr makeASTSelectFromTimeSeries(
     const ContextPtr & context);
 
 /// The settings the generated read query must run with, independent of the caller's session/profile.
-/// Apply them to the (child) context that runs `makeASTSelectFromTimeSeries`.
+/// Apply them to the (child) context that runs the query returned by `makeASTSelectFromTimeSeries`.
 SettingsChanges getSettingsForSelectFromTimeSeries();
 
 }
