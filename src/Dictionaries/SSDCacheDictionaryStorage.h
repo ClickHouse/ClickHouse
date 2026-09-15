@@ -11,7 +11,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <Common/ErrnoException.h>
-#include <Common/ProfileEvents.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -543,8 +542,7 @@ public:
         auto bytes_written = eventResult(event);
 
         ProfileEvents::increment(ProfileEvents::AIOWrite);
-        if (bytes_written > 0)
-            ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
+        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,

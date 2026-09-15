@@ -32,9 +32,10 @@
                     <min>1</min>
                 </enable_analyzer>
 
-                <!-- Recursion-limiting constraints (max_ast_depth, max_parser_depth,
-                     max_parser_backtracks) live in limit-recursion-settings.xml, installed
-                     alongside this file and shared with the stress test. -->
+                <!-- Prevent stack overflow -->
+                <max_ast_depth>
+                    <readonly/>
+                </max_ast_depth>
 
             </constraints>
 

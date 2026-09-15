@@ -1271,7 +1271,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append);
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append, /* sync= */ false);
         }
 
         if (use_marks_file)

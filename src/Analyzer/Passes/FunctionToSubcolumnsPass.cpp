@@ -292,11 +292,10 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     else
         return {};
 
-    if (index == 0 || index > data_type_qbit.getElementSize() * data_type_qbit.getNumStrides())
+    if (index == 0 || index > data_type_qbit.getElementSize())
         return {};
 
-    /// Each subcolumn is one stride group's bit plane: a FixedString of ceil(stride / 8) bytes.
-    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getStride() + 7) / 8)};
+    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
 }
 
 template <typename DataType>

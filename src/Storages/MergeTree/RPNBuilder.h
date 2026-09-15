@@ -130,6 +130,11 @@ public:
     /// Convert node to function node or null optional
     std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
 
+    /** If this node is `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
+      * Handles both the DAG `ARRAY_JOIN` action node and the AST `ASTFunction` named `arrayJoin`.
+      */
+    std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
+
     /// Get tree context
     const RPNBuilderTreeContext & getTreeContext() const
     {

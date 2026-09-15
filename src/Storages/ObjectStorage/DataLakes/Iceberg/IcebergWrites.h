@@ -48,7 +48,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const DataTypes & partition_types,
+    const std::vector<DataTypePtr> & partition_types,
     const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
     const std::vector<UInt64> & data_file_byte_counts,
@@ -60,7 +60,10 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number = std::nullopt);
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
+    /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
+    /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
@@ -72,8 +75,7 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots = true,
-    const std::vector<Iceberg::FileContentType> & per_entry_content_types = {});
+    bool use_previous_snapshots = true);
 
 class IcebergStorageSink final : public SinkToStorage
 {

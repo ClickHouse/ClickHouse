@@ -138,35 +138,6 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
     );
 }
 
-VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFactory::getCodecDocumentations() const
-{
-    VectorWithMemoryTracking<std::pair<String, Documentation>> result;
-    result.reserve(family_name_with_codec.size());
-    for (const auto & [name, creator] : family_name_with_codec)
-    {
-        CompressionCodecPtr codec;
-        try
-        {
-            codec = creator({}, nullptr);
-        }
-        catch (...) // Ok: some codecs cannot be instantiated in this build configuration (e.g. the encryption codecs
-                    // register a creator that throws when the server is built without SSL support). They have no
-                    // documentation to expose, so skip them rather than failing the whole system.documentation query.
-        {
-            continue;
-        }
-
-        Documentation documentation;
-        documentation.description = codec->getDescription();
-        /// The codec carries its description through `getDescription` rather than a `Documentation` object, so the
-        /// source is not captured automatically; use the registration site recorded in `registerCompressionCodec*`.
-        if (auto it = family_name_with_source.find(name); it != family_name_with_source.end())
-            documentation.source = it->second;
-        result.emplace_back(name, std::move(documentation));
-    }
-    return result;
-}
-
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
     if (family_name == "Multiple")
@@ -183,8 +154,7 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
 void CompressionCodecFactory::registerCompressionCodecWithType(
     const String & family_name,
     std::optional<uint8_t> byte_code,
-    CreatorWithType creator,
-    std::source_location source)
+    CreatorWithType creator)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: "
@@ -193,8 +163,6 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
     if (!family_name_with_codec.emplace(family_name, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: the codec family name '{}' is not unique", family_name);
 
-    family_name_with_source.emplace(family_name, source.file_name());
-
     if (byte_code)
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -202,26 +170,25 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
                             std::to_string(*byte_code));
 }
 
-void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source)
+void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator)
 {
     registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, const IDataType * /* data_type */)
     {
         return creator(ast);
-    }, source);
+    });
 }
 
 void CompressionCodecFactory::registerSimpleCompressionCodec(
     const String & family_name,
     std::optional<uint8_t> byte_code,
-    SimpleCreator creator,
-    std::source_location source)
+    SimpleCreator creator)
 {
     registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)
     {
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Compression codec {} cannot have arguments", family_name);
         return creator();
-    }, source);
+    });
 }
 
 

@@ -62,6 +62,12 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    /// Only `loadMetadata` may set this: it is the sole caller that executes a definition this server wrote.
+    void setIsMetadataReplay(bool is_metadata_replay_)
+    {
+        is_metadata_replay = is_metadata_replay_;
+    }
+
     void setDontNeedDDLGuard()
     {
         need_ddl_guard = false;
@@ -128,7 +134,7 @@ private:
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
-    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
+    /// Remove transaction metadata files (txn_version.txt) from all parts for a table.
     static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
@@ -146,6 +152,7 @@ private:
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
+    bool is_metadata_replay = false;
 
     String as_database_saved;
     String as_table_saved;

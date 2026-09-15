@@ -1089,19 +1089,49 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
     {
-        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.count)
+        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {
             auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
-            for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+            /// This tree is used for execution, so the value itself cannot be rewritten; only the
+            /// display mask of its constants can be set. `setMaskId` is a display flag, so it hides
+            /// the literal in projection names, `EXPLAIN QUERY TREE` and the `EXPLAIN actions = 1`
+            /// ActionsDAG (see PlannerActionsVisitor) without changing what is executed.
+            auto assign_mask = [&](ConstantNode & constant)
             {
-                if (auto * constant = argument_nodes[n]->as<ConstantNode>())
+                auto mask = scope.projection_mask_map->insert({constant.getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                constant.setMaskId(mask);
+                return mask;
+            };
+            /// A secret value can be an expression, not a bare literal (e.g. an `encrypt` key built as
+            /// `leftPad('...', 16, '*')`, including one inlined from a SQL UDF body). Hide every
+            /// constant inside it so no fragment of the secret leaks; returns whether any literal was
+            /// hidden. A slot that carries no literal (a plaintext like `toString(number)` or a key
+            /// held in a column) exposes nothing in the query text, so it is left as is.
+            std::function<bool(const QueryTreeNodePtr &)> mask_secret_constants = [&](const QueryTreeNodePtr & subtree)
+            {
+                if (auto * constant = subtree->as<ConstantNode>())
                 {
-                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
-                    constant->setMaskId(mask);
-                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
+                    assign_mask(*constant);
+                    return true;
                 }
-            }
+                bool masked_any = false;
+                for (const auto & child : subtree->getChildren())
+                    if (child)
+                        masked_any |= mask_secret_constants(child);
+                return masked_any;
+            };
+
+            forEachSecretArgumentNode(
+                argument_nodes,
+                secret_arguments,
+                [&](size_t n, QueryTreeNodePtr & secret_node)
+                {
+                    if (auto * constant = secret_node->as<ConstantNode>())
+                        arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
+                    else if (mask_secret_constants(secret_node))
+                        arguments_projection_names[n] = "[HIDDEN]";
+                });
         }
     }
 
@@ -1142,18 +1172,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
 
-        /// Table expressions are only allowed as the second (right) argument of IN.
-        /// A table on the left side is not a value expression, so reject it with a clear
-        /// error instead of failing later when getResultType is called on the table node.
-        auto first_argument_type = in_first_argument->getNodeType();
-        if (first_argument_type == QueryTreeNodeType::TABLE || first_argument_type == QueryTreeNodeType::TABLE_FUNCTION)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function '{}' is a table expression '{}', but it must be a value expression. In scope {}",
-                function_name,
-                in_first_argument->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-
         /// Edge case when the first argument of IN is scalar subquery.
+        auto first_argument_type = in_first_argument->getNodeType();
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
             IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
@@ -1625,7 +1645,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            VectorWithMemoryTracking<std::string> possible_function_names;
+            std::vector<std::string> possible_function_names;
 
             auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());

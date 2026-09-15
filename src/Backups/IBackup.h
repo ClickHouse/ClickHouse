@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ctime>
-#include <map>
 #include <memory>
 #include <optional>
 
@@ -41,9 +40,6 @@ public:
 
     /// Returns whether the backup was opened for reading or writing.
     virtual OpenMode getOpenMode() const = 0;
-
-    /// Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty if none.
-    virtual std::map<String, String> getEngineSettings() const = 0;
 
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;
@@ -119,12 +115,16 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
-    virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
+    /// When `sync` is true the destination file's contents are fsynced before this call returns, so a
+    /// restored part can be made as durable as an inserted one (see MergeTreeData::restorePartFromBackup).
+    virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const = 0;
 
-    virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
+    virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const = 0;
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
+
+    virtual void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept = 0;
 
     /// Whether it's possible to add new entries to the backup in multiple threads.
     virtual bool supportsWritingInMultipleThreads() const = 0;

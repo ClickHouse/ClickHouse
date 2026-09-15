@@ -19,15 +19,19 @@ private:
     /// Needed to extract nested subcolumn from values in shared variant.
     String nested_subcolumn;
     bool is_null_map_subcolumn;
+    /// True when the extraction wrapped the requested subcolumn into Nullable or
+    /// LowCardinality(Nullable). Only forwarded to the variant element serialization of the requested
+    /// type; see SerializationVariantElement::nullable_added_by_extraction.
+    bool nullable_added_by_extraction;
 
-    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false)
-        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_)
+    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_)
+        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_), nullable_added_by_extraction(nullable_added_by_extraction_)
     {
     }
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_);
-    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false);
+    static UInt128 getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_);
+    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && shared_variant_serialization->supportsPooling(); }
 

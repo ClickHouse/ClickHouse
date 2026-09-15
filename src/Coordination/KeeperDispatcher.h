@@ -200,7 +200,7 @@ public:
 
     Keeper4LWInfo getKeeper4LWInfo() const;
 
-    const KeeperStateMachine & getStateMachine() const
+    const IKeeperStateMachine & getStateMachine() const
     {
         return *server->getKeeperStateMachine();
     }

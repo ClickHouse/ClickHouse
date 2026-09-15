@@ -235,7 +235,8 @@ private:
     /// Ordered container
     /// Key is a timestamp of the first insert into batch.
     /// Used to detect for how long the batch is active, so we can dump it by timer.
-    using Queue = std::map<std::chrono::steady_clock::time_point, Container>;
+    /// Must be a multimap: two queries with different keys may theoretically compute the same deadline.
+    using Queue = std::multimap<std::chrono::steady_clock::time_point, Container>;
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 

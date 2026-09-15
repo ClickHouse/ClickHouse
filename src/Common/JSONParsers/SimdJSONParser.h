@@ -208,6 +208,14 @@ public:
                 format.nullAtom();
                 break;
             }
+            /// `simdjson` only produces `BIGINT` when the parser is configured to store integers
+            /// that do not fit in 64 bits as raw digit strings. We do not enable that option, so
+            /// `simdjson` reports `BIGINT_ERROR` for such numbers instead and this case is
+            /// unreachable; it is handled to keep the switch exhaustive.
+            case simdjson::dom::element_type::BIGINT: {
+                format.string(value.get_bigint().value_unsafe());
+                break;
+            }
             case simdjson::dom::element_type::ARRAY: {
                 append(value.get_array().value_unsafe());
                 break;
@@ -289,6 +297,10 @@ struct SimdJSONParser
                 case simdjson::dom::element_type::OBJECT: return ElementType::OBJECT;
                 case simdjson::dom::element_type::BOOL: return ElementType::BOOL;
                 case simdjson::dom::element_type::NULL_VALUE: return ElementType::NULL_VALUE;
+                /// Unreachable unless the parser is told to store big integers as raw digit
+                /// strings, which we do not do. Reported as a string because that is how
+                /// `simdjson` exposes the value (`element::get_bigint`).
+                case simdjson::dom::element_type::BIGINT: return ElementType::STRING;
             }
         }
 

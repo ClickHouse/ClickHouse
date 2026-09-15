@@ -97,7 +97,7 @@ SerializationVariant::SerializationVariant(
     const VariantSerializations & variant_serializations_,
     const Names & variant_names_,
     const String & variant_name_)
-    : variant_types(variant_types_.begin(), variant_types_.end())
+    : variant_types(variant_types_)
     , variant_serializations(variant_serializations_)
     , variant_names(variant_names_)
     , deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_))
@@ -561,19 +561,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         /// so if rows_offset is not 0 we cannot use it as is because we will modify it here later by applying rows_offset.
         /// Instead we need to insert data from the current range from it.
         if (rows_offset)
-        {
-            /// `col`'s discriminators may alias `cached_column`: a prior rows_offset == 0 read of this
-            /// substream caches the discriminators column itself (see the deserialize path below, where
-            /// `discriminators_for_cache` is `col.getLocalDiscriminatorsPtr()` and not a `cut()` copy).
-            /// On a later rows_offset > 0 cache hit, appending in place — and the in-place rows_offset
-            /// compaction that follows — would then mutate storage still referenced by the cache, the same
-            /// COW hole the size readers close. Clone when shared; `IColumn::mutate` is a no-op when
-            /// uniquely owned.
-            ColumnPtr & discriminators = col.getLocalDiscriminatorsPtr();
-            MutableColumnPtr mutable_discriminators = IColumn::mutate(std::move(discriminators));
-            mutable_discriminators->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-            discriminators = std::move(mutable_discriminators);
-        }
+            col.getLocalDiscriminatorsPtr()->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
             insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache, true);
 

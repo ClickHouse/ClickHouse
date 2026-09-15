@@ -114,14 +114,6 @@ ContextPtr CurrentThread::tryGetQueryContext()
     return current_thread->tryGetQueryContext();
 }
 
-void CurrentThread::checkIfNotCancelled()
-{
-    if (unlikely(!current_thread))
-        return;
-
-    current_thread->throwIfQueryCanceled();
-}
-
 std::string_view CurrentThread::getQueryId()
 {
     if (unlikely(!current_thread))

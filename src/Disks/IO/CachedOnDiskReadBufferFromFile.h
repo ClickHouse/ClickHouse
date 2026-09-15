@@ -7,11 +7,11 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/SwapHelper.h>
+#include <mutex>
 
 
 namespace CurrentMetrics
@@ -22,7 +22,7 @@ extern const Metric FilesystemCacheReadBuffers;
 namespace DB
 {
 
-class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
+class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
     using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>()>;
@@ -77,7 +77,6 @@ public:
     bool isContentCached(size_t offset, size_t size) override;
 
     std::optional<size_t> tryGetFileSize() override;
-    std::optional<Field> getMetadata(const String & name) const override;
 
     size_t getFileSize();
 
@@ -251,6 +250,10 @@ private:
 
     ReadFromFileSegmentStatePtr state;
     ReadInfo info;
+
+    /// Guards the lazily initialized file_size: tryGetFileSize may be called from readBigAt
+    /// concurrently with the sequential read path.
+    mutable std::mutex file_size_mutex;
 
     size_t first_offset = 0;
     String nextimpl_step_log_info;

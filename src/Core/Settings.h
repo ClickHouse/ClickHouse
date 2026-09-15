@@ -8,8 +8,8 @@
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
-#include <Common/VectorWithMemoryTracking.h>
 
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -63,7 +63,6 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
-    M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, FloatAuto) \
     M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
@@ -122,8 +121,7 @@ class WriteBuffer;
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
-    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
-    M(CLASS_NAME, SkipUnavailableShardsMode)
+    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
@@ -145,8 +143,6 @@ struct Settings
     bool isChanged(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
     std::string_view getDescription(std::string_view name) const;
-    std::string_view getTypeName(std::string_view name) const;
-    String getDefaultValueString(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
@@ -154,18 +150,18 @@ struct Settings
     void set(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
-    VectorWithMemoryTracking<String> getHints(const String & name) const;
-    String toString() const;
+    std::vector<String> getHints(const String & name) const;
+    String toString(bool show_secrets) const;
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
-    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
-    VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
-    VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
-    VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
+    std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
+    std::vector<std::string_view> getChangedAndObsoleteNames() const;
+    std::vector<std::string_view> getUnchangedNames() const;
 
-    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
-    void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
+    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
+    void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
     NameToNameMap toNameToNameMap() const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
@@ -183,6 +179,7 @@ struct Settings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 

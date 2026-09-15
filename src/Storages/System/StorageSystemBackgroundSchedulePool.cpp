@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemBackgroundSchedulePool.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -58,6 +57,3 @@ void StorageSystemBackgroundSchedulePool::fillData(MutableColumns & res_columns,
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemBackgroundSchedulePool) }

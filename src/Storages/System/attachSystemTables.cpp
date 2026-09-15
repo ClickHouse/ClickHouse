@@ -91,7 +91,6 @@
 #include <Storages/System/StorageSystemSettingsProfiles.h>
 #include <Storages/System/StorageSystemSettingsProfileElements.h>
 #include <Storages/System/StorageSystemRowPolicies.h>
-#include <Storages/System/StorageSystemMaskingPolicies.h>
 #include <Storages/System/StorageSystemQuotas.h>
 #include <Storages/System/StorageSystemQuotaLimits.h>
 #include <Storages/System/StorageSystemQuotaUsage.h>
@@ -108,7 +107,6 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemTokenizers.h>
-#include <Storages/System/StorageSystemStemmers.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
@@ -120,6 +118,7 @@
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Storages/System/StorageSystemJemallocSampledAllocations.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperCluster.h>
@@ -195,7 +194,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types along with their embedded documentation.");
     attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
     attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
-    attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the components of the system (functions, table engines, data types, settings, profile events, metrics, system tables, etc.) into a single table, with the reference documentation rendered as Markdown and the path to the source file where it is defined.");
+    attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the uniform components of the system (functions, table engines, data types, etc.) into a single table, with the reference documentation rendered as Markdown.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
@@ -209,7 +208,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles", "Contains properties of configured setting profiles.");
     attach<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements", "Describes the content of each settings profile configured on the server. Including settings constraints, roles and users for which the settings are applied, and parent settings profiles.");
     attach<StorageSystemRowPolicies>(context, system_database, "row_policies", "Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.");
-    attach<StorageSystemMaskingPolicies>(context, system_database, "masking_policies", "Contains information about masking policies. Masking policies can only be created and applied in ClickHouse Cloud; in open-source builds this table is always empty.");
     attach<StorageSystemQuotas>(context, system_database, "quotas", "Contains information about quotas.");
     attach<StorageSystemQuotaLimits>(context, system_database, "quota_limits", "Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.");
     attach<StorageSystemQuotaUsage>(context, system_database, "quota_usage", "Contains quota usage by the current user: how much is used and how much is left.");
@@ -276,16 +274,15 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attachNoDescription<StorageSystemTokenizers>(context, system_database, "tokenizers", "Contains a list of the available tokenizers.");
-#if USE_LIBSTEMMER
-    attachNoDescription<StorageSystemStemmers>(context, system_database, "stemmers", "Contains a list of the available stemmers.");
-#endif
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
     attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemBackgroundSchedulePool>(context, system_database, "background_schedule_pool", "Contains information about tasks in all BackgroundSchedulePool instances. Each row represents a task.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
-    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc. For small size classes the slab columns (`slab_size`, `nonfull_slabs` and the `waste` alias) measure memory lost to slab fragmentation.", /*per_arena_=*/ false);
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_arena_bins", "Same as `system.jemalloc_bins` but with one row per (arena, bin) instead of aggregating over arenas. Slabs belong to a single arena, so this table locates fragmentation in a specific arena (including the dedicated MergeTree metadata, JIT and cache arenas) and joins to `system.jemalloc_sampled_allocations` on both `arena` and size class.", /*per_arena_=*/ true);
     attachNoDescription<StorageSystemJemallocProfileText>(context, system_database, "jemalloc_profile_text", "Displays the symbolized jemalloc heap profile. Run 'SYSTEM JEMALLOC FLUSH PROFILE' to generate a profile first.");
+    attachNoDescription<StorageSystemJemallocSampledAllocations>(context, system_database, "jemalloc_sampled_allocations", "One row per live sampled allocation from the jemalloc heap profiler; reading the table flushes a fresh heap profile. Only threads with the profiler armed contribute (`jemalloc_enable_profiler` setting or `jemalloc_enable_global_profiler` config); each row represents roughly `weight` similar allocations.");
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");

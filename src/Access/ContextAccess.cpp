@@ -119,7 +119,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if (res & drop_table)
             res |= drop_view;
 
-        if (res & alter_table)
+        if (res.contains(alter_table))
             res |= alter_view;
 
         /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
@@ -251,9 +251,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_QUOTAS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
-
-        if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
-            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
     }
     else
     {

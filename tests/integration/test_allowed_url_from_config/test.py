@@ -11,14 +11,10 @@ node3 = cluster.add_instance(
     "node3", main_configs=["configs/config_with_only_regexp_hosts.xml"]
 )
 node4 = cluster.add_instance(
-    "node4",
-    main_configs=[],
-    user_configs=["configs/allow_server_credentials.xml"],
+    "node4", main_configs=[]
 )  # No `remote_url_allow_hosts` at all.
 node5 = cluster.add_instance(
-    "node5",
-    main_configs=["configs/config_without_allowed_hosts.xml"],
-    user_configs=["configs/allow_server_credentials.xml"],
+    "node5", main_configs=["configs/config_without_allowed_hosts.xml"]
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
 

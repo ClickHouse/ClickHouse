@@ -392,7 +392,9 @@ The serialization layer computes which bucket the requested key belongs to and r
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
 
 :::note
-The order of keys within a map value may differ from the original insertion order when using `with_buckets` serialization. Keys are distributed across buckets by hash and are reassembled in bucket order, not insertion order. With `basic` serialization, the key order from inserted maps is preserved.
+Since version 26.8, `with_buckets` serialization preserves the original key order: an additional `bucket_indexes` substream records which bucket every key-value pair was taken from, so the map is reassembled in the order it was written instead of in bucket order.
+
+Parts written by earlier versions do not contain that substream. Their maps are still reassembled in bucket order, and the original key order cannot be restored for them because it was never stored on disk — rewriting such a part (by a merge or `OPTIMIZE FINAL`) freezes the bucket order it currently has instead of recovering the insertion order. With `basic` serialization, the key order from inserted maps has always been preserved.
 :::
 
 The bucket count can vary between parts. When parts with different bucket counts are merged, the new part's bucket count is recalculated from the merged statistics. Parts with `basic` and `with_buckets` serialization can coexist in the same table and are merged transparently.
