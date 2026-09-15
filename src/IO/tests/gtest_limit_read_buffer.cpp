@@ -71,6 +71,17 @@ TEST(LimitReadBuffer, WithoutExpectEofDataPastTheLimitIsCutOff)
     EXPECT_EQ(readAll(limited), "0123456789");
 }
 
+/// The check runs in `nextImpl`, so a consumer that reads exactly the limit and stops never asks for
+/// the byte that would reveal the overflow. `expect_eof` is therefore best-effort, not a guarantee.
+TEST(LimitReadBuffer, ExpectEofIsNotCheckedWhenTheConsumerStopsAtTheLimit)
+{
+    ReadBufferFromString nested(std::string_view("0123456789abc"));
+    LimitReadBuffer limited(nested, {.read_no_more = 10, .expect_eof = true, .excetion_hint = "hint"});
+    char buf[10] = {};
+    limited.readStrict(buf, sizeof(buf));
+    EXPECT_EQ(String(buf, sizeof(buf)), "0123456789");
+}
+
 TEST(LimitReadBuffer, ExpectEofShortStreamIsNotAnError)
 {
     ReadBufferFromString nested(std::string_view("012"));
