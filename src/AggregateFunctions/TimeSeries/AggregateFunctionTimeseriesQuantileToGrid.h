@@ -38,21 +38,21 @@ bool timeseriesQuantileLess(ValueType lhs, ValueType rhs)
 /// R-7 (quantileExactInclusive) quantile of `sorted_values`, which must be ordered by `timeseriesQuantileLess`, with the
 /// Prometheus edge cases of the level: NaN gives NaN, a level below 0 gives -Inf and a level above 1 gives +Inf.
 template <typename ValueType>
-std::optional<ValueType> computeTimeseriesQuantile(const VectorWithMemoryTracking<ValueType> & sorted_values, Float64 phi)
+std::optional<Float64> computeTimeseriesQuantile(const VectorWithMemoryTracking<ValueType> & sorted_values, Float64 phi)
 {
     if (sorted_values.empty())
         return std::nullopt;
 
     if (std::isnan(phi))
-        return static_cast<ValueType>(std::numeric_limits<Float64>::quiet_NaN());
+        return std::numeric_limits<Float64>::quiet_NaN();
     if (phi < 0.0)
-        return static_cast<ValueType>(-std::numeric_limits<Float64>::infinity());
+        return -std::numeric_limits<Float64>::infinity();
     if (phi > 1.0)
-        return static_cast<ValueType>(std::numeric_limits<Float64>::infinity());
+        return std::numeric_limits<Float64>::infinity();
 
     const size_t n = sorted_values.size();
     if (n == 1)
-        return sorted_values[0];
+        return static_cast<Float64>(sorted_values[0]);
 
     /// rank = phi * (n - 1), interpolated between the neighbouring values.
     const Float64 rank = phi * static_cast<Float64>(n - 1);
@@ -62,22 +62,24 @@ std::optional<ValueType> computeTimeseriesQuantile(const VectorWithMemoryTrackin
     /// An exact rank gives the sample itself. Prometheus has no such shortcut and computes `lower * 1 + upper * 0`,
     /// which is NaN when either sample is infinite.
     if (lower == upper)
-        return sorted_values[lower];
+        return static_cast<Float64>(sorted_values[lower]);
 
     /// The weighted form of Prometheus (`lower * (1 - weight) + upper * weight`) rather than `lower + weight * (upper - lower)`,
     /// so that infinite samples give the infinity instead of `Inf - Inf = NaN`.
     const Float64 weight = rank - static_cast<Float64>(lower);
     const Float64 result = static_cast<Float64>(sorted_values[lower]) * (1.0 - weight) + static_cast<Float64>(sorted_values[upper]) * weight;
-    return static_cast<ValueType>(result);
+    return result;
 }
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 struct AggregateFunctionTimeseriesQuantileToGridTraits
 {
+    using GridScaleTimestampType = DateTime64;
     using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+
+    /// The quantile is interpolated between the samples, so it's calculated with double precision.
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -146,11 +148,11 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
     /// Sliding aggregator: keeps the sorted values of the window and reads the phi-quantile (R-7, inclusive) from them.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
         static_assert(decltype(sliding_sum)::is_invertible);
 
-        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             VectorWithMemoryTracking<ValueType> values;
             samples.forEachSample([&values](TimestampType /*timestamp*/, ValueType value)
@@ -166,18 +168,18 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/, Float64 phi) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
         {
             return computeTimeseriesQuantile(sliding_sum.getCurrentSum().values, phi);
         }
     };
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
+    static constexpr UInt16 FORMAT_VERSION = 2;
 };
 
 /// The quantile level `phi` of `timeSeriesQuantileToGrid`: a number for the whole grid or an array with one number per
@@ -207,18 +209,18 @@ private:
 /// Aggregate function that computes the phi-quantile of time series values on a regular time grid.
 /// Returns the R-7 (inclusive) quantile of all sample values within each grid point's window. The quantile level is the
 /// argument after the samples: a number, or an array with one level per grid point.
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 class AggregateFunctionTimeseriesQuantileToGrid final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesQuantileToGrid<TimestampType_, IntervalType_, ValueType_>,
-        AggregateFunctionTimeseriesQuantileToGridTraits<TimestampType_, IntervalType_, ValueType_>>
+        AggregateFunctionTimeseriesQuantileToGrid<TimestampType_, ValueType_>,
+        AggregateFunctionTimeseriesQuantileToGridTraits<TimestampType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesQuantileToGridTraits<TimestampType_, IntervalType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesQuantileToGridTraits<TimestampType_, ValueType_>;
 
     using TimestampType = typename Traits::TimestampType;
-    using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
+    using ResultType = typename Traits::ResultType;
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesQuantileToGrid, Traits>;
@@ -262,9 +264,9 @@ public:
         data(place)->phi.deserialize(buf, Base::grid_size);
     }
 
-    std::optional<ValueType> getGridPointResult(const Aggregator & aggregator, ConstAggregateDataPtr place, size_t grid_index) const
+    std::optional<ResultType> getGridPointResult(const Aggregator & aggregator, ConstAggregateDataPtr place, size_t grid_index) const
     {
-        return aggregator.getResult(Base::timestampAtIndex(grid_index), data(place)->phi.at(grid_index));
+        return aggregator.getResult(Base::getGridPoint(grid_index), data(place)->phi.at(grid_index));
     }
 
 private:
