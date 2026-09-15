@@ -503,7 +503,7 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
         session_timezone = &DateLUT::instance();
 
 #if USE_SIMDJSON
-    bool allow_simdjson;
+    bool allow_simdjson = false;
     if (settings.json.allow_simdjson)
         allow_simdjson = *settings.json.allow_simdjson;
     else
