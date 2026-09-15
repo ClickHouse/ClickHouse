@@ -1,0 +1,7 @@
+CREATE VIEW validation over UNIQUE
+1
+EXPLAIN over UNIQUE does not throw
+1
+1
+UNIQUE nested inside an expression under CREATE VIEW
+2

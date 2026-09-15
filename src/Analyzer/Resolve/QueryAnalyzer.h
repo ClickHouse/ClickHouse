@@ -26,6 +26,8 @@ class QueryExpressionsAliasVisitor ;
 class QueryNode;
 class JoinNode;
 class ColumnNode;
+class FunctionNode;
+using FunctionNodePtr = std::shared_ptr<FunctionNode>;
 
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
@@ -255,6 +257,8 @@ private:
 
     ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope, bool allow_niladic_functions = true);
 
+    ProjectionNames resolveUniquePredicate(QueryTreeNodePtr & node, const FunctionNodePtr & function_node_ptr, IdentifierResolveScope & scope, bool allow_niladic_functions);
+
     ProjectionNames resolveExpressionNode(
         QueryTreeNodePtr & node,
         IdentifierResolveScope & scope,
@@ -368,6 +372,13 @@ private:
     /// True while a parameterized view argument value is resolved: a scalar subquery there must
     /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
     bool parameterized_view_arguments_in_resolve_process = false;
+
+    /// True while an expression that must resolve to a plain `ConstantNode` is resolved:
+    /// LIMIT/OFFSET and LIMIT BY LIMIT/OFFSET, window frame offsets, WITH FILL expressions,
+    /// and parametric function parameters.
+    /// In only-analyze mode the `UNIQUE` predicate placeholder must stay a plain constant in
+    /// these contexts instead of being wrapped in `materialize`. See `resolveUniquePredicate`.
+    bool constant_expression_in_resolve_process = false;
 };
 
 }
