@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Interpreters/ITokenizer.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
@@ -47,6 +48,15 @@ private:
         return "";
     }
 
+    struct SourceIndex
+    {
+        StoragePtr table;
+        MergeTreeIndexPtr index;
+    };
+
+    /// Resolves the source table and builds the index object from its current metadata.
+    SourceIndex resolveSourceIndex(ContextPtr context) const;
+
     String source_database;
     String source_table;
     String source_index_name;
@@ -81,26 +91,7 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
-ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr, bool /*is_insert_query*/) const
-{
-    return ColumnsDescription{{
-        {"part_name", std::make_shared<DataTypeString>()},
-        {"token", std::make_shared<DataTypeString>()},
-        {"dictionary_compression", getDictionaryCompressionType()},
-        {"cardinality", std::make_shared<DataTypeUInt64>()},
-        {"num_posting_blocks", std::make_shared<DataTypeUInt64>()},
-        {"has_embedded_postings", std::make_shared<DataTypeUInt8>()},
-        {"has_raw_postings", std::make_shared<DataTypeUInt8>()},
-        {"has_compressed_postings", std::make_shared<DataTypeUInt8>()}
-    }};
-}
-
-StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
-    const ASTPtr & /*ast_function*/,
-    ContextPtr context,
-    const std::string & table_name,
-    ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+TableFunctionMergeTreeTextIndex::SourceIndex TableFunctionMergeTreeTextIndex::resolveSourceIndex(ContextPtr context) const
 {
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
@@ -117,6 +108,47 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
+    return {.table = std::move(source_table_ptr), .index = std::move(text_index)};
+}
+
+ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+{
+    NamesAndTypesList columns
+    {
+        {"part_name", std::make_shared<DataTypeString>()},
+        {"token", std::make_shared<DataTypeString>()},
+    };
+
+    /// A `keyValuePairs` token is a `(key, value)` pair of a `Map` with a binary trailer. Expose its parts.
+    const auto source_index = resolveSourceIndex(context);
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*source_index.index);
+    if (text_index.tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        columns.emplace_back("token_key", std::make_shared<DataTypeString>());
+        columns.emplace_back("token_value", std::make_shared<DataTypeString>());
+    }
+
+    columns.insert(columns.end(),
+    {
+        {"dictionary_compression", getDictionaryCompressionType()},
+        {"cardinality", std::make_shared<DataTypeUInt64>()},
+        {"num_posting_blocks", std::make_shared<DataTypeUInt64>()},
+        {"has_embedded_postings", std::make_shared<DataTypeUInt8>()},
+        {"has_raw_postings", std::make_shared<DataTypeUInt8>()},
+        {"has_compressed_postings", std::make_shared<DataTypeUInt8>()},
+    });
+
+    return ColumnsDescription{columns};
+}
+
+StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/,
+    bool is_insert_query) const
+{
+    auto [source_table_ptr, text_index] = resolveSourceIndex(context);
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 
@@ -156,6 +188,8 @@ mergeTreeTextIndex(database, table, index_name)
 ## Returned value {#returned-value}
 
 A table object with tokens and their posting list metadata.
+
+If the index uses the `keyValuePairs` tokenizer, each token is a `(key, value)` pair of a `Map` column, and the result has two additional columns `token_key` and `token_value` with the decoded parts of the token.
 
 ## Usage Example {#usage-example}
 

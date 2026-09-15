@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ITokenizer.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -94,6 +95,20 @@ protected:
                 if (column_name == "token")
                 {
                     result_columns[pos]->insertRangeFrom(*dict_block->tokens, 0, block_size);
+                }
+                else if (column_name == "token_key" || column_name == "token_value")
+                {
+                    /// Present only for the `keyValuePairs` tokenizer, whose every token decodes.
+                    const bool is_key = column_name == "token_key";
+                    auto & column_string = assert_cast<ColumnString &>(*result_columns[pos]);
+
+                    for (size_t i = 0; i < block_size; ++i)
+                    {
+                        const std::string_view token = dict_block->tokens->getDataAt(i);
+                        const auto decoded = KeyValuePairsTokenizer::decodeToken(token);
+                        const auto part = is_key ? decoded.key : decoded.value;
+                        column_string.insertData(part.data(), part.size());
+                    }
                 }
                 else if (column_name == "cardinality")
                 {

@@ -631,12 +631,25 @@ std::string MergeTreeIndexConditionText::getDescription() const
     }
     else
     {
+        const bool is_key_value_pairs = tokenizer->getType() == ITokenizer::Type::KeyValuePairs;
+
         for (size_t i = 0; i < all_search_tokens.size(); ++i)
         {
             if (i > 0)
                 description += ", ";
 
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
+            if (is_key_value_pairs)
+            {
+                /// A stored token ends with a binary trailer; show the pair it encodes instead.
+                const auto decoded = KeyValuePairsTokenizer::decodeToken(all_search_tokens[i]);
+                description += fmt::format("\"{}\": \"{}\"", decoded.key, decoded.value);
+                if (decoded.is_rest)
+                    description += " (rest)";
+            }
+            else
+            {
+                description += fmt::format("\"{}\"", all_search_tokens[i]);
+            }
         }
     }
 

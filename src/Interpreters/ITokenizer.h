@@ -474,6 +474,16 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     static void encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out);
     static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
 
+    struct DecodedToken
+    {
+        std::string_view key;
+        std::string_view value;
+        bool is_rest = false;
+    };
+
+    /// The inverse of `encodeToken`. The views alias `token`. Throws if the token is not in the pair format.
+    static DecodedToken decodeToken(std::string_view token);
+
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
