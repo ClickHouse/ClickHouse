@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"memory_eviction_score", 0, 0, "New setting to control the eviction order of query memory reservations when a workload is under memory pressure."},
             {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
             {"enable_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."},

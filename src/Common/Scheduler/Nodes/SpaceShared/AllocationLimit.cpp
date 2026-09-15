@@ -1,8 +1,11 @@
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/IAllocationQueue.h>
+#include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -77,6 +80,16 @@ ISchedulerNode * AllocationLimit::getChild(const String & child_name)
 
 ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
+    // If the requester's own reservation would exceed the limit, no eviction anywhere in the subtree can make
+    // it admissible. Fail its own request here instead of descending into a (possibly lower-precedence)
+    // sibling workload — and, for a `reserve_memory = 0` first grow that is not yet a running child, instead
+    // of leaving the increase blocked forever. `fair_key` is the requester's allocated size plus its pending
+    // increase, so `fair_key > limit` means it cannot fit even with the whole subtree freed.
+    if (killer.allocation.fair_key > limit)
+    {
+        details = fmt::format("Evicting allocation (eviction_score {}) to satisfy its own increase, its reservation exceeds the limit", killer.allocation.eviction_score);
+        return &killer.allocation;
+    }
     if (!child)
         return nullptr;
     return child->selectAllocationToKill(killer, limit, details);

@@ -227,23 +227,33 @@ void AllocationQueue::approveIncrease()
     chassert(increase);
     ResourceAllocation & allocation = increase->allocation;
     SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, increase->size, allocated);
+    // `admitted` is part of the `ByEvictionKey` ordering of `running_allocations`, so it must carry its final
+    // value whenever the allocation is (re)inserted there. `apply` below keys off `increase.kind`, not
+    // `admitted`, so setting the flag first is safe. Mark the allocation admitted so its eventual removal
+    // propagates a matching `removing_allocation` decrease instead of underflowing `allocations`.
     if (allocation.increase.kind == IncreaseRequest::Kind::Pending)
     {
         pending_allocations.erase(pending_allocations.iterator_to(allocation));
         pending_allocations_size -= allocation.increase.size;
         allocation.fair_key = increase->size;
+        allocation.admitted = true;
         running_allocations.insert(allocation);
     }
     else
+    {
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+        // A `Kind::Initial` increase admits an allocation that is already in `running_allocations` (inserted
+        // as a zero-cost, not-admitted allocation). Re-key it: erase, flip `admitted`, re-insert so it lands
+        // at its new `ByEvictionKey` position.
+        if (allocation.increase.kind == IncreaseRequest::Kind::Initial)
+        {
+            running_allocations.erase(running_allocations.iterator_to(allocation));
+            allocation.admitted = true;
+            running_allocations.insert(allocation);
+        }
+    }
     apply(*increase);
     allocation.allocated += increase->size;
-    // `apply` above incremented `allocations` for `Kind::Pending`/`Kind::Initial`. Mark the
-    // allocation as admitted so its eventual removal propagates a matching `removing_allocation`
-    // decrease (instead of underflowing `allocations` in the hierarchy).
-    if (allocation.increase.kind == IncreaseRequest::Kind::Pending
-        || allocation.increase.kind == IncreaseRequest::Kind::Initial)
-        allocation.admitted = true;
 
     // Notify allocation
     increase->allocation.increaseApproved(*increase);
@@ -293,8 +303,6 @@ void AllocationQueue::approveDecrease()
 
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
-    UNUSED(limit);
-
     // It is important not to kill allocation due to pending allocation in the same queue
     if (killer.kind == IncreaseRequest::Kind::Pending && &killer.allocation.queue == this)
         return nullptr;
@@ -303,18 +311,27 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Kill the largest allocation. It is the last as the set is ordered by size.
+    // The impossible-grow self-kill (the requester's own reservation exceeds the limit, so no eviction can
+    // make it fit) is handled by `AllocationLimit` before it descends to a victim, so it also covers a
+    // cross-workload least common ancestor. Nothing to decide from `limit` at the leaf.
+    UNUSED(limit);
+
+    // The victim is the greatest allocation by `ByEvictionKey`: an admitted allocation with the highest
+    // `eviction_score`, then the largest `fair_key`. Not-admitted allocations sort first (killed last),
+    // so a pending/never-admitted allocation is chosen only when no admitted one exists — which cannot happen
+    // under real pressure (an admitted allocation holds the resource), and an impossible grow is already
+    // handled by the self-kill above.
     ResourceAllocation & victim = *running_allocations.rbegin();
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)
     {
         if (&killer.allocation == &victim)
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy its own increase for {}.",
-                formatReadableCost(victim.allocated), getWorkloadName(), formatReadableCost(killer.size));
+            details = fmt::format("Evicting allocation of size {} (eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
+                formatReadableCost(victim.allocated), victim.eviction_score, getWorkloadName(), formatReadableCost(killer.size));
         else
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy increase of a smaller allocation.",
-                formatReadableCost(victim.allocated), getWorkloadName());
+            details = fmt::format("Evicting allocation of size {} (eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
+                formatReadableCost(victim.allocated), victim.eviction_score, getWorkloadName());
     }
 
     return &victim;

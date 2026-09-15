@@ -610,8 +610,8 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
-        : ResourceAllocation(*queue_, name_)
+    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int32 eviction_score_ = 0)
+        : ResourceAllocation(*queue_, name_, eviction_score_)
     {
         if (initial_size > 0)
             increase_enqueued = true;
@@ -762,4 +762,128 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
     ASSERT_EQ(b.killCount(), 0u);
     EXPECT_EQ(a.size(), 9000);
     EXPECT_EQ(b.size(), 0);
+}
+
+
+/// `eviction_score` controls eviction order under memory pressure: the reservation with the highest
+/// `eviction_score` is evicted first, even when it is not the largest. Here `small_hi` is smaller than
+/// `big` but has a higher score, so `small_hi` is the victim even though the largest-first tie-break alone
+/// would pick `big`.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreEvictsHighestFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 30000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation big(queue, "big", 15000, /* eviction_score = */ 0);
+    auto small_hi = std::make_unique<ManualAllocation>(queue, "small_hi", 5000, /* eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 10000, /* eviction_score = */ 0);
+    // Total 30000 == limit; the increase below overflows and triggers the eviction decision.
+
+    killer.increaseAsync(1000);
+
+    // Bounded wait for the eviction signal, so a regression fails cleanly instead of hanging.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (small_hi->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(small_hi->killCount(), 1u) << "The reservation with the higher eviction_score must be evicted first";
+    EXPECT_EQ(big.killCount(), 0u);
+    EXPECT_EQ(killer.killCount(), 0u);
+
+    // The evicted reservation releases its memory (as a real query does on MEMORY_RESERVATION_KILLED),
+    // which frees room for the pending increase.
+    small_hi.reset();
+    killer.waitSynced();
+    EXPECT_EQ(killer.size(), 11000);
+}
+
+
+/// Regression guard: with a uniform `eviction_score` (the default), the largest reservation is evicted
+/// first.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 30000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    auto big = std::make_unique<ManualAllocation>(queue, "big", 15000, /* eviction_score = */ 0);
+    ManualAllocation small(queue, "small", 5000, /* eviction_score = */ 0);
+    ManualAllocation killer(queue, "killer", 10000, /* eviction_score = */ 0);
+
+    killer.increaseAsync(1000);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (big->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(big->killCount(), 1u) << "With a uniform eviction_score the largest reservation must be evicted first";
+    EXPECT_EQ(small.killCount(), 0u);
+    EXPECT_EQ(killer.killCount(), 0u);
+
+    big.reset();
+    killer.waitSynced();
+    EXPECT_EQ(killer.size(), 11000);
+}
+
+
+/// A high `eviction_score` on a not-admitted allocation (e.g. `reserve_memory = 0`) must not make it
+/// the eviction victim over an admitted allocation. Not-admitted allocations sort first in `ByEvictionKey`
+/// (killed last), so an admitted holder is chosen even though the not-admitted one carries a higher score.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreSkipsZeroByteVictim)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // `holder` is the only allocation actually holding memory; `zero_hi` is a never-admitted zero-byte
+    // allocation with the highest score. `killer` then grows past the limit to trigger an eviction.
+    auto holder = std::make_unique<ManualAllocation>(queue, "holder", 8000, /* eviction_score = */ 0);
+    ManualAllocation zero_hi(queue, "zero_hi", 0, /* eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 1000, /* eviction_score = */ 0);
+
+    killer.increaseAsync(2000); // 8000 + 3000 > 10000 -> triggers an eviction
+
+    // The memory-holding `holder` must be the victim, not the higher-scored zero-byte `zero_hi`.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (holder->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(holder->killCount(), 1u) << "The memory-holding allocation must be evicted, not the zero-byte one";
+    EXPECT_EQ(zero_hi.killCount(), 0u);
+    EXPECT_EQ(killer.killCount(), 0u);
+
+    // Releasing the holder frees real memory, so the increase completes — no deadlock on a no-op kill.
+    holder.reset();
+    killer.waitSynced();
+    EXPECT_EQ(killer.size(), 3000);
+}
+
+
+/// An impossible grow — the requester's own reservation exceeds the limit, so no eviction can make it fit —
+/// must fail the requester's own request rather than evict a peer. `AllocationLimit` (the limit-enforcing
+/// node) selects the requester before descending to a victim.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreImpossibleGrowSelfKills)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // `peer` holds a little memory and has the highest score; `killer` holds more and asks for a grow that
+    // alone exceeds the 10000 limit.
+    ManualAllocation peer(queue, "peer", 1000, /* eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 8000, /* eviction_score = */ 0);
+
+    killer.increaseAsync(3000); // 8000 + 3000 = 11000 > 10000: the requester alone exceeds the limit
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (killer.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(killer.killCount(), 1u) << "A requester whose grow exceeds the limit must self-kill";
+    EXPECT_EQ(peer.killCount(), 0u) << "A peer must not be evicted for a grow that can never fit";
 }
