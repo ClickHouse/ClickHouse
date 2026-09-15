@@ -1204,6 +1204,95 @@ def test_function_over_time():
         [["[('job','test')]", "1970-01-01 00:03:30.000", 200]],
     )
 
+    # present_over_time: 1 wherever the window has a sample; the metric name is dropped.
+    do_query_test(
+        "present_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "1"], [180, "1"], [195, "1"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time: the first sample is at 110, so only the first grid point (105) has an
+    # empty window (60, 105] and yields the synthetic 1.
+    do_query_test(
+        "absent_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[105, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:45.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time never infers labels from a subquery, even a selector-backed one:
+    # Prometheus derives them from a vector/matrix selector only, so job="api" is not copied.
+    do_query_test(
+        'absent_over_time(nonexistent_metric_name{job="api"}[45s:15s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # quantile_over_time with interpolation: at 150 the window holds {1,1,3,4} -> 2,
+    # at 165 it holds {3,4} -> 3.5.
+    do_query_test(
+        "quantile_over_time(0.5, test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "2"], [165, "3.5"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # A level above 1 gives +Inf, a level below 0 gives -Inf and a NaN level gives NaN at every point whose
+    # window has samples, as in Prometheus.
+    do_query_test(
+        "quantile_over_time(2, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(-1, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(NaN, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "nan"]],
+    )
+
+    # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
+    # two samples (165, 180 after the left-open cut, and 195) yield nothing. The regression
+    # arithmetic carries float noise (12.000000000000002), hence the epsilon.
+    do_query_test(
+        "predict_linear(test[25s], 30)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "10"], [150, "8"], [210, "12"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
 
 def test_function_absent():
     # A non-empty input produces an empty vector.
@@ -1936,6 +2025,54 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
         )
     finally:
         node.query("DROP TABLE prometheus_f32 SYNC")
+
+
+# `predict_linear` and `quantile_over_time` accept a scalar argument that varies with the evaluation time (such as
+# `time()` in a range query). Such a scalar is carried as an array of one value per evaluation step, typed after the
+# TimeSeries table's value type, so on a Float32 table it is an Array(Float32).
+def test_range_functions_with_varying_scalar_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_range (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        # Series `m` rises by 1 per second: 10 at t=100, 20 at t=110, 30 at t=120.
+        # Series `q` carries the quantile level to use at each evaluation step: 0 at t=110 and 1 at t=120.
+        node.query(
+            "INSERT INTO prometheus_f32_range (metric_name, tags, samples) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30)]), "
+            "('q', map('host', 'h1'), [(toDateTime64(110, 3), 0), (toDateTime64(120, 3), 1)])"
+        )
+
+        # The prediction horizon is the evaluation time itself, so the predicted values are the fitted value at
+        # t=110 plus 110 seconds of growth (20 + 110) and the fitted value at t=120 plus 120 seconds (30 + 120).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'predict_linear(m[30], time())', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',130),('1970-01-01 00:02:00.000',150)]",
+                ]
+            ],
+        )
+
+        # The quantile level is 0 at the first evaluation step and 1 at the second one, so the results are the
+        # smallest value in the first window (10) and the greatest value in the second one (30).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'quantile_over_time(scalar(q), m[30])', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',30)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_range SYNC")
 
 
 def test_math_functions():
