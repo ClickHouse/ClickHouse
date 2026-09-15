@@ -28,9 +28,12 @@ not scan	4
 fixed string idx	[1,3]
 fixed string scan	[1,3]
 fixed string not replaced	0
-not constant idx	[1,3]
-not constant scan	[1,3]
-not constant not replaced	0
+column idx	[1,2]
+column scan	[1,2]
+column not replaced	0
+-- the same rows whether or not the needle is recognized as a constant
+materialize idx	[1,3]
+materialize scan	[1,3]
 null idx	0
 null scan	0
 -- a repeated key matches on any of its occurrences, unlike m[key]

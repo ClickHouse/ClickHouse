@@ -16,6 +16,7 @@ CREATE TABLE tab
 (
     id UInt32,
     m Map(String, String),
+    v String,
     INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
 )
 ENGINE = MergeTree
@@ -23,7 +24,7 @@ ORDER BY id
 SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
 
 -- One part with two granules: rows (1, 2) and rows (3, 4). Row 4 has no pairs at all.
-INSERT INTO tab VALUES (1, {'level':'error','service':'api'}), (2, {'level':'warn','service':'api'}), (3, {'level':'error','service':'web'}), (4, {});
+INSERT INTO tab VALUES (1, {'level':'error','service':'api'}, 'error'), (2, {'level':'warn','service':'api'}, 'warn'), (3, {'level':'error','service':'web'}, 'x'), (4, {}, '');
 
 SELECT '-- pair lookup';
 SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', 'error') ORDER BY id;
@@ -53,9 +54,13 @@ SELECT '-- needles the index cannot search must keep the result correct';
 SELECT 'fixed string idx', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, toFixedString('level', 8), 'error') ORDER BY id);
 SELECT 'fixed string scan', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, toFixedString('level', 8), 'error') ORDER BY id SETTINGS use_skip_indexes = 0);
 SELECT 'fixed string not replaced', count() FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE mapContainsKeyValue(m, toFixedString('level', 8), 'error')) WHERE explain LIKE '%__text_index%';
-SELECT 'not constant idx', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', materialize('error')) ORDER BY id);
-SELECT 'not constant scan', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', materialize('error')) ORDER BY id SETTINGS use_skip_indexes = 0);
-SELECT 'not constant not replaced', count() FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', materialize('error'))) WHERE explain LIKE '%__text_index%';
+SELECT 'column idx', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', v) ORDER BY id);
+SELECT 'column scan', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', v) ORDER BY id SETTINGS use_skip_indexes = 0);
+SELECT 'column not replaced', count() FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', v)) WHERE explain LIKE '%__text_index%';
+
+SELECT '-- the same rows whether or not the needle is recognized as a constant';
+SELECT 'materialize idx', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', materialize('error')) ORDER BY id);
+SELECT 'materialize scan', groupArray(id) FROM (SELECT id FROM tab WHERE mapContainsKeyValue(m, 'level', materialize('error')) ORDER BY id SETTINGS use_skip_indexes = 0);
 SELECT 'null idx', count() FROM tab WHERE mapContainsKeyValue(m, 'level', NULL);
 SELECT 'null scan', count() FROM tab WHERE mapContainsKeyValue(m, 'level', NULL) SETTINGS use_skip_indexes = 0;
 
