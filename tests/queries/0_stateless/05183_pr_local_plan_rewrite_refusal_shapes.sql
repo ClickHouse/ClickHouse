@@ -15,6 +15,7 @@
 DROP TABLE IF EXISTS t_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_window_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_untuple_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_limit_by_pr_rewrite_shapes;
 
 CREATE TABLE t_pr_rewrite_shapes (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
     SETTINGS index_granularity = 128;
@@ -24,6 +25,10 @@ CREATE VIEW v_window_pr_rewrite_shapes AS
     SELECT tenant, ts, sum(ts) OVER (PARTITION BY tenant ORDER BY ts) AS s FROM t_pr_rewrite_shapes ORDER BY ts;
 CREATE VIEW v_untuple_pr_rewrite_shapes AS
     SELECT tenant, ts, untuple((ts, ts + 1)) FROM t_pr_rewrite_shapes ORDER BY ts;
+-- A condition on the `LIMIT BY` key is pushed below the `LIMIT BY` and reaches the read, where it
+-- fixes the sort key prefix - but `rewriteSubquery` refuses a subquery that has one.
+CREATE VIEW v_limit_by_pr_rewrite_shapes AS
+    SELECT tenant, ts FROM t_pr_rewrite_shapes ORDER BY ts LIMIT 1 BY tenant;
 
 -- For runs with the old analyzer
 SET enable_analyzer = 1;
@@ -62,6 +67,16 @@ FROM (
 WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
 SELECT count() FROM (SELECT * FROM v_untuple_pr_rewrite_shapes WHERE tenant = 5);
 
+SELECT 'limit by: the condition reaches the read and prunes it, and orders nothing';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts FROM v_limit_by_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
+SELECT count() FROM (SELECT tenant, ts FROM v_limit_by_pr_rewrite_shapes WHERE tenant = 5);
+
+DROP VIEW v_limit_by_pr_rewrite_shapes;
 DROP VIEW v_untuple_pr_rewrite_shapes;
 DROP VIEW v_window_pr_rewrite_shapes;
 DROP TABLE t_pr_rewrite_shapes;

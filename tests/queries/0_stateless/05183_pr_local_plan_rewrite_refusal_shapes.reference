@@ -5,3 +5,7 @@ untuple: the rewrite takes it, so the read may order itself off the condition
 Read type: InOrder
 Prewhere filter column:  tenant = 5
 1000
+limit by: the condition reaches the read and prunes it, and orders nothing
+Read type: Default
+Prewhere filter column:  tenant = 5
+1

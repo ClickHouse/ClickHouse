@@ -6,6 +6,9 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 
 namespace DB
 {
@@ -81,8 +84,11 @@ bool ReadFromLocalParallelReplicaStep::remoteRewriteRefusesThisShape() const
     {
         const auto * node = stack.back();
         stack.pop_back();
-        if (typeid_cast<const JoinStep *>(node->step.get()) || typeid_cast<const JoinStepLogical *>(node->step.get())
-            || typeid_cast<const FilledJoinStep *>(node->step.get()) || typeid_cast<const UnionStep *>(node->step.get()))
+        const auto * step = node->step.get();
+        if (typeid_cast<const JoinStep *>(step) || typeid_cast<const JoinStepLogical *>(step)
+            || typeid_cast<const FilledJoinStep *>(step) || typeid_cast<const UnionStep *>(step)
+            || typeid_cast<const LimitByStep *>(step) || typeid_cast<const FillingStep *>(step)
+            || typeid_cast<const WindowStep *>(step))
             return true;
         for (const auto * child : node->children)
             stack.push_back(child);
