@@ -2153,7 +2153,7 @@ To add an LDAP server as a remote user directory of users that are not defined l
 | `page_size` | entries per page of the search (RFC 2696), between `1` and `1000`, `500` by default. |
 | `create_roles` | create the roles named by the `groups` allow-lists of the `role_mapping` sections when they do not exist; `false` by default. Requires a non-empty `groups` list in at least one `role_mapping`. Roles are never altered or dropped. |
 | `roles_storage` | name of the access storage the roles are created in. Unset by default: the first storage that is not read-only is used. The storage must not be ephemeral (`memory`), otherwise the run fails before writing anything. |
-| `only_synced_users` | serve only the users the last successful synchronization materialized, `true` by default. A name outside the snapshot is reported as not found for every kind of credential, so the user directories that follow are consulted. |
+| `only_synced_users` | serve only the users the last successful synchronization materialized, `true` by default. A name outside the snapshot is reported as not found for every kind of credential, so the user directories that follow are consulted. With `false` a user the search does not return can still log in lazily; such a directory must not be declared before another synchronized directory, whose runs would fail. |
 | `min_users` | a run that finds fewer users applies nothing; `1` by default. |
 | `max_users` | a run that receives more entries applies nothing; `10000` by default, `0` = unlimited. Must be `0` or greater than `min_users`. |
 | `max_removed_fraction` | a run that would remove more than max(1, floor(fraction × currently synchronized users)) users applies nothing; `0.5` by default, between `0` and `1`. |

@@ -1185,27 +1185,35 @@ void LDAPAccessStorage::sync()
 void LDAPAccessStorage::checkNoLazyLDAPDirectoryBefore() const
 {
     /// `planSync` asks every storage declared before this one whether it has a name, and does not
-    /// materialise the names it finds there because the preceding storage wins the login anyway. An `ldap`
-    /// directory without a `<sync>` section can only answer for the users who have already logged in
-    /// through it: it would still win the next password login of any other name and materialise that user
-    /// under a new id, so a user synchronised here would flip to the lazy directory, with whatever roles it
-    /// maps, at their next login. No run can make such an answer authoritative, so the layout is refused
-    /// (before the directory is contacted, once per run). A preceding synced directory is fine: its
-    /// snapshot is complete. Storages declared after this one lose the login anyway and need no check.
+    /// materialise the names it finds there because the preceding storage wins the login anyway. That answer
+    /// is authoritative only for a storage that knows its whole user set. An `ldap` directory that materialises
+    /// users at their login (one without a `<sync>` section, or one whose `only_synced_users` is false) can
+    /// only answer for the users who have already logged in through it (plus, for the second kind, its own
+    /// snapshot): it would still win the next password login of any other name and materialise that user under
+    /// a new id, so a user synchronised here would flip to the preceding directory, with whatever roles it maps,
+    /// at their next login. No run can make such an answer authoritative, so the layout is refused (before the
+    /// directory is contacted, once per run). A preceding synced directory with `only_synced_users` is fine:
+    /// its snapshot is complete and a name outside it is not found there. Storages declared after this one lose
+    /// the login anyway and need no check.
     for (const auto & storage : access_control.getStorages())
     {
         if (storage.get() == this)
             return;
 
         const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get());
-        if (ldap_storage && !ldap_storage->sync_params)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "LDAP synchronisation of directory {} cannot run: user directory {} is an 'ldap' directory without a 'sync' section "
-                "and is declared before it. Such a directory materialises users at their first login and would win the next login "
-                "of a name synchronised here, so the user would flip between the two directories. Declare directory {} before {}, "
-                "or add a 'sync' section to {}",
-                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()),
-                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()), backQuote(ldap_storage->getStorageName()));
+        if (!ldap_storage || (ldap_storage->sync_params && ldap_storage->sync_params->only_synced_users))
+            continue;
+
+        const bool has_sync = ldap_storage->sync_params.has_value();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LDAP synchronisation of directory {} cannot run: user directory {} is an 'ldap' directory {} and is declared "
+            "before it. Such a directory materialises users at their first login and would win the next login of a name "
+            "synchronised here, so the user would flip between the two directories. Declare directory {} before {}, or {} {}",
+            backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()),
+            has_sync ? "with 'only_synced_users' set to false" : "without a 'sync' section",
+            backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()),
+            has_sync ? "set 'only_synced_users' to true in" : "add a 'sync' section to",
+            backQuote(ldap_storage->getStorageName()));
     }
 }
 
@@ -1230,7 +1238,8 @@ LDAPAccessStorage::SyncPlan LDAPAccessStorage::planSync(std::vector<LDAPSyncClie
 
     /// A storage declared before this one wins for a name it defines (the user is never materialised here);
     /// a storage declared after it is overridden by the LDAP entry, exactly as at login time. The answer of a
-    /// preceding storage is complete for every kind of storage `checkNoLazyLDAPDirectoryBefore` lets through.
+    /// preceding storage is complete for every kind of storage `checkNoLazyLDAPDirectoryBefore` lets through:
+    /// an `ldap` directory that materialises users at login (no `<sync>`, or `only_synced_users` false) is refused there.
     const auto storages = access_control.getStorages();
 
     for (auto & entry : entries)
