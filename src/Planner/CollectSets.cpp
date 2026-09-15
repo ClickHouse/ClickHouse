@@ -83,6 +83,8 @@ public:
 
         if (storage_set)
         {
+            storage_set->checkNoRowPolicy(planner_context.getQueryContext());
+
             /// Handle storage_set as ready set.
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findStorage(set_key))

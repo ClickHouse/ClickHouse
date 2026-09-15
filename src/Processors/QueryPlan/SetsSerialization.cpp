@@ -265,6 +265,10 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
+        /// The initiator has already refused a policed set, but this replica resolves the name against
+        /// its own tables and policies.
+        storage_set->checkNoRowPolicy(context);
+
         /// The `StorageSet` this replica resolved the name to, so its set is mutable like any other.
         auto future_set = std::make_shared<FutureSetFromStorage>(
             set.hash, nullptr, storage_set->getSet(), table_node->getStorageID(), /*is_mutable_during_query_=*/ true);
