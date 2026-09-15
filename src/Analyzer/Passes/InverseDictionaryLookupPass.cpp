@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 
 #include <Analyzer/ColumnNode.h>
@@ -158,8 +159,8 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
 /// analyzed, so a mismatched probe reaches this pass. Rewriting it would replace the
 /// `TYPE_MISMATCH` (or `ILLEGAL_TYPE_OF_ARGUMENT`) that `dictGet` throws with a result, so the
 /// caller skips the rewrite entirely and leaves such a query unoptimized.
-bool keyExprShapeMatchesDictionary(
-    const QueryTreeNodePtr & key_expr_node, const DictionaryStructure & dict_structure, size_t key_cols_size)
+bool keyExpressionMatchesDictionaryStructure(
+    const QueryTreeNodePtr & key_expr_node, const DictionaryStructure & dict_structure)
 {
     const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
     const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
@@ -171,34 +172,16 @@ bool keyExprShapeMatchesDictionary(
         return !key_expr_tuple_type;
 
     if (key_expr_tuple_type)
-        return key_expr_tuple_type->getElements().size() == key_cols_size;
+        return key_expr_tuple_type->getElements().size() == dict_structure.key->size();
 
-    return key_cols_size == 1;
-}
-
-QueryTreeNodePtr makeTupleElement(const QueryTreeNodePtr & tuple_node, size_t element_index, const ContextPtr & context)
-{
-    auto tuple_element_function_node = std::make_shared<FunctionNode>("tupleElement");
-    tuple_element_function_node->getArguments().getNodes()
-        = {tuple_node, std::make_shared<ConstantNode>(Field(static_cast<UInt64>(element_index)))};
-    resolveOrdinaryFunctionNodeByName(*tuple_element_function_node, "tupleElement", context);
-    return tuple_element_function_node;
-}
-
-QueryTreeNodePtr makeAccurateCast(const QueryTreeNodePtr & value_node, const DataTypePtr & target_type, const ContextPtr & context)
-{
-    auto accurate_cast_function_node = std::make_shared<FunctionNode>("accurateCast");
-    accurate_cast_function_node->getArguments().getNodes()
-        = {value_node, std::make_shared<ConstantNode>(target_type->getName())};
-    resolveOrdinaryFunctionNodeByName(*accurate_cast_function_node, "accurateCast", context);
-    return accurate_cast_function_node;
+    return dict_structure.key->size() == 1;
 }
 
 /// A complex-key dictionary with a single key column accepts both the bare key expression
 /// (`dictGet(..., k)`) and its one-element tuple wrapper (`dictGet(..., tuple(k))`). The
 /// rewrites compare the key expression with bare key values: scalar constants produced by
 /// `dictGetKeys` or a single-column `SELECT` from `dictionary(...)`. Unwrap the tuple,
-/// otherwise the rewrite pits `Tuple(T)` against `T` and fails with ILLEGAL_TYPE_OF_ARGUMENT.
+/// otherwise the rewrite pits `Tuple(T)` against `T` and fails with `ILLEGAL_TYPE_OF_ARGUMENT`.
 /// The tuple can also be `Nullable` (e.g. produced by `if(cond, tuple(k), NULL)`):
 /// `tupleElement` propagates the `NULL` to the extracted element, and a `NULL` key behaves
 /// the same on both sides of the rewrite (`dictGet` returns `NULL`, so the comparison is
@@ -209,8 +192,10 @@ void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextP
 {
     const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
     const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
-    if (!key_expr_tuple_type || key_expr_tuple_type->getElements().size() != 1)
+    if (!key_expr_tuple_type)
         return;
+
+    chassert(key_expr_tuple_type->getElements().size() == 1);
 
     /// A syntactic wrapper: `tuple(k)` -> `k`. `tuple` produces one element per argument and
     /// never returns `Nullable`, so a one-element tuple result means exactly one argument.
@@ -224,7 +209,7 @@ void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextP
 
     /// Not a `tuple(...)` call, but still a (possibly `Nullable`) one-element tuple,
     /// e.g. a column of type `Tuple(UUID)`: extract the element.
-    key_expr_node = makeTupleElement(key_expr_node, 1, context);
+    key_expr_node = createTupleElementFunction(context, key_expr_node, 1);
 }
 
 /// Whether comparing `expr_type` values against `key_col_type` values is equivalent to the
@@ -234,9 +219,9 @@ void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextP
 /// narrow integer expression against a wide key type. The criterion is total for
 /// integer-to-float pairs as well: `getLeastSupertype` refuses e.g. `Int64` with `Float64`
 /// (not enough mantissa bits), so an integer expression passes only when the float key type
-/// represents every its value exactly. It is the same criterion `canReplaceWithDictGetKeys`
+/// represents every input value exactly. It is the same criterion `canReplaceWithDictGetKeys`
 /// uses for the attribute side.
-bool keyConversionIsTotalWidening(const DataTypePtr & expr_type, const DataTypePtr & key_col_type)
+bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr & key_col_type)
 {
     const DataTypePtr stripped_expr_type = removeLowCardinalityAndNullable(expr_type);
     const DataTypePtr stripped_key_col_type = removeLowCardinalityAndNullable(key_col_type);
@@ -250,8 +235,8 @@ bool keyConversionIsTotalWidening(const DataTypePtr & expr_type, const DataTypeP
 /// column throws for values outside of `UInt8`. The rewrites compare the key expression with
 /// values of the key column types and convert via a common supertype instead, which both
 /// rejects valid lookups (`NO_COMMON_TYPE` for `String` against `UUID`) and silently returns
-/// false where `dictGet` throws. Mirror the conversion with `accurateCast`, which computes the
-/// same value as `castColumnAccurate` and throws the same error on every row it is evaluated on.
+/// false where `dictGet` throws. `_accurateCast` delegates to `castColumnAccurate` at execution
+/// time, preserving its conversion settings and deferring type errors until rows are evaluated.
 ///
 /// That is a per-row guarantee, not a per-query one. The rewritten predicate is an ordinary
 /// expression, so the planner decides which rows it runs on, and that set can differ from the
@@ -260,49 +245,55 @@ bool keyConversionIsTotalWidening(const DataTypePtr & expr_type, const DataTypeP
 /// is split by `ComparisonTupleEliminationPass` into a short-circuiting `and`, which converts an
 /// element only on rows where the preceding elements matched. A conversion error `dictGet` would
 /// raise for a row the optimized query never converts disappears together with the lookup, the
-/// same way the zero-match constant fold elides the key expression entirely. The test pins the
-/// behavior on rows that are converted either way.
+/// same way the zero-match constant fold elides the key expression entirely. Conversion results
+/// and exceptions are preserved for rows evaluated by both expressions.
 ///
 /// Expressions that need no cast are left untouched, which keeps them usable for index
-/// analysis. For a `Nullable` expression that does need one the rewrite is skipped instead:
-/// `dictGet` itself throws there regardless of the optimization (at `NULL` rows the nested
-/// column holds default values, and e.g. an empty string does not parse as `UUID`), so
-/// keeping the unoptimized query is the only behavior-preserving choice.
+/// analysis. Conversions with nullable inputs or destinations keep the original lookup.
+/// `dictGet` converts the nested values of nullable inputs before propagating their null map.
+/// Converting to a nullable key can introduce `NULL` and match a stored null key, whereas the
+/// rewritten comparison would propagate or discard that `NULL`.
 ///
 /// Returns false when the rewrite must be skipped entirely.
-bool mirrorImplicitKeyConversion(QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols, const ContextPtr & context)
+bool tryConvertKeyForComparison(QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols, const ContextPtr & context)
 {
     if (key_cols.size() == 1)
     {
-        if (keyConversionIsTotalWidening(key_expr_node->getResultType(), key_cols.front().type))
+        if (canCompareKeyWithoutCast(key_expr_node->getResultType(), key_cols.front().type))
             return true;
 
-        if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
+        if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType())
+            || isNullableOrLowCardinalityNullable(key_cols.front().type))
             return false;
 
-        key_expr_node = makeAccurateCast(key_expr_node, key_cols.front().type, context);
+        key_expr_node = createResolvedFunction(
+            context, "_accurateCast", {key_expr_node, std::make_shared<ConstantNode>(key_cols.front().type->getName())});
         return true;
     }
 
     /// A composite key with several columns is passed to `dictGet` as a tuple and converted
     /// per key column, so the rewrite has to cast per element as well. The shape was already
-    /// checked by `keyExprShapeMatchesDictionary`, so the tuple and its arity are guaranteed.
+    /// checked by `keyExpressionMatchesDictionaryStructure`, so the tuple and its arity are guaranteed.
     const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
     const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
     chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
 
     const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
 
-    std::vector<bool> element_needs_cast(key_cols.size());
-    bool any_element_needs_cast = false;
+    std::vector<size_t> elements_to_cast;
     for (size_t i = 0; i < key_cols.size(); ++i)
     {
-        element_needs_cast[i] = !keyConversionIsTotalWidening(key_expr_elements[i], key_cols[i].type);
-        any_element_needs_cast |= element_needs_cast[i];
+        if (canCompareKeyWithoutCast(key_expr_elements[i], key_cols[i].type))
+            continue;
+
+        if (isNullableOrLowCardinalityNullable(key_cols[i].type))
+            return false;
+
+        elements_to_cast.push_back(i);
     }
 
     /// Nothing to convert: keep the original expression, tuple shape included.
-    if (!any_element_needs_cast)
+    if (elements_to_cast.empty())
         return true;
 
     /// An outer `Nullable` carrier (e.g. `if(cond, (k1, k2), NULL)`) makes every extracted
@@ -313,29 +304,41 @@ bool mirrorImplicitKeyConversion(QueryTreeNodePtr & key_expr_node, const NamesAn
     /// Rebuild the tuple, casting only the elements that need it. A syntactic `tuple(...)`
     /// call supplies its arguments directly; any other tuple-typed expression is taken apart
     /// with `tupleElement`.
-    const auto * key_expr_function = key_expr_node->as<FunctionNode>();
-    const bool is_syntactic_tuple = key_expr_function && key_expr_function->getFunctionName() == "tuple";
-    if (is_syntactic_tuple)
-        chassert(key_expr_function->getArguments().getNodes().size() == key_cols.size());
-
     QueryTreeNodes key_element_nodes;
-    key_element_nodes.reserve(key_cols.size());
-    for (size_t i = 0; i < key_cols.size(); ++i)
+    if (const auto * key_expr_function = key_expr_node->as<FunctionNode>();
+        key_expr_function && key_expr_function->getFunctionName() == "tuple")
     {
-        QueryTreeNodePtr key_element_node
-            = is_syntactic_tuple ? key_expr_function->getArguments().getNodes()[i] : makeTupleElement(key_expr_node, i + 1, context);
-
-        if (element_needs_cast[i])
-            key_element_node = makeAccurateCast(key_element_node, key_cols[i].type, context);
-
-        key_element_nodes.push_back(std::move(key_element_node));
+        chassert(key_expr_function->getArguments().getNodes().size() == key_cols.size());
+        key_element_nodes = key_expr_function->getArguments().getNodes();
+    }
+    else
+    {
+        key_element_nodes.reserve(key_cols.size());
+        for (size_t i = 0; i < key_cols.size(); ++i)
+            key_element_nodes.push_back(createTupleElementFunction(context, key_expr_node, i + 1));
     }
 
-    auto tuple_function_node = std::make_shared<FunctionNode>("tuple");
-    tuple_function_node->getArguments().getNodes() = std::move(key_element_nodes);
-    resolveOrdinaryFunctionNodeByName(*tuple_function_node, "tuple", context);
-    key_expr_node = std::move(tuple_function_node);
+    for (size_t i : elements_to_cast)
+        key_element_nodes[i] = createResolvedFunction(
+            context, "_accurateCast", {key_element_nodes[i], std::make_shared<ConstantNode>(key_cols[i].type->getName())});
+
+    key_expr_node = createResolvedFunction(context, "tuple", std::move(key_element_nodes));
     return true;
+}
+
+/// Each key returned by `dictGetKeys` is a key-column value or a tuple of key-column values.
+/// Equality with a null key column can produce `NULL` for a non-null probe, whereas a dictionary
+/// lookup misses that key. Nulls inside `Array` or `Map` values do not propagate through the
+/// container comparison.
+bool hasNullKeyColumn(const Field & key)
+{
+    if (key.isNull())
+        return true;
+
+    if (key.getType() == Field::Types::Tuple)
+        return std::ranges::any_of(key.safeGet<Tuple>(), [](const Field & component) { return component.isNull(); });
+
+    return false;
 }
 
 bool isRewriteSemanticallySafe(
@@ -563,17 +566,16 @@ public:
 
         /// A key expression whose shape `dictGet` would reject must not be rewritten: the
         /// rewrites below can turn the error it throws into a result.
-        if (!keyExprShapeMatchesDictionary(dictget_function_info.key_expr_node, dict_structure, key_cols.size()))
+        if (!keyExpressionMatchesDictionaryStructure(dictget_function_info.key_expr_node, dict_structure))
             return;
 
-        /// A complex-key dictionary with a single key column also accepts the `tuple()`-wrapped
+        /// A complex-key dictionary with a single key column also accepts the `tuple`-wrapped
         /// call form; normalize it to the bare key expression the rewrites compare against.
         if (dict_structure.key && key_cols.size() == 1)
             unwrapSingleColumnTupleKey(dictget_function_info.key_expr_node, getContext());
 
-        /// Mirror the key conversion `dictGet` performs, so the rewritten comparison keeps both
-        /// its results and its errors.
-        if (!mirrorImplicitKeyConversion(dictget_function_info.key_expr_node, key_cols, getContext()))
+        /// Match the key conversion `dictGet` performs on rows evaluated by the rewritten comparison.
+        if (!tryConvertKeyForComparison(dictget_function_info.key_expr_node, key_cols, getContext()))
             return;
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
@@ -660,8 +662,8 @@ public:
                 /// Like any constant fold, this replaces the predicate without evaluating the
                 /// key expression: when the key needs the accurate conversion inserted above,
                 /// `dictGet` throws for rows whose key value does not convert, and that error
-                /// disappears here together with the lookup. This matches the pre-existing
-                /// behavior for bare mistyped key expressions.
+                /// disappears here together with the lookup. This applies to both bare keys
+                /// and tuple-wrapped keys.
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
@@ -670,14 +672,10 @@ public:
                     return;
                 }
 
-                /// Single key -> key_expr = <that key>.
-                /// Only for a non-NULL key. For the NULL key of a Nullable-keyed dictionary,
-                /// `key_expr = NULL` is NULL for every row, while `dictGet` misses the NULL
-                /// row for non-NULL keys and the predicate must be false there. The `IN`
-                /// form below preserves that: `x IN [NULL]` is false for non-NULL `x` and
-                /// NULL for NULL `x`, matching `dictGet` (a NULL key expression gives a NULL
-                /// result, so the comparison is NULL as well).
-                if (keys_size == 1 && !keys_array.front().isNull())
+                /// A single key without null components can use equality. Keep membership for
+                /// null keys and tuples containing `NULL`: equality would turn a false lookup
+                /// predicate into `NULL` for non-null probes.
+                if (keys_size == 1 && !hasNullKeyColumn(keys_array.front()))
                 {
                     const Field & single_key_field = keys_array.front();
 
@@ -695,7 +693,7 @@ public:
                     return;
                 }
 
-                /// Multiple keys (or a single NULL key) -> key_expr IN <constant array-of-keys>
+                /// Multiple keys or a key containing `NULL` use membership in the constant array of keys.
                 /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
                 const auto in_function_name = getInFunctionNameForPassCreatedNode(
                     "in", dictget_function_info.key_expr_node->getResultType(), getContext());

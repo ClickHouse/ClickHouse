@@ -4,7 +4,7 @@
 
 SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
--- Keep `LIKE` as `like` in EXPLAIN output regardless of settings randomization.
+-- Keep `LIKE` as `like` in `EXPLAIN` output regardless of settings randomization.
 SET optimize_rewrite_like_perfect_affix = 0;
 
 DROP DICTIONARY IF EXISTS dict_single_key;
@@ -26,7 +26,7 @@ INSERT INTO ref_source VALUES
     ('22222222-2222-2222-2222-222222222222', 'b', 'onboarding'),
     ('44444444-4444-4444-4444-444444444444', 'd', 'paywall');
 
--- Complex-key dictionary with a single key column: `dictGet` accepts both the bare
+-- For a complex-key dictionary with a single key column, `dictGet` accepts both the bare
 -- key expression (`dictGet(..., k)`) and its one-element tuple wrapper
 -- (`dictGet(..., tuple(k))`).
 CREATE DICTIONARY dict_single_key
@@ -65,7 +65,7 @@ INSERT INTO data VALUES
     ('33333333-3333-3333-3333-333333333333', 'c', tuple('33333333-3333-3333-3333-333333333333')),
     ('44444444-4444-4444-4444-444444444444', 'd', tuple('44444444-4444-4444-4444-444444444444'));
 
--- The degenerate case: single-column complex key called with a tuple() wrapper.
+-- A single-column complex key accepts a `tuple` wrapper.
 -- `equals` with one matching key constant-folds into `key = const`.
 SELECT 'tuple(k), equals, one match - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -107,7 +107,7 @@ SELECT 'tuple(k), notEquals, opt off';
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(k)) != 'none'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- `like` also rewrites into the IN-subquery form.
+-- `like` also rewrites into the `IN` subquery form.
 SELECT 'tuple(k), like - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(k)) LIKE 'pay%';
@@ -137,8 +137,8 @@ SELECT 'tuple-typed column, like, opt off';
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', kt) LIKE 'pay%'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- The one-element tuple can be Nullable (e.g. produced by `if`): `dictGet` returns
--- NULL for NULL keys, and so does the rewritten comparison.
+-- The one-element tuple can be `Nullable` (e.g. produced by `if`): `dictGet` returns
+-- `NULL` for null keys, and so does the rewritten comparison.
 SELECT 'nullable tuple expr, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data
@@ -190,9 +190,9 @@ SELECT 'implicit key conversion, bare, equals, opt off';
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', toString(k)) = 'onboarding'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- `dictGet` throws for a Nullable key expression that needs conversion (the nested
--- column holds default values at NULL rows), so the rewrite must not change that:
--- the optimization is skipped and the query fails the same way with it on and off.
+-- Converting a `Nullable(String)` key to `UUID` can throw at null rows because the nested
+-- column contains an empty string there. The optimization retains `dictGet`, so the query
+-- raises the same exception with the optimization on and off.
 SELECT count() FROM data
 WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', toString(k), NULL)) = 'onboarding'; -- { serverError CANNOT_PARSE_UUID }
 SELECT count() FROM data
@@ -325,17 +325,16 @@ SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', tuple
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
 -- When the attribute value matches no keys, the whole predicate constant-folds to `0`
--- without evaluating the key expression, so the conversion error above disappears
--- together with the lookup. This is pre-existing constant-fold behavior (a bare
--- mistyped key behaves the same way before this fix).
+-- without evaluating the key expression. A key value outside the dictionary key type's
+-- range therefore produces a false predicate instead of a conversion exception.
 SELECT 'lossy key conversion, zero-match fold';
 SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing';
 SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
--- A dictionary key column can be Nullable, and the attribute value can belong to the
--- NULL-keyed row. The single-match constant fold must not produce `key_expr = NULL`
--- (NULL for every row): `dictGet` misses the NULL row for non-NULL keys, so the
+-- A dictionary key column can be `Nullable`, and the attribute value can belong to the
+-- null-keyed row. The single-match constant fold must not produce `key_expr = NULL`
+-- (`NULL` for every row): `dictGet` misses the null row for non-null keys, so the
 -- predicate must be false there, which the `IN [NULL]` form preserves.
 DROP DICTIONARY IF EXISTS dict_nullable_key;
 DROP TABLE IF EXISTS ref_nullable_key;
@@ -395,7 +394,7 @@ SELECT 'NULL-keyed row match, bare nullable key, NOT pred, opt off';
 SELECT count() FROM data_nk WHERE NOT (dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'x')
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- Control: a non-NULL single-key match on the same dictionary keeps the equals fold.
+-- A non-null single-key match on the same dictionary uses the equality fold.
 SELECT 'non-NULL single-key match on nullable-keyed dict - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data_nk WHERE dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'foo';
@@ -405,7 +404,7 @@ SELECT 'non-NULL single-key match on nullable-keyed dict, opt off';
 SELECT count() FROM data_nk WHERE dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'foo'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- Control: the bare key form must keep working exactly as before.
+-- The bare key form supports the same equality rewrite as its tuple wrapper.
 SELECT 'bare key, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', k) = 'onboarding';
@@ -415,11 +414,11 @@ SELECT 'bare key, equals, opt off';
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', k) = 'onboarding'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- Control: the constant can be on the left-hand side.
+-- The constant can be on the left-hand side.
 SELECT 'tuple(k), constant on the left';
 SELECT count() FROM data WHERE 'onboarding' = dictGet('dict_single_key', 'attr', tuple(k));
 
--- Control: a two-column key is the standard form and must stay untouched.
+-- A two-column key with matching types retains its tuple expression.
 SELECT 'two-column key, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data WHERE dictGet('dict_two_keys', 'attr', (k, k2)) = 'paywall';
@@ -464,8 +463,8 @@ CREATE TABLE data_mc
     k1 UUID,
     k2_i16 Int16,
     k2_u8 UInt8,
-    -- The same key as `(toString(k1), k2_u8)`, carried by a tuple-typed column instead of a
-    -- syntactic `tuple(...)` call.
+    -- This tuple column represents the same key as the expression `(toString(k1), k2_u8)`.
+    -- It exercises element extraction from a column instead of a syntactic `tuple` call.
     kt Tuple(String, UInt16)
 )
 ENGINE = MergeTree
@@ -474,7 +473,7 @@ ORDER BY k1;
 INSERT INTO data_mc VALUES
     ('11111111-1111-1111-1111-111111111111', 1, 1, ('11111111-1111-1111-1111-111111111111', 1)),
     ('33333333-3333-3333-3333-333333333333', -1, 7, ('33333333-3333-3333-3333-333333333333', 7)),
-    -- Shares `k1` with the matching dictionary key, so the rewritten conjunction cannot
+    -- This row shares `k1` with the matching dictionary key, so the rewritten conjunction cannot
     -- short-circuit past the out-of-range `k2_i16` and the conversion is always evaluated.
     ('11111111-1111-1111-1111-111111111111', -1, 9, ('11111111-1111-1111-1111-111111111111', 9));
 
@@ -491,7 +490,7 @@ SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 -- A lossy `Int16` expression over the `UInt16` key column: `dictGet` throws on the rows
--- holding `-1`, and so does the rewrite's `accurateCast` on every row it is evaluated on,
+-- holding `-1`, and so does the rewrite's `_accurateCast` on every row it is evaluated on,
 -- instead of silently comparing in `Int32`. Which rows that is depends on the plan:
 -- `ComparisonTupleEliminationPass` splits the single-match fold into a short-circuiting
 -- `and`, so the conversion of `k2_i16` runs only on rows whose `k1` matched. One of the
@@ -500,8 +499,8 @@ SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'pa
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
--- Control: a key expression that needs no conversion must stay untouched, so that the
--- rewrite remains usable for index analysis.
+-- A key expression that needs no conversion retains its shape so that the rewrite remains
+-- usable for index analysis.
 SELECT 'two-column key, no conversion needed - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8)) = 'paywall';
@@ -561,24 +560,23 @@ SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_U
 -- when it executes (`IDictionary::convertKeyColumns`), so these queries do reach the pass.
 -- Every pair below must fail the same way with the optimization on and off.
 
--- Two key columns, probed with a one-element tuple.
+-- Two key columns reject a one-element tuple.
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', tuple(k1)) = 'missing'; -- { serverError TYPE_MISMATCH }
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', tuple(k1)) = 'missing'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError TYPE_MISMATCH }
 
--- Two key columns, probed with a bare (non-tuple) expression.
+-- Two key columns reject a bare scalar expression.
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', k1) = 'missing'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', k1) = 'missing'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Two key columns, probed with a three-element tuple.
+-- Two key columns reject a three-element tuple.
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8, k2_u8)) = 'missing'; -- { serverError TYPE_MISMATCH }
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8, k2_u8)) = 'missing'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError TYPE_MISMATCH }
 
--- A single-column complex key probed with a two-element tuple. Both the zero-match fold (the
--- attribute matches no key) and the matching case have to keep the `dictGet` error; the latter
--- used to surface as a spurious `accurateCast` failure instead.
+-- A single-column complex key probed with a two-element tuple must retain the `dictGet` arity
+-- error both when no attribute matches and when a key matches.
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', (k, k2)) = 'missing'; -- { serverError TYPE_MISMATCH }
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', (k, k2)) = 'missing'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError TYPE_MISMATCH }
