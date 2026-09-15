@@ -3076,61 +3076,11 @@ static void processDefLevelsForInnermostColumn(
     out_num_encoded_values = num_encoded_values;
 }
 
-/// Produces array offsets at a given level of nested arrays.
-///
-/// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
-/// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
-/// But I expect it would be slower because (a) simd would be less effective (especially after we
-/// simdify this implementation), (b) usually there's only one level of arrays.
-static void processRepDefLevelsForArray(
-    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+static void NO_INLINE processRepDefLevelsForArrayScalar(
+    size_t begin, size_t end, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
+    UInt8 parent_array_def, UInt64 & offset, PaddedPODArray<UInt64> & out_offsets)
 {
-    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
-
-    size_t i = 0;
-#if defined(__AVX2__)
-    constexpr size_t simd_width = 32;
-    const __m256i sign_bit = _mm256_set1_epi8(static_cast<char>(0x80));
-    const __m256i array_rep_xored = _mm256_set1_epi8(static_cast<char>(array_rep ^ 0x80));
-    const __m256i array_def_xored = _mm256_set1_epi8(static_cast<char>(array_def ^ 0x80));
-    const __m256i parent_array_def_xored = _mm256_set1_epi8(static_cast<char>(parent_array_def ^ 0x80));
-
-    for (; i + simd_width <= num_values; i += simd_width)
-    {
-        const __m256i def_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(def + i));
-        const __m256i rep_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(rep + i));
-        const __m256i def_values_xored = _mm256_xor_si256(def_values, sign_bit);
-        const __m256i rep_values_xored = _mm256_xor_si256(rep_values, sign_bit);
-
-        const UInt32 def_lt_parent_mask
-            = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(parent_array_def_xored, def_values_xored)));
-        const UInt32 valid_mask = ~def_lt_parent_mask;
-        const UInt32 new_array_mask
-            = valid_mask & static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_rep_xored, rep_values_xored)));
-        const UInt32 rep_gt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(rep_values_xored, array_rep_xored)));
-        const UInt32 def_lt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_def_xored, def_values_xored)));
-        const UInt32 contributes_mask = valid_mask & ~rep_gt_array_mask & ~def_lt_array_mask;
-
-        UInt32 processed_mask = 0;
-        UInt32 boundaries = new_array_mask;
-        while (boundaries)
-        {
-            const UInt32 boundary = std::countr_zero(boundaries);
-            const UInt32 before_boundary_mask = boundary ? (UInt32(1) << boundary) - 1 : 0;
-            const UInt32 boundary_bit = UInt32(1) << boundary;
-            offset += std::popcount(contributes_mask & before_boundary_mask & ~processed_mask);
-            out_offsets.back() = offset;
-            out_offsets.resize(out_offsets.size() + 1);
-            offset += (contributes_mask >> boundary) & 1;
-            processed_mask |= before_boundary_mask | boundary_bit;
-            boundaries &= boundaries - 1;
-        }
-        offset += std::popcount(contributes_mask & ~processed_mask);
-    }
-#endif
-
-    for (; i < num_values; ++i)
+    for (size_t i = begin; i < end; ++i)
     {
         if (def[i] < parent_array_def)
             /// Some ancestor is null or empty array.
@@ -3153,6 +3103,92 @@ static void processRepDefLevelsForArray(
 
         offset += rep[i] <= array_rep && def[i] >= array_def;
     }
+    out_offsets.back() = offset;
+}
+
+/// Produces array offsets at a given level of nested arrays.
+///
+/// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
+/// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
+/// But I expect it would be slower because (a) simd would be less effective (especially after we
+/// simdify this implementation), (b) usually there's only one level of arrays.
+static void processRepDefLevelsForArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
+    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+{
+    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+
+    size_t i = 0;
+#if defined(__AVX2__)
+    constexpr size_t simd_width = 32;
+    constexpr int max_boundaries_for_simd = 12;
+
+    if (num_values >= 2 * simd_width)
+    {
+        int first_boundary_count = 0;
+        int second_boundary_count = 0;
+        for (size_t j = 0; j < simd_width; ++j)
+        {
+            first_boundary_count += rep[j] < array_rep && def[j] >= parent_array_def;
+            second_boundary_count += rep[j + simd_width] < array_rep && def[j + simd_width] >= parent_array_def;
+        }
+
+        if (first_boundary_count > max_boundaries_for_simd && second_boundary_count > max_boundaries_for_simd)
+        {
+            processRepDefLevelsForArrayScalar(
+                0, num_values, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
+            return;
+        }
+    }
+
+    const __m256i sign_bit = _mm256_set1_epi8(static_cast<char>(0x80));
+    const __m256i array_rep_xored = _mm256_set1_epi8(static_cast<char>(array_rep ^ 0x80));
+    const __m256i array_def_xored = _mm256_set1_epi8(static_cast<char>(array_def ^ 0x80));
+    const __m256i parent_array_def_xored = _mm256_set1_epi8(static_cast<char>(parent_array_def ^ 0x80));
+
+    for (; i + simd_width <= num_values; i += simd_width)
+    {
+        const __m256i rep_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(rep + i));
+        const __m256i def_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(def + i));
+        const __m256i rep_values_xored = _mm256_xor_si256(rep_values, sign_bit);
+        const __m256i def_values_xored = _mm256_xor_si256(def_values, sign_bit);
+        const UInt32 boundary_mask
+            = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_rep_xored, rep_values_xored)));
+        const UInt32 def_lt_parent_mask
+            = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(parent_array_def_xored, def_values_xored)));
+        const UInt32 valid_mask = ~def_lt_parent_mask;
+        const UInt32 new_array_mask = valid_mask & boundary_mask;
+
+        if (std::popcount(new_array_mask) > max_boundaries_for_simd)
+        {
+            processRepDefLevelsForArrayScalar(
+                i, i + simd_width, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
+            continue;
+        }
+
+        const UInt32 rep_gt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(rep_values_xored, array_rep_xored)));
+        const UInt32 def_lt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_def_xored, def_values_xored)));
+        const UInt32 contributes_mask = valid_mask & ~rep_gt_array_mask & ~def_lt_array_mask;
+
+        UInt32 processed_mask = 0;
+        UInt32 boundaries = new_array_mask;
+        while (boundaries)
+        {
+            const UInt32 boundary = std::countr_zero(boundaries);
+            const UInt32 before_boundary_mask = boundary ? (UInt32(1) << boundary) - 1 : 0;
+            const UInt32 boundary_bit = UInt32(1) << boundary;
+            offset += std::popcount(contributes_mask & before_boundary_mask & ~processed_mask);
+            out_offsets.back() = offset;
+            out_offsets.resize(out_offsets.size() + 1);
+            offset += (contributes_mask >> boundary) & 1;
+            processed_mask |= before_boundary_mask | boundary_bit;
+            boundaries &= boundaries - 1;
+        }
+        offset += std::popcount(contributes_mask & ~processed_mask);
+    }
+#endif
+
+    processRepDefLevelsForArrayScalar(i, num_values, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
     /// Note that the array may continue in the next page. In that case the next call to this
     /// function will read this offset back, add to it, and assign it again.
     out_offsets.back() = offset;
