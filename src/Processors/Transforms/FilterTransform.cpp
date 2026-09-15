@@ -1,7 +1,5 @@
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <cstring>
-
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
@@ -245,6 +243,50 @@ void FilterTransform::transform(Chunk & chunk)
 namespace
 {
 
+bool filterRangeHasValue(const IColumn::Filter & filter, size_t begin, size_t end, bool value)
+{
+    const UInt64 expected_mask = value ? ~UInt64{0} : UInt64{0};
+
+    while (end - begin >= 64)
+    {
+        if (bytes64MaskToBits64Mask(filter.data() + begin) != expected_mask)
+            return false;
+        begin += 64;
+    }
+
+    for (; begin < end; ++begin)
+    {
+        if ((filter[begin] != 0) != value)
+            return false;
+    }
+
+    return true;
+}
+
+bool filterHasUniformValue(const IColumn::Filter & filter, bool value)
+{
+    const size_t size = filter.size();
+    if (size == 0)
+        return true;
+
+    constexpr size_t max_probe_points = 1024;
+    const size_t probe_stride = (size - 1) / max_probe_points + 1;
+
+    if ((filter.back() != 0) != value)
+        return false;
+
+    /// Probe a bounded number of evenly spaced bytes before the full confirmation scan. This
+    /// keeps a mixed filter with an interior outlier on the regular path in the common case
+    /// while keeping the probe much cheaper than filtering a wide payload column.
+    for (size_t i = 0; i < size; i += probe_stride)
+    {
+        if ((filter[i] != 0) != value)
+            return false;
+    }
+
+    return filterRangeHasValue(filter, 0, size, value);
+}
+
 std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
 {
     if (const auto * sparse_filter_description = typeid_cast<const SparseFilterDescription *>(&filter_description))
@@ -266,21 +308,8 @@ std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_d
         return {};
 
     const auto & filter = *dense_filter_description->data;
-    const bool first_value = filter[0] != 0;
-    if ((filter.back() != 0) != first_value)
-        return {};
-
-    if (filter[0] == 0)
-    {
-        if (memoryIsZero(filter.data(), 0, filter.size()))
-            return false;
-    }
-    else if (std::memchr(filter.data() + 1, 0, filter.size() - 1) == nullptr)
-    {
-        return true;
-    }
-
-    return {};
+    const bool value = filter[0] != 0;
+    return filterHasUniformValue(filter, value) ? std::optional<bool>(value) : std::nullopt;
 }
 
 /// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's

@@ -36,4 +36,12 @@ SELECT count(), sum(id)
 FROM t_filter_transform_uniform_mask_prewhere
 PREWHERE all_true AND selective;
 
+SELECT count(), sum(id)
+FROM t_filter_transform_uniform_mask_prewhere
+PREWHERE if(id = 50, 0, 1);
+
+SELECT count(), sum(id)
+FROM t_filter_transform_uniform_mask_prewhere
+PREWHERE if(id = 50, 1, 0);
+
 DROP TABLE t_filter_transform_uniform_mask_prewhere;

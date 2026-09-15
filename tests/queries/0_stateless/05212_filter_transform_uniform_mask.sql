@@ -14,6 +14,14 @@ SELECT count(), sum(number)
 FROM numbers(10)
 WHERE number % 2;
 
+SELECT count(), sum(number)
+FROM numbers(10)
+WHERE if(number = 5, 0, 1);
+
+SELECT count(), sum(number)
+FROM numbers(10)
+WHERE if(number = 5, 1, 0);
+
 SELECT number
 FROM
 (

@@ -1,5 +1,3 @@
-#include <cstring>
-
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
@@ -80,6 +78,27 @@ static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_
     return can_inplace;
 }
 
+static bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
+{
+    const size_t size = filter.size();
+    if (size == 0)
+        return true;
+
+    constexpr size_t max_probe_points = 1024;
+    const size_t probe_stride = (size - 1) / max_probe_points + 1;
+
+    if ((filter.back() != 0) != value)
+        return false;
+
+    for (size_t i = 0; i < size; i += probe_stride)
+    {
+        if ((filter[i] != 0) != value)
+            return false;
+    }
+
+    return true;
+}
+
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
 {
@@ -156,30 +175,17 @@ std::optional<bool> FilterWithCachedCount::tryGetUniformValue() const
     }
 
     const auto & filter = getData();
-    const bool first_value = filter[0] != 0;
-    if ((filter.back() != 0) != first_value)
+    const bool value = filter[0] != 0;
+    if (!filterSampleHasValue(filter, value))
         return {};
 
-    if (filter[0] == 0)
-    {
-        if (memoryIsZero(filter.data(), 0, filter.size()))
-        {
-            cached_count_bytes = 0;
-            return false;
-        }
-    }
-    else
-    {
-        const auto * first_zero = static_cast<const UInt8 *>(std::memchr(filter.data() + 1, 0, filter.size() - 1));
-        if (!first_zero)
-        {
-            cached_count_bytes = size();
-            return true;
-        }
-
-        if (first_zero == filter.data() + filter.size() - 1)
-            cached_count_bytes = filter.size() - 1;
-    }
+    /// Cache the count from the confirmation scan. optimize() needs it later for its filtering
+    /// heuristics, so a uniform probe must not make mixed filters scan the mask twice.
+    const size_t num_set_rows = countBytesInFilter();
+    if (num_set_rows == 0)
+        return false;
+    if (num_set_rows == size())
+        return true;
 
     return {};
 }
