@@ -489,7 +489,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
         {
             T value = static_cast<T>(values[col]);
             value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
-            memcpy(dst + col * sizeof(T), &value, sizeof(value));
+            unalignedStore<T>(dst + col * sizeof(T), value);
         }
         return;
     }
@@ -516,7 +516,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
     {
         T value = reverseTransposeBytes<T>(matrix, col);
         value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
-        memcpy(dst + col * sizeof(T), &value, sizeof(value));
+        unalignedStore<T>(dst + col * sizeof(T), value);
     }
 })
 )
