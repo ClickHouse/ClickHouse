@@ -12,15 +12,10 @@ doc_type: 'reference'
 
 `T` не может быть ни одним из следующих составных типов данных:
 
-* [Array](/ru/reference/data-types/array) — Не поддерживается
-* [Map](/ru/reference/data-types/map) — Не поддерживается
-* [Tuple](/ru/reference/data-types/tuple) — Доступна бета-поддержка*
+* [Array](/ru/reference/data-types/array)
+* [Map](/ru/reference/data-types/map)
 
 Однако составные типы данных **могут содержать** значения типа `Nullable`, например `Array(Nullable(Int8))` или `Tuple(Nullable(String), Nullable(Int64))`.
-
-<Note title="Бета: Nullable Tuple">
-  * [Nullable(Tuple(...))](/ru/reference/data-types/tuple#nullable-tuple) поддерживается, если включен параметр `enable_nullable_tuple_type = 1`.
-</Note>
 
 Поле типа `Nullable` нельзя включать в индексы таблицы.
 

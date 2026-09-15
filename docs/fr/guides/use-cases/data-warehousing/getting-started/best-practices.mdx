@@ -72,9 +72,9 @@ Cette approche passe mieux à l’échelle que la création de définitions de t
 
 De nombreuses intégrations nécessitent l’activation d’un flag avant la première utilisation. Vérifiez la version de votre service si `CREATE DATABASE` échoue avec une erreur d’autorisation.
 
-Pour les connexions aux catalogues, chaque type de catalogue possède son propre flag. Consultez [Connexion aux catalogues](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) pour une vue d’ensemble, et la [référence DataLakeCatalog](/fr/reference/engines/database-engines/datalake) pour le détail des paramètres. La configuration de chaque catalogue se trouve dans les [guides des catalogues](/fr/guides/use-cases/data-warehousing/reference).
+Pour les connexions aux catalogues, chaque type de catalogue possède son propre flag. Consultez [Se connecter aux catalogues](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) pour une vue d’ensemble, et la [référence DataLakeCatalog](/fr/reference/engines/database-engines/datalake) pour le détail des paramètres. La configuration de chaque catalogue se trouve dans les [guides des catalogues](/fr/guides/use-cases/data-warehousing/reference).
 
-Pour les écritures, Iceberg nécessite [allow&#95;insert&#95;into&#95;iceberg](/fr/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta à partir de 26.2). Consultez [Écriture dans les lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake nécessite [allow&#95;delta&#95;lake&#95;writes](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+). La [matrice de compatibilité](/fr/guides/use-cases/data-warehousing/support-matrix) indique quels flags s’appliquent à chaque format et à chaque opération.
+Pour les écritures, Iceberg nécessite [allow&#95;insert&#95;into&#95;iceberg](/fr/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, bêta à partir de 26.2). Consultez [Écrire dans les lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake nécessite [allow&#95;delta&#95;lake&#95;writes](/fr/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+). La [Matrice de prise en charge](/fr/guides/use-cases/data-warehousing/support-matrix) indique quels flags s’appliquent à chaque format et à chaque opération.
 
 ## Améliorer les performances des requêtes {#query-performance}
 
@@ -240,12 +240,12 @@ Conservez la version de fin après chaque chargement réussi et réutilisez-la c
 
 #### Écritures Delta Lake {#delta-write-settings}
 
-En plus de [allow&#95;delta&#95;lake&#95;writes](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+), contrôlez la taille des fichiers de sortie à l’insertion :
+En plus de [allow&#95;delta&#95;lake&#95;writes](/fr/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+), contrôlez la taille des fichiers de sortie à l’insertion :
 
-| Paramètre                                                                                                                                                        | Depuis | Objectif                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------- |
-| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/fr/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9   | Limite de lignes par fichier de données de sortie |
-| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/fr/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9   | Limite d’octets par fichier de données de sortie  |
+| Paramètre                                                                                                                                                        | Depuis | Objectif                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------ |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/fr/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9   | Nombre maximal de lignes par fichier de données de sortie    |
+| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/fr/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9   | Taille maximale en octets par fichier de données de sortie   |
 
 ```sql
 SET allow_delta_lake_writes = 1;

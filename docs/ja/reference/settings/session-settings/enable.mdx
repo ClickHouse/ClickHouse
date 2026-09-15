@@ -131,6 +131,18 @@ true に設定すると、テキスト索引を使用できます。
 クエリ分析時に、`and` および `or` の早期短絡定数畳み込みを有効にします。
 有効にすると、対象となる到達不能なスカラーサブクエリの分岐は、型を維持しクエリの意味を検証するために分析されますが、実行されません。スカラーのカーディナリティまたは実行時の値が必要な場合、この最適化は通常の分析にフォールバックします。
 
+## enable_funnel_functions {#enable_funnel_functions}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_funnel_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_funnel_functions` の別名を追加しました。"}]}]} />
+
+ファネル分析用の関数を有効にします。
+
 ## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -229,6 +241,18 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
+## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_json_lazy_type_hints`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_json_lazy_type_hints` の別名を追加しました。"}]}]} />
+
+JSON type に対する Lazy Type Hints を有効にします。この機能では、型ヒントの評価を遅延させることで JSON type の型変換を最適化できます。
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -249,6 +273,18 @@ SET dialect = 'clickhouse_json';
 有効な場合、`MATERIALIZED` として宣言され、2 回以上参照される CTE は一度だけ実行されて一時テーブルに格納され、すべての参照はそのテーブルから読み取られます。1 回しか参照されない CTE は、オーバーヘッドを避けるために通常の CTE としてインライン展開されます。
 無効な場合、`MATERIALIZED` キーワードは無視され、CTE は通常の CTE と同様に各参照箇所でインライン展開され、警告がログに記録されます。
 
+## enable_materialized_postgresql_table {#enable_materialized_postgresql_table}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_materialized_postgresql_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_materialized_postgresql_table` の別名を追加しました。"}]}]} />
+
+`MaterializedPostgreSQL` テーブルエンジンの使用を許可します。
+
 ## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -268,6 +304,19 @@ AND で結合された複数の条件がある場合、より多くの条件を 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "すべての名前が一意で、クォートなしの識別子として扱える場合、tuple() 関数で名前付きタプルを生成します。"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "ユーザビリティ改善まで無効化"}]}]} />
 
 すべての名前が一意で、クォートなしの識別子として扱える場合、tuple() 関数で名前付きタプルを生成します。
+
+## enable_nullable_tuple_type {#enable_nullable_tuple_type}
+
+**別名**: `allow_experimental_nullable_tuple_type`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` が GA になりました"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple がベータになりました。'allow_experimental_nullable_tuple_type' の別名として追加されました。"}]}]} />
+
+テーブルで [Nullable](/ja/reference/data-types/nullable) [Tuple](/ja/reference/data-types/tuple) カラムを作成できるようにします。
+
+この設定は、抽出された tuple のサブカラム (Dynamic、Variant、JSON、Tuple カラムから抽出されたものなど) を `Nullable` にできるかどうかは制御しません。
+抽出された tuple のサブカラムを `Nullable` にできるかどうかは、`allow_nullable_tuple_in_extracted_subcolumns` で制御してください。
 
 ## enable_order_by_all {#enable_order_by_all}
 
@@ -475,11 +524,37 @@ Prometheus 風の時系列のリサンプリング、rate、delta の計算を�
 
 [Time](/ja/reference/data-types/time) および [Time64](/ja/reference/data-types/time64) データ型を作成できるようにします。
 
+## enable_trino_dialect {#enable_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`dialect` 設定の `trino` 値を有効にする新しい設定。Trino の SQL 構文を変換し、Trino の関数名を ClickHouse の同等のものにマッピングします。"}]}]} />
+
+`dialect` 設定の `trino` 値を有効にします。
+
+`dialect` を `trino` に設定すると、クエリは Trino SQL で記述します。Trino 固有の構文 (`ARRAY[...]` literals、`TRY_CAST`、`UNNEST`、`ROW` types、`LIMIT` の前の `OFFSET`) は ClickHouse SQL に変換され、Trino の関数名は ClickHouse の同等のものにマッピングされます。`SET` クエリは引き続き通常の SQL としてパースされるため、ダイアレクトを元に戻すことができます。
+
+このダイアレクトでは、クエリのセマンティクスも Trino に合わせられます。`join_use_nulls` が有効化され、`use_variant_as_common_type` が無効化され、クエリ アナライザが有効化されます。クエリ内で明示的に指定した `SETTINGS` clause は引き続き優先されます。
+
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 サイズの異なる複数の配列に対する ARRAY JOIN を許可します。この設定を有効にすると、配列は最も長いものに合わせてリサイズされます。
+
+## enable_unique_key {#enable_unique_key}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_unique_key`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_unique_key` の別名を追加しました。"}]}]} />
+
+MergeTree ファミリーのエンジンで `UNIQUE KEY` 句を使用したテーブルの作成を許可します。
 
 ## enable_url_encoding {#enable_url_encoding}
 

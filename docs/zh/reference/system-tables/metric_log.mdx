@@ -1268,6 +1268,17 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时分派给远程工作线程的任务数。非零值表示该查询实际以分布式方式执行。
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/zh/reference/data-types/int-uint)) — 当 make&#95;distributed&#95;plan 查询通过本地执行器 (distributed&#95;plan&#95;execute&#95;locally) 在进程内执行，而非分派给远程工作线程时，设为 1。
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时，至少被分配一个任务的不同主机数量。
+* `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入分布式查询计划中流式 exchange 套接字的字节数。`NetworkSendBytes` 不统计这些字节。
+* `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从分布式查询计划中流式 exchange 套接字读取的字节数。`NetworkReceiveBytes` 不统计这些字节。
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/zh/reference/data-types/int-uint)) — 完整写入流式 exchange 套接字的 Data 数据包数：每个 chunk 一个数据包，每个 stream 另有一个流结束数据包。发送缓冲区中的数据包仅在整个缓冲区写入后计数；若接收方不再需要数据而导致缓冲区未完整写入，则其中的数据包均不计数。
+* `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — 从流式 exchange 读取的 Data 数据包数：每个 chunk 一个数据包，每个 stream 另有一个流结束数据包。
+* `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange 数据包中压缩前 Native 块的字节数，在每个数据包序列化时计数一次。与 `StreamingExchangeSendBytes` 对比可得出 shuffle 或 gather 的压缩率；广播会将每个数据包发送到每个目标端，因此 `StreamingExchangeSendBytes` 会随目标端数量增加而增长。
+* `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将 chunk 序列化并压缩为流式 exchange 数据包所花费的时间。
+* `ProfileEvent_StreamingExchangeDeserializeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将流式 exchange 数据包解压并反序列化为 chunk 所花费的时间。
+* `ProfileEvent_StreamingExchangeSendQueueFullMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange sink 因等待写入套接字的数据包队列已满而无法接收 chunk 的时间。
+* `ProfileEvent_StreamingExchangeReceiveWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange source 等待发送方发送下一批字节所花费的时间。
+* `ProfileEvent_StreamingExchangeConnectionWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange sink 等待接收任务建立连接所花费的时间。
+* `ProfileEvent_StreamingExchangeEarlyCloses` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange source 在数据流读取完毕前通知发送方停止发送的次数，例如已满足 LIMIT 时。已终止的发送方不计入此指标。
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — 虚拟分区片段更新次数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/zh/reference/data-types/int-uint)) — 由 leader 执行的虚拟分区片段更新
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 虚拟分区片段更新耗时 (微秒)
@@ -2141,6 +2152,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_ExchangeServerThreads` ([Int64](/zh/reference/data-types/int-uint)) — 分布式 exchange server 握手线程池中的线程数量。
 * `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 分布式 exchange server 握手线程池中正在执行任务的线程数量。
 * `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 分布式 exchange server 握手线程池中已排队或活动中的作业数量。
+* `CurrentMetric_StreamingExchangeSinksWithFullSendQueue` ([Int64](/zh/reference/data-types/int-uint)) — 因等待套接字的数据包队列已满而不再接收数据块的流式 exchange sink 数量。
 * `CurrentMetric_ReadonlyDisks` ([Int64](/zh/reference/data-types/int-uint)) — 在磁盘检查期间被标记为只读的磁盘数。
 * `CurrentMetric_BrokenDisks` ([Int64](/zh/reference/data-types/int-uint)) — 在磁盘检查期间被标记为损坏的磁盘数。
 * `CurrentMetric_TaskTrackerThreads` ([Int64](/zh/reference/data-types/int-uint)) — 分布式查询远程任务跟踪器使用的线程数量。

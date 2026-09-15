@@ -1273,6 +1273,17 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan으로 쿼리를 실행할 때 원격 워커에 디스패치된 작업 수입니다. 0이 아닌 값은 쿼리가 실제로 분산 방식으로 실행되었음을 의미합니다.
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan 쿼리가 원격 워커로 디스패치되지 않고 로컬 실행기(distributed&#95;plan&#95;execute&#95;locally)를 통해 프로세스 내에서 실행된 경우 1로 설정됩니다.
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan으로 쿼리를 실행할 때 하나 이상의 작업이 할당된 고유 호스트 수입니다.
+* `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에 기록된 바이트 수입니다. `NetworkSendBytes`에는 집계되지 않습니다.
+* `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에서 읽은 바이트 수입니다. `NetworkReceiveBytes`에는 집계되지 않습니다.
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange의 소켓에 완전히 기록된 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개가 포함됩니다. 전송 버퍼의 패킷은 버퍼 전체가 기록될 때 집계됩니다. 수신기에 더 이상 데이터가 필요하지 않아 버퍼 기록이 중간에 중단된 경우 해당 버퍼의 패킷은 집계되지 않습니다.
+* `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange에서 읽은 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개가 포함됩니다.
+* `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 패킷에서 직렬화된 각 패킷당 한 번 집계한, 압축 전 Native 블록의 바이트 수입니다. `StreamingExchangeSendBytes`와 비교하면 shuffle 또는 gather의 압축률을 구할 수 있습니다. broadcast는 모든 패킷을 각 대상에 전송하므로, 이 경우 `StreamingExchangeSendBytes`는 대상 수에 따라 증가합니다.
+* `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 청크를 스트리밍 exchange 패킷으로 직렬화하고 압축하는 데 소요된 시간입니다.
+* `ProfileEvent_StreamingExchangeDeserializeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 패킷을 압축 해제하고 청크로 역직렬화하는 데 소요된 시간입니다.
+* `ProfileEvent_StreamingExchangeSendQueueFullMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 소켓 전송을 기다리는 패킷 큐가 가득 차 스트리밍 exchange 싱크가 청크를 가져가지 못한 시간입니다.
+* `ProfileEvent_StreamingExchangeReceiveWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 소스가 송신자로부터 다음 바이트를 기다린 시간입니다.
+* `ProfileEvent_StreamingExchangeConnectionWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 싱크가 수신 작업의 연결을 기다린 시간입니다.
+* `ProfileEvent_StreamingExchangeEarlyCloses` ([UInt64](/ko/reference/data-types/int-uint)) — 예를 들어 LIMIT가 충족되어 스트림을 끝까지 읽기 전에 스트리밍 exchange 소스가 송신자에게 중지를 알린 횟수입니다. 이미 종료된 송신자는 집계하지 않습니다.
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/ko/reference/data-types/int-uint)) — 가상 파트 업데이트 횟수
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/ko/reference/data-types/int-uint)) — 리더에 의한 가상 파트 업데이트 횟수
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 가상 파트 업데이트에 소요된 시간(마이크로초)

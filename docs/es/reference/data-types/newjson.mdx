@@ -1083,7 +1083,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 ## Indicaciones de tipo diferidas (Experimental) {#lazy-type-hints}
 
 <Note>
-  Esta funcionalidad es experimental y requiere que la configuración `allow_experimental_json_lazy_type_hints` esté habilitada.
+  Esta funcionalidad es experimental y requiere que la configuración `enable_json_lazy_type_hints` esté habilitada.
 </Note>
 
 Cuando agregas o modificas indicaciones de tipo en una columna JSON con `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normalmente reescribe todas las partes de datos para materializar las nuevas indicaciones de tipo. En tablas con grandes volúmenes de datos históricos (cientos de terabytes), esto puede resultar extremadamente costoso.
@@ -1099,23 +1099,23 @@ Esto significa que puedes añadir indicaciones de tipo al instante, y los datos 
 ### Habilitación de indicación de tipo diferida {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### Ejemplo {#lazy-type-hints-example}
 
 ```sql title="Query"
--- Crear una tabla e insertar datos
+-- Create a table and insert data
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Habilitar la configuración experimental
-SET allow_experimental_json_lazy_type_hints = 1;
+-- Enable experimental setting
+SET enable_json_lazy_type_hints = 1;
 
--- Agregar indicaciones de tipo - esto se completa de forma instantánea sin mutación
+-- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
 
--- Consultar los datos - las indicaciones de tipo se aplican en el momento de la lectura
+-- Query the data - type hints are applied at read time
 SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
 ```
 
@@ -1153,7 +1153,7 @@ Para materializar las indicaciones de tipo en los datos existentes, puedes optar
 * Modificar una indicación de tipo (o eliminar una ruta tipada) **no** es una operación de solo metadatos, y se rechaza cuando la subcolumna afectada se utiliza en una estructura persistida posicionalmente:
 
   * la **clave primaria/de ordenación** o la **clave de partición** — el cambio está prohibido, porque los valores en disco del índice primario o de la partición no se pueden reconstruir mediante un `ALTER` como operación de solo metadatos (como ocurre con cualquier otra columna clave);
-  * un **índice de omisión de datos** explícito — primero elimine el índice o desactive `allow_experimental_json_lazy_type_hints` para ejecutar el cambio como una mutación completa que reconstruya el índice.
+  * un **índice de omisión de datos** explícito — primero elimine el índice o desactive `enable_json_lazy_type_hints` para ejecutar el cambio como una mutación completa que reconstruya el índice.
   * una **proyección cuya clave de ordenación (`ORDER BY`) lee la subcolumna** — primero elimine la proyección, porque un `ALTER` como operación de solo metadatos no puede reconstruir el índice primario de la proyección.
 
   Añadir indicaciones para rutas que no se utilizan en ninguna de esas estructuras, o realizar cambios que no modifiquen el tipo en disco de las subcolumnas utilizadas (por ejemplo, añadir una ruta tipada no relacionada), sigue siendo una operación de solo metadatos.

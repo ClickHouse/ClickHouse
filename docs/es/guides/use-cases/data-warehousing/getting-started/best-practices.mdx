@@ -84,7 +84,7 @@ Muchas integraciones requieren activar una flag de función antes del primer uso
 
 En las conexiones a catálogos, cada tipo de catálogo tiene su propia flag. Consulta [Conexión a catálogos](/es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) para obtener una visión general y la [referencia de DataLakeCatalog](/es/reference/engines/database-engines/datalake) para ver los detalles de configuración. La configuración específica de cada catálogo se encuentra en las [guías de catálogos](/es/guides/use-cases/data-warehousing/reference).
 
-Para las operaciones de escritura, Iceberg requiere [allow&#95;insert&#95;into&#95;iceberg](/es/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta desde 26.2). Consulta [Escritura en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake requiere [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+). La [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) indica qué flags se aplican a cada formato y operación.
+Para las operaciones de escritura, Iceberg requiere [allow&#95;insert&#95;into&#95;iceberg](/es/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta desde 26.2). Consulta [Escritura en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake requiere [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+). La [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) indica qué flags se aplican a cada formato y operación.
 
 <div id="query-performance">
   ## Mejorar el rendimiento de las consultas {#query-performance}
@@ -276,14 +276,12 @@ SETTINGS
 
 Almacene la versión final después de cada carga exitosa y pásela como versión inicial en la siguiente ejecución. El resultado incluye columnas de CDF (`_change_type`, `_commit_version`, `_commit_timestamp`). Procese estas columnas antes de cargarlas en su tabla de destino. Para el patrón general de instantáneas, consulte [Acotar las lecturas por lotes a instantáneas](#snapshot-bounds).
 
-<div id="delta-write-settings">
-  #### Escrituras en Delta Lake {#delta-write-settings}
-</div>
+#### Escrituras en Delta Lake {#delta-write-settings}
 
-Además de [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+), controle el tamaño del archivo de salida al insertar:
+Además de [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+), controle el tamaño del archivo de salida al insertar:
 
-| Configuración                                                                                                                                                    | Desde | Propósito                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------- |
+| Configuración                                                                                                                                                       | Desde | Propósito                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------- |
 | [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/es/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9  | Límite de filas por archivo de datos de salida |
 | [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/es/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9  | Límite de bytes por archivo de datos de salida |
 

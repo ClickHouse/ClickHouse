@@ -447,26 +447,26 @@ Le nombre de lignes dans un message Kafka dépend du fait que le format soit bas
 
 <ExperimentalBadge />
 
-Si `allow_experimental_kafka_offsets_storage_in_keeper` est activé, deux paramètres supplémentaires peuvent être spécifiés pour le moteur de table Kafka :
+Si `allow_kafka_offsets_storage_in_keeper` est activé, deux paramètres supplémentaires peuvent être spécifiés pour le moteur de table Kafka :
 
 * `kafka_keeper_path` spécifie le chemin vers la table dans ClickHouse Keeper
 * `kafka_replica_name` spécifie le nom de la réplique dans ClickHouse Keeper
 
-Soit les deux paramètres doivent être spécifiés, soit aucun des deux. Lorsque les deux sont spécifiés, un nouveau moteur Kafka expérimental est utilisé. Ce nouveau moteur ne dépend pas du stockage des offsets validés dans Kafka, mais les stocke dans ClickHouse Keeper. Il essaie toujours de valider les offsets dans Kafka, mais il ne dépend de ces offsets qu’au moment de la création de la table. Dans tous les autres cas (si la table est redémarrée ou restaurée après une erreur), les offsets stockés dans ClickHouse Keeper sont utilisés pour reprendre la consommation des messages. En plus de l’offset validé, il stocke également le nombre de messages consommés dans le dernier lot, de sorte que, si l’insert échoue, le même nombre de messages sera consommé, ce qui permet la déduplication si nécessaire.
+Soit les deux paramètres doivent être spécifiés, soit aucun des deux. Lorsque les deux sont spécifiés, un nouveau moteur Kafka expérimental est utilisé. Ce nouveau moteur ne dépend pas du stockage des offsets validés dans Kafka, mais les stocke dans ClickHouse Keeper. Il essaie toujours de valider les offsets dans Kafka, mais il ne dépend de ces offsets qu&#39;au moment de la création de la table. Dans tous les autres cas (si la table est redémarrée ou restaurée après une erreur), les offsets stockés dans ClickHouse Keeper sont utilisés pour reprendre la consommation des messages. En plus de l&#39;offset validé, il stocke également le nombre de messages consommés dans le dernier lot, de sorte que, si l&#39;insert échoue, le même nombre de messages sera consommé, ce qui permet la déduplication si nécessaire.
 
 ### Affinité statique entre partitions et segments {#static-partition-to-shard-affinity}
 
-Lorsque vous utilisez `StorageKafka2`, vous pouvez activer une affinité statique entre partitions et segments en spécifiant `kafka_partition_shard_num` et `kafka_shard_count`. Cela permet à plusieurs instances ClickHouse (segments) de consommer le même topic Kafka, chaque segment ne traitant qu’un sous-ensemble déterministe de partitions selon la formule :
+Lorsque vous utilisez `StorageKafka2`, vous pouvez activer une affinité statique entre partitions et segments en spécifiant `kafka_partition_shard_num` et `kafka_shard_count`. Cela permet à plusieurs instances ClickHouse (segments) de consommer le même topic Kafka, chaque segment ne traitant qu’un sous-ensemble déterministe de partitions selon la formule :
 
 ```text
 partition_id % kafka_shard_count == kafka_partition_shard_num - 1
 ```
 
-Les deux paramètres doivent être spécifiés ensemble ; n’en spécifier un seul déclenche une exception. La valeur de `kafka_partition_shard_num` doit être comprise entre 1 et `kafka_shard_count`, bornes incluses. Elle prend en charge l’expansion de macros (par exemple, `'{shard}'`), réévaluée à chaque démarrage du serveur. Cela permet de partager les mêmes métadonnées de table entre les segments d’une base de données `Replicated`, chaque segment résolvant sa propre valeur. La validation est effectuée après l’expansion des macros.
+Les deux paramètres doivent être spécifiés ensemble ; n’en spécifier un seul déclenche une exception. La valeur de `kafka_partition_shard_num` doit être comprise entre 1 et `kafka_shard_count`, bornes incluses. Elle prend en charge l’expansion de macros (par exemple, `'{shard}'`), réévaluée à chaque démarrage du serveur. Cela permet de partager les mêmes métadonnées de table entre les segments d’une base de données `Replicated`, chaque segment résolvant sa propre valeur. La validation est effectuée après l’expansion des macros.
 
 Tous les segments doivent utiliser la même valeur pour `kafka_keeper_path`. Toutes les répliques partagent les offsets validés et les tailles d’intention, mais seules les répliques ayant le même numéro de segment sont en concurrence pour les verrous de partition (à condition que toutes les répliques aient le même nombre de segments).
 
-Exemple avec 3 segments consommant un topic comportant 12 partitions :
+Exemple avec 3 segments consommant un topic comportant 12 partitions :
 
 ```sql
 -- Shard 1: consumes partitions 0, 3, 6, 9
@@ -477,7 +477,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -487,12 +487,12 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 Combiné à des répliques (plusieurs valeurs de `kafka_replica_name` partageant le même `kafka_keeper_path`), le filtre d’affinité est d’abord appliqué pour déterminer les partitions éligibles, puis les verrous ZooKeeper répartissent ces dernières entre les répliques.
 
-Exemple :
+Exemple :
 
 ```sql
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
@@ -500,7 +500,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Limites connues {#known-limitations}

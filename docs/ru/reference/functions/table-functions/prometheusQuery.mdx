@@ -29,12 +29,14 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 Функция может возвращать разные столбцы в зависимости от типа результата запроса, переданного через параметр `promql_query`:
 
-| Тип результата | Столбцы результата                                                                        | Пример                                              |
-| -------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector         | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix         | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar         | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string         | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| Тип результата | Столбцы результата                                                                | Пример                                              |
+| -------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector         | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix         | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar         | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string         | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+Столбец `samples` называется `time_series`, если таблица `TimeSeries` имеет [version](/ru/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 или более раннюю.
 
 ## Поддерживаемые возможности PromQL {#supported-promql-features}
 

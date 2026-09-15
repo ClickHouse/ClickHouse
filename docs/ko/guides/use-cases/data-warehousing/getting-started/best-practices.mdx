@@ -74,7 +74,7 @@ SELECT count() FROM my_lake.`analytics.events`
 
 카탈로그 연결의 경우 카탈로그 유형마다 별도의 플래그가 있습니다. 개요는 [카탈로그 연결하기](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)를, 설정 세부 정보는 [DataLakeCatalog 참고](/ko/reference/engines/database-engines/datalake)를 참조하십시오. 카탈로그별 설정 방법은 [카탈로그 가이드](/ko/guides/use-cases/data-warehousing/reference)에 나와 있습니다.
 
-쓰기의 경우 Iceberg에는 [allow&#95;insert&#95;into&#95;iceberg](/ko/reference/settings/session-settings/allow#allow_insert_into_iceberg)가 필요합니다(25.7+, 26.2부터 베타). 자세한 내용은 [데이터 레이크에 쓰기](/ko/guides/use-cases/data-warehousing/getting-started/writing-data)를 참조하십시오. Delta Lake에는 [allow&#95;delta&#95;lake&#95;writes](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes)가 필요합니다(25.9+). [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix)에는 각 포맷과 작업에 적용되는 플래그가 정리되어 있습니다.
+쓰기의 경우 Iceberg에는 [allow&#95;insert&#95;into&#95;iceberg](/ko/reference/settings/session-settings/allow#allow_insert_into_iceberg)가 필요합니다(25.7+, 26.2부터 베타). 자세한 내용은 [데이터 레이크에 쓰기](/ko/guides/use-cases/data-warehousing/getting-started/writing-data)를 참조하십시오. Delta Lake에는 [allow&#95;delta&#95;lake&#95;writes](/ko/reference/settings/session-settings/allow#allow_delta_lake_writes)가 필요합니다(25.9+). [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix)에는 각 포맷과 작업에 적용되는 플래그가 정리되어 있습니다.
 
 ## 쿼리 성능 개선 {#query-performance}
 
@@ -240,11 +240,11 @@ SETTINGS
 
 #### Delta Lake 쓰기 {#delta-write-settings}
 
-[allow&#95;delta&#95;lake&#95;writes](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+) 외에, 삽입 시 출력 파일 크기도 제어할 수 있습니다:
+[allow&#95;delta&#95;lake&#95;writes](/ko/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+) 외에, 삽입 시 출력 파일 크기도 제어할 수 있습니다:
 
-| 설정                                                                                                                                                               | 도입 버전 | 용도                |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------------- |
-| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/ko/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9  | 출력 데이터 파일당 행 수 제한 |
+| 설정                                                                                                                                                               | 도입 버전 | 용도                  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------- |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/ko/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9  | 출력 데이터 파일당 행 수 제한   |
 | [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/ko/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9  | 출력 데이터 파일당 바이트 수 제한 |
 
 ```sql

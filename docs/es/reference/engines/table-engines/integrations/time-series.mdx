@@ -62,20 +62,20 @@ A continuación, esta tabla puede utilizarse con los siguientes protocolos (debe
 
 Las columnas de una tabla TimeSeries se generan automáticamente. Son columnas externas: no almacenan datos, solo proporcionan la interfaz para SELECT/INSERT. Los datos reales se almacenan en las [tablas de destino](#target-tables). Aquí está la lista de las columnas externas:
 
-| Nombre          | Tipo                                                           | Descripción                                                                                                                                                                                                                                                        |
-| --------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `metric_name`   | `String`                                                       | El nombre de la métrica                                                                                                                                                                                                                                            |
-| `tags`          | `Map(String, String)`                                          | Mapa de etiquetas (labels) de la serie temporal                                                                                                                                                                                                                    |
-| `time_series`   | `Array(Tuple(DateTime64(3), Float64))` de forma predeterminada | Array de pares (timestamp, valor) de una serie temporal. Los tipos del timestamp y del elemento escalar de la tupla pueden derivarse de la declaración `INNER COLUMNS` de las sample (consulta [Especificación de columnas externas](#specifying-outer-columns)) |
-| `metric_family` | `String`                                                       | El nombre de la familia de métricas (para los metadatos de métricas)                                                                                                                                                                                               |
-| `type`          | `String`                                                       | El tipo de la métrica (p. ej., &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                                             |
-| `unit`          | `String`                                                       | La unidad de la métrica                                                                                                                                                                                                                                            |
-| `help`          | `String`                                                       | La descripción de la métrica                                                                                                                                                                                                                                       |
+| Nombre          | Tipo                                                           | Descripción                                                                                                                                                                                                                                                                                                                                                             |
+| --------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                                       | El nombre de la métrica                                                                                                                                                                                                                                                                                                                                                 |
+| `tags`          | `Map(String, String)`                                          | Mapa de etiquetas (labels) de la serie temporal                                                                                                                                                                                                                                                                                                                         |
+| `samples`       | `Array(Tuple(DateTime64(3), Float64))` de forma predeterminada | Array de pares (timestamp, valor) de una serie temporal. Los tipos del timestamp y del elemento escalar de la tupla pueden derivarse de la declaración `INNER COLUMNS` de las sample (consulta [Especificación de columnas externas](#specifying-outer-columns)). La columna se denomina `time_series` en las tablas de la [version](#schema-versioning) 2 y anteriores |
+| `metric_family` | `String`                                                       | El nombre de la familia de métricas (para los metadatos de métricas)                                                                                                                                                                                                                                                                                                    |
+| `type`          | `String`                                                       | El tipo de la métrica (p. ej., &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                                                                                                                                                  |
+| `unit`          | `String`                                                       | La unidad de la métrica                                                                                                                                                                                                                                                                                                                                                 |
+| `help`          | `String`                                                       | La descripción de la métrica                                                                                                                                                                                                                                                                                                                                            |
 
 Ejemplo:
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series) VALUES
+INSERT INTO my_table (metric_name, tags, samples) VALUES
     ('cpu_usage', {'job': 'node_exporter', 'instance': 'host1:9100'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5), (toDateTime64('2024-01-01 00:01:00', 3), 0.7)])
 ```
@@ -83,7 +83,7 @@ INSERT INTO my_table (metric_name, tags, time_series) VALUES
 Se permite que `metric_name` esté vacío durante la inserción, lo que significa que el nombre de la métrica se especifica en `tags` con `__name__`, por ejemplo:
 
 ```sql
-INSERT INTO my_table (tags, time_series) VALUES
+INSERT INTO my_table (tags, samples) VALUES
     ({'__name__': 'cpu_usage', 'job': 'test'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5)])
 ```
@@ -91,17 +91,17 @@ INSERT INTO my_table (tags, time_series) VALUES
 Para insertar metadatos de métricas, insértelos en las columnas `metric_family`, `type`, `unit` y `help`:
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, help) VALUES
     ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
 ### Especificación de columnas externas {#specifying-outer-columns}
 
-La columna externa `time_series` se puede incluir explícitamente en una sentencia `CREATE TABLE` para sobrescribir su tipo predeterminado `Array(Tuple(DateTime64(3), Float64))`. ClickHouse extrae de la tupla los tipos de marca de tiempo y escalares, y los propaga a la tabla interna de muestras:
+La columna externa `samples` se puede incluir explícitamente en una sentencia `CREATE TABLE` para sobrescribir su tipo predeterminado `Array(Tuple(DateTime64(3), Float64))` (también se acepta su nombre anterior `time_series`). ClickHouse extrae de la tupla los tipos de marca de tiempo y escalares, y los propaga a la tabla interna de muestras:
 
 ```sql
-CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
+CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 ```
 
 Esto equivale a declarar directamente los tipos de las columnas `timestamp` y `value` en la cláusula `INNER COLUMNS` de samples:
@@ -202,14 +202,14 @@ CREATE TABLE my_table
 (
     `metric_name` String,
     `tags` Map(String, String),
-    `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `samples` Array(Tuple(DateTime64(3), Float64)),
     `metric_family` String,
     `type` String,
     `unit` String,
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 2, recent_samples_ttl_seconds = 345600
+SETTINGS version = 3, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -506,18 +506,18 @@ Aquí tienes una lista de configuraciones que se pueden especificar al definir u
 | `recent_samples_partition_by`        | Expression    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Clave de partición de la tabla interna `recent samples`, por ejemplo, `toStartOfHour(timestamp)`. Cuando se establece explícitamente, sobrescribe la clave de partición de la declaración del motor; si no se establece ninguna, se usa una partición por cada 5 horas. Se ignora para una tabla externa de samples recientes. Requiere que `recent_samples_ttl_seconds` sea distinto de cero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `recent_samples_index_granularity`   | UInt64        | 8192                                                          | Establece `index_granularity` de la tabla interna `recent samples`. Cuando se establece explícitamente, sobrescribe `index_granularity` de la declaración del motor. Se ignora para una tabla externa de samples recientes y un motor que no sea MergeTree. Requiere que `recent_samples_ttl_seconds` sea distinto de cero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `tags_index_granularity`             | UInt64        | 8192                                                          | Establece `index_granularity` de la tabla [etiquetas](#tags-table) interna. Cuando se establece explícitamente, sobrescribe `index_granularity` de la declaración del motor. Se ignora para una tabla externa de etiquetas y un motor que no sea MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `version`                            | UInt64        | 2                                                             | La versión de la tabla: identifica el conjunto de tablas de destino y su estructura. La versión se fija automáticamente cuando se crea una tabla y no se puede cambiar posteriormente; normalmente debe omitirse en la consulta `CREATE TABLE` (consulta [Control de versiones del esquema](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `version`                            | UInt64        | 3                                                             | La versión de la tabla: identifica el conjunto de tablas de destino y su estructura. La versión se fija automáticamente cuando se crea una tabla y no se puede cambiar posteriormente; normalmente debe omitirse en la consulta `CREATE TABLE` (consulta [Control de versiones del esquema](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Control de versiones del esquema {#schema-versioning}
 
 El motor de tabla `TimeSeries` y la capa de ejecución de PromQL están en desarrollo activo:
 el conjunto de tablas de destino y su estructura pueden cambiar entre versiones de ClickHouse.
 Para que dichos cambios sean detectables, cada tabla `TimeSeries` almacena su versión en el ajuste [version](#settings).
-La versión se fija automáticamente en la consulta `CREATE` al crear la tabla —su valor es la última versión conocida por el servidor (actualmente 2)—,
+La versión se fija automáticamente en la consulta `CREATE` al crear la tabla —su valor es la última versión conocida por el servidor (actualmente 3)—,
 persiste en los metadatos de la tabla y no puede modificarse mediante `ALTER`. Las tablas creadas antes de que se introdujera el ajuste se consideran de versión 0.
 Lo normal es omitir el ajuste en la consulta `CREATE TABLE`: así la tabla obtiene la última versión.
-Se acepta un valor explícito de `version` siempre que el servidor admita esa versión; en ese caso la tabla se define tal como lo hace esa versión, por ejemplo
-una tabla de versión 1 no registra el ajuste `id_type`. `CREATE TABLE ... AS other_table` no copia la versión de la otra tabla; consulte [Crear una tabla AS una tabla existente](#create-as).
+Se acepta un valor explícito de `version` siempre que el servidor admita esa versión; en ese caso la tabla se define tal como lo hace esa versión (consulte [Historial de versiones](#version-history)).
+`CREATE TABLE ... AS other_table` no copia la versión de la otra tabla; consulte [Crear una tabla AS una tabla existente](#create-as).
 
 Un servidor admite un rango de versiones, y la versión mínima puede variar según se trate de lectura con `SELECT`, de escritura con `INSERT`
 o con el protocolo remote-write de Prometheus, o de evaluación de PromQL (las funciones de tabla [prometheusQuery](/es/reference/functions/table-functions/prometheusQuery),
@@ -529,6 +529,15 @@ el dialecto `promql` y la API HTTP de consultas de Prometheus):
   cree una nueva tabla `TimeSeries`, copie los datos con una consulta `INSERT ... SELECT` y sustituya la tabla antigua por la nueva.
 * Si la versión es demasiado antigua para escribir en ella, se rechazan las consultas `INSERT` y el protocolo remote-write de Prometheus, mientras que las consultas `SELECT` siguen funcionando.
 * Si la versión es demasiado antigua para el servidor en general, se rechaza cualquier consulta sobre la tabla (excepto `SHOW CREATE TABLE`, `DETACH` y `DROP`).
+
+### Historial de versiones {#version-history}
+
+| Versión | Cambios                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0       | Tablas creadas antes de que se introdujera el ajuste `version`, incluidas las tablas &quot;prealpha&quot; (que declaraban las columnas de las tablas de destino como [columnas externas](#outer-columns)) y las tablas sin la tabla de [muestras recientes](#recent-samples-table)                                                                                                                                                                               |
+| 1       | Se introdujo el ajuste `version`                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2       | Se introdujo el ajuste [`id_type`](#settings): una tabla con una tabla de etiquetas externa registra el tipo de la columna `id` en `id_type` y la expresión que genera los identificadores en [`id_generator`](#settings), de modo que su definición no depende de la tabla externa. `id_type` también se registra cuando se establece `id_generator` (véase [La columna `id`](#id-column))                                                                  |
+| 3       | La columna externa `time_series` pasó a llamarse `samples` (véase [Columnas externas](#outer-columns)). Las tablas de versiones anteriores conservan el nombre antiguo de la columna, y las funciones de tabla [prometheusQuery](/es/reference/functions/table-functions/prometheusQuery) y [prometheusQueryRange](/es/reference/functions/table-functions/prometheusQueryRange) devuelven la columna con el nombre que utiliza la tabla. Los datos almacenados no cambiaron |
 
 # Funciones {#functions}
 

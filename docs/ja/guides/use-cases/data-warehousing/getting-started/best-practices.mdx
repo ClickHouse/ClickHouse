@@ -74,7 +74,7 @@ SELECT count() FROM my_lake.`analytics.events`
 
 カタログ接続では、カタログタイプごとに専用のフラグがあります。概要については [カタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) を、設定の詳細については [DataLakeCatalog reference](/ja/reference/engines/database-engines/datalake) を参照してください。各カタログのセットアップ手順は [カタログガイド](/ja/guides/use-cases/data-warehousing/reference) にあります。
 
-書き込みでは、Iceberg で [allow&#95;insert&#95;into&#95;iceberg](/ja/reference/settings/session-settings/allow#allow_insert_into_iceberg) が必要です (25.7+、26.2 以降はベータ) 。詳しくは [データレイクへの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) を参照してください。Delta Lake で [allow&#95;delta&#95;lake&#95;writes](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) が必要です (25.9+) 。[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix) には、各フォーマットと操作にどのフラグが適用されるかが示されています。
+書き込みでは、Iceberg で [allow&#95;insert&#95;into&#95;iceberg](/ja/reference/settings/session-settings/allow#allow_insert_into_iceberg) が必要です (25.7+、26.2 以降はベータ) 。詳しくは [データレイクへの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) を参照してください。Delta Lake で [allow&#95;delta&#95;lake&#95;writes](/ja/reference/settings/session-settings/allow#allow_delta_lake_writes) が必要です (25.9+) 。[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix) には、各フォーマットと操作にどのフラグが適用されるかが示されています。
 
 ## クエリパフォーマンスを向上させる {#query-performance}
 
@@ -240,7 +240,7 @@ SETTINGS
 
 #### Delta Lake への書き込み {#delta-write-settings}
 
-[allow&#95;delta&#95;lake&#95;writes](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+) に加え、INSERT 時の出力ファイルサイズを制御できます。
+[allow&#95;delta&#95;lake&#95;writes](/ja/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+) に加え、INSERT 時の出力ファイルサイズを制御できます。
 
 | 設定                                                                                                                                                               | 導入時期 | 目的                |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----------------- |

@@ -1268,6 +1268,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المهام الموجَّهة إلى العاملين البعيدين عند تنفيذ استعلام باستخدام make&#95;distributed&#95;plan. وتعني القيمة غير الصفرية أن الاستعلام نُفِّذ فعليًا بشكل موزّع.
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ar/reference/data-types/int-uint)) — تُضبط على 1 عند تنفيذ استعلام make&#95;distributed&#95;plan داخل العملية عبر المنفّذ المحلي (distributed&#95;plan&#95;execute&#95;locally) بدلًا من توجيهه إلى العاملين البعيدين.
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المضيفين المميزين الذين أُسنِدت إليهم مهمة واحدة على الأقل عند تنفيذ استعلام باستخدام make&#95;distributed&#95;plan.
+* `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المكتوبة إلى مقابس التبادلات المتدفقة في خطة استعلام موزّعة. لا يحتسبها `NetworkSendBytes`.
+* `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المقروءة من مقابس التبادلات المتدفقة في خطة استعلام موزّعة. لا يحتسبها `NetworkReceiveBytes`.
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ar/reference/data-types/int-uint)) — حزم Data المكتوبة بالكامل إلى مقابس التبادلات المتدفقة، واحدة لكل مقطع بالإضافة إلى حزمة نهاية دفق واحدة لكل دفق. تُحتسب حزم مخزن الإرسال المؤقت عند كتابة المخزن المؤقت بالكامل؛ أما المخزن المؤقت الذي قُطع قبل اكتماله لأن المستقبِل لم يعد بحاجة إلى مزيد من البيانات فلا تُحتسب أي من حُزمه.
+* `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/ar/reference/data-types/int-uint)) — حزم Data المقروءة من التبادلات المتدفقة، واحدة لكل مقطع بالإضافة إلى حزمة نهاية دفق واحدة لكل دفق.
+* `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — بايتات كتل Native في حزم التبادل المتدفق قبل الضغط، وتُحتسب مرة واحدة لكل حزمة عند تسلسلها. وبالمقارنة مع `StreamingExchangeSendBytes`، يبيّن هذا نسبة الضغط لعملية shuffle أو gather؛ أما broadcast فيرسل كل حزمة إلى كل وجهة، ولذلك يزداد فيه `StreamingExchangeSendBytes` مع عدد الوجهات.
+* `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في تسلسل المقاطع وضغطها إلى حزم التبادل المتدفق.
+* `ProfileEvent_StreamingExchangeDeserializeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في فك الضغط وإلغاء تسلسل حزم التبادل المتدفق إلى مقاطع.
+* `ProfileEvent_StreamingExchangeSendQueueFullMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الذي لم يأخذ فيه مصرف التبادل المتدفق المقاطع لأن قائمة انتظار الحزم الخاصة به، التي تنتظر المقبس، كانت ممتلئة.
+* `ProfileEvent_StreamingExchangeReceiveWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الذي انتظره مصدر التبادل المتدفق البايتات التالية من المُرسِل.
+* `ProfileEvent_StreamingExchangeConnectionWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الذي انتظره مصرف التبادل المتدفق حتى تتصل مهمة الاستقبال.
+* `ProfileEvent_StreamingExchangeEarlyCloses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أبلغ فيها مصدر التبادل المتدفق مُرسِله بالتوقف قبل قراءة الدفق حتى نهايته، مثلًا بسبب استيفاء LIMIT. ولا يُحتسب المُرسِل الذي كان قد غادر بالفعل.
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/ar/reference/data-types/int-uint)) — عدد تحديثات الأجزاء الافتراضية
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/ar/reference/data-types/int-uint)) — تحديثات الأجزاء الافتراضية بواسطة القائد
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت بالميكروثانية لتحديث الأجزاء الافتراضية
@@ -1461,7 +1472,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_CoordinatedMergesMergeWorkerUpdateCount` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لتحديثات عامل الدمج
 * `ProfileEvent_CoordinatedMergesMergeWorkerUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرق في تحديث الحالة المحلية لعمليات الدمج المسندة إلى العامل
 * `ProfileEvent_CoordinatedMergesMergeAssignmentRequest` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لطلبات إسناد الدمج
-* `ProfileEvent_CoordinatedMergesMergeAssignmentResponse` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لاستجابات إسناد الدمج
+* `ProfileEvent_CoordinatedMergesMergeAssignmentResponse` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لطلبات إسناد الدمج
 * `ProfileEvent_CoordinatedMergesMergeAssignmentRequestMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرق في عميل إسناد الدمج
 * `ProfileEvent_CoordinatedMergesMergeAssignmentResponseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرق في معالج إسناد الدمج
 * `ProfileEvent_SharedDatabaseCatalogFailedToApplyState` ([UInt64](/ar/reference/data-types/int-uint)) — عدد حالات الفشل في تطبيق الحالة الجديدة في SharedDatabaseCatalog
@@ -2141,6 +2152,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_ExchangeServerThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في مجمّع خيوط المصافحة لخادم التبادل الموزّع.
 * `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي تنفّذ مهمة في مجمّع خيوط المصافحة لخادم التبادل الموزّع.
 * `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّع خيوط المصافحة لخادم التبادل الموزّع.
+* `CurrentMetric_StreamingExchangeSinksWithFullSendQueue` ([Int64](/ar/reference/data-types/int-uint)) — عدد مصارف التبادل المتدفقة التي لا تأخذ أي مقاطع لأن قائمة انتظار الحزم لديها المنتظرة للمقبس ممتلئة.
 * `CurrentMetric_ReadonlyDisks` ([Int64](/ar/reference/data-types/int-uint)) — عدد الأقراص التي وُسِمت بأنها للقراءة فقط أثناء فحص القرص.
 * `CurrentMetric_BrokenDisks` ([Int64](/ar/reference/data-types/int-uint)) — عدد الأقراص التي وُسِمت بأنها تالفة أثناء فحص القرص.
 * `CurrentMetric_TaskTrackerThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد مؤشرات الترابط التي يستخدمها متعقّب المهام البعيدة للاستعلام الموزّع.

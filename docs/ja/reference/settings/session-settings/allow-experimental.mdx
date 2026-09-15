@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -35,30 +34,6 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 Iceberg compaction 時に古い data files をクリーンアップできるようにします。
 
-## allow_experimental_correlated_subqueries {#allow_experimental_correlated_subqueries}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "相関サブクエリのサポートをベータとしました。"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "相関サブクエリの実行を許可する新しい設定を追加しました。"}]}]} />
-
-相関サブクエリを実行できるようにします。
-
-## allow_experimental_database_glue_catalog {#allow_experimental_database_glue_catalog}
-
-<BetaBadge />
-
-**別名**: `allow_database_glue_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "catalog_type = 'glue' の実験的なデータベースエンジン DataLakeCatalog の使用を許可します"}]}]} />
-
-catalog&#95;type = &#39;glue&#39; の実験的なデータベースエンジン DataLakeCatalog の使用を許可します
-
-Cloud でのデフォルト値: `1`.
-
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
@@ -68,20 +43,6 @@ Cloud でのデフォルト値: `1`.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "catalog_type = 'hive' の場合に、実験的なデータベースエンジン DataLakeCatalog を有効にします"}]}]} />
 
 catalog&#95;type = &#39;hms&#39; の場合に、実験的なデータベースエンジン DataLakeCatalog を有効にします
-
-## allow_experimental_database_iceberg {#allow_experimental_database_iceberg}
-
-<BetaBadge />
-
-**別名**: `allow_database_iceberg`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
-
-catalog&#95;type = &#39;iceberg&#39; の実験的なデータベースエンジン DataLakeCatalog の使用を許可します
-
-Cloud でのデフォルト値: `1`.
 
 ## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
@@ -100,32 +61,6 @@ Engine=MaterializedPostgreSQL(...) を指定したデータベースの作成を
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデータベースエンジン DataLakeCatalog の使用を許可します
-
-## allow_experimental_database_unity_catalog {#allow_experimental_database_unity_catalog}
-
-<BetaBadge />
-
-**別名**: `allow_database_unity_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "catalog_type = 'unity' の実験的なデータベースエンジン DataLakeCatalog を有効にします"}]}]} />
-
-catalog&#95;type = &#39;unity&#39; の実験的なデータベースエンジン DataLakeCatalog を有効にします
-
-Cloud でのデフォルト値: `1`.
-
-## allow_experimental_delta_lake_writes {#allow_experimental_delta_lake_writes}
-
-<BetaBadge />
-
-**別名**: `allow_delta_lake_writes`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Delta Lake への書き込みはベータに移行しました。"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
-
-delta-kernelの書き込み機能を有効にします。
 
 ## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
@@ -147,22 +82,6 @@ delta-kernelの書き込み機能を有効にします。
 
 実験段階の Iceberg コマンド `ALTER TABLE ... EXECUTE expire_snapshots` を実行できるようにします。
 
-## allow_experimental_funnel_functions {#allow_experimental_funnel_functions}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-ファネル分析の実験的な関数を有効にします。
-
-## allow_experimental_geo_types_in_iceberg {#allow_experimental_geo_types_in_iceberg}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Iceberg の geometry\/geography フィールドを Geometry 型としてパースできるようにする新しい設定。"}]}]} />
-
-Iceberg の `geometry` および `geography` フィールド型を、ClickHouse の `Geometry` (Variant) 型としてパースできるようにします。
-
 ## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
@@ -181,36 +100,6 @@ Iceberg の `geometry` および `geography` フィールド型を、ClickHouse 
 
 Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるようにします。
 
-## allow_experimental_join_right_table_sorting {#allow_experimental_join_right_table_sorting}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "true に設定されており、`join_to_sort_minimum_perkey_rows` と `join_to_sort_maximum_table_rows` の条件を満たす場合、left または inner ハッシュ結合のパフォーマンスを向上させるために、右テーブルをキー順に並べ替えます"}]}]} />
-
-true に設定されており、`join_to_sort_minimum_perkey_rows` と `join_to_sort_maximum_table_rows` の条件を満たす場合、left または inner ハッシュ結合のパフォーマンスを向上させるために、右テーブルをキー順に並べ替えます。
-
-## allow_experimental_json_lazy_type_hints {#allow_experimental_json_lazy_type_hints}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "JSON型の遅延型ヒント向けの新しい実験的設定"}]}]} />
-
-JSON型で実験的な遅延型ヒントを有効にします。この機能では、型ヒントの評価を後回しにすることで、JSON型の型変換を最適化できます。
-
-## allow_experimental_kafka_offsets_storage_in_keeper {#allow_experimental_kafka_offsets_storage_in_keeper}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "コミット済みオフセットを ClickHouse Keeper に保存する実験的な Kafka ストレージエンジンの使用を許可します"}]}]} />
-
-Kafka 関連のオフセットを ClickHouse Keeper に保存する実験的機能を有効にします。有効にすると、Kafka テーブルエンジン に ClickHouse Keeper パスとレプリカ名を指定できます。これにより、通常の Kafka エンジンの代わりに、コミット済みオフセットを主に ClickHouse Keeper に保存する新しい種類のストレージエンジンが使用されます
-
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
@@ -221,14 +110,6 @@ Kafka 関連のオフセットを ClickHouse Keeper に保存する実験的機�
 
 SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
 
-## allow_experimental_materialized_postgresql_table {#allow_experimental_materialized_postgresql_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-MaterializedPostgreSQL テーブルエンジンの使用を許可します。この機能は実験的なため、デフォルトでは無効になっています
-
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
@@ -236,21 +117,6 @@ MaterializedPostgreSQL テーブルエンジンの使用を許可します。こ
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 自然言語処理向けの実験的な関数を有効にします。
-
-## allow_experimental_nullable_tuple_type {#allow_experimental_nullable_tuple_type}
-
-<BetaBadge />
-
-**別名**: `enable_nullable_tuple_type`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "新しい実験的設定"}]}]} />
-
-テーブルで [Nullable](/ja/reference/data-types/nullable) [Tuple](/ja/reference/data-types/tuple) カラムを作成できるようにします。
-
-この設定では、抽出された Tuple のサブカラムを `Nullable` にできるかどうか (たとえば、Dynamic、Variant、JSON、または Tuple カラムから抽出されたもの) を制御しません。
-抽出された Tuple のサブカラムを `Nullable` にできるかどうかを制御するには、`allow_nullable_tuple_in_extracted_subcolumns` を使用してください。
 
 ## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
@@ -299,45 +165,6 @@ polyglot SQL トランスパイラを有効にします。これにより、30�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 SQLの代替となるPRQLを有効にします。
-
-## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Trino SQL 構文を変換し、Trino 関数名を ClickHouse の同等の関数にマッピングする、`dialect` 設定の `trino` 値を有効化するための新しい設定。"}]}]} />
-
-`dialect` 設定の `trino` 値を有効にします。
-
-`dialect` を `trino` に設定すると、クエリを Trino SQL で記述できます。Trino 固有の
-構文 (`ARRAY[...]` リテラル、`TRY_CAST`、`UNNEST`、`ROW` 型、`LIMIT` の前に置く `OFFSET`)
-は ClickHouse SQL に変換され、Trino 関数名は ClickHouse の同等の関数にマッピングされます。`SET` クエリは、
-方言を元に戻せるよう、引き続き通常の SQL として解析されます。
-
-この方言では、クエリのセマンティクスも Trino に合わせます。`join_use_nulls` は
-オンになり、`use_variant_as_common_type` はオフになり、クエリアナライザはオンになります。
-クエリ内で明示的に指定した `SETTINGS` 句は引き続き優先されます。
-
-## allow_experimental_unique_key {#allow_experimental_unique_key}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "MergeTree ファミリーのテーブルで実験的な `UNIQUE KEY` 句を有効にするための新しい設定"}]}]} />
-
-MergeTree ファミリーのエンジンで `UNIQUE KEY` 句を使用したテーブルの作成を許可します。
-
-## allow_experimental_url_wildcard_from_index_pages {#allow_experimental_url_wildcard_from_index_pages}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "HTTPインデックスページを列挙して `url` テーブル関数のワイルドカード展開を有効にするための新しい設定。"}]}]} />
-
-HTTPインデックスページを使用して、`url()` および `ENGINE = URL` での実験的なワイルドカード展開を許可します。
 
 ## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 

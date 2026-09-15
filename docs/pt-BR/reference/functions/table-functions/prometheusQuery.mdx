@@ -29,12 +29,14 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 A função pode retornar colunas diferentes, dependendo do tipo de resultado da consulta fornecida no parâmetro `promql_query`:
 
-| Tipo de resultado | Colunas retornadas                                                                        | Exemplo                                             |
-| ----------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector            | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix            | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar            | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string            | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| Tipo de resultado | Colunas retornadas                                                                | Exemplo                                             |
+| ----------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector            | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix            | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar            | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string            | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+A coluna `samples` recebe o nome `time_series` se a tabela `TimeSeries` tiver [version](/pt-BR/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 ou anterior.
 
 ## Funcionalidades do PromQL compatíveis {#supported-promql-features}
 

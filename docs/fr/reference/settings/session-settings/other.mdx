@@ -43,7 +43,7 @@ Taille de mémoire à partir de laquelle l’agrégateur adaptatif fige la table
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Si une table possède une courbe de remplissage de l’espace dans son index, par exemple `ORDER BY mortonEncode(x, y)` ou `ORDER BY hilbertEncode(x, y)`, et que la requête comporte des conditions sur ses arguments, par exemple `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, utilisez la courbe de remplissage de l’espace pour l’analyse de l’index.
+Si une table possède une courbe de remplissage de l’espace dans son index, par exemple `ORDER BY mortonEncode(x, y)` ou `ORDER BY hilbertEncode(x, y)`, et que la requête comporte des conditions sur ses arguments, par exemple `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, utilisez la courbe de remplissage de l’espace pour l’analyse de l’index. Actuellement, l’analyse 2D ignore les courbes dont les arguments sont de type `UInt64`, car leurs implémentations n’utilisent que 32 bits par argument.
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -360,7 +360,7 @@ Valeurs prises en charge :
 * `polyglot` — convertit le SQL provenant d&#39;autres dialectes (MySQL, PostgreSQL, etc.) en ClickHouse SQL. Nécessite le paramètre expérimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (langage de requêtes Prometheus) évalué sur une table TimeSeries, configurée à l&#39;aide des paramètres `promql_database`, `promql_table` et `promql_evaluation_time`.
 * `clickhouse_json` — au lieu d&#39;un texte SQL, la requête est interprétée comme un AST JSON (la sortie de `parseQueryToJSON`). La requête `SET` reste reconnue sous sa forme habituelle afin de pouvoir rétablir le dialecte. Nécessite le paramètre expérimental `enable_json_ast_dialect`.
-* `trino` — Trino SQL : traduit la syntaxe Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, etc.) et fait correspondre les noms de fonctions Trino à leurs équivalents ClickHouse. Nécessite le paramètre expérimental `allow_experimental_trino_dialect`.
+* `trino` — Trino SQL : traduit la syntaxe Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, etc.) et fait correspondre les noms de fonctions Trino à leurs équivalents ClickHouse. Nécessite le paramètre expérimental `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 

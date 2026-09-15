@@ -29,12 +29,14 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 함수는 `promql_query` 매개변수에 전달된 쿼리의 결과 유형에 따라 반환하는 컬럼이 달라질 수 있습니다:
 
-| 결과 유형  | 결과 컬럼                                                                                     | 예시                                                  |
-| ------ | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| 결과 유형  | 결과 컬럼                                                                             | 예시                                                  |
+| ------ | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+`TimeSeries` 테이블의 [version](/ko/reference/engines/table-engines/integrations/time-series#schema-versioning)이 2 이하인 경우 `samples` 컬럼의 이름은 `time_series`가 됩니다.
 
 ## 지원되는 PromQL 기능 {#supported-promql-features}
 

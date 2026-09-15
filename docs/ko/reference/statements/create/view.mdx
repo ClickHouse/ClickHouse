@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -271,12 +271,13 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 해당 쿼리를 주기적으로 실행하고 결과를 테이블에 저장합니다.
 
 * `APPEND`를 지정하면 각 갱신 시 기존 행을 삭제하지 않고 테이블에 행을 삽입합니다. 이 삽입은 일반적인 `INSERT INTO ... SELECT` 쿼리와 마찬가지로 원자적이지 않습니다.
+* `APPEND INCREMENTAL`을 지정하면 각 갱신 시 이전 갱신 이후 원본 테이블에 커밋된 행에 대해서만 쿼리를 실행하고 결과를 추가합니다.
 * 그렇지 않으면 각 갱신 시 테이블의 이전 내용이 원자적으로 대체됩니다.
 
 일반적인 비갱신형 materialized view와의 차이점:
 
 * 삽입 트리거가 없습니다. `SELECT`에 지정된 테이블에 새 데이터가 삽입되어도 갱신 가능 구체화 뷰로 자동 반영되지 *않습니다*. 대신 데이터 삽입은 주기적 또는 수동 갱신 실행 중에만 이루어집니다.
-* `SELECT` 쿼리에는 제한이 없습니다. 테이블 함수(예: `url()`), 뷰, UNION, JOIN을 모두 사용할 수 있습니다.
+* `SELECT` 쿼리에는 제한이 없습니다. 테이블 함수(예: `url()`), 뷰, UNION, JOIN을 모두 사용할 수 있습니다. 단, `APPEND INCREMENTAL`은 예외입니다. `enable_block_number_column = 1` 및 `enable_block_offset_column = 1`이 설정된 단일 일반 `MergeTree` 원본 테이블이 필요하며, `JOIN`, `UNION`, 서브쿼리, 뷰 및 테이블 함수는 허용되지 않습니다.
 
 <Note>
   쿼리의 `REFRESH ... SETTINGS` 부분에 있는 설정은 갱신 설정(예: `refresh_retries`)이며, 일반 설정(예: `max_threads`)과는 구분됩니다. 일반 설정은 쿼리 끝에 `SETTINGS`를 사용해 지정할 수 있습니다.
@@ -444,7 +445,7 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
   * materialized view에서는 `ALTER TABLE ... MODIFY SETTING refresh_retries = ...`가 지원되지 않습니다. 반드시 `MODIFY REFRESH`를 사용해야 합니다.
 
-  * `APPEND`를 추가하거나 제거하는 것은 지원되지 않습니다.
+  * 갱신 모드는 변경할 수 없습니다. `APPEND`와 `INCREMENTAL`은 추가하거나 제거할 수 없습니다.
 
   * `all_replicas` 설정은 생성 후 변경할 수 없습니다.
 </Note>
@@ -452,19 +453,19 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 예시:
 
 ```sql
--- 스케줄을 변경하고 기존 설정 및 의존성을 삭제합니다.
+-- Change the schedule, drop existing settings and dependencies.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- 스케줄을 변경하고 재시도 동작을 조정합니다.
+-- Change the schedule and tune retry behavior.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- 주기를 변경하면서 의존성을 유지합니다.
+-- Keep the dependency while changing the period.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- `DEPENDS ON`을 생략하여 의존성을 삭제합니다.
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

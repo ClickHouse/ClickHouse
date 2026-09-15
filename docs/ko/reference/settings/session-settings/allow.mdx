@@ -52,6 +52,18 @@ File/S3 엔진/테이블 함수는 아카이브에 올바른 확장자가 있으
 활성화하면 hedged request에서 이미 일부 Progress가 있었더라도 첫 번째 데이터 패킷을 받을 때까지 새 연결을 시작할 수 있습니다
 (단, `receive_data_timeout` timeout 동안 Progress가 갱신되지 않은 경우). 그렇지 않으면 처음 Progress가 발생한 이후에는 레플리카 변경을 비활성화합니다.
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**별칭**: `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`allow_experimental_correlated_subqueries` 설정의 별칭을 추가했습니다."}]}]} />
+
+상관 서브쿼리(correlated subqueries)의 실행을 허용합니다.
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ TYPE 없이 CREATE INDEX 쿼리를 허용합니다. 이 쿼리는 무시됩니�
 
 함수 throwIf()에서 사용자 지정 오류 코드를 사용할 수 있도록 합니다. true이면 발생하는 예외에 예상치 못한 오류 코드가 사용될 수 있습니다.
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**별칭**: `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "`allow_experimental_database_glue_catalog` 설정에 대한 별칭이 추가되었습니다"}]}]} />
+
+`catalog_type = 'glue'`인 데이터베이스 엔진 `DataLakeCatalog`를 허용합니다
+
+Cloud 기본값: `1`.
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**별칭**: `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "`allow_experimental_database_iceberg` 설정에 대한 별칭이 추가되었습니다"}]}]} />
+
+`catalog_type = 'iceberg'`인 데이터베이스 엔진 `DataLakeCatalog`를 허용합니다
+
+Cloud default value: `1`.
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**별칭**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "`allow_experimental_database_unity_catalog` 설정에 대한 별칭이 추가되었습니다"}]}]} />
+
+`catalog_type = 'unity'`인 데이터베이스 엔진 `DataLakeCatalog`를 허용합니다
+
+Cloud 기본값: `1`.
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,18 @@ true로 설정하면 사용자가 DDL 쿼리를 실행할 수 있습니다.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`allow_experimental_delta_kernel_rs`의 새 이름입니다. 더 이상 실험적 기능이 아니지만 별칭으로 유지됩니다. 기본값은 변경되지 않았습니다."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "새로운 설정입니다. `allow_experimental_delta_kernel_rs`라는 이름으로 도입되었으며, 현재는 이 설정의 별칭입니다. 전체 이력을 유지하기 위해 이 행은 정규 이름으로 이어집니다."}]}]} />
 
 Delta Lake 테이블을 읽기 위한 `delta-kernel-rs` 구현을 허용합니다.
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**별칭**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "베타로 전환된 `allow_experimental_delta_lake_writes` 설정의 별칭이 추가되었습니다."}]}]} />
+
+delta-kernel 쓰기 기능을 활성화합니다.
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +210,16 @@ multiIf 함수를 열 지향으로 실행할 수 있도록 허용합니다
 
 더 복잡한 조건을 처리할 수 있는 더 범용적인 조인 계획 알고리즘을 사용할 수 있도록 허용하지만, 해시 조인에서만 동작합니다. 해시 조인이 활성화되지 않은 경우에는 이 설정값과 관계없이 기본 조인 계획 알고리즘이 사용됩니다.
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**별칭**: `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_geo_types_in_iceberg` 설정에 대한 별칭을 추가했습니다."}]}]} />
+
+Iceberg의 `geometry` 및 `geography` 필드 타입을 ClickHouse `Geometry`(Variant) 타입으로 파싱하는 것을 허용합니다.
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +271,30 @@ Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 
 * [샘플링 쿼리 프로파일러](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * 시스템 테이블 [trace&#95;log](/ko/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**별칭**: `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_join_right_table_sorting` 설정에 대한 별칭을 추가했습니다."}]}]} />
+
+true로 설정되어 있고 `join_to_sort_minimum_perkey_rows` 및 `join_to_sort_maximum_table_rows` 조건이 충족되면, 오른쪽 테이블을 키 기준으로 재배열하여 left 또는 inner 해시 조인의 성능을 향상시킵니다.
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**별칭**: `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_kafka_offsets_storage_in_keeper` 설정에 대한 별칭이 추가되었습니다."}]}]} />
+
+Kafka 관련 offset을 ClickHouse Keeper에 저장할 수 있도록 허용합니다. 이 설정을 활성화하면 Kafka 테이블 엔진에 ClickHouse Keeper 경로와 레플리카 이름을 지정할 수 있습니다. 이 경우 일반 Kafka 엔진 대신, committed offset을 주로 ClickHouse Keeper에 저장하는 새로운 유형의 저장 엔진이 사용됩니다.
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -272,9 +372,9 @@ toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*()와 같은 특정 �
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "추출된 Tuple 서브컬럼을 널 허용으로 지정할 수 있는지 제어하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)`이 이제 일반 제공됩니다. `Tuple`, `Variant`, `Dynamic` 또는 `JSON` 컬럼에서 추출된 `Tuple` 서브컬럼은 `Nullable(Tuple)`이며, 서브컬럼이 없는 행에서는 NULL입니다. 이 설정은 서버 시작 시 한 번만 읽히므로, `compatibility`는 세션 수준 `SET`이 아니라 시작 프로필(예: users.xml)에서만 이전 동작을 복원합니다."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "추출된 Tuple 서브컬럼을 널 허용으로 지정할 수 있는지 제어하는 새로운 설정입니다."}]}]} />
 
 `Tuple(...)` 타입의 추출된 서브컬럼을 `Nullable(Tuple(...))`로 지정할 수 있는지 제어합니다.
 
@@ -383,6 +483,18 @@ Sparse 및 Replicated와 같은 특수 serialization kind를 사용하는 컬럼
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 system.zookeeper 테이블에서 제한 없이(경로 조건 없이) 읽을 수 있도록 허용합니다. 편리할 수는 있지만 ZooKeeper에는 안전하지 않습니다.
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_url_wildcard_from_index_pages` 설정에 대한 별칭이 추가되었습니다."}]}]} />
+
+HTTP 인덱스 페이지에서 `url()` 및 `ENGINE = URL`에 대한 wildcard 확장을 허용합니다.
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

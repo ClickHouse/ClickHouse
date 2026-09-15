@@ -1083,7 +1083,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 ## Ленивые подсказки типов (экспериментальная возможность) {#lazy-type-hints}
 
 <Note>
-  Эта возможность является экспериментальной, и для нее необходимо включить настройку `allow_experimental_json_lazy_type_hints`.
+  Эта возможность является экспериментальной, и для нее необходимо включить настройку `enable_json_lazy_type_hints`.
 </Note>
 
 Когда вы добавляете или изменяете подсказки типов в JSON-столбце с помощью `ALTER TABLE ... MODIFY COLUMN`, ClickHouse обычно переписывает все части данных, чтобы материализовать новые подсказки типов. Для таблиц с большими объемами исторических данных (сотни терабайт) это может быть чрезвычайно затратно.
@@ -1099,23 +1099,23 @@ SELECT json, json.a, json.b, json.c FROM test;
 ### Включение ленивых подсказок типов {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### Пример {#lazy-type-hints-example}
 
 ```sql title="Query"
--- Создать таблицу и вставить данные
+-- Create a table and insert data
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Включить экспериментальную настройку
-SET allow_experimental_json_lazy_type_hints = 1;
+-- Enable experimental setting
+SET enable_json_lazy_type_hints = 1;
 
--- Добавить подсказки типов — выполняется мгновенно без мутации
+-- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
 
--- Запросить данные — подсказки типов применяются во время чтения
+-- Query the data - type hints are applied at read time
 SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
 ```
 
@@ -1154,7 +1154,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 - Изменение подсказки типа (или удаление типизированного пути) **не** является операцией только с метаданными и отклоняется, если затронутый подстолбец используется в структуре с позиционным хранением:
 
   * в **первичном ключе/ключе сортировки** или **ключе партиционирования** — изменение запрещено, поскольку первичный индекс / значения партиции на диске нельзя перестроить с помощью `ALTER`, изменяющего только метаданные (как и для любого другого ключевого столбца);
-  * в явном **индексе пропуска данных** — сначала удалите индекс или отключите `allow_experimental_json_lazy_type_hints`, чтобы выполнить изменение как полную мутацию, перестраивающую индекс.
+  * в явном **индексе пропуска данных** — сначала удалите индекс или отключите `enable_json_lazy_type_hints`, чтобы выполнить изменение как полную мутацию, перестраивающую индекс.
   * в **проекции, ключ сортировки (`ORDER BY`) которой считывает подстолбец** — сначала удалите проекцию, поскольку `ALTER`, изменяющий только метаданные, не может перестроить первичный индекс проекции.
 
   Добавление подсказок для путей, не используемых ни в одной такой структуре, или изменения, при которых тип используемых подстолбцов на диске остаётся неизменным (например, добавление несвязанного типизированного пути), по-прежнему являются операциями только с метаданными.

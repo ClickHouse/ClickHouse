@@ -132,6 +132,18 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 Включает раннюю свёртку констант с коротким замыканием для `and` и `or` на этапе анализа запроса.
 Если параметр включен, подходящие недостижимые ветви со скалярными подзапросами анализируются для сохранения их типов и проверки семантики запроса, но не выполняются. Если требуются скалярная мощность или значения времени выполнения, оптимизация переключается на обычный анализ.
 
+## enable_funnel_functions {#enable_funnel_functions}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_funnel_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_funnel_functions`."}]}]} />
+
+Включает функции для воронкового анализа.
+
 ## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -230,6 +242,18 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
+## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_json_lazy_type_hints`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_json_lazy_type_hints`."}]}]} />
+
+Включает ленивые подсказки типов для типа JSON. Эта возможность позволяет оптимизировать преобразования типа JSON за счёт отложенного вычисления подсказок типов.
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -250,6 +274,18 @@ SET dialect = 'clickhouse_json';
 Если настройка включена, CTE, объявленное как `MATERIALIZED` и используемое более одного раза, выполняется однократно и сохраняется во временной таблице, а все обращения читают данные из этой таблицы. CTE, к которому обращаются лишь один раз, встраивается как обычное CTE, чтобы избежать накладных расходов.
 Если настройка отключена, ключевое слово `MATERIALIZED` игнорируется: CTE встраивается при каждом обращении как обычное CTE, а в лог записывается предупреждение.
 
+## enable_materialized_postgresql_table {#enable_materialized_postgresql_table}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_materialized_postgresql_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_materialized_postgresql_table`."}]}]} />
+
+Позволяет использовать движок таблицы `MaterializedPostgreSQL`.
+
 ## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -269,6 +305,19 @@ SET dialect = 'clickhouse_json';
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Генерировать именованные Tuple в функции tuple(), если все имена уникальны и могут использоваться как идентификаторы без кавычек."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Отключено до улучшения удобства использования"}]}]} />
 
 Генерировать именованные Tuple в функции tuple(), если все имена уникальны и могут использоваться как идентификаторы без кавычек.
+
+## enable_nullable_tuple_type {#enable_nullable_tuple_type}
+
+**Псевдонимы**: `allow_experimental_nullable_tuple_type`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` теперь GA"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple теперь в статусе бета. Добавлен как псевдоним для 'allow_experimental_nullable_tuple_type'."}]}]} />
+
+Разрешает создание в таблицах столбцов типа [Nullable](/ru/reference/data-types/nullable) [Tuple](/ru/reference/data-types/tuple).
+
+Эта настройка не определяет, могут ли извлечённые подстолбцы tuple быть `Nullable` (например, из столбцов Dynamic, Variant, JSON или Tuple).
+Для управления тем, могут ли извлечённые подстолбцы tuple быть `Nullable`, используйте `allow_nullable_tuple_in_extracted_subcolumns`.
 
 ## enable_order_by_all {#enable_order_by_all}
 
@@ -476,11 +525,43 @@ WHERE (_part, _part_offset) IN (
 
 Позволяет создавать типы данных [Time](/ru/reference/data-types/time) и [Time64](/ru/reference/data-types/time64).
 
+## enable_trino_dialect {#enable_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, включающая значение `trino` для настройки `dialect`, которое транслирует SQL-синтаксис Trino и сопоставляет имена функций Trino с эквивалентами ClickHouse."}]}]} />
+
+Включает значение `trino` для настройки `dialect`.
+
+Когда `dialect` имеет значение `trino`, запросы пишутся на Trino SQL: специфичный
+для Trino синтаксис (литералы `ARRAY[...]`, `TRY_CAST`, `UNNEST`, типы `ROW`, `OFFSET` перед `LIMIT`)
+транслируется в ClickHouse SQL, а имена функций Trino сопоставляются с их
+эквивалентами в ClickHouse. Запрос `SET` по-прежнему разбирается как обычный SQL, чтобы
+диалект можно было переключить обратно.
+
+Диалект также приводит семантику запросов в соответствие с Trino: `join_use_nulls` включается,
+`use_variant_as_common_type` отключается, а анализатор запросов включается.
+Явно указанное в запросе предложение `SETTINGS` по-прежнему имеет приоритет.
+
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает ARRAY JOIN с несколькими массивами разной длины. Когда этот параметр включен, массивы будут приведены к длине самого длинного.
+
+## enable_unique_key {#enable_unique_key}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_unique_key`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_unique_key`."}]}]} />
+
+Разрешает создание таблиц с конструкцией `UNIQUE KEY` для движков семейства MergeTree.
 
 ## enable_url_encoding {#enable_url_encoding}
 

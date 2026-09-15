@@ -74,7 +74,7 @@ Muitas integrações exigem uma flag de recurso antes do primeiro uso. Verifique
 
 Para conexões com catálogos, cada tipo de catálogo tem sua própria flag. Consulte [Conectando-se a catálogos](/pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) para uma visão geral e a [referência do DataLakeCatalog](/pt-BR/reference/engines/database-engines/datalake) para detalhes das configurações. As instruções de setup de cada catálogo estão nos [guias de catálogos](/pt-BR/guides/use-cases/data-warehousing/reference).
 
-Para gravação, o Iceberg exige [allow&#95;insert&#95;into&#95;iceberg](/pt-BR/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta a partir da 26.2). Consulte [Gravando em lagos de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/writing-data). O Delta Lake exige [allow&#95;delta&#95;lake&#95;writes](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+). A [matriz de suporte](/pt-BR/guides/use-cases/data-warehousing/support-matrix) lista quais flags se aplicam a cada formato e operação.
+Para gravação, o Iceberg exige [allow&#95;insert&#95;into&#95;iceberg](/pt-BR/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta a partir da 26.2). Consulte [Gravando em lagos de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/writing-data). O Delta Lake exige [allow&#95;delta&#95;lake&#95;writes](/pt-BR/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+). A [matriz de suporte](/pt-BR/guides/use-cases/data-warehousing/support-matrix) lista quais flags se aplicam a cada formato e operação.
 
 ## Melhore o desempenho das consultas {#query-performance}
 
@@ -240,7 +240,7 @@ Armazene a versão final após cada carga bem-sucedida e passe-a como versão in
 
 #### Gravações no Delta Lake {#delta-write-settings}
 
-Além de [allow&#95;delta&#95;lake&#95;writes](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+), controle o tamanho do arquivo de saída no insert:
+Além de [allow&#95;delta&#95;lake&#95;writes](/pt-BR/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+), controle o tamanho do arquivo de saída no insert:
 
 | Configuração                                                                                                                                                     | Desde | Finalidade                                     |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------- |

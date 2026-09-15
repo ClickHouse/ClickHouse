@@ -52,6 +52,18 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Если параметр включен, в хеджированных запросах можно устанавливать новое соединение до получения первого пакета данных, даже если уже был достигнут некоторый прогресс
 (но прогресс не обновлялся в течение тайм-аута `receive_data_timeout`); в противном случае смена реплики отключается после первого достижения прогресса.
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**Псевдонимы**: `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Добавлен псевдоним для настройки `allow_experimental_correlated_subqueries`."}]}]} />
+
+Разрешает выполнение коррелированных подзапросов.
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использование пользовательского кода ошибки в функции throwIf(). Если значение `true`, сгенерированные исключения могут иметь неожиданные коды ошибок.
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**Псевдонимы**: `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_database_glue_catalog`"}]}]} />
+
+Разрешает движок баз данных `DataLakeCatalog` с `catalog_type = 'glue'`
+
+Значение по умолчанию в Cloud: `1`.
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**Псевдонимы**: `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_database_iceberg`"}]}]} />
+
+Разрешает движок баз данных `DataLakeCatalog` с `catalog_type = 'iceberg'`
+
+Значение по умолчанию в Cloud: `1`.
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**Псевдонимы**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_database_unity_catalog`"}]}]} />
+
+Разрешает движок баз данных `DataLakeCatalog` с `catalog_type = 'unity'`
+
+Значение по умолчанию в Cloud: `1`.
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,18 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новое название `allow_experimental_delta_kernel_rs`, которая больше не является экспериментальной и сохранена в качестве псевдонима. Значение по умолчанию не изменилось."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая настройка. Введена под именем `allow_experimental_delta_kernel_rs`, которое теперь является её псевдонимом; запись перенесена под каноническое имя, чтобы сохранить всю историю."}]}]} />
 
 Разрешает использовать реализацию `delta-kernel-rs` для чтения таблиц Delta Lake.
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**Псевдонимы**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_delta_lake_writes`, которая переведена в статус бета."}]}]} />
+
+Включает возможность записи через delta-kernel.
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +210,16 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать более универсальный алгоритм планирования JOIN, способный обрабатывать более сложные условия, но работающий только с hash join. Если hash join не включен, то независимо от значения этой настройки используется обычный алгоритм планирования JOIN.
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**Псевдонимы**: `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_geo_types_in_iceberg`."}]}]} />
+
+Разрешает разбор типов полей Iceberg `geometry` и `geography` как типа ClickHouse `Geometry` (Variant).
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +271,30 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 * [Выборочный профилировщик запросов](/ru/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * Системная таблица [trace&#95;log](/ru/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_join_right_table_sorting`."}]}]} />
+
+Если задано значение true и выполняются условия `join_to_sort_minimum_perkey_rows` и `join_to_sort_maximum_table_rows`, правая таблица переупорядочивается по ключу — это повышает производительность left или inner hash join.
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_kafka_offsets_storage_in_keeper`."}]}]} />
+
+Разрешает хранение смещений Kafka в ClickHouse Keeper. Если настройка включена, для движка таблицы Kafka можно указать path в ClickHouse Keeper и имя реплики. В этом случае вместо обычного движка Kafka будет использоваться новый тип движка хранения, который хранит зафиксированные смещения преимущественно в ClickHouse Keeper
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -271,9 +371,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая настройка, определяющая, могут ли извлечённые подстолбцы Tuple быть Nullable."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` теперь GA: подстолбец `Tuple`, извлечённый из столбца `Tuple`, `Variant`, `Dynamic` или `JSON`, имеет тип `Nullable(Tuple)` и содержит NULL в строках, где подстолбец отсутствует. Настройка считывается один раз при запуске сервера, поэтому `compatibility` восстанавливает предыдущее поведение только из профиля запуска (например, users.xml), а не из `SET` на уровне сеанса."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая настройка, определяющая, могут ли извлечённые подстолбцы Tuple быть Nullable."}]}]} />
 
 Определяет, могут ли извлечённые подстолбцы типа `Tuple(...)` иметь тип `Nullable(Tuple(...))`.
 
@@ -382,6 +482,18 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает неограниченное чтение (без условия по path) из таблицы system.zookeeper; может быть удобно, но небезопасно для ZooKeeper
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_url_wildcard_from_index_pages`."}]}]} />
+
+Разрешает раскрытие wildcard для `url()` и `ENGINE = URL` по индексным страницам HTTP.
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

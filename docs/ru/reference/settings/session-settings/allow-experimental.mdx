@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -35,30 +34,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает удалять старые файлы данных во время compaction в Iceberg.
 
-## allow_experimental_correlated_subqueries {#allow_experimental_correlated_subqueries}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Поддержка коррелированных подзапросов переведена в статус бета."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Добавлена новая настройка, разрешающая выполнение коррелированных подзапросов."}]}]} />
-
-Разрешает выполнение коррелированных подзапросов.
-
-## allow_experimental_database_glue_catalog {#allow_experimental_database_glue_catalog}
-
-<BetaBadge />
-
-**Псевдонимы**: `allow_database_glue_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog_type = 'glue'"}]}]} />
-
-Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;glue&#39;
-
-Значение по умолчанию в Cloud: `1`.
-
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
@@ -68,20 +43,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Разрешить использование экспериментального движка базы данных DataLakeCatalog с catalog_type = 'hive'"}]}]} />
 
 Разрешить использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;hms&#39;
-
-## allow_experimental_database_iceberg {#allow_experimental_database_iceberg}
-
-<BetaBadge />
-
-**Псевдонимы**: `allow_database_iceberg`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "Новая настройка"}]}]} />
-
-Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;iceberg&#39;
-
-Значение по умолчанию в Cloud: `1`.
 
 ## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
@@ -100,32 +61,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "новая настройка"}]}]} />
 
 Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;paimon&#95;rest&#39;
-
-## allow_experimental_database_unity_catalog {#allow_experimental_database_unity_catalog}
-
-<BetaBadge />
-
-**Псевдонимы**: `allow_database_unity_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog_type = 'unity'"}]}]} />
-
-Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;unity&#39;
-
-Значение по умолчанию в Cloud: `1`.
-
-## allow_experimental_delta_lake_writes {#allow_experimental_delta_lake_writes}
-
-<BetaBadge />
-
-**Псевдонимы**: `allow_delta_lake_writes`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Запись в Delta Lake переведена в статус бета."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Новая настройка."}]}]} />
-
-Включает возможность записи с помощью delta-kernel.
 
 ## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
@@ -147,22 +82,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает выполнение экспериментальной команды Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_funnel_functions {#allow_experimental_funnel_functions}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Включает экспериментальные функции для вороночного анализа.
-
-## allow_experimental_geo_types_in_iceberg {#allow_experimental_geo_types_in_iceberg}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Новая настройка, позволяющая интерпретировать поля Iceberg `geometry`/`geography` как тип Geometry."}]}]} />
-
-Позволяет интерпретировать поля Iceberg типов `geometry` и `geography` как тип ClickHouse `Geometry` (Variant).
-
 ## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
@@ -181,36 +100,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает явно использовать `OPTIMIZE` для таблиц Iceberg.
 
-## allow_experimental_join_right_table_sorting {#allow_experimental_join_right_table_sorting}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Если задано значение true и выполняются условия `join_to_sort_minimum_perkey_rows` и `join_to_sort_maximum_table_rows`, правая таблица переупорядочивается по ключу для повышения производительности левого или внутреннего hash JOIN"}]}]} />
-
-Если задано значение true и выполняются условия `join_to_sort_minimum_perkey_rows` и `join_to_sort_maximum_table_rows`, правая таблица переупорядочивается по ключу для повышения производительности левого или внутреннего hash JOIN.
-
-## allow_experimental_json_lazy_type_hints {#allow_experimental_json_lazy_type_hints}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая экспериментальная настройка для ленивых подсказок типов JSON"}]}]} />
-
-Включает экспериментальные ленивые подсказки типов для типа JSON. Эта возможность позволяет оптимизировать преобразования типа JSON, откладывая вычисление подсказок типов.
-
-## allow_experimental_kafka_offsets_storage_in_keeper {#allow_experimental_kafka_offsets_storage_in_keeper}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Разрешить использование экспериментального движка хранения для Kafka, который хранит зафиксированные смещения в ClickHouse Keeper"}]}]} />
-
-Разрешает экспериментальную возможность хранения смещений, связанных с Kafka, в ClickHouse Keeper. При включении этой возможности для движка таблицы Kafka можно указать путь в ClickHouse Keeper и имя реплики. В результате вместо обычного движка Kafka будет использоваться новый тип движка хранения, который хранит зафиксированные смещения прежде всего в ClickHouse Keeper
-
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
@@ -221,14 +110,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает диалект Kusto Query Language (KQL) — альтернативу SQL.
 
-## allow_experimental_materialized_postgresql_table {#allow_experimental_materialized_postgresql_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Разрешает использовать движок таблицы MaterializedPostgreSQL. По умолчанию отключено, так как эта возможность экспериментальная.
-
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
@@ -236,21 +117,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает экспериментальные функции обработки естественного языка.
-
-## allow_experimental_nullable_tuple_type {#allow_experimental_nullable_tuple_type}
-
-<BetaBadge />
-
-**Псевдонимы**: `enable_nullable_tuple_type`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Новая экспериментальная настройка"}]}]} />
-
-Разрешает создавать в таблицах столбцы типа [Nullable](/ru/reference/data-types/nullable) [Tuple](/ru/reference/data-types/tuple).
-
-Эта настройка не определяет, могут ли извлечённые подстолбцы Tuple иметь тип `Nullable` (например, из столбцов Dynamic, Variant, JSON или Tuple).
-Используйте `allow_nullable_tuple_in_extracted_subcolumns`, чтобы задать, могут ли извлечённые подстолбцы Tuple иметь тип `Nullable`.
 
 ## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
@@ -299,46 +165,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
 Включает PRQL — альтернативный язык запросов по сравнению с SQL.
-
-## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, включающая значение `trino` настройки `dialect`, которое транслирует SQL-синтаксис Trino и сопоставляет имена функций Trino с их эквивалентами в ClickHouse."}]}]} />
-
-Включает значение `trino` настройки `dialect`.
-
-Когда `dialect` установлена в `trino`, запросы пишутся на Trino SQL: специфичный для
-Trino синтаксис (литералы `ARRAY[...]`, `TRY_CAST`, `UNNEST`, типы `ROW`, `OFFSET` перед `LIMIT`)
-транслируется в ClickHouse SQL, а имена функций Trino сопоставляются с их
-эквивалентами в ClickHouse. Запрос `SET` по-прежнему разбирается как обычный SQL, чтобы
-можно было переключить диалект обратно.
-
-Диалект также приводит семантику запросов в соответствие с Trino: `join_use_nulls` включается,
-`use_variant_as_common_type` отключается, а анализатор запросов включается.
-Явно указанная в запросе `SETTINGS` clause по-прежнему имеет приоритет.
-
-## allow_experimental_unique_key {#allow_experimental_unique_key}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Новая настройка, управляющая доступностью экспериментальной клаузы UNIQUE KEY для таблиц семейства MergeTree"}]}]} />
-
-Разрешает создание таблиц с клаузой `UNIQUE KEY` на движках семейства MergeTree.
-
-## allow_experimental_url_wildcard_from_index_pages {#allow_experimental_url_wildcard_from_index_pages}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Новая настройка для включения раскрытия подстановочных шаблонов в табличной функции `url` по спискам на HTTP-страницах индекса."}]}]} />
-
-Разрешает экспериментальное раскрытие подстановочных шаблонов для `url()` и `ENGINE = URL` по HTTP-страницам индекса.
 
 ## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 

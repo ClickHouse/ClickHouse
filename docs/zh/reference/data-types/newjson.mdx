@@ -1080,7 +1080,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 ## 惰性类型提示 (Experimental) {#lazy-type-hints}
 
 <Note>
-  此功能为实验性功能，需要启用设置 `allow_experimental_json_lazy_type_hints`。
+  此功能为 Experimental 功能，需要启用设置 `enable_json_lazy_type_hints`。
 </Note>
 
 当你使用 `ALTER TABLE ... MODIFY COLUMN` 为 JSON 列添加或修改类型提示时，ClickHouse 通常会重写所有 parts，以物化新的类型提示。对于包含大量历史数据 (数百 TB) 的表，这一过程的开销可能极其高昂。
@@ -1096,23 +1096,23 @@ SELECT json, json.a, json.b, json.c FROM test;
 ### 启用惰性类型提示 {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### 示例 {#lazy-type-hints-example}
 
 ```sql title="Query"
--- 创建表并插入数据
+-- Create a table and insert data
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- 启用实验性设置
-SET allow_experimental_json_lazy_type_hints = 1;
+-- Enable experimental setting
+SET enable_json_lazy_type_hints = 1;
 
--- 添加类型提示 - 此操作无需变更，立即完成
+-- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
 
--- 查询数据 - 类型提示在读取时生效
+-- Query the data - type hints are applied at read time
 SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
 ```
 
@@ -1150,7 +1150,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 * 当受影响的子列用于按位置持久化的结构时，修改类型提示 (或移除已类型化路径) **并非**仅元数据操作，并且会被拒绝：
 
   * **主键/排序键**或**分区键** — 禁止此更改，因为无法通过仅元数据的 `ALTER` 重建磁盘上的主索引/分区值 (与任何其他键列一样)；
-  * 显式的**数据跳过索引** — 请先删除该索引，或者禁用 `allow_experimental_json_lazy_type_hints`，以将此更改作为重建索引的完整变更运行。
+  * 显式的**数据跳过索引** — 请先删除该索引，或者禁用 `enable_json_lazy_type_hints`，以将此更改作为重建索引的完整变更运行。
   * **排序键 (`ORDER BY`) 读取该子列的投影** — 请先删除该投影，因为仅元数据的 `ALTER` 无法重建投影的主索引。
 
   对未用于任何此类结构的路径添加提示，或不会改变所用子列磁盘上类型的更改 (例如添加不相关的已类型化路径)，仍然是仅元数据操作。

@@ -43,7 +43,7 @@ Grava o cabeçalho HTTP CORS.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Se uma tabela tiver uma curva de preenchimento espacial em seu índice, por exemplo, `ORDER BY mortonEncode(x, y)` ou `ORDER BY hilbertEncode(x, y)`, e a consulta tiver condições sobre seus argumentos, por exemplo, `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use a curva de preenchimento espacial para análise de índice.
+Se uma tabela tiver uma curva de preenchimento espacial em seu índice, por exemplo, `ORDER BY mortonEncode(x, y)` ou `ORDER BY hilbertEncode(x, y)`, e a consulta tiver condições sobre seus argumentos, por exemplo, `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use a curva de preenchimento espacial para análise de índice. Atualmente, a análise em 2D ignora curvas com argumentos `UInt64` porque as implementações das curvas usam apenas 32 bits por argumento.
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -360,7 +360,7 @@ Valores compatíveis:
 * `polyglot` — transpila SQL de outros dialetos (MySQL, PostgreSQL etc.) para ClickHouse SQL. Requer a configuração experimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language) avaliada em uma tabela TimeSeries, configurada pelas opções `promql_database`, `promql_table` e `promql_evaluation_time`.
 * `clickhouse_json` — em vez de texto SQL, a consulta é interpretada como um AST JSON (a saída de `parseQueryToJSON`). A consulta `SET` continua sendo reconhecida em formato simples para permitir a reversão para outro dialeto. Requer a configuração experimental `enable_json_ast_dialect`.
-* `trino` — Trino SQL: traduz a sintaxe do Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) e mapeia os nomes das funções do Trino para seus equivalentes no ClickHouse. Requer a configuração experimental `allow_experimental_trino_dialect`.
+* `trino` — Trino SQL: traduz a sintaxe do Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) e mapeia os nomes das funções do Trino para seus equivalentes no ClickHouse. Requer a configuração experimental `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 

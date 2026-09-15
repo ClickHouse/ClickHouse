@@ -29,12 +29,14 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 この関数は、パラメータ `promql_query` に渡されたクエリの結果タイプに応じて、異なるカラムを返します。
 
-| 結果タイプ  | 結果カラム                                                                                     | 例                                                   |
-| ------ | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| 結果タイプ  | 結果カラム                                                                             | 例                                                   |
+| ------ | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+`TimeSeries` テーブルの [version](/ja/reference/engines/table-engines/integrations/time-series#schema-versioning) が 2 以前の場合、`samples` カラムは `time_series` という名前になります。
 
 ## PromQL でサポートされている機能 {#supported-promql-features}
 

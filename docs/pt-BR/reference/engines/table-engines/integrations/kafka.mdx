@@ -449,7 +449,7 @@ O número de linhas em uma mensagem do Kafka depende de o formato ser baseado em
 
 <ExperimentalBadge />
 
-Se `allow_experimental_kafka_offsets_storage_in_keeper` estiver habilitada, mais duas configurações poderão ser especificadas para o motor de tabela Kafka:
+Se `allow_kafka_offsets_storage_in_keeper` estiver habilitada, mais duas configurações poderão ser especificadas para o motor de tabela Kafka:
 
 * `kafka_keeper_path` especifica o caminho da tabela no ClickHouse Keeper
 * `kafka_replica_name` especifica o nome da réplica no ClickHouse Keeper
@@ -479,7 +479,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -489,7 +489,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 Quando usado com réplicas (vários valores de `kafka_replica_name` que compartilham o mesmo `kafka_keeper_path`), o filtro de afinidade é aplicado primeiro para determinar as partições elegíveis; em seguida, os locks do ZooKeeper distribuem essas partições entre as réplicas.
@@ -502,7 +502,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Limitações conhecidas {#known-limitations}

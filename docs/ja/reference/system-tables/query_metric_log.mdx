@@ -1274,6 +1274,17 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan を使用したクエリ実行時にリモートワーカーへ送出されたタスク数。値がゼロ以外の場合、クエリは実際に分散実行されました。
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan クエリがリモートワーカーに送出されず、ローカル executor (distributed&#95;plan&#95;execute&#95;locally) によってプロセス内で実行された場合は 1 に設定されます。
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan を使用したクエリ実行時に、少なくとも 1 つのタスクが割り当てられた異なるホスト数。
+* `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランの streaming exchange のソケットに書き込まれたバイト数。`NetworkSendBytes` には含まれません。
+* `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランの streaming exchange のソケットから読み取られたバイト数。`NetworkReceiveBytes` には含まれません。
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ja/reference/data-types/int-uint)) — streaming exchange のソケットに完全に書き込まれた Data パケット数。chunk ごとに 1 つ、各ストリームにはストリーム終端パケットが 1 つ追加されます。送信バッファ内のパケットは、バッファ全体が書き込まれた時点でカウントされます。receiver がそれ以上データを必要としないために書き込みが途中で打ち切られたバッファ内のパケットは、カウントされません。
+* `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/ja/reference/data-types/int-uint)) — streaming exchange から読み取られた Data パケット数。chunk ごとに 1 つ、各ストリームにはストリーム終端パケットが 1 つ追加されます。
+* `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — streaming exchange パケット内の圧縮前の Native ブロックのバイト数。シリアル化されるパケットごとに 1 回カウントされます。`StreamingExchangeSendBytes` と比較すると、shuffle または gather の圧縮率が得られます。broadcast は各パケットを各宛先に送信するため、その場合 `StreamingExchangeSendBytes` は宛先数に応じて増加します。
+* `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — chunk を streaming exchange パケットにシリアル化および圧縮するのに費やした時間。
+* `ProfileEvent_StreamingExchangeDeserializeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — streaming exchange パケットを chunk に解凍およびデシリアル化するのに費やした時間。
+* `ProfileEvent_StreamingExchangeSendQueueFullMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ソケットへの送信待ちパケットのキューが満杯だったため、streaming exchange sink が chunk を受け取らなかった時間。
+* `ProfileEvent_StreamingExchangeReceiveWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — streaming exchange source が送信元から次のバイトを待機した時間。
+* `ProfileEvent_StreamingExchangeConnectionWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — streaming exchange sink が受信タスクからの接続を待機した時間。
+* `ProfileEvent_StreamingExchangeEarlyCloses` ([UInt64](/ja/reference/data-types/int-uint)) — たとえば LIMIT が満たされたために、ストリームを最後まで読み取る前に streaming exchange source が送信元へ停止を通知した回数。すでに終了していた送信元はカウントされません。
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/ja/reference/data-types/int-uint)) — 仮想パーツ更新回数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/ja/reference/data-types/int-uint)) — リーダーによる仮想パーツ更新回数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 仮想パーツ更新にかかったマイクロ秒数

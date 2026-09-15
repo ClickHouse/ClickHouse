@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="join_algorithm">
-  ## join_algorithm
-</div>
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -83,7 +81,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 خوارزمية [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) المعتمدة على الفرز، والمخصصة لـ `JOIN` يحتوي قسم `ON` فيه على مقارنتين لعدم المساواة (`<` و`<=` و`>` و`>=`) بين تعبيرات الجداول الموصولة. تدعم `ALL INNER/LEFT/RIGHT/FULL JOIN` و`SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
-يحدد موضعها في القائمة الأولوية: فإذا أُدرجت بعد الخوارزميات الأخرى، كما في القيمة الافتراضية، فلا تُستخدم IEJoin إلا عندما لا تنطبق تلك الخوارزميات (أي عندما لا يحتوي قسم `ON` على شروط مساواة)؛ وإذا أُدرجت أولًا، فتُستخدم كلما احتوى قسم `ON` على شرطي عدم مساواة. تُطبَّق الشروط المتبقية (بما فيها شروط المساواة) كـ filter على نتيجة join بالنسبة إلى `ALL INNER JOIN`، وتُقيَّم داخل operator كشرط متبقٍ يؤثر في المطابقة للأنواع الأخرى. من دون `ie_join` في القائمة، يُنفَّذ `INNER JOIN` الذي لا يحتوي إلا على شروط عدم مساواة بوصفه `CROSS JOIN` مع filter، ولا تُدعَم الأنواع الأخرى.
+يحدد موضعها في القائمة الأولوية: فإذا أُدرجت بعد الخوارزميات الأخرى، كما في القيمة الافتراضية، فلا تُستخدم IEJoin إلا عندما لا تنطبق تلك الخوارزميات (أي عندما لا يحتوي قسم `ON` على شروط مساواة)؛ وإذا أُدرجت أولًا، فتُستخدم كلما احتوى قسم `ON` على شرطي عدم مساواة. تُطبَّق الشروط المتبقية (بما فيها شروط المساواة) كـ filter على نتيجة join بالنسبة إلى `ALL INNER JOIN`، وتُقيَّم داخل operator كشرط متبقٍ يؤثر في المطابقة للأنواع الأخرى. عندما يحتوي قسم `ON` على أكثر من شرطي عدم مساواة مؤهلين، يُختار الشرطان اللذان تستخدمهما الخوارزمية بحسب انتقائيتهما المقدرة من إحصاءات الحد الأدنى/الأقصى للأعمدة (راجع النوع `basic` في [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics))؛ وعندما لا تتوفر التقديرات (لعدم وجود إحصاءات، أو عند تعطيل [`use_statistics`](/ar/reference/settings/session-settings/use-statistics#use_statistics))، يُستخدم أول شرطيْن وفق ترتيب الصياغة. من دون `ie_join` في القائمة، يُنفَّذ `INNER JOIN` الذي لا يحتوي إلا على شروط عدم مساواة بوصفه `CROSS JOIN` مع filter، ولا تُدعَم الأنواع الأخرى.
 
 يُراكَم كلا الإدخالين في الذاكرة قبل تنفيذ join: يحدّ [`max_rows_in_join`](/ar/reference/settings/session-settings/max-rows#max_rows_in_join) و[`max_bytes_in_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join) إجمالي الإدخال المتراكم لكلا الجانبين معًا (وليس الجانب الأيمن فقط)، ويُحدَّد الإجراء عند overflow بواسطة [`join_overflow_mode`](/ar/reference/settings/session-settings/join#join_overflow_mode)؛ ولا تُحتسب sort indexes التي يبنيها operator فوق الإدخال المتراكم ضمن الحد. يعمل join operator نفسه في thread واحد؛ ولا يُنفَّذ بالتوازي إلا الفرز السابق لـ join للإدخالين.
 
@@ -97,20 +95,18 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * الجوانب المرتبة مسبقًا (قراءة MergeTree بالترتيب، أو أي إدخال مرتب مسبقًا): قد يؤدي scatter المحافظ على الترتيب إلى merge joins لكل shard إلى حدوث deadlock في pipeline. ويُحتفَظ بدلًا من ذلك بالقراءة بالترتيب وتحسينها `read_in_order_use_virtual_row`.
 * أثناء قيام initiator ببناء distributed plan (`make_distributed_plan`)، لأن scattered sort غير قابل للتسلسل من أجل التنفيذ عن بُعد. تُعيد local single-fragment plan وfragments الخاصة بكل worker التحسين مع تعطيل ذلك الإعداد، ولذلك لا يزال بإمكانها التقسيم إلى shards.
 
-لا يؤدي تخطي ذلك إلا إلى تعطيل إعادة الكتابة هذه، وليس التوازي عمومًا: إذ تعمل join بوصفها `full_sorting_merge` واحدة، ولا يزال بإمكان جوانب MergeTree المقروءة بالترتيب أن تُقسَّم إلى shards عند المصدر بحسب primary-key ranges (التي ترتب بالمقارنة نفسها التي تستخدمها join، لذا تبقى المفاتيح المتساوية معًا) عند تمكين `query_plan_join_shard_by_pk_ranges`.
+تخطّيه يعطّل هذا الـ rewrite فقط، وليس التوازي عمومًا: إذ يُنفَّذ join بوصفه `full_sorting_merge` واحدة، ولا يزال بالإمكان تقسيم جوانب MergeTree المقروءة بالترتيب إلى shards عند المصدر بحسب ranges الخاصة بـ primary key (والتي تُرتَّب بالمقارنة نفسها التي يستخدمها join، ولذلك تبقى المفاتيح المتساوية معًا) عندما يكون `query_plan_join_shard_by_pk_ranges` مفعّلًا.
 
 * prefer&#95;partial&#95;merge
 
-يحاول ClickHouse دائمًا استخدام join `partial_merge` إن أمكن، وإلا يستخدم `hash`. *مهمل*، وهو مماثل لـ `partial_merge,hash`.
+يحاول ClickHouse دائمًا استخدام join من نوع `partial_merge` إن أمكن، وإلا فإنه يستخدم `hash`. *تم إهمال*، مماثل لـ `partial_merge,hash`.
 
-* default (مهمل)
+* default (تم إهمال)
 
 قيمة قديمة، يُرجى عدم استخدامها بعد الآن.
-تماثل `direct,hash`، أي جرّب استخدام direct join وhash join (بهذا الترتيب).
+مماثلة لـ `direct,hash`، أي محاولة استخدام direct join ثم hash join (بهذا الترتيب).
 
-<div id="join_any_take_last_row">
-  ## join_any_take_last_row
-</div>
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,9 +129,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [محرك الجدول Join](/ar/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ar/reference/settings/session-settings/join#join_default_strictness)
 
-<div id="join_default_strictness">
-  ## join_default_strictness
-</div>
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -148,9 +142,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `ASOF` — لربط التسلسلات ذات المطابقة غير المؤكدة.
 * `Empty string` — إذا لم يتم تحديد `ALL` أو `ANY` في الاستعلام، يطرح ClickHouse استثناء.
 
-<div id="join_on_disk_max_files_to_merge">
-  ## join_on_disk_max_files_to_merge
-</div>
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -162,9 +154,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * أي عدد صحيح موجب يبدأ من 2.
 
-<div id="join_output_by_rowlist_perkey_rows_threshold">
-  ## join_output_by_rowlist_perkey_rows_threshold
-</div>
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -172,9 +162,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأدنى لمتوسط عدد الصفوف لكل مفتاح في الجدول الأيمن، لتحديد ما إذا كان سيتم إخراج النتائج وفق قائمة الصفوف في hash join.
 
-<div id="join_overflow_mode">
-  ## join_overflow_mode
-</div>
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -201,9 +189,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [عبارة JOIN](/ar/reference/statements/select/join)
 * [محرك الجدول Join](/ar/reference/engines/table-engines/special/join)
 
-<div id="join_use_nulls">
-  ## join_use_nulls
-</div>
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

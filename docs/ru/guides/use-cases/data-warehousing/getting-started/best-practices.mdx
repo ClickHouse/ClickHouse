@@ -74,7 +74,7 @@ SELECT count() FROM my_lake.`analytics.events`
 
 Для подключений к каталогам у каждого типа каталога есть свой флаг. Общую информацию см. в [Подключение к каталогам](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs), а сведения о настройках — в [справочнике DataLakeCatalog](/ru/reference/engines/database-engines/datalake). Инструкции по настройке для конкретных каталогов приведены в [руководствах по каталогам](/ru/guides/use-cases/data-warehousing/reference).
 
-Для записи в Iceberg требуется [allow&#95;insert&#95;into&#95;iceberg](/ru/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, бета с 26.2). См. [Запись в озера данных](/ru/guides/use-cases/data-warehousing/getting-started/writing-data). Для Delta Lake требуется [allow&#95;delta&#95;lake&#95;writes](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+). В [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix) указано, какие флаги применяются к каждому формату и операции.
+Для записи в Iceberg требуется [allow&#95;insert&#95;into&#95;iceberg](/ru/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, бета с 26.2). См. [Запись в озера данных](/ru/guides/use-cases/data-warehousing/getting-started/writing-data). Для Delta Lake требуется [allow&#95;delta&#95;lake&#95;writes](/ru/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+). В [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix) указано, какие флаги применяются к каждому формату и операции.
 
 ## Повысьте производительность запросов {#query-performance}
 
@@ -240,7 +240,7 @@ SETTINGS
 
 #### Запись в Delta Lake {#delta-write-settings}
 
-Помимо [allow&#95;delta&#95;lake&#95;writes](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+), можно управлять размером выходного файла данных при вставке:
+Помимо [allow&#95;delta&#95;lake&#95;writes](/ru/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+), можно управлять размером выходного файла данных при вставке:
 
 | Настройка                                                                                                                                                        | С версии | Назначение                                            |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------- |

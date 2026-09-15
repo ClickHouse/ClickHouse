@@ -43,7 +43,7 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Если в индексе таблицы используется пространственно-заполняющая кривая, например `ORDER BY mortonEncode(x, y)` или `ORDER BY hilbertEncode(x, y)`, и запрос содержит условия для её аргументов, например `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, используйте пространственно-заполняющую кривую для анализа индекса.
+Если в индексе таблицы используется пространственно-заполняющая кривая, например `ORDER BY mortonEncode(x, y)` или `ORDER BY hilbertEncode(x, y)`, и запрос содержит условия для её аргументов, например `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, используйте пространственно-заполняющую кривую для анализа индекса. В настоящее время двумерный анализ пропускает кривые с аргументами `UInt64`, поскольку реализации кривых используют только 32 бита на аргумент.
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -360,7 +360,7 @@ SETTINGS convert_query_to_cnf = true;
 * `polyglot` — транспилирует SQL из других диалектов (MySQL, PostgreSQL и т. д.) в ClickHouse SQL. Требует экспериментальной настройки `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language), выполняемый для таблицы TimeSeries, настроенной с помощью параметров `promql_database`, `promql_table` и `promql_evaluation_time`.
 * `clickhouse_json` — вместо текста SQL запрос интерпретируется как JSON AST (результат работы `parseQueryToJSON`). Запрос `SET` по-прежнему распознаётся в обычной форме, что позволяет переключиться обратно на другой диалект. Требует экспериментальной настройки `enable_json_ast_dialect`.
-* `trino` — Trino SQL: преобразует синтаксис Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) и сопоставляет имена функций Trino с их эквивалентами в ClickHouse. Требует экспериментальной настройки `allow_experimental_trino_dialect`.
+* `trino` — Trino SQL: преобразует синтаксис Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) и сопоставляет имена функций Trino с их эквивалентами в ClickHouse. Требует экспериментальной настройки `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 

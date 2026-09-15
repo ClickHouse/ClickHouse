@@ -52,6 +52,18 @@ MergeTree テーブルからの読み取りにバックグラウンド I/O プ�
 有効な場合、ヘッジドリクエストでは、すでにある程度 Progress が進んでいても、最初の Data パケットを受信するまで新しい接続を開始できます
 (ただし、`receive_data_timeout` のタイムアウト時間内に Progress が更新されていない場合に限ります) 。無効な場合は、最初に Progress が進んだ時点以降、レプリカの切り替えは行われません。
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Added an alias for setting `allow_experimental_correlated_subqueries`."}]}]} />
+
+相関サブクエリの実行を許可します。
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ TYPE を指定しない CREATE INDEX クエリを許可します。このクエ�
 
 関数 throwIf() でカスタムエラーコードを有効にします。true の場合、送出される例外に想定外のエラーコードが付与されることがあります。
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "設定 `allow_experimental_database_glue_catalog` の別名を追加"}]}]} />
+
+`catalog_type = 'glue'` を指定したデータベースエンジン `DataLakeCatalog` を許可します
+
+Cloud でのデフォルト値: `1`。
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "設定 `allow_experimental_database_iceberg` の別名を追加"}]}]} />
+
+`catalog_type = 'iceberg'` を指定したデータベースエンジン `DataLakeCatalog` を許可します
+
+Cloud でのデフォルト値: `1`。
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "設定 `allow_experimental_database_unity_catalog` の別名を追加"}]}]} />
+
+`catalog_type = 'unity'` を指定したデータベースエンジン `DataLakeCatalog` を許可します
+
+Cloud でのデフォルト値: `1`。
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,18 @@ true に設定すると、ユーザーは DDL クエリを実行できます。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`allow_experimental_delta_kernel_rs` の新しい名前です。実験的な機能ではなくなりましたが、同名は別名として維持されます。デフォルト値は変更されていません。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "新しい設定。`allow_experimental_delta_kernel_rs` という名前で導入され、現在はその別名となっています。履歴全体を維持するため、この行は正規名のもとに引き継がれています。"}]}]} />
 
 Delta Lake テーブルの読み取りに `delta-kernel-rs` 実装を使用できるようにします。
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "ベータに移行された設定 `allow_experimental_delta_lake_writes` の別名を追加しました。"}]}]} />
+
+delta-kernel の書き込み機能を有効にします。
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +210,16 @@ multiIf 関数の列指向実行を許可する
 
 より複雑な条件を処理できる、より汎用的な JOIN 計画アルゴリズムを使用できるようにしますが、これはハッシュ結合でのみ機能します。ハッシュ結合が有効でない場合は、この設定の値に関係なく、通常の JOIN 計画アルゴリズムが使用されます。
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**別名**: `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_geo_types_in_iceberg` の別名を追加。"}]}]} />
+
+Iceberg の `geometry` および `geography` フィールド型を、ClickHouse の `Geometry` (Variant) 型としてパースできるようにします。
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +271,30 @@ Iceberg に対する `insert` クエリの実行を許可します。
 
 * [Sampling Query Profiler](/ja/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * システムテーブル [trace&#95;log](/ja/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_join_right_table_sorting` の別名を追加しました。"}]}]} />
+
+true に設定されており、かつ `join_to_sort_minimum_perkey_rows` と `join_to_sort_maximum_table_rows` の条件を満たす場合、右テーブルをキー順に並べ替え、left または inner のハッシュ結合の性能を向上させます。
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_kafka_offsets_storage_in_keeper` の別名を追加しました。"}]}]} />
+
+Kafka 関連のオフセットを ClickHouse Keeper に保存できるようにします。有効にすると、Kafka table engine に ClickHouse Keeper パスとレプリカ名を指定できます。これにより、通常の Kafka エンジンではなく、committed offsets を主に ClickHouse Keeper に保存する新しい種類の storage engine が使用されます
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -272,9 +372,9 @@ toTimeZone()、fromUnixTimestamp*()、snowflakeIDToDateTime*() などの一部�
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "抽出された Tuple サブカラムを Nullable にできるかどうかを制御する新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` が GA になりました。`Tuple`、`Variant`、`Dynamic`、`JSON` カラムから抽出された `Tuple` サブカラムは `Nullable(Tuple)` となり、サブカラムが存在しない行では NULL になります。この設定はサーバー起動時に一度だけ読み込まれるため、`compatibility` で以前の動作に戻せるのは起動時プロファイル (たとえば users.xml) からのみで、セッションレベルの `SET` からはできません。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "抽出された Tuple サブカラムを Nullable にできるかどうかを制御する新しい設定。"}]}]} />
 
 `Tuple(...)` 型の抽出されたサブカラムを `Nullable(Tuple(...))` 型として扱えるかどうかを制御します。
 
@@ -383,6 +483,18 @@ Sparse や Replicated のような特殊なシリアライゼーション種別�
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 system.zookeeper table から無制限に (path に条件を指定せずに) 読み取ることを許可します。便利な場合もありますが、ZooKeeper に対して安全ではありません。
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_url_wildcard_from_index_pages` の別名を追加しました。"}]}]} />
+
+HTTP のインデックスページからの `url()` および `ENGINE = URL` に対する wildcard 展開を許可します。
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

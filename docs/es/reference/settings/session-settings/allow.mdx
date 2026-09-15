@@ -52,6 +52,18 @@ Cuando está habilitado, ClickHouse calculará el tamaño de los archivos necesa
 Si está habilitado, en las solicitudes hedged podemos iniciar una nueva conexión hasta recibir el primer paquete de datos, incluso si ya se ha registrado cierto progreso
 (aunque el progreso no se haya actualizado durante el tiempo de espera de `receive_data_timeout`); de lo contrario, se deshabilita el cambio de réplica después de la primera vez que se registra progreso.
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**Aliases**: `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Se añadió un alias para la configuración `allow_experimental_correlated_subqueries`."}]}]} />
+
+Permite ejecutar subconsultas correlacionadas.
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ Habilita la predesduplicación paralela por partición del resultado de la subco
 
 Permite usar un código de error personalizado en la función throwIf(). Si es true, las excepciones lanzadas pueden tener códigos de error inesperados.
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**Aliases**: `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_database_glue_catalog`"}]}]} />
+
+Permite el motor de base de datos `DataLakeCatalog` con `catalog_type = 'glue'`
+
+valor predeterminado en Cloud: `1`.
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**Aliases**: `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_database_iceberg`"}]}]} />
+
+Permite el motor de base de datos `DataLakeCatalog` con `catalog_type = 'iceberg'`
+
+Valor predeterminado en Cloud: `1`.
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**Aliases**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_database_unity_catalog`"}]}]} />
+
+Permite el motor de base de datos `DataLakeCatalog` con `catalog_type = 'unity'`
+
+valor predeterminado en Cloud: `1`.
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,18 @@ Si se establece en true, un usuario puede ejecutar consultas DDL.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nuevo nombre de `allow_experimental_delta_kernel_rs`, que ya no es experimental y se mantiene como alias. El valor predeterminado no cambia."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Nueva SETTING. Se introdujo con el nombre `allow_experimental_delta_kernel_rs`, que ahora es un alias; la fila se conserva bajo el nombre canónico para mantener todo el historial."}]}]} />
 
 Permite usar la implementación `delta-kernel-rs` para leer tablas de Delta Lake.
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**Aliases**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_delta_lake_writes`, que pasó a Beta."}]}]} />
+
+Habilita la funcionalidad de escrituras de delta-kernel.
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +210,16 @@ Habilita la función `fuzzQuery`, que aplica mutaciones aleatorias del AST a una
 
 Permite un algoritmo de planificación de JOIN más general, capaz de manejar condiciones más complejas, pero solo funciona con hash join. Si hash join no está habilitado, se usa el algoritmo habitual de planificación de JOIN independientemente del valor de esta configuración.
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**Aliases**: `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_geo_types_in_iceberg`."}]}]} />
+
+Permite el parsing de los tipos de field `geometry` y `geography` de Iceberg como el tipo `Geometry` (Variant) de ClickHouse.
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +271,30 @@ Valores posibles:
 
 * [Sampling Query Profiler](/es/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * Tabla del sistema [trace&#95;log](/es/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para el setting `allow_experimental_join_right_table_sorting`."}]}]} />
+
+Si se establece en true y se cumplen las condiciones de `join_to_sort_minimum_perkey_rows` y `join_to_sort_maximum_table_rows`, se reordena la tabla derecha por key para mejorar el rendimiento de los hash joins de tipo left o inner.
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_kafka_offsets_storage_in_keeper`."}]}]} />
+
+Permite almacenar en ClickHouse Keeper los desplazamientos relacionados con Kafka. Cuando está habilitado, se pueden especificar una ruta de ClickHouse Keeper y un nombre de réplica en el Kafka table engine. Como resultado, en lugar del motor Kafka habitual, se utilizará un nuevo tipo de storage engine que almacena los committed offsets principalmente en ClickHouse Keeper
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -271,9 +371,9 @@ Por lo tanto, no habilite esta configuración.
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración que controla si las subcolumnas extraídas de tipo Tuple pueden ser anulables."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` ahora es GA: una subcolumna `Tuple` extraída de una columna `Tuple`, `Variant`, `Dynamic` o `JSON` es `Nullable(Tuple)` y es NULL en las filas en las que falta la subcolumna. La configuración se lee una sola vez al iniciar el servidor, por lo que `compatibility` restaura el comportamiento anterior solo desde el perfil de inicio (por ejemplo, users.xml), no desde un `SET` a nivel de sesión."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración que controla si las subcolumnas extraídas de tipo Tuple pueden ser anulables."}]}]} />
 
 Controla si las subcolumnas extraídas de tipo `Tuple(...)` pueden tener el tipo `Nullable(Tuple(...))`.
 
@@ -382,6 +482,18 @@ Ayuda a evitar copias de datos innecesarias durante el formateo.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite lecturas sin restricciones (sin condición sobre la ruta) desde la tabla system.zookeeper; puede resultar útil, pero no es seguro para ZooKeeper
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_url_wildcard_from_index_pages`."}]}]} />
+
+Permite la expansión de wildcard para `url()` y `ENGINE = URL` desde páginas de índice HTTP.
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

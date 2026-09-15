@@ -14,6 +14,8 @@ doc_type: 'reference'
 
 未在 `columns_substreams.txt` 中记录子流的 分片 不会列出。
 
+所报告的每个值都源自该表的数据，因此读取结果中的任意列都需要拥有该表所有列的 `SELECT` 权限。仅覆盖部分列的授权是不够的。解析该函数的结构 (例如通过 `DESCRIBE`) 同样需要该权限。对于完全无权查看该表的用户，即未在该表上拥有 `SHOW TABLES` 权限的用户，无论表是否存在都会得到 `ACCESS_DENIED`，因此该函数不会向此类用户透露存在哪些表。
+
 如果行策略适用于当前用户访问该表，读取 `codec_block_counts` 会引发 `ACCESS_DENIED`，因为计数会包含被该策略隐藏的行。其他列仍可读取，`system.parts_columns` 不受行策略影响，仍会报告这些列。
 
 ## 语法 {#syntax}

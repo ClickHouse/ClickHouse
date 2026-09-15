@@ -1083,7 +1083,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 ## Lazy Type Hints (Experimental) {#lazy-type-hints}
 
 <Note>
-  Este recurso é experimental e exige que a configuração `allow_experimental_json_lazy_type_hints` esteja habilitada.
+  Este recurso é experimental e exige que a configuração `enable_json_lazy_type_hints` esteja habilitada.
 </Note>
 
 Quando você adiciona ou modifica type hints em uma coluna JSON usando `ALTER TABLE ... MODIFY COLUMN`, o ClickHouse normalmente reescreve todas as partes de dados para materializar os novos type hints. Em tabelas com grandes volumes de dados históricos (centenas de terabytes), isso pode ser extremamente custoso.
@@ -1092,30 +1092,30 @@ Quando você adiciona ou modifica type hints em uma coluna JSON usando `ALTER TA
 
 * **Partes antigas**: os type hints são aplicados em tempo de consulta, convertendo de `Dynamic` para o tipo indicado
 * **Partes novas**: os type hints são materializados durante operações de `INSERT`
-* **Merges**: os type hints são materializados quando as partes são mescladas
+* **Mesclagens**: os type hints são materializados quando as partes são mescladas
 
-Isso significa que você pode adicionar type hints instantaneamente, e os dados serão convertidos gradualmente à medida que ocorrerem os merges normais em segundo plano.
+Isso significa que você pode adicionar type hints instantaneamente, e os dados serão convertidos gradualmente à medida que ocorrerem as mesclagens normais em segundo plano.
 
 ### Como habilitar Lazy Type Hints {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### Exemplo {#lazy-type-hints-example}
 
 ```sql title="Query"
--- Crie uma tabela e insira os dados
+-- Create a table and insert data
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Habilite a configuração experimental
-SET allow_experimental_json_lazy_type_hints = 1;
+-- Enable experimental setting
+SET enable_json_lazy_type_hints = 1;
 
--- Adicione type hints - isso é concluído instantaneamente, sem mutação
+-- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
 
--- Consulte os dados - os type hints são aplicados no momento da leitura
+-- Query the data - type hints are applied at read time
 SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
 ```
 
@@ -1154,7 +1154,7 @@ Para materializar type hints em dados existentes, você pode:
 - Modificar uma type hint (ou remover um caminho tipado) **não** é uma operação somente de metadados e é rejeitado quando a subcoluna afetada é usada em uma estrutura persistida por posição:
 
   * na **chave primária/de ordenação** ou **chave de partição** — a alteração é proibida, pois os valores do índice primário/da partição em disco não podem ser reconstruídos por um `ALTER` somente de metadados (como ocorre com qualquer outra coluna-chave);
-  * em um **skip index de dados** explícito — primeiro remova o índice ou desative `allow_experimental_json_lazy_type_hints` para executar a alteração como uma mutação completa que reconstrói o índice.
+  * em **data skipping indexes** explícitos — primeiro remova o índice ou desative `enable_json_lazy_type_hints` para executar a alteração como uma mutação completa que reconstrói o índice.
   * em uma **projeção cuja chave de ordenação (`ORDER BY`) lê a subcoluna** — primeiro remova a projeção, pois um `ALTER` somente de metadados não pode reconstruir o índice primário da projeção.
 
   Adicionar hints a caminhos não usados em nenhuma dessas estruturas, ou fazer alterações que não modifiquem o tipo em disco das subcolunas usadas (por exemplo, adicionar um caminho tipado não relacionado), continua sendo uma operação somente de metadados.

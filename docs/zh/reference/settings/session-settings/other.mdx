@@ -43,7 +43,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-如果表的索引中使用了空间填充曲线，例如 `ORDER BY mortonEncode(x, y)` 或 `ORDER BY hilbertEncode(x, y)`，并且查询对其参数指定了条件，例如 `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`，则会使用空间填充曲线进行索引分析。
+如果表的索引中使用了空间填充曲线，例如 `ORDER BY mortonEncode(x, y)` 或 `ORDER BY hilbertEncode(x, y)`，并且查询对其参数指定了条件，例如 `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`，则会使用空间填充曲线进行索引分析。目前，二维分析会跳过带有 `UInt64` 参数的曲线，因为曲线实现对每个参数仅使用 32 位。
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -340,7 +340,7 @@ SETTINGS convert_query_to_cnf = true;
 * `polyglot` — 将其他方言 (MySQL、PostgreSQL 等) 的 SQL 转译为 ClickHouse SQL。需要启用 Experimental 设置 `allow_experimental_polyglot_dialect`。
 * `promql` — PromQL (Prometheus 查询语言) ，基于由 `promql_database`、`promql_table` 和 `promql_evaluation_time` 设置指定的 TimeSeries 表进行计算。
 * `clickhouse_json` — 查询将不作为 SQL 文本处理，而是解释为 JSON AST (`parseQueryToJSON` 的输出) 。仍可使用普通形式的 `SET` 查询，以便切换回其他方言。需要启用 Experimental 设置 `enable_json_ast_dialect`。
-* `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Experimental 设置 `allow_experimental_trino_dialect`。
+* `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Experimental 设置 `enable_trino_dialect`。
 
 ## discard_query_data {#discard_query_data}
 

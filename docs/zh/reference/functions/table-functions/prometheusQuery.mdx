@@ -29,12 +29,14 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 该函数会根据传给参数 `promql_query` 的查询结果类型，返回不同的列：
 
-| 结果类型   | 结果列                                                                                       | 示例                                                  |
-| ------ | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| 结果类型   | 结果列                                                                               | 示例                                                  |
+| ------ | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+如果 `TimeSeries` 表的 [version](/zh/reference/engines/table-engines/integrations/time-series#schema-versioning) 为 2 或更早，则 `samples` 列的名称为 `time_series`。
 
 ## 支持的 PromQL 特性 {#supported-promql-features}
 

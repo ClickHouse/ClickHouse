@@ -27,14 +27,16 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 ## القيمة المُعادة {#returned-value}
 
-يمكن أن تُرجع الدالة أعمدة مختلفة بحسب نوع نتيجة الاستعلام المُمرَّر إلى المعامل `promql_query`:
+يمكن أن تُرجع الدالة أعمدة مختلفة بحسب نوع نتيجة الاستعلام المُمرَّر إلى المعامل `promql_query`:
 
-| نوع النتيجة | أعمدة النتيجة                                                                             | مثال                                                |
-| ----------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector      | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix      | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar      | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string      | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| نوع النتيجة | أعمدة النتيجة                                                                     | مثال                                                |
+| ----------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector      | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix      | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar      | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string      | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+يُسمّى العمود `samples` بالاسم `time_series` إذا كان الجدول `TimeSeries` من [version](/ar/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 أو أقدم.
 
 ## الميزات المدعومة في PromQL {#supported-promql-features}
 

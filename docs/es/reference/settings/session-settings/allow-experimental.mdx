@@ -11,7 +11,6 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -35,30 +34,6 @@ Habilita el analizador.
 
 Permite eliminar archivos de datos antiguos durante la compactación de Iceberg.
 
-## allow_experimental_correlated_subqueries {#allow_experimental_correlated_subqueries}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "La compatibilidad con subconsultas correlacionadas pasa a ser Beta."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Se añadió una nueva configuración para permitir la ejecución de subconsultas correlacionadas."}]}]} />
-
-Permite ejecutar subconsultas correlacionadas.
-
-## allow_experimental_database_glue_catalog {#allow_experimental_database_glue_catalog}
-
-<BetaBadge />
-
-**Alias**: `allow_database_glue_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Permite usar el motor de base de datos experimental DataLakeCatalog con catalog_type = 'glue'"}]}]} />
-
-Permite usar el motor de base de datos experimental DataLakeCatalog con catalog&#95;type = &#39;glue&#39;
-
-Valor predeterminado en Cloud: `1`.
-
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
@@ -68,20 +43,6 @@ Valor predeterminado en Cloud: `1`.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Permite usar el motor de base de datos experimental DataLakeCatalog con catalog_type = 'hive'"}]}]} />
 
 Permite usar el motor de base de datos experimental DataLakeCatalog con catalog&#95;type = &#39;hms&#39;
-
-## allow_experimental_database_iceberg {#allow_experimental_database_iceberg}
-
-<BetaBadge />
-
-**Alias**: `allow_database_iceberg`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "Nueva configuración."}]}]} />
-
-Permite usar el motor de base de datos experimental DataLakeCatalog con catalog&#95;type = &#39;iceberg&#39;
-
-Valor predeterminado en Cloud: `1`.
 
 ## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
@@ -100,32 +61,6 @@ Permite crear una base de datos con Engine=MaterializedPostgreSQL(...).
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Nueva opción de configuración"}]}]} />
 
 Permite usar el motor de base de datos experimental DataLakeCatalog con catalog&#95;type = &#39;paimon&#95;rest&#39;
-
-## allow_experimental_database_unity_catalog {#allow_experimental_database_unity_catalog}
-
-<BetaBadge />
-
-**Alias**: `allow_database_unity_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Permitir el motor de base de datos experimental DataLakeCatalog con catalog_type = 'unity'"}]}]} />
-
-Permitir el motor de base de datos experimental DataLakeCatalog con catalog&#95;type = &#39;unity&#39;
-
-Valor predeterminado en Cloud: `1`.
-
-## allow_experimental_delta_lake_writes {#allow_experimental_delta_lake_writes}
-
-<BetaBadge />
-
-**Alias**: `allow_delta_lake_writes`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Las escrituras de Delta Lake pasaron a Beta."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración."}]}]} />
-
-Habilita la funcionalidad de escritura de delta-kernel.
 
 ## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
@@ -147,22 +82,6 @@ Habilita la función de tabla experimental `eval`.
 
 Permite ejecutar el comando experimental de Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_funnel_functions {#allow_experimental_funnel_functions}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Habilita funciones experimentales para el análisis de embudos.
-
-## allow_experimental_geo_types_in_iceberg {#allow_experimental_geo_types_in_iceberg}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nueva opción de configuración para permitir interpretar los campos geometry/geography de Iceberg como el tipo Geometry."}]}]} />
-
-Permite interpretar los tipos de campo `geometry` y `geography` de Iceberg como el tipo `Geometry` (Variant) de ClickHouse.
-
 ## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
@@ -181,36 +100,6 @@ Activa las funciones hash experimentales
 
 Permite usar &#39;OPTIMIZE&#39; explícitamente en tablas Iceberg.
 
-## allow_experimental_join_right_table_sorting {#allow_experimental_join_right_table_sorting}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Si se establece en true y se cumplen las condiciones de `join_to_sort_minimum_perkey_rows` y `join_to_sort_maximum_table_rows`, reordena la tabla derecha por clave para mejorar el rendimiento en un left hash join o inner hash join"}]}]} />
-
-Si se establece en true y se cumplen las condiciones de `join_to_sort_minimum_perkey_rows` y `join_to_sort_maximum_table_rows`, reordena la tabla derecha por clave para mejorar el rendimiento en un left hash join o inner hash join.
-
-## allow_experimental_json_lazy_type_hints {#allow_experimental_json_lazy_type_hints}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración experimental para las indicaciones de tipo diferidas de JSON"}]}]} />
-
-Activa las indicaciones de tipo diferidas experimentales para el tipo JSON. Esta funcionalidad permite optimizar las conversiones de tipo de JSON al aplazar la evaluación de las indicaciones de tipo.
-
-## allow_experimental_kafka_offsets_storage_in_keeper {#allow_experimental_kafka_offsets_storage_in_keeper}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Permite usar el motor de almacenamiento experimental de Kafka que almacena los offsets confirmados en ClickHouse Keeper"}]}]} />
-
-Permite la funcionalidad experimental para almacenar en ClickHouse Keeper los offsets relacionados con Kafka. Cuando está habilitada, se pueden especificar una ruta de ClickHouse Keeper y un nombre de réplica para el motor de tabla de Kafka. Como resultado, en lugar del motor Kafka habitual, se utilizará un nuevo tipo de motor de almacenamiento que almacena principalmente los offsets confirmados en ClickHouse Keeper
-
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
@@ -221,14 +110,6 @@ Permite la funcionalidad experimental para almacenar en ClickHouse Keeper los of
 
 Habilita el dialecto Kusto Query Language (KQL), una alternativa a SQL.
 
-## allow_experimental_materialized_postgresql_table {#allow_experimental_materialized_postgresql_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Permite usar el motor de tabla MaterializedPostgreSQL. Está deshabilitado de forma predeterminada porque esta funcionalidad es experimental.
-
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
@@ -236,21 +117,6 @@ Permite usar el motor de tabla MaterializedPostgreSQL. Está deshabilitado de fo
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Habilita las funciones experimentales de procesamiento del lenguaje natural.
-
-## allow_experimental_nullable_tuple_type {#allow_experimental_nullable_tuple_type}
-
-<BetaBadge />
-
-**Alias**: `enable_nullable_tuple_type`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Nueva configuración experimental"}]}]} />
-
-Permite crear columnas [Nullable](/es/reference/data-types/nullable) [Tuple](/es/reference/data-types/tuple) en las tablas.
-
-Esta configuración no controla si las subcolumnas de tupla extraídas pueden ser `Nullable` (por ejemplo, de columnas Dynamic, Variant, JSON o Tuple).
-Usa `allow_nullable_tuple_in_extracted_subcolumns` para controlar si las subcolumnas de tupla extraídas pueden ser `Nullable`.
 
 ## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
@@ -299,46 +165,6 @@ Habilita el transpilador SQL políglota: transpila SQL de más de 30 dialectos (
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Permite PRQL, una alternativa a SQL.
-
-## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva opción de configuración para habilitar el valor `trino` de la opción `dialect`, que traduce la sintaxis SQL de Trino y asigna los nombres de funciones de Trino a sus equivalentes en ClickHouse."}]}]} />
-
-Habilita el valor `trino` de la opción `dialect`.
-
-Cuando `dialect` tiene el valor `trino`, las consultas se escriben en SQL de Trino: la
-sintaxis específica de Trino (literales `ARRAY[...]`, `TRY_CAST`, `UNNEST`, tipos `ROW`, `OFFSET` antes de `LIMIT`)
-se traduce a ClickHouse SQL y los nombres de funciones de Trino se asignan a sus
-equivalentes en ClickHouse. La consulta `SET` se sigue analizando como SQL simple, de modo que
-sea posible volver a cambiar el dialecto.
-
-El dialecto también alinea la semántica de las consultas con la de Trino: `join_use_nulls` se
-activa, `use_variant_as_common_type` se desactiva y el analizador de consultas se activa.
-Una cláusula `SETTINGS` explícita en la consulta sigue teniendo precedencia.
-
-## allow_experimental_unique_key {#allow_experimental_unique_key}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nueva configuración para habilitar la cláusula experimental UNIQUE KEY en tablas de la familia MergeTree"}]}]} />
-
-Permite crear tablas con la cláusula `UNIQUE KEY` en motores de la familia MergeTree.
-
-## allow_experimental_url_wildcard_from_index_pages {#allow_experimental_url_wildcard_from_index_pages}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nueva opción de configuración para habilitar la expansión de comodines en la función de tabla `url` mediante el listado de páginas de índice HTTP."}]}]} />
-
-Permite la expansión experimental de comodines para `url()` y `ENGINE = URL` usando páginas de índice HTTP.
 
 ## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 

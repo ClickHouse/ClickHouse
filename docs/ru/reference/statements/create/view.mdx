@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -266,17 +266,18 @@ AS SELECT ...
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-В части `REFRESH` должно быть указано как минимум одно из `EVERY`, `AFTER` или `DEPENDS ON`. Просто `REFRESH` (без них) не допускается. `REFRESH DEPENDS ON ...` без `EVERY`/`AFTER` — это сокращение для `REFRESH AFTER 0 SECOND DEPENDS ON ...`; см. ниже раздел [Refresh Dependencies](#refresh-dependencies).
+В части `REFRESH` должно быть указано как минимум одно из `EVERY`, `AFTER` или `DEPENDS ON`. Просто `REFRESH` (без них) не допускается. `REFRESH DEPENDS ON ...` без `EVERY`/`AFTER` — это сокращение для `REFRESH AFTER 0 SECOND DEPENDS ON ...`; см. ниже раздел [Зависимость при обновлении](#refresh-dependencies).
 
 Периодически выполняет соответствующий запрос и сохраняет его результат в таблице.
 
 * Если указано `APPEND`, при каждом обновлении в таблицу добавляются новые строки без удаления существующих. Вставка не является атомарной, как и в обычном запросе `INSERT INTO ... SELECT`.
+* Если указано `APPEND INCREMENTAL`, при каждом обновлении запрос выполняется только для строк, зафиксированных в исходной таблице с момента предыдущего обновления, а результат добавляется.
 * В противном случае при каждом обновлении предыдущее содержимое таблицы атомарно заменяется.
 
 Отличия от обычных non-refreshable materialized views:
 
-* Нет insert trigger. Когда новые данные вставляются в таблицу, указанную в `SELECT`, они *не* передаются автоматически в refreshable materialized view. Вместо этого данные вставляются только во время периодических или ручных обновлений.
-* Для запроса `SELECT` нет ограничений. Допускаются табличные функции (например, `url()`), просмотры, UNION, JOIN.
+* Нет триггера вставки. Когда новые данные вставляются в таблицу, указанную в `SELECT`, они *не* передаются автоматически в refreshable materialized view. Вместо этого данные вставляются только во время периодических или ручных обновлений.
+* Для запроса `SELECT` нет ограничений. Допускаются табличные функции (например, `url()`), просмотры, UNION, JOIN. Единственное исключение — `APPEND INCREMENTAL`: для него требуется одна простая исходная таблица `MergeTree` с `enable_block_number_column = 1` и `enable_block_offset_column = 1`; не допускаются `JOIN`, `UNION`, подзапросы, просмотры и табличные функции.
 
 <Note>
   Настройки в части запроса `REFRESH ... SETTINGS` — это настройки обновления (например, `refresh_retries`), а не обычные настройки (например, `max_threads`). Обычные настройки можно указать с помощью `SETTINGS` в конце запроса.
@@ -444,7 +445,7 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
   * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` не поддерживается для materialized view; нужно использовать `MODIFY REFRESH`.
 
-  * Добавлять или удалять `APPEND` не поддерживается.
+  * Изменение режима обновления не поддерживается: `APPEND` и `INCREMENTAL` нельзя ни добавить, ни удалить.
 
   * Настройку `all_replicas` нельзя изменить после создания.
 </Note>
@@ -452,19 +453,19 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 Примеры:
 
 ```sql
--- Изменить расписание, удалить существующие настройки и зависимости.
+-- Change the schedule, drop existing settings and dependencies.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- Изменить расписание и настроить поведение повторных попыток.
+-- Change the schedule and tune retry behavior.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- Сохранить зависимость при изменении периода.
+-- Keep the dependency while changing the period.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- Удалить зависимость, опустив `DEPENDS ON`.
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

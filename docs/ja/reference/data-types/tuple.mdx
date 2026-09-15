@@ -182,11 +182,6 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Note title="ベータ機能">
-  `SET enable_nullable_tuple_type = 1` が必要です
-  これはベータ機能です。
-</Note>
-
 `Tuple(Nullable(T1), Nullable(T2), ...)` では個々の要素のみを `NULL` にできるのに対し、こちらではタプル全体を `NULL` にできます。
 
 | 型                                          | タプル全体を NULL にできる | 要素を NULL にできる |
@@ -197,8 +192,6 @@ ORDER BY key ASC;
 例:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
-
 CREATE TABLE test (
     id UInt32,
     data Nullable(Tuple(String, Int64))

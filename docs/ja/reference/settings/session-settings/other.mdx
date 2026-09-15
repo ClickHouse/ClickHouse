@@ -43,7 +43,7 @@ HTTP CORS ヘッダーを追加して書き込みます。
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-テーブルの索引に空間充填曲線が含まれている場合 (例: `ORDER BY mortonEncode(x, y)` や `ORDER BY hilbertEncode(x, y)`) 、クエリにその引数に対する条件 (例: `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`) があるときは、索引解析に空間充填曲線を使用します。
+テーブルの索引に空間充填曲線が含まれている場合 (例: `ORDER BY mortonEncode(x, y)` や `ORDER BY hilbertEncode(x, y)`) 、クエリにその引数に対する条件 (例: `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`) があるときは、索引解析に空間充填曲線を使用します。現在、曲線の実装では各引数に32ビットしか使用していないため、2次元解析では `UInt64` 引数を持つ曲線はスキップされます。
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -349,7 +349,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * `polyglot` — 他のdialect (MySQL、PostgreSQLなど) のSQLをClickHouse SQLにトランスパイルします。実験的設定の`allow_experimental_polyglot_dialect`が必要です。
 * `promql` — `promql_database`、`promql_table`、`promql_evaluation_time`設定で構成されたTimeSeriesテーブルに対して評価されるPromQL (Prometheus Query Language) 。
 * `clickhouse_json` — SQLテキストの代わりに、クエリをJSON AST (`parseQueryToJSON`の出力) として解釈します。dialectを元に戻せるよう、`SET`クエリは引き続き通常の形式で認識されます。実験的設定の`enable_json_ast_dialect`が必要です。
-* `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。実験的設定の`allow_experimental_trino_dialect`が必要です。
+* `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。実験的設定の`enable_trino_dialect`が必要です。
 
 ## discard_query_data {#discard_query_data}
 

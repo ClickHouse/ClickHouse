@@ -12,15 +12,10 @@ doc_type: 'reference'
 
 `T` には、次の複合データ型は指定できません。
 
-* [Array](/ja/reference/data-types/array) — サポートされていません
-* [Map](/ja/reference/data-types/map) — サポートされていません
-* [Tuple](/ja/reference/data-types/tuple) — ベータサポートを利用できます*
+* [Array](/ja/reference/data-types/array)
+* [Map](/ja/reference/data-types/map)
 
 ただし、複合データ型に `Nullable` 型の値を**含める**ことはできます。たとえば、`Array(Nullable(Int8))` や `Tuple(Nullable(String), Nullable(Int64))` です。
-
-<Note title="ベータ: Nullable Tuple">
-  * `enable_nullable_tuple_type = 1` が有効な場合、[Nullable(Tuple(...))](/ja/reference/data-types/tuple#nullable-tuple) がサポートされます。
-</Note>
 
 `Nullable` 型のフィールドは、テーブルの索引に含めることはできません。
 

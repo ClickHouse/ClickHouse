@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -266,17 +266,18 @@ AS SELECT ...
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-`REFRESH` 子句必须至少指定 `EVERY`、`AFTER` 或 `DEPENDS ON` 之一。单独使用 `REFRESH` (即一个都不带) 会被拒绝。不带 `EVERY`/`AFTER` 的 `REFRESH DEPENDS ON ...` 是 `REFRESH AFTER 0 SECOND DEPENDS ON ...` 的简写；请参见下方的 [刷新依赖](#refresh-dependencies)。
+`REFRESH` 子句必须至少指定 `EVERY`、`AFTER` 或 `DEPENDS ON` 之一。单独使用 `REFRESH` (即一个都不带) 会被拒绝。不带 `EVERY`/`AFTER` 的 `REFRESH DEPENDS ON ...` 是 `REFRESH AFTER 0 SECOND DEPENDS ON ...` 的简写；请参见下方的 [刷新依赖关系](#refresh-dependencies)。
 
 周期性运行相应的查询，并将其结果存储到表中。
 
 * 如果指定了 `APPEND`，每次刷新都会将行插入表中，而不会删除现有行。该 insert 不是原子的，和普通的 `INSERT INTO ... SELECT` 查询一样。
+* 如果指定了 `APPEND INCREMENTAL`，每次刷新只会对自上次刷新以来已提交到源表的行运行查询，并追加其结果。
 * 否则，每次刷新都会以原子方式替换表&#39;的现有内容。
 
 与常规不可刷新的 materialized view 的区别：
 
 * 没有插入触发器。当新数据插入到 `SELECT` 中指定的表时，它*不会*自动推送到可刷新materialized view。相反，只有在周期性刷新或手动刷新执行时才会插入数据。
-* 对 `SELECT` 查询没有限制。表函数 (例如 `url()`) 、视图、UNION、JOIN 都允许使用。
+* 对 `SELECT` 查询没有限制。表函数 (例如 `url()`) 、视图、UNION、JOIN 都允许使用。`APPEND INCREMENTAL` 是唯一的例外：它要求源表是单个普通 `MergeTree` 表，并且设置了 `enable_block_number_column = 1` 和 `enable_block_offset_column = 1`，同时不允许 `JOIN`、`UNION`、子查询、视图和表函数。
 
 <Note>
   查询中 `REFRESH ... SETTINGS` 部分的 settings 是刷新设置 (例如 `refresh_retries`) ，与常规设置 (例如 `max_threads`) 不同。常规设置可以在查询末尾使用 `SETTINGS` 指定。
@@ -444,7 +445,7 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
   * materialized view 不支持 `ALTER TABLE ... MODIFY SETTING refresh_retries = ...`；必须通过 `MODIFY REFRESH` 进行修改。
 
-  * 不支持添加或移除 `APPEND`。
+  * 不支持更改刷新模式：`APPEND` 和 `INCREMENTAL` 既不能添加也不能移除。
 
   * `all_replicas` 设置在创建后无法更改。
 </Note>
@@ -452,19 +453,19 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 示例：
 
 ```sql
--- 更改调度计划，删除现有设置和依赖项。
+-- Change the schedule, drop existing settings and dependencies.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- 更改调度计划并调整重试行为。
+-- Change the schedule and tune retry behavior.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- 在更改周期的同时保留依赖项。
+-- Keep the dependency while changing the period.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- 通过省略 `DEPENDS ON` 来删除依赖项。
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

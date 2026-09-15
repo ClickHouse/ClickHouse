@@ -1083,23 +1083,23 @@ SELECT json, json.a, json.b, json.c FROM test;
 ## Lazy Type Hints (Expérimental) {#lazy-type-hints}
 
 <Note>
-  Cette fonctionnalité est expérimentale et nécessite que le paramètre `allow_experimental_json_lazy_type_hints` soit activé.
+  Cette fonctionnalité est expérimentale et nécessite que le paramètre `enable_json_lazy_type_hints` soit activé.
 </Note>
 
 Lorsque vous ajoutez ou modifiez des indications de type sur une colonne JSON à l’aide de `ALTER TABLE ... MODIFY COLUMN`, ClickHouse réécrit normalement toutes les parts de données afin de matérialiser les nouvelles indications de type. Pour les tables contenant de grandes quantités de données historiques (des centaines de téraoctets), cela peut être extrêmement coûteux.
 
-Les **Lazy type hints** permettent d’ajouter des indications de type comme simple opération sur les métadonnées, sans réécrire les données existantes :
+Les **Lazy type hints** permettent d’ajouter des indications de type comme simple opération limitée aux métadonnées, sans réécrire les données existantes :
 
-* **Anciennes parts** : les indications de type sont appliquées au moment de la requête par conversion de `Dynamic` vers le type indiqué
-* **Nouvelles parts** : les indications de type sont matérialisées lors des opérations `INSERT`
-* **Fusions** : les indications de type sont matérialisées lorsque les parts sont fusionnées
+* **Anciennes parts** : les indications de type sont appliquées au moment de la requête par conversion de `Dynamic` vers le type indiqué
+* **Nouvelles parts** : les indications de type sont matérialisées lors des opérations `INSERT`
+* **Fusions** : les indications de type sont matérialisées lorsque les parts sont fusionnées
 
 Cela signifie que vous pouvez ajouter des indications de type instantanément, et que les données seront converties progressivement au fil des fusions normales en arrière-plan.
 
 ### Activer les Lazy Type Hints {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### Exemple {#lazy-type-hints-example}
@@ -1110,7 +1110,7 @@ CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
 -- Enable experimental setting
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
@@ -1149,12 +1149,12 @@ Pour matérialiser les indications de type dans les données existantes, vous po
 
 * Cette fonctionnalité est expérimentale et peut évoluer dans de futures versions
 * La conversion de types au moment de la requête peut entraîner un surcoût important en termes de performances par rapport aux types pré-matérialisés, en particulier pour les objets JSON volumineux
-* Cette fonctionnalité s&#39;applique uniquement lors de la modification de `typed_paths` (indications de type) ; les autres paramètres JSON, comme `max_dynamic_paths`, `SKIP` ou `SKIP REGEXP`, nécessitent toujours des mutations
+* Cette fonctionnalité s&#39;applique uniquement lors de la modification de `typed_paths` (indications de type) ; les autres paramètres JSON, comme `max_dynamic_paths`, `SKIP` ou `SKIP REGEXP`, nécessitent toujours des mutations
 
-- La modification d’une indication de type (ou la suppression d’un chemin typé) n’est **pas** une opération limitée aux métadonnées et est rejetée lorsque la sous-colonne concernée est utilisée dans une structure persistée positionnellement :
+- La modification d’une indication de type (ou la suppression d’un chemin typé) n’est **pas** une opération limitée aux métadonnées et est rejetée lorsque la sous-colonne concernée est utilisée dans une structure persistée positionnellement :
 
-  * la **clé primaire/de tri** ou la **clé de partition** — la modification est interdite, car les valeurs de l’index primaire/de partition sur disque ne peuvent pas être reconstruites par un `ALTER` limité aux métadonnées (comme pour toute autre colonne de clé) ;
-  * un **index de saut de données** explicite — supprimez d’abord l’index ou désactivez `allow_experimental_json_lazy_type_hints` pour exécuter la modification sous la forme d’une mutation complète qui reconstruit l’index.
+  * la **clé primaire/de tri** ou la **clé de partition** — la modification est interdite, car les valeurs de l’index primaire/de partition sur disque ne peuvent pas être reconstruites par un `ALTER` limité aux métadonnées (comme pour toute autre colonne de clé) ;
+  * un **index de saut de données** explicite — supprimez d’abord l’index ou désactivez `enable_json_lazy_type_hints` pour exécuter la modification sous la forme d’une mutation complète qui reconstruit l’index.
   * une **projection dont la clé de tri (`ORDER BY`) lit la sous-colonne** — supprimez d’abord la projection, car un `ALTER` limité aux métadonnées ne peut pas reconstruire l’index primaire de la projection.
 
   L’ajout d’indications pour des chemins non utilisés dans une telle structure, ou les modifications qui ne changent pas le type sur disque des sous-colonnes utilisées (par exemple, l’ajout d’un chemin typé non lié), restent limités aux métadonnées.

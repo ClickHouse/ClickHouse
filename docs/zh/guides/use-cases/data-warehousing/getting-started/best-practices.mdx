@@ -72,9 +72,9 @@ SELECT count() FROM my_lake.`analytics.events`
 
 许多集成在首次使用前都需要先启用功能标志。如果 `CREATE DATABASE` 因权限错误而失败，请检查你的服务版本。
 
-对于目录连接，不同目录类型都有各自的标志。概览请参阅[Connecting to catalogs](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)，设置详情请参阅 [DataLakeCatalog reference](/zh/reference/engines/database-engines/datalake)。各目录的具体设置请见[目录指南](/zh/guides/use-cases/data-warehousing/reference)。
+对于目录连接，不同目录类型都有各自的标志。概览请参阅[连接到目录](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)，设置详情请参阅 [DataLakeCatalog reference](/zh/reference/engines/database-engines/datalake)。各目录的具体设置请见[目录指南](/zh/guides/use-cases/data-warehousing/reference)。
 
-对于写入操作，Iceberg 需要 [allow&#95;insert&#95;into&#95;iceberg](/zh/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 。请参阅[写入数据湖](/zh/guides/use-cases/data-warehousing/getting-started/writing-data)。Delta Lake 需要 [allow&#95;delta&#95;lake&#95;writes](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+) 。[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix)列出了每种格式和操作适用的标志。
+对于写入操作，Iceberg 需要 [allow&#95;insert&#95;into&#95;iceberg](/zh/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 。请参阅[写入数据湖](/zh/guides/use-cases/data-warehousing/getting-started/writing-data)。Delta Lake 需要 [allow&#95;delta&#95;lake&#95;writes](/zh/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+) 。[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix)列出了每种格式和操作适用的标志。
 
 ## 提升查询性能 {#query-performance}
 
@@ -240,7 +240,7 @@ SETTINGS
 
 #### Delta Lake 写入 {#delta-write-settings}
 
-除了 [allow&#95;delta&#95;lake&#95;writes](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+) 外，还可控制插入时输出文件的大小：
+除了 [allow&#95;delta&#95;lake&#95;writes](/zh/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+) 外，还可控制 insert 时输出文件的大小：
 
 | 设置项                                                                                                                                                              | 版本   | 用途            |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------- |

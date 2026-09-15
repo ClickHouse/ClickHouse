@@ -449,7 +449,7 @@ INSERT INTO kafka_out VALUES
 
 <ExperimentalBadge />
 
-Если включен параметр `allow_experimental_kafka_offsets_storage_in_keeper`, то для движка таблицы Kafka можно задать еще две настройки:
+Если включен параметр `allow_kafka_offsets_storage_in_keeper`, то для движка таблицы Kafka можно задать еще две настройки:
 
 * `kafka_keeper_path` задает путь к таблице в ClickHouse Keeper
 * `kafka_replica_name` задает имя реплики в ClickHouse Keeper
@@ -466,7 +466,7 @@ partition_id % kafka_shard_count == kafka_partition_shard_num - 1
 
 Оба параметра необходимо указывать вместе; указание только одного из них вызывает исключение. Значение `kafka_partition_shard_num` должно находиться в диапазоне от 1 до `kafka_shard_count` включительно. Поддерживается раскрытие макросов (например, `'{shard}'`), которое повторно выполняется при каждом запуске сервера. Это позволяет использовать общие метаданные таблицы для всех сегментов в базе данных `Replicated`, при этом каждый сегмент подставляет собственное значение. Проверка выполняется после раскрытия макросов.
 
-Все сегменты должны использовать одно и то же значение `kafka_keeper_path`. Все реплики используют общие закоммиченные смещения и размеры намерений, но за блокировки партиций конкурируют только реплики с одинаковым номером сегмента (при условии, что у всех реплик одинаковое количество сегментов).
+Все сегменты должны использовать одно и то же значение `kafka_keeper_path`. Все реплики используют общие зафиксированные смещения и размеры намерений, но за блокировки партиций конкурируют только реплики с одинаковым номером сегмента (при условии, что у всех реплик одинаковое количество сегментов).
 
 Пример для 3 сегментов, потребляющих топик с 12 партициями:
 
@@ -479,7 +479,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -489,7 +489,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 В сочетании с репликами (несколькими значениями `kafka_replica_name`, использующими один и тот же `kafka_keeper_path`) фильтр привязки сначала определяет доступные партиции, после чего блокировки ZooKeeper распределяют их между репликами.
@@ -502,7 +502,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Известные ограничения {#known-limitations}

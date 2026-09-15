@@ -1069,42 +1069,42 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Experimental) {#lazy-type-hints}
+## Lazy 型ヒント (Experimental) {#lazy-type-hints}
 
 <Note>
-  この機能は実験的な機能であり、設定 `allow_experimental_json_lazy_type_hints` を有効にする必要があります。
+  この機能は実験的な機能であり、設定 `enable_json_lazy_type_hints` を有効にする必要があります。
 </Note>
 
-`ALTER TABLE ... MODIFY COLUMN` を使って JSONカラムに型ヒントを追加または変更すると、ClickHouse は通常、新しい型ヒントを実体化するためにすべてのデータパーツを書き換えます。大量の履歴データ (数百テラバイト) を持つテーブルでは、これは非常に大きなコストになる可能性があります。
+`ALTER TABLE ... MODIFY COLUMN` を使って JSONカラムに型ヒントを追加または変更すると、ClickHouse は通常、新しい型ヒントをマテリアライズするためにすべてのデータパーツを書き換えます。大量の履歴データ (数百テラバイト) を持つテーブルでは、これは非常に大きなコストになる可能性があります。
 
-**Lazy type hints** を使うと、既存データを書き換えることなく、メタデータのみの操作として型ヒントを追加できます。
+**Lazy 型ヒント** を使うと、既存データを書き換えることなく、メタデータのみの操作として型ヒントを追加できます。
 
 * **古いパーツ**: 型ヒントは、`Dynamic` から指定された型へのキャストによってクエリ時に適用されます
-* **新しいパーツ**: 型ヒントは `INSERT` 時に実体化されます
-* **マージ**: 型ヒントはパーツのマージ時に実体化されます
+* **新しいパーツ**: 型ヒントは `INSERT` 時にマテリアライズされます
+* **マージ**: 型ヒントはパーツのマージ時にマテリアライズされます
 
 つまり、型ヒントを即座に追加でき、通常のバックグラウンドマージに伴ってデータは徐々に変換されます。
 
-### Lazy Type Hints を有効にする {#enabling-lazy-type-hints}
+### Lazy 型ヒント を有効にする {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### 例 {#lazy-type-hints-example}
 
 ```sql title="Query"
--- テーブルを作成してデータを挿入する
+-- Create a table and insert data
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- 実験的な設定を有効にする
-SET allow_experimental_json_lazy_type_hints = 1;
+-- Enable experimental setting
+SET enable_json_lazy_type_hints = 1;
 
--- 型ヒントを追加する - ミューテーションなしで即座に完了する
+-- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
 
--- データをクエリする - 型ヒントは読み取り時に適用される
+-- Query the data - type hints are applied at read time
 SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
 ```
 
@@ -1142,7 +1142,7 @@ Lazy 型ヒント を有効にすると、このクエリは1行も返さず、�
 * 型ヒントの変更 (または型付きパスの削除) は、影響を受けるサブカラムが位置依存で永続化された構造で使用されている場合、**メタデータのみ**の操作にはならず、拒否されます:
 
   * **プライマリ/ソートキー**または**パーティションキー** — メタデータのみの `ALTER` ではディスク上のプライマリインデックス / パーティション値を再構築できないため (他のキー カラムと同様に) 、変更は禁止されます。
-  * 明示的な**データスキッピングインデックス** — まず索引を削除するか、`allow_experimental_json_lazy_type_hints` を無効にして、索引を再構築する完全なミューテーションとして変更を実行してください。
+  * 明示的な**データスキッピングインデックス** — まず索引を削除するか、`enable_json_lazy_type_hints` を無効にして、索引を再構築する完全なミューテーションとして変更を実行してください。
   * **ソートキー (`ORDER BY`) がサブカラムを参照するプロジェクション** — メタデータのみの `ALTER` ではプロジェクションのプライマリインデックスを再構築できないため、まずプロジェクションを削除してください。
 
   このような構造で使用されていないパスへのヒントの追加、または使用されるサブカラムのディスク上の型を変更しない変更 (例: 関係のない型付きパスの追加) は、引き続きメタデータのみの操作です。

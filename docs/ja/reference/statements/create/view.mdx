@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -266,17 +266,18 @@ AS SELECT ...
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-`REFRESH` clause では、`EVERY`、`AFTER`、`DEPENDS ON` の少なくとも 1 つを指定する必要があります。これらを 1 つも指定しない単独の `REFRESH` は拒否されます。`EVERY`/`AFTER` を伴わない `REFRESH DEPENDS ON ...` は、`REFRESH AFTER 0 SECOND DEPENDS ON ...` の省略形です。詳細は以下の [Refresh Dependencies](#refresh-dependencies) を参照してください。
+`REFRESH` clause では、`EVERY`、`AFTER`、`DEPENDS ON` の少なくとも 1 つを指定する必要があります。これらを 1 つも指定しない単独の `REFRESH` は拒否されます。`EVERY`/`AFTER` を伴わない `REFRESH DEPENDS ON ...` は、`REFRESH AFTER 0 SECOND DEPENDS ON ...` の省略形です。詳細は以下の [リフレッシュの依存関係](#refresh-dependencies) を参照してください。
 
 対応するクエリを定期的に実行し、その結果をテーブルに格納します。
 
 * `APPEND` が指定されている場合、各リフレッシュでは既存の行を削除せずにテーブルへ行を挿入します。この insert は、通常の `INSERT INTO ... SELECT` クエリと同様にアトミックではありません。
+* `APPEND INCREMENTAL` が指定されている場合、各リフレッシュでは前回のリフレッシュ以降にソーステーブルへコミットされた行のみを対象にクエリを実行し、その結果を追加します。
 * それ以外の場合、各リフレッシュでテーブルの以前の内容はアトミックに置き換えられます。
 
 通常の、リフレッシュ機能のない materialized view との違い:
 
 * insert trigger はありません。`SELECT` で指定したテーブルに新しいデータが挿入されても、そのデータがリフレッシャブルmaterialized view に自動的に反映されることは *ありません*。代わりに、データの挿入は定期実行または手動実行のリフレッシュ時にのみ行われます。
-* `SELECT` クエリには制約がありません。テーブル関数 (例: `url()`) 、ビュー、UNION、JOIN はいずれも使用できます。
+* `SELECT` クエリには制約がありません。テーブル関数 (例: `url()`) 、ビュー、UNION、JOIN はいずれも使用できます。唯一の例外は `APPEND INCREMENTAL` で、`enable_block_number_column = 1` および `enable_block_offset_column = 1` を設定した単一のプレーンな `MergeTree` ソーステーブルが必要であり、`JOIN`、`UNION`、サブクエリ、ビュー、テーブル関数は使用できません。
 
 <Note>
   クエリの `REFRESH ... SETTINGS` 部分で指定する設定はリフレッシュ設定 (例: `refresh_retries`) であり、通常の設定 (例: `max_threads`) とは異なります。通常の設定は、クエリ末尾の `SETTINGS` で指定できます。
@@ -444,7 +445,7 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
   * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` は materialized view ではサポートされていません。必ず `MODIFY REFRESH` を使用してください。
 
-  * `APPEND` の追加または削除はサポートされていません。
+  * リフレッシュモードの変更はサポートされていません。`APPEND` と `INCREMENTAL` は追加も削除もできません。
 
   * `all_replicas` 設定は作成後に変更できません。
 </Note>
@@ -452,19 +453,19 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 例:
 
 ```sql
--- スケジュールを変更し、既存の設定と依存関係を削除する。
+-- Change the schedule, drop existing settings and dependencies.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- スケジュールを変更し、再試行の動作を調整する。
+-- Change the schedule and tune retry behavior.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- 期間を変更しながら依存関係を維持する。
+-- Keep the dependency while changing the period.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- `DEPENDS ON` を省略して依存関係を削除する。
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

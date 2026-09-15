@@ -132,6 +132,18 @@ Si se establece en true, permite utilizar el índice de texto.
 Habilita el plegado anticipado de constantes mediante cortocircuito para `and` y `or` durante el análisis de consultas.
 Cuando está habilitada, se analizan las ramas no alcanzables de subconsultas escalares aptas para preservar sus tipos y validar la semántica de las consultas, pero no se ejecutan. La optimización recurre al análisis normal cuando se requiere la cardinalidad escalar o valores en tiempo de ejecución.
 
+## enable_funnel_functions {#enable_funnel_functions}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_funnel_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para el setting `allow_experimental_funnel_functions`."}]}]} />
+
+Habilita las funciones para el análisis de funnel.
+
 ## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -230,6 +242,18 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
+## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_json_lazy_type_hints`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para el ajuste `allow_experimental_json_lazy_type_hints`."}]}]} />
+
+Habilita las indicaciones de tipo diferidas para el JSON type. Esta funcionalidad permite optimizar las conversiones del JSON type al diferir la evaluación de las indicaciones de tipo.
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -250,6 +274,18 @@ Habilita las expresiones de tabla comunes materializadas (`WITH <name> AS MATERI
 Cuando está habilitada, una CTE declarada como `MATERIALIZED` a la que se hace referencia más de una vez se ejecuta una sola vez, se almacena en una tabla temporal y todas las referencias leen de esa tabla. Una CTE a la que solo se hace referencia una vez se incorpora en línea como una CTE ordinaria para evitar la sobrecarga.
 Cuando está deshabilitada, la palabra clave `MATERIALIZED` se ignora: la CTE se incorpora en línea en cada referencia como una CTE ordinaria y se registra una advertencia.
 
+## enable_materialized_postgresql_table {#enable_materialized_postgresql_table}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_materialized_postgresql_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_materialized_postgresql_table`."}]}]} />
+
+Permite usar el motor de tabla `MaterializedPostgreSQL`.
+
 ## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -269,6 +305,19 @@ Traslada más condiciones de WHERE a PREWHERE y realiza lecturas desde disco y f
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Genera tuplas con nombre en la función tuple() cuando todos los nombres son únicos y pueden tratarse como identificadores sin comillas."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Deshabilitado hasta que haya mejoras de usabilidad"}]}]} />
 
 Genera tuplas con nombre en la función tuple() cuando todos los nombres son únicos y pueden tratarse como identificadores sin comillas.
+
+## enable_nullable_tuple_type {#enable_nullable_tuple_type}
+
+**Aliases**: `allow_experimental_nullable_tuple_type`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` ahora es GA"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple ahora está en Beta. Añadido como alias de 'allow_experimental_nullable_tuple_type'."}]}]} />
+
+Permite crear columnas [Nullable](/es/reference/data-types/nullable) [Tuple](/es/reference/data-types/tuple) en las tablas.
+
+Esta configuración no determina si las subcolumnas de tupla extraídas pueden ser `Nullable` (por ejemplo, a partir de columnas Dynamic, Variant, JSON o Tuple).
+Utilice `allow_nullable_tuple_in_extracted_subcolumns` para controlar si las subcolumnas de tupla extraídas pueden ser `Nullable`.
 
 ## enable_order_by_all {#enable_order_by_all}
 
@@ -475,11 +524,43 @@ Permite crear tablas con el motor de tablas [TimeSeries](/es/reference/engines/t
 
 Permite crear los tipos de datos [Time](/es/reference/data-types/time) y [Time64](/es/reference/data-types/time64).
 
+## enable_trino_dialect {#enable_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para habilitar el valor `trino` de la configuración `dialect`, que traduce la sintaxis SQL de Trino y asigna los nombres de funciones de Trino a sus equivalentes en ClickHouse."}]}]} />
+
+Habilita el valor `trino` de la configuración `dialect`.
+
+Cuando `dialect` tiene el valor `trino`, las consultas se escriben en SQL de Trino: la
+sintaxis específica de Trino (literales `ARRAY[...]`, `TRY_CAST`, `UNNEST`, tipos `ROW`, `OFFSET` antes de `LIMIT`)
+se traduce a ClickHouse SQL y los nombres de funciones de Trino se asignan a sus
+equivalentes en ClickHouse. La consulta `SET` se sigue analizando como SQL sin procesar, de modo que sea posible
+volver a cambiar el dialecto.
+
+El dialecto también alinea la semántica de las consultas con la de Trino: `join_use_nulls` se activa,
+`use_variant_as_common_type` se desactiva y el analizador de consultas se activa.
+Una cláusula `SETTINGS` explícita en la consulta sigue teniendo precedencia.
+
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite ARRAY JOIN con varios arrays de distintos tamaños. Cuando esta configuración está habilitada, los arrays se redimensionarán hasta igualar el más largo.
+
+## enable_unique_key {#enable_unique_key}
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_unique_key`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_unique_key`."}]}]} />
+
+Permite crear tablas con la cláusula `UNIQUE KEY` en motores de la familia MergeTree.
 
 ## enable_url_encoding {#enable_url_encoding}
 

@@ -12,15 +12,10 @@ doc_type: 'reference'
 
 `T`는 다음 복합 데이터 타입 중 어느 것도 될 수 없습니다.
 
-* [배열](/ko/reference/data-types/array) — 지원되지 않음
-* [맵](/ko/reference/data-types/map) — 지원되지 않음
-* [Tuple](/ko/reference/data-types/tuple) — 베타 지원 제공*
+* [배열](/ko/reference/data-types/array)
+* [맵](/ko/reference/data-types/map)
 
 하지만 복합 데이터 타입은 `Nullable` 타입 값을 **포함할 수 있습니다**. 예를 들어 `Array(Nullable(Int8))` 또는 `Tuple(Nullable(String), Nullable(Int64))`와 같습니다.
-
-<Note title="베타: Nullable Tuples">
-  * `enable_nullable_tuple_type = 1`이 활성화되면 [Nullable(Tuple(...))](/ko/reference/data-types/tuple#nullable-tuple)을 지원합니다.
-</Note>
 
 `Nullable` 타입 필드는 테이블 인덱스에 포함할 수 없습니다.
 

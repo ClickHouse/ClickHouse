@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -271,12 +271,13 @@ La cláusula `REFRESH` debe especificar al menos uno de `EVERY`, `AFTER` o `DEPE
 Ejecuta periódicamente la consulta correspondiente y almacena su resultado en una tabla.
 
 * Si se especifica `APPEND`, cada actualización inserta filas en la tabla sin eliminar las existentes. La inserción no es atómica, igual que en una consulta `INSERT INTO ... SELECT` normal.
+* Si se especifica `APPEND INCREMENTAL`, cada actualización ejecuta la consulta únicamente sobre las filas confirmadas en la tabla de origen desde la actualización anterior, y añade el resultado.
 * De lo contrario, cada actualización reemplaza atómicamente el contenido previo de la tabla.
 
 Diferencias con las vistas materializadas normales no actualizables:
 
-* No hay trigger de inserción. Cuando se insertan datos nuevos en la tabla especificada en `SELECT`, *no* se envían automáticamente a la vista materializada actualizable. En su lugar, los datos solo se insertan durante las ejecuciones de actualización periódicas o manuales.
-* La consulta `SELECT` no tiene restricciones. Se permiten funciones de tabla (por ejemplo, `url()`), vistas, UNION y JOIN.
+* No hay desencadenador de inserción. Cuando se insertan datos nuevos en la tabla especificada en `SELECT`, *no* se envían automáticamente a la vista materializada actualizable. En su lugar, los datos solo se insertan durante las ejecuciones de actualización periódicas o manuales.
+* La consulta `SELECT` no tiene restricciones. Se permiten funciones de tabla (por ejemplo, `url()`), vistas, UNION y JOIN. `APPEND INCREMENTAL` es la única excepción: requiere una sola tabla de origen `MergeTree` simple con `enable_block_number_column = 1` y `enable_block_offset_column = 1`, y rechaza `JOIN`, `UNION`, subconsultas, vistas y funciones de tabla.
 
 <Note>
   La configuración de la parte `REFRESH ... SETTINGS` de la consulta corresponde a los parámetros de actualización (por ejemplo, `refresh_retries`), y es distinta de la configuración normal (por ejemplo, `max_threads`). La configuración normal puede especificarse con `SETTINGS` al final de la consulta.
@@ -444,7 +445,7 @@ La programación (`EVERY` o `AFTER`) es obligatoria: la sentencia siempre sustit
 
   * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` no es compatible con las vistas materializadas; debe hacerse mediante `MODIFY REFRESH`.
 
-  * No se admite añadir ni quitar `APPEND`.
+  * No se admite cambiar el modo de actualización: `APPEND` e `INCREMENTAL` no pueden añadirse ni quitarse.
 
   * La configuración `all_replicas` no puede cambiarse después de la creación.
 </Note>
@@ -452,19 +453,19 @@ La programación (`EVERY` o `AFTER`) es obligatoria: la sentencia siempre sustit
 Ejemplos:
 
 ```sql
--- Cambiar el horario, eliminar la configuración y las dependencias existentes.
+-- Change the schedule, drop existing settings and dependencies.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- Cambiar el horario y ajustar el comportamiento de reintentos.
+-- Change the schedule and tune retry behavior.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- Mantener la dependencia al cambiar el período.
+-- Keep the dependency while changing the period.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- Eliminar la dependencia omitiendo `DEPENDS ON`.
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

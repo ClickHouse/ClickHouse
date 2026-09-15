@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="join_algorithm">
-  ## join_algorithm
-</div>
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -83,7 +81,7 @@ MergeTree 테이블의 경우 이 알고리즘은 조인 키 필터를 스토리
 
 조인 대상 테이블의 표현식 간 부등식 비교(`<`, `<=`, `>`, `>=`)가 2개 있는 `ON` 절을 포함하는 `JOIN`을 위한 정렬 기반 [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 알고리즘입니다. `ALL INNER/LEFT/RIGHT/FULL JOIN` 및 `SEMI`/`ANTI` `LEFT/RIGHT JOIN`을 지원합니다.
 
-목록 내 위치가 우선순위를 결정합니다. 기본값처럼 다른 알고리즘 뒤에 나열하면 IEJoin은 해당 알고리즘을 적용할 수 없을 때만 사용됩니다(`ON` 절에 동등 조건이 없는 경우). 첫 번째로 나열하면 `ON` 절에 부등 조건이 2개 있을 때마다 사용됩니다. 나머지 조건(동등 조건 포함)은 `ALL INNER JOIN`에서는 조인 결과에 대한 필터로 적용되며, 다른 종류에서는 매칭에 영향을 주는 잔여 조건으로 연산자 내부에서 평가됩니다. 목록에 `ie_join`이 없으면 부등 조건만 있는 `INNER JOIN`은 필터가 적용된 `CROSS JOIN`으로 실행되며, 다른 종류는 지원되지 않습니다.
+목록 내 위치가 우선순위를 결정합니다. 기본값처럼 다른 알고리즘 뒤에 나열하면 IEJoin은 해당 알고리즘을 적용할 수 없을 때만 사용됩니다(`ON` 절에 동등 조건이 없는 경우). 첫 번째로 나열하면 `ON` 절에 부등 조건이 2개 있을 때마다 사용됩니다. 나머지 조건(동등 조건 포함)은 `ALL INNER JOIN`에서는 조인 결과에 대한 필터로 적용되며, 다른 종류에서는 매칭에 영향을 주는 잔여 조건으로 연산자 내부에서 평가됩니다. `ON` 절에 적합한 부등 조건이 2개를 초과하면, 알고리즘에서 사용할 2개는 컬럼 min/max 통계의 추정 선택도를 기준으로 선택합니다([Column statistics](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)의 `basic` 유형 참조). 추정값을 사용할 수 없는 경우(통계가 없거나 [`use_statistics`](/ko/reference/settings/session-settings/use-statistics#use_statistics)가 비활성화된 경우)에는 구문 순서상 처음 2개를 사용합니다. 목록에 `ie_join`이 없으면 부등 조건만 있는 `INNER JOIN`은 필터가 적용된 `CROSS JOIN`으로 실행되며, 다른 종류는 지원되지 않습니다.
 
 두 입력은 조인 전에 모두 메모리에 누적됩니다. [`max_rows_in_join`](/ko/reference/settings/session-settings/max-rows#max_rows_in_join) 및 [`max_bytes_in_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_join)은 양쪽의 누적 입력을 함께 제한하며(오른쪽만이 아님), 오버플로우 시 수행할 작업은 [`join_overflow_mode`](/ko/reference/settings/session-settings/join#join_overflow_mode)로 설정합니다. 누적된 입력 위에 연산자가 구축하는 정렬 인덱스는 제한에 포함되지 않습니다. 조인 연산자 자체는 단일 스레드에서 실행되며, 입력의 조인 전 정렬만 병렬화됩니다.
 
@@ -97,20 +95,18 @@ MergeTree 테이블의 경우 이 알고리즘은 조인 키 필터를 스토리
 * 이미 정렬된 쪽(MergeTree 순서 읽기 또는 사전 정렬된 모든 입력): 세그먼트별 머지에 순서를 보존하는 분산을 수행하면 파이프라인이 교착 상태에 빠질 수 있습니다. 대신 순서 읽기와 해당 `read_in_order_use_virtual_row` 최적화가 유지됩니다.
 * 이니시에이터가 분산 계획(`make_distributed_plan`)을 구축하는 동안: 분산된 정렬은 원격 실행을 위해 직렬화할 수 없기 때문입니다. 로컬 단일 프래그먼트 계획과 워커별 프래그먼트는 해당 설정을 비활성화한 상태에서 다시 최적화되므로, 여전히 샤딩할 수 있습니다.
 
-이를 건너뛰면 일반적인 병렬성이 아니라 이 재작성만 비활성화됩니다. 조인은 단일 `full_sorting_merge`로 실행되며, 순서대로 읽는 MergeTree 쪽은 `query_plan_join_shard_by_pk_ranges`가 활성화되어 있으면 여전히 프라이머리 키 범위별로 소스에서 샤딩될 수 있습니다(이 범위는 조인에서 사용하는 동일한 비교 기준으로 정렬되므로 동일한 키가 함께 유지됨).
+이를 건너뛰면 일반적인 병렬 처리가 아니라 이 재작성만 비활성화됩니다. 조인은 단일 `full_sorting_merge`로 실행되며, MergeTree 쪽의 순서 읽기도 `query_plan_join_shard_by_pk_ranges`가 활성화된 경우 프라이머리 키 범위(조인에서 사용하는 것과 동일한 비교로 정렬되므로 동일한 키가 함께 유지됨)를 기준으로 소스 단계에서 샤딩될 수 있습니다.
 
 * prefer&#95;partial&#95;merge
 
-ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려고 시도하며, 그렇지 않으면 `hash`를 사용합니다. *Deprecated*이며, `partial_merge,hash`와 같습니다.
+ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도하며, 그렇지 않으면 `hash`를 사용합니다. *Deprecated*, `partial_merge,hash`와 같습니다.
 
 * default (deprecated)
 
 레거시 값이므로 더 이상 사용하지 마십시오.
-`direct,hash`와 같으며, 즉 direct 조인과 해시 조인을 이 순서대로 사용하려고 시도합니다.
+`direct,hash`와 같습니다. 즉, direct 조인과 해시 조인을 이 순서대로 사용하려 시도합니다.
 
-<div id="join_any_take_last_row">
-  ## join_any_take_last_row
-</div>
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,9 +129,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려고 시�
 * [Join 테이블 엔진](/ko/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ko/reference/settings/session-settings/join#join_default_strictness)
 
-<div id="join_default_strictness">
-  ## join_default_strictness
-</div>
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -148,9 +142,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려고 시�
 * `ASOF` — 정확히 일치하지 않는 시퀀스를 조인할 때 사용합니다.
 * `빈 문자열` — 쿼리에서 `ALL` 또는 `ANY`를 지정하지 않으면 ClickHouse가 예외를 발생시킵니다.
 
-<div id="join_on_disk_max_files_to_merge">
-  ## join_on_disk_max_files_to_merge
-</div>
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -162,9 +154,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려고 시�
 
 * 2 이상의 모든 양의 정수.
 
-<div id="join_output_by_rowlist_perkey_rows_threshold">
-  ## join_output_by_rowlist_perkey_rows_threshold
-</div>
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -172,9 +162,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려고 시�
 
 해시 조인에서 행 목록으로 출력할지 결정할 때 사용하는, 오른쪽 테이블의 키별 평균 행 수 하한값입니다.
 
-<div id="join_overflow_mode">
-  ## join_overflow_mode
-</div>
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -202,9 +190,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려고 시�
 * [JOIN 절](/ko/reference/statements/select/join)
 * [Join 테이블 엔진](/ko/reference/engines/table-engines/special/join)
 
-<div id="join_use_nulls">
-  ## join_use_nulls
-</div>
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

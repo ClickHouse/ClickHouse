@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="join_algorithm">
-  ## join_algorithm
-</div>
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -73,7 +71,7 @@ Admite joins `INNER` y `LEFT`, y solo join keys de igualdad de una sola columna 
 
 * auto
 
-Cuando se establece en `auto`, primero se prueba `hash` join y el algoritmo cambia dinámicamente a otro algoritmo si se supera el límite de memoria.
+Cuando se establece en `auto`, primero se prueba `hash` join y el algoritmo cambia dinámicamente a otro algoritmo si se supera el memory limit.
 
 * full&#95;sorting&#95;merge
 
@@ -83,7 +81,7 @@ Cuando se establece en `auto`, primero se prueba `hash` join y el algoritmo camb
 
 El algoritmo [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) basado en ordenación para un `JOIN` cuya sección `ON` tiene dos comparaciones de desigualdad (`<`, `<=`, `>`, `>=`) entre expresiones de las tablas combinadas. Admite `ALL INNER/LEFT/RIGHT/FULL JOIN` y `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
-La posición en la lista establece la prioridad: si aparece después de otros algoritmos, como en el valor predeterminado, IEJoin se usa solo cuando estos no se aplican (la sección `ON` no tiene condiciones de igualdad); si aparece primero, se usa siempre que la sección `ON` tenga dos condiciones de desigualdad. Las condiciones restantes (incluidas las igualdades) se aplican como filtro sobre el resultado del join para `ALL INNER JOIN`, y se evalúan dentro del operador como una condición residual que afecta a la coincidencia para los demás tipos. Sin `ie_join` en la lista, un `INNER JOIN` con solo condiciones de desigualdad se ejecuta como un `CROSS JOIN` con un filtro, y los demás tipos no son compatibles.
+La posición en la lista establece la prioridad: si aparece después de otros algoritmos, como en el valor predeterminado, IEJoin se usa solo cuando estos no se aplican (la sección `ON` no tiene condiciones de igualdad); si aparece primero, se usa siempre que la sección `ON` tenga dos condiciones de desigualdad. Las condiciones restantes (incluidas las igualdades) se aplican como filtro sobre el resultado del join para `ALL INNER JOIN`, y se evalúan dentro del operador como una condición residual que afecta a la coincidencia para los demás tipos. Cuando la sección `ON` tiene más de dos condiciones de desigualdad aptas, las dos que utiliza el algoritmo se eligen según su selectividad estimada a partir de las estadísticas min/max de las columnas (consulte el tipo `basic` en [Estadísticas de columnas](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)); cuando las estimaciones no están disponibles (no hay estadísticas o [`use_statistics`](/es/reference/settings/session-settings/use-statistics#use_statistics) está desactivado), se utilizan las dos primeras en el orden sintáctico. Sin `ie_join` en la lista, un `INNER JOIN` con solo condiciones de desigualdad se ejecuta como un `CROSS JOIN` con un filtro, y los demás tipos no son compatibles.
 
 Ambas entradas se acumulan en memoria antes de realizar el join: [`max_rows_in_join`](/es/reference/settings/session-settings/max-rows#max_rows_in_join) y [`max_bytes_in_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitan conjuntamente la entrada acumulada de ambos lados (no solo del lado derecho), con la acción ante overflow establecida mediante [`join_overflow_mode`](/es/reference/settings/session-settings/join#join_overflow_mode); los índices de ordenación que el operador construye sobre la entrada acumulada no cuentan para el límite. El propio operador join se ejecuta en un único thread; solo se paralelizan las ordenaciones de las entradas previas al join.
 
@@ -97,20 +95,18 @@ La segmentación por hash mediante las join keys se aplica solo a joins de igual
 * Lados que ya están ordenados (una lectura de MergeTree en orden o cualquier entrada preordenada): una dispersión que preserve el orden en los merges por segmento puede bloquear la canalización. En su lugar se conservan la lectura en orden y su optimización `read_in_order_use_virtual_row`.
 * Mientras el iniciador crea un plan distribuido (`make_distributed_plan`), porque la ordenación dispersa no se puede serializar para la ejecución remota. El plan local de un solo fragmento y los fragmentos por trabajador se vuelven a optimizar con esa configuración desactivada, por lo que aún pueden segmentarse.
 
-Omitirlo desactiva solo esta reescritura, no el paralelismo en general: el join se ejecuta como un único `full_sorting_merge`, y los lados de MergeTree que se leen en orden aún pueden segmentarse en el origen mediante rangos de primary key (que se ordenan según la misma comparación que usa el join, por lo que las claves iguales permanecen juntas) cuando `query_plan_join_shard_by_pk_ranges` está habilitado.
+Omitirla desactiva solo esta reescritura, no el paralelismo en general: el join se ejecuta como un único `full_sorting_merge`, y los lados MergeTree que leen en orden aún pueden segmentarse en el origen mediante rangos de clave primaria (que se ordenan por la misma comparación que usa el join, por lo que las claves iguales permanecen juntas) cuando `query_plan_join_shard_by_pk_ranges` está habilitado.
 
 * prefer&#95;partial&#95;merge
 
-ClickHouse siempre intenta usar `partial_merge` join si es posible; en caso contrario, usa `hash`. *Obsoleto*, igual que `partial_merge,hash`.
+ClickHouse siempre intenta usar el join `partial_merge` si es posible; de lo contrario, usa `hash`. *Obsoleto*, igual que `partial_merge,hash`.
 
 * default (obsoleto)
 
-Valor heredado; no lo use más.
-Igual que `direct,hash`; es decir, intenta usar direct join y hash join (en este orden).
+Valor heredado; no lo utilice más.
+Igual que `direct,hash`, es decir, intenta usar un direct join y un hash join (en este orden).
 
-<div id="join_any_take_last_row">
-  ## join_any_take_last_row
-</div>
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,9 +129,7 @@ Véase también:
 * [motor de tabla Join](/es/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/es/reference/settings/session-settings/join#join_default_strictness)
 
-<div id="join_default_strictness">
-  ## join_default_strictness
-</div>
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -148,9 +142,7 @@ Valores posibles:
 * `ASOF` — Para combinar secuencias con una coincidencia incierta.
 * `Cadena vacía` — Si no se especifica `ALL` o `ANY` en la consulta, ClickHouse lanza una excepción.
 
-<div id="join_on_disk_max_files_to_merge">
-  ## join_on_disk_max_files_to_merge
-</div>
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -162,9 +154,7 @@ Valores posibles:
 
 * Cualquier entero positivo a partir de 2.
 
-<div id="join_output_by_rowlist_perkey_rows_threshold">
-  ## join_output_by_rowlist_perkey_rows_threshold
-</div>
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -172,9 +162,7 @@ Valores posibles:
 
 El límite inferior del promedio de filas por clave en la tabla de la derecha para determinar si la salida debe generarse como una lista de filas en hash join.
 
-<div id="join_overflow_mode">
-  ## join_overflow_mode
-</div>
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -202,9 +190,7 @@ Valor predeterminado: `THROW`.
 * [cláusula JOIN](/es/reference/statements/select/join)
 * [motor de tabla Join](/es/reference/engines/table-engines/special/join)
 
-<div id="join_use_nulls">
-  ## join_use_nulls
-</div>
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

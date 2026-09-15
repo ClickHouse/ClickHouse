@@ -52,6 +52,18 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 如果启用，在对冲请求中，即使已经有了一些进度，也可以在收到第一个数据包之前发起新的连接
 (但在 `receive_data_timeout` 超时时间内进度没有更新) ；否则，一旦首次取得进度，就会禁止切换副本。
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**别名**：`allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "为设置 `allow_experimental_correlated_subqueries` 添加了别名。"}]}]} />
+
+允许执行关联子查询。
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 在 throwIf() 函数中启用自定义错误代码。如果为 true，抛出的异常可能带有非预期的错误代码。
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**别名**：`allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "为设置 `allow_experimental_database_glue_catalog` 添加了别名"}]}]} />
+
+允许使用 `catalog_type = 'glue'` 的数据库引擎 `DataLakeCatalog`
+
+Cloud 默认值：`1`。
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**别名**：`allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "为设置 `allow_experimental_database_iceberg` 添加了别名"}]}]} />
+
+允许使用 `catalog_type = 'iceberg'` 的 数据库引擎 `DataLakeCatalog`
+
+Cloud 默认值：`1`。
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**别名**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "为设置 `allow_experimental_database_unity_catalog` 添加了别名"}]}]} />
+
+允许使用 `catalog_type = 'unity'` 的 数据库引擎 `DataLakeCatalog`
+
+Cloud default value: `1`。
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,18 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`allow_experimental_delta_kernel_rs` 的新名称；该设置不再处于实验阶段，原名称保留为别名。默认值保持不变。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "新设置。最初以 `allow_experimental_delta_kernel_rs` 之名引入，现为该设置的别名；为保留完整历史记录，此条目以规范名称延续。"}]}]} />
 
 允许使用 `delta-kernel-rs` 实现读取 Delta Lake 表。
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**别名**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "为设置 `allow_experimental_delta_lake_writes` 添加了别名，该设置已转为 Beta。"}]}]} />
+
+启用 delta-kernel 写入功能。
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +210,16 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许使用一种更通用的 JOIN 规划算法，可处理更复杂的条件，但仅适用于 hash join。如果未启用 hash join，则无论此设置的值如何，都会使用常规的 JOIN 规划算法。
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**别名**：`allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_geo_types_in_iceberg` 添加了别名。"}]}]} />
+
+允许将 Iceberg 的 `geometry` 和 `geography` 字段类型解析为 ClickHouse 的 `Geometry` (Variant) 类型。
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +271,30 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 * [采样查询分析器](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * 系统表 [trace&#95;log](/zh/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_join_right_table_sorting` 添加了别名。"}]}]} />
+
+若设置为 true，且满足 `join_to_sort_minimum_perkey_rows` 与 `join_to_sort_maximum_table_rows` 的条件，则按 key 对右表重新排列，以提升 left 或 inner hash join 的性能。
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**别名**： `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_kafka_offsets_storage_in_keeper` 添加了别名。"}]}]} />
+
+允许将 Kafka 相关的偏移量存储在 ClickHouse Keeper 中。启用后，可为 Kafka table engine 指定 ClickHouse Keeper path 和副本名称。此时将不再使用常规的 Kafka 引擎，而是改用一种新的 storage engine，主要把已提交偏移量存储在 ClickHouse Keeper 中
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -273,9 +373,9 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "用于控制提取的 Tuple 子列是否可以为可空类型的新设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` 现已 GA：从 `Tuple`、`Variant`、`Dynamic` 或 `JSON` 列中提取的 `Tuple` 子列类型为 `Nullable(Tuple)`，并在缺少该子列的行中为 NULL。该设置仅在服务器启动时读取一次，因此 `compatibility` 只能通过启动 profile (例如 users.xml) 恢复此前的行为，而不能通过会话级的 `SET` 恢复。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "用于控制提取的 Tuple 子列是否可以为可空类型的新设置。"}]}]} />
 
 控制类型为 `Tuple(...)` 的提取子列是否可以设为 `Nullable(Tuple(...))` 类型。
 
@@ -384,6 +484,18 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许从 system.zookeeper 表进行不受限制的读取 (即不对 path 作条件限制) 。这可能会比较方便，但对 ZooKeeper 来说并不安全
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_url_wildcard_from_index_pages` 添加了别名。"}]}]} />
+
+允许 `url()` 和 `ENGINE = URL` 基于 HTTP 索引页面进行通配符展开。
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

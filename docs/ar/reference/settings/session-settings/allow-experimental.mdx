@@ -2,7 +2,7 @@
 title: 'إعدادات الجلسة allow_experimental_*'
 sidebarTitle: 'allow_experimental_*'
 toc_max_heading_level: 2
-description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة allow_experimental_*.'
+description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة allow_experimental_*.'
 doc_type: 'reference'
 ---
 
@@ -11,9 +11,8 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
-هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
+هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
 ## allow_experimental_analyzer {#allow_experimental_analyzer}
 
@@ -35,30 +34,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح تنظيف ملفات البيانات القديمة أثناء دمج Iceberg.
 
-## allow_experimental_correlated_subqueries {#allow_experimental_correlated_subqueries}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "وسم دعم الاستعلامات الفرعية المترابطة على أنه بيتا."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "إضافة إعداد جديد للسماح بتنفيذ الاستعلامات الفرعية المترابطة."}]}]} />
-
-يسمح بتنفيذ الاستعلامات الفرعية المترابطة.
-
-## allow_experimental_database_glue_catalog {#allow_experimental_database_glue_catalog}
-
-<BetaBadge />
-
-**الأسماء البديلة**: `allow_database_glue_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع catalog_type = 'glue'"}]}]} />
-
-السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع catalog&#95;type = &#39;glue&#39;
-
-قيمة Cloud الافتراضية: `1`.
-
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
@@ -68,20 +43,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع ‎catalog_type = 'hive'‎"}]}]} />
 
 السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع ‎catalog&#95;type = &#39;hms&#39;‎
-
-## allow_experimental_database_iceberg {#allow_experimental_database_iceberg}
-
-<BetaBadge />
-
-**الأسماء البديلة**: `allow_database_iceberg`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
-
-يسمح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع catalog&#95;type = &#39;iceberg&#39;
-
-القيمة الافتراضية في Cloud: `1`.
 
 ## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
@@ -100,32 +61,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع `catalog_type = 'paimon_rest'`
-
-## allow_experimental_database_unity_catalog {#allow_experimental_database_unity_catalog}
-
-<BetaBadge />
-
-**الأسماء البديلة**: `allow_database_unity_catalog`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog عند catalog_type = 'unity'"}]}]} />
-
-السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog عند catalog&#95;type = &#39;unity&#39;
-
-القيمة الافتراضية في Cloud: `1`.
-
-## allow_experimental_delta_lake_writes {#allow_experimental_delta_lake_writes}
-
-<BetaBadge />
-
-**الأسماء البديلة**: `allow_delta_lake_writes`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "نُقلت عمليات الكتابة في Delta Lake إلى مرحلة بيتا."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
-
-يُمكّن ميزة الكتابة عبر delta-kernel.
 
 ## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
@@ -147,22 +82,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح بتنفيذ أمر Iceberg التجريبي `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_funnel_functions {#allow_experimental_funnel_functions}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-مكّن الدوال التجريبية لتحليل مسار التحويل.
-
-## allow_experimental_geo_types_in_iceberg {#allow_experimental_geo_types_in_iceberg}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد يتيح تحليل حقول `geometry` و`geography` في Iceberg على أنها من النوع `Geometry` (Variant)."}]}]} />
-
-يتيح تحليل نوعَي الحقول `geometry` و`geography` في Iceberg على أنهما من النوع `Geometry` (Variant) في ClickHouse.
-
 ## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
@@ -181,36 +100,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 السماح بالاستخدام الصريح لـ &#39;OPTIMIZE&#39; مع جداول Iceberg.
 
-## allow_experimental_join_right_table_sorting {#allow_experimental_join_right_table_sorting}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "إذا ضُبط هذا الإعداد على `true`، واستوفيت شروط `join_to_sort_minimum_perkey_rows` و`join_to_sort_maximum_table_rows`، فأعِد ترتيب الجدول الأيمن حسب المفتاح لتحسين الأداء في left أو inner hash join"}]}]} />
-
-إذا ضُبط هذا الإعداد على `true`، واستوفيت شروط `join_to_sort_minimum_perkey_rows` و`join_to_sort_maximum_table_rows`، فأعِد ترتيب الجدول الأيمن حسب المفتاح لتحسين الأداء في left أو inner hash join.
-
-## allow_experimental_json_lazy_type_hints {#allow_experimental_json_lazy_type_hints}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد تجريبي جديد لتلميحات الأنواع الكسولة لنوع JSON"}]}]} />
-
-يُفعّل تلميحات الأنواع الكسولة التجريبية لنوع JSON. تتيح هذه الميزة تحسين تحويلات أنواع JSON عبر تأجيل تقييم تلميحات الأنواع.
-
-## allow_experimental_kafka_offsets_storage_in_keeper {#allow_experimental_kafka_offsets_storage_in_keeper}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "السماح باستخدام محرك تخزين Kafka التجريبي الذي يخزن الـ offsets المعتمدة في ClickHouse Keeper"}]}]} />
-
-يسمح بتفعيل الميزة التجريبية لتخزين الـ offsets المرتبطة بـ Kafka في ClickHouse Keeper. عند التمكين، يمكن تحديد مسار ClickHouse Keeper واسم النسخة المتماثلة لمحرك جدول Kafka. ونتيجة لذلك، بدلًا من محرك Kafka العادي، سيُستخدم نوع جديد من محركات التخزين يخزن الـ offsets المعتمدة بشكل أساسي في ClickHouse Keeper
-
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
@@ -221,14 +110,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح استخدام لهجة Kusto Query Language (KQL) كبديل لـ SQL.
 
-## allow_experimental_materialized_postgresql_table {#allow_experimental_materialized_postgresql_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-يتيح استخدام محرك الجدول MaterializedPostgreSQL. يكون معطّلًا افتراضيًا لأن هذه الميزة تجريبية
-
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
@@ -236,21 +117,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 تمكين الدوال التجريبية لمعالجة اللغة الطبيعية.
-
-## allow_experimental_nullable_tuple_type {#allow_experimental_nullable_tuple_type}
-
-<BetaBadge />
-
-**الأسماء البديلة**: `enable_nullable_tuple_type`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "إعداد تجريبي جديد"}]}]} />
-
-يسمح بإنشاء أعمدة [Nullable](/ar/reference/data-types/nullable) من النوع [Tuple](/ar/reference/data-types/tuple) في الجداول.
-
-لا يتحكم هذا الإعداد في ما إذا كان يمكن أن تكون الأعمدة الفرعية المستخرجة من Tuple من النوع `Nullable` (على سبيل المثال، من أعمدة Dynamic أو Variant أو JSON أو Tuple).
-استخدم `allow_nullable_tuple_in_extracted_subcolumns` للتحكم في ما إذا كان يمكن أن تكون الأعمدة الفرعية المستخرجة من Tuple من النوع `Nullable`.
 
 ## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
@@ -299,46 +165,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 يتيح PRQL، وهو بديل لـ SQL.
-
-## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتمكين القيمة `trino` في إعداد `dialect`، الذي يترجم بناء جملة Trino SQL ويربط أسماء دوال Trino بمكافئاتها في ClickHouse."}]}]} />
-
-فعّل القيمة `trino` في إعداد `dialect`.
-
-عند ضبط `dialect` على `trino`، تُكتب الاستعلامات بلغة Trino SQL: إذ يُترجم
-بناء الجملة الخاص بـ Trino (القيم الحرفية `ARRAY[...]`، و`TRY_CAST`، و`UNNEST`، وأنواع `ROW`، و`OFFSET` قبل `LIMIT`)
-إلى ClickHouse SQL، وتُربط أسماء دوال Trino بمكافئاتها
-في ClickHouse. ويظل استعلام `SET` محلّلًا باعتباره SQL عاديًا، بحيث يمكن
-إعادة تبديل اللهجة.
-
-تُوائم هذه اللهجة أيضًا دلالات الاستعلام مع Trino: يُفعّل `join_use_nulls`،
-ويُعطّل `use_variant_as_common_type`، ويُفعّل محلّل الاستعلامات.
-وتظل عبارة `SETTINGS` الصريحة في الاستعلام هي صاحبة الأسبقية.
-
-## allow_experimental_unique_key {#allow_experimental_unique_key}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد للتحكم في إتاحة العبارة التجريبية UNIQUE KEY في جداول عائلة MergeTree"}]}]} />
-
-يسمح بإنشاء جداول باستخدام العبارة `UNIQUE KEY` على محركات عائلة MergeTree.
-
-## allow_experimental_url_wildcard_from_index_pages {#allow_experimental_url_wildcard_from_index_pages}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين توسيع أحرف البدل في دالة الجدول `url` عبر إدراج صفحات فهرس HTTP."}]}]} />
-
-يسمح بالتوسيع التجريبي لأحرف البدل لكلٍّ من `url()` و `ENGINE = URL` استنادًا إلى صفحات فهرس HTTP.
 
 ## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 

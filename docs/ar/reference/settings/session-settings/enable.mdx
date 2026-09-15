@@ -132,6 +132,18 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 فعّل طيّ الثوابت مبكرًا باستخدام التقييم قصير الدائرة لـ `and` و`or` أثناء تحليل الاستعلام.
 عند تفعيله، تُحلَّل الفروع غير القابلة للوصول والمؤهلة في الاستعلامات الفرعية القياسية للحفاظ على أنواعها والتحقق من دلالات الاستعلام، لكنها لا تُنفَّذ. ويعود التحسين إلى التحليل العادي عندما تكون قيمة العددية القياسية أو قيم وقت التشغيل مطلوبة.
 
+## enable_funnel_functions {#enable_funnel_functions}
+
+<ExperimentalBadge />
+
+**اسم بديل**: `allow_experimental_funnel_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_funnel_functions`."}]}]} />
+
+تمكين الدوال الخاصة بتحليل مسار التحويل.
+
 ## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -230,6 +242,18 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
+## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
+
+<ExperimentalBadge />
+
+**اسم بديل**: `allow_experimental_json_lazy_type_hints`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_json_lazy_type_hints`."}]}]} />
+
+تمكين تلميحات النوع المؤجّلة لنوع JSON. تتيح هذه الميزة تحسين تحويلات نوع JSON عبر تأجيل تقييم تلميح النوع.
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -250,6 +274,18 @@ SET dialect = 'clickhouse_json';
 عند التمكين، يُنفَّذ تعبير الجدول الشائع المُعلَن بوصفه `MATERIALIZED` والمُشار إليه أكثر من مرة تنفيذًا واحدًا فقط، ويُخزَّن في جدول مؤقت، وتقرأ جميع الإشارات من ذلك الجدول. أما تعبير الجدول الشائع المُشار إليه مرة واحدة فقط، فيُدمَج مباشرةً كتعبير جدول شائع عادي لتجنّب الكلفة الإضافية.
 وعند التعطيل، تُتجاهل الكلمة المفتاحية `MATERIALIZED`: فيُدمَج تعبير الجدول الشائع مباشرةً عند كل إشارة إليه كتعبير جدول شائع عادي، ويُسجَّل تحذير.
 
+## enable_materialized_postgresql_table {#enable_materialized_postgresql_table}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_materialized_postgresql_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_materialized_postgresql_table`."}]}]} />
+
+يسمح باستخدام محرك الجداول `MaterializedPostgreSQL`.
+
 ## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -269,6 +305,19 @@ SET dialect = 'clickhouse_json';
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "إنشاء tuples مسماة في الدالة tuple() عندما تكون جميع الأسماء فريدة ويمكن التعامل معها كمُعرِّفات غير مقتبسة."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "مُعطَّل بانتظار تحسينات سهولة الاستخدام"}]}]} />
 
 إنشاء tuples مسماة في الدالة tuple() عندما تكون جميع الأسماء فريدة ويمكن التعامل معها كمُعرِّفات غير مقتبسة.
+
+## enable_nullable_tuple_type {#enable_nullable_tuple_type}
+
+**اسم بديل**: `allow_experimental_nullable_tuple_type`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "أصبح `Nullable(Tuple)` الآن GA"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "أصبح Nullable Tuple الآن Beta. أُضيف كـ اسم بديل لـ 'allow_experimental_nullable_tuple_type'."}]}]} />
+
+يتيح إنشاء columns من النوع [Nullable](/ar/reference/data-types/nullable) [Tuple](/ar/reference/data-types/tuple) في الجداول.
+
+لا يتحكم هذا الإعداد في إمكانية أن تكون subcolumns الـ tuple المستخرجة من النوع `Nullable` (على سبيل المثال، من columns من النوع Dynamic أو Variant أو JSON أو Tuple).
+استخدم `allow_nullable_tuple_in_extracted_subcolumns` للتحكم في إمكانية أن تكون subcolumns الـ tuple المستخرجة من النوع `Nullable`.
 
 ## enable_order_by_all {#enable_order_by_all}
 
@@ -475,11 +524,43 @@ WHERE (_part, _part_offset) IN (
 
 يسمح بإنشاء نوعَي البيانات [Time](/ar/reference/data-types/time) و[Time64](/ar/reference/data-types/time64).
 
+## enable_trino_dialect {#enable_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتمكين القيمة `trino` للإعداد `dialect`، الذي يترجم بناء جملة Trino SQL ويطابق أسماء دوال Trino مع مكافئاتها في ClickHouse."}]}]} />
+
+فعّل القيمة `trino` للإعداد `dialect`.
+
+عند ضبط `dialect` على `trino`، تُكتب الاستعلامات بلغة Trino SQL: إذ يُترجم بناء
+الجملة الخاص بـ Trino (القيم الحرفية `ARRAY[...]` و`TRY_CAST` و`UNNEST` وأنواع `ROW` و`OFFSET` قبل `LIMIT`)
+إلى ClickHouse SQL، وتُطابق أسماء دوال Trino مع مكافئاتها في
+ClickHouse. يظل استعلام `SET` محللًا بصيغة SQL عادية، بحيث يمكن إعادة
+تبديل اللهجة.
+
+تتوافق دلالات الاستعلام أيضًا مع Trino: إذ يُفعّل `join_use_nulls`،
+ويُعطّل `use_variant_as_common_type`، ويُفعّل محلّل الاستعلامات.
+وتظل عبارة `SETTINGS` الصريحة في الاستعلام ذات أولوية أعلى.
+
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح باستخدام ARRAY JOIN مع عدة مصفوفات ذات أحجام مختلفة. عند تمكين هذا الإعداد، سيُعاد ضبط حجم المصفوفات وفقًا لأطولها.
+
+## enable_unique_key {#enable_unique_key}
+
+<ExperimentalBadge />
+
+**اسم بديل**: `allow_experimental_unique_key`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_unique_key`."}]}]} />
+
+يسمح بإنشاء جداول تتضمن الـ clause `UNIQUE KEY` في engines عائلة MergeTree.
 
 ## enable_url_encoding {#enable_url_encoding}
 

@@ -244,7 +244,7 @@ Cette fonctionnalité est obsolète et sera supprimée à l’avenir.
 
 Pour vous faciliter la tâche, l’ancienne documentation est disponible [ici](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Vue matérialisée actualisable {#refreshable-materialized-view}
+## Vue matérialisée rafraîchissable {#refreshable-materialized-view}
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -260,23 +260,24 @@ AS SELECT ...
 [COMMENT 'comment']
 ```
 
-où `interval` correspond à une suite d&#39;intervalles simples :
+où `interval` correspond à une suite d&#39;intervalles simples :
 
 ```sql
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-La clause `REFRESH` doit spécifier au moins l’un des éléments suivants : `EVERY`, `AFTER` ou `DEPENDS ON`. Un `REFRESH` seul (sans aucun d’eux) est rejeté. `REFRESH DEPENDS ON ...` sans `EVERY`/`AFTER` est une forme abrégée de `REFRESH AFTER 0 SECOND DEPENDS ON ...` ; voir [Dépendances de rafraîchissement](#refresh-dependencies) ci-dessous.
+La clause `REFRESH` doit spécifier au moins l’un des éléments suivants : `EVERY`, `AFTER` ou `DEPENDS ON`. Un `REFRESH` seul (sans aucun d’eux) est rejeté. `REFRESH DEPENDS ON ...` sans `EVERY`/`AFTER` est une forme abrégée de `REFRESH AFTER 0 SECOND DEPENDS ON ...` ; voir [Dépendances de rafraîchissement](#refresh-dependencies) ci-dessous.
 
 Exécute périodiquement la requête correspondante et stocke son résultat dans une table.
 
 * Si `APPEND` est spécifié, chaque rafraîchissement insère des lignes dans la table sans supprimer les lignes existantes. L’insertion n’est pas atomique, comme pour une requête `INSERT INTO ... SELECT` classique.
+* Si `APPEND INCREMENTAL` est spécifié, chaque rafraîchissement exécute la requête uniquement sur les lignes validées dans la table source depuis le rafraîchissement précédent, et ajoute le résultat.
 * Sinon, chaque rafraîchissement remplace atomiquement le contenu précédent de la table.
 
-Différences par rapport aux vues matérialisées classiques non actualisables :
+Différences par rapport aux vues matérialisées classiques non rafraîchissables :
 
-* Pas de déclencheur d’insertion. Lorsque de nouvelles données sont insérées dans la table spécifiée dans `SELECT`, elles ne sont *pas* automatiquement propagées vers la vue matérialisée actualisable. À la place, l’insertion des données n’a lieu que lors des rafraîchissements périodiques ou manuels.
-* Aucune restriction sur la requête `SELECT`. Les fonctions de table (par ex. `url()`), les vues, UNION et JOIN sont tous autorisés.
+* Pas de déclencheur d’insertion. Lorsque de nouvelles données sont insérées dans la table spécifiée dans `SELECT`, elles ne sont *pas* automatiquement propagées vers la vue matérialisée rafraîchissable. À la place, l’insertion des données n’a lieu que lors des rafraîchissements périodiques ou manuels.
+* Aucune restriction sur la requête `SELECT`. Les fonctions de table (par ex. `url()`), les vues, UNION et JOIN sont tous autorisés. `APPEND INCREMENTAL` constitue la seule exception : elle requiert une unique table source `MergeTree` simple avec `enable_block_number_column = 1` et `enable_block_offset_column = 1`, et rejette `JOIN`, `UNION`, les sous-requêtes, les vues et les fonctions de table.
 
 <Note>
   Les paramètres de la partie `REFRESH ... SETTINGS` de la requête sont des paramètres de rafraîchissement (par ex. `refresh_retries`), distincts des paramètres classiques (par ex. `max_threads`). Les paramètres classiques peuvent être spécifiés à l’aide de `SETTINGS` à la fin de la requête.
@@ -427,29 +428,29 @@ Paramètres de rafraîchissement disponibles :
 
 ### Modification des paramètres de rafraîchissement {#changing-refresh-parameters}
 
-Les paramètres de rafraîchissement d’une vue matérialisée actualisable existante peuvent être modifiés à l’aide de [`ALTER TABLE ... MODIFY REFRESH`](/fr/reference/statements/alter/view#alter-table--modify-refresh-statement) :
+Les paramètres de rafraîchissement d’une vue matérialisée actualisable existante peuvent être modifiés à l’aide de [`ALTER TABLE ... MODIFY REFRESH`](/fr/reference/statements/alter/view#alter-table--modify-refresh-statement) :
 
 ```sql
 ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
 ```
 
-La planification (`EVERY` ou `AFTER`) est obligatoire : l’instruction remplace toujours *tous* les paramètres de rafraîchissement — la planification, `RANDOMIZE FOR`, `DEPENDS ON` et les paramètres de rafraîchissement — par ceux qui sont spécifiés. Tout élément omis est réinitialisé à sa valeur par défaut (paramètres) ou supprimé (dépendances, randomisation).
+La planification (`EVERY` ou `AFTER`) est obligatoire : l’instruction remplace toujours *tous* les paramètres de rafraîchissement — la planification, `RANDOMIZE FOR`, `DEPENDS ON` et les paramètres de rafraîchissement — par ceux qui sont spécifiés. Tout élément omis est réinitialisé à sa valeur par défaut (paramètres) ou supprimé (dépendances, randomisation).
 
 <Note>
-  * Pour modifier uniquement les paramètres de rafraîchissement (par ex. `refresh_retries`), répétez la planification existante :
+  * Pour modifier uniquement les paramètres de rafraîchissement (par ex. `refresh_retries`), répétez la planification existante :
 
     ```sql
     ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR SETTINGS refresh_retries = 5;
     ```
 
-  * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` n’est pas pris en charge pour les vues matérialisées ; vous devez passer par `MODIFY REFRESH`.
+  * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` n’est pas pris en charge pour les vues matérialisées ; vous devez passer par `MODIFY REFRESH`.
 
-  * L’ajout ou la suppression de `APPEND` n’est pas pris en charge.
+  * La modification du mode de rafraîchissement n’est pas prise en charge : `APPEND` et `INCREMENTAL` ne peuvent être ni ajoutés ni supprimés.
 
   * Le paramètre `all_replicas` ne peut pas être modifié après la création.
 </Note>
 
-Exemples :
+Exemples :
 
 ```sql
 -- Change the schedule, drop existing settings and dependencies.

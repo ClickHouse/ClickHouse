@@ -244,7 +244,7 @@ Este recurso está obsoleto e será removido no futuro.
 
 Para sua conveniência, a documentação antiga está disponível [aqui](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## VIEW materializada atualizável {#refreshable-materialized-view}
+## visão materializada atualizável {#refreshable-materialized-view}
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -271,12 +271,13 @@ A cláusula `REFRESH` deve especificar pelo menos um de `EVERY`, `AFTER` ou `DEP
 Executa periodicamente a consulta correspondente e armazena o resultado em uma tabela.
 
 * Se `APPEND` for especificado, cada atualização insere linhas na tabela sem excluir as já existentes. A inserção não é atômica, assim como em uma consulta `INSERT INTO ... SELECT` comum.
+* Se `APPEND INCREMENTAL` for especificado, cada atualização executa a consulta apenas nas linhas confirmadas na tabela de origem desde a atualização anterior e adiciona o resultado.
 * Caso contrário, cada atualização substitui atomicamente o conteúdo anterior da tabela.
 
-Diferenças em relação às VIEWs materializadas comuns, não atualizáveis:
+Diferenças em relação às visões materializadas comuns, não atualizáveis:
 
-* Não há gatilho de inserção. Quando novos dados são inseridos na tabela especificada em `SELECT`, eles *não* são enviados automaticamente para a VIEW materializada atualizável. Em vez disso, a inserção de dados ocorre apenas durante execuções de atualização periódicas ou manuais.
-* Não há restrições para a consulta `SELECT`. Funções de tabela (por exemplo, `url()`), VIEWs, UNION e JOIN são permitidos.
+* Não há gatilho de inserção. Quando novos dados são inseridos na tabela especificada em `SELECT`, eles *não* são enviados automaticamente para a visão materializada atualizável. Em vez disso, a inserção de dados ocorre apenas durante execuções de atualização periódicas ou manuais.
+* Não há restrições para a consulta `SELECT`. Funções de tabela (por exemplo, `url()`), VIEWs, UNION e JOIN são permitidos. `APPEND INCREMENTAL` é a única exceção: ele requer uma única tabela de origem `MergeTree` simples com `enable_block_number_column = 1` e `enable_block_offset_column = 1` e rejeita `JOIN`, `UNION`, subconsultas, VIEWs e funções de tabela.
 
 <Note>
   As configurações na parte `REFRESH ... SETTINGS` da consulta são configurações de atualização (por exemplo, `refresh_retries`), distintas das configurações comuns (por exemplo, `max_threads`). As configurações comuns podem ser especificadas com `SETTINGS` no final da consulta.
@@ -427,7 +428,7 @@ Configurações de atualização disponíveis:
 
 ### Alterando os parâmetros de atualização {#changing-refresh-parameters}
 
-Os parâmetros de atualização de uma visão materializada atualizável existente podem ser alterados com [`ALTER TABLE ... MODIFY REFRESH`](/pt-BR/reference/statements/alter/view#alter-table--modify-refresh-statement):
+Os parâmetros de atualização de uma view materializada atualizável existente podem ser alterados com [`ALTER TABLE ... MODIFY REFRESH`](/pt-BR/reference/statements/alter/view#alter-table--modify-refresh-statement):
 
 ```sql
 ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
@@ -444,7 +445,7 @@ O agendamento (`EVERY` ou `AFTER`) é obrigatório: a instrução sempre substit
 
   * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` não tem suporte em visões materializadas; é preciso usar `MODIFY REFRESH`.
 
-  * Não há suporte para adicionar ou remover `APPEND`.
+  * Não há suporte para alterar o modo de atualização: `APPEND` e `INCREMENTAL` não podem ser adicionados nem removidos.
 
   * A configuração `all_replicas` não pode ser alterada após a criação.
 </Note>
@@ -452,19 +453,19 @@ O agendamento (`EVERY` ou `AFTER`) é obrigatório: a instrução sempre substit
 Exemplos:
 
 ```sql
--- Alterar o agendamento, removendo as configurações e dependências existentes.
+-- Change the schedule, drop existing settings and dependencies.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- Alterar o agendamento e ajustar o comportamento de retentativas.
+-- Change the schedule and tune retry behavior.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- Manter a dependência ao alterar o período.
+-- Keep the dependency while changing the period.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- Remover a dependência omitindo `DEPENDS ON`.
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

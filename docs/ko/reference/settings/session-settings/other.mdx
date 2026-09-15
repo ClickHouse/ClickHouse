@@ -43,7 +43,7 @@ HTTP CORS 헤더를 추가합니다.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-테이블 인덱스에 공간 충전 곡선(space-filling curve)이 있고(예: `ORDER BY mortonEncode(x, y)` 또는 `ORDER BY hilbertEncode(x, y)`), 쿼리에 해당 인수에 대한 조건이 있는 경우(예: `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`), 인덱스 분석에 공간 충전 곡선을 사용합니다.
+테이블 인덱스에 공간 충전 곡선(space-filling curve)이 있고(예: `ORDER BY mortonEncode(x, y)` 또는 `ORDER BY hilbertEncode(x, y)`), 쿼리에 해당 인수에 대한 조건이 있는 경우(예: `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`), 인덱스 분석에 공간 충전 곡선을 사용합니다. 현재 2D 분석은 `UInt64` 인수를 가진 곡선을 건너뜁니다. 곡선 구현이 인수당 32비트만 사용하기 때문입니다.
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -349,7 +349,7 @@ true로 설정하면 DESCRIBE 쿼리 결과에 컬럼명과 타입만 포함됩�
 * `polyglot` — 다른 방언(MySQL, PostgreSQL 등)의 SQL을 ClickHouse SQL로 트랜스파일합니다. 실험적 설정 `allow_experimental_polyglot_dialect`이 필요합니다.
 * `promql` — `promql_database`, `promql_table`, `promql_evaluation_time` 설정으로 구성된 TimeSeries 테이블에서 평가되는 PromQL(Prometheus Query Language)입니다.
 * `clickhouse_json` — SQL 텍스트 대신 쿼리를 JSON AST(`parseQueryToJSON`의 출력)로 해석합니다. 방언을 다시 전환할 수 있도록 일반 형식의 `SET` 쿼리도 계속 인식됩니다. 실험적 설정 `enable_json_ast_dialect`이 필요합니다.
-* `trino` — Trino SQL: Trino 구문(`ARRAY[...]`, `TRY_CAST`, `UNNEST` 등)을 변환하고 Trino 함수 이름을 이에 상응하는 ClickHouse 함수로 매핑합니다. 실험적 설정 `allow_experimental_trino_dialect`이 필요합니다.
+* `trino` — Trino SQL: Trino 구문(`ARRAY[...]`, `TRY_CAST`, `UNNEST` 등)을 변환하고 Trino 함수 이름을 이에 상응하는 ClickHouse 함수로 매핑합니다. 실험적 설정 `enable_trino_dialect`이 필요합니다.
 
 ## discard_query_data {#discard_query_data}
 

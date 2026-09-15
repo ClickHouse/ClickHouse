@@ -1267,6 +1267,17 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan を使用したクエリの実行時にリモートワーカーへ送出されたタスク数。値がゼロ以外の場合、クエリが実際に分散実行されたことを意味します。
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan クエリがリモートワーカーへ送出される代わりに、ローカル executor (distributed&#95;plan&#95;execute&#95;locally) を介してプロセス内で実行された場合に 1 が設定されます。
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan を使用したクエリの実行時に、少なくとも 1 つのタスクが割り当てられた異なるホスト数。
+* `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランのストリーミング exchange のソケットに書き込まれたバイト数。`NetworkSendBytes` には含まれません。
+* `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランのストリーミング exchange のソケットから読み取られたバイト数。`NetworkReceiveBytes` には含まれません。
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange のソケットに完全に書き込まれた Data パケット数。chunk ごとに 1 つ、ストリームごとに終端パケットが 1 つです。送信バッファ内のパケットは、バッファ全体が書き込まれた時点でカウントされます。receiver がそれ以上のデータを必要としないため途中で切り詰められたバッファでは、パケットは一切カウントされません。
+* `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange から読み取られた Data パケット数。chunk ごとに 1 つ、ストリームごとに終端パケットが 1 つです。
+* `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange パケット内でシリアル化された、圧縮前の Native ブロックのバイト数。シリアル化されるパケットごとに 1 回カウントされます。`StreamingExchangeSendBytes` と比較することで、シャッフルまたは収集の圧縮率が得られます。ブロードキャストでは各パケットが各宛先に送信されるため、`StreamingExchangeSendBytes` は宛先数に応じて増加します。
+* `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — chunk をストリーミング exchange パケットにシリアル化および圧縮するのに費やされた時間。
+* `ProfileEvent_StreamingExchangeDeserializeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange パケットを chunk に解凍およびデシリアライズするのに費やされた時間。
+* `ProfileEvent_StreamingExchangeSendQueueFullMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ソケットへの送信を待つパケットのキューが満杯だったため、ストリーミング exchange sink が chunk を受け取らなかった時間。
+* `ProfileEvent_StreamingExchangeReceiveWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange source が送信元から次のバイトを待機した時間。
+* `ProfileEvent_StreamingExchangeConnectionWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange sink が受信タスクの接続を待機した時間。
+* `ProfileEvent_StreamingExchangeEarlyCloses` ([UInt64](/ja/reference/data-types/int-uint)) — たとえば LIMIT が満たされたため、ストリームを最後まで読み取る前にストリーミング exchange source が送信元に停止を通知した回数。送信元がすでに存在しない場合はカウントされません。
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/ja/reference/data-types/int-uint)) — 仮想パーツ更新数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/ja/reference/data-types/int-uint)) — リーダーによる仮想パーツ更新数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 仮想パーツ更新に要したマイクロ秒数
@@ -2140,6 +2151,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `CurrentMetric_ExchangeServerThreads` ([Int64](/ja/reference/data-types/int-uint)) — 分散 exchange server の handshake thread pool 内のスレッド数。
 * `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/ja/reference/data-types/int-uint)) — 分散 exchange server の handshake thread pool 内でタスクを実行中のスレッド数。
 * `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/ja/reference/data-types/int-uint)) — 分散 exchange server の handshake thread pool 内でキューに入っている、またはアクティブなジョブ数。
+* `CurrentMetric_StreamingExchangeSinksWithFullSendQueue` ([Int64](/ja/reference/data-types/int-uint)) — ソケット待ちのパケットキューが満杯であるため、chunk を受け取らないストリーミング exchange sink の数。
 * `CurrentMetric_ReadonlyDisks` ([Int64](/ja/reference/data-types/int-uint)) — ディスクチェック中に readonly としてマークされたディスク数。
 * `CurrentMetric_BrokenDisks` ([Int64](/ja/reference/data-types/int-uint)) — ディスクチェック中に broken としてマークされたディスク数。
 * `CurrentMetric_TaskTrackerThreads` ([Int64](/ja/reference/data-types/int-uint)) — 分散クエリのリモートタスクトラッカーで使用されるスレッド数。

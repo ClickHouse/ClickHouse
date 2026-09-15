@@ -449,16 +449,16 @@ INSERT INTO kafka_out VALUES
 
 <ExperimentalBadge />
 
-إذا كان `allow_experimental_kafka_offsets_storage_in_keeper` مفعّلًا، فيمكن عندئذٍ تحديد إعدادين إضافيين لمحرك جدول Kafka:
+إذا كان `allow_kafka_offsets_storage_in_keeper` مفعّلًا، فيمكن عندئذٍ تحديد إعدادين إضافيين لمحرك جدول Kafka:
 
 * يحدّد `kafka_keeper_path` المسار إلى الجدول في ClickHouse Keeper
 * يحدّد `kafka_replica_name` اسم النسخة المتماثلة في ClickHouse Keeper
 
-إما أن يُحدَّد الإعدادان معًا أو لا يُحدَّد أيٌّ منهما. وعند تحديدهما معًا، سيُستخدم محرك Kafka جديد وتجريبي. لا يعتمد هذا المحرك الجديد على تخزين الإزاحات المعتمدة في Kafka، بل يخزّنها في ClickHouse Keeper. وما يزال يحاول تثبيت الإزاحات في Kafka، لكنه لا يعتمد على تلك الإزاحات إلا عند إنشاء الجدول. وفي أي حالة أخرى (مثل إعادة تشغيل الجدول أو استعادته بعد حدوث خطأ)، ستُستخدم الإزاحات المخزّنة في ClickHouse Keeper كإزاحة لمواصلة استهلاك الرسائل. وإلى جانب الإزاحة المعتمدة، يخزّن أيضًا عدد الرسائل التي استُهلكت في الدفعة الأخيرة، بحيث إذا فشلت عملية `insert`، فسيُستهلك العدد نفسه من الرسائل، مما يتيح إزالة التكرار عند الحاجة.
+إما أن يُحدَّد الإعدادان معًا أو لا يُحدَّد أيٌّ منهما. وعند تحديدهما معًا، سيُستخدم محرك Kafka جديد وتجريبي. لا يعتمد هذا المحرك الجديد على تخزين الإزاحات المعتمدة في Kafka، بل يخزّنها في ClickHouse Keeper. وما يزال يحاول تثبيت الإزاحات في Kafka، لكنه لا يعتمد على تلك الإزاحات إلا عند إنشاء الجدول. وفي أي حالة أخرى (مثل إعادة تشغيل الجدول أو استعادته بعد حدوث خطأ)، ستُستخدم الإزاحات المخزّنة في ClickHouse Keeper كإزاحة لمواصلة استهلاك الرسائل. وإلى جانب الإزاحة المعتمدة، يخزّن أيضًا عدد الرسائل التي استُهلكت في الدفعة الأخيرة، بحيث إذا فشلت عملية `insert`، فسيُستهلك العدد نفسه من الرسائل، مما يتيح إزالة التكرار عند الحاجة.
 
-### التخصيص الثابت للأقسام إلى الشظايا {#static-partition-to-shard-affinity}
+### الألفة الثابتة للأقسام إلى الشظايا {#static-partition-to-shard-affinity}
 
-عند استخدام `StorageKafka2`، يمكنك اختياريًا تفعيل التخصيص الثابت للأقسام إلى الشظايا عبر تحديد `kafka_partition_shard_num` و`kafka_shard_count`. يتيح ذلك لعدة مثيلات من ClickHouse (شظايا) الاستهلاك من موضوع Kafka نفسه، بحيث تعالج كل شظية مجموعة فرعية حتمية فقط من الأقسام استنادًا إلى الصيغة:
+عند استخدام `StorageKafka2`، يمكنك اختياريًا تفعيل الألفة الثابتة للأقسام إلى الشظايا عبر تحديد `kafka_partition_shard_num` و`kafka_shard_count`. يتيح ذلك لعدة مثيلات من ClickHouse (شظايا) الاستهلاك من موضوع Kafka نفسه، بحيث تعالج كل شظية مجموعة فرعية حتمية فقط من الأقسام استنادًا إلى الصيغة:
 
 ```text
 partition_id % kafka_shard_count == kafka_partition_shard_num - 1
@@ -479,7 +479,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -489,10 +489,10 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
-عند استخدامه مع النسخ المتماثلة (قيم متعددة لـ `kafka_replica_name` تشترك في `kafka_keeper_path` نفسه)، يُطبَّق مرشح الألفة أولًا لتحديد الأقسام المؤهلة، ثم توزّع أقفال ZooKeeper هذه الأقسام بين النسخ المتماثلة.
+عند استخدامه مع النسخ المتماثلة (قيم متعددة لـ `kafka_replica_name` تشترك في `kafka_keeper_path` نفسه)، يُطبَّق مرشح الألفة أولًا لتحديد الأقسام المؤهلة، ثم توزّع أقفال ZooKeeper هذه الأقسام بين النسخ المتماثلة.
 
 مثال:
 
@@ -502,7 +502,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### القيود المعروفة {#known-limitations}

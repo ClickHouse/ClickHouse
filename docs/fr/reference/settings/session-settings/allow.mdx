@@ -52,6 +52,18 @@ Lorsqu’il est activé, ClickHouse calcule la taille des fichiers nécessaires 
 Si ce paramètre est activé, dans les requêtes hedged, nous pouvons établir une nouvelle connexion jusqu&#39;à la réception du premier paquet de données, même si un certain progrès a déjà été réalisé
 (mais que la progression n&#39;a pas été mise à jour pendant le délai d&#39;expiration `receive_data_timeout`) ; sinon, nous désactivons le changement de réplique dès qu&#39;un premier progrès a été réalisé.
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**Alias** : `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_correlated_subqueries`."}]}]} />
+
+Autorise l&#39;exécution de sous-requêtes corrélées.
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ Active le prédédoublonnage parallèle, partition par partition, du résultat d
 
 Active l’utilisation d’un code d’erreur personnalisé dans la fonction throwIf(). Si true, les exceptions levées peuvent avoir des codes d’erreur inattendus.
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**Aliases** : `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_database_glue_catalog`"}]}]} />
+
+Autorise le database engine `DataLakeCatalog` avec `catalog_type = 'glue'`
+
+Cloud default value : `1`.
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**Aliases** : `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_database_iceberg`"}]}]} />
+
+Autorise le database engine `DataLakeCatalog` avec `catalog_type = 'iceberg'`
+
+Cloud default value : `1`.
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**Aliases** : `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_database_unity_catalog`"}]}]} />
+
+Autorise le database engine `DataLakeCatalog` avec `catalog_type = 'unity'`
+
+Cloud default value : `1`.
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,18 @@ S&#39;il est défini sur true, l&#39;utilisateur est autorisé à exécuter des 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau nom de `allow_experimental_delta_kernel_rs`, qui n’est plus expérimental et est conservé comme alias. La valeur par défaut reste inchangée."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Nouveau paramètre. Introduit sous le nom `allow_experimental_delta_kernel_rs`, désormais un alias de ce paramètre ; l’entrée est conservée sous le nom canonique afin de préserver l’intégralité de l’historique."}]}]} />
 
 Autorise l’utilisation de l’implémentation `delta-kernel-rs` pour lire les tables Delta Lake.
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**Aliases** : `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_delta_lake_writes`, passé en bêta."}]}]} />
+
+Active la fonctionnalité d&#39;écriture via delta-kernel.
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +210,16 @@ Active la fonction `fuzzQuery`, qui applique des mutations aléatoires de l&#39;
 
 Autorise un algorithme de planification des jointures plus générique, capable de gérer des conditions plus complexes, mais qui fonctionne uniquement avec le hash join. Si le hash join n’est pas activé, l’algorithme habituel de planification des jointures est utilisé, quelle que soit la valeur de ce paramètre.
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**Aliases** : `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_geo_types_in_iceberg`."}]}]} />
+
+Autorise l&#39;analyse des types de champs Iceberg `geometry` et `geography` en tant que type ClickHouse `Geometry` (Variant).
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +271,30 @@ Valeurs possibles :
 
 * [Profileur de requêtes par échantillonnage](/fr/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * Table système [trace&#95;log](/fr/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**Aliases** : `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_join_right_table_sorting`."}]}]} />
+
+Si ce paramètre est défini à true et que les conditions de `join_to_sort_minimum_perkey_rows` et `join_to_sort_maximum_table_rows` sont réunies, la table de droite est réordonnée par clé afin d&#39;améliorer les performances des hash joins left ou inner.
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**Aliases** : `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_kafka_offsets_storage_in_keeper`."}]}]} />
+
+Permet de stocker les offsets liés à Kafka dans ClickHouse Keeper. Lorsque ce paramètre est activé, il est possible de spécifier un Keeper path ClickHouse et un nom de réplique au Kafka table engine. Ainsi, au lieu du Kafka engine habituel, un nouveau type de storage engine est utilisé, lequel stocke les offsets validés principalement dans ClickHouse Keeper
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -271,17 +371,17 @@ Par conséquent, veuillez ne pas activer ce paramètre.
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre qui détermine si les sous-colonnes extraites de type Tuple peuvent être Nullable."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` est désormais GA : une sous-colonne `Tuple` extraite d'une colonne `Tuple`, `Variant`, `Dynamic` ou `JSON` est de type `Nullable(Tuple)` et vaut NULL dans les lignes où la sous-colonne est absente. Le paramètre est lu une seule fois au démarrage du serveur, si bien que `compatibility` ne restaure le comportement précédent qu'à partir du profil de démarrage (par exemple, users.xml), et non via un `SET` au niveau de la session."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre qui détermine si les sous-colonnes extraites de type Tuple peuvent être Nullable."}]}]} />
 
 Détermine si les sous-colonnes extraites de type `Tuple(...)` peuvent être typées comme `Nullable(Tuple(...))`.
 
-* `false` : renvoie `Tuple(...)` et utilise les valeurs de tuple par défaut pour les lignes où la sous-colonne est absente.
-* `true` : renvoie `Nullable(Tuple(...))` et utilise `NULL` pour les lignes où la sous-colonne est absente.
+* `false` : renvoie `Tuple(...)` et utilise les valeurs de tuple par défaut pour les lignes où la sous-colonne est absente.
+* `true` : renvoie `Nullable(Tuple(...))` et utilise `NULL` pour les lignes où la sous-colonne est absente.
 
 Ce paramètre contrôle uniquement le comportement des sous-colonnes extraites.
-Il ne détermine pas si des colonnes `Nullable(Tuple(...))` peuvent être créées dans des tables ; cela est contrôlé par `enable_nullable_tuple_type`.
+Il ne détermine pas si des colonnes `Nullable(Tuple(...))` peuvent être créées dans des tables ; cela est contrôlé par `enable_nullable_tuple_type`.
 
 ClickHouse utilise la valeur de ce paramètre chargée au démarrage du serveur.
 Les modifications effectuées avec `SET` ou la clause `SETTINGS` au niveau de la requête ne changent pas le comportement des sous-colonnes extraites.
@@ -382,6 +482,18 @@ Cela permet d’éviter des copies de données inutiles lors de la mise en forme
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Autorise les lectures sans restriction (sans condition sur le chemin) depuis la table system.zookeeper ; cela peut être pratique, mais n&#39;est pas sans risque pour ZooKeeper
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**Aliases** : `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_url_wildcard_from_index_pages`."}]}]} />
+
+Autorise l&#39;expansion des wildcards pour `url()` et `ENGINE = URL` à partir des pages d&#39;index HTTP.
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

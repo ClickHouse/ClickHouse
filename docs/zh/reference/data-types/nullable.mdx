@@ -12,15 +12,10 @@ doc_type: 'reference'
 
 `T` 不能是以下任一复合数据类型：
 
-* [Array](/zh/reference/data-types/array) — 不支持
-* [Map](/zh/reference/data-types/map) — 不支持
-* [Tuple](/zh/reference/data-types/tuple) — 提供 Beta 支持*
+* [Array](/zh/reference/data-types/array)
+* [Map](/zh/reference/data-types/map)
 
 不过，复合数据类型**可以包含** `Nullable` 类型的值，例如 `Array(Nullable(Int8))` 或 `Tuple(Nullable(String), Nullable(Int64))`。
-
-<Note title="Beta：Nullable Tuples">
-  * 启用 `enable_nullable_tuple_type = 1` 时，支持 [Nullable(Tuple(...))](/zh/reference/data-types/tuple#nullable-tuple)。
-</Note>
 
 `Nullable` 类型的字段不能包含在表索引中。
 

@@ -131,6 +131,18 @@ true로 설정하면 텍스트 인덱스 사용이 허용됩니다.
 쿼리 분석 중 `and` 및 `or`에 대한 조기 단락 상수 폴딩을 활성화합니다.
 활성화하면 조건을 충족하는 실행 불가 스칼라 하위 쿼리 분기는 타입을 보존하고 쿼리 의미를 검증하기 위해 분석되지만 실행되지는 않습니다. 스칼라 카디널리티 또는 런타임 값이 필요한 경우에는 일반 분석으로 되돌아갑니다.
 
+## enable_funnel_functions {#enable_funnel_functions}
+
+<ExperimentalBadge />
+
+**별칭**: `allow_experimental_funnel_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_funnel_functions` 설정의 별칭을 추가했습니다."}]}]} />
+
+funnel 분석용 함수를 활성화합니다.
+
 ## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -229,6 +241,18 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
+## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
+
+<ExperimentalBadge />
+
+**별칭**: `allow_experimental_json_lazy_type_hints`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "설정 `allow_experimental_json_lazy_type_hints`의 별칭을 추가했습니다."}]}]} />
+
+JSON 타입에 지연 타입 힌트를 활성화합니다. 이 기능을 사용하면 타입 힌트 평가를 지연해 JSON 타입 변환을 최적화할 수 있습니다.
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -249,6 +273,18 @@ SET dialect = 'clickhouse_json';
 활성화하면 `MATERIALIZED`로 선언된 CTE가 두 번 이상 참조될 경우 한 번만 실행되어 임시 테이블에 저장되고, 모든 참조는 해당 테이블에서 읽습니다. 한 번만 참조되는 CTE는 오버헤드를 피하기 위해 일반 CTE처럼 인라인 처리됩니다.
 비활성화하면 `MATERIALIZED` 키워드는 무시됩니다. 즉, CTE는 일반 CTE와 같이 각 참조 지점에 인라인 처리되며 경고가 로그에 기록됩니다.
 
+## enable_materialized_postgresql_table {#enable_materialized_postgresql_table}
+
+<ExperimentalBadge />
+
+**별칭**: `allow_experimental_materialized_postgresql_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_materialized_postgresql_table` 설정의 별칭을 추가했습니다."}]}]} />
+
+`MaterializedPostgreSQL` 테이블 엔진 사용을 허용합니다.
+
 ## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -268,6 +304,19 @@ WHERE의 더 많은 조건을 PREWHERE로 이동하고, AND로 결합된 여러 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "모든 이름이 고유하고 따옴표 없이 식별자로 취급할 수 있는 경우 tuple() 함수에서 이름이 지정된 Tuple을 생성합니다."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "사용성 개선 사항이 있을 때까지 비활성화됨"}]}]} />
 
 모든 이름이 고유하고 따옴표 없이 식별자로 취급할 수 있는 경우 tuple() 함수에서 이름이 지정된 Tuple을 생성합니다.
+
+## enable_nullable_tuple_type {#enable_nullable_tuple_type}
+
+**별칭**: `allow_experimental_nullable_tuple_type`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)`가 일반 제공(GA)됩니다"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple이 베타가 되었습니다. 'allow_experimental_nullable_tuple_type'의 별칭으로 추가되었습니다."}]}]} />
+
+테이블에서 [Nullable](/ko/reference/data-types/nullable) [Tuple](/ko/reference/data-types/tuple) 컬럼을 생성할 수 있습니다.
+
+이 설정은 Dynamic, Variant, JSON 또는 Tuple 컬럼 등에서 추출한 튜플 서브컬럼을 `Nullable`로 만들 수 있는지 여부는 제어하지 않습니다.
+추출한 튜플 서브컬럼을 `Nullable`로 만들 수 있는지 제어하려면 `allow_nullable_tuple_in_extracted_subcolumns`을 사용하십시오.
 
 ## enable_order_by_all {#enable_order_by_all}
 
@@ -475,11 +524,42 @@ Prometheus 스타일의 time series 리샘플링, rate 및 delta 계산에 사�
 
 [Time](/ko/reference/data-types/time) 및 [Time64](/ko/reference/data-types/time64) 데이터 타입을 생성할 수 있습니다.
 
+## enable_trino_dialect {#enable_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Trino SQL 구문을 변환하고 Trino 함수 이름을 ClickHouse의 동등한 함수로 매핑하는 `dialect` 설정의 `trino` 값을 활성화하는 새로운 설정입니다."}]}]} />
+
+`dialect` 설정의 `trino` 값을 활성화합니다.
+
+`dialect`를 `trino`로 설정하면 쿼리를 Trino SQL로 작성할 수 있습니다. Trino 전용
+구문(`ARRAY[...]` 리터럴, `TRY_CAST`, `UNNEST`, `ROW` 타입, `LIMIT` 앞의 `OFFSET`)은
+ClickHouse SQL로 변환되고, Trino 함수 이름은 ClickHouse의 동등한 함수로 매핑됩니다.
+방언을 다시 전환할 수 있도록 `SET` 쿼리는 일반 SQL로 계속 구문 분석됩니다.
+
+이 방언은 쿼리 의미도 Trino에 맞춥니다. 즉, `join_use_nulls`는 켜지고,
+`use_variant_as_common_type`은 꺼지며, 쿼리 분석기는 켜집니다.
+쿼리에 명시적으로 지정한 `SETTINGS` 절은 계속 우선 적용됩니다.
+
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 크기가 서로 다른 여러 배열에 대해 ARRAY JOIN을 허용합니다. 이 설정을 활성화하면 배열 크기가 가장 긴 배열에 맞춰 조정됩니다.
+
+## enable_unique_key {#enable_unique_key}
+
+<ExperimentalBadge />
+
+**별칭**: `allow_experimental_unique_key`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`allow_experimental_unique_key` 설정에 대한 별칭을 추가했습니다."}]}]} />
+
+MergeTree 계열 엔진에서 `UNIQUE KEY` 절을 사용해 테이블을 생성할 수 있도록 허용합니다.
 
 ## enable_url_encoding {#enable_url_encoding}
 

@@ -1267,6 +1267,17 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan으로 쿼리를 실행할 때 원격 워커에 디스패치된 작업 수입니다. 0이 아닌 값은 쿼리가 실제로 분산 실행되었음을 의미합니다.
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan 쿼리가 원격 워커로 디스패치되는 대신 로컬 실행기(distributed&#95;plan&#95;execute&#95;locally)를 통해 in-process로 실행된 경우 1로 설정됩니다.
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan으로 쿼리를 실행할 때 하나 이상의 작업이 할당된 고유 호스트 수입니다.
+* `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에 기록된 바이트 수입니다. `NetworkSendBytes`에는 포함되지 않습니다.
+* `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에서 읽은 바이트 수입니다. `NetworkReceiveBytes`에는 포함되지 않습니다.
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 소켓에 완전히 기록된 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개입니다. 전송 버퍼의 패킷은 버퍼 전체가 기록될 때 집계됩니다. 수신기에 더 이상 데이터가 필요하지 않아 버퍼 기록이 중간에 중단된 경우에는 해당 버퍼의 패킷을 집계하지 않습니다.
+* `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange에서 읽은 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개입니다.
+* `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 패킷에서 직렬화된 Native 블록의 압축 전 바이트 수이며, 패킷당 한 번 집계됩니다. `StreamingExchangeSendBytes`와 비교하면 shuffle 또는 gather의 압축률을 알 수 있습니다. broadcast는 각 대상에 모든 패킷을 전송하므로 `StreamingExchangeSendBytes`는 대상 수에 따라 증가합니다.
+* `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 청크를 스트리밍 exchange 패킷으로 직렬화하고 압축하는 데 소요된 시간입니다.
+* `ProfileEvent_StreamingExchangeDeserializeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 패킷을 압축 해제하고 청크로 역직렬화하는 데 소요된 시간입니다.
+* `ProfileEvent_StreamingExchangeSendQueueFullMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 소켓 전송을 기다리는 패킷 큐가 가득 차 스트리밍 exchange 싱크가 청크를 받지 못한 시간입니다.
+* `ProfileEvent_StreamingExchangeReceiveWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 소스가 송신자로부터 다음 바이트를 기다린 시간입니다.
+* `ProfileEvent_StreamingExchangeConnectionWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 싱크가 수신 작업의 연결을 기다린 시간입니다.
+* `ProfileEvent_StreamingExchangeEarlyCloses` ([UInt64](/ko/reference/data-types/int-uint)) — 예를 들어 LIMIT가 충족되어 스트림을 끝까지 읽기 전에 스트리밍 exchange 소스가 송신자에게 중지하도록 알린 횟수입니다. 이미 종료된 송신자는 집계되지 않습니다.
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/ko/reference/data-types/int-uint)) — virtual parts 업데이트 수
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/ko/reference/data-types/int-uint)) — 리더가 수행한 virtual parts 업데이트 수
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — virtual parts 업데이트에 소요된 마이크로초
@@ -1571,7 +1582,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 오류로 응답한 create&#95;lease 요청 수입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 create&#95;lease 요청을 처리하는 데 소요한 총 시간입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 처리한 update&#95;lease 요청 수입니다.
-* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커리 서비스가 오류 응답을 반환한 update&#95;lease 요청 수입니다.
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 오류 응답을 반환한 update&#95;lease 요청 수입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 update&#95;lease 요청을 처리하는 데 소요한 총 시간입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryGetLeaseRequests` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 처리한 get&#95;lease 요청 수입니다.
 * `ProfileEvent_StatelessWorkerDiscoveryGetLeaseErrors` ([UInt64](/ko/reference/data-types/int-uint)) — stateless worker 디스커버리 서비스가 오류 응답을 반환한 get&#95;lease 요청 수입니다.
@@ -1724,7 +1735,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `CurrentMetric_ThreadPoolRemoteFSReaderThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — remote&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀에서 대기 중이거나 실행 중인 작업 수입니다.
 * `CurrentMetric_ThreadPoolFSReaderThreads` ([Int64](/ko/reference/data-types/int-uint)) — local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_ThreadPoolFSReaderThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀의 스레드 수입니다.
-* `CurrentMetric_ThreadPoolFSReaderThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀에서 대기 중이거나 활성 상태인 job 수입니다.
+* `CurrentMetric_ThreadPoolFSReaderThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀에서 큐에 대기 중이거나 활성 상태인 job 수입니다.
 * `CurrentMetric_ObjectStorageQueueShutdownThreads` ([Int64](/ko/reference/data-types/int-uint)) — 객체 스토리지 큐 종료 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_ObjectStorageQueueShutdownThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 객체 스토리지 큐 종료 스레드 풀에서 작업을 실행 중인 스레드 수입니다.
 * `CurrentMetric_ObjectStorageQueueShutdownThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — 객체 스토리지 큐 종료 스레드 풀에서 큐에 대기 중이거나 활성 상태인 job 수입니다.
@@ -1983,7 +1994,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `CurrentMetric_TextIndexPostingsCacheBytes` ([Int64](/ko/reference/data-types/int-uint)) — 텍스트 인덱스 포스팅 리스트 캐시 크기(바이트)
 * `CurrentMetric_TextIndexPostingsCacheCells` ([Int64](/ko/reference/data-types/int-uint)) — 텍스트 인덱스 포스팅 리스트 캐시의 항목 수
 * `CurrentMetric_PointInPolygonCacheBytes` ([Int64](/ko/reference/data-types/int-uint)) — `pointInPolygon` 함수용으로 전처리된 상수 다각형 캐시의 크기(바이트)
-* `CurrentMetric_PointInPolygonCacheCells` ([Int64](/ko/reference/data-types/int-uint)) — `pointInPolygon` 함수용으로 전처리된 상수 다각형 캐시의 개수
+* `CurrentMetric_PointInPolygonCacheCells` ([Int64](/ko/reference/data-types/int-uint)) — `pointInPolygon` 함수용 캐시에 있는 전처리된 상수 다각형 개수
 * `CurrentMetric_PointInPolygonCacheSizeLimit` ([Int64](/ko/reference/data-types/int-uint)) — `pointInPolygon` 함수용으로 전처리된 상수 다각형 캐시의 최대 크기(바이트)입니다(`point_in_polygon_cache_size` 서버 설정의 적용 값).
 * `CurrentMetric_DNSHostsCacheBytes` ([Int64](/ko/reference/data-types/int-uint)) — DNS 호스트 캐시 크기(바이트)
 * `CurrentMetric_DNSHostsCacheSize` ([Int64](/ko/reference/data-types/int-uint)) — 캐시된 DNS 호스트 수
@@ -2140,6 +2151,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `CurrentMetric_ExchangeServerThreads` ([Int64](/ko/reference/data-types/int-uint)) — 분산 exchange server 핸드셰이크 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 분산 exchange server 핸드셰이크 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — 분산 exchange server 핸드셰이크 스레드 풀에서 큐에 대기 중이거나 활성 상태인 작업 수입니다.
+* `CurrentMetric_StreamingExchangeSinksWithFullSendQueue` ([Int64](/ko/reference/data-types/int-uint)) — 소켓 전송을 기다리는 패킷 큐가 가득 차서 청크를 받지 않는 스트리밍 exchange 싱크 수입니다.
 * `CurrentMetric_ReadonlyDisks` ([Int64](/ko/reference/data-types/int-uint)) — 디스크 검사 중 readonly로 표시된 디스크 수입니다.
 * `CurrentMetric_BrokenDisks` ([Int64](/ko/reference/data-types/int-uint)) — 디스크 검사 중 손상된 것으로 표시된 디스크 수입니다.
 * `CurrentMetric_TaskTrackerThreads` ([Int64](/ko/reference/data-types/int-uint)) — 분산 쿼리 원격 작업 추적기에 사용되는 스레드 수입니다.

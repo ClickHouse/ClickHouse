@@ -14,6 +14,8 @@ A seleção de `codec_block_counts` lê arquivos de dados `.bin`, e não apenas 
 
 As partes que não registram seus subfluxos em `columns_substreams.txt` não são listadas.
 
+Todo valor informado é derivado dos dados da tabela, portanto a leitura de qualquer coluna do resultado exige o privilégio `SELECT` em todas as colunas da tabela. Um grant que abranja apenas algumas das colunas não é suficiente. O privilégio também é necessário para resolver a estrutura da função, por exemplo, por meio de `DESCRIBE`. Um usuário que não tem permissão alguma para ver a tabela, ou seja, que não possui o privilégio `SHOW TABLES` sobre ela, recebe `ACCESS_DENIED` independentemente de a tabela existir ou não, de modo que a função não revela a esse usuário quais tabelas existem.
+
 Se uma política de linha se aplicar à tabela para o usuário atual, a leitura de `codec_block_counts` lança `ACCESS_DENIED`, pois as contagens abrangeriam linhas ocultadas pela política. As outras colunas permanecem legíveis; `system.parts_columns` as informa independentemente das políticas de linha.
 
 ## Sintaxe {#syntax}

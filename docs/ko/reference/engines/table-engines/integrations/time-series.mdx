@@ -61,20 +61,20 @@ CREATE TABLE my_table ENGINE=TimeSeries
 
 TimeSeries 테이블의 컬럼은 자동으로 생성됩니다. 이러한 컬럼을 외부 컬럼이라고 하며, 데이터는 저장하지 않고 SELECT/INSERT를 위한 인터페이스만 제공합니다. 실제 데이터는 [대상 테이블](#target-tables)에 저장됩니다. 다음은 외부 컬럼 목록입니다:
 
-| Name            | Type                                        | Description                                                                                                                                   |
-| --------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `metric_name`   | `String`                                    | 메트릭 이름                                                                                                                                        |
-| `tags`          | `Map(String, String)`                       | 시계열의 tags(labels) 맵                                                                                                                           |
-| `time_series`   | `Array(Tuple(DateTime64(3), Float64))`가 기본값 | 시계열에 대한 (timestamp, value) 쌍의 배열입니다. 튜플의 timestamp 및 스칼라 요소 타입은 샘플 `INNER COLUMNS` 선언에서 유추할 수 있습니다([외부 컬럼 지정](#specifying-outer-columns) 참고). |
-| `metric_family` | `String`                                    | 메트릭 패밀리 이름(메트릭 메타데이터용)                                                                                                                        |
-| `type`          | `String`                                    | 메트릭 유형(예: &quot;counter&quot;, &quot;gauge&quot;)                                                                                             |
-| `unit`          | `String`                                    | 메트릭 단위                                                                                                                                        |
-| `help`          | `String`                                    | 메트릭 설명                                                                                                                                        |
+| Name            | Type                                        | 설명                                                                                                                                                                                                             |
+| --------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                    | 메트릭 이름                                                                                                                                                                                                                  |
+| `tags`          | `Map(String, String)`                       | 시계열의 tags(labels) 맵                                                                                                                                                                                                     |
+| `samples`       | `Array(Tuple(DateTime64(3), Float64))`가 기본값 | 시계열에 대한 (timestamp, value) 쌍의 배열입니다. 튜플의 timestamp 및 스칼라 요소 타입은 샘플 `INNER COLUMNS` 선언에서 유추할 수 있습니다([외부 컬럼 지정](#specifying-outer-columns) 참고). 이 컬럼은 [version](#schema-versioning) 2 이하의 테이블에서는 `time_series`라는 이름을 가집니다 |
+| `metric_family` | `String`                                    | 메트릭 패밀리 이름(메트릭 메타데이터용)                                                                                                                                                                                                  |
+| `type`          | `String`                                    | 메트릭 유형(예: &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                       |
+| `unit`          | `String`                                    | 메트릭 단위                                                                                                                                                                                                                  |
+| `help`          | `String`                                    | 메트릭 설명                                                                                                                                                                                                                  |
 
 예시:
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series) VALUES
+INSERT INTO my_table (metric_name, tags, samples) VALUES
     ('cpu_usage', {'job': 'node_exporter', 'instance': 'host1:9100'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5), (toDateTime64('2024-01-01 00:01:00', 3), 0.7)])
 ```
@@ -82,7 +82,7 @@ INSERT INTO my_table (metric_name, tags, time_series) VALUES
 삽입 시 `metric_name`은 비워 둘 수 있으며, 이는 메트릭 이름이 `tags`의 `__name__`에 지정된다는 의미입니다. 예시는 다음과 같습니다:
 
 ```sql
-INSERT INTO my_table (tags, time_series) VALUES
+INSERT INTO my_table (tags, samples) VALUES
     ({'__name__': 'cpu_usage', 'job': 'test'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5)])
 ```
@@ -90,17 +90,17 @@ INSERT INTO my_table (tags, time_series) VALUES
 메트릭 메타데이터를 삽입하려면 `metric_family`, `type`, `unit`, `help` 컬럼에 값을 삽입합니다:
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, help) VALUES
     ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
 ### 외부 컬럼 지정 {#specifying-outer-columns}
 
-외부 `time_series` 컬럼은 `CREATE TABLE` 문에서 명시적으로 나열해 기본 `Array(Tuple(DateTime64(3), Float64))` 유형을 재정의할 수 있습니다. ClickHouse는 튜플에서 타임스탬프와 스칼라 유형을 추출해 내부 samples table에 반영합니다:
+외부 `samples` 컬럼은 `CREATE TABLE` 문에서 명시적으로 나열해 기본 `Array(Tuple(DateTime64(3), Float64))` 유형을 재정의할 수 있습니다(이전 이름인 `time_series`도 허용됩니다). ClickHouse는 튜플에서 타임스탬프와 스칼라 유형을 추출해 내부 samples table에 반영합니다:
 
 ```sql
-CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
+CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 ```
 
 이는 samples `INNER COLUMNS` 절에서 timestamp 및 value 컬럼의 유형을 직접 선언하는 것과 동일합니다:
@@ -198,14 +198,14 @@ CREATE TABLE my_table
 (
     `metric_name` String,
     `tags` Map(String, String),
-    `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `samples` Array(Tuple(DateTime64(3), Float64)),
     `metric_family` String,
     `type` String,
     `unit` String,
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 2, recent_samples_ttl_seconds = 345600
+SETTINGS version = 3, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -497,18 +497,18 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | 표현식    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 내부 `recent samples` 테이블의 파티션 키입니다. 예: `toStartOfHour(timestamp)`. 명시적으로 설정하면 엔진 선언의 파티션 키를 재정의하며, 둘 다 설정되지 않은 경우 5시간마다 하나의 파티션이 사용됩니다. 외부 최근 샘플 테이블에서는 무시됩니다. `recent_samples_ttl_seconds`가 0이 아니어야 합니다                                                                                                                                                                                                                            |
 | `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 내부 `recent samples` 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 최근 샘플 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다. `recent_samples_ttl_seconds`가 0이 아니어야 합니다                                                                                                                                                                                                                                            |
 | `tags_index_granularity`             | UInt64 | 8192                                                          | 내부 [tags](#tags-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 tags 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                                                                                                                                                                                                                                                                                     |
-| `version`                            | UInt64 | 2                                                             | 테이블의 버전입니다. 대상 테이블의 집합과 그 구조를 식별합니다. 버전은 테이블이 생성될 때 자동으로 고정되며 이후에는 변경할 수 없습니다. 일반적으로 `CREATE TABLE` 쿼리에서는 생략해야 합니다([스키마 버전 관리](#schema-versioning) 참조)                                                                                                                                                                                                                                                                             |
+| `version`                            | UInt64 | 3                                                             | 테이블의 버전입니다. 대상 테이블의 집합과 그 구조를 식별합니다. 버전은 테이블이 생성될 때 자동으로 고정되며 이후에는 변경할 수 없습니다. 일반적으로 `CREATE TABLE` 쿼리에서는 생략해야 합니다([스키마 버전 관리](#schema-versioning) 참조)                                                                                                                                                                                                                                                                             |
 
 ## 스키마 버전 관리 {#schema-versioning}
 
 `TimeSeries` 테이블 엔진과 PromQL 실행 계층은 활발히 개발이 진행 중입니다.
 대상 테이블의 집합과 그 구조는 ClickHouse 버전에 따라 달라질 수 있습니다.
 이러한 변경을 감지할 수 있도록, 모든 `TimeSeries` 테이블은 자신의 버전을 [version](#settings) 설정에 저장합니다.
-버전은 테이블이 생성될 때 `CREATE` 쿼리에 자동으로 고정되며(그 값은 서버가 알고 있는 최신 버전, 현재는 2입니다),
+버전은 테이블이 생성될 때 `CREATE` 쿼리에 자동으로 고정되며(그 값은 서버가 알고 있는 최신 버전, 현재는 3입니다),
 테이블 메타데이터에 유지되고 `ALTER`로 변경할 수 없습니다. 이 설정이 도입되기 전에 생성된 테이블은 버전 0으로 간주됩니다.
 일반적으로 이 설정은 `CREATE TABLE` 쿼리에서 생략하면 되며, 그러면 테이블은 최신 버전을 갖게 됩니다.
-서버가 해당 버전을 지원한다면 `version`을 명시적으로 지정할 수도 있습니다. 이 경우 테이블은 해당 버전의 방식대로 정의되며, 예를 들어
-버전 1의 테이블은 `id_type` 설정을 기록하지 않습니다. `CREATE TABLE ... AS other_table`은 다른 테이블의 버전을 복사하지 않습니다. [기존 테이블을 AS로 사용하여 테이블 생성](#create-as)을 참고하십시오.
+서버가 해당 버전을 지원한다면 `version`을 명시적으로 지정할 수도 있습니다. 이 경우 테이블은 해당 버전의 방식대로 정의됩니다([버전 이력](#version-history) 참고).
+`CREATE TABLE ... AS other_table`은 다른 테이블의 버전을 복사하지 않습니다. [기존 테이블을 AS로 사용하여 테이블 생성](#create-as)을 참고하십시오.
 
 서버는 일정 범위의 버전을 지원하며, 최소 버전은 `SELECT`로 읽는 경우, `INSERT` 또는 Prometheus remote-write 프로토콜로 쓰는 경우,
 PromQL을 평가하는 경우([prometheusQuery](/ko/reference/functions/table-functions/prometheusQuery),
@@ -520,6 +520,15 @@ PromQL을 평가하는 경우([prometheusQuery](/ko/reference/functions/table-fu
   즉, 새 `TimeSeries` 테이블을 생성하고 `INSERT ... SELECT` 쿼리로 데이터를 복사한 뒤, 기존 테이블을 새 테이블로 대체하십시오.
 * 버전이 쓰기를 지원하기에 너무 오래된 경우, `INSERT` 쿼리와 Prometheus remote-write 프로토콜은 거부되지만 `SELECT` 쿼리는 계속 동작합니다.
 * 버전이 서버에서 아예 지원되지 않을 정도로 오래된 경우, 해당 테이블에 대한 모든 쿼리(`SHOW CREATE TABLE`, `DETACH`, `DROP` 제외)가 거부됩니다.
+
+### 버전 이력 {#version-history}
+
+| 버전 | 변경 사항                                                                                                                                                                                                                                                                                                                     |
+| -- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0  | `version` 설정이 도입되기 전에 생성된 테이블로, &quot;prealpha&quot; 테이블(대상 테이블의 컬럼을 [외부 컬럼(outer columns)](#outer-columns)으로 선언한 테이블)과 [최근 샘플](#recent-samples-table) 테이블이 없는 테이블을 포함합니다                                                                                                                                                 |
+| 1  | `version` 설정이 도입되었습니다                                                                                                                                                                                                                                                                                                     |
+| 2  | [`id_type`](#settings) 설정이 도입되었습니다. 외부 Tags 테이블을 사용하는 테이블은 `id` 컬럼의 유형을 `id_type`에, 식별자를 생성하는 표현식을 [`id_generator`](#settings)에 기록하므로, 테이블 정의가 외부 테이블에 의존하지 않습니다. `id_generator`가 설정된 경우에도 `id_type`이 기록됩니다([`id` 컬럼](#id-column) 참조)                                                                                     |
+| 3  | 외부 컬럼 `time_series`의 이름이 `samples`로 변경되었습니다([외부 컬럼](#outer-columns) 참조). 이전 버전의 테이블은 기존 컬럼 이름을 유지하며, [prometheusQuery](/ko/reference/functions/table-functions/prometheusQuery) 및 [prometheusQueryRange](/ko/reference/functions/table-functions/prometheusQueryRange) 테이블 함수는 해당 테이블이 사용하는 이름으로 컬럼을 반환합니다. 저장된 데이터는 변경되지 않았습니다 |
 
 # 함수 {#functions}
 

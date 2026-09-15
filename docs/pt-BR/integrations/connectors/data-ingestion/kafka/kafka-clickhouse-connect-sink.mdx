@@ -432,7 +432,7 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 
 Os seguintes schemas Protobuf não são suportados pelo conector em versões mais antigas do ClickHouse:
 
-* uniões com várias mensagens (**antes da versão 26.1 do CH** e, antes da versão 26.9 do CH, a menos que um setting esteja habilitado, veja abaixo)
+* uniões com várias mensagens (**antes da versão 26.1 do CH** e, antes da versão 26.9 do CH, a menos que um SETTING esteja habilitado, veja abaixo)
 
 ```protobuf
 syntax = "proto3";
@@ -457,7 +457,7 @@ message TwoRecords {
 }
 ```
 
-A partir da versão 26.9 do ClickHouse, esse schema é suportado por padrão. Nas versões 26.1 a 26.8, ele requer a configuração `allow_experimental_nullable_tuple_type = 1` (consulte [esta página da documentação](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
+A partir da versão 26.9 do ClickHouse, esse schema é suportado por padrão. Nas versões 26.1 a 26.8, ele requer a configuração `allow_experimental_nullable_tuple_type = 1` (consulte [esta página da documentação](/pt-BR/reference/settings/session-settings/enable#enable_nullable_tuple_type)).
 
 ### Suporte a schema JSON {#json-schema-support}
 

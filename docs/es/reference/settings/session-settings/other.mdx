@@ -43,7 +43,7 @@ Escribe el encabezado HTTP CORS adicional.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Si una tabla tiene una curva de llenado de espacio en su índice, por ejemplo, `ORDER BY mortonEncode(x, y)` o `ORDER BY hilbertEncode(x, y)`, y la consulta tiene condiciones sobre sus argumentos, por ejemplo, `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use la curva de llenado de espacio para el análisis de índices.
+Si una tabla tiene una curva de llenado de espacio en su índice, por ejemplo, `ORDER BY mortonEncode(x, y)` o `ORDER BY hilbertEncode(x, y)`, y la consulta tiene condiciones sobre sus argumentos, por ejemplo, `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use la curva de llenado de espacio para el análisis de índices. Actualmente, el análisis en 2D omite las curvas con argumentos `UInt64` porque las implementaciones de las curvas usan solo 32 bits por argumento.
 
 ## analyzer_inline_views {#analyzer_inline_views}
 
@@ -361,7 +361,7 @@ Valores admitidos:
 * `promql` — PromQL (Prometheus Query Language) evaluado sobre una tabla TimeSeries, configurada mediante las opciones `promql_database`, `promql_table` y `promql_evaluation_time`.
 * `clickhouse_json` — en lugar de texto SQL, la consulta se interpreta como un AST JSON (la salida de `parseQueryToJSON`). La consulta `SET` se sigue reconociendo en formato sin procesar para poder volver a cambiar el dialecto. Requiere la configuración experimental `enable_json_ast_dialect`.
 
-- `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración experimental `allow_experimental_trino_dialect`.
+- `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración experimental `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 

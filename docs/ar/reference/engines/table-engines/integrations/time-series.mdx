@@ -62,28 +62,28 @@ CREATE TABLE my_table ENGINE=TimeSeries
 
 تُنشأ أعمدة جدول TimeSeries تلقائيًا. وهذه هي الأعمدة الخارجية؛ فهي لا تخزّن أي بيانات، وإنما توفّر فقط واجهة لـ SELECT/INSERT. وتُخزَّن البيانات الفعلية في [الجداول الهدف](#target-tables). وفيما يلي قائمة الأعمدة الخارجية:
 
-| Name            | Type                                             | Description                                                                                                                                                                                                     |
-| --------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `metric_name`   | `String`                                         | اسم المقياس                                                                                                                                                                                                     |
-| `tags`          | `Map(String, String)`                            | خريطة الوسوم (التسميات) للسلسلة الزمنية                                                                                                                                                                           |
-| `time_series`   | `Array(Tuple(DateTime64(3), Float64))` افتراضيًا | مصفوفة من أزواج (timestamp، value) لسلسلة زمنية. ويمكن اشتقاق نوعَي عنصر timestamp والعنصر scalar في Tuple من تعريف `INNER COLUMNS` الخاص بـ samples (راجع [تحديد الأعمدة الخارجية](#specifying-outer-columns)) |
-| `metric_family` | `String`                                         | اسم عائلة المقياس (للبيانات الوصفية للمقاييس)                                                                                                                                                                  |
-| `type`          | `String`                                         | نوع المقياس (مثل &quot;counter&quot; و&quot;gauge&quot;)                                                                                                                                                        |
-| `unit`          | `String`                                         | وحدة المقياس                                                                                                                                                                                                    |
-| `help`          | `String`                                         | وصف المقياس                                                                                                                                                                                                     |
+| Name            | Type                                             | Description                                                                                                                                                                                                                                                                                                    |
+| --------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                         | اسم المقياس                                                                                                                                                                                                                                                                                                    |
+| `tags`          | `Map(String, String)`                            | خريطة الوسوم (التسميات) للسلسلة الزمنية                                                                                                                                                                                                                                                                        |
+| `samples`       | `Array(Tuple(DateTime64(3), Float64))` افتراضيًا | مصفوفة من أزواج (timestamp، value) لسلسلة زمنية. ويمكن اشتقاق نوعَي عنصر timestamp والعنصر scalar في Tuple من تعريف `INNER COLUMNS` الخاص بـ samples (راجع [تحديد الأعمدة الخارجية](#specifying-outer-columns)). ويُسمّى العمود `time_series` في الجداول ذات [الإصدار](#schema-versioning) 2 والإصدارات الأقدم |
+| `metric_family` | `String`                                         | اسم عائلة المقياس (للبيانات الوصفية للمقاييس)                                                                                                                                                                                                                                                                  |
+| `type`          | `String`                                         | نوع المقياس (مثل &quot;counter&quot; و&quot;gauge&quot;)                                                                                                                                                                                                                                                       |
+| `unit`          | `String`                                         | وحدة المقياس                                                                                                                                                                                                                                                                                                   |
+| `help`          | `String`                                         | وصف المقياس                                                                                                                                                                                                                                                                                                    |
 
 مثال:
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series) VALUES
+INSERT INTO my_table (metric_name, tags, samples) VALUES
     ('cpu_usage', {'job': 'node_exporter', 'instance': 'host1:9100'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5), (toDateTime64('2024-01-01 00:01:00', 3), 0.7)])
 ```
 
-يُسمح بأن تكون القيمة `metric_name` فارغة عند الإدخال، ما يعني أن اسم المقياس يُحدَّد في `tags` ضمن `__name__`، على سبيل المثال:
+يُسمح بأن تكون القيمة `metric_name` فارغة عند الإدخال، ما يعني أن اسم المقياس يُحدَّد في `tags` ضمن `__name__`، على سبيل المثال:
 
 ```sql
-INSERT INTO my_table (tags, time_series) VALUES
+INSERT INTO my_table (tags, samples) VALUES
     ({'__name__': 'cpu_usage', 'job': 'test'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5)])
 ```
@@ -91,17 +91,17 @@ INSERT INTO my_table (tags, time_series) VALUES
 لإدراج البيانات الوصفية للمقاييس، أدرِجها في الأعمدة `metric_family` و`type` و`unit` و`help`:
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, help) VALUES
     ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
 ### تحديد الأعمدة الخارجية {#specifying-outer-columns}
 
-يمكن إدراج العمود الخارجي `time_series` صراحةً في عبارة `CREATE TABLE` لاستبدال نوعه الافتراضي `Array(Tuple(DateTime64(3), Float64))`. يستخرج ClickHouse نوعَي الطابع الزمني والقيمة scalar من الـ tuple ويُمرّرهما إلى جدول العينات الداخلي:
+يمكن إدراج العمود الخارجي `samples` صراحةً في عبارة `CREATE TABLE` لاستبدال نوعه الافتراضي `Array(Tuple(DateTime64(3), Float64))` (كما يُقبل اسمه القديم `time_series` أيضاً). يستخرج ClickHouse نوعَي الطابع الزمني والقيمة scalar من الـ tuple ويُمرّرهما إلى جدول العينات الداخلي:
 
 ```sql
-CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
+CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 ```
 
 وهذا يعادل التصريح مباشرةً بأنواع أعمدة الطابع الزمني والقيمة في عبارة `INNER COLUMNS` الخاصة بجدول samples:
@@ -202,14 +202,14 @@ CREATE TABLE my_table
 (
     `metric_name` String,
     `tags` Map(String, String),
-    `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `samples` Array(Tuple(DateTime64(3), Float64)),
     `metric_family` String,
     `type` String,
     `unit` String,
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 2, recent_samples_ttl_seconds = 345600
+SETTINGS version = 3, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -506,18 +506,18 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | Expression   | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | مفتاح التقسيم لجدول `recent samples` الداخلي، مثلًا `toStartOfHour(timestamp)`. عند تعيينه صراحةً، فإنه يتجاوز مفتاح التقسيم من تعريف المحرك؛ وإذا لم يُعيّن أي منهما، فسيُستخدم قسم واحد لكل 5 ساعات. يُتجاهل لجدول العينات الحديثة خارجي. يتطلب أن تكون `recent_samples_ttl_seconds` غير صفرية                                                                                                                                                                                                                                                                                                                                                                       |
 | `recent_samples_index_granularity`   | UInt64       | 8192                                                          | يضبط `index_granularity` لجدول `recent samples` الداخلي. عند تعيينه صراحةً، فإنه يتجاوز `index_granularity` من تعريف المحرك. يُتجاهل لجدول العينات الحديثة خارجي ولمحرك غير MergeTree. يتطلب أن تكون `recent_samples_ttl_seconds` غير صفرية                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `tags_index_granularity`             | UInt64       | 8192                                                          | يضبط `index_granularity` لجدول [الوسوم](#tags-table) الداخلي. عند تعيينه صراحةً، فإنه يتجاوز `index_granularity` من تعريف المحرك. يُتجاهل لجدول الوسوم خارجي ولمحرك غير MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `version`                            | UInt64       | 2                                                             | إصدار الجدول: يحدد مجموعة جداول الهدف وبنيتها. يُثبّت الإصدار تلقائيًا عند إنشاء الجدول ولا يمكن تغييره بعد ذلك، وعادةً ينبغي حذفه من استعلام `CREATE TABLE` (راجع [إصدارات المخطط](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `version`                            | UInt64       | 3                                                             | إصدار الجدول: يحدد مجموعة جداول الهدف وبنيتها. يُثبّت الإصدار تلقائيًا عند إنشاء الجدول ولا يمكن تغييره بعد ذلك، وعادةً ينبغي حذفه من استعلام `CREATE TABLE` (راجع [إصدارات المخطط](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ## إصدارات المخطط {#schema-versioning}
 
 لا يزال محرك الجدول `TimeSeries` وطبقة تنفيذ PromQL قيد التطوير النشط:
 فمجموعة الجداول الهدف وبنيتها قد تتغيّر بين إصدارات ClickHouse.
 ولجعل مثل هذه التغييرات قابلة للاكتشاف، يخزّن كل جدول `TimeSeries` إصداره في الإعداد [version](#settings).
-ويُثبَّت الإصدار تلقائيًا في استعلام `CREATE` عند إنشاء الجدول - وقيمته هي أحدث إصدار معروف للخادم (حاليًا 2) -
+ويُثبَّت الإصدار تلقائيًا في استعلام `CREATE` عند إنشاء الجدول - وقيمته هي أحدث إصدار معروف للخادم (حاليًا 3) -
 ويبقى محفوظًا في بيانات الجدول الوصفية، ولا يمكن تغييره باستخدام `ALTER`. أما الجداول التي أُنشئت قبل أن يُضاف هذا الإعداد فتُعدّ من الإصدار 0.
 وفي الأحوال العادية يُستحسن إغفال هذا الإعداد في استعلام `CREATE TABLE`، فيحصل الجدول عندئذٍ على أحدث إصدار.
-ويُقبل تحديد `version` صراحةً إذا كان الخادم يدعم ذلك الإصدار؛ عندئذٍ يُعرَّف الجدول بالطريقة التي يعتمدها ذلك الإصدار، فمثلًا
-لا يسجّل جدول من الإصدار 1 الإعداد `id_type`. ولا ينسخ `CREATE TABLE ... AS other_table` إصدار الجدول الآخر، انظر [إنشاء جدول AS جدول موجود](#create-as).
+ويُقبل تحديد `version` صراحةً إذا كان الخادم يدعم ذلك الإصدار؛ عندئذٍ يُعرَّف الجدول بالطريقة التي يعتمدها ذلك الإصدار (انظر [سجل الإصدارات](#version-history)).
+ولا ينسخ `CREATE TABLE ... AS other_table` إصدار الجدول الآخر، انظر [إنشاء جدول AS جدول موجود](#create-as).
 
 يدعم الخادم نطاقًا من الإصدارات، وقد يختلف الحد الأدنى للإصدار بين القراءة عبر `SELECT`، والكتابة عبر `INSERT`
 أو بروتوكول remote-write الخاص بـ Prometheus، وتقييم PromQL (دوال الجداول [prometheusQuery](/ar/reference/functions/table-functions/prometheusQuery)
@@ -529,6 +529,15 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
   أنشئ جدول `TimeSeries` جديدًا، وانسخ البيانات باستعلام `INSERT ... SELECT`، ثم استبدل الجدول القديم بالجديد.
 * إذا كان الإصدار أقدم من أن يُكتب فيه، تُرفض استعلامات `INSERT` وبروتوكول remote-write الخاص بـ Prometheus، بينما تظل استعلامات `SELECT` تعمل.
 * وإذا كان الإصدار أقدم من أن يدعمه الخادم أصلًا، يُرفض كل استعلام على الجدول (باستثناء `SHOW CREATE TABLE` و`DETACH` و`DROP`).
+
+### سجل الإصدارات {#version-history}
+
+| الإصدار | التغييرات                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | الجداول التي أُنشئت قبل إضافة الإعداد `version`، بما فيها جداول &quot;prealpha&quot; (التي كانت تُعلن أعمدة الجداول الهدف كـ[أعمدة خارجية](#outer-columns)) والجداول التي لا تحتوي على جدول [العينات الحديثة](#recent-samples-table)                                                                                                                                                                       |
+| 1       | أُضيف الإعداد `version`                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2       | أُضيف الإعداد [`id_type`](#settings): الجدول الذي له جدول الوسوم الخارجي يسجّل نوع العمود `id` في `id_type`، والتعبير المولِّد للمعرّفات في [`id_generator`](#settings)، بحيث لا يعتمد تعريفه على الجدول الخارجي. ويُسجَّل `id_type` أيضًا عند ضبط `id_generator` (انظر [العمود `id`](#id-column))                                                                                                             |
+| 3       | أُعيدت تسمية العمود الخارجي `time_series` إلى `samples` (انظر [الأعمدة الخارجية](#outer-columns)). تحتفظ جداول الإصدارات الأقدم بالاسم القديم للعمود، وتُعيد دالتا الجداول [prometheusQuery](/ar/reference/functions/table-functions/prometheusQuery) و[prometheusQueryRange](/ar/reference/functions/table-functions/prometheusQueryRange) العمود بالاسم الذي يستخدمه الجدول. أما البيانات المخزَّنة فلم تتغيّر |
 
 # الدوال {#functions}
 

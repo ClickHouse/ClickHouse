@@ -1274,6 +1274,17 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时分派给远程工作线程的任务数。非零值表示该查询实际以分布式方式执行。
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/zh/reference/data-types/int-uint)) — 当 make&#95;distributed&#95;plan 查询通过本地执行器 (distributed&#95;plan&#95;execute&#95;locally) 在进程内执行，而非分派给远程工作线程时，设置为 1。
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时，至少被分配一个任务的不同主机数量。
+* `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入分布式查询计划中流式 exchange 套接字的字节数。`NetworkSendBytes` 不统计这些字节。
+* `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从分布式查询计划中流式 exchange 套接字读取的字节数。`NetworkReceiveBytes` 不统计这些字节。
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/zh/reference/data-types/int-uint)) — 完整写入流式 exchange 套接字的 Data 数据包，每个块对应一个数据包，另加每个 stream 一个流结束数据包。发送缓冲区中的数据包仅在整个缓冲区写入时计数；如果接收端不再需要数据而导致缓冲区未完全写入，则其中的数据包均不计数。
+* `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — 从流式 exchange 读取的 Data 数据包，每个块对应一个数据包，另加每个 stream 一个流结束数据包。
+* `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange 数据包中压缩前 Native 块的字节数，在其被序列化的每个数据包中计数一次。与 `StreamingExchangeSendBytes` 对比，可得出 shuffle 或 gather 的压缩率；广播会将每个数据包发送至每个目标端，因此 `StreamingExchangeSendBytes` 会随目标端数量增加而增长。
+* `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将块序列化并压缩为流式 exchange 数据包所花费的时间。
+* `ProfileEvent_StreamingExchangeDeserializeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将流式 exchange 数据包解压并反序列化为块所花费的时间。
+* `ProfileEvent_StreamingExchangeSendQueueFullMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange sink 因等待写入套接字的数据包队列已满而未接收块的时间。
+* `ProfileEvent_StreamingExchangeReceiveWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange source 等待发送端传来下一批字节的时间。
+* `ProfileEvent_StreamingExchangeConnectionWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange sink 等待接收任务建立连接的时间。
+* `ProfileEvent_StreamingExchangeEarlyCloses` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange source 在 stream 读取到末尾前通知发送端停止的次数，例如已满足 LIMIT 时。已断开的发送端不计入其中。
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/zh/reference/data-types/int-uint)) — 虚拟分区片段更新次数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/zh/reference/data-types/int-uint)) — 由 leader 执行的虚拟分区片段更新次数
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 虚拟分区片段更新耗时 (微秒)
@@ -1493,7 +1504,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetReadRowGroups` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 数据中读取的行组总数
 * `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 数据中被剪枝的行组总数
 * `ProfileEvent_ParquetReadPages` ([UInt64](/zh/reference/data-types/int-uint)) — 读取的 Parquet 数据页总数
-* `ProfileEvent_ParquetPrunedPages` ([UInt64](/zh/reference/data-types/int-uint)) — 通过列索引从 Parquet 数据中被剪枝的页面总数
+* `ProfileEvent_ParquetPrunedPages` ([UInt64](/zh/reference/data-types/int-uint)) — 通过列索引从 Parquet 数据中被剪枝的数据页总数
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 由 Parquet 读取器发出的任务数
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/zh/reference/data-types/int-uint)) — 由 Parquet 读取器发送到线程池的任务批次
 * `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/zh/reference/data-types/int-uint)) — DB::Parquet::Prefetcher 使用 ReadMode::RandomRead 的读取总次数

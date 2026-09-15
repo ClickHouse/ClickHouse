@@ -51,18 +51,23 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_*",
-      count: 41,
+      count: 50,
       settings: [
         { name: "allow_aggregate_partitions_independently", path: "/allow#allow_aggregate_partitions_independently", default: "1" },
         { name: "allow_archive_path_syntax", path: "/allow#allow_archive_path_syntax", default: "1" },
         { name: "allow_asynchronous_read_from_io_pool_for_merge_tree", path: "/allow#allow_asynchronous_read_from_io_pool_for_merge_tree", default: "0" },
         { name: "allow_calculating_subcolumns_sizes_for_merge_tree_reading", path: "/allow#allow_calculating_subcolumns_sizes_for_merge_tree_reading", default: "1" },
         { name: "allow_changing_replica_until_first_data_packet", path: "/allow#allow_changing_replica_until_first_data_packet", default: "0" },
+        { name: "allow_correlated_subqueries", path: "/allow#allow_correlated_subqueries", default: "1" },
         { name: "allow_create_index_without_type", path: "/allow#allow_create_index_without_type", default: "0" },
         { name: "allow_creating_set_partitions_independently", path: "/allow#allow_creating_set_partitions_independently", default: "1" },
         { name: "allow_custom_error_code_in_throwif", path: "/allow#allow_custom_error_code_in_throwif", default: "0" },
+        { name: "allow_database_glue_catalog", path: "/allow#allow_database_glue_catalog", default: "0" },
+        { name: "allow_database_iceberg", path: "/allow#allow_database_iceberg", default: "0" },
+        { name: "allow_database_unity_catalog", path: "/allow#allow_database_unity_catalog", default: "0" },
         { name: "allow_ddl", path: "/allow#allow_ddl", default: "1" },
         { name: "allow_delta_kernel_rs", path: "/allow#allow_delta_kernel_rs", default: "1" },
+        { name: "allow_delta_lake_writes", path: "/allow#allow_delta_lake_writes", default: "0" },
         { name: "allow_distinct_partitions_independently", path: "/allow#allow_distinct_partitions_independently", default: "1" },
         { name: "allow_distributed_ddl", path: "/allow#allow_distributed_ddl", default: "1" },
         { name: "allow_drop_detached", path: "/allow#allow_drop_detached", default: "0" },
@@ -70,11 +75,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_execute_multiif_columnar", path: "/allow#allow_execute_multiif_columnar", default: "1" },
         { name: "allow_fuzz_query_functions", path: "/allow#allow_fuzz_query_functions", default: "0" },
         { name: "allow_general_join_planning", path: "/allow#allow_general_join_planning", default: "1" },
+        { name: "allow_geo_types_in_iceberg", path: "/allow#allow_geo_types_in_iceberg", default: "0" },
         { name: "allow_get_client_http_header", path: "/allow#allow_get_client_http_header", default: "0" },
         { name: "allow_hyperscan", path: "/allow#allow_hyperscan", default: "1" },
         { name: "allow_iceberg_remove_orphan_files", path: "/allow#allow_iceberg_remove_orphan_files", default: "0" },
         { name: "allow_insert_into_iceberg", path: "/allow#allow_insert_into_iceberg", default: "0" },
         { name: "allow_introspection_functions", path: "/allow#allow_introspection_functions", default: "0" },
+        { name: "allow_join_right_table_sorting", path: "/allow#allow_join_right_table_sorting", default: "0" },
+        { name: "allow_kafka_offsets_storage_in_keeper", path: "/allow#allow_kafka_offsets_storage_in_keeper", default: "0" },
         { name: "allow_key_condition_coalesce_rewrite", path: "/allow#allow_key_condition_coalesce_rewrite", default: "1" },
         { name: "allow_limit_by_partitions_independently", path: "/allow#allow_limit_by_partitions_independently", default: "1" },
         { name: "allow_lossy_numeric_supertype", path: "/allow#allow_lossy_numeric_supertype", default: "0" },
@@ -84,7 +92,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_named_collection_override_by_default", path: "/allow#allow_named_collection_override_by_default", default: "1" },
         { name: "allow_non_metadata_alters", path: "/allow#allow_non_metadata_alters", default: "1" },
         { name: "allow_nonconst_timezone_arguments", path: "/allow#allow_nonconst_timezone_arguments", default: "0" },
-        { name: "allow_nullable_tuple_in_extracted_subcolumns", path: "/allow#allow_nullable_tuple_in_extracted_subcolumns", default: "0" },
+        { name: "allow_nullable_tuple_in_extracted_subcolumns", path: "/allow#allow_nullable_tuple_in_extracted_subcolumns", default: "1" },
         { name: "allow_preliminary_distinct_abandoning", path: "/allow#allow_preliminary_distinct_abandoning", default: "1" },
         { name: "allow_rank_dense_rank_arguments", path: "/allow#allow_rank_dense_rank_arguments", default: "0" },
         { name: "allow_reorder_prewhere_conditions", path: "/allow#allow_reorder_prewhere_conditions", default: "1" },
@@ -93,6 +101,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_simdjson", path: "/allow#allow_simdjson", default: "1" },
         { name: "allow_special_serialization_kinds_in_output_formats", path: "/allow#allow_special_serialization_kinds_in_output_formats", default: "1" },
         { name: "allow_unrestricted_reads_from_keeper", path: "/allow#allow_unrestricted_reads_from_keeper", default: "0" },
+        { name: "allow_url_wildcard_from_index_pages", path: "/allow#allow_url_wildcard_from_index_pages", default: "0" },
         { name: "allow_window_partitions_independently", path: "/allow#allow_window_partitions_independently", default: "1" }
       ],
       children: []
@@ -109,39 +118,24 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_experimental_*",
-      count: 34,
+      count: 19,
       settings: [
         { name: "allow_experimental_analyzer", path: "/allow-experimental#allow_experimental_analyzer", default: "1" },
         { name: "allow_experimental_cleanup_old_data_files_compaction", path: "/allow-experimental#allow_experimental_cleanup_old_data_files_compaction", default: "0" },
-        { name: "allow_experimental_correlated_subqueries", path: "/allow-experimental#allow_experimental_correlated_subqueries", default: "1" },
-        { name: "allow_experimental_database_glue_catalog", path: "/allow-experimental#allow_experimental_database_glue_catalog", default: "0" },
         { name: "allow_experimental_database_hms_catalog", path: "/allow-experimental#allow_experimental_database_hms_catalog", default: "0" },
-        { name: "allow_experimental_database_iceberg", path: "/allow-experimental#allow_experimental_database_iceberg", default: "0" },
         { name: "allow_experimental_database_materialized_postgresql", path: "/allow-experimental#allow_experimental_database_materialized_postgresql", default: "0" },
         { name: "allow_experimental_database_paimon_rest_catalog", path: "/allow-experimental#allow_experimental_database_paimon_rest_catalog", default: "0" },
-        { name: "allow_experimental_database_unity_catalog", path: "/allow-experimental#allow_experimental_database_unity_catalog", default: "0" },
-        { name: "allow_experimental_delta_lake_writes", path: "/allow-experimental#allow_experimental_delta_lake_writes", default: "0" },
         { name: "allow_experimental_eval_table_function", path: "/allow-experimental#allow_experimental_eval_table_function", default: "0" },
         { name: "allow_experimental_expire_snapshots", path: "/allow-experimental#allow_experimental_expire_snapshots", default: "0" },
-        { name: "allow_experimental_funnel_functions", path: "/allow-experimental#allow_experimental_funnel_functions", default: "0" },
-        { name: "allow_experimental_geo_types_in_iceberg", path: "/allow-experimental#allow_experimental_geo_types_in_iceberg", default: "0" },
         { name: "allow_experimental_hash_functions", path: "/allow-experimental#allow_experimental_hash_functions", default: "0" },
         { name: "allow_experimental_iceberg_compaction", path: "/allow-experimental#allow_experimental_iceberg_compaction", default: "0" },
-        { name: "allow_experimental_join_right_table_sorting", path: "/allow-experimental#allow_experimental_join_right_table_sorting", default: "0" },
-        { name: "allow_experimental_json_lazy_type_hints", path: "/allow-experimental#allow_experimental_json_lazy_type_hints", default: "0" },
-        { name: "allow_experimental_kafka_offsets_storage_in_keeper", path: "/allow-experimental#allow_experimental_kafka_offsets_storage_in_keeper", default: "0" },
         { name: "allow_experimental_kusto_dialect", path: "/allow-experimental#allow_experimental_kusto_dialect", default: "0" },
-        { name: "allow_experimental_materialized_postgresql_table", path: "/allow-experimental#allow_experimental_materialized_postgresql_table", default: "0" },
         { name: "allow_experimental_nlp_functions", path: "/allow-experimental#allow_experimental_nlp_functions", default: "0" },
-        { name: "allow_experimental_nullable_tuple_type", path: "/allow-experimental#allow_experimental_nullable_tuple_type", default: "0" },
         { name: "allow_experimental_object_storage_queue_hive_partitioning", path: "/allow-experimental#allow_experimental_object_storage_queue_hive_partitioning", default: "0" },
         { name: "allow_experimental_paimon_storage_engine", path: "/allow-experimental#allow_experimental_paimon_storage_engine", default: "0" },
         { name: "allow_experimental_parallel_reading_from_replicas", path: "/allow-experimental#allow_experimental_parallel_reading_from_replicas", default: "0" },
         { name: "allow_experimental_polyglot_dialect", path: "/allow-experimental#allow_experimental_polyglot_dialect", default: "0" },
         { name: "allow_experimental_prql_dialect", path: "/allow-experimental#allow_experimental_prql_dialect", default: "0" },
-        { name: "allow_experimental_trino_dialect", path: "/allow-experimental#allow_experimental_trino_dialect", default: "0" },
-        { name: "allow_experimental_unique_key", path: "/allow-experimental#allow_experimental_unique_key", default: "0" },
-        { name: "allow_experimental_url_wildcard_from_index_pages", path: "/allow-experimental#allow_experimental_url_wildcard_from_index_pages", default: "0" },
         { name: "allow_experimental_ytsaurus_dictionary_source", path: "/allow-experimental#allow_experimental_ytsaurus_dictionary_source", default: "0" },
         { name: "allow_experimental_ytsaurus_table_engine", path: "/allow-experimental#allow_experimental_ytsaurus_table_engine", default: "0" },
         { name: "allow_experimental_ytsaurus_table_function", path: "/allow-experimental#allow_experimental_ytsaurus_table_function", default: "0" }
@@ -760,7 +754,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 44,
+      count: 50,
       settings: [
         { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
         { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
@@ -772,6 +766,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_extended_results_for_datetime_functions", path: "/enable#enable_extended_results_for_datetime_functions", default: "0" },
         { name: "enable_full_text_index", path: "/enable#enable_full_text_index", default: "1" },
         { name: "enable_function_early_short_circuit", path: "/enable#enable_function_early_short_circuit", default: "0" },
+        { name: "enable_funnel_functions", path: "/enable#enable_funnel_functions", default: "0" },
         { name: "enable_global_with_statement", path: "/enable#enable_global_with_statement", default: "1" },
         { name: "enable_group_by_top_k_optimization", path: "/enable#enable_group_by_top_k_optimization", default: "1" },
         { name: "enable_hash_join_row_store", path: "/enable#enable_hash_join_row_store", default: "1" },
@@ -780,11 +775,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_identifier_resolve_cache", path: "/enable#enable_identifier_resolve_cache", default: "1" },
         { name: "enable_job_stack_trace", path: "/enable#enable_job_stack_trace", default: "0" },
         { name: "enable_json_ast_dialect", path: "/enable#enable_json_ast_dialect", default: "0" },
+        { name: "enable_json_lazy_type_hints", path: "/enable#enable_json_lazy_type_hints", default: "0" },
         { name: "enable_lazy_columns_replication", path: "/enable#enable_lazy_columns_replication", default: "1" },
         { name: "enable_materialized_cte", path: "/enable#enable_materialized_cte", default: "0" },
+        { name: "enable_materialized_postgresql_table", path: "/enable#enable_materialized_postgresql_table", default: "0" },
         { name: "enable_memory_bound_merging_of_aggregation_results", path: "/enable#enable_memory_bound_merging_of_aggregation_results", default: "1" },
         { name: "enable_multiple_prewhere_read_steps", path: "/enable#enable_multiple_prewhere_read_steps", default: "1" },
         { name: "enable_named_columns_in_function_tuple", path: "/enable#enable_named_columns_in_function_tuple", default: "0" },
+        { name: "enable_nullable_tuple_type", path: "/enable#enable_nullable_tuple_type", default: "1" },
         { name: "enable_order_by_all", path: "/enable#enable_order_by_all", default: "1" },
         { name: "enable_packed_string_keys_in_aggregation", path: "/enable#enable_packed_string_keys_in_aggregation", default: "1" },
         { name: "enable_parsing_to_custom_serialization", path: "/enable#enable_parsing_to_custom_serialization", default: "1" },
@@ -801,7 +799,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_time_series_aggregate_functions", path: "/enable#enable_time_series_aggregate_functions", default: "0" },
         { name: "enable_time_series_table", path: "/enable#enable_time_series_table", default: "0" },
         { name: "enable_time_time64_type", path: "/enable#enable_time_time64_type", default: "1" },
+        { name: "enable_trino_dialect", path: "/enable#enable_trino_dialect", default: "0" },
         { name: "enable_unaligned_array_join", path: "/enable#enable_unaligned_array_join", default: "0" },
+        { name: "enable_unique_key", path: "/enable#enable_unique_key", default: "0" },
         { name: "enable_url_encoding", path: "/enable#enable_url_encoding", default: "0" },
         { name: "enable_vertical_final", path: "/enable#enable_vertical_final", default: "1" },
         { name: "enable_writes_to_query_cache", path: "/enable#enable_writes_to_query_cache", default: "1" },
@@ -3173,6 +3173,23 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     }
   ])
+  const [settingAliases] = useState(() => ({
+    allow_correlated_subqueries: ["allow_experimental_correlated_subqueries"],
+    allow_database_glue_catalog: ["allow_experimental_database_glue_catalog"],
+    allow_database_iceberg: ["allow_experimental_database_iceberg"],
+    allow_database_unity_catalog: ["allow_experimental_database_unity_catalog"],
+    allow_delta_lake_writes: ["allow_experimental_delta_lake_writes"],
+    allow_geo_types_in_iceberg: ["allow_experimental_geo_types_in_iceberg"],
+    allow_join_right_table_sorting: ["allow_experimental_join_right_table_sorting"],
+    allow_kafka_offsets_storage_in_keeper: ["allow_experimental_kafka_offsets_storage_in_keeper"],
+    allow_url_wildcard_from_index_pages: ["allow_experimental_url_wildcard_from_index_pages"],
+    enable_funnel_functions: ["allow_experimental_funnel_functions"],
+    enable_json_lazy_type_hints: ["allow_experimental_json_lazy_type_hints"],
+    enable_materialized_postgresql_table: ["allow_experimental_materialized_postgresql_table"],
+    enable_nullable_tuple_type: ["allow_experimental_nullable_tuple_type"],
+    enable_trino_dialect: ["allow_experimental_trino_dialect"],
+    enable_unique_key: ["allow_experimental_unique_key"]
+  }))
   const [allGroupKeys] = useState(() => {
     const collectGroupKeys = (items, path = []) =>
       items.flatMap((entry) => {
@@ -3221,7 +3238,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
+    const settings = entry.settings.filter((setting) => matchesSearch([setting.name, ...(settingAliases[setting.name] || [])].join(" ")))
     const children = entry.children.map(filterEntry).filter(Boolean)
     const count = settings.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null
@@ -3360,7 +3377,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/session-settings</div>
+          <div className="min-w-max font-semibold">/session-设置</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "全部折叠" : "全部展开"}

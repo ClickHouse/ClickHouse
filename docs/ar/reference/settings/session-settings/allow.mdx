@@ -52,6 +52,18 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 إذا كان هذا الإعداد مُمكّنًا، ففي الطلبات المتحوّطة يمكننا بدء connection جديد حتى استلام أول packet بيانات، حتى لو كنّا قد أحرزنا بعض التقدّم بالفعل
 (لكن لم يتم تحديث التقدّم خلال مهلة `receive_data_timeout`)؛ وإلا فسنُعطّل تغيير الـ replica بعد أول مرة نُحرز فيها تقدّمًا.
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**اسم بديل**: `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_correlated_subqueries`."}]}]} />
+
+يسمح بتنفيذ الاستعلامات الفرعية المترابطة.
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح استخدام رمز خطأ مخصص في الدالة throwIf(). إذا كانت القيمة true، فقد تحمل الاستثناءات المُطلَقة رموز خطأ غير متوقعة.
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**اسم بديل**: `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_database_glue_catalog`"}]}]} />
+
+يسمح باستخدام محرك قاعدة البيانات `DataLakeCatalog` مع `catalog_type = 'glue'`
+
+قيمة Cloud الافتراضية: `1`.
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**اسم بديل**: `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_database_iceberg`"}]}]} />
+
+يسمح باستخدام محرك قاعدة البيانات ‏`DataLakeCatalog` مع `catalog_type = 'iceberg'`
+
+القيمة الافتراضية في Cloud: `1`.
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**اسم بديل**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_database_unity_catalog`"}]}]} />
+
+السماح بمحرك قاعدة البيانات `DataLakeCatalog` مع `catalog_type = 'unity'`
+
+Cloud default value: `1`.
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,18 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "الاسم الجديد لـ `allow_experimental_delta_kernel_rs`، الذي لم يعد تجريبيًا ويُحتفَظ به كاسم مستعار. لم تتغير القيمة الافتراضية."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد. قُدِّم في البداية باسم `allow_experimental_delta_kernel_rs`، وهو الآن اسم مستعار له؛ ويُدرج هذا الصف تحت الاسم المعياري للحفاظ على السجل الكامل."}]}]} />
 
 يسمح باستخدام تنفيذ `delta-kernel-rs` لقراءة جداول Delta Lake.
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**اسم بديل**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_delta_lake_writes`، الذي نُقل إلى Beta."}]}]} />
+
+يُمكّن ميزة الكتابة عبر delta-kernel.
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +210,16 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح هذا استخدام خوارزمية أكثر عمومية لتخطيط JOIN يمكنها التعامل مع شروط أكثر تعقيدًا، لكنها لا تعمل إلا مع hash join. وإذا لم يكن hash join مُمكّنًا، فستُستخدم خوارزمية تخطيط JOIN المعتادة بغض النظر عن قيمة هذا الإعداد.
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**اسم بديل**: `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_geo_types_in_iceberg`."}]}]} />
+
+يسمح بتحليل نوعي الحقول `geometry` و`geography` في Iceberg على أنهما النوع `Geometry` (Variant) في ClickHouse.
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +271,30 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 * [Sampling Query Profiler](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * جدول النظام [trace&#95;log](/ar/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_join_right_table_sorting`."}]}]} />
+
+عند تعيينه إلى true، وفي حال استيفاء شرطَي `join_to_sort_minimum_perkey_rows` و`join_to_sort_maximum_table_rows`، يُعاد ترتيب الجدول الأيمن حسب المفتاح لتحسين الأداء في hash join من النوع left أو inner.
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_kafka_offsets_storage_in_keeper`."}]}]} />
+
+السماح بتخزين الإزاحات الخاصة بـ Kafka في ClickHouse Keeper. عند التفعيل، يمكن تحديد مسار ClickHouse Keeper واسم النسخة المتماثلة لمحرك جدول Kafka. ونتيجة لذلك، سيُستخدم نوع جديد من محركات التخزين بدلاً من محرك Kafka المعتاد، وهو محرك يخزّن الإزاحات المعتمدة في ClickHouse Keeper بشكل أساسي
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -272,9 +372,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد يتحكم في ما إذا كان يمكن أن تكون الأعمدة الفرعية المستخرجة من النوع Tuple قابلة للإسناد إلى nullable."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "أصبح `Nullable(Tuple)` الآن GA: العمود الفرعي `Tuple` المستخرج من عمود `Tuple` أو `Variant` أو `Dynamic` أو `JSON` يكون من النوع `Nullable(Tuple)` ويكون NULL في الصفوف التي يكون فيها العمود الفرعي مفقودًا. تُقرأ قيمة الإعداد مرة واحدة عند بدء تشغيل الخادم، لذا فإن `compatibility` يستعيد السلوك السابق من ملف التعريف عند بدء التشغيل فقط (على سبيل المثال، users.xml)، وليس من `SET` على مستوى الجلسة."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد يتحكم في ما إذا كان يمكن أن تكون الأعمدة الفرعية المستخرجة من النوع Tuple قابلة للإسناد إلى nullable."}]}]} />
 
 يتحكم هذا الإعداد في ما إذا كان يمكن إسناد النوع `Nullable(Tuple(...))` إلى الأعمدة الفرعية المستخرجة من النوع `Tuple(...)`.
 
@@ -383,6 +483,18 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح بعمليات قراءة غير مقيّدة (من دون شرط على مسار) من جدول system.zookeeper، وقد يكون ذلك مفيدًا، لكنه غير آمن لـ ZooKeeper
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**اسم بديل**: `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_url_wildcard_from_index_pages`."}]}]} />
+
+يسمح بتوسيع wildcard لكل من `url()` و`ENGINE = URL` انطلاقًا من صفحات فهرسة HTTP.
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

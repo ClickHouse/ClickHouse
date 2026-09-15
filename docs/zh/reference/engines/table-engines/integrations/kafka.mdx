@@ -447,7 +447,7 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 
 <ExperimentalBadge />
 
-如果启用了 `allow_experimental_kafka_offsets_storage_in_keeper`，则可以为 Kafka 表引擎额外指定两个设置：
+如果启用了 `allow_kafka_offsets_storage_in_keeper`，则可以为 Kafka 表引擎额外指定两个设置：
 
 * `kafka_keeper_path` 指定 ClickHouse Keeper 中该表的路径
 * `kafka_replica_name` 指定 ClickHouse Keeper 中的副本名称
@@ -456,7 +456,7 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 
 ### 静态分区与分片亲和性 {#static-partition-to-shard-affinity}
 
-使用 `StorageKafka2` 时，可通过指定 `kafka_partition_shard_num` 和 `kafka_shard_count` 选择性启用静态分区与分片亲和性。这样，多个 ClickHouse 实例 (分片) 可以从同一 Kafka topic 消费数据，并且每个分片仅根据以下公式处理确定的分区子集：
+使用 `StorageKafka2` 时，可通过指定 `kafka_partition_shard_num` 和 `kafka_shard_count` 选择性启用静态分区与分片亲和性。这样，多个 ClickHouse 实例 (分片) 可以从同一 topic 消费数据，并且每个分片仅根据以下公式处理确定的分区子集：
 
 ```text
 partition_id % kafka_shard_count == kafka_partition_shard_num - 1
@@ -477,7 +477,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -487,7 +487,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 与副本配合使用时 (多个 `kafka_replica_name` 值共享同一个 `kafka_keeper_path`) ，系统会先应用亲和性过滤器以确定符合条件的分区，然后由 ZooKeeper 锁在各副本之间分配这些分区。
@@ -500,7 +500,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### 已知限制 {#known-limitations}

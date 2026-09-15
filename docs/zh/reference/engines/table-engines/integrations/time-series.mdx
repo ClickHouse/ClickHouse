@@ -59,22 +59,22 @@ CREATE TABLE my_table ENGINE=TimeSeries
 
 ### 外部列 {#outer-columns}
 
-TimeSeries 表的列会自动生成。这些列属于外部列，不存储任何数据，只为 SELECT/INSERT 提供接口。实际数据存储在[目标表](#target-tables)中。以下是外部列列表：
+TimeSeries 表的列会自动生成。这些列属于外部列，不存储任何数据，只为 SELECT/INSERT 提供接口。实际数据存储在[目标端表](#target-tables)中。以下是外部列列表：
 
-| Name            | Type                                         | Description                                                                                                                              |
-| --------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `metric_name`   | `String`                                     | 指标名称                                                                                                                                     |
-| `tags`          | `Map(String, String)`                        | 时间序列的标签映射 (标记)                                                                                                                           |
-| `time_series`   | `Array(Tuple(DateTime64(3), Float64))` (默认)  | 时间序列的 (timestamp, value) 对数组。该 Tuple 的 timestamp 和 scalar 元素类型可从 samples `INNER COLUMNS` 声明中推导得出 (参见[指定外部列](#specifying-outer-columns))  |
-| `metric_family` | `String`                                     | 指标族名称 (用于指标元数据)                                                                                                                          |
-| `type`          | `String`                                     | 指标类型 (例如 &quot;counter&quot;、&quot;gauge&quot;)                                                                                          |
-| `unit`          | `String`                                     | 指标单位                                                                                                                                     |
-| `help`          | `String`                                     | 指标说明                                                                                                                                     |
+| Name            | Type                                        | Description                                                                                                                                                                                           |
+| --------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                    | 指标名称                                                                                                                                                                                                  |
+| `tags`          | `Map(String, String)`                       | 时间序列的标签映射 (标记)                                                                                                                                                                                        |
+| `samples`       | `Array(Tuple(DateTime64(3), Float64))` (默认) | 时间序列的 (timestamp, value) 对数组。该 Tuple 的 timestamp 和 scalar 元素类型可从 samples `INNER COLUMNS` 声明中推导得出 (参见[指定外部列](#specifying-outer-columns))。在 [version](#schema-versioning) 2 及更早版本的表中，该列名为 `time_series` |
+| `metric_family` | `String`                                    | 指标族名称 (用于指标元数据)                                                                                                                                                                                       |
+| `type`          | `String`                                    | 指标类型 (例如 &quot;counter&quot;、&quot;gauge&quot;)                                                                                                                                                       |
+| `unit`          | `String`                                    | 指标单位                                                                                                                                                                                                  |
+| `help`          | `String`                                    | 指标说明                                                                                                                                                                                                  |
 
 示例：
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series) VALUES
+INSERT INTO my_table (metric_name, tags, samples) VALUES
     ('cpu_usage', {'job': 'node_exporter', 'instance': 'host1:9100'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5), (toDateTime64('2024-01-01 00:01:00', 3), 0.7)])
 ```
@@ -82,7 +82,7 @@ INSERT INTO my_table (metric_name, tags, time_series) VALUES
 在插入时，`metric_name` 可以为空，这表示指标名称是在 `tags` 的 `__name__` 中指定的，例如：
 
 ```sql
-INSERT INTO my_table (tags, time_series) VALUES
+INSERT INTO my_table (tags, samples) VALUES
     ({'__name__': 'cpu_usage', 'job': 'test'},
      [(toDateTime64('2024-01-01 00:00:00', 3), 0.5)])
 ```
@@ -90,17 +90,17 @@ INSERT INTO my_table (tags, time_series) VALUES
 要插入指标元数据，请写入 `metric_family`、`type`、`unit` 和 `help` 列：
 
 ```sql
-INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, help) VALUES
     ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
 ### 指定外部列 {#specifying-outer-columns}
 
-可以在 `CREATE TABLE` 语句中显式列出外部 `time_series` 列，以覆盖其默认的 `Array(Tuple(DateTime64(3), Float64))` 类型。ClickHouse 会从该元组中提取时间戳类型和 scalar 类型，并将它们传递到内部samples表：
+可以在 `CREATE TABLE` 语句中显式列出外部 `samples` 列，以覆盖其默认的 `Array(Tuple(DateTime64(3), Float64))` 类型 (其旧名称 `time_series` 同样可用) 。ClickHouse 会从该元组中提取时间戳类型和 scalar 类型，并将它们传递到内部samples表：
 
 ```sql
-CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
+CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 ```
 
 这相当于直接在 samples 的 `INNER COLUMNS` 子句中声明时间戳列和值列的类型：
@@ -199,14 +199,14 @@ CREATE TABLE my_table
 (
     `metric_name` String,
     `tags` Map(String, String),
-    `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `samples` Array(Tuple(DateTime64(3), Float64)),
     `metric_family` String,
     `type` String,
     `unit` String,
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 2, recent_samples_ttl_seconds = 345600
+SETTINGS version = 3, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -240,11 +240,11 @@ METRICS INNER COLUMNS
 METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-因此，列会自动生成。此外，还有四个内部目标端表，各自的列定义存储在 `INNER COLUMNS` 子句中。
+因此，列会自动生成。此外，还有四个内部目标表，各自的列定义存储在 `INNER COLUMNS` 子句中。
 `recent_samples_ttl_seconds` 设置以默认值写入 `SETTINGS` 子句：该设置定义最近样本表的生存时间 (TTL)，因此其实际值在创建时便已确定。
 此外，最新的 schema 版本已固定写入 `version` 设置中 (参见 [Schema 版本控制](#schema-versioning)) 。
 
-内部目标端表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
+内部目标表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 每个目标端表都有各自的一组列：
@@ -502,18 +502,18 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | 表达式    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `最近样本` 表的分区键，例如 `toStartOfHour(timestamp)`。显式设置时，会覆盖引擎声明中的分区键；如果两者均未设置，则每 5 小时使用一个分区。对于外部最近样本表，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                   |
 | `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 设置内部 `最近样本` 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部最近样本表和非 MergeTree 引擎，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                     |
 | `tags_index_granularity`             | UInt64 | 8192                                                          | 设置内部 [标签](#tags-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部标签表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                               |
-| `version`                            | UInt64 | 2                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
+| `version`                            | UInt64 | 3                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
 
 ## Schema 版本控制 {#schema-versioning}
 
 `TimeSeries` 表引擎与 PromQL 执行层仍处于活跃开发阶段：
 目标端表的集合及其结构可能在不同 ClickHouse 版本之间发生变化。
 为了让此类变化可被检测，每个 `TimeSeries` 表都会将自身版本记录在 [version](#settings) 设置中。
-建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 2) ——
+建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 3) ——
 并持久化在表的元数据中，且无法通过 `ALTER` 修改。在该设置引入之前创建的表被视为版本 0。
 通常在 `CREATE TABLE` 查询中省略该设置即可——此时表会自动采用最新版本。
-如果服务器支持所指定的版本，也可以显式指定 `version`；此时该表会按照该版本的方式来定义，例如
-版本 1 的表不会记录 `id_type` 设置。`CREATE TABLE ... AS other_table` 不会复制另一个表的版本，请参阅[基于现有表创建表](#create-as)。
+如果服务器支持所指定的版本，也可以显式指定 `version`；此时该表会按照该版本的方式来定义 (请参阅[版本历史](#version-history)) 。
+`CREATE TABLE ... AS other_table` 不会复制另一个表的版本，请参阅[基于现有表创建表](#create-as)。
 
 服务器支持一个版本范围，且不同场景所要求的最低版本可能不同：使用 `SELECT` 读取、使用 `INSERT`
 或 Prometheus 远程写入协议写入、以及执行 PromQL ([prometheusQuery](/zh/reference/functions/table-functions/prometheusQuery)、
@@ -525,6 +525,15 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
   创建一个新的 `TimeSeries` 表，通过 `INSERT ... SELECT` 查询复制数据，再用新表替换旧表。
 * 如果版本过旧而无法写入，则 `INSERT` 查询和 Prometheus 远程写入协议会被拒绝，但 `SELECT` 查询仍可正常工作。
 * 如果版本对服务器而言完全过旧，则针对该表的所有查询 (`SHOW CREATE TABLE`、`DETACH` 和 `DROP` 除外) 都会被拒绝。
+
+### 版本历史 {#version-history}
+
+| 版本 | 变更                                                                                                                                                                                                                                                                 |
+| -- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0  | 在引入 `version` 设置之前创建的表，包括 “prealpha” 表 (这类表将目标端表的列声明为[外部列](#outer-columns)) 以及没有[最近样本](#recent-samples-table)表的表                                                                                                                                                   |
+| 1  | 引入了 `version` 设置                                                                                                                                                                                                                                                   |
+| 2  | 引入了 [`id_type`](#settings) 设置：使用外部标签表的表会在 `id_type` 中记录 `id` 列的类型，并在 [`id_generator`](#settings) 中记录生成标识符的表达式，因此其定义不再依赖于外部表。设置了 `id_generator` 时同样会记录 `id_type` (参见 [`id` 列](#id-column))                                                                          |
+| 3  | 外部列 `time_series` 更名为 `samples` (参见[外部列](#outer-columns)) 。早期版本的表仍沿用该列的旧名称，[prometheusQuery](/zh/reference/functions/table-functions/prometheusQuery) 与 [prometheusQueryRange](/zh/reference/functions/table-functions/prometheusQueryRange) 表函数也会按表所使用的名称返回该列。存储的数据没有变化 |
 
 # 函数 {#functions}
 

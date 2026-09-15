@@ -252,7 +252,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -271,12 +271,13 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 يشغِّل الاستعلام المقابل دوريًا ويخزّن نتيجته في جدول.
 
 * إذا تم تحديد `APPEND`، فإن كل عملية تحديث تُدرِج صفوفًا في الجدول من دون حذف الصفوف الموجودة. ولا تكون عملية الإدراج ذرّية، تمامًا مثل استعلام `INSERT INTO ... SELECT` العادي.
+* إذا تم تحديد `APPEND INCREMENTAL`، فإن كل عملية تحديث تشغّل الاستعلام على الصفوف المُثبّتة في الجدول المصدر منذ التحديث السابق فقط، وتُلحق النتيجة.
 * بخلاف ذلك، يستبدل كل تحديث محتويات الجدول السابقة بشكل ذرّي.
 
 الاختلافات عن العروض المادية العادية غير القابلة للتحديث:
 
 * لا يوجد مشغّل إدراج. عند إدراج بيانات جديدة في الجدول المحدد في `SELECT`، لا يتم تمريرها تلقائيًا إلى العرض المادي القابل للتحديث. وبدلًا من ذلك، لا يحدث إدراج البيانات إلا أثناء تشغيل عمليات التحديث الدورية أو اليدوية.
-* لا توجد قيود على استعلام `SELECT`. دوال الجداول (مثل `url()`)، والعروض، وUNION، وJOIN، كلها مسموح بها.
+* لا توجد قيود على استعلام `SELECT`. دوال الجداول (مثل `url()`)، والعروض، وUNION، وJOIN، كلها مسموح بها. ويُعد `APPEND INCREMENTAL` الاستثناء الوحيد: إذ يتطلب جدول مصدر `MergeTree` عاديًا واحدًا مع `enable_block_number_column = 1` و`enable_block_offset_column = 1`، ويرفض `JOIN` و`UNION` والاستعلامات الفرعية والعروض ودوال الجداول.
 
 <Note>
   الإعدادات الموجودة في جزء `REFRESH ... SETTINGS` من الاستعلام هي إعدادات التحديث (مثل `refresh_retries`)، وهي مختلفة عن الإعدادات العادية (مثل `max_threads`). ويمكن تحديد الإعدادات العادية باستخدام `SETTINGS` في نهاية الاستعلام.
@@ -444,7 +445,7 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
   * لا يدعم `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` العروض المادية؛ ويجب تنفيذ ذلك عبر `MODIFY REFRESH`.
 
-  * لا تتمّ إضافة `APPEND` أو إزالته.
+  * لا يدعم تغيير وضع التحديث: لا يمكن إضافة `APPEND` و`INCREMENTAL` أو إزالتهما.
 
   * لا يمكن تغيير الإعداد `all_replicas` بعد الإنشاء.
 </Note>

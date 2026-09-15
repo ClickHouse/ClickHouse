@@ -14,6 +14,8 @@ La selección de `codec_block_counts` lee archivos de datos `.bin`, no solo meta
 
 No se incluyen las partes que no registran sus subflujos en `columns_substreams.txt`.
 
+Todos los valores indicados se derivan de los datos de la tabla, por lo que leer cualquier columna del resultado requiere el privilegio `SELECT` en todas las columnas de la tabla. Una concesión que abarque solo algunas de las columnas no es suficiente. El privilegio también es necesario para resolver la estructura de la función, por ejemplo, mediante `DESCRIBE`. Un usuario que no tiene permiso para ver la tabla en absoluto, es decir, que no tiene el privilegio `SHOW TABLES` sobre ella, recibe `ACCESS_DENIED` tanto si existe como si no, por lo que la función no le indica qué tablas existen.
+
 Si se aplica una política de filas a la tabla para el usuario actual, la lectura de `codec_block_counts` genera `ACCESS_DENIED`, ya que los recuentos incluirían filas que la política oculta. Las demás columnas siguen siendo legibles; `system.parts_columns` las informa independientemente de las políticas de filas.
 
 ## Sintaxis {#syntax}
