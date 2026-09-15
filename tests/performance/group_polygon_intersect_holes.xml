@@ -7,6 +7,9 @@
                 <value>64</value>
                 <value>128</value>
                 <value>256</value>
+                <value>512</value>
+                <value>1024</value>
+                <value>2048</value>
             </values>
         </substitution>
     </substitutions>
