@@ -1,0 +1,8 @@
+inserted	5000
+both rows	0
+both detached parts	1	broken-on-start
+both broken projections	0
+inserted	5000
+projection only rows	5000
+projection only detached parts	0	\N
+projection only broken projections	1
