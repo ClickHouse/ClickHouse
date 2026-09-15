@@ -20,15 +20,15 @@ ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
         max_bytes_before_external_distinct = 94371840,
         optimize_distinct_in_order = 0, allow_preliminary_distinct_abandoning = 0"
 
-# When the first chunk leaves insufficient spill headroom, the empty set is released and that
-# chunk becomes an ordinary spill run. All of its rows must reach the output.
+# A one-byte threshold starts spilling before the first chunk is inserted, so the empty set is
+# released and that chunk becomes an ordinary spill run. All of its rows must reach the output.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
     SELECT count()
     FROM (SELECT DISTINCT toUInt64(number) AS k FROM numbers(262144))
     SETTINGS max_threads = 1, max_block_size = 262144,
         max_memory_usage = 0, max_memory_usage_for_user = 33554432,
         max_untracked_memory = 0, max_bytes_ratio_before_external_distinct = 0,
-        max_bytes_before_external_distinct = 1073741824,
+        max_bytes_before_external_distinct = 1,
         optimize_distinct_in_order = 0, allow_preliminary_distinct_abandoning = 0"
 
 # Fixed tables need no growth allocation. Their small retained state fits without spill workspace.

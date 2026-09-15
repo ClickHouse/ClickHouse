@@ -18,6 +18,6 @@ SELECT count() FROM (SELECT DISTINCT number FROM numbers(8) LIMIT 4) SETTINGS ma
 SELECT count() FROM (SELECT DISTINCT number FROM numbers(8) LIMIT 4) SETTINGS max_rows_in_distinct = 4, max_bytes_before_external_distinct = 0;
 SELECT count() FROM (SELECT DISTINCT number FROM numbers(8) LIMIT 4) SETTINGS max_rows_in_distinct = 4, max_bytes_before_external_distinct = 1;
 
--- A smaller hint can finish hashing before either the row limit or the spill transition.
+-- A smaller hint finishes hashing when the chunk fits below the spill threshold.
 SELECT count() FROM (SELECT DISTINCT number FROM numbers(8) LIMIT 2) SETTINGS max_rows_in_distinct = 3, max_bytes_before_external_distinct = 0;
-SELECT count() FROM (SELECT DISTINCT number FROM numbers(8) LIMIT 2) SETTINGS max_rows_in_distinct = 3, max_bytes_before_external_distinct = 1;
+SELECT count() FROM (SELECT DISTINCT number FROM numbers(8) LIMIT 2) SETTINGS max_rows_in_distinct = 3, max_bytes_before_external_distinct = '64M';

@@ -1,6 +1,5 @@
--- The first two-row chunk is deduplicated by the hash set and triggers spilling. Later chunks use sort
--- equality. Signed zeros and `NaN` payloads therefore retain both binary representatives only when both
--- reach the hash set before spilling; otherwise their first representative determines the result.
+-- The one-byte threshold starts spilling before the first chunk is inserted. Sort equality keeps
+-- the first representative of signed zeros and `NaN` payloads, both within and across input chunks.
 SET max_threads = 1;
 SET max_block_size = 2;
 SET max_bytes_before_external_distinct = 1;
@@ -59,7 +58,7 @@ FROM
 )
 SETTINGS log_comment = 'external_distinct_equality/nans_across';
 
--- Every placement crosses the spill transition.
+-- Every input placement uses spill files and a final merge.
 SYSTEM FLUSH LOGS query_log;
 SELECT
     substring(log_comment, length('external_distinct_equality/') + 1) AS test_case,

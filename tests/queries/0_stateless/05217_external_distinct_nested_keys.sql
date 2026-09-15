@@ -5,7 +5,7 @@ SET max_block_size = 2;
 SET optimize_distinct_in_order = 0;
 SET allow_preliminary_distinct_abandoning = 0;
 
--- Small chunks exercise both already-emitted keys and repeated keys in spilled runs.
+-- Small chunks exercise repeated keys across input and spill boundaries.
 CREATE VIEW external_distinct_nested_keys AS
 SELECT
     number,

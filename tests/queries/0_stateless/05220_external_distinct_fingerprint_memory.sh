@@ -24,11 +24,11 @@ for ratio in 0 0.5; do
             optimize_distinct_in_order = 0, allow_preliminary_distinct_abandoning = 0"
 done
 
-# The first chunk leaves insufficient spill headroom, so hashing yields an empty set and the
-# original rows become an ordinary fingerprint run without a suppression run.
+# A one-byte threshold starts spilling before the first chunk is inserted. The original rows
+# become an ordinary fingerprint run without a suppression run.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
     SELECT count() FROM (SELECT DISTINCT [number] AS k FROM numbers(262144))
     SETTINGS max_threads = 1, max_block_size = 262144, max_untracked_memory = 0,
         max_memory_usage = 0, max_memory_usage_for_user = 50331648,
-        max_bytes_ratio_before_external_distinct = 0, max_bytes_before_external_distinct = 1073741824,
+        max_bytes_ratio_before_external_distinct = 0, max_bytes_before_external_distinct = 1,
         optimize_distinct_in_order = 0, allow_preliminary_distinct_abandoning = 0"

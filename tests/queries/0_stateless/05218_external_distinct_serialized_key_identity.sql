@@ -6,7 +6,7 @@ SET allow_preliminary_distinct_abandoning = 0;
 SET max_bytes_ratio_before_external_distinct = 0;
 
 -- Hash-backed aggregate states can change their serialization when reconstructed. The repeated states
--- must match the original keys retained before spilling, including inside composite and nested keys.
+-- must match their original fingerprints after spilling, including inside composite and nested keys.
 CREATE VIEW external_distinct_state_identity AS
 SELECT
     number % 2 AS id,

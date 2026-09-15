@@ -92,13 +92,17 @@ def test_distinct_cancellation_releases_temporary_data(start_cluster, cancel_sta
     during_extraction = cancel_stage == "extraction"
     failpoint = "external_distinct_suppression_run_prepared_pause"
     if during_extraction:
-        # The first block contains over 32 MiB of unique key bytes. The first run targets 16 MiB,
-        # leaving the extractor's remaining keys and arena alive alongside the pending file run.
+        # Small input blocks populate the set before spilling. Its retained keys exceed the 16 MiB
+        # run target, leaving the extractor and arena alive alongside the pending file run.
         query = (
             "SELECT DISTINCT concat(toString(number), repeat('x', 512)) AS k "
             "FROM numbers(131072) FORMAT Null"
         )
-        settings.update(max_block_size=65536, optimize_distinct_in_order=0)
+        settings.update(
+            max_block_size=4096,
+            max_bytes_before_external_distinct="128M",
+            optimize_distinct_in_order=0,
+        )
         node_distinct.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
 
     try:
@@ -152,7 +156,7 @@ def test_distinct_partial_cancellation_drains_suppression(start_cluster):
     settings = {
         "max_threads": 1,
         "max_block_size": 64,
-        "max_bytes_before_external_distinct": "8M",
+        "max_bytes_before_external_distinct": "40M",
         "max_bytes_ratio_before_external_distinct": 0,
         "max_untracked_memory": 0,
         "optimize_distinct_in_order": 0,

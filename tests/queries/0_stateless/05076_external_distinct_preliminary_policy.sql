@@ -24,14 +24,14 @@ FROM
 )
 SETTINGS log_comment = '05076_external_distinct_preliminary_policy/prefix';
 
--- Reaching the hint takes priority over memory shedding in the same chunk.
+-- A hint can finish hashing when the next chunk and its workspace fit the threshold.
 SELECT count() > 0
 FROM (EXPLAIN PLAN SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 10)
 WHERE explain LIKE '%Distinct (Preliminary DISTINCT)%';
 
 SELECT count()
 FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 10)
-SETTINGS log_comment = '05076_external_distinct_preliminary_policy/hint_first';
+SETTINGS max_bytes_before_external_distinct = '64M', log_comment = '05076_external_distinct_preliminary_policy/hint_first';
 
 -- Shedding before the hint is reached leaves the final step responsible for exact deduplication.
 SELECT count()

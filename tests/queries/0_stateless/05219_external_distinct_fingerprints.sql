@@ -11,10 +11,10 @@ SETTINGS max_bytes_in_distinct = 1048576, max_bytes_ratio_before_external_distin
 
 SET max_block_size = 2, max_bytes_ratio_before_external_distinct = 0, max_bytes_before_external_distinct = 1;
 
--- Suppression discards repeated keys while ordinary runs retain their first original payload.
+-- Ordinary runs deduplicate composite keys and preserve both original columns.
 SELECT k, payload FROM
 (
-    SELECT DISTINCT ON (k) [number % 3] AS k, number AS payload FROM numbers(12)
+    SELECT DISTINCT [number % 3] AS k, number % 3 AS payload FROM numbers(12)
 )
 ORDER BY k;
 
@@ -26,5 +26,5 @@ SELECT count() FROM
     FROM numbers(12)
 );
 
--- A spill after the final input chunk contains suppression keys and an empty ordinary tail.
+-- A single ordinary spill run is merged with an empty in-memory tail.
 SELECT count() FROM (SELECT DISTINCT [number] AS k FROM numbers(2));

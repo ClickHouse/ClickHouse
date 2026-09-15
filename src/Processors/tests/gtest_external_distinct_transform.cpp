@@ -4,6 +4,7 @@
 #include <functional>
 #include <initializer_list>
 #include <thread>
+#include <tuple>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -18,6 +19,7 @@
 #include <Processors/Merges/DistinctSortedTransform.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
@@ -47,13 +49,27 @@ struct ConnectedDistinct
     ExternalDistinctTransform transform;
     Processors processors;
 
-    explicit ConnectedDistinct(TemporaryDataOnDiskScopePtr tmp_data, UInt64 limit_hint = 0)
-        : transform(header, SizeLimits{}, limit_hint, Names{}, /*max_bytes_before_external_distinct_=*/ 1,
+    static constexpr UInt64 default_spill_threshold = 64 << 20;
+
+    explicit ConnectedDistinct(TemporaryDataOnDiskScopePtr tmp_data, UInt64 limit_hint = 0, UInt64 threshold = default_spill_threshold)
+        : transform(header, SizeLimits{}, limit_hint, Names{}, threshold,
             std::move(tmp_data), /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false)
     {
         connect(upstream, transform.getInputs().front());
         connect(transform.getOutputs().front(), downstream);
         downstream.setNeeded();
+    }
+
+    /// Populate the set and consume its output before introducing memory pressure for the next chunk.
+    void hashChunk(std::initializer_list<UInt64> values)
+    {
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        upstream.push(makeChunk(values));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        ASSERT_TRUE(downstream.hasData());
+        EXPECT_EQ(downstream.pull().getNumRows(), values.size());
     }
 
     struct RunProcessors
@@ -94,7 +110,7 @@ protected:
         destroyDisk(disk);
     }
 
-    /// Query memory accounting makes the one-byte threshold trigger deterministically.
+    /// Track query allocations independently of the thread running the test suite.
     void withQueryThread(const std::function<void()> & body)
     {
         MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
@@ -120,10 +136,14 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
         ConnectedDistinct connected(tmp_data);
         auto & transform = connected.transform;
         auto & downstream = connected.downstream;
-        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
-        connected.upstream.push(makeChunk({1, 2, 3, 4, 5, 6}));
+        ASSERT_NO_FATAL_FAILURE(connected.hashChunk({1, 2, 3, 4, 5, 6}));
+        connected.upstream.push(makeChunk({5, 7, 8, 9}));
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         downstream.setNotNeeded();
+        /// Another operator consumes half the threshold. Its remaining budget cannot fit hashing
+        /// and spill workspace, although current query memory is still below the threshold.
+        std::ignore = CurrentMemoryTracker::alloc(ConnectedDistinct::default_spill_threshold / 2);
+        SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold / 2));
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
         auto suppression = connected.attachRun();
@@ -135,7 +155,7 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
         suppression_sink.work();
         ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::NeedData);
 
-        /// The three two-row write chunks drain while the six-row hashing result remains blocked.
+        /// The three two-row suppression chunks drain while result output is blocked.
         for (size_t i = 0; i < 3; ++i)
         {
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
@@ -160,12 +180,25 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
         EXPECT_EQ(transform.prepare(), IProcessor::Status::PortFull);
 
         downstream.setNeeded();
-        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
-        ASSERT_TRUE(downstream.hasData());
-        EXPECT_EQ(downstream.pull().getNumRows(), 6);
-        downstream.setNeeded();
+        /// The chunk rejected before insertion remains available after suppression extraction.
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        EXPECT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        EXPECT_TRUE(connected.upstream.isNeeded());
+    });
+}
 
+TEST_F(ExternalDistinctTransformTest, OrdinaryInputResumesBeforeFileCompletion)
+{
+    withQueryThread([&]
+    {
+        ConnectedDistinct connected(tmp_data, /*limit_hint=*/ 0, /*threshold=*/ 1);
+        auto & transform = connected.transform;
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
         connected.upstream.push(makeChunk({5, 7, 8, 9}));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        /// An empty set needs no suppression run. The rejected chunk starts the first ordinary run.
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
@@ -228,9 +261,11 @@ TEST_F(ExternalDistinctTransformTest, DownstreamClosureTerminatesRunDependencies
         {
             ConnectedDistinct connected(tmp_data);
             auto & transform = connected.transform;
-            ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
-            connected.upstream.push(makeChunk({1, 2, 3}));
+            ASSERT_NO_FATAL_FAILURE(connected.hashChunk({1, 2, 3}));
+            connected.upstream.push(makeChunk({1}));
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+            std::ignore = CurrentMemoryTracker::alloc(ConnectedDistinct::default_spill_threshold);
+            SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold));
             transform.work();
             ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
             if (connect_run)
@@ -265,9 +300,11 @@ TEST_F(ExternalDistinctTransformTest, CompletionPortRejectsData)
     {
         ConnectedDistinct connected(tmp_data);
         auto & transform = connected.transform;
-        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        ASSERT_NO_FATAL_FAILURE(connected.hashChunk({1}));
         connected.upstream.push(makeChunk({1}));
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        std::ignore = CurrentMemoryTracker::alloc(ConnectedDistinct::default_spill_threshold);
+        SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold));
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
         auto run = connected.attachRun();
@@ -300,8 +337,7 @@ TEST_F(ExternalDistinctTransformTest, CompletionPortRejectsData)
 
 TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation)
 {
-    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
-    MemoryTracker query{&user, VariableContext::Process, false};
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
     std::thread([&]
     {
         ThreadStatus thread_status;
@@ -316,8 +352,9 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
         auto input = column->cut(0, 3);
         column.reset();
         ASSERT_GE(assert_cast<const ColumnLowCardinality &>(*input).getDictionary().size(), dictionary_size);
+        const UInt64 threshold = query.get() + 128 * 1024;
         ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
-            /*max_bytes_before_external_distinct_=*/ 1ULL << 30, tmp_data, /*min_free_disk_space_=*/ 0,
+            threshold, tmp_data, /*min_free_disk_space_=*/ 0,
             /*max_block_size_rows_=*/ 3, /*preserve_input_order_=*/ false);
         OutputPort upstream{header};
         InputPort downstream{header};
@@ -328,15 +365,11 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
         upstream.push(Chunk({std::move(input)}, 3));
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
 
-        {
-            /// Spilling must start before allocating a bitmap for the dictionary retained by these
-            /// three rows.
-            user.setHardLimit(user.get() + 128 * 1024);
-            SCOPE_EXIT({ user.setHardLimit(0); });
-            ASSERT_NO_THROW(transform.work());
-            EXPECT_FALSE(downstream.hasData());
-            EXPECT_EQ(transform.prepare(), IProcessor::Status::Ready);
-        }
+        /// Spilling must start before allocating a bitmap for the dictionary retained by these
+        /// three rows.
+        ASSERT_NO_THROW(transform.work());
+        EXPECT_FALSE(downstream.hasData());
+        EXPECT_EQ(transform.prepare(), IProcessor::Status::Ready);
 
         /// The unconsumed input is collected into an ordinary run without constructing the LC bitmap.
         ASSERT_NO_THROW(transform.work());
@@ -346,8 +379,7 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
 
 TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacity)
 {
-    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
-    MemoryTracker query{&user, VariableContext::Process, false};
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
     std::thread([&]
     {
         ThreadStatus thread_status;
@@ -368,14 +400,6 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
         for (const auto & payload : payloads)
         {
             SCOPED_TRACE(payload->getName());
-            ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
-                /*max_bytes_before_external_distinct_=*/ 1ULL << 30, tmp_data, /*min_free_disk_space_=*/ 0,
-                /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false);
-            OutputPort upstream{header};
-            InputPort downstream{header};
-            connect(upstream, transform.getInputs().front());
-            connect(transform.getOutputs().front(), downstream);
-            downstream.setNeeded();
             auto input = makeChunk({1, 2, 3, 4, 5, 6, 7, 7});
             input.addColumn(payload);
             size_t materialization_bytes = 0;
@@ -387,17 +411,22 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
                 if (prepared.getColumns()[1] != payload)
                     materialization_bytes = prepared.getColumns()[1]->allocatedBytes();
             }
+            /// The table needs no growth, but filtering would copy most of the wide payload.
+            const UInt64 threshold = query.get() + materialization_bytes + filtering_bytes / 4 + 65536;
+            ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+                threshold, tmp_data, /*min_free_disk_space_=*/ 0,
+                /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false);
+            OutputPort upstream{header};
+            InputPort downstream{header};
+            connect(upstream, transform.getInputs().front());
+            connect(transform.getOutputs().front(), downstream);
+            downstream.setNeeded();
             ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
             upstream.push(std::move(input));
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
-            {
-                /// The table needs no growth, but filtering would copy most of the wide payload.
-                user.setHardLimit(user.get() + materialization_bytes + filtering_bytes / 4 + 65536);
-                SCOPE_EXIT({ user.setHardLimit(0); });
-                ASSERT_NO_THROW(transform.work());
-                ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
-                EXPECT_FALSE(downstream.hasData());
-            }
+            ASSERT_NO_THROW(transform.work());
+            ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+            EXPECT_FALSE(downstream.hasData());
 
             /// The unconsumed input is collected into an ordinary run after switching to spilling.
             ASSERT_NO_THROW(transform.work());

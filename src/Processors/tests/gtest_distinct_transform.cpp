@@ -19,7 +19,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
-#include <base/scope_guard.h>
 
 using namespace DB;
 
@@ -194,8 +193,7 @@ TEST(DistinctTransformSkipNullKeys, DropsLowCardinalityNullableNullRows)
 
 TEST(DistinctTransformMemory, PassThroughBeforeLowCardinalityBitmapAllocation)
 {
-    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
-    MemoryTracker query{&user, VariableContext::Process, false};
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
     std::thread([&]
     {
         ThreadStatus thread_status;
@@ -210,12 +208,10 @@ TEST(DistinctTransformMemory, PassThroughBeforeLowCardinalityBitmapAllocation)
         auto column = dictionary->cut(0, 3);
         dictionary.reset();
         ASSERT_GE(assert_cast<const ColumnLowCardinality &>(*column).getDictionary().size(), dictionary_size);
-        DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
-            /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false, /*max_bytes_before_pass_through_=*/ 1ULL << 30);
-
         /// The hash table can hold the three keys, but the dictionary bitmap exceeds the remaining budget.
-        user.setHardLimit(user.get() + 128 * 1024);
-        SCOPE_EXIT({ user.setHardLimit(0); });
+        const UInt64 threshold = query.get() + 128 * 1024;
+        DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
+            /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false, threshold);
         for (size_t i = 0; i < 2; ++i)
         {
             Chunk input({column}, 3);
@@ -227,8 +223,7 @@ TEST(DistinctTransformMemory, PassThroughBeforeLowCardinalityBitmapAllocation)
 
 TEST(DistinctTransformMemory, FilteringWidePayloadsWithSpareTableCapacity)
 {
-    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
-    MemoryTracker query{&user, VariableContext::Process, false};
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
     std::thread([&]
     {
         ThreadStatus thread_status;
@@ -251,9 +246,6 @@ TEST(DistinctTransformMemory, FilteringWidePayloadsWithSpareTableCapacity)
             for (const bool constrained : {false, true})
             {
                 SCOPED_TRACE(::testing::Message() << payload->getName() << ", constrained=" << constrained);
-                DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
-                    /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false,
-                    /*max_bytes_before_pass_through_=*/ 1ULL << 30);
                 auto input = makeChunk({1, 2, 3, 4, 5, 6, 7, 7});
                 input.addColumn(payload);
                 size_t materialization_bytes = 0;
@@ -268,9 +260,11 @@ TEST(DistinctTransformMemory, FilteringWidePayloadsWithSpareTableCapacity)
 
                 /// Materialization fits, but copying the seven selected payloads exceeds the budget.
                 /// The eight numeric keys fit the initial hash-table capacity without growth.
-                if (constrained)
-                    user.setHardLimit(user.get() + materialization_bytes + filtering_bytes / 4 + 65536);
-                SCOPE_EXIT({ user.setHardLimit(0); });
+                const UInt64 threshold = constrained
+                    ? query.get() + materialization_bytes + filtering_bytes / 4 + 65536
+                    : 1ULL << 30;
+                DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+                    /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false, threshold);
                 ASSERT_NO_THROW(static_cast<ISimpleTransform &>(transform).transform(input));
                 ASSERT_EQ(input.getNumRows(), constrained ? num_rows : num_rows - 1);
                 EXPECT_EQ(input.getColumns()[1]->getDataAt(0).size(), 1 << 20);
@@ -282,5 +276,41 @@ TEST(DistinctTransformMemory, FilteringWidePayloadsWithSpareTableCapacity)
                 EXPECT_EQ(repeated.getNumRows(), constrained ? num_rows : 0);
             }
         }
+    }).join();
+}
+
+TEST(DistinctTransformMemory, PassThroughBeforeFilteringExceedsQueryThreshold)
+{
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        const auto header = std::make_shared<const Block>(Block{
+            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
+        auto payload = ColumnString::create();
+        for (size_t row = 0; row < 8; ++row)
+            payload->insert(Field(String(1 << 20, 'x')));
+        auto input = makeChunk({1, 2, 3, 4, 5, 6, 7, 7});
+        input.addColumn(std::move(payload));
+
+        /// Input fits below the threshold, but copying its seven selected rows would exceed it.
+        const UInt64 threshold = query.get() + input.allocatedBytes() / 4;
+        DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+            /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false, threshold);
+        ASSERT_LT(query.get(), threshold);
+        static_cast<ISimpleTransform &>(transform).transform(input);
+        EXPECT_EQ(input.getNumRows(), 8);
+
+        /// Pass-through remains active after the wide payload is released.
+        input.clear();
+        auto repeated = makeChunk({1, 1});
+        auto empty_payload = ColumnString::create();
+        empty_payload->insertManyDefaults(2);
+        repeated.addColumn(std::move(empty_payload));
+        static_cast<ISimpleTransform &>(transform).transform(repeated);
+        EXPECT_EQ(repeated.getNumRows(), 2);
     }).join();
 }

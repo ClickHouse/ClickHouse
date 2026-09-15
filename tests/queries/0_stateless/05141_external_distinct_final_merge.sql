@@ -7,8 +7,8 @@ SET max_bytes_ratio_before_external_sort = 0;
 SET allow_preliminary_distinct_abandoning = 1;
 SET optimize_distinct_in_order = 0;
 
--- A unique prefix starts spilling. The remaining chunks repeat a small set of new keys, which must
--- remain unique when the buffered tail is merged with ordinary and suppression runs.
+-- A small threshold starts spilling before hashing. Later chunks repeat a small set of new keys,
+-- which must remain unique when ordinary runs are merged with the buffered tail.
 SELECT count(), uniqExact(k), sum(k)
 FROM
 (
