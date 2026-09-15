@@ -39,5 +39,4 @@ SET allow_executable_table_engine = 0;
 ATTACH TABLE t_exec_attach;
 SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't_exec_attach';
 SELECT * FROM t_exec_attach; -- { serverError SUPPORT_IS_DISABLED }
-SET allow_executable_table_engine = 1;
 DROP TABLE t_exec_attach;
