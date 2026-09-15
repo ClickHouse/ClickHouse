@@ -1183,20 +1183,28 @@ try
     const auto rounds_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns];
     const auto errors_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors];
 
-    DB::FailPointInjection::enableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object);
-    SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object); });
+    {
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object);
+        SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object); });
 
-    /// Commits the metadata change and then waits for the blob to be removed, which cannot succeed.
-    disk->removeFile(file_name);
+        /// Commits the metadata change and then waits for the blob to be removed, which cannot succeed.
+        disk->removeFile(file_name);
 
-    const auto rounds = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns] - rounds_before;
-    const auto errors = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors] - errors_before;
-    std::cout << "Cleanup rounds: " << rounds << ", removal errors: " << errors << std::endl;
+        const auto rounds = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns] - rounds_before;
+        const auto errors = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors] - errors_before;
+        std::cout << "Cleanup rounds: " << rounds << ", removal errors: " << errors << std::endl;
 
-    /// Without this the round count proves nothing: it is also low when the injection is never reached.
-    EXPECT_GT(errors, 0u);
-    /// One failed round ends the wait; the slack covers a background round landing in the same window.
-    EXPECT_LT(rounds, 8u);
+        /// Without this the round count proves nothing: it is also low when the injection is never reached.
+        EXPECT_GT(errors, 0u);
+        /// One failed round ends the wait; the slack covers a background round landing in the same window.
+        EXPECT_LT(rounds, 8u);
+
+        /// The abandoned wait must not lose the blob: it is still in the storage and still queued.
+        waitBlobsCount(disk, 1);
+    }
+
+    /// Once removals work again a later cleanup round takes the blob from the queue.
+    waitBlobsCount(disk, 0);
 }
 catch (...)
 {
