@@ -4,7 +4,11 @@
     </settings>
 
     <!-- ColumnString::Chars stores string bytes without per-row terminators. The digit keeps the input non-constant. -->
-    <!-- Cover the AVX-512 crossover and exercise the scan through several UTF-8 functions. -->
+    <!-- Cover representative sub-threshold buffers and the AVX-512 crossover through several UTF-8 functions. -->
+    <query>SELECT substringUTF8(concat(repeat('a', 1023), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 4095), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 8191), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(concat(repeat('a', 12287), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 16382), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 16383), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
     <query>SELECT substringUTF8(concat(repeat('a', 16384), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
