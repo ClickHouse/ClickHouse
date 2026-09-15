@@ -63,7 +63,6 @@
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-#include <Core/Field.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Message.h>
