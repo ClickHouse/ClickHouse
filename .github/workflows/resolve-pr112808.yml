@@ -42,14 +42,18 @@ jobs:
           git fetch --no-tags --filter=blob:none --depth=1 upstream "$merge_base"
 
           # The compare API gives us the exact merge base, so full history is unnecessary. Create
-          # local unsigned ancestry stand-ins with the exact original trees, then map the real tips
-          # to them only for merge-base traversal. The final merge parents are verified below.
+          # local ancestry stand-ins with the exact original trees and expose their one parent. Keep
+          # the merge-base itself shallow; no history before it is needed for this three-way merge.
           head_tree=$(git rev-parse "$head^{tree}")
           master_tree=$(git rev-parse "$master^{tree}")
           synthetic_head=$(printf 'synthetic branch ancestry\n' | git commit-tree "$head_tree" -p "$merge_base")
           synthetic_master=$(printf 'synthetic master ancestry\n' | git commit-tree "$master_tree" -p "$merge_base")
           git replace "$head" "$synthetic_head"
           git replace "$master" "$synthetic_master"
+          if [[ -f .git/shallow ]]; then
+            grep -v -e "^${head}$" -e "^${master}$" .git/shallow > .git/shallow.next || true
+            mv .git/shallow.next .git/shallow
+          fi
           test "$(git merge-base "$head" "$master")" = "$merge_base"
 
           set +e
