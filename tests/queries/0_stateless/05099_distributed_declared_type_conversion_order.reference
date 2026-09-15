@@ -1,0 +1,42 @@
+-- the reported query, and the other shapes that trust the shard order, are refused
+-- without ORDER BY nothing relies on the shard order, so the queries still work
+200
+21
+21
+21
+20
+19
+18
+-- the control with the matching type merges the sorted shard streams
+1
+9
+8
+7
+-- a differing but order-preserving type is accepted, and the values are right
+1
+-999
+-998
+-997
+-- exact widenings are accepted: Float32/Float64, Date/Date32, DateTime/DateTime64, Decimal, FixedString/String
+1
+12.25
+12
+2020-02-19
+2020-02-18
+2020-01-01 00:00:49.000
+2020-01-01 00:00:48.000
+12.25
+12
+049
+048
+-- only the columns the query sorts by are checked
+99
+99
+99
+99
+15
+15
+-- a smaller decimal scale rounds distinct values together, so it is refused
+50
+-- an equal-width sign change does not preserve the order
+1000

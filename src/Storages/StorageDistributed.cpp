@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 
 #include <Disks/IVolume.h>
 
@@ -47,6 +48,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -83,6 +85,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
@@ -207,6 +210,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
     extern const int TYPE_MISMATCH;
+    extern const int INCOMPATIBLE_COLUMNS;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
     extern const int INVALID_SHARD_ID;
@@ -256,6 +260,89 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     }
 
     return res;
+}
+
+/// The columns the query the storage is asked about sorts by, on either analyzer path: only those
+/// cross the cast below the shards' sort, so only their conversion can corrupt the merged order.
+/// `std::nullopt` means the query does not sort its result at all. An engaged but empty set means it
+/// sorts by something whose source columns could not be established - a positional `ORDER BY 1` or
+/// an `ORDER BY ALL` on the old analyzer path - and then every column has to be treated as sorted by.
+std::optional<NameSet> getOrderByColumns(const SelectQueryInfo & query_info)
+{
+    if (query_info.query_tree)
+    {
+        if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+        {
+            if (!query_node->hasOrderBy())
+                return {};
+
+            /// Positional arguments and `ORDER BY ALL` are already resolved to columns here.
+            NameSet columns;
+            auto collect = [&columns](const QueryTreeNodePtr & node, auto & self) -> void
+            {
+                /// A subquery sorts and returns its own columns; the ones inside it are not what
+                /// this stream is sorted by.
+                const auto node_type = node->getNodeType();
+                if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                    return;
+
+                if (const auto * column_node = node->as<ColumnNode>())
+                    columns.insert(column_node->getColumnName());
+
+                for (const auto & child : node->getChildren())
+                    if (child)
+                        self(child, self);
+            };
+            collect(query_node->getOrderByNode(), collect);
+            return columns;
+        }
+    }
+
+    if (query_info.query)
+    {
+        if (const auto * select_query = query_info.query->as<ASTSelectQuery>())
+        {
+            const auto order_by = select_query->orderBy();
+            if (!order_by)
+                return {};
+
+            /// `ORDER BY ALL` names no column: it sorts by everything the query selects.
+            if (select_query->order_by_all)
+                return NameSet{};
+
+            NameSet columns;
+            for (const auto & element : order_by->children)
+            {
+                const auto * order_by_element = element->as<ASTOrderByElement>();
+                if (!order_by_element || order_by_element->children.empty())
+                    return NameSet{};
+
+                const auto & expression = order_by_element->children.front();
+
+                /// A bare literal is a positional argument, which this path sees unresolved.
+                /// Deeper literals are ordinary constants of an expression and say nothing.
+                if (expression->as<ASTLiteral>())
+                    return NameSet{};
+
+                auto collect = [&columns](const ASTPtr & node, auto & self) -> void
+                {
+                    if (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>())
+                        return;
+
+                    if (const auto * identifier = node->as<ASTIdentifier>())
+                        columns.insert(identifier->shortName());
+
+                    for (const auto & child : node->children)
+                        if (child)
+                            self(child, self);
+                };
+                collect(expression, collect);
+            }
+            return columns;
+        }
+    }
+
+    return {};
 }
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
@@ -549,6 +636,27 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         }
     }
 
+    /// The query was analyzed against the columns declared here, but a shard resolves the remote
+    /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
+    /// only afterwards (`createLocalPlan`, `RemoteQueryExecutor::adaptBlockStructure`), so a cast that
+    /// does not preserve the order, say `String` to `Int8`, reorders the values after they were sorted,
+    /// while the initiator takes the shards' order on trust: it merges the streams as sorted, cuts them
+    /// with LIMIT and applies DISTINCT and LIMIT BY to them as sorted, and in a debug build
+    /// `DistinctSortedStreamTransform` throws `Equal values are not contiguous`. A shard sorts and
+    /// applies its preliminary LIMIT at every stage from `WithMergeableState` on, and `FetchColumns`
+    /// is not a stage this storage can be read at (the shard query is built from the whole query
+    /// tree), so there is no stage to fall back to: refuse the query instead of returning wrong rows.
+    /// `StorageMerge` refuses the same conversion for its children by dropping to `FetchColumns`.
+    /// Only the columns the query sorts by matter: without ORDER BY the shards' sort is not relied
+    /// upon at all (a DISTINCT or GROUP BY is redone on the initiator over the converted values), and
+    /// a column that no sorting key expression reads is just carried along, so a table with one
+    /// sloppily declared column keeps working as long as nothing orders by it.
+    if (nodes > 0)
+    {
+        if (auto order_by_columns = getOrderByColumns(query_info))
+            checkRemoteTableConversionPreservesOrder(local_context, storage_snapshot, cluster, *order_by_columns);
+    }
+
     if (settings[Setting::distributed_group_by_no_merge])
     {
         if (settings[Setting::distributed_group_by_no_merge] == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
@@ -608,6 +716,62 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::WithMergeableState;
+}
+
+void StorageDistributed::checkRemoteTableConversionPreservesOrder(
+    ContextPtr local_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ClusterPtr & cluster,
+    const NameSet & order_by_columns) const
+{
+    if (remote_table_function_ptr)
+        return;
+
+    /// A shard that is this server reads `remote_database.remote_table` from here, whatever
+    /// `prefer_localhost_replica` says, so that table's types are the ones a shard sorts by. Nothing
+    /// is known about the tables behind remote-only shards, and a local table that merely shares
+    /// their name would be unrelated to them.
+    if (cluster->getLocalShardCount() == 0)
+        return;
+
+    /// An empty remote database means the shard's default database, which for this server is the
+    /// query's current database (`createLocalPlan` runs the shard query in a copy of this context).
+    const String & remote_database_name = remote_database.empty() ? local_context->getCurrentDatabase() : remote_database;
+    StorageID remote_table_id{remote_database_name, remote_table};
+    auto remote_table_storage = DatabaseCatalog::instance().tryGetTable(remote_table_id, local_context);
+    if (!remote_table_storage)
+        return;
+
+    /// `ALIAS` columns cross the same cast, so they are compared too.
+    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+    const auto & declared_columns = storage_snapshot->metadata->getColumns();
+    const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
+    for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
+    {
+        /// A column the query does not sort by is converted above the shards' sort like any other
+        /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
+        /// there is none of this check's business. An empty set means the sorted-by columns are
+        /// unknown and every column has to be checked.
+        if (!order_by_columns.empty() && !order_by_columns.contains(remote_column.name))
+            continue;
+
+        auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
+        if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
+                "between them does not preserve the order: the shards would sort by {} and the initiator would merge "
+                "their streams as if they were sorted by {}, so ORDER BY cannot be processed. Declare the column with "
+                "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
+                "a Nullable of it",
+                backQuoteIfNeed(remote_column.name),
+                remote_column.type->getName(),
+                remote_table_id.getNameForLogs(),
+                declared_column->type->getName(),
+                getStorageID().getNameForLogs(),
+                remote_column.type->getName(),
+                declared_column->type->getName());
+    }
 }
 
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
