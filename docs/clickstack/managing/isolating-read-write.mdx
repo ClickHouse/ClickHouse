@@ -1,0 +1,285 @@
+---
+slug: /use-cases/observability/clickstack/isolating-read-write
+title: 'Isolating read and write workloads'
+sidebarTitle: 'Isolating read and write'
+description: 'Separating ClickStack ingestion and query workloads with ClickHouse Cloud warehouses'
+doc_type: 'guide'
+keywords: ['clickstack', 'warehouses', 'compute-compute separation', 'read-only', 'isolation', 'ingestion', 'scaling']
+---
+
+import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+Observability workloads place two very different demands on the same data. Ingestion is continuous and write heavy, with background merges consuming CPU and memory long after an insert completes. Query load is uneven: dashboards and searches peak during an incident, when a slow response is least acceptable.
+
+With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/warehouses), both workloads can be served from the same data by separate compute, so that neither competes with the other for CPU and memory.
+
+<ScalePlanFeatureBadge feature="Compute-compute separation"/>
+
+Warehouses are a ClickHouse Cloud feature, so the setup described here applies to ClickStack running against ClickHouse Cloud. Self-managed deployments can separate the two workloads by pointing ingestion and queries at different endpoints of a replicated cluster; what the warehouse adds is doing so over a single copy of the data, with each side sized, scaled and idled on its own.
+
+<Note>
+**When isolation is worth it**
+
+Isolation is aimed at large deployments with continuous ingestion. Below roughly 100 TB/month of stored data, a single read-write service normally absorbs both workloads and a second service probably isn't necessary. Use the [sizing model](/clickstack/managing/estimating-resources) to estimate your compressed volume per month.
+</Note>
+
+## Why isolate reads from writes {#why-isolate}
+
+- **Writes stop degrading reads.** Continuous OpenTelemetry ingestion - the inserts themselves, plus the background merges that follow them - competes with dashboard and search queries for CPU and memory. Read latency can degrade noticeably while ingestion is running, and recovers once it stops.
+- **Reads stop disrupting writes.** The contention runs both ways: a heavy ad-hoc query or an expensive dashboard render can exhaust memory on the service and fail inserts outright, not merely slow them down.
+- **Read-only compute is fully dedicated to queries.** Read-only services perform no background merges outside of system tables. They also idle without delay, unlike read-write services, which merges can keep awake.
+- **Each side is sized on its own.** The [sizing model](/clickstack/managing/estimating-resources) estimates ingest compute and query compute separately, and a warehouse lets you provision each as its own service. Above the model's 1 QPS baseline query compute dominates - its [worked example](/clickstack/managing/estimating-resources#worked-example) at 5 QPS arrives at 58 vCPUs for ingest against 290 for queries - so a small write service can feed a much larger read service.
+- **Idling and autoscaling are configured per service.** Each service has its own replica count, autoscaling and auto-idling settings, so the write service can stay always-on for continuous ingestion while the read service idles outside working hours.
+- **Storage isn't duplicated.** Services in a warehouse share the same object storage folder and the same tables, and [storage is billed only once](/products/cloud/features/infrastructure/warehouses#pricing).
+- **Access can be restricted per endpoint.** IP access lists are applied per service, so the write endpoint can be reachable only from your collectors and the read endpoint only from your ClickStack deployment. See our guide on [Network access control](/products/cloud/features/infrastructure/warehouses#network-access-control).
+
+## Architecture {#architecture}
+
+The recommended topology is a warehouse containing one read-write service for ingestion and one read-only service for ClickStack:
+
+| Service | Type | Responsibilities | Clients |
+|---|---|---|---|
+| Primary | Read-write | Ingestion, background merges, DDL (table creation, TTL, materialized views) | OpenTelemetry collector, ClickPipes, Vector, SQL console / client for administration |
+| Secondary | Read-only | Search, dashboards, notebooks, alert evaluation | ClickStack UI (HyperDX) |
+
+Keep in mind when planning the topology:
+
+- The first service in a warehouse is always read-write, and a service's type is **fixed at creation** - to switch between read-only and read-write, create a new service in the warehouse.
+- All services in a warehouse share the same cloud provider, region, ClickHouse version and Keeper, and the upgrade schedule of the primary service.
+- Use **one** read-write service for ingestion. Merges are assigned across every read-write service sharing the storage, so a merge for an insert on one service can be executed by another. If that other service is also serving heavy queries, those queries compete with the merge for CPU and memory on the service running it - slowing merges for the first service's inserts, and with them insert performance. Keep query workloads on the read-only service, and only add a second read-write service if you need to [separate merges from ingestion](#separating-merges).
+
+## Setting up an isolated deployment {#setup}
+
+<Steps>
+<Step title="Prepare the read-write service" id="prepare-read-write-service">
+
+Use your existing service - or the primary service of a new warehouse - for ingestion, sized for the ingest compute from the [sizing model](/clickstack/managing/estimating-resources).
+
+Create the database and the dedicated ingestion user on this service. Because all services in a warehouse share access controls, users you create here are available on every service in the warehouse:
+
+```sql
+CREATE DATABASE otel;
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+Generate the password with a tool such as `openssl rand -base64 24` and store it in a secret manager rather than in a manifest or shell history. See our guide on [Creating an ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user) for further details.
+
+If this service is already part of a warehouse, note that database-level DDL can hang when another service in it is idled - see [Administration and DDL](#administration).
+</Step>
+<Step title="Add a read-only service to the warehouse" id="add-read-only-service">
+
+In the ClickHouse Cloud console, click the plus sign on the service you just prepared to create a second service sharing its data. Select **read-only** as the service type, and size it for the query compute from the sizing model.
+
+For the full walkthrough, see our guide on [How to set up a warehouse](/products/cloud/features/infrastructure/warehouses#setup-warehouses).
+</Step>
+<Step title="Point ingestion at the read-write service" id="point-ingestion">
+
+Configure your collector to export to the **read-write** service endpoint, authenticating as the ingestion user:
+
+```shell
+CLICKHOUSE_ENDPOINT=https://<read-write-service>.clickhouse.cloud:8443
+CLICKHOUSE_USER=hyperdx_ingest
+CLICKHOUSE_PASSWORD=<strong-password>
+HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel
+```
+
+See the [collector configuration options](/clickstack/managing/config#otel-collector) for details, or the equivalent settings for [Vector](/clickstack/ingesting-data/vector) and other ingestion paths.
+
+Writes sent to the read-only endpoint are rejected, so the collector must always target the read-write service.
+</Step>
+<Step title="Point ClickStack at the read-only service" id="point-clickstack">
+
+The ClickStack UI always connects to the ClickHouse service from which it is launched in the ClickHouse Cloud console. To run it on read-only compute:
+
+1. Select the read-only service in the ClickHouse Cloud console.
+2. Select **ClickStack** from the left navigation menu.
+
+Every query issued by the UI then runs on that read-only compute. No configuration inside ClickStack is required. See our guide on [Using ClickStack with read-only compute](/clickstack/deployment/managed#clickstack-read-only-compute).
+
+<Warning>
+**ClickStack state is scoped to the service**
+
+Dashboards, saved searches, alerts and sources belong to the service ClickStack was launched from, and don't follow you to another service in the same warehouse - even though both services share the same data. Sources using the [default OpenTelemetry schema](/clickstack/deployment/managed#adding-data-sources) are auto-detected on the new service, so search over that data works straight away, but custom or manually configured sources - and everything else you saved - has to be recreated.
+
+Choose the service you want to run ClickStack from before building dashboards. If you're switching an established deployment, note that alerts created on the previous service keep evaluating there - on that service's compute - until you delete them.
+</Warning>
+
+If individual data sources need to target a different service, the connection used by each source can be overridden with its [`Server Connection` setting](/clickstack/managing/config#datasource-settings).
+</Step>
+<Step title="Verify the split" id="verify">
+
+Run a search or open a dashboard in ClickStack, then check where the queries landed. `system` tables are written on the node that ran the query, so a service with more than one replica needs [`clusterAllReplicas`](/reference/system-tables/overview#querying-across-nodes) with the `default` cluster name to cover all of them. On the **read-only** service, you should see the ClickStack queries:
+
+```sql
+SELECT 
+    user, 
+    query_kind, 
+    http_user_agent,
+    count()
+FROM clusterAllReplicas('default', system.query_log)
+WHERE event_time > now() - toIntervalMinute(10) 
+  AND type = 'QueryFinish'
+GROUP BY ALL
+ORDER BY count() DESC;
+```
+
+Grouping by `user` and `http_user_agent` is what attributes the traffic: it distinguishes the UI from the SQL console and from anything else connecting to the endpoint, whatever tables your sources point at.
+
+On the **read-write** service, the same query should show inserts from the ingestion user and no ClickStack query traffic.
+
+Running the query on each service in turn is the reliable check, because the `default` cluster contains only the replicas of the service you're connected to. For an aggregate view across the warehouse, use the `all_groups.default` cluster name instead:
+
+```sql
+SELECT 
+    hostName() AS host, 
+    query_kind, 
+    count()
+FROM clusterAllReplicas('all_groups.default', system.query_log)
+WHERE event_time > now() - toIntervalMinute(10) 
+  AND type = 'QueryFinish'
+GROUP BY ALL;
+```
+
+Two things to keep in mind with this query: services that have idled can't contribute rows, so wake them first if you need complete results, and `hostName()` identifies a replica rather than a service - to attribute activity to a specific service, query that service directly.
+</Step>
+</Steps>
+
+## Separating merges from ingestion {#separating-merges}
+
+At very high sustained ingest rates, merges - rather than the inserts themselves - become the dominant cost on the ingest service. Because merges are assigned across all read-write services sharing the storage, they can also be pulled onto a service you intended for something else.
+
+For these deployments, merges can be moved off the ingest service entirely, giving a three-service topology:
+
+| Service | Type | Responsibilities |
+|---|---|---|
+| Ingest | Read-write, merges disabled | Accepts inserts only |
+| Merge | Read-write | Executes all background merges and mutations for the warehouse |
+| Query | Read-only | Serves ClickStack |
+
+<Info>
+**Requires a support request**
+
+Disabling merges on a read-write service isn't configurable from the Cloud console. [Contact support](https://clickhouse.com/support/program) to apply it to a service.
+</Info>
+
+This topology is worth considering when ingest alone saturates a service, or when you need two read-write services because both must write. If your query workload is served entirely by ClickStack - which only reads - the simpler [read-write plus read-only split](#architecture) covers the requirement and is the better-supported path.
+
+When running this topology, be aware of the following:
+
+- **Don't rely on auto-idling for either read-write service.** A service with merges disabled still processes the part download and removal events generated by inserts elsewhere in the warehouse, and a high count of unmerged parts can block idling on its own. Plan for both read-write services to be continuously awake.
+- **Keep queries off both read-write services.** Heavy `SELECT` queries on a read-write service compete with merge work for CPU and memory, which is the failure mode this topology exists to avoid. Point ClickStack at the read-only service as described [above](#point-clickstack).
+- **Mutations, where you have them, are tracked on the service that executes them.** Mutations are rare in observability - ClickStack's schema sets [`ttl_only_drop_parts = 1`](/clickstack/managing/ttl), so ordinary retention drops whole expired parts during TTL merges rather than mutating rows away. If you do submit a mutation-producing `ALTER` to the ingest service, it is carried out by the merge service, and its progress appears in [`system.mutations`](/reference/system-tables/mutations) there rather than on the ingest service.
+
+## Administration and DDL {#administration}
+
+All schema changes must be run against the **read-write** service, including:
+
+- Table creation - performed automatically by the ClickStack collector on first ingest
+- [Modifying TTL](/clickstack/managing/ttl#modifying-ttl) to change retention
+- Creating [materialized views](/clickstack/managing/materialized-views) for query acceleration
+- Adding [skip indexes, projections and other performance optimizations](/clickstack/managing/performance-tuning)
+
+Users, roles and grants aren't schema changes - they're shared by every service in the warehouse, so each only needs to be created once, from any service. The [setup steps](#prepare-read-write-service) above create the ingestion user. Any other client you point at the read-only service should authenticate as a separate read-only query user with the [permissions required by the ClickStack UI](/clickstack/managing/production#user-permissions) - not with the ingestion grants shown above.
+
+Connect to the read-write service using the [SQL console or ClickHouse client](/clickstack/managing/admin). Because the warehouse shares storage and access controls, the changes are immediately visible to the read-only service. If you've [separated merges from ingestion](#separating-merges), statements can be submitted against either read-write service - but note that mutations are executed and tracked on the merge service.
+
+<Warning>
+**Database DDL can hang when another service is idled**
+
+`CREATE`, `RENAME` and `DROP DATABASE` statements can be blocked by idled or stopped services in the warehouse, causing them to hang. This is easy to hit in this topology, because read-only services idle without delay. Run database-level statements with [`distributed_ddl_task_timeout=0`](/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout), set per query or for the session:
+
+```sql
+CREATE DATABASE otel
+SETTINGS distributed_ddl_task_timeout=0
+```
+
+A service you stopped manually must be started again before queries will execute against it.
+</Warning>
+
+Materialized views are triggered by the insert, so they're executed by the read-write service. The read-only service queries their target tables like any other table, including the views [registered against a ClickStack source](/clickstack/managing/config#materialized-views-settings) for query acceleration.
+
+## Isolating agentic workloads {#agentic-workloads}
+
+AI assistants connected through the [ClickStack MCP server](/clickstack/mcp) are read traffic like any dashboard, but their load pattern is different: an agent investigating an incident issues many exploratory queries in quick succession, over ranges nobody chose in advance. Sharing one read-only service between agents and the UI puts that burst in front of the dashboards an engineer is looking at during the same incident.
+
+The same warehouse pattern applies - give the agents their own read-only compute:
+
+<Steps>
+<Step title="Add a second read-only service" id="agentic-add-service">
+
+Create another read-only service in the warehouse, exactly as in [the setup above](#add-read-only-service). It reads the same tables as the service serving the UI, with no data to copy.
+
+Size it for the query load you expect from agents rather than from the sizing model's dashboard QPS, and leave auto-idling enabled: agentic use is typically intermittent, so the service can idle between investigations.
+</Step>
+<Step title="Enable MCP on that service" id="agentic-enable-mcp">
+
+Open the read-only service in the ClickHouse Cloud console, click **Connect**, select **Connect with MCP** and toggle it on. See [enabling the remote MCP server](/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
+</Step>
+<Step title="Point MCP clients at it" id="agentic-point-clients">
+
+The Cloud MCP endpoint is the same for every service - requests are routed by the `x-service-id` header, and without it they go to the first ClickStack service used by your account. Copy your existing MCP configuration and add the header with the ID of the new read-only service:
+
+```shell
+claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack \
+  --header "x-service-id: <read-only-agent-service-id>"
+```
+
+Any MCP client can carry the header - see [targeting a specific service](/clickstack/mcp#managed-service-override) for the equivalent configuration in Cursor, VS Code and others.
+</Step>
+</Steps>
+
+<Warning>
+**MCP writes state to the service it targets**
+
+The MCP server can create dashboards, alerts and saved searches as well as run queries, and that state is scoped to the service the request was routed to, like all [ClickStack state](#point-clickstack). A dashboard an agent creates on the agent service won't appear in the ClickStack UI launched from the service serving your engineers, and an alert it creates there is evaluated on that service's compute - where an idling agent service will delay or miss the evaluations, as [below](#isolating-alerts). Route agents that are expected to create durable artifacts to the same service your team uses.
+</Warning>
+
+## Alerts {#alerts}
+
+ClickStack evaluates an alert using the connection of the source it's attached to. When every source shares one connection - the default - alerts therefore run on the same compute as the UI, the read-only service in this topology. A source with an overridden [`Server Connection`](/clickstack/managing/config#datasource-settings) evaluates its alerts on whichever service that connection points to instead, so include that load in the sizing for the service concerned.
+
+<Note>
+**Managed ClickStack**
+
+To enable alerts, at least one user with **Service Admin** permissions must sign in to ClickStack at least once. This provisions the dedicated database user which runs alert queries, and that user is shared across every service in the warehouse. See our guide on [Granting access to Managed ClickStack](/clickstack/deployment/managed#configure-access).
+</Note>
+
+Alert evaluation is a recurring query workload. Include it in the QPS you size the read-only service for - the [sizing model](/clickstack/managing/estimating-resources#refining-sizing-assumptions) treats search, dashboard and alerting queries as a single aggregate figure.
+
+### Isolating alert evaluation {#isolating-alerts}
+
+Alert load can't be routed centrally, because alerts are created by users: whoever adds an alert in ClickStack adds it to the service they're working in, and it evaluates on that service's compute. There's no setting that moves the alerts of a service elsewhere.
+
+What you can isolate is the alerts you own centrally - the ones a platform team maintains for the whole organization, which are usually also the ones evaluating most frequently. Give them their own read-only service in the warehouse, and create them from a ClickStack launched there:
+
+| Service | Type | Serves |
+|---|---|---|
+| Ingest | Read-write | OpenTelemetry collector |
+| Query | Read-only | ClickStack UI, and the alerts users create for themselves |
+| Alerting | Read-only | Common alerts maintained by the platform team |
+
+<Warning>
+**Disable auto-idling on the alerting service**
+
+Having alerts configured on a service doesn't keep it awake. Alert evaluations that land on an idled service are delayed by the wake-up or fail outright, so an alerting service left with auto-idling enabled can miss evaluations. Turn auto-idling off on that service and plan for it to be always-on. The same applies wherever your alerts are evaluated: if they run on the service serving the UI, that service can't be left to idle either.
+</Warning>
+
+The remaining trade-offs are the ones that follow from state being per service:
+
+- The common alerts, and any dashboards that go with them, exist only on the alerting service and aren't visible to users working on the query service. Notifications are delivered to the same [destinations](/clickstack/features/alerts) either way, so what users lose is sight of the definitions, not the alerting itself.
+- Sources on the alerting service are separate objects. Those using the [default OpenTelemetry schema](/clickstack/deployment/managed#adding-data-sources) are auto-detected, but custom sources have to be configured there too before an alert can reference them.
+
+If a single set of alerts is small enough that its evaluation load is a rounding error against dashboard traffic, keep everything on one read-only service - the operational cost of maintaining definitions in two places is the larger of the two costs.
+
+## Further considerations {#considerations}
+
+**Auto-idling.** The first query to a read-only service that has idled waits for the service to start, so intermittent use trades a little latency for lower spend. Don't count on alerts to prevent idling - disable auto-idling on any service you rely on to evaluate them, as described [above](#isolating-alerts). Continuous ingestion does keep the read-write service awake, but if your ingestion is intermittent or scheduled, the first batch after an idle period waits in the same way, which surfaces as delayed telemetry.
+
+**Backups.** Backups are taken on the primary service only, which covers the data for the whole warehouse. Restoring a backup creates a completely new service that isn't connected to the existing warehouse.
+
+**Replica limits.** The combined replica count across all services in a warehouse is capped by default - see [usage limits](/products/cloud/guides/best-practices/usagelimits).
+
+**Isolating ClickStack from other workloads.** If you're adding ClickStack to a service that already runs other workloads, such as real-time application analytics, the same warehouse feature is used to give observability its own compute. See our guide on [Isolating observability workloads](/clickstack/managing/estimating-resources#isolating-workloads).
+
+For the complete set of warehouse behaviors and limitations, see our guide on [Warehouses](/products/cloud/features/infrastructure/warehouses).
