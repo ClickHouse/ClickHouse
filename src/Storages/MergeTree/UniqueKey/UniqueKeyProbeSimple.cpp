@@ -54,10 +54,8 @@ std::vector<ProbeResult> UniqueKeyProbeSimple::probeBatch(const Block & keys, co
     VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(uk_columns, /*permutation=*/nullptr, max_encoded_size, encoded);
 
-    /// Sort the batch once by encoded key: targets receive keys in sorted order
-    /// (contract of `findRowIndexBatch`), so they skip their own sort and each
-    /// `MultiGet` chunk covers a contiguous key range. `perm` maps a sorted
-    /// position back to its input row.
+    /// Sort the batch once by encoded key (contract of `findRowIndexBatch`);
+    /// `perm` maps a sorted position back to its input row.
     std::vector<size_t> perm(n);
     std::iota(perm.begin(), perm.end(), 0);
     std::sort(perm.begin(), perm.end(),
