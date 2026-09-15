@@ -27,6 +27,9 @@ struct IntervalKind
     IntervalKind(Kind kind_ = Kind::Second) : kind(kind_) {} /// NOLINT
     operator Kind() const { return kind; } /// NOLINT
 
+    /// Decodes the interval kind byte of the binary type encoding.
+    static IntervalKind fromBinary(UInt8 value);
+
     std::string_view toString() const;
 
     /// Returns number of nanoseconds in one interval.

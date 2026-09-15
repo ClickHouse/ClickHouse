@@ -4,55 +4,40 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-#include <Poco/ConsoleChannel.h>
-#include <Poco/Logger.h>
-#endif
+#include <array>
 
 namespace DB::ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int INCORRECT_DATA;
 }
 
 namespace
 {
-template <typename Result>
-void checkInvalidKinds(Result (DB::IntervalKind::*method)() const)
-{
-    for (unsigned value : {0x0Bu, 0x7Fu, 0xFFu})
-    {
-        SCOPED_TRACE(value);
-        const DB::IntervalKind interval(static_cast<DB::IntervalKind::Kind>(value));
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        EXPECT_DEATH(
-            {
-                Poco::Logger::root().setChannel(new Poco::ConsoleChannel);
-                (interval.*method)();
-            },
-            "Unexpected IntervalKind");
-#else
-        EXPECT_THAT(
-            [&] { (interval.*method)(); },
-            ::testing::Throws<DB::Exception>(::testing::Property(&DB::Exception::code, DB::ErrorCodes::LOGICAL_ERROR)));
-#endif
-    }
-}
+using DB::IntervalKind;
+
+/// Built from the macro on purpose: the test checks that it lists the kinds in enum order.
+constexpr std::array all_kinds = {
+#define M(KIND) IntervalKind::Kind::KIND,
+    FOR_EACH_INTERVAL_KIND(M)
+#undef M
+};
 }
 
-TEST(IntervalKindDeathTest, InvalidKinds)
+/// `fromBinary` must accept exactly the bytes of the known kinds.
+TEST(IntervalKind, FromBinary)
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-#endif
-    checkInvalidKinds(&DB::IntervalKind::toString);
-    checkInvalidKinds(&DB::IntervalKind::toAvgNanoseconds);
-    checkInvalidKinds(&DB::IntervalKind::toAvgMilliseconds);
-    checkInvalidKinds(&DB::IntervalKind::toAvgSeconds);
-    checkInvalidKinds(&DB::IntervalKind::toSeconds);
-    checkInvalidKinds(&DB::IntervalKind::isFixedLength);
-    checkInvalidKinds(&DB::IntervalKind::toKeyword);
-    checkInvalidKinds(&DB::IntervalKind::toLowercasedKeyword);
-    checkInvalidKinds(&DB::IntervalKind::toDateDiffUnit);
-    checkInvalidKinds(&DB::IntervalKind::toNameOfFunctionToIntervalDataType);
-    checkInvalidKinds(&DB::IntervalKind::toNameOfFunctionExtractTimePart);
+    for (size_t i = 0; i < all_kinds.size(); ++i)
+    {
+        SCOPED_TRACE(i);
+        EXPECT_EQ(static_cast<size_t>(all_kinds[i]), i);
+        EXPECT_EQ(IntervalKind::fromBinary(static_cast<UInt8>(i)).kind, all_kinds[i]);
+    }
+
+    for (unsigned value = all_kinds.size(); value < 256; ++value)
+    {
+        SCOPED_TRACE(value);
+        EXPECT_THAT(
+            [&] { return IntervalKind::fromBinary(static_cast<UInt8>(value)); },
+            ::testing::Throws<DB::Exception>(::testing::Property(&DB::Exception::code, DB::ErrorCodes::INCORRECT_DATA)));
+    }
 }
