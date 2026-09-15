@@ -55,6 +55,8 @@ DISTRIBUTED_SETTINGS = (
 # A dispatched worker task runs under current_query_id = '<initiator_uuid>::<stage_name>'
 TASK_LOG_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\}")
 TASK_ERROR_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\} <Error>")
+# Reported to the client when a worker's forwarding buffer overflows and drops log lines.
+DROPPED_LOGS_LINE = re.compile(r"worker log line\(s\) were dropped on .* forwarding buffer was full")
 
 
 def run_query_capturing_logs(query, send_logs_level="trace"):
@@ -93,6 +95,21 @@ def test_worker_exception_context_reaches_client(started_cluster):
     assert "boom on worker" in out
     assert TASK_ERROR_LINE.search(out), (
         "worker exception context was not forwarded to the client: " + out[-2000:]
+    )
+
+
+def test_worker_log_drops_reported_to_client(started_cluster):
+    """With a tiny forwarding buffer, a chatty worker task overflows it between status polls.
+    The dropped lines must be counted and reported to the client, not silently lost."""
+    out = run_query_capturing_logs(
+        "SELECT sum(id) FROM t_worker_logs "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, distributed_plan_max_buffered_log_rows = 1"
+    )
+    assert "499999500000" in out, (
+        "query did not return the expected result; test setup problem: " + out[-2000:]
+    )
+    assert DROPPED_LOGS_LINE.search(out), (
+        "worker log drops were not reported to the client: " + out[-2000:]
     )
 
 
