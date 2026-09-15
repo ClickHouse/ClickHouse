@@ -298,21 +298,22 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
     hashing.set.prepareForInsert(input_chunk);
 
-    /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation.
-    /// Generic spill input also needs a fingerprint column. A suppression run needs its columns,
-    /// a sorted copy, and a permutation. Writing needs uncompressed, compressed, and file buffers.
-    /// Oversized values and codec overhead can exceed this estimate.
+    /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation
+    /// and its row masks. Generic spill input also needs a fingerprint column.
+    /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs uncompressed,
+    /// compressed, and file buffers. Oversized values and codec overhead can exceed this estimate.
     const size_t fingerprint_bytes = hashing.set.getKeyRepresentation() == DistinctKeyRepresentation::Hash128
         ? input_chunk.getNumRows() * sizeof(UInt128) : 0;
     const size_t suppression_columns_bytes = 2 * DEFAULT_BYTES_IN_RUN;
     const size_t sort_permutation_bytes = max_block_size_rows * sizeof(IColumn::Permutation::value_type);
     const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
     const size_t spill_headroom_bytes
-        = input_chunk.allocatedBytes() + fingerprint_bytes + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
+        = hashing.set.estimateFilteringMemory(input_chunk) + fingerprint_bytes
+            + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
     if (const auto available = getMostStrictAvailableSystemMemory())
     {
-        const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk);
-        if (growth_memory && (spill_headroom_bytes > *available || growth_memory > *available - spill_headroom_bytes))
+        if (spill_headroom_bytes > *available
+            || hashing.set.estimateGrowthMemory(input_chunk) > *available - spill_headroom_bytes)
         {
             startSpilling(hashing);
             return;

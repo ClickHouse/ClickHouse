@@ -5,7 +5,10 @@
 #include <initializer_list>
 #include <thread>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -338,5 +341,67 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
         /// The unconsumed input is collected into an ordinary run without constructing the LC bitmap.
         ASSERT_NO_THROW(transform.work());
         EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+    }).join();
+}
+
+TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacity)
+{
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    MemoryTracker query{&user, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        const auto header = std::make_shared<const Block>(Block{
+            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
+        constexpr size_t num_rows = 8;
+        auto value = ColumnString::create();
+        value->insert(Field(String(1 << 20, 'x')));
+        ColumnPtr constant = ColumnConst::create(std::move(value), num_rows);
+        const Columns payloads{
+            constant->convertToFullColumnIfConst(),
+            constant,
+            ColumnReplicated::create(assert_cast<const ColumnConst &>(*constant).getDataColumnPtr(),
+                ColumnUInt8::create(num_rows, UInt8(0)))};
+        for (const auto & payload : payloads)
+        {
+            SCOPED_TRACE(payload->getName());
+            ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+                /*max_bytes_before_external_distinct_=*/ 1ULL << 30, tmp_data, /*min_free_disk_space_=*/ 0,
+                /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false);
+            OutputPort upstream{header};
+            InputPort downstream{header};
+            connect(upstream, transform.getInputs().front());
+            connect(transform.getOutputs().front(), downstream);
+            downstream.setNeeded();
+            auto input = makeChunk({1, 2, 3, 4, 5, 6, 7, 7});
+            input.addColumn(payload);
+            size_t materialization_bytes = 0;
+            size_t filtering_bytes = 0;
+            {
+                auto prepared = input.clone();
+                materializeChunk(prepared);
+                filtering_bytes = prepared.allocatedBytes();
+                if (prepared.getColumns()[1] != payload)
+                    materialization_bytes = prepared.getColumns()[1]->allocatedBytes();
+            }
+            ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+            upstream.push(std::move(input));
+            ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+            {
+                /// The table needs no growth, but filtering would copy most of the wide payload.
+                user.setHardLimit(user.get() + materialization_bytes + filtering_bytes / 4 + 65536);
+                SCOPE_EXIT({ user.setHardLimit(0); });
+                ASSERT_NO_THROW(transform.work());
+                ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+                EXPECT_FALSE(downstream.hasData());
+            }
+
+            /// The unconsumed input is collected into an ordinary run after switching to spilling.
+            ASSERT_NO_THROW(transform.work());
+            EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+        }
     }).join();
 }
