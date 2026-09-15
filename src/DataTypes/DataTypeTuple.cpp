@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -250,6 +251,14 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
         return false;
 
     const DataTypeTuple & rhs_tuple = static_cast<const DataTypeTuple &>(rhs);
+
+    const auto semantic_identity = getCustomTypeSemanticIdentity(*this);
+    const auto rhs_semantic_identity = getCustomTypeSemanticIdentity(rhs_tuple);
+    if (semantic_identity || rhs_semantic_identity)
+    {
+        if (!semantic_identity || !rhs_semantic_identity || *semantic_identity != *rhs_semantic_identity)
+            return false;
+    }
 
     size_t size = elems.size();
     if (size != rhs_tuple.elems.size())
@@ -573,7 +582,7 @@ SELECT a.2 FROM named_tuples; -- by index
 
 ## Comparison operations with Tuple {#comparison-operations-with-tuple}
 
-Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
+Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller), otherwise (both elements are equal), the next element is compared.
 
 Example:
 
@@ -631,22 +640,7 @@ SELECT * FROM test;
 │   1 │       42 │    70 │
 │   2 │        1 │    10 │
 │   2 │        2 │     0 │
-└─────┴──────────┴───────┘
-
--- Let's find a value for each key with the biggest duration, if durations are equal, select the biggest value
-
-SELECT
-    key,
-    max(duration),
-    argMax(value, (duration, value))
-FROM test
-GROUP BY key
-ORDER BY key ASC;
-
-┌─key─┬─max(duration)─┬─argMax(value, tuple(duration, value))─┐
-│   1 │            42 │                                    70 │
-│   2 │             2 │                                     0 │
-└─────┴───────────────┴───────────────────────────────────────┘
+└─────┴──────────┴───────┴─────┘
 ```
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
