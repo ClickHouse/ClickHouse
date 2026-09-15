@@ -808,6 +808,45 @@ ColumnPtr convertDecimalToDateTime64OrTime64Accurate(const ColumnsWithTypeAndNam
         return col_to;
 }
 
+/// `accurateCastOrNull` from `Date32` to `DateTime64`: the midnight of an extended-range day (e.g. `9999-12-31` at
+/// scale 9) does not always fit the `Int64` ticks of the result type. Such a day is not representable, so it yields
+/// NULL instead of the saturated boundary that the plain `CAST` produces under `date_time_overflow_behavior`.
+ColumnPtr convertDate32ToDateTime64OrNull(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale)
+{
+    const auto * col_from = checkAndGetColumn<ColumnInt32>(arguments[0].column.get());
+    if (!col_from)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of conversion to {}",
+            arguments[0].column->getName(), TypeName<DateTime64>);
+
+    const auto & vec_from = col_from->getData();
+    const auto & time_zone = assert_cast<const DataTypeDateTime64 &>(*removeNullable(result_type)).getTimeZone();
+
+    auto col_to = DataTypeDateTime64::ColumnType::create(input_rows_count, scale);
+    auto & vec_to = col_to->getData();
+
+    auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+    auto & vec_null_map_to = col_null_map_to->getData();
+
+    /// The same scale-dependent whole-second window that `ToDateTime64Transform` checks for `Date32` sources.
+    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+    const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
+    const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        const Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(vec_from[i])));
+        if (dt < min_whole || dt > max_whole)
+        {
+            vec_to[i] = DateTime64(0);
+            vec_null_map_to[i] = true;
+        }
+        else
+            vec_to[i] = DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+    }
+
+    return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+}
+
 }
 
 template <typename ToDataType>
@@ -866,6 +905,21 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 /// of a `Date32` day does not always fit the `Int64` ticks of a high-precision `DateTime64` (a scale-9
                 /// one ends at 2262-04-11), so `date_time_overflow_behavior` has to reach the transform - unlike the
                 /// other branches here, which cannot lose a value and therefore use the default mode.
+                ///
+                /// `accurateCast` and `accurateCastOrNull` enforce the accurate-cast contract instead, like the
+                /// numeric and decimal sources below: an unrepresentable day throws or yields NULL regardless of the
+                /// session overflow mode.
+                if (cast_type == CastType::accurate)
+                {
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                    return true;
+                }
+                if (cast_type == CastType::accurateOrNull)
+                {
+                    result_column = convertDate32ToDateTime64OrNull(arguments, result_type, input_rows_count, scale);
+                    return true;
+                }
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \

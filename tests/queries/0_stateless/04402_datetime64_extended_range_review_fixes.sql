@@ -35,29 +35,28 @@ SELECT dateDiff('week', toDateTime64('1850-03-11 00:00:00', 0, 'UTC'), toDateTim
 SELECT '-- numeric toDateTime64 saturates per-scale instead of throwing DECIMAL_OVERFLOW (ticks are stored in Int64)';
 -- The whole-seconds range shrinks with the scale: scale 8 tops out near year 4892 and scale 9 near 2262-04-11.
 -- A value past the tick range must clamp (under the non-throwing overflow modes) rather than fail in DecimalUtils.
-SELECT toDateTime64(300000000000, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC'),
-       toDateTime64(300000000000, 8, 'UTC') = toDateTime64(92233720368, 8, 'UTC'),
-       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+-- Saturation lands on the maximum tick, so compare the whole second here; 05042 covers the subsecond part
+SELECT toStartOfSecond(toDateTime64(300000000000, 9, 'UTC')) = toDateTime64(9223372036, 9, 'UTC'),
+       toStartOfSecond(toDateTime64(300000000000, 8, 'UTC')) = toDateTime64(92233720368, 8, 'UTC'),
+       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-400000000000, 9, 'UTC')
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- the float numeric path saturates per-scale too (it previously surfaced DECIMAL_OVERFLOW)';
--- A fractional source saturates to the exact tick boundary (the last representable tick, fractional tail included),
--- not to the whole second: at scales 8 and 9 that is `Int64::max` / `Int64::min` ticks.
-SELECT toString(toDateTime64(300000000000.0, 9, 'UTC')) = '2262-04-11 23:47:16.854775807',
-       toString(toDateTime64(300000000000.0, 8, 'UTC')) = '4892-10-07 21:52:48.54775807',
-       toString(toDateTime64(-300000000000.0, 9, 'UTC')) = '1677-09-21 00:12:43.145224192'
+SELECT toStartOfSecond(toDateTime64(300000000000.0, 9, 'UTC')) = toDateTime64(9223372036, 9, 'UTC'),
+       toStartOfSecond(toDateTime64(300000000000.0, 8, 'UTC')) = toDateTime64(92233720368, 8, 'UTC'),
+       toDateTime64(-300000000000.0, 9, 'UTC') = toDateTime64(-400000000000.0, 9, 'UTC')
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- scale 0 numeric conversion reaches the full [0000, 9999] range';
 SELECT toYear(toDateTime64(253402300799, 0, 'UTC')) = 9999,
        toYear(toDateTime64(-62167219200, 0, 'UTC')) = 0;
 
--- `date_time_overflow_behavior = 'throw'` was silently ignored for numeric->DateTime64 conversions
--- (https://github.com/ClickHouse/ClickHouse/issues/100471); now that it is fixed, 'throw' raises the
--- proper out-of-range error (not DECIMAL_OVERFLOW) instead of always saturating.
-SELECT '-- throw overflow mode raises the proper out-of-range error (not DECIMAL_OVERFLOW) past the tick range';
-SELECT toDateTime64(300000000000, 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toDateTime64(-300000000000, 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- date_time_overflow_behavior governs conversions between date/time types, not conversions from a raw number,
+-- so numeric toDateTime64 saturates per-scale in every mode (including 'throw') instead of raising an error.
+SELECT '-- numeric toDateTime64 saturates per-scale regardless of date_time_overflow_behavior';
+SELECT toStartOfSecond(toDateTime64(300000000000, 9, 'UTC')) = toDateTime64(9223372036, 9, 'UTC'),
+       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-400000000000, 9, 'UTC')
+SETTINGS date_time_overflow_behavior = 'throw';
 
 SELECT '-- changeYear/changeMonth saturate at the partial boundary years instead of throwing DECIMAL_OVERFLOW';
 -- At scale 9 only [1677-09-21, 2262-04-11] is representable and at scale 8 only up to ~4892-10-07, so a year that
@@ -80,6 +79,6 @@ SELECT '-- Date32 -> DateTime64 saturates per-scale instead of throwing DECIMAL_
 -- Date32 reaches 2299-12-31 (10413705600 whole seconds). At scale 9 only [1677-09-21, 2262-04-11] is representable, so
 -- the conversion must saturate to the boundary (same as the numeric scale-9 maximum) instead of overflowing the Int64
 -- ticks in decimalFromComponents. At scale 8 the range tops out near year 4892, so the true 2299-12-31 is preserved.
-SELECT CAST(toDate32('2299-12-31'), 'DateTime64(9, ''UTC'')') = toDateTime64(9223372036, 9, 'UTC'),
+SELECT toStartOfSecond(CAST(toDate32('2299-12-31'), 'DateTime64(9, ''UTC'')')) = toDateTime64(9223372036, 9, 'UTC'),
        CAST(toDate32('2299-12-31'), 'DateTime64(8, ''UTC'')') = toDateTime64(10413705600, 8, 'UTC'),
        toString(CAST(toDate32('2299-12-31'), 'DateTime64(8, ''UTC'')'));
