@@ -940,7 +940,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         {
             TableExpressionNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
-            if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
+            /// A comma cannot carry `GLOBAL` in the query text; the join is a cross join with the same meaning.
+            if (join_kind == JoinKind::Comma)
+                join_node->setKind(JoinKind::Cross);
+            if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner || isCrossOrComma(join_kind))
             {
                 join_table_expression = join_node->getRightTableExpressionNodeTyped();
             }

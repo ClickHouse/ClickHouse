@@ -1,5 +1,7 @@
 #include <Planner/Utils.h>
 
+#include <ranges>
+
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -833,7 +835,8 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
             bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
             if (is_conjunction)
             {
-                for (const auto & child : node->children)
+                /// The stack pops the last child first, so the children go in reverse to keep the order of the query text.
+                for (const auto & child : node->children | std::views::reverse)
                 {
                     if (!visited_nodes.contains(child))
                     {
