@@ -195,6 +195,17 @@ DateLUT::DateLUT()
 {
     /// Initialize the pointer to the default DateLUTImpl.
     std::string default_time_zone = determineDefaultTimeZone();
+
+    /// The name comes from the host's time zone database, while the zones ClickHouse can load come
+    /// from the database linked into the binary. Report the mismatch here, where the name and where
+    /// it came from are both known, instead of letting `DateLUTImpl` report an unsupported name with
+    /// no hint that the host, and not the query, chose it.
+    if (!DateLUTImpl::isSupportedTimeZoneName(default_time_zone))
+        throw Poco::Exception(
+            "The local time zone is '" + default_time_zone
+            + "', which ClickHouse does not know. Set the TZ environment variable, or the `timezone` "
+              "server setting, to a name from `system.time_zones`.");
+
     default_impl.store(&getImplementation(default_time_zone), std::memory_order_release);
 }
 
