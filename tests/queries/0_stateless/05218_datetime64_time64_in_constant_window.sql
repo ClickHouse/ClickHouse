@@ -102,6 +102,11 @@ select count() from (select 1 where toTime64('00:00:01', 6) in (-inf));
 -- Mixed sets and Nullable arguments take the same path.
 select toDateTime64('1970-01-01 00:00:01.5', 1, 'UTC') in (1e30, 1.5);
 select toNullable(toTime64('00:00:01.5', 3)) in (nan, 1.5);
+-- The smallest tick of a `DateTime64(9)` is `Int64::min`, and `-9223372036.854776` scales to exactly that in a `Float64`.
+-- `CAST` accepts it, so the `IN` path does too: the lower bound is inclusive, like the upper one.
+select toDateTime64(-9223372036.854776, 9, 'UTC') in (-9223372036.854776);
+select toDateTime64(-9223372036.854776, 9, 'UTC') in (-9223372036.854776, 1.5);
+select count() from (select 1 where toDateTime64(-9223372036.854776, 9, 'UTC') in (-9223372036.86));
 -- The `INSERT ... VALUES` expression fallback goes through `convertFieldToType` too: a `Float64` literal that is not parsed
 -- by the streaming path materializes the same value as `CAST` (truncated to the scale, like `CAST(1.25 AS DateTime64(1))`).
 drop table if exists t_05218_float;
@@ -109,6 +114,15 @@ create table t_05218_float (dt DateTime64(1, 'UTC'), t Time64(1)) engine = Memor
 insert into t_05218_float values (1.5 + 0, -1.5 + 0), (1.25 + 0, 1.25 + 0), (1735689600.0 + 0, -3599999.5 + 0);
 select * from t_05218_float order by dt;
 drop table t_05218_float;
+-- The same boundary through the `VALUES` fallback: the minimum `DateTime64(9)` literal is stored, not rejected. The
+-- streaming parser must not see the bare literal: as text, `-9223372036.854776` has more digits than the `Int64` ticks
+-- hold and `readDateTime64Text` reports `DECIMAL_OVERFLOW` without trying the expression fallback; only its `Float64`
+-- value is exactly `Int64::min`. The unary minus makes it an expression from the start.
+drop table if exists t_05218_float_min;
+create table t_05218_float_min (dt DateTime64(9, 'UTC')) engine = Memory;
+insert into t_05218_float_min values (-(9223372036.854776));
+select dt, dt = toDateTime64(-9223372036.854776, 9, 'UTC'), toInt64(toUnixTimestamp64Nano(dt)) from t_05218_float_min;
+drop table t_05218_float_min;
 
 select 'Nullable and multi-element sets';
 select toNullable(toDateTime64('1970-01-01 00:00:01', 3, 'UTC')) in (1, 99999999999999999);

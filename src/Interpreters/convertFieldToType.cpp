@@ -313,13 +313,19 @@ std::optional<Int64> ticksFromIntegerField(const T & whole_seconds, Int64 scale_
 /// the same value as `CAST`. Under `strict`, this follows the `Float64` -> `Decimal` rule of `convertDecimalType`:
 /// ticks that do not read back as the original `Float64` lost precision and cannot equal any stored value, so
 /// `toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC') IN (1.25)` is 0 while `IN (1.5)` at scale 1 is 1.
+/// The `Int64` limits are brought into the `Float64` domain with the same `floatBoundNotBelow` / `floatBoundNotAbove`
+/// as `ToDateTime64TransformFloat`, and both ends are inclusive: `-9223372036.854776` at scale 9 scales to exactly
+/// `Int64::min`, the smallest tick of a `DateTime64(9)`, and `CAST` accepts it, so the `IN` and `VALUES` paths must too.
 std::optional<Int64> ticksFromFloatField(Float64 from, Int64 scale_multiplier_to, bool strict)
 {
     if (!isFinite(from))
         return std::nullopt;
 
+    static const Float64 min_ticks_in_float_domain = floatBoundNotBelow<Float64>(std::numeric_limits<Int64>::min());
+    static const Float64 max_ticks_in_float_domain = floatBoundNotAbove<Float64>(std::numeric_limits<Int64>::max());
+
     const Float64 scaled = from * static_cast<Float64>(scale_multiplier_to);
-    if (scaled <= static_cast<Float64>(std::numeric_limits<Int64>::min()) || scaled >= static_cast<Float64>(std::numeric_limits<Int64>::max()))
+    if (scaled < min_ticks_in_float_domain || scaled > max_ticks_in_float_domain)
         return std::nullopt;
 
     const Int64 ticks = static_cast<Int64>(scaled);
