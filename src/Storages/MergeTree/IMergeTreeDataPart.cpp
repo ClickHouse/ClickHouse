@@ -2649,7 +2649,23 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
-    if (auto in = readFileIfExists("columns.txt"))
+    /** A power loss can leave a file that was never `fsync`ed at length zero while the rest of the part
+      * survives - the file's inode is persisted, its data block is not - and neither `columns.txt` nor
+      * `metadata_version.txt` is covered by the part checksums, so nothing else notices that one of them
+      * is gone. Both have a safe path for being absent: the column list is regenerated from the table
+      * metadata, the version falls back to the table's. An empty file carries exactly as much as an
+      * absent one, so take the same path for it instead of failing to parse it and detaching the whole
+      * part - with all of its rows - as broken.
+      */
+    auto read_non_empty_file_if_exists = [this](const String & file_name)
+    {
+        auto in = readFileIfExists(file_name);
+        if (in && in->eof())
+            return std::unique_ptr<ReadBuffer>{};
+        return in;
+    };
+
+    if (auto in = read_non_empty_file_if_exists("columns.txt"))
     {
         loaded_columns.readText(*in);
 
@@ -2686,7 +2702,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
     {
-        if (auto in = readFileIfExists(METADATA_VERSION_FILE_NAME))
+        if (auto in = read_non_empty_file_if_exists(METADATA_VERSION_FILE_NAME))
         {
             readIntText(loaded_metadata_version.emplace(), *in);
         }
