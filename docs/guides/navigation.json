@@ -119,6 +119,7 @@
             "guides/oss/deployment-and-scaling/scaling-clusters",
             "guides/oss/deployment-and-scaling/separation-storage-compute",
             "guides/oss/deployment-and-scaling/cluster-discovery",
+            "guides/oss/deployment-and-scaling/clickhouse-proxy",
             {
               "expanded": false,
               "group": "Keeper",
