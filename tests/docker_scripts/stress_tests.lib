@@ -7,6 +7,14 @@ FAIL="\tFAIL\t\\N\t"
 
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
+FAILURE_TAIL_LINES=30
+FAILURE_TAIL_MAX_BYTES=3000
+FAILURE_ENCODE_TIMEOUT=60
+FAILURE_DRAIN_GRACE=15
+FAILURE_DRAIN_GRACE_OK=5
+FAILURE_DRAIN_TIMEOUT=30
+FAILURE_DRAIN_INTERVAL=1
+FAILURE_DRAIN_STABLE_SAMPLES=3
 START_SERVER_READY_TIMEOUT=120
 
 function escaped()
@@ -15,6 +23,198 @@ function escaped()
     # Also limit lines width just in case (too long lines are not really useful usually)
     clickhouse local -S 's String' --input-format=LineAsString -q "select substr(s, 1, $FAILURE_CONTEXT_MAX_LINE_WIDTH)
       from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
+}
+
+function escaped_tail()
+{
+    # Escape stdin as one value with the `Escaped` rule `read_test_results` decodes, at ONE
+    # escape level -- so callers must append with `printf '%s'`; `echo -e` would collapse it.
+    # `right` keeps the end of the input, where the exception line is.
+    # Bounded: the encoder is the binary under stress, and this runs only after the wrapped
+    # script already failed, so waiting on a wedged one would cost the reason it encodes.
+    timeout --verbose --signal=TERM --kill-after=10 "$FAILURE_ENCODE_TIMEOUT" \
+        clickhouse local -S 's String' --input-format=RawBLOB -q "select right(s, $FAILURE_TAIL_MAX_BYTES)
+      from table format CustomSeparated settings format_custom_escaping_rule='Escaped'"
+}
+
+function drain_capture()
+{
+    # Returns when $1 has been size-stable for $FAILURE_DRAIN_STABLE_SAMPLES samples, never
+    # before $2 (default $FAILURE_DRAIN_GRACE) and never after $FAILURE_DRAIN_TIMEOUT
+    # seconds: a holder that has not written yet is indistinguishable from none, so
+    # stability alone is unsafe.
+    local captured="$1"
+    local grace="${2:-$FAILURE_DRAIN_GRACE}"
+    local started="$SECONDS"
+    local previous=-1 current stable=0
+    # `local -` restores the caller's options on return, so this `set +x` cannot leak. The
+    # poll would otherwise trace about ten lines a second over the mirrored output.
+    local -
+    set +x
+    while [ $(( SECONDS - started )) -lt "$FAILURE_DRAIN_TIMEOUT" ]
+    do
+        current=$(stat -c %s "$captured" 2>/dev/null || echo 0)
+        if [ "$current" = "$previous" ]
+        then
+            stable=$(( stable + 1 ))
+        else
+            stable=0
+        fi
+        previous="$current"
+        if [ "$stable" -ge "$FAILURE_DRAIN_STABLE_SAMPLES" ] \
+            && [ $(( SECONDS - started )) -ge "$grace" ]
+        then
+            return 0
+        fi
+        sleep "$FAILURE_DRAIN_INTERVAL"
+    done
+    return 0
+}
+
+function flush_capture()
+{
+    # Print the bytes of $1 past offset $2, leaving the end of what was printed in
+    # `flushed_offset`: a byte appended mid-flush belongs to the next one, never to both.
+    local captured="$1"
+    local mirrored="$2"
+    local size
+    size=$(stat -c %s "$captured" 2>/dev/null || echo 0)
+    flushed_offset="$mirrored"
+    if [ "$size" -gt "$mirrored" ]
+    then
+        tail -c "+$(( mirrored + 1 ))" "$captured" | head -c "$(( size - mirrored ))"
+        flushed_offset="$size"
+    fi
+}
+
+function finalize_capture()
+{
+    # Whatever arrived past `$mirrored_bytes` reaches the console, and a failing run keeps the
+    # capture with the other artifacts. Runs from an EXIT trap under errexit, where a command
+    # that fails would replace the status the job is reporting, so nothing here may fail.
+    local captured="$1"
+    local exit_code="$2"
+    flush_capture "$captured" "${mirrored_bytes:-0}" ||:
+    mirrored_bytes="$flushed_offset"
+    if [ "$exit_code" -ne 0 ] && [ -s "$captured" ]
+    then
+        cp "$captured" /test_output/stress_script.log \
+            || echo "Cannot preserve $captured, its late output is lost"
+    fi
+}
+
+function run_capturing_output()
+{
+    # Run "$@" with its output captured to $1, mirrored to this shell's stdout as it
+    # arrives, and left readable by `script_failure_info`. Returns the command's status
+    # with errexit still off, so a caller reads `$?` and restores `set -e` itself.
+    local captured="$1"
+    shift
+    : > "$captured"
+    set +e
+    "$@" > "$captured" 2>&1 &
+    local script_pid=$!
+    # `tee <path>` would `open()` the path, and for a regular-file stdout that is a second
+    # file description with its own offset, so this shell's later writes would overwrite the
+    # mirrored bytes. A named fd, so nothing here clobbers a descriptor a caller holds.
+    local mirror_fd
+    exec {mirror_fd}>&1
+    # Count what the mirror copied, not the file size after it exits: a descendant can append
+    # between `tail`'s last read and a stat, and the flush would then start past those bytes.
+    # Only `tail` writes to this pipe, so an inherited descriptor cannot hold it open.
+    mirrored_bytes=$(tail -n +1 -f --pid="$script_pid" "$captured" \
+        | tee >(cat >&"$mirror_fd") | wc -c)
+    exec {mirror_fd}>&-
+    # Default folded in here rather than at each reader: an empty `wc -c` would otherwise
+    # leave the offset unset and the next flush would reprint the whole capture.
+    mirrored_bytes=${mirrored_bytes//[^0-9]/}
+    mirrored_bytes=${mirrored_bytes:-0}
+    wait "$script_pid"
+    captured_exit_code=$?
+    # The mirror ends with the command, but descendants inherit its stdout and can still
+    # append. Only a failure row embeds those bytes, so only it pays the full settle wait;
+    # the flush is what puts them on the console either way.
+    if [ "$captured_exit_code" -ne 0 ]
+    then
+        drain_capture "$captured"
+    else
+        drain_capture "$captured" "$FAILURE_DRAIN_GRACE_OK"
+    fi
+    finalize_capture "$captured" "$captured_exit_code"
+    # Writers can outlive the settle wait, so look once more whenever the job ends, on the
+    # wrapped command's status: a later failure of the caller's own does not make this
+    # capture worth uploading. `$captured` is local, so it must expand now.
+    # shellcheck disable=SC2064
+    trap "finalize_capture '$captured' \"\$captured_exit_code\"" EXIT
+    return "$captured_exit_code"
+}
+
+function append_script_result_row()
+{
+    # Append the `Test script exit code` / `Test script failed` row for a wrapped script,
+    # given its status ($2) and capture ($3). `printf`, not `echo -e`: the encoded payload
+    # of a failure row must reach the file verbatim.
+    local results="$1"
+    local exit_code="$2"
+    local captured="$3"
+    if [ "$exit_code" -eq 0 ]
+    then
+        echo -e "Test script exit code$OK" >> "$results"
+    else
+        printf "Test script failed$FAIL%s\n" \
+            "$(script_failure_info "$exit_code" "$captured")" >> "$results"
+    fi
+}
+
+function script_failure_info()
+{
+    # `info` cell of a `Test script failed` row: the exit code plus the tail of the wrapped
+    # script's captured output, so the reason reaches the parsed result and not just the job
+    # console. Falls back to the exit code alone, naming the encoder if that is what failed.
+    # `local -` restores the caller's options on return, so this `set +x` cannot leak. The
+    # payload is this function's return value; tracing repeats it once per composition step.
+    local -
+    set +x
+    local exit_code="$1"
+    local captured="$2"
+    local info=" script exit code: $exit_code"
+
+    if [ ! -s "$captured" ]
+    then
+        printf '%s' "$info"
+        return 0
+    fi
+
+    local total tail_bytes total_bytes
+    # Logical lines, the unit `tail -n` drops. `wc -l` counts newline bytes, so a
+    # capture whose last line is unterminated (a killed script) counted one short
+    # and presented a truncated tail as the whole output.
+    total=$(awk 'END{print NR}' < "$captured")
+    total_bytes=$(stat -c %s "$captured" 2>/dev/null || echo 0)
+    tail_bytes=$(tail -n "$FAILURE_TAIL_LINES" "$captured" | wc -c)
+    tail_bytes=${tail_bytes//[^0-9]/}
+    tail_bytes=${tail_bytes:-0}
+    # `escaped_tail` cuts BYTES after `tail -n` cut lines, so a line count alone can claim
+    # more lines than the cell shows. Report whichever limit actually bit, in its own unit.
+    if [ "$tail_bytes" -gt "$FAILURE_TAIL_MAX_BYTES" ]
+    then
+        info="$info (last $FAILURE_TAIL_MAX_BYTES of $total_bytes bytes)"
+    elif [ "$total" -gt "$FAILURE_TAIL_LINES" ]
+    then
+        info="$info (last $FAILURE_TAIL_LINES of $total lines)"
+    fi
+
+    local encoded
+    # A partial encode carries raw newlines, so only a clean exit is usable; `if`, not `||`,
+    # so errexit cannot abort before the row is appended. The capture is not empty here, so
+    # without naming the encoder this row would read as no capture at all.
+    if ! encoded=$(tail -n "$FAILURE_TAIL_LINES" "$captured" | escaped_tail) || [ -z "$encoded" ]
+    then
+        printf '%s (could not encode the captured output)' "$info"
+        return 0
+    fi
+    # `\n` here is the two characters the reader decodes back into a line break.
+    printf '%s\\n%s' "$info" "$encoded"
 }
 
 function head_escaped()
