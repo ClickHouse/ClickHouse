@@ -447,6 +447,11 @@ void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, Dat
     transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, reader.getEscapingRule(), &json_inference_info);
 }
 
+void CustomSeparatedSchemaReader::carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained)
+{
+    carryOverInferenceProvenance(dropped, retained, &json_inference_info);
+}
+
 void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCustomSeparated(FormatFactory & factory)
 {

@@ -121,6 +121,8 @@ private:
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
+    void carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained) override;
+
     PeekableReadBuffer buf;
     CustomSeparatedFormatReader reader;
     bool first_row = true;

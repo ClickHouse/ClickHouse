@@ -3,6 +3,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
 
@@ -63,8 +64,16 @@ public:
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained) override;
 
     bool first_row = true;
+
+    /// Records inference provenance (which Int64 came from a signed literal) for the types
+    /// transformation. Its lifetime must span the whole readSchema() call, because
+    /// transformTypesIfNeeded runs later, from chooseResultColumnType.
+    JSONInferenceInfo inference_info;
 };
 
 }

@@ -215,6 +215,11 @@ void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr 
     transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule, &json_inference_info);
 }
 
+void RegexpSchemaReader::carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained)
+{
+    carryOverInferenceProvenance(dropped, retained, &json_inference_info);
+}
+
 
 void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatRegexp(FormatFactory & factory)

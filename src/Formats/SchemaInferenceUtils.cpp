@@ -274,7 +274,7 @@ namespace
         {
             if (WhichDataType(type).isInt64())
             {
-                bool is_negative = json_info && json_info->negative_integers.contains(type.get());
+                bool is_negative = json_info && json_info->isNegativeInteger(type.get());
                 have_negative_integers |= is_negative;
                 if (!is_negative)
                     type = std::make_shared<DataTypeUInt64>();
@@ -775,8 +775,13 @@ namespace
         transformTypesRecursively(types, transform_simple_types, transform_complex_types, &settings);
     }
 
+    /// reader_refuses_plus says whether the format's value reader refuses a leading '+' for an unsigned
+    /// target, which decides whether a '+' literal is recorded as unreadable. It defaults to the safe
+    /// answer, so a caller added later records nothing unless it opts in. See hasUnreadableSign.
     template <bool is_json>
-    DataTypePtr tryInferDataTypeForSingleFieldImpl(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth = 1);
+    DataTypePtr tryInferDataTypeForSingleFieldImpl(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth = 1,
+        bool reader_refuses_plus = false);
 
     bool tryInferDate(std::string_view field, DayNum & date)
     {
@@ -877,7 +882,8 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferArray(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferArray(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         assertChar('[', buf);
         skipWhitespaceIfAny(buf);
@@ -897,7 +903,7 @@ namespace
             else
                 first = false;
 
-            auto nested_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 2);
+            auto nested_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 2, reader_refuses_plus);
 
             if (nested_type)
                 nested_types.push_back(nested_type);
@@ -923,7 +929,13 @@ namespace
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
         if (checkIfTypesAreEqual(nested_types))
+        {
+            /// Only the last element's type object survives, so carry the other elements' provenance
+            /// over to it first: they are all equal, but the provenance is keyed on object identity.
+            for (size_t i = 0; i + 1 < nested_types.size(); ++i)
+                carryOverInferenceProvenance(nested_types[i], nested_types.back(), json_info);
             return std::make_shared<DataTypeArray>(std::move(nested_types.back()));
+        }
 
         /// If element types are not equal, we should try to find common type.
         /// If after transformation element types are still different, we return Tuple for JSON and
@@ -953,21 +965,32 @@ namespace
             transformInferredTypesIfNeededImpl<is_json>(nested_types_copy, settings_copy, json_info);
 
             if (checkIfTypesAreEqual(nested_types_copy))
+            {
+                /// The transformation can make unequal element types equal, for example by replacing a
+                /// Nothing element, so this collapse also drops every element object but the last one.
+                for (size_t i = 0; i + 1 < nested_types_copy.size(); ++i)
+                    carryOverInferenceProvenance(nested_types_copy[i], nested_types_copy.back(), json_info);
                 return std::make_shared<DataTypeArray>(nested_types_copy.back());
+            }
             return std::make_shared<DataTypeTuple>(nested_types);
         }
         else
         {
-            transformInferredTypesIfNeededImpl<is_json>(nested_types, settings);
+            transformInferredTypesIfNeededImpl<is_json>(nested_types, settings, json_info);
             if (checkIfTypesAreEqual(nested_types))
+            {
+                for (size_t i = 0; i + 1 < nested_types.size(); ++i)
+                    carryOverInferenceProvenance(nested_types[i], nested_types.back(), json_info);
                 return std::make_shared<DataTypeArray>(nested_types.back());
+            }
 
             /// We couldn't determine common type for array element.
             return nullptr;
         }
     }
 
-    DataTypePtr tryInferTuple(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferTuple(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         assertChar('(', buf);
         skipWhitespaceIfAny(buf);
@@ -986,7 +1009,7 @@ namespace
             else
                 first = false;
 
-            auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1);
+            auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1, reader_refuses_plus);
             if (nested_type)
                 nested_types.push_back(nested_type);
             else
@@ -1043,11 +1066,23 @@ namespace
     /// type inference has always reported there, and the deserializers accept the same text.
     DataTypePtr tryInferNumberFromEmptyField(const FormatSettings & settings)
     {
-        /// The integer parsers read no sign either, so the type is never a negative integer and is not
-        /// registered in json_info->negative_integers.
+        /// An empty span carries no sign either, so the type is never registered as one an unsigned type
+        /// cannot read back.
         if (settings.try_infer_integers)
             return std::make_shared<DataTypeInt64>();
         return std::make_shared<DataTypeFloat64>();
+    }
+
+    /// True when the literal's WRITTEN SIGN (not its parsed value, so `-0` counts) is one the caller's
+    /// value reader refuses for an unsigned target. Every integer reader refuses a '-'; whether a '+'
+    /// is refused is a property of the caller's reader, which is what `reader_refuses_plus` carries.
+    bool hasUnreadableSign(std::string_view span, bool reader_refuses_plus)
+    {
+        if (span.empty())
+            return false;
+        if (span.front() == '-')
+            return true;
+        return reader_refuses_plus && span.front() == '+';
     }
 
     /// True when the span is written like a float rather than like an integer. Only reached after the
@@ -1067,7 +1102,8 @@ namespace
     /// than reusing the delimiting pass keeps the answer independent of buffer geometry.
     template <bool is_json>
     DataTypePtr classifyNumberSpan(
-        std::string_view span, bool field_was_untouched, const FormatSettings & settings, JSONInferenceInfo * json_info)
+        std::string_view span, bool field_was_untouched, const FormatSettings & settings, JSONInferenceInfo * json_info,
+        bool reader_refuses_plus)
     {
         /// Nothing was delimited. A collection closing right after a delimiter read no characters at
         /// all and keeps its previous answer; a failed `true`/`false`/`null` probe walked past what it
@@ -1086,8 +1122,8 @@ namespace
             if (tryReadIntText(tmp_int, int_buf) && int_buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
-                if (json_info && tmp_int < 0)
-                    json_info->negative_integers.insert(type.get());
+                if (json_info && hasUnreadableSign(span, reader_refuses_plus))
+                    json_info->markNegativeInteger(type);
                 return type;
             }
 
@@ -1129,7 +1165,8 @@ namespace
     /// delimited as empty can be told apart from a leftover a failed literal probe walked past.
     template <bool is_json>
     DataTypePtr tryInferNumber(
-        ReadBuffer & buf, size_t field_start_count, const FormatSettings & settings, JSONInferenceInfo * json_info)
+        ReadBuffer & buf, size_t field_start_count, const FormatSettings & settings, JSONInferenceInfo * json_info,
+        bool reader_refuses_plus)
     {
         if (buf.eof())
             return nullptr;
@@ -1151,7 +1188,8 @@ namespace
             tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional);
 
             return classifyNumberSpan<is_json>(
-                std::string_view(number_start, buf.position() - number_start), field_was_untouched, settings, json_info);
+                std::string_view(number_start, buf.position() - number_start), field_was_untouched, settings, json_info,
+                reader_refuses_plus);
         }
 
         /// Needs a checkpoint to extract the delimited number before classifying it.
@@ -1161,11 +1199,13 @@ namespace
         tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional);
 
         return classifyNumberSpan<is_json>(
-            extractDelimitedNumber(peekable_buf), field_was_untouched, settings, json_info);
+            extractDelimitedNumber(peekable_buf), field_was_untouched, settings, json_info, reader_refuses_plus);
     }
 
     template <bool is_json>
-    DataTypePtr tryInferNumberFromStringImpl(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_inference_info = nullptr)
+    DataTypePtr tryInferNumberFromStringImpl(
+        std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_inference_info = nullptr,
+        bool reader_refuses_plus = false)
     {
         ReadBufferFromString buf(field);
 
@@ -1175,8 +1215,8 @@ namespace
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
-                if (json_inference_info && tmp_int < 0)
-                    json_inference_info->negative_integers.insert(type.get());
+                if (json_inference_info && hasUnreadableSign(field, reader_refuses_plus))
+                    json_inference_info->markNegativeInteger(type);
                 return type;
             }
 
@@ -1204,7 +1244,8 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferString(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    DataTypePtr tryInferString(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, bool reader_refuses_plus)
     {
         String field;
         bool ok = true;
@@ -1232,7 +1273,7 @@ namespace
         {
             if (settings.json.try_infer_numbers_from_strings)
             {
-                if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info))
+                if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info, reader_refuses_plus))
                 {
                     json_info->numbers_parsed_from_json_strings.insert(number_type.get());
                     return number_type;
@@ -1243,7 +1284,9 @@ namespace
         return std::make_shared<DataTypeString>();
     }
 
-    bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
+    bool tryReadJSONObject(
+        ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path,
+        JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         /// max_parser_depth is the primary bound but user-tunable; keep a checkStackSize backstop.
         /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
@@ -1281,12 +1324,12 @@ namespace
 
             if (!buf.eof() && *buf.position() == '{')
             {
-                if (!tryReadJSONObject(buf, settings, paths, current_path, json_info, depth + 1))
+                if (!tryReadJSONObject(buf, settings, paths, current_path, json_info, depth + 1, reader_refuses_plus))
                     return false;
             }
             else
             {
-                auto value_type = tryInferDataTypeForSingleFieldImpl<true>(buf, settings, json_info, depth + 1);
+                auto value_type = tryInferDataTypeForSingleFieldImpl<true>(buf, settings, json_info, depth + 1, reader_refuses_plus);
                 if (!value_type)
                     return false;
 
@@ -1311,16 +1354,18 @@ namespace
         return true;
     }
 
-    DataTypePtr tryInferJSONPaths(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferJSONPaths(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         DataTypeJSONPaths::Paths paths;
-        if (!tryReadJSONObject(buf, settings, paths, {}, json_info, depth))
+        if (!tryReadJSONObject(buf, settings, paths, {}, json_info, depth, reader_refuses_plus))
             return nullptr;
         return std::make_shared<DataTypeJSONPaths>(std::move(paths));
     }
 
     template <bool is_json>
-    DataTypePtr tryInferMapOrObject(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferMapOrObject(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);
@@ -1345,12 +1390,12 @@ namespace
             {
                 /// For JSON key type must be String.
                 json_info->is_object_key = true;
-                key_type = tryInferString<is_json>(buf, settings, json_info);
+                key_type = tryInferString<is_json>(buf, settings, json_info, reader_refuses_plus);
                 json_info->is_object_key = false;
             }
             else
             {
-                key_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, nullptr, depth + 1);
+                key_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1, reader_refuses_plus);
             }
 
             if (key_type)
@@ -1363,7 +1408,7 @@ namespace
                 return nullptr;
             skipWhitespaceIfAny(buf);
 
-            auto value_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1);
+            auto value_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1, reader_refuses_plus);
             if (value_type)
                 value_types.push_back(value_type);
             else
@@ -1397,16 +1442,29 @@ namespace
             if (!checkIfTypesAreEqual(value_types))
                 return nullptr;
 
+            /// Only the last key and value type objects survive, so carry the dropped ones' provenance
+            /// over to them first, as the array path above does.
+            if (checkIfTypesAreEqual(key_types))
+                for (size_t i = 0; i + 1 < key_types.size(); ++i)
+                    carryOverInferenceProvenance(key_types[i], key_types.back(), json_info);
+            for (size_t i = 0; i + 1 < value_types.size(); ++i)
+                carryOverInferenceProvenance(value_types[i], value_types.back(), json_info);
+
             return std::make_shared<DataTypeMap>(key_types.back(), value_types.back());
         }
 
         if (!checkIfTypesAreEqual(key_types))
-            transformInferredTypesIfNeededImpl<is_json>(key_types, settings);
+            transformInferredTypesIfNeededImpl<is_json>(key_types, settings, json_info);
         if (!checkIfTypesAreEqual(value_types))
-            transformInferredTypesIfNeededImpl<is_json>(value_types, settings);
+            transformInferredTypesIfNeededImpl<is_json>(value_types, settings, json_info);
 
         if (!checkIfTypesAreEqual(key_types) || !checkIfTypesAreEqual(value_types))
             return nullptr;
+
+        for (size_t i = 0; i + 1 < key_types.size(); ++i)
+            carryOverInferenceProvenance(key_types[i], key_types.back(), json_info);
+        for (size_t i = 0; i + 1 < value_types.size(); ++i)
+            carryOverInferenceProvenance(value_types[i], value_types.back(), json_info);
 
         auto key_type = removeNullable(key_types.back());
         if (!DataTypeMap::isValidKeyType(key_type))
@@ -1416,7 +1474,8 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferDataTypeForSingleFieldImpl(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferDataTypeForSingleFieldImpl(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         /// The max_parser_depth limit below is the primary bound, but it is user-tunable; keep a
         /// checkStackSize backstop so a raised limit cannot turn deep nesting into a stack overflow.
@@ -1437,13 +1496,13 @@ namespace
 
         /// Array [field1, field2, ...]
         if (*buf.position() == '[')
-            return tryInferArray<is_json>(buf, settings, json_info, depth);
+            return tryInferArray<is_json>(buf, settings, json_info, depth, reader_refuses_plus);
 
         /// Tuple (field1, field2, ...), if format is not JSON
         if constexpr (!is_json)
         {
             if (*buf.position() == '(')
-                return tryInferTuple(buf, settings, json_info, depth);
+                return tryInferTuple(buf, settings, json_info, depth, reader_refuses_plus);
         }
 
         /// Map/Object for JSON { key1 : value1, key2 : value2, ...}
@@ -1452,16 +1511,16 @@ namespace
             if constexpr (is_json)
             {
                 if (settings.json.try_infer_objects_as_tuples)
-                    return tryInferJSONPaths(buf, settings, json_info, depth);
+                    return tryInferJSONPaths(buf, settings, json_info, depth, reader_refuses_plus);
             }
 
-            return tryInferMapOrObject<is_json>(buf, settings, json_info, depth);
+            return tryInferMapOrObject<is_json>(buf, settings, json_info, depth, reader_refuses_plus);
         }
 
         /// String
         char quote = is_json ? '"' : '\'';
         if (*buf.position() == quote)
-            return tryInferString<is_json>(buf, settings, json_info);
+            return tryInferString<is_json>(buf, settings, json_info, reader_refuses_plus);
 
         /// Bool
         if (checkStringCaseInsensitive("true", buf) || checkStringCaseInsensitive("false", buf))
@@ -1481,7 +1540,7 @@ namespace
         }
 
         /// Number
-        return tryInferNumber<is_json>(buf, field_start_count, settings, json_info);
+        return tryInferNumber<is_json>(buf, field_start_count, settings, json_info, reader_refuses_plus);
     }
 }
 
@@ -1506,12 +1565,104 @@ bool checkIfTypesAreEqual(const DataTypes & types)
     return true;
 }
 
-void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info)
 {
     DataTypes types = {first, second};
-    transformInferredTypesIfNeededImpl<false>(types, settings, nullptr);
+    transformInferredTypesIfNeededImpl<false>(types, settings, json_info);
     first = std::move(types[0]);
     second = std::move(types[1]);
+}
+
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
+{
+    transformInferredTypesIfNeeded(first, second, settings, nullptr);
+}
+
+bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr & second)
+{
+    if (!first || !second)
+        return false;
+
+    /// Pair exactly what transformTypesRecursively would pair, no more: a pair it never reaches has no
+    /// widening to decline, so reporting one there refuses an unrelated merge. See the header.
+    auto paired = [](const DataTypePtr & lhs, const DataTypePtr & rhs, const auto & self) -> bool
+    {
+        /// Nullable is peeled on either side before comparing, so an asymmetric one still pairs.
+        const auto & left = removeNullable(lhs);
+        const auto & right = removeNullable(rhs);
+
+        const TypeIndex left_id = left->getTypeId();
+        const TypeIndex right_id = right->getTypeId();
+
+        if ((left_id == TypeIndex::Int64 && right_id == TypeIndex::UInt64)
+            || (left_id == TypeIndex::UInt64 && right_id == TypeIndex::Int64))
+            return true;
+
+        /// Different container kinds: the transformation stops here, so nothing below is ever paired.
+        if (left_id != right_id)
+            return false;
+
+        if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+        {
+            const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+            return self(left_array->getNestedType(), right_array->getNestedType(), self);
+        }
+
+        if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+        {
+            const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+            return self(left_map->getKeyType(), right_map->getKeyType(), self)
+                || self(left_map->getValueType(), right_map->getValueType(), self);
+        }
+
+        if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+        {
+            const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+            /// transformTypesRecursively transforms tuple elements only when the sizes and the element
+            /// names of all tuples are equal, so anything else is never paired either.
+            if (left_elements.size() != right_elements.size()
+                || left_tuple->getElementNames() != right_tuple->getElementNames())
+                return false;
+
+            for (size_t i = 0; i != left_elements.size(); ++i)
+            {
+                if (self(left_elements[i], right_elements[i], self))
+                    return true;
+            }
+            return false;
+        }
+
+        return false;
+    };
+
+    return paired(first, second, paired);
+}
+
+void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & to, JSONInferenceInfo * json_info)
+{
+    if (!json_info || !from || !to || from.get() == to.get() || !from->equals(*to))
+        return;
+
+    if (json_info->isNegativeInteger(from.get()))
+        json_info->markNegativeInteger(to);
+
+    /// Equality fixes the child order for every container inference produces, so the two walks line up.
+    /// It does NOT for Object, which inference never yields here: do not reuse this for one.
+    std::vector<const IDataType *> from_children;
+    std::vector<const IDataType *> to_children;
+    from->forEachChild([&](const IDataType & child) { from_children.push_back(&child); });
+    to->forEachChild([&](const IDataType & child) { to_children.push_back(&child); });
+    if (from_children.size() != to_children.size())
+        return;
+
+    for (size_t i = 0; i != from_children.size(); ++i)
+    {
+        /// A child is owned by `to`, so retaining `to` keeps the child's address alive with it.
+        if (json_info->isNegativeInteger(from_children[i]))
+            json_info->markNegativeIntegerWithin(to_children[i], to);
+    }
 }
 
 void transformInferredJSONTypesIfNeeded(
@@ -1728,14 +1879,20 @@ DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSetting
     return tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
 }
 
-DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings)
+DataTypePtr tryInferDataTypeForSingleField(
+    std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info, bool reader_refuses_plus)
 {
     ReadBufferFromString buf(field);
-    auto type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
+    auto type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, /*depth=*/1, reader_refuses_plus);
     /// Check if there is no unread data in buffer.
     if (!buf.eof())
         return nullptr;
     return type;
+}
+
+DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings)
+{
+    return tryInferDataTypeForSingleField(field, settings, nullptr);
 }
 
 DataTypePtr tryInferDataTypeForSingleJSONField(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)

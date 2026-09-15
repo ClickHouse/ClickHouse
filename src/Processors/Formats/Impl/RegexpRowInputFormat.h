@@ -81,6 +81,8 @@ private:
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
+    void carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained) override;
+
     using EscapingRule = FormatSettings::EscapingRule;
     RegexpFieldExtractor field_extractor;
     PeekableReadBuffer buf;

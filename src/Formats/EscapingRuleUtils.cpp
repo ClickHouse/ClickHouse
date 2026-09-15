@@ -392,12 +392,15 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
-            auto type = tryInferDataTypeForSingleField(field, format_settings);
+            /// These rules read values with readIntTextUnsafe, which refuses a leading '+'; see
+            /// hasUnreadableSign.
+            const bool reader_refuses_plus = !format_settings.allow_number_leading_zeros;
 
-            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
-            /// ReadHelpers.h) reads the leading '0' as the whole value.
-            /// allow_number_leading_zeros (hive partitioning) opts out.
-            if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
+            auto type = tryInferDataTypeForSingleField(field, format_settings, json_info, reader_refuses_plus);
+
+            /// readIntTextUnsafe reads a leading '0' as the whole value and stops before a '+', so an
+            /// integer starting with either cannot be read back and must stay a String.
+            if (type && (field[0] == '0' || field[0] == '+') && field.size() != 1 && reader_refuses_plus
                 && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
 
@@ -431,7 +434,7 @@ void transformInferredTypesByEscapingRuleIfNeeded(DataTypePtr & first, DataTypeP
         case FormatSettings::EscapingRule::Raw: [[fallthrough]];
         case FormatSettings::EscapingRule::Quoted: [[fallthrough]];
         case FormatSettings::EscapingRule::CSV:
-            transformInferredTypesIfNeeded(first, second, settings);
+            transformInferredTypesIfNeeded(first, second, settings, json_info);
             break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
