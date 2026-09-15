@@ -83,6 +83,7 @@ FROM
 );
 SELECT arrayMinIndex([nan::Float32, -inf::Float32, -inf::Float32, 0::Float32]), arrayMaxIndex([nan::Float32, inf::Float32, inf::Float32, 0::Float32]);
 SELECT arrayMinIndex([nan::Float64, -inf::Float64, -inf::Float64, 0::Float64]), arrayMaxIndex([nan::Float64, inf::Float64, inf::Float64, 0::Float64]);
+SELECT arrayMinIndex([-inf::Float32, 1::Float32, 2::Float32]), arrayMaxIndex([1::Float32, 2::Float32, inf::Float32]), arrayMinIndex([-inf::Float64, 1::Float64, 2::Float64]), arrayMaxIndex([1::Float64, 2::Float64, inf::Float64]);
 SELECT arrayMinIndex([(2, 'b'), (1, 'c'), (1, 'a')]), arrayMaxIndex([(2, 'b'), (1, 'c'), (1, 'a')]);
 SELECT arrayMinIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]), arrayMaxIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]);
 SELECT arrayMinIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]), arrayMaxIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]);
