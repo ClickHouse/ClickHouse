@@ -1,0 +1,9 @@
+after delete
+1	10
+2	20
+strict read
+ICEBERG_SPECIFICATION_VIOLATION
+tolerant read
+1	10
+2	20
+2	20

@@ -331,13 +331,17 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
     const size_t partition_spec_fields_count = partition_specification->size();
 
-    /// The partition key is derived from the header schema, so it cannot be built while the header's
-    /// schema-id is bound to two different schemas by manifest headers and metadata.json does not
-    /// define it (see `IcebergSchemaProcessor::isSchemaSettled`). A walk that only collects file paths
-    /// and record counts (`remove_orphan_files`, `expire_snapshots`) must still get through such a
-    /// manifest, so its entries carry no partition values and no partition pruning is applied to
-    /// them. Everything that does need the schema of this id (pruning by column bounds, reading or
-    /// rewriting the files) still fails at the schema lookup.
+    /// The partition key expression is derived from the header schema, so it cannot be built while the
+    /// header's schema-id is bound to two different schemas by manifest headers and metadata.json does
+    /// not define it (see `IcebergSchemaProcessor::isSchemaSettled`). A walk that only collects file
+    /// paths and record counts (`remove_orphan_files`, `expire_snapshots`) must still get through such
+    /// a manifest, so no partition pruning is applied to its entries. The partition spec itself (source
+    /// ids, transforms, field names) is written in the header independently of any schema and is kept:
+    /// it is the identity by which position and equality deletes are matched to data files
+    /// (`defineDeletesSpan`), and an empty spec would make the entries of this manifest compare
+    /// different from every entry written with the same spec, silently detaching their delete files.
+    /// Everything that does need the schema of this id (pruning by column bounds, reading or rewriting
+    /// the files) still fails at the schema lookup.
     PartitionKeyFromSpec partition_key;
     if (schema_processor.isSchemaSettled(manifest_schema_id))
     {
@@ -345,10 +349,13 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     }
     else
     {
+        /// Unlike `buildPartitionKeyFromSpec`, this keeps the fields whose source column the schema does
+        /// not have, because there is no schema to check them against.
+        partition_key.partition_specification = parsePartitionSpecification(partition_specification);
         LOG_WARNING(
             getLogger("ManifestFileIterator"),
             "Manifest file '{}' carries schema-id {} that manifest file headers bind to different schemas and metadata.json "
-            "does not define; its partition key is not built and its data files are not pruned by partition",
+            "does not define; its partition key expression is not built and its data files are not pruned by partition",
             path_to_manifest_file_,
             manifest_schema_id);
     }

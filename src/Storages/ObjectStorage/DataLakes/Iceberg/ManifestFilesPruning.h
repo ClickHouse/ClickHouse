@@ -44,6 +44,12 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const IcebergSchemaProcessor & schema_processor,
     DB::ContextPtr context);
 
+/// The partition spec fields as written in the manifest header, without consulting any schema:
+/// source column id, transform, field name and the position of the field in the partition tuples.
+/// This is the partition-spec identity that delete files are matched to data files by, so it is
+/// needed even when the header's schema cannot be used to build the partition key expression.
+PartitionSpecification parsePartitionSpecification(const Poco::JSON::Array::Ptr & partition_specification_json);
+
 /// NOTE: tricky part to support RENAME column.
 /// Takes ActionDAG representation of user's WHERE expression and
 /// renames columns to their original numeric ID's in iceberg.
