@@ -103,12 +103,20 @@ def test_recreated_on_rotation(start_cluster):
 
     # Trigger a rotation: the structure of the log table no longer matches the expected
     # one, so at the first flush after a restart it is renamed to `query_log_N` and
-    # created anew, and the union table is recreated as well.
+    # created anew. The table on the union name is not one this server generated, so it is
+    # left alone - replacing it would drop it with its data.
     node3.query("ALTER TABLE system.query_log ADD COLUMN test_rotation UInt8")
     node3.restart_clickhouse()
     node3.query("SYSTEM FLUSH LOGS query_log")
 
     assert node3.query("EXISTS TABLE system.query_log_0").strip() == "1"
+    assert "Memory" in node3.query(
+        "SHOW CREATE TABLE system.all_query_log FORMAT TSVRaw"
+    )
+
+    # Once that table is gone, the union table is created again.
+    node3.query("DROP TABLE system.all_query_log SYNC")
+    node3.query("SYSTEM FLUSH LOGS query_log")
     assert "AS merge" in node3.query(
         "SHOW CREATE TABLE system.all_query_log FORMAT TSVRaw"
     )
