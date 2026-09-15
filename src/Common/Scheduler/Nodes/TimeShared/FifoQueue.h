@@ -167,9 +167,11 @@ public:
                 cancelActivation();
             }
         }
-        // Now notify all collected requests about the failure without holding the mutex
+        // Now notify all collected requests about the failure without holding the mutex.
+        // Format the limit from the local `value` (== the max_queued just set) rather than reading
+        // the mutex-protected member here, to avoid a data race with a concurrent limit update.
         auto exception = std::make_exception_ptr(
-            Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {}", max_queued));
+            Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {}", value));
         for (ResourceRequest * request : requests_to_fail)
             request->failed(exception);
     }
