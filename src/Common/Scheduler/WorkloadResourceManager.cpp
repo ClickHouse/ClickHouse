@@ -192,8 +192,15 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
             new_info.settings,
             getSharingMode(getUnit())))
         {
+            // A parentless workload is a child of the implicit root, so it must be detached from
+            // (and later reattached to) the implicit root — not skipped — otherwise a priority /
+            // precedence change would update its settings without re-positioning it among the
+            // implicit root's children. (The parent cannot change presence here; that is rejected
+            // above, so old and new parent are both empty or both the same explicit workload.)
             if (!old_info.parent.empty())
                 node_for_workload[old_info.parent]->detachWorkloadChild(node);
+            else
+                implicit_root->detachWorkloadChild(node);
             detached = true;
         }
 
@@ -203,6 +210,8 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
         {
             if (!new_info.parent.empty())
                 node_for_workload[new_info.parent]->attachWorkloadChild(node);
+            else
+                implicit_root->attachWorkloadChild(node);
         }
         updateCurrentVersion();
         SCHED_DBG("WorkloadResourceManager -- [end] updateNode(resource={}, workload={})", resource_name, old_info.name);

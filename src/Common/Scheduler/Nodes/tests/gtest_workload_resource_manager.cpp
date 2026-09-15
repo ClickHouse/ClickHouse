@@ -392,6 +392,39 @@ TEST(SchedulerWorkloadResourceManager, MultipleRoots)
     g.unlock();
 }
 
+// Changing the priority of a parentless workload via CREATE OR REPLACE must re-position it among
+// the implicit root's children, not merely update its settings. Two equal-priority parentless
+// workloads share a single fair branch; giving one a distinct priority must introduce a priority
+// ("prio") policy node under the implicit root. Without the reattach the node would keep its old
+// position and no priority node would appear.
+TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattaches)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    auto has_priority_node = [&]
+    {
+        bool seen = false;
+        t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
+        {
+            if (path.find("/prio/") != String::npos)
+                seen = true;
+        });
+        return seen;
+    };
+
+    // Equal priority: both parentless workloads sit under one fair branch, no priority node.
+    EXPECT_FALSE(has_priority_node());
+
+    // Distinct priority must re-position b under a newly created priority node.
+    t.query("CREATE OR REPLACE WORKLOAD b SETTINGS priority = 1");
+    EXPECT_TRUE(has_priority_node())
+        << "priority change on a parentless workload was not re-positioned under the implicit root";
+}
+
 TEST(SchedulerWorkloadResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
