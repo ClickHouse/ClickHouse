@@ -981,13 +981,13 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
     dead id, and when janedoe rejoins the group and is materialised under a new id the policy would silently
     not apply to her. Now it visibly does not: the table has row policies, none of them for the new janedoe
     (`throw_on_unmatched_row_policies` is set by the harness), and `apply_to_list` no longer names her.
-    """
 
     The discriminating check is the stored definition of the policy: `apply_to_list` and `SHOW CREATE` are
     rendered by `RolesOrUsersSet::toASTWithNames`, which silently drops an id it cannot resolve to a name,
     and the new janedoe is denied with or without the cleanup, so all three look the same with a dangling
     id. `local_directory` rewrites `<policy id>.sql` synchronously on every update, in the attach form that
     names the users by id (`TO ID('<uuid>')`), so the file shows whether the reference is really gone.
+    """
     sync_node_manual()
     policy_query = (
         "SELECT apply_to_all, apply_to_list FROM system.row_policies"
@@ -1012,7 +1012,6 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
         id_before = admin(
             node_manual, "SELECT id FROM system.users WHERE name = 'janedoe'"
         )
-
         janedoe_id = id_before.strip()
         policy_id = admin(
             node_manual,
@@ -1025,6 +1024,7 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
 
         definition = stored_policy_definition()
         assert f"ID('{janedoe_id}')" in definition, definition
+
         ldap_set_memberships("janedoe", set())
         admin(node_manual, "SYSTEM RELOAD USERS")
         assert admin(node_manual, ldap_users_query("janedoe")) == "0\n"
@@ -1046,8 +1046,8 @@ def test_removed_user_is_dropped_from_row_policies_like_drop_user(janedoe_in_rol
             != id_before
         )
         assert admin(node_manual, policy_query) == TSV([["0", "[]"]])
-        error = node_manual.query_and_get_error(
         assert "ID(" not in stored_policy_definition()
+        error = node_manual.query_and_get_error(
             "SELECT count() FROM policy_table", user="janedoe", password="qwerty"
         )
         assert (
