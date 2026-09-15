@@ -916,6 +916,13 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
+    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
+    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
+    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
+    /// branch below, because every shape is matched the same way.
+    if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
+        return {};
+
     auto compile_pattern = [&](const String & pattern)
     {
         std::vector<OptimizedRegularExpression> patterns;
@@ -976,12 +983,6 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     /// Reject short needles: they might match too many dictionary tokens.
     if (end - start < min_pattern_length)
-        return {};
-
-    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
-    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
-    /// would prune a granule holding a matching row.
-    if (case_insensitive && std::any_of(data + start, data + end, UTF8::isASCIIReachableByCaseFolding))
         return {};
 
     String pattern;

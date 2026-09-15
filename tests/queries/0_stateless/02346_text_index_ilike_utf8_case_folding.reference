@@ -24,6 +24,10 @@ array tokenizer, same needle restriction
 [1,2]
 0
 1
+[1,2]
+[1,2]
+0
+1
 Which predicates still reach the dictionary scan
 ILIKE %monde%	1	1
 ILIKE %monkey%	0

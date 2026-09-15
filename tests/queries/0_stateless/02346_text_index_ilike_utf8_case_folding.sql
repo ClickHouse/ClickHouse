@@ -92,6 +92,12 @@ SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zzzk%';
 SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zzzk%');
 SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zzzz%');
 
+-- The array tokenizer also accepts arbitrary patterns, which must honour the same restriction.
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zz_kz%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zz_kz%';
+SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zz_kz%');
+SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zz_zz%');
+
 SELECT 'Which predicates still reach the dictionary scan';
 
 DROP TABLE IF EXISTS tab;
