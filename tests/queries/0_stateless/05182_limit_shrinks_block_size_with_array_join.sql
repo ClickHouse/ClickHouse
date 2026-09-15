@@ -10,7 +10,7 @@ SELECT argMax(read_rows, event_time_microseconds) < 100 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05182_limit';
 
 -- the prefetched pool sizes its reads by marks, not by the block size, so a small LIMIT keeps it off
-SELECT countIf(explain LIKE '%PrefetchedReadPool%') FROM (EXPLAIN PIPELINE SELECT arrayJoin(a) FROM t_aj_limit LIMIT 1 SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, max_threads = 8, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1);
+SELECT countIf(explain LIKE '%PrefetchedReadPool%') FROM (EXPLAIN PIPELINE SELECT arrayJoin(a) FROM t_aj_limit LIMIT 1 SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', max_threads = 8, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1);
 
 DROP TABLE t_aj_limit;
 
