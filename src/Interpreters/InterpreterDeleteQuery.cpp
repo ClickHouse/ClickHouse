@@ -25,6 +25,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageTableProxy.h>
 
 
 namespace DB
@@ -107,11 +108,18 @@ BlockIO InterpreterDeleteQuery::execute()
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+
+    /// A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in, which both
+    /// defeats a downcast to the engine and answers metadata queries from the columns cached out of the
+    /// `CREATE TABLE` query alone - without the projections, which the guard below has to see. A
+    /// `DELETE` materializes the table in any case, so resolve it to the real storage right away.
+    StoragePtr engine_table = materializeLazyTable(table);
+
     /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
     /// metadata is not loaded until the first access.  Initialize it now so that
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(getContext(), false);
 
     if (table->supportsDelete())
     {
@@ -161,7 +169,9 @@ BlockIO InterpreterDeleteQuery::execute()
 
         if (metadata_snapshot->hasProjections())
         {
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+            /// Note that the downcast is of the storage behind a possible lazy-load stand-in: otherwise
+            /// the guard is silently skipped and the `THROW` mode drops the projections instead.
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(engine_table.get()))
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "
