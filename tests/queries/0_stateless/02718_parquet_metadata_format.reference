@@ -6,6 +6,7 @@
     "metadata_size": 617,
     "total_uncompressed_size": 314147,
     "total_compressed_size": 27081,
+    "key_value_metadata": {},
     "columns": [
         {
             "name": "number",
@@ -239,6 +240,9 @@
     "metadata_size": 267,
     "total_uncompressed_size": 105,
     "total_compressed_size": 128,
+    "key_value_metadata": {
+        "writer.model.name": "example"
+    },
     "columns": [
         {
             "name": "ipv6",
