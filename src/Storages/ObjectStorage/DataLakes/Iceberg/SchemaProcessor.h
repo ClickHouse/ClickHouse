@@ -28,6 +28,16 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
 
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
+/// Where a schema JSON was read from. The table metadata is the source of truth for the
+/// schema-id -> schema mapping; the copy embedded in a manifest file is the one the engine that
+/// wrote that manifest serialized at write time and is only used for schema-ids the table
+/// metadata does not describe.
+enum class SchemaSource
+{
+    TableMetadata,
+    ManifestFile,
+};
+
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -90,7 +100,14 @@ class IcebergSchemaProcessor
 public:
     explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
 
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
+    /// Register every schema of one table metadata file as authoritative, without building the
+    /// ClickHouse schema for it: a schema-id that is never read must not make the table unreadable.
+    void addTableMetadataSchemas(const Poco::JSON::Array::Ptr & schemas);
+
+    /// `schema_id_override` is for manifest files, whose schema-id is the Avro metadata key
+    /// `schema-id` rather than the `schema-id` member of the embedded schema JSON.
+    void addIcebergTableSchema(
+        Poco::JSON::Object::Ptr schema_ptr, SchemaSource source, std::optional<Int32> schema_id_override = std::nullopt);
     std::shared_ptr<NamesAndTypesList> getClickHouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
@@ -123,12 +140,19 @@ private:
     std::atomic<Int64> last_column_id{-1};
 
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
+    /// Schemas as described by the newest table metadata file read so far, by schema-id.
+    std::unordered_map<Int32, Poco::JSON::Object::Ptr> table_metadata_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
+
+    std::unordered_map<String, String> getTypeMapping() const;
+    void dropCachedSchema(Int32 schema_id) TSA_REQUIRES(mutex);
+    void registerTableMetadataSchema(
+        Int32 schema_id, Poco::JSON::Object::Ptr schema_ptr, const std::unordered_map<String, String> & type_mapping) TSA_REQUIRES(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);

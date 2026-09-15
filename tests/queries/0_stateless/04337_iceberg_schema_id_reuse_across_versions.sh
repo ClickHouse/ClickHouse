@@ -5,8 +5,10 @@
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/107316
 # A metadata version that re-binds an existing schema-id to different fields
 # used to abort the server with a chassert in addIcebergTableSchema (debug) and
-# silently keep the stale cached schema (release). It must now be rejected with
-# a clean ICEBERG_SPECIFICATION_VIOLATION in all builds, leaving the server up.
+# silently keep the stale cached schema (release). The table metadata is the
+# source of truth for the schema-id -> schema mapping and data files are
+# resolved by field id, so the newest metadata version must simply win: the read
+# succeeds under the schema the table currently declares, leaving the server up.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -51,10 +53,11 @@ with open(tmp_file, "w") as fh:
 os.rename(tmp_file, next_file)
 PY
 
-# Forced fresh re-read re-parses the new version: addIcebergTableSchema(0, {c9,c1})
-# collides with the cached {c0,c1}. Expect a clean specification-violation error.
-${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT count() FROM ${TABLE}" 2>&1 \
-    | grep -q -F "ICEBERG_SPECIFICATION_VIOLATION" && echo "rejected" || echo "NOT REJECTED"
+# Forced fresh re-read re-parses the new version: schema-id 0 is now {c9,c1}, while the
+# already written manifest file still embeds {c0,c1} for it. The row is returned under the
+# name the newest metadata declares, and its value still resolves by field id.
+# --send_logs_level=fatal: the re-binding is reported as a warning by the server.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --iceberg_metadata_staleness_ms=0 --query "SELECT c9, c1 FROM ${TABLE}"
 
 # The server must still be alive (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 'alive'"

@@ -351,22 +351,39 @@ bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, cons
     return true;
 }
 
-bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
+String stringifyJSON(const Poco::JSON::Object & object)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    object.stringify(oss);
+    return oss.str();
+}
+
+/// Name the first difference between two schemas bound to the same schema-id. Returns an empty
+/// optional when they denote the same schema.
+std::optional<String>
+describeSchemaDivergence(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
 {
     if (!first.isArray(f_fields) || !second.isArray(f_fields))
-        return false;
+        return fmt::format("one of the schemas has no '{}' array", f_fields);
     const auto first_fields = first.getArray(f_fields);
     const auto second_fields = second.getArray(f_fields);
     if (first_fields->size() != second_fields->size())
-        return false;
+        return fmt::format("they have {} and {} top-level fields", first_fields->size(), second_fields->size());
     for (UInt32 i = 0; i != first_fields->size(); ++i)
     {
         const auto first_field = first_fields->getObject(i);
         const auto second_field = second_fields->getObject(i);
-        if (!first_field || !second_field || !schemaFieldsAreStructurallyIdentical(*first_field, *second_field, type_mapping))
-            return false;
+        if (!first_field || !second_field)
+            return fmt::format("field #{} is not an object in one of the schemas", i);
+        if (!schemaFieldsAreStructurallyIdentical(*first_field, *second_field, type_mapping))
+            return fmt::format("field #{} is {} and {}", i, stringifyJSON(*first_field), stringifyJSON(*second_field));
     }
-    return true;
+    return {};
+}
+
+bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
+{
+    return !describeSchemaDivergence(first, second, type_mapping).has_value();
 }
 
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
@@ -393,33 +410,127 @@ namespace Iceberg
 
 std::string IcebergSchemaProcessor::default_link{};
 
-void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
+std::unordered_map<String, String> IcebergSchemaProcessor::getTypeMapping() const
+{
+    std::unordered_map<String, String> type_mapping;
+    if (allow_geo_parser)
+    {
+        type_mapping[f_geography] = f_binary;
+        type_mapping[f_geometry] = f_binary;
+    }
+    return type_mapping;
+}
+
+void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
+{
+    iceberg_table_schemas_by_ids.erase(schema_id);
+    clickhouse_table_schemas_by_ids.erase(schema_id);
+    std::erase_if(transform_dags_by_ids, [schema_id](const auto & item) { return item.first.first == schema_id || item.first.second == schema_id; });
+    std::erase_if(clickhouse_types_by_source_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
+    std::erase_if(clickhouse_ids_by_source_names, [schema_id](const auto & item) { return item.first.first == schema_id; });
+}
+
+void IcebergSchemaProcessor::registerTableMetadataSchema(
+    Int32 schema_id, Poco::JSON::Object::Ptr schema_ptr, const std::unordered_map<String, String> & type_mapping)
+{
+    table_metadata_schemas_by_ids[schema_id] = schema_ptr;
+
+    auto built_it = iceberg_table_schemas_by_ids.find(schema_id);
+    if (built_it == iceberg_table_schemas_by_ids.end())
+        return;
+    auto divergence = describeSchemaDivergence(*built_it->second, *schema_ptr, type_mapping);
+    if (!divergence)
+        return;
+
+    /// The newest table metadata is the source of truth: data files are resolved by field id, so a
+    /// schema-id re-bound by a newer metadata version is applied instead of the schema cached earlier.
+    LOG_WARNING(
+        getLogger("IcebergSchemaProcessor"),
+        "Iceberg schema with schema-id {} differs from the schema cached for that schema-id: {}. Using the one from the table metadata",
+        schema_id,
+        *divergence);
+    dropCachedSchema(schema_id);
+}
+
+void IcebergSchemaProcessor::addTableMetadataSchemas(const Poco::JSON::Array::Ptr & schemas)
 {
     std::lock_guard lock(mutex);
 
-    Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
+    const auto type_mapping = getTypeMapping();
+    std::unordered_map<Int32, Poco::JSON::Object::Ptr> schemas_of_this_metadata_file;
+    for (UInt32 i = 0; i != schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(i);
+        /// `schema-id` is optional in a v1 schema serialization; without it the entry maps no id.
+        if (!schema || !schema->has(f_schema_id))
+            continue;
+
+        Int32 schema_id = schema->getValue<Int32>(f_schema_id);
+        auto [it, inserted] = schemas_of_this_metadata_file.emplace(schema_id, schema);
+        if (!inserted)
+        {
+            /// Within one table metadata file a schema-id denotes exactly one schema, so two
+            /// different schemas sharing an id there are malformed metadata and nothing can
+            /// resolve which one the data files were written under.
+            if (auto divergence = describeSchemaDivergence(*it->second, *schema, type_mapping))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg table metadata binds schema-id {} to two different schemas: {}",
+                    schema_id,
+                    *divergence);
+            continue;
+        }
+        registerTableMetadataSchema(schema_id, schema, type_mapping);
+    }
+}
+
+void IcebergSchemaProcessor::addIcebergTableSchema(
+    Poco::JSON::Object::Ptr schema_ptr, SchemaSource source, std::optional<Int32> schema_id_override)
+{
+    std::lock_guard lock(mutex);
+
+    Int32 schema_id = schema_id_override.value_or(schema_ptr->getValue<Int32>(f_schema_id));
 
     /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
     /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
     if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
         return;
 
+    const auto type_mapping = getTypeMapping();
+
+    if (source == SchemaSource::TableMetadata)
+    {
+        registerTableMetadataSchema(schema_id, schema_ptr, type_mapping);
+    }
+    else if (auto authoritative_it = table_metadata_schemas_by_ids.find(schema_id);
+             authoritative_it != table_metadata_schemas_by_ids.end())
+    {
+        /// The schema embedded in a manifest file is the copy the engine that wrote that manifest
+        /// serialized at write time. The table metadata is the source of truth for the
+        /// schema-id -> schema mapping, so the embedded copy only fills a gap for a schema-id the
+        /// table metadata does not describe.
+        if (auto divergence = describeSchemaDivergence(*authoritative_it->second, *schema_ptr, type_mapping))
+            LOG_DEBUG(
+                getLogger("IcebergSchemaProcessor"),
+                "Iceberg schema with schema-id {} embedded in a manifest file differs from the one in the table metadata: {}. "
+                "Using the one from the table metadata",
+                schema_id,
+                *divergence);
+        schema_ptr = authoritative_it->second;
+    }
+
     current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
-        {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
-        }
-        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
-        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
-                schema_id);
+        /// Two manifest files disagree about a schema-id that the table metadata does not describe.
+        if (auto divergence = describeSchemaDivergence(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
+            LOG_WARNING(
+                getLogger("IcebergSchemaProcessor"),
+                "Iceberg schema-id {} is bound to two different schemas by the manifest files of this table: {}. "
+                "Using the one read first",
+                schema_id,
+                *divergence);
     }
     else
     {

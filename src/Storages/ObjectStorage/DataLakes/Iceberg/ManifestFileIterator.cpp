@@ -313,9 +313,31 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor.addIcebergTableSchema(schema_object);
+    auto manifest_schema_id_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema_id);
+    Int32 manifest_schema_id = 0;
+    if (manifest_schema_id_string.has_value())
+    {
+        manifest_schema_id = parse<Int32>(*manifest_schema_id_string);
+        if (schema_object->has(f_schema_id) && schema_object->getValue<Int32>(f_schema_id) != manifest_schema_id)
+            LOG_DEBUG(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' was written under schema-id {}, but the schema it embeds is serialized with schema-id {}",
+                path_to_manifest_file_,
+                manifest_schema_id,
+                schema_object->getValue<Int32>(f_schema_id));
+    }
+    else if (schema_object->has(f_schema_id))
+        manifest_schema_id = schema_object->getValue<Int32>(f_schema_id);
+    else
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read Iceberg table: manifest file '{}' provides no '{}', neither in its metadata nor in its '{}'",
+            path_to_manifest_file_,
+            f_schema_id,
+            f_schema);
+
+    schema_processor.addIcebergTableSchema(schema_object, Iceberg::SchemaSource::ManifestFile, manifest_schema_id);
 
     /// Every entry of this manifest carries one partition value per spec field, including the
     /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
