@@ -44,6 +44,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int LIMIT_EXCEEDED;
 }
 
 static Block materializeScalar(InputFormatPtr input)
@@ -216,11 +217,12 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    if (settings[Setting::http_max_multipart_form_data_size])
+    const size_t form_data_size_limit = settings[Setting::http_max_multipart_form_data_size];
+    if (form_data_size_limit)
         read_buffer = std::make_unique<LimitReadBuffer>(
             stream,
             LimitReadBuffer::Settings{
-                .read_no_more = settings[Setting::http_max_multipart_form_data_size],
+                .read_no_more = form_data_size_limit > form_data_bytes_read ? form_data_size_limit - form_data_bytes_read : 0,
                 .expect_eof = true,
                 .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
             });
@@ -293,6 +295,17 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
+
+    form_data_bytes_read += read_buffer->count();
+
+    /// `expect_eof` on the limiter above only fires when the format asks for a byte past the budget, so
+    /// the budget is enforced here as well, whatever the format did with the part.
+    if (form_data_size_limit && !stream.eof())
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "Total size of multipart/form-data exceeds the maximum of {} bytes. This limit can be tuned "
+            "by the 'http_max_multipart_form_data_size' setting",
+            form_data_size_limit);
 }
 
 }
