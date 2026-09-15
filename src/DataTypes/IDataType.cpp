@@ -101,7 +101,7 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
     return column;
 }
 
-MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
+ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
     column->insert(field);
@@ -109,7 +109,7 @@ MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & fi
 }
 
 
-MutableColumnConstPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
+ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 {
     return createColumnConst(size, getDefault());
 }
@@ -199,9 +199,12 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         auto tmp_subpath = subpath;
                         if (tmp_subpath[i].creator)
                         {
+                            /// Build the serialization before the type is wrapped, so that a creator
+                            /// inspecting its prev_type argument sees the type the serialization
+                            /// actually serializes. Same order as in ISerialization::createFromPath.
+                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;
@@ -356,11 +359,11 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
     for (auto kind : kind_stack)
     {
         if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
-            serialization = SerializationSparse::create(serialization);
+            serialization = std::make_shared<SerializationSparse>(serialization);
         else if (kind == ISerialization::Kind::DETACHED)
-            serialization = SerializationDetached::create(serialization);
+            serialization = std::make_shared<SerializationDetached>(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)
-            serialization = SerializationReplicated::create(serialization);
+            serialization = std::make_shared<SerializationReplicated>(serialization);
     }
 
     return serialization;

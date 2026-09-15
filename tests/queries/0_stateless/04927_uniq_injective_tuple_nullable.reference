@@ -1,0 +1,28 @@
+tuple
+3	3	3	3	3
+3	3	3	3	3
+nested, LowCardinality and multiple arguments
+3	3
+3	3
+2
+2
+constant folding must not change the result
+1
+1
+1
+the optimization still applies to a not Nullable argument
+QUERY id: 0
+  PROJECTION COLUMNS
+    uniqExact((number)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: uniqExact, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_3, constant_value_type: UInt8
+  SETTINGS optimize_injective_functions_inside_uniq=1

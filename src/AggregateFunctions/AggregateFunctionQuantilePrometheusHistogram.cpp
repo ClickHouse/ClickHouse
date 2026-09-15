@@ -162,7 +162,7 @@ private:
             if (upper_bound_it->first > 0)
             {
                 // If position is in the first bucket and the first bucket's upper bounds is positive, perform interpolation as if the first bucket's lower bounds is 0.
-                return static_cast<Value>(static_cast<Float64>(upper_bound_it->first) * (position / static_cast<Float64>(upper_bound_it->second)));
+                return static_cast<Value>(upper_bound_it->first * (position / static_cast<Float64>(upper_bound_it->second)));
             }
             else
             {
@@ -182,14 +182,8 @@ private:
         UnderlyingType histogram_bucket_upper_bound = upper_bound_it->first;
         CumulativeHistogramValue histogram_bucket_upper_value = upper_bound_it->second;
 
-        /// Subtract in the original integer types and cast the difference to `Float64`,
-        /// so we don't lose 1-count resolution above `2^53` for `UInt64` cumulative counts.
-        Float64 bucket_bound_width = static_cast<Float64>(histogram_bucket_upper_bound - histogram_bucket_lower_bound);
-        Float64 bucket_value_width = static_cast<Float64>(histogram_bucket_upper_value - histogram_bucket_lower_value);
-        Float64 position_offset = position - static_cast<Float64>(histogram_bucket_lower_value);
-
         // Interpolate between the lower and upper bounds of the bucket that the position is in.
-        return static_cast<Value>(static_cast<Float64>(histogram_bucket_lower_bound) + bucket_bound_width * position_offset / bucket_value_width);
+        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - static_cast<Float64>(histogram_bucket_lower_value)) / static_cast<Float64>(histogram_bucket_upper_value - histogram_bucket_lower_value));
     }
 };
 
@@ -249,7 +243,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

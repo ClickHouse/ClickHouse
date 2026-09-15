@@ -1,24 +1,21 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <string_view>
 #include <variant>
-#include <list>
 
 namespace DB
 {
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
-using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
+using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::vector<ProcessorPtr>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -34,8 +31,6 @@ struct ExplainPlanOptions;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
-
-struct ExplainFormatSettings;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -83,7 +78,18 @@ public:
 
     virtual const SortDescription & getSortDescription() const;
 
-    using FormatSettings = ExplainFormatSettings;
+    struct FormatSettings
+    {
+        WriteBuffer & out;
+        std::string header_prefix;
+        std::string detail_prefix;
+        size_t offset = 0;
+        const size_t base_indent = 2;
+        const char indent_char = ' ';
+        const bool write_header = false;
+        bool compact = false;
+        bool pretty = false;
+    };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
     virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const {}
@@ -97,11 +103,8 @@ public:
     virtual void describeProjections(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeProjections(FormatSettings & /*settings*/) const {}
 
-    /// Get description of the distributed plan. Shown with option `distributed = 1`.
+    /// Get description of the distributed plan. Shown in with options `distributed = 1
     virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
-
-    /// Get description of the distributed pipeline. Shown with option `distributed = 1` in EXPLAIN PIPELINE.
-    virtual void describeDistributedPipeline(FormatSettings & /*settings*/, bool /*distributed*/) {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
@@ -120,13 +123,6 @@ public:
     void updateInputHeaders(SharedHeaders input_headers_);
     void updateInputHeader(SharedHeader input_header, size_t idx = 0);
 
-    /// Returns true if this step's expressions contain correlated columns (`PLACEHOLDER` action nodes).
-    /// Such plans cannot be executed standalone and require decorrelation first.
-    /// The default returns false; every subclass that stores an `ActionsDAG` (or any
-    /// other container of expression actions that may hold `PLACEHOLDER` nodes) MUST
-    /// override this to check its expressions. Otherwise correlated subqueries may
-    /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
-    /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
 
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
@@ -136,37 +132,20 @@ public:
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
-    struct RemoveUnusedColumnsResult
+    enum class RemovedUnusedColumns
     {
-        /// Sentinel for kept_output_positions entries that were added
-        /// (e.g., a dummy column in JoinStepLogical) and have no original output position.
-        static constexpr size_t NEWLY_ADDED_COLUMN_POSITION = std::numeric_limits<size_t>::max();
-
-        /// Whether the step was actually modified.
-        /// Needed to distinguish "removed all outputs" from "nothing changed",
-        /// since both can have empty required_input_positions and kept_output_positions.
-        bool changed = false;
-
-        /// Required input positions per child (outer index = child_id).
-        /// Empty outside vector means no inputs were changed.
-        /// Empty inside vector means the step doesn't require any inputs from the child.
-        std::vector<std::vector<size_t>> required_input_positions;
-
-        /// Which original output positions survived, in order.
-        /// Only meaningful if `changed` is true, otherwise it shouldn't be used.
-        /// Maps new output position to the original output position.
-        /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
-        std::vector<size_t> kept_output_positions;
+        None,
+        OutputOnly,
+        OutputAndInput
     };
 
-    /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
-    /// required_output_positions must be a sorted vector of indices into the step's current output header.
-    /// Each position uniquely identifies a column even when names are duplicated.
-    /// It is guaranteed that the output header of the step will contain all columns at those positions
-    /// and might contain some other columns too.
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
+    /// required_outputs must be a maybe empty subset of the current outputs of the step.
+    /// It is guaranteed that the output header of the step will contain all columns from
+    /// required_outputs and might contain some other columns too.
     /// Can be used only if canRemoveUnusedColumns returns true.
     /// The order of the remaining outputs must be preserved.
-    virtual RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
+    virtual RemovedUnusedColumns removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;

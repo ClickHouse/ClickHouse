@@ -62,8 +62,8 @@ private:
     /// after preparation
     mutable bool prepared = false;
     mutable std::vector<BackupFileInfo *> file_infos_for_all_hosts;
-    mutable size_t num_files{};
-    mutable size_t total_size_of_files{};
+    mutable size_t num_files;
+    mutable size_t total_size_of_files;
 };
 
 }

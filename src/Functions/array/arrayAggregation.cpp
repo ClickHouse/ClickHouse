@@ -15,6 +15,7 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
+
 namespace DB
 {
 
@@ -226,7 +227,7 @@ struct ArrayAggregateImpl
             if (!column_const)
                 return false;
 
-            const AggregationType x = static_cast<AggregationType>(column_const->template getValue<Element>()); // NOLINT
+            const AggregationType x = column_const->template getValue<Element>(); // NOLINT
             const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
 
             typename ColVecResultType::MutablePtr res_column;
@@ -324,7 +325,7 @@ struct ArrayAggregateImpl
             }
 
             size_t count = 1;
-            aggregate_value = static_cast<AggregationType>(data[pos]); // NOLINT
+            aggregate_value = data[pos]; // NOLINT
             ++pos;
 
             for (; pos < offsets[i]; ++pos)
@@ -334,7 +335,7 @@ struct ArrayAggregateImpl
                 if constexpr (aggregate_operation == AggregateOperation::sum ||
                             aggregate_operation == AggregateOperation::average)
                 {
-                    aggregate_value += static_cast<AggregationType>(element);
+                    aggregate_value += element;
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
@@ -349,7 +350,7 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        aggregate_value *= static_cast<AggregationType>(element);
+                        aggregate_value *= element;
                     }
                 }
 

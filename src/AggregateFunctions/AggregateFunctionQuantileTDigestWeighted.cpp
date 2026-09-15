@@ -46,7 +46,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantileTDigestWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileTDigestWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

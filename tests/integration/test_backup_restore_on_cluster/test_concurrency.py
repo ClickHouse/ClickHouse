@@ -1,10 +1,11 @@
 import concurrent
 import time
 from random import randint, random
+from typing import List
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.test_tools import TSV, assert_eq_with_retry
 
 from .concurrency_helper import (
@@ -15,7 +16,7 @@ from .concurrency_helper import (
 
 cluster = ClickHouseCluster(__file__)
 
-num_nodes = 4  # Kept equal to num_concurrent_backups to reduce memory usage under sanitizers
+num_nodes = 10
 
 
 main_configs = [
@@ -72,7 +73,7 @@ def test_replicated_table():
     backup_name = new_backup_name()
     node0.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
     node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node0.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
@@ -110,7 +111,7 @@ def test_concurrent_backups_on_same_node():
     ) == TSV([["BACKUP_CREATED", ""]] * num_concurrent_backups)
 
     for backup_name in backup_names:
-        node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
         node0.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
         for i in range(num_nodes):
@@ -147,7 +148,7 @@ def test_concurrent_backups_on_different_nodes():
         ) == TSV([["BACKUP_CREATED", ""]])
 
     for i in range(num_concurrent_backups):
-        nodes[i].query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        nodes[i].query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         nodes[i].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_names[i]}")
         nodes[i].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
         for j in range(num_nodes):
@@ -307,8 +308,8 @@ def test_kill_mutation_during_backup():
             TSV([["BACKUP_CREATED", ""]]),
         )
 
-        node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
 
         if n != repeat_count - 1:
-            node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+            node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")

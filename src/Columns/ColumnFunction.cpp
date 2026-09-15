@@ -1,8 +1,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/validateColumnType.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
@@ -127,7 +125,7 @@ void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
     size_t num_captured_columns = captured_columns.size();
-    chassert(num_captured_columns == src_func.captured_columns.size());
+    assert(num_captured_columns == src_func.captured_columns.size());
 
     for (size_t i = 0; i < num_captured_columns; ++i)
     {
@@ -148,7 +146,7 @@ void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
     size_t num_captured_columns = captured_columns.size();
-    chassert(num_captured_columns == src_func.captured_columns.size());
+    assert(num_captured_columns == src_func.captured_columns.size());
 
     for (size_t i = 0; i < num_captured_columns; ++i)
     {
@@ -245,18 +243,18 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
+std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
                                                       const IColumn::Selector & selector) const
 {
     if (elements_size != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
                         selector.size(), elements_size);
 
-    VectorWithMemoryTracking<size_t> counts;
+    std::vector<size_t> counts;
     if (captured_columns.empty())
         counts = countColumnsSizeInSelector(num_columns, selector);
 
-    VectorWithMemoryTracking<ColumnsWithTypeAndName> captures(num_columns, captured_columns);
+    std::vector<ColumnsWithTypeAndName> captures(num_columns, captured_columns);
 
     for (size_t capture = 0; capture < captured_columns.size(); ++capture)
     {
@@ -265,7 +263,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_co
             captures[part][capture].column = std::move(parts[part]);
     }
 
-    VectorWithMemoryTracking<MutableColumnPtr> columns;
+    std::vector<MutableColumnPtr> columns;
     columns.reserve(num_columns);
     for (size_t part = 0; part < num_columns; ++part)
     {
@@ -317,40 +315,12 @@ void ColumnFunction::updateHashWithValue(size_t n, SipHash & hash) const
         column.column->updateHashWithValue(n, hash);
 }
 
-void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnFunction::getWeakHash32() const
 {
-    const size_t n = row_end - row_begin;
-
-    if (captured_columns.empty())
-    {
-        /// No captures: a single fixed per-row hash (all bits set).
-        if (initial)
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
-        else
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
-        return;
-    }
-
-    if (initial)
-    {
-        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every capture.
-        for (size_t i = 0; i < n; ++i)
-            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
-        for (const auto & column : captured_columns)
-            column.column->computeHashInto(row_begin, row_end, hash_out, false);
-        return;
-    }
-
-    /// Non-initial: build the finalized function row hash in a scratch buffer, then combine that
-    /// single value into the prior key columns' hash (rather than streaming captures straight into
-    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
-    PaddedPODArray<UInt32> function_hash(n, WEAK_HASH32_INITIAL_VALUE);
+    WeakHash32 hash(elements_size);
     for (const auto & column : captured_columns)
-        column.column->computeHashInto(row_begin, row_end, function_hash.data(), false);
-    for (size_t i = 0; i < n; ++i)
-        hash_out[i] = combineWeakHash32(function_hash[i], hash_out[i]);
+        hash.update(column.column->getWeakHash32());
+    return hash;
 }
 
 void ColumnFunction::updateHashFast(SipHash & hash) const
@@ -396,7 +366,7 @@ DataTypePtr ColumnFunction::getResultType() const
     return function->getResultType();
 }
 
-ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
+ColumnWithTypeAndName ColumnFunction::reduce() const
 {
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
@@ -419,7 +389,7 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
             for (size_t i : settings.arguments_with_disabled_lazy_execution)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce(dry_run);
+                    columns[i] = arg->reduce();
             }
         }
         else
@@ -427,7 +397,7 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
             for (auto & col : columns)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                    col = arg->reduce(dry_run);
+                    col = arg->reduce();
             }
         }
     }
@@ -438,14 +408,14 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-    res.column = function->execute(columns, res.type, elements_size, dry_run);
-    if (!columnMatchesType(*res.column, *res.type))
+    res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
+    if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected return type from {}. Expected {}. Got {}",
             function->getName(),
-            res.type->getName(),
-            res.column->getName());
+            res.type->getColumnType(),
+            res.column->getDataType());
     if (recursively_convert_result_to_full_column_if_low_cardinality)
     {
         res.column = recursiveRemoveLowCardinality(res.column);
@@ -496,7 +466,7 @@ void ColumnFunction::forEachSubcolumnRecursively(RecursiveColumnCallback callbac
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)
 {
-    const ColumnFunction * column_function = nullptr;
+    const ColumnFunction * column_function;
     if ((column_function = typeid_cast<const ColumnFunction *>(column.get())) && column_function->isShortCircuitArgument())
         return column_function;
     return nullptr;

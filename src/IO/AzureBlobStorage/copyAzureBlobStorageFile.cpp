@@ -2,7 +2,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Common/ListWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -92,16 +91,16 @@ namespace
 
         struct UploadPartTask
         {
-            size_t part_offset{};
-            size_t part_size{};
-            Strings block_ids;
+            size_t part_offset;
+            size_t part_size;
+            std::vector<std::string> block_ids;
             bool is_finished = false;
         };
 
         size_t normal_part_size;
-        Strings block_ids;
+        std::vector<std::string> block_ids;
 
-        ListWithMemoryTracking<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
+        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
         int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);
@@ -178,13 +177,14 @@ namespace
         void performSinglepartUpload()
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = create_read_buffer();
+            /// `offset` is non-zero for incremental backups, where only the tail of the file is uploaded.
+            LimitSeekableReadBuffer read_buffer(create_read_buffer(), offset, total_size);
 
             PODArray<char> memory;
             {
                 memory.resize(total_size);
                 WriteBufferFromVector<PODArray<char>> wb(memory);
-                copyData(*read_buffer, wb, total_size);
+                copyData(read_buffer, wb, total_size);
             }
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
@@ -468,7 +468,6 @@ void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
-    size_t offset,
     size_t size,
     const String & dest_container_for_logging,
     const String & dest_blob,
@@ -573,7 +572,7 @@ void copyAzureBlobStorageFile(
                 src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
+        UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
         helper.performCopy();
     }
 }

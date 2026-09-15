@@ -115,7 +115,6 @@ void JSONCompactEachRowRowOutputFormat::resetFormatterImpl()
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
-void registerOutputFormatJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {false, true})

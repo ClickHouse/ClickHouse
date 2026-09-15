@@ -21,7 +21,7 @@ It's optimized for pattern-match lookups (e.g. classifying strings like user age
 
 Regular expression tree dictionaries are defined in ClickHouse open-source using the [`YAMLRegExpTree`](../sources/yamlregexptree.md) source which is provided the path to a YAML file containing the regular expression tree.
 
-```sql title="Query"
+```sql
 CREATE DICTIONARY regexp_dict
 (
     regexp String,
@@ -125,13 +125,15 @@ LIFETIME(0)
   captured: 'NULL'
 ```
 
-```sql title="Query"
+```sql
 CREATE TABLE urls (url String) ENGINE=MergeTree ORDER BY url;
 INSERT INTO urls VALUES ('clickhouse.com'), ('clickhouse.com/docs/en'), ('github.com/clickhouse/tree/master/docs');
 SELECT url, dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2) FROM urls;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─url────────────────────────────────────┬─dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2)─┐
 │ clickhouse.com                         │ (['ClickHouse'],[1],[],[])                                                            │
 │ clickhouse.com/docs/en                 │ (['ClickHouse Documentation','ClickHouse'],[0,1],['/en'],['ClickHouse'])              │

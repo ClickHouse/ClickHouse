@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Columns/ColumnConst.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -10,7 +9,7 @@
 namespace DB
 {
 
-class ExecutableFunctionYesterday final : public IExecutableFunction
+class ExecutableFunctionYesterday : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionYesterday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
@@ -26,7 +25,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseYesterday final : public IFunctionBase
+class FunctionBaseYesterday : public IFunctionBase
 {
 public:
     explicit FunctionBaseYesterday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -57,7 +56,7 @@ private:
     DataTypePtr return_type;
 };
 
-class YesterdayOverloadResolver final : public IFunctionOverloadResolver
+class YesterdayOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "yesterday";

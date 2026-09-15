@@ -1,5 +1,3 @@
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
@@ -10,7 +8,6 @@
 #include <Formats/NativeReader.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
-#include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -40,7 +37,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class SetOrJoinSink final : public SinkToStorage, WithContext
+class SetOrJoinSink : public SinkToStorage, WithContext
 {
 public:
     SetOrJoinSink(
@@ -149,27 +146,18 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool persistent_)
-    : StorageWithCommonVirtualColumns(table_id_), disk(disk_), persistent(persistent_)
+    : IStorage(table_id_), disk(disk_), persistent(persistent_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 
     path = relative_path_;
-}
-
-VirtualColumnsDescription StorageSetOrJoinBase::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 
@@ -184,8 +172,7 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    Block header = metadata_snapshot->getSampleBlock();
+    Block header = getInMemoryMetadataPtr()->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
@@ -346,7 +333,6 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 }
 
 
-void registerStorageSet(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory)
 {
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
@@ -363,41 +349,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
-    Documentation{
-        .description = R"DOCS_MD(
-:::note
-In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
-:::
-
-A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section "IN operators").
-
-You can use `INSERT` to insert data in the table. New elements will be added to the data set, while duplicates will be ignored.
-But you can't perform `SELECT` from the table. The only way to retrieve data is by using it in the right half of the `IN` operator.
-
-Data is always located in RAM. For `INSERT`, the blocks of inserted data are also written to the directory of tables on the disk. When starting the server, this data is loaded to RAM. In other words, after restarting, the data remains in place.
-
-For a rough server restart, the block of data on the disk might be lost or damaged. In the latter case, you may need to manually delete the file with damaged data.
-
-### Limitations and settings {#join-limitations-and-settings}
-
-When creating a table, the following settings are applied:
-
-#### Persistent {#persistent}
-
-Disables persistency for the Set and [Join](/engines/table-engines/special/join) table engines.
-
-Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-
-Default value: `1`.
-)DOCS_MD",
-        .syntax = "ENGINE = Set",
-        .related = {"Join"}});
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
 }
 
 

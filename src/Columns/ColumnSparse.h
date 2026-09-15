@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 class Collator;
@@ -140,7 +141,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
@@ -169,10 +170,10 @@ public:
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { values->fixDynamicStructure(); }
     bool hasStatistics() const override { return values->hasStatistics(); }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
     size_t getNumberOfTrailingDefaults() const
     {
@@ -264,10 +265,6 @@ private:
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
-
-/// Returns true if `recursiveRemoveSparse` would change `column`, i.e. there is a sparse column
-/// either at the top level or nested inside a Tuple or Replicated column. Does not allocate.
-bool recursiveHasSparse(const ColumnPtr & column);
 
 /// Remove all special representations (for now Sparse and Replicated).
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);

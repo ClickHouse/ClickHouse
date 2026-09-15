@@ -20,10 +20,10 @@ struct NATSConfiguration
     String token;
     String credential_file;
 
-    UInt64 max_connect_tries{};
-    int reconnect_wait{};
+    UInt64 max_connect_tries;
+    int reconnect_wait;
 
-    bool secure{};
+    bool secure;
 };
 
 using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;

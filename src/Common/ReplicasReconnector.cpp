@@ -23,7 +23,6 @@ ReplicasReconnector::ReplicasReconnector(ContextPtr context)
     : task_handle(context->getSchedulePool().createTask(StorageID::createEmpty(), "ReplicasReconnector", [this]{ run(); }))
     , log(getLogger("ReplicasReconnector"))
 {
-    instance_ptr = this;
 }
 
 ReplicasReconnector::~ReplicasReconnector()
@@ -38,7 +37,9 @@ std::unique_ptr<ReplicasReconnector> ReplicasReconnector::init(ContextPtr contex
     if (instance_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas reconnector is already initialized.");
 
-    return std::unique_ptr<ReplicasReconnector>(new ReplicasReconnector(context));
+    std::unique_ptr<ReplicasReconnector> ret(new ReplicasReconnector(context));
+    instance_ptr = ret.get();
+    return ret;
 }
 
 ReplicasReconnector & ReplicasReconnector::instance()

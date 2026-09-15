@@ -23,7 +23,7 @@ namespace
   * For example, it may be used as a sophisticated replacement for the function 'hostName' if servers have complicated hostnames
   *  but you still need to distinguish them by some convenient names.
   */
-class FunctionGetMacro final : public IFunction
+class FunctionGetMacro : public IFunction
 {
 private:
     MultiVersion<Macros>::Version macros;
