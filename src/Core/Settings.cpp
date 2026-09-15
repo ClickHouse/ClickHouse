@@ -4655,6 +4655,12 @@ Possible values:
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
 Allow execute multiIf function columnar
 )", 0) \
+    DECLARE(Bool, allow_executable_table_function, true, R"(
+Allow the `executable` table function.
+)", 0) \
+    DECLARE(Bool, allow_executable_table_engine, true, R"(
+Allow the `Executable` and `ExecutablePool` table engines.
+)", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
