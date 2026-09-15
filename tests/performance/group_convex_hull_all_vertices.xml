@@ -1,0 +1,23 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>50000</value>
+                <value>100000</value>
+                <value>200000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <drop_query>DROP TABLE IF EXISTS bench_hull_all_vertices_{n}</drop_query>
+    <create_query>CREATE TABLE bench_hull_all_vertices_{n} (pt Point) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_hull_all_vertices_{n}
+        SELECT (cos(number * 2 * pi() / {n}), sin(number * 2 * pi() / {n})) FROM numbers({n})
+    </fill_query>
+
+    <query>SELECT groupConvexHull(pt) FROM bench_hull_all_vertices_{n} FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_hull_all_vertices_{n}</drop_query>
+</test>

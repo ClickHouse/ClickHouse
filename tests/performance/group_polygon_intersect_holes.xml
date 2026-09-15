@@ -1,0 +1,28 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>32</value>
+                <value>64</value>
+                <value>128</value>
+                <value>256</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <drop_query>DROP TABLE IF EXISTS bench_intersect_holes_{n}</drop_query>
+    <create_query>CREATE TABLE bench_intersect_holes_{n} (p Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_intersect_holes_{n}
+        SELECT [
+            [(0., 0.), (0., 4.), (3. * {n} + 2, 4.), (3. * {n} + 2, 0.), (0., 0.)],
+            [(3. * number + 1, 1.), (3. * number + 2, 1.), (3. * number + 2, 2.),
+             (3. * number + 1, 2.), (3. * number + 1, 1.)]
+        ] FROM numbers({n})
+    </fill_query>
+
+    <query>SELECT groupPolygonIntersection(p) FROM bench_intersect_holes_{n} FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_intersect_holes_{n}</drop_query>
+</test>
