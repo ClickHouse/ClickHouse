@@ -40,38 +40,46 @@ public:
     {
         size_t num_args = arguments.size();
 
-        /// If the resulting size is constant, return constant column.
+        /// Add fixed-size arguments once and calculate only the dynamic arguments per row.
+        auto is_constant_size = [&](size_t arg_num)
+        {
+            /// Sparse columns have representation-dependent per-row overhead,
+            /// even when their logical type has a fixed-size representation.
+            return !arguments[arg_num].column->isSparse()
+                && arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
+        };
 
-        bool all_constant = true;
+        size_t first_dynamic_arg = num_args;
         UInt64 constant_size = 0;
         for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
         {
-            if (arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            if (is_constant_size(arg_num))
             {
                 constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
             }
-            else
+            else if (first_dynamic_arg == num_args)
             {
-                all_constant = false;
-                break;
+                first_dynamic_arg = arg_num;
             }
         }
 
-        if (all_constant)
+        if (first_dynamic_arg == num_args)
             return result_type->createColumnConst(input_rows_count, constant_size);
 
         auto result_col = ColumnUInt64::create(input_rows_count);
         auto & vec_res = result_col->getData();
-        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
-        {
-            const IColumn * column = arguments[arg_num].column.get();
+        const IColumn * first_dynamic_column = arguments[first_dynamic_arg].column.get();
+        for (size_t row = 0; row < input_rows_count; ++row)
+            vec_res[row] = constant_size + first_dynamic_column->byteSizeAt(row);
 
-            if (arg_num == 0)
-                for (size_t row = 0; row < input_rows_count; ++row)
-                    vec_res[row] = column->byteSizeAt(row);
-            else
-                for (size_t row = 0; row < input_rows_count; ++row)
-                    vec_res[row] += column->byteSizeAt(row);
+        for (size_t arg_num = first_dynamic_arg + 1; arg_num < num_args; ++arg_num)
+        {
+            if (is_constant_size(arg_num))
+                continue;
+
+            const IColumn * column = arguments[arg_num].column.get();
+            for (size_t row = 0; row < input_rows_count; ++row)
+                vec_res[row] += column->byteSizeAt(row);
         }
 
         return result_col;
@@ -84,7 +92,8 @@ REGISTER_FUNCTION(ByteSize)
 {
     FunctionDocumentation::Description description = R"(
 Returns an estimation of the uncompressed byte size of its arguments in memory.
-For `String` arguments, the function returns the string length + 8 (length).
+For non-sparse `String` arguments, the function returns the string length + 8 bytes for the offset.
+For values in sparse columns, the result also includes representation-dependent sparse overhead.
 If the function has multiple arguments, the function accumulates their byte sizes.
     )";
     FunctionDocumentation::Syntax syntax = "byteSize(arg1[, arg2, ...])";
