@@ -18,8 +18,13 @@ public:
     const String & getHost() const { return host; }
     int getPort() const { return port; }
 
-    std::shared_ptr<arrow::flight::FlightClient> getClient() const;
-    std::shared_ptr<const arrow::flight::FlightCallOptions> getOptions() const;
+    /// `timeout_sec` bounds each RPC made through the returned client or options; zero means no
+    /// deadline. Both accessors take it, so no call site can reach the client without one.
+    std::shared_ptr<arrow::flight::FlightClient> getClient(UInt64 timeout_sec) const;
+
+    /// By value: the connection's shared options carry only the authentication header, while the
+    /// deadline differs per request.
+    arrow::flight::FlightCallOptions getCallOptions(UInt64 timeout_sec) const;
 
     /// Makes another connection with the same parameters.
     std::shared_ptr<ArrowFlightConnection> clone() const;
@@ -28,7 +33,8 @@ public:
     std::shared_ptr<ArrowFlightConnection> cloneWithHostAndPort(const String & host_, int port_) const;
 
 private:
-    void connect() const TSA_REQUIRES(mutex);
+    void connect(arrow::flight::TimeoutDuration timeout) const TSA_REQUIRES(mutex);
+    static arrow::flight::TimeoutDuration toTimeoutDuration(UInt64 timeout_sec);
     static String loadCertificate(const String & path);
 
     ArrowFlightConnection(const ArrowFlightConnection & src);

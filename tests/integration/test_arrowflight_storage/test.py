@@ -1,9 +1,16 @@
 import pytest
+import time
 import uuid
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import arrowflight_user, arrowflight_pass
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
+
+# The STALL_* datasets of the test Flight server block for 120s. Every query against one must
+# finish well inside that, and far inside the harness's own 600s client timeout, so a regression
+# shows up as a failed assertion instead of a killed run.
+STALL_QUERY_BOUND_SEC = 60
+STALL_REQUEST_TIMEOUT_SEC = 3
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -384,3 +391,199 @@ def test_remote_host_filter():
         assert "not allowed in configuration file" in error
     finally:
         node.query("DROP NAMED COLLECTION arrowflight_blocked_collection")
+
+
+def assert_query_timed_out_quickly(query, expected_error_code):
+    start = time.time()
+    error = node.query_and_get_error(
+        query,
+        settings={"arrow_flight_request_timeout_sec": STALL_REQUEST_TIMEOUT_SEC},
+    )
+    elapsed = time.time() - start
+    # The error code identifies which RPC the deadline fired on, so each caller pins a
+    # different blocking frame. "TimedOut" is Arrow's own reason and separates a deadline
+    # from any other failure against the same dataset.
+    assert expected_error_code in error, error
+    assert "TimedOut" in error, error
+    # elapsed is measured around the whole client invocation, which strictly contains the
+    # deadline window, and a deadline cannot fire before its absolute time. So the configured
+    # value brackets the run from below and a mis-scaled deadline cannot pass unnoticed.
+    assert (
+        elapsed >= STALL_REQUEST_TIMEOUT_SEC - 0.5
+    ), f"query returned after {elapsed:.1f}s, before its {STALL_REQUEST_TIMEOUT_SEC}s deadline"
+    assert elapsed < STALL_QUERY_BOUND_SEC, f"query took {elapsed:.1f}s"
+
+
+def assert_timed_out_quickly(dataset, expected_error_code):
+    assert_query_timed_out_quickly(
+        f"SELECT * FROM arrowFlight('arrowflight1:5005', '{dataset}')",
+        expected_error_code,
+    )
+
+
+def test_stalled_flight_server_metadata_does_not_hang():
+    # GetSchema, issued while the query is still being analysed.
+    assert_timed_out_quickly("STALL_SCHEMA", "ARROWFLIGHT_FETCH_SCHEMA_ERROR")
+
+
+def test_stalled_flight_server_endpoints_do_not_hang():
+    # GetFlightInfo, issued while the read pipeline is built.
+    assert_timed_out_quickly("STALL_FLIGHT_INFO", "ARROWFLIGHT_FETCH_SCHEMA_ERROR")
+
+
+def test_stalled_flight_server_handshake_does_not_hang():
+    # The Handshake of AuthenticateBasicToken, before any dataset is named. The stub stalls
+    # ahead of its credential check, so the user need not exist.
+    assert_query_timed_out_quickly(
+        "SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', 'stall_handshake', 'x')",
+        "ARROWFLIGHT_CONNECTION_FAILURE",
+    )
+
+
+def test_timed_out_handshake_does_not_poison_a_reused_connection():
+    # The engine keeps one connection for the table's lifetime, so a handshake that timed out must
+    # leave nothing behind: the next query has to attempt its own handshake rather than reuse a
+    # client whose options carry no authentication header.
+    node.query(
+        """
+        CREATE TABLE arrow_stall_handshake_reuse (
+            column1 String,
+            column2 String
+        ) ENGINE=ArrowFlight('arrowflight1:5006', 'ABC', 'stall_handshake', 'x')
+        """
+    )
+    try:
+        for attempt in range(2):
+            start = time.time()
+            error = node.query_and_get_error(
+                "SELECT * FROM arrow_stall_handshake_reuse",
+                settings={"arrow_flight_request_timeout_sec": STALL_REQUEST_TIMEOUT_SEC},
+            )
+            elapsed = time.time() - start
+            assert "ARROWFLIGHT_CONNECTION_FAILURE" in error, (attempt, error)
+            assert "TimedOut" in error, (attempt, error)
+            assert (
+                elapsed >= STALL_REQUEST_TIMEOUT_SEC - 0.5
+            ), f"attempt {attempt} returned after {elapsed:.1f}s"
+            assert elapsed < STALL_QUERY_BOUND_SEC, f"attempt {attempt} took {elapsed:.1f}s"
+    finally:
+        node.query("DROP TABLE arrow_stall_handshake_reuse")
+
+
+def test_stalled_flight_server_insert_does_not_hang():
+    node.query(
+        """
+        CREATE TABLE arrow_stall_insert (
+            column1 String,
+            column2 String
+        ) ENGINE=ArrowFlight('arrowflight1:5005', 'STALL_DOPUT')
+        """
+    )
+    try:
+        start = time.time()
+        error = node.query_and_get_error(
+            "INSERT INTO arrow_stall_insert VALUES ('a','data_a')",
+            settings={"arrow_flight_request_timeout_sec": STALL_REQUEST_TIMEOUT_SEC},
+        )
+        elapsed = time.time() - start
+        # Every DoPut-family failure reports ARROWFLIGHT_WRITE_ERROR, so the frame is named
+        # by the message rather than the code.
+        assert "ARROWFLIGHT_WRITE_ERROR" in error, error
+        assert "TimedOut" in error, error
+        assert (
+            elapsed >= STALL_REQUEST_TIMEOUT_SEC - 0.5
+        ), f"insert returned after {elapsed:.1f}s, before its {STALL_REQUEST_TIMEOUT_SEC}s deadline"
+        assert elapsed < STALL_QUERY_BOUND_SEC, f"insert took {elapsed:.1f}s"
+    finally:
+        node.query("DROP TABLE arrow_stall_insert")
+
+
+def test_stalled_flight_server_before_first_message_does_not_hang():
+    # Inside DoGet, which reads the stream's first message before handing back a reader.
+    assert_timed_out_quickly("STALL_DOGET", "ARROWFLIGHT_CONNECTION_FAILURE")
+
+
+def test_stalled_flight_server_mid_stream_does_not_hang():
+    # A read of the open stream, i.e. inside ISource::work.
+    assert_timed_out_quickly("STALL_STREAM", "ARROWFLIGHT_INTERNAL_ERROR")
+
+
+def test_request_timeout_magnitude_is_honored():
+    # A second, larger bound: the deadline is the only thing that can end this query, so its
+    # elapsed time is bracketed by the configured value on both sides. A deadline scaled up
+    # rather than honored lands outside STALL_QUERY_BOUND_SEC here while the 3s tests, whose
+    # inflated value is still inside it, stay green.
+    start = time.time()
+    error = node.query_and_get_error(
+        "SELECT * FROM arrowFlight('arrowflight1:5005', 'STALL_SCHEMA')",
+        settings={"arrow_flight_request_timeout_sec": 10},
+    )
+    elapsed = time.time() - start
+    assert "ARROWFLIGHT_FETCH_SCHEMA_ERROR" in error, error
+    assert "TimedOut" in error, error
+    assert elapsed >= 9.5, f"query returned after {elapsed:.1f}s, before its 10s deadline"
+    assert elapsed < STALL_QUERY_BOUND_SEC, f"query took {elapsed:.1f}s"
+
+
+def test_kill_query_interrupts_a_stalled_flight_read():
+    query_id = uuid.uuid4().hex
+
+    # The deadline is switched off, so the cancellation path is the only thing that can end
+    # this query. STALL_STREAM is the only stalling dataset with a reader to cancel.
+    request = node.get_query_request(
+        "SELECT * FROM arrowFlight('arrowflight1:5005', 'STALL_STREAM')",
+        query_id=query_id,
+        settings={"arrow_flight_request_timeout_sec": 0},
+        timeout=STALL_QUERY_BOUND_SEC + 30,
+        ignore_error=True,
+    )
+    count_query = f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+    try:
+        # Wait for the stub's first batch to be read, not merely for the query to appear: a kill
+        # that lands earlier is reported before execution starts and never reaches the read.
+        assert_eq_with_retry(
+            node,
+            f"SELECT read_rows > 0 FROM system.processes WHERE query_id = '{query_id}'",
+            "1",
+            retry_count=STALL_QUERY_BOUND_SEC,
+            sleep_time=1,
+        )
+
+        node.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+
+        assert_eq_with_retry(
+            node, count_query, "0", retry_count=STALL_QUERY_BOUND_SEC, sleep_time=1
+        )
+    finally:
+        _, stderr = request.get_answer_and_error()
+
+    assert "QUERY_WAS_CANCELLED" in stderr, stderr
+
+
+def test_max_execution_time_interrupts_a_stalled_flight_read():
+    # The deadline is switched off, so only cancellation can end this query, and
+    # max_execution_time reaches it through CancellationChecker, not the KILL QUERY interpreter.
+    start = time.time()
+    error = node.query_and_get_error(
+        "SELECT * FROM arrowFlight('arrowflight1:5005', 'STALL_STREAM')",
+        settings={"arrow_flight_request_timeout_sec": 0, "max_execution_time": 5},
+    )
+    elapsed = time.time() - start
+    assert "TIMEOUT_EXCEEDED" in error, error
+    assert elapsed < STALL_QUERY_BOUND_SEC, f"query took {elapsed:.1f}s"
+
+
+def test_huge_request_timeout_does_not_break_a_healthy_read():
+    # The largest value the setting accepts must still leave a usable future deadline, so a
+    # healthy read completes rather than failing as if its deadline had already passed.
+    result = node.query(
+        "SELECT * FROM arrowFlight('arrowflight1:5005', 'ABC')",
+        settings={"arrow_flight_request_timeout_sec": 18446744073709551615},
+    )
+    assert result == TSV(
+        [
+            ["test_value_1", "data1"],
+            ["abcadbc", "text_text_text"],
+            ["123456789", "data3"],
+        ]
+    )

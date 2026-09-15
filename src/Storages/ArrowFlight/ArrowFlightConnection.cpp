@@ -1,6 +1,8 @@
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 
 #if USE_ARROWFLIGHT
+#include <algorithm>
+#include <limits>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -26,21 +28,39 @@ ArrowFlightConnection::ArrowFlightConnection(const StorageArrowFlight::Configura
 {
 }
 
-std::shared_ptr<arrow::flight::FlightClient> ArrowFlightConnection::getClient() const
+arrow::flight::TimeoutDuration ArrowFlightConnection::toTimeoutDuration(UInt64 timeout_sec)
+{
+    /// Zero is Arrow's own "no deadline"; it has to come before the clamp, because a zero
+    /// TimeoutDuration would mean "deadline already reached".
+    if (timeout_sec == 0)
+        return arrow::flight::TimeoutDuration(-1);
+
+    /// Arrow builds the deadline as now() + timeout and narrows the sum to the clock's microsecond
+    /// rep, so a bound is only usable while that sum stays representable. Half of the rep's range is
+    /// left for now(), which still keeps every value a caller can mean.
+    static constexpr UInt64 max_timeout_sec = static_cast<UInt64>(std::numeric_limits<Int64>::max() / 2 / 1'000'000);
+    return arrow::flight::TimeoutDuration(std::min(timeout_sec, max_timeout_sec));
+}
+
+std::shared_ptr<arrow::flight::FlightClient> ArrowFlightConnection::getClient(UInt64 timeout_sec) const
 {
     std::lock_guard lock{mutex};
-    connect();
+    connect(toTimeoutDuration(timeout_sec));
     return client;
 }
 
-std::shared_ptr<const arrow::flight::FlightCallOptions> ArrowFlightConnection::getOptions() const
+arrow::flight::FlightCallOptions ArrowFlightConnection::getCallOptions(UInt64 timeout_sec) const
 {
+    auto timeout = toTimeoutDuration(timeout_sec);
+
     std::lock_guard lock{mutex};
-    connect();
-    return options;
+    connect(timeout);
+    auto call_options = *options;
+    call_options.timeout = timeout;
+    return call_options;
 }
 
-void ArrowFlightConnection::connect() const
+void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) const
 {
     if (client)
         return;
@@ -67,22 +87,29 @@ void ArrowFlightConnection::connect() const
         throw Exception(
             ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to connect to Arrow Flight server: {}", client_result.status().ToString());
     }
-    client = std::move(client_result).ValueOrDie();
+    auto new_client = std::move(client_result).ValueOrDie();
 
-    auto res_options = std::make_shared<arrow::flight::FlightCallOptions>();
-    options = res_options;
+    auto new_options = std::make_shared<arrow::flight::FlightCallOptions>();
 
     if (use_basic_authentication)
     {
-        auto auth_result = client->AuthenticateBasicToken({}, username, password);
+        arrow::flight::FlightCallOptions auth_options;
+        auth_options.timeout = timeout;
+
+        auto auth_result = new_client->AuthenticateBasicToken(auth_options, username, password);
         if (!auth_result.ok())
         {
             throw Exception(
                 ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to authenticate Arrow Flight server: {}", auth_result.status().ToString());
         }
         auto auth_token = std::move(auth_result).ValueOrDie();
-        res_options->headers.push_back(auth_token);
+        new_options->headers.push_back(auth_token);
     }
+
+    /// Published only now: a connection whose handshake failed must not be reused, otherwise
+    /// every later query on it would go out without the authentication header.
+    client = std::move(new_client);
+    options = std::move(new_options);
 }
 
 String ArrowFlightConnection::loadCertificate(const String & path)
