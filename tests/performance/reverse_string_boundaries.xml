@@ -1,0 +1,41 @@
+<test run_all_queries="1">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Keep the String word-path boundaries visible in the performance report. -->
+    <query>SELECT reverse(materialize(repeat('x', 1))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 2))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 3))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 4))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 5))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 6))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 7))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 9))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 15))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 16))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 17))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 24))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 31))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 32))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 33))) FROM numbers(10000000) FORMAT Null</query>
+
+    <!-- Keep the FixedString word-path boundaries visible as well. -->
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 1), 1))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 2), 2))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 3), 3))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 4), 4))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 5), 5))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 6), 6))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 7), 7))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 8), 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 9), 9))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 15), 15))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 16), 16))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 17), 17))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 24), 24))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 31), 31))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 32), 32))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 33), 33))) FROM numbers(10000000) FORMAT Null</query>
+</test>
