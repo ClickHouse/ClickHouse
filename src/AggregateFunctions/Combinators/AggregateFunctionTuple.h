@@ -57,6 +57,8 @@ public:
 
     String getName() const override { return nested_func_name + "Tuple"; }
 
+    Array getStateParameters() const override;
+
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
     size_t getVersionFromRevision(size_t revision) const override;
