@@ -225,7 +225,11 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
 
     table_function_ptr->parseArguments(table_expression.table_function, current_context);
 
-    auto column_descriptions = table_function_ptr->getActualTableStructureWithAccess(current_context, /*is_insert_query*/ true);
+    /// DESCRIBE only reads: resolve the structure the same way a SELECT from the table function
+    /// would. Passing `is_insert_query = true` here would make table functions apply insert-time
+    /// restrictions (e.g. `url(...)` rejects schema inference with a `body(...)` argument for
+    /// insert-style queries because inserting cannot use `body`, while DESCRIBE legitimately can).
+    auto column_descriptions = table_function_ptr->getActualTableStructureWithAccess(current_context, /*is_insert_query*/ false);
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
 

@@ -145,7 +145,11 @@ VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configur
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
+        /// `body` is skipped together with `headers` so that the shared URL/S3 argument parser
+        /// sees it as an AST function and can reject it with a clear message (it is supported only
+        /// by the `url` table function). Otherwise the analyzer fails earlier with a confusing
+        /// `UNKNOWN_FUNCTION` error for `body`.
+        if (function_node && (function_node->getFunctionName() == "headers" || function_node->getFunctionName() == "body"))
             result.push_back(i);
     }
     return result;
