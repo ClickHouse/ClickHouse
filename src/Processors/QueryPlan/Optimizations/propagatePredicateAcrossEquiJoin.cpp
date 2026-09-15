@@ -14,7 +14,7 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Copies filter conjuncts across equi-join keys. A copy on a primary key column prunes granules;
-/// on any other column it still shrinks the target's hash table. Limited to `Expression`/`Filter`
+/// on any other column it still shrinks the target's join input. Limited to `Expression`/`Filter`
 /// chains, see `isTransparentForPropagation`
 
 /// Defined in partialJoinFilterPushDown.cpp
@@ -94,9 +94,9 @@ std::optional<NameSet> getTargetPrimaryKeyColumns(const QueryPlan::Node * target
     return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
 }
 
-/// A fixed-size comparison costs a fraction of a hash probe, so a copy that filters nothing is a
-/// rounding error. A set lookup is an order of magnitude more, so it has to earn its place by
-/// pruning the primary key instead of being evaluated over the whole target
+/// A fixed-size comparison costs a fraction of what any join algorithm spends per row, so a copy
+/// that filters nothing is a rounding error. A set lookup is an order of magnitude more, so it has
+/// to earn its place by pruning the primary key instead of being evaluated over the whole target
 bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
 {
     if (atom->function_base->getName() == "in")

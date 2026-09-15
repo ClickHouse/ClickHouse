@@ -35,6 +35,25 @@
         INNER JOIN (SELECT * FROM prop_nopk_small WHERE k &lt; 10000000) AS s ON b.k = s.k
     </query>
 
+    <!-- The merge algorithms have no hash table to shrink; the copy must stay a rounding error there too -->
+    <query>
+        SELECT count()
+        FROM prop_nopk_big AS b
+        INNER JOIN (SELECT * FROM prop_nopk_small WHERE k &lt; 10000000) AS s ON b.k = s.k
+        SETTINGS join_algorithm = 'full_sorting_merge'
+    </query>
+    <query>
+        SELECT count()
+        FROM prop_nopk_big AS b
+        INNER JOIN (SELECT * FROM prop_nopk_small WHERE k &lt; 10000000) AS s ON b.k = s.k
+        SETTINGS join_algorithm = 'partial_merge'
+    </query>
+    <query>
+        SELECT count()
+        FROM prop_nopk_big AS b
+        INNER JOIN (SELECT * FROM prop_nopk_small WHERE k &lt; 100) AS s ON b.k = s.k
+        SETTINGS join_algorithm = 'full_sorting_merge'
+    </query>
     <!-- A set lookup is too expensive to copy off-index, so this one must not change -->
     <query>
         SELECT count()
