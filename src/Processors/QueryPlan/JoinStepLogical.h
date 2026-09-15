@@ -148,6 +148,7 @@ public:
     bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    std::optional<UInt64> getResultRowsUpperBound() const { return result_rows_upper; }
     std::optional<double> getEstimatedCost() const { return estimated_cost; }
     std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
@@ -156,6 +157,7 @@ public:
 
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
+        std::optional<UInt64> estimated_rows_upper_ = {},
         std::unordered_map<String, ColumnStats> column_stats_ = {},
         bool imprecise_estimate_ = false,
         std::optional<double> estimated_cost_ = {},
@@ -164,6 +166,7 @@ public:
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
+        result_rows_upper = estimated_rows_upper_;
         result_column_stats = std::move(column_stats_);
         imprecise_estimate = imprecise_estimate_;
         estimated_cost = estimated_cost_;
@@ -245,6 +248,7 @@ protected:
     /// Runtime info, do not serialize
 
     std::optional<UInt64> result_rows_estimation = {};
+    std::optional<UInt64> result_rows_upper = {};
     std::optional<double> estimated_cost = {};
     std::optional<double> estimated_selectivity = {};
     UInt64 cluster_id = 0;
