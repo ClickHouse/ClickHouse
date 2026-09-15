@@ -27,6 +27,8 @@ void DistributedQueryTaskStatus::write(WriteBuffer & out, UInt64 task_version, U
             NativeWriter writer(out, progress_version, std::make_shared<const Block>(InternalTextLogsQueue::getSampleBlock()));
             writer.write(logs);
         }
+        writeVarUInt(num_dropped_logs, out);
+        writeVarUInt(forwarded_log_count, out);
     }
 }
 
@@ -46,6 +48,8 @@ void DistributedQueryTaskStatus::read(ReadBuffer & in, UInt64 task_version, UInt
             NativeReader reader(in, progress_version);
             logs = reader.read();
         }
+        readVarUInt(num_dropped_logs, in);
+        readVarUInt(forwarded_log_count, in);
     }
 }
 
