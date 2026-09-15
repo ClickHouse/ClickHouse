@@ -30,6 +30,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///        job String)
 ///    ENGINE = ReplacingMergeTree, ...
 ///
+/// The queries over the target tables run according to the `DEFINER` / `SQL SECURITY` clauses of the table
+/// (by default with the permissions of the creating user, the same as for a materialized view),
+/// so a user needs privileges on the TimeSeries table only.
 class StorageTimeSeries final : public StorageWithCommonVirtualColumns, WithContext
 {
 public:
@@ -54,6 +57,10 @@ public:
 
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
+
+    /// Returns the context for running queries over the target tables on behalf of a query executed with `caller_context`.
+    /// With `SQL SECURITY DEFINER` the returned context has the permissions of the definer.
+    ContextMutablePtr getContextForTargetTables(const ContextPtr & caller_context) const;
 
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;

@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -17,6 +18,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
@@ -220,6 +222,13 @@ StorageTimeSeries::StorageTimeSeries(
     if (!comment.empty())
         storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
+
+    if (query.sql_security)
+        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
+
+    if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id);
+
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -360,8 +369,17 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 }
 
 
+ContextMutablePtr StorageTimeSeries::getContextForTargetTables(const ContextPtr & caller_context) const
+{
+    return getInMemoryMetadataPtr(caller_context, false)->getSQLSecurityOverriddenContext(caller_context);
+}
+
+
 void StorageTimeSeries::drop()
 {
+    if (getInMemoryMetadataPtr(getContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
+        DefinerDependencies::instance().removeDependencies(getStorageID());
+
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
     /// Running synchronous DROP from that task leads to deadlock.
@@ -606,6 +624,12 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         local_context, time_series_table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 
+    auto & definer_dependencies = DefinerDependencies::instance();
+    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        definer_dependencies.addDependency(*new_metadata.definer, time_series_table_id);
+    else
+        definer_dependencies.removeDependencies(time_series_table_id);
+
     if (new_settings)
         storage_settings.set(std::move(new_settings));
 }
@@ -724,9 +748,9 @@ void StorageTimeSeries::readImpl(
 {
     checkTimeSeriesVersionIsSupported(*this);
 
-    /// Run the generated read query on a child context with a few settings pinned so its results
-    /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
-    auto read_context = Context::createCopy(local_context);
+    /// Run the generated read query with the permissions given by the SQL security of this table and with a few settings
+    /// pinned so its results don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
+    auto read_context = getContextForTargetTables(local_context);
     read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries());
 
     NameSet requested_columns{column_names.begin(), column_names.end()};
@@ -758,7 +782,9 @@ SinkToStoragePtr StorageTimeSeries::write(
             for (const auto & col : insert_query->columns->children)
                 insert_columns.push_back(col->getColumnName());
     }
-    return std::make_shared<TimeSeriesSink>(*this, metadata_snapshot->getSampleBlock(), insert_columns, local_context, async_insert);
+    /// The inserts into the target tables run with the permissions given by the SQL security of this table.
+    return std::make_shared<TimeSeriesSink>(
+        *this, metadata_snapshot->getSampleBlock(), insert_columns, getContextForTargetTables(local_context), async_insert);
 }
 
 
@@ -799,6 +825,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
+        .supports_sql_security = true,
         .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
     },
     Documentation{
@@ -1263,6 +1290,36 @@ Such a table must have the same columns as an external samples table, and it mus
 The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
 
 The type of the `id` column of an external tags table and the expression generating identifiers are recorded in the [`id_type`](#settings) and [`id_generator`](#settings) settings at `CREATE` time (from [version](#schema-versioning) 2), so the definition of the `TimeSeries` table keeps them: for example, `CREATE TABLE ... AS my_table` reads the `id` type from the definition of `my_table` without reading its external target tables. If the `id_generator` setting isn't specified, it's set to the `DEFAULT` declared on the external table's `id` column (if any), otherwise to the canonical generator derived from the `id` type. The recorded expression is used to generate `id` even if the `DEFAULT` of the external table changes later — see [The `id` column](#id-column) for details.
+
+## SQL security {#sql-security}
+
+The queries which a `TimeSeries` table runs over its target tables (inner or external) use the permissions given by the
+`DEFINER` and `SQL SECURITY` clauses, the same as for a materialized view. The clauses are written after the engine and the target clauses:
+
+```sql
+CREATE TABLE my_table ENGINE = TimeSeries DEFINER = admin SQL SECURITY DEFINER;
+```
+
+If the clauses are omitted, the defaults for materialized views apply (see the settings
+[`default_materialized_view_sql_security`](/reference/settings/session-settings#default_materialized_view_sql_security) and
+[`default_view_definer`](/reference/settings/session-settings#default_view_definer)), so by default the creating user becomes the definer.
+
+With `SQL SECURITY DEFINER` a user needs the `SELECT` or `INSERT` privilege on the `TimeSeries` table only,
+while the definer needs these privileges on the target tables, including the inner ones.
+The table functions [`timeSeriesSamples`](/reference/functions/table-functions/timeSeriesSamples), [`timeSeriesTags`](/reference/functions/table-functions/timeSeriesTags),
+[`timeSeriesMetrics`](/reference/functions/table-functions/timeSeriesMetrics), [`timeSeriesSelector`](/reference/functions/table-functions/timeSeriesSelector),
+[`prometheusQuery`](/reference/functions/table-functions/prometheusQuery) and [`prometheusQueryRange`](/reference/functions/table-functions/prometheusQueryRange),
+and the Prometheus protocols follow the same rule: they require a privilege on the `TimeSeries` table and access its target tables on behalf of the definer.
+
+With `SQL SECURITY INVOKER` the user reading or writing the `TimeSeries` table needs the privileges on its target tables too.
+The clauses can be changed later:
+
+```sql
+ALTER TABLE my_table MODIFY SQL SECURITY INVOKER;
+ALTER TABLE my_table MODIFY DEFINER = admin SQL SECURITY DEFINER;
+```
+
+A `TimeSeries` table created before the support of these clauses has no SQL security type and behaves like `SQL SECURITY INVOKER` until it's altered.
 
 ## Altering settings {#altering-settings}
 

@@ -29,6 +29,7 @@
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -517,6 +518,13 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 }
 
 
+ContextMutablePtr PrometheusHTTPProtocolAPI::makeContextForTargetTables() const
+{
+    getContext()->checkAccess(AccessType::SELECT, time_series_storage->getStorageID());
+    return time_series_storage->getContextForTargetTables(getContext());
+}
+
+
 ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const Strings & match_params,
     const String & start_param,
@@ -612,10 +620,12 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
+    auto target_tables_context = makeContextForTargetTables();
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
+    target_tables_context->setSetting("allow_experimental_analyzer", true);
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), target_tables_context, {}, QueryProcessingStage::Complete);
 
     try
     {
@@ -750,7 +760,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), makeContextForTargetTables(), {}, QueryProcessingStage::Complete);
 
     try
     {
@@ -928,10 +938,12 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
+    auto target_tables_context = makeContextForTargetTables();
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
+    target_tables_context->setSetting("allow_experimental_analyzer", true);
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), target_tables_context, {}, QueryProcessingStage::Complete);
 
     try
     {

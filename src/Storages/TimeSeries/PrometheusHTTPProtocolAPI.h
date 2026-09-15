@@ -98,6 +98,9 @@ private:
     /// with their tags registered for timeSeriesIdToTags.
     ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
 
+    /// Checks that the user of the request can read the TimeSeries table and returns the context for running queries over its target tables.
+    ContextMutablePtr makeContextForTargetTables() const;
+
     /// Shared implementation of getLabels and getLabelValues: executes a query aggregating `array_expression`
     /// (a sorted array of unique strings) over the series matched by the `match[]` selectors
     /// (or over all series if no selectors are given) and writes the result as a JSON array, capped by `limit`

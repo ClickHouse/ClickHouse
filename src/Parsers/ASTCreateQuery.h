@@ -172,7 +172,7 @@ public:
 
     NameToNameMap getQueryParameters() const;
 
-    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
+    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view || is_time_series_table; }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

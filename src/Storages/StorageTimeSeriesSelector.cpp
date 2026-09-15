@@ -11,6 +11,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -131,6 +132,9 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+
+    /// Reading through the selector requires the same privilege as reading the TimeSeries table itself.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
@@ -827,6 +831,11 @@ void StorageTimeSeriesSelector::readImpl(
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
+    /// The caller needs the SELECT privilege on the TimeSeries table; the generated queries over its target tables
+    /// run with the permissions given by the SQL security of the TimeSeries table.
+    context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
+    auto target_tables_context = time_series_storage->getContextForTargetTables(context);
+
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
@@ -882,10 +891,10 @@ void StorageTimeSeriesSelector::readImpl(
         config.timestamp_data_type,
         min_time_to_filter_ids,
         max_time_to_filter_ids,
-        context,
+        target_tables_context,
         log);
 
-    auto modified_context = Context::createCopy(context);
+    auto modified_context = target_tables_context;
     ContextPtr interpreter_context = modified_context;
 
     if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read"))

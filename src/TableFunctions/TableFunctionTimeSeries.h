@@ -38,6 +38,9 @@ private:
 
     StoragePtr getTargetTable(const ContextPtr & context) const;
 
+    /// Checks that the caller can read (or write, for an insert query) the TimeSeries table and returns the target table.
+    StoragePtr getTargetTableWithAccessCheck(const ContextPtr & context, bool is_insert_query) const;
+
     StorageID time_series_storage_id = StorageID::createEmpty();
     String target_table_type_name;
 };

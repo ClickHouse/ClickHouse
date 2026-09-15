@@ -1,0 +1,63 @@
+== The definition records the SQL security
+DEFINER = default SQL SECURITY DEFINER
+== SELECT ON ts is enough to read the table and its target tables
+-- reader: SELECT count(metric_name) FROM ts
+1
+-- reader: SELECT count() FROM timeSeriesTags(ts)
+1
+-- reader: SELECT count() FROM timeSeriesSamples(ts)
+1
+-- reader: SELECT count() FROM timeSeriesMetrics(ts)
+1
+-- reader: SELECT count() FROM timeSeriesSelector(ts, 'http_requests', now() - INTERVAL 1 DAY, now() + INTERVAL 1 DAY)
+1
+-- reader: SELECT count() FROM prometheusQuery(ts, 'http_requests', now() + INTERVAL 1 MINUTE)
+1
+== The table functions work in the readonly mode
+-- reader: SELECT count() FROM timeSeriesTags(ts)
+1
+== INSERT ON ts is enough to write the table and its target tables
+-- writer: INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'j2'}, [(now64(3), 2.)])
+-- writer: INSERT INTO FUNCTION timeSeriesMetrics(ts) (metric_family_name, type, unit, help) VALUES ('http_errors', 'counter', '', 'Errors')
+-- default: SELECT count() FROM timeSeriesTags(ts)
+2
+-- default: SELECT count() FROM timeSeriesMetrics(ts)
+2
+-- writer: SELECT count(metric_name) FROM ts
+writer_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(<columns>) ON db.ts
+-- writer: SELECT count() FROM timeSeriesTags(ts)
+writer_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.ts
+== Without privileges on ts nothing can be read or written
+-- outsider: SELECT count(metric_name) FROM ts
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(<columns>) ON db.ts
+-- outsider: SELECT count() FROM timeSeriesTags(ts)
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.ts
+-- outsider: SELECT count() FROM timeSeriesSelector(ts, 'http_requests', now() - INTERVAL 1 DAY, now() + INTERVAL 1 DAY)
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.ts
+-- outsider: SELECT count() FROM prometheusQuery(ts, 'http_requests', now() + INTERVAL 1 MINUTE)
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.ts
+-- outsider: INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'j3'}, [(now64(3), 3.)])
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant INSERT(<columns>) ON db.ts
+-- outsider: INSERT INTO FUNCTION timeSeriesMetrics(ts) (metric_family_name, type, unit, help) VALUES ('x', 'gauge', '', 'x')
+outsider_db: Not enough privileges. To execute this query, it's necessary to have the grant CREATE TEMPORARY TABLE ON *.*
+== With SQL SECURITY INVOKER the privileges on the target tables are required
+SQL SECURITY INVOKER
+-- reader: SELECT count(metric_name) FROM ts
+reader_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(<columns>) ON db.`.inner_id.tags.<uuid>`
+-- reader: SELECT count() FROM timeSeriesTags(ts)
+reader_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.`.inner_id.tags.<uuid>`
+DEFINER = default SQL SECURITY DEFINER
+-- reader: SELECT count(metric_name) FROM ts
+2
+-- reader: SELECT count() FROM timeSeriesTags(ts)
+2
+== The definer needs the privileges on external target tables, the reader doesn't
+DEFINER = definer_db SQL SECURITY DEFINER
+-- reader: SELECT count(metric_name) FROM ts_ext
+definer_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(<columns>) ON db.ext_tags
+-- reader: SELECT count() FROM timeSeriesTags(ts_ext)
+definer_db: Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON db.ext_tags
+-- reader: SELECT count(metric_name) FROM ts_ext
+0
+-- reader: SELECT count() FROM timeSeriesTags(ts_ext)
+0

@@ -1852,11 +1852,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
+    /// A TimeSeries table always gets an SQL security type, using the defaults of materialized views.
+    if (!create.sql_security && create.supportSQLSecurity()
+        && (create.refresh_strategy || create.is_time_series_table
+            || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
 
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, mode);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view || create.is_time_series_table, mode);
 
     DDLGuardPtr ddl_guard;
 
@@ -2070,6 +2073,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
+
+    /// `CREATE TABLE ... AS <TimeSeries table>` finds out that it creates a TimeSeries table only in `setEngine`,
+    /// so the default SQL security type is set here for it.
+    if (create.is_time_series_table && !create.sql_security)
+    {
+        create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), /* is_materialized_view = */ true, mode);
+    }
 
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
