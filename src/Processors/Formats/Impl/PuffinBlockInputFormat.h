@@ -5,6 +5,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -76,6 +78,10 @@ public:
     explicit PuffinSchemaReader(ReadBuffer & in_);
     NamesAndTypesList readSchema() override;
 };
+
+void forEachDeletionVectorPosition(
+    std::string_view blob,
+    const std::function<void(UInt64)> & on_position);
 
 class FormatFactory;
 void registerInputFormatPuffin(FormatFactory & factory);
