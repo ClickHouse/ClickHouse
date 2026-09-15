@@ -1095,7 +1095,7 @@ def prefetch_images(
     retries: int = 3,
     pull_timeout: int = 300,
     parallel: int = PREFETCH_PARALLEL_PULLS,
-    skipped_out: Optional[Set[str]] = None,
+    fetched_out: Optional[Set[str]] = None,
 ) -> bool:
     """Pull the images using `ci/prefetch-integration-test-images`.
 
@@ -1103,9 +1103,10 @@ def prefetch_images(
     on arm64 runners) are silently skipped.  Returns True on success, False if any
     image fails to pull for a real reason.
 
-    `skipped_out`, when given, receives the references the script waived for a missing
-    architecture manifest. A missing report is read as "every reference waived", so a
-    script without this protocol cannot be mistaken for a run that fetched everything.
+    `fetched_out`, when given, receives the references the script reports as actually
+    pulled. A missing or short report can only leave references out, so a reporting
+    failure costs the skip in `tests/integration/helpers/cluster.py` instead of claiming
+    an image that was never fetched.
     """
     if not images:
         print("No images to pre-fetch.")
@@ -1118,24 +1119,18 @@ def prefetch_images(
         "PULL_TIMEOUT": str(pull_timeout),
         "PULL_PARALLEL": str(parallel),
     }
-    skipped_path = None
-    if skipped_out is not None:
-        # The directory exists and the file does not: the script creates it, so its absence
-        # below means the report never ran.
-        skipped_path = os.path.join(
-            tempfile.mkdtemp(prefix="prefetch_", dir=temp_path), "skipped.txt"
+    report = ""
+    with tempfile.TemporaryDirectory(prefix="prefetch_", dir=temp_path) as report_dir:
+        if fetched_out is not None:
+            report = os.path.join(report_dir, "fetched.txt")
+            env["PREFETCH_FETCHED_FILE"] = report
+        ok = Shell.check(
+            f"{script} {' '.join(images)}",
+            verbose=True,
+            env=env,
         )
-        env["PREFETCH_SKIPPED_FILE"] = skipped_path
-    ok = Shell.check(
-        f"{script} {' '.join(images)}",
-        verbose=True,
-        env=env,
-    )
-    if skipped_out is not None:
-        if skipped_path and Path(skipped_path).is_file():
-            skipped_out.update(Path(skipped_path).read_text(errors="replace").split())
-        else:
-            skipped_out.update(images)
+        if fetched_out is not None and Path(report).is_file():
+            fetched_out.update(Path(report).read_text(errors="replace").split())
     return ok
 
 
@@ -1887,19 +1882,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
         + ", ".join(str(f.name) for f in compose_files)
     )
     images_to_prefetch = get_images_from_compose_files(compose_files)
-    waived: Set[str] = set()
-    if not prefetch_images(images_to_prefetch, skipped_out=waived):
+    prefetched: Set[str] = set()
+    if not prefetch_images(images_to_prefetch, fetched_out=prefetched):
         prefetch_failure_result().complete_job()
-    prefetched = set(images_to_prefetch) - waived
     # Read by tests/integration/helpers/cluster.py below. The instance image is interpolated into
-    # the generated per-instance compose file, so a batch's compose files need not name it; a batch
-    # whose instances all use a custom image does not need it at all, so failing to fetch it turns
-    # the skip off instead of ending the job.
+    # the generated per-instance compose file, so a batch's compose files need not name it, and a
+    # batch whose instances all use a custom image does not need it: this pull's result is ignored.
     server_image = f"clickhouse/integration-test:{os.environ['DOCKER_BASE_TAG']}"
     if server_image not in prefetched:
-        server_waived: Set[str] = set()
-        if prefetch_images([server_image], skipped_out=server_waived) and not server_waived:
-            prefetched.add(server_image)
+        prefetch_images([server_image], fetched_out=prefetched)
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
