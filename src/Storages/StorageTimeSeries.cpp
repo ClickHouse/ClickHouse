@@ -823,6 +823,14 @@ with the `enable_time_series_table` setting.
 Input the command `set enable_time_series_table = 1`.
 </Info>
 
+<Note>
+The TimeSeries table engine in ClickHouse Cloud is also in private preview.
+The services that take part in the private preview already have the
+`enable_time_series_table` setting configured. Other ClickHouse Cloud services
+do not have this configuration, and you cannot enable the engine yourself on
+such a service.
+</Note>
+
 ## Syntax {#syntax}
 
 ```sql
