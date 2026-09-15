@@ -91,17 +91,6 @@ def create_throttled_table():
     )
 
 
-def create_idle_table():
-    node.query("drop table if exists idle_data sync")
-    node.query("create table idle_data (key UInt64) engine=MergeTree order by key")
-    # Enough rows that the ordered parallel read spawns several workers AND the serial running-sum
-    # window over them runs for seconds -- long enough that the idle workers reliably sleep and park
-    # even under slow sanitizer scheduling (a small/fast table finishes before any worker sits idle,
-    # which made this test flaky). The row is narrow and the window is incremental, so the read
-    # streams and memory stays low (no in-memory sort).
-    node.query("insert into idle_data select number from numbers_mt(50000000)")
-
-
 # A low local read bandwidth forces Throttler::sleep on the pipeline worker threads while they
 # hold a CPU lease, which parks the lease (releasing the CPU slot) and unparks it on wakeup.
 THROTTLED_QUERY = (
@@ -153,30 +142,30 @@ def test_parking_fires_on_single_thread_async_remote_wait():
     assert parks == unparks, f"parks={parks} != unparks={unparks}"
 
 
-# The ordered read of the (large) table fans out to several parallel workers, then the global
-# running-sum window (single partition, ordered frame) is serial and cannot use them, so the extras
-# sit idle in `ExecutorTasks::tryGetTask` with no runnable task -- the #95727 path -- for the whole
-# multi-second window phase. The table is local and the read is not throttled, so no cached-read,
-# throttle, or async park site is reached: any park here comes only from the idle-wait guard, which
-# isolates it (deleting that guard makes this zero). This is the same read-then-serial-window shape
-# used to reproduce #95727 in the PR description, sized so idle workers reliably sleep under CI load.
+# Reproduce the #95727 idle-worker park deterministically and cheaply. A parallel `numbers_mt`
+# branch keeps several workers busy long enough to be spawned; a serial `numbers` branch (a single
+# stream) then sleeps for a few seconds while those workers have no task, so they sleep in
+# `ExecutorTasks::tryGetTask` -- the idle wait -- and park. The sleeps make the idle phase long in
+# wall-clock time rather than row count, so it is hardware-independent and fast under any sanitizer
+# (a large window query was either flaky on fast CI or timed out under msan). No table/throttle/
+# async/cache path is touched, so the only park site reached is the idle wait, isolating that guard.
 IDLE_WORKER_QUERY = (
-    "select max(s) from ("
-    "  select sum(key) over (order by key rows between unbounded preceding and current row) as s "
-    "  from idle_data"
-    ") settings workload = 'all', max_threads = 8"
+    "select count() from ("
+    "  select sleepEachRow(0.2) from numbers_mt(80)"
+    "  union all"
+    "  select sleepEachRow(0.5) from numbers(10)"
+    ") settings workload = 'all', max_threads = 8, max_block_size = 1"
 )
 
 
 def test_parking_fires_on_idle_worker():
     setup_cpu_workload()
-    create_idle_table()
     query_id = "cpu_parking_idle"
     node.query(IDLE_WORKER_QUERY, query_id=query_id)
     node.query("system flush logs")
     parks = get_profile_event(query_id, "ConcurrencyControlParks")
     unparks = get_profile_event(query_id, "ConcurrencyControlUnparks")
-    # Workers idle during the serial window phase park via the idle wait (#95727), so parking fires
+    # Workers idle during the serial sleep phase park via the idle wait (#95727), so parking fires
     # even with no I/O throttling or async wait involved.
     assert parks > 0, f"expected parks > 0, got {parks}"
     assert unparks > 0, f"expected unparks > 0, got {unparks}"
