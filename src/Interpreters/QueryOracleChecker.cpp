@@ -1035,7 +1035,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                 for (const auto & definition : definitions)
                     if (hasNonDeterministicFunctionsImpl(definition, context)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
-                        || referencesDistributedTableAnywhere(definition, context)
+                        || referencesNonDeterministicEngineAnywhere(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
                         return true;
             }
@@ -2526,7 +2526,7 @@ bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, 
         if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
             return false;
 
-    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
     if (referencesNonDeterministicDatabase(select))
         return false;
@@ -2605,7 +2605,7 @@ bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select,
     if (!storage || !storage->getName().ends_with("MergeTree"))
         return false;
 
-    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
