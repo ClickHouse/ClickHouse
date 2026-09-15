@@ -70,8 +70,8 @@ bool lessOp(A a, B b)
         return DecomposedFloat<A>(a).less(b);
     }
 
-    static_assert(is_integer<A> || is_floating_point<A>);
-    static_assert(is_integer<B> || is_floating_point<B>);
+    static_assert(std::is_same_v<A, B> || is_integer<A> || is_floating_point<A>);
+    static_assert(std::is_same_v<A, B> || is_integer<B> || is_floating_point<B>);
     UNREACHABLE();
 }
 
