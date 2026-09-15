@@ -20,6 +20,9 @@ struct ClusterFunctionReadTaskResponse
 
     /// Data path (object path, in case of object storage).
     String path;
+    /// Carried on the wire only, so the protocol version number space matches servers that have
+    /// `read_source_index` (version 8); this release never sets it.
+    std::optional<size_t> read_source_index;
     FileBucketInfoPtr file_bucket_info;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
