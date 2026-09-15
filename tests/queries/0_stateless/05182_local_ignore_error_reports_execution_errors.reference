@@ -1,0 +1,9 @@
+--- a failure followed by a working statement, with --ignore-error
+local : stdout=[still runs] reported errors=1 exit=success
+client: stdout=[still runs] reported errors=1 exit=success
+--- the failure as the last statement, with --ignore-error
+local : stdout=[still runs] reported errors=1 exit=success
+client: stdout=[still runs] reported errors=1 exit=success
+--- without --ignore-error the run stops at the failure and fails
+local : stdout=[] reported errors=1 exit=failure
+client: stdout=[] reported errors=1 exit=failure
