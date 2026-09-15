@@ -1,5 +1,8 @@
--- Tags: zookeeper, no-random-merge-tree-settings
+-- Tags: zookeeper, no-random-merge-tree-settings, no-shared-merge-tree
 -- Tag no-random-merge-tree-settings: the test lists the implicit indices of a table.
+-- Tag no-shared-merge-tree: the test covers the `ReplicatedMergeTree` follower, which applies the
+-- `ALTER` through the ZooKeeper metadata diff; `SharedMergeTree` has its own metadata path, and its
+-- follower reads the rows of the redefined column asynchronously, so the counts below race there.
 
 -- A replica applies a metadata `ALTER` through the ZooKeeper metadata diff rather than through
 -- `AlterCommand`, and the diff carries no index list: implicit indices are recreated locally from
