@@ -294,7 +294,7 @@ private:
 
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
-    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const;
+    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
@@ -316,6 +316,21 @@ private:
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
+
+    /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
+      * A view keeps its name as a qualifier once inlined, exactly as it does without inlining: `v.c` and
+      * `db.v.c` address it, and an alias of its own does not take that name away.
+      */
+    struct InlinedViewName
+    {
+        StorageID storage_id;
+        /// The view had no alias of its own, so its name became the alias of the inlined subquery. Unlike
+        /// a user-provided alias, a table name may repeat in a `FROM` section, so a duplicate of it is
+        /// resolved the way a duplicate table name is instead of being rejected.
+        bool is_the_alias_as_well;
+    };
+
+    std::unordered_map<const IQueryTreeNode *, InlinedViewName> table_expression_to_inlined_view_name;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;

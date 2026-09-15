@@ -4512,6 +4512,18 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     {
         table_expression_data.table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
         table_expression_data.table_expression_description = "subquery";
+
+        /** An inlined view keeps the name it had as a table expression, so that references qualified by
+          * the view name, with or without the database name, resolve the way they do without inlining -
+          * where a table name qualifies references even when the table expression also has an alias.
+          * Example: `SELECT default.v.b FROM t JOIN default.v USING (k)`.
+          */
+        auto inlined_view_it = table_expression_to_inlined_view_name.find(table_expression_node.get());
+        if (inlined_view_it != table_expression_to_inlined_view_name.end())
+        {
+            table_expression_data.database_name = inlined_view_it->second.storage_id.database_name;
+            table_expression_data.table_name = inlined_view_it->second.storage_id.table_name;
+        }
     }
     else if (table_function_node)
     {
@@ -5863,7 +5875,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
   * This replaces the TableNode wrapping a StorageView with a QueryNode/UnionNode built from the
   * view's inner query AST, making the view transparent to the analyzer and all optimization passes.
   */
-void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const
+void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope)
 {
     if (!scope.context->getSettingsRef()[Setting::analyzer_inline_views])
         return;
@@ -6044,7 +6056,13 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     }
 
     /// Preserve alias: the outer query references columns via the view name or user-provided alias.
-    result_node->setAlias(table_node->getAlias());
+    /// A view used without an alias lends its own name to the inlined subquery: the subquery carries no
+    /// name of its own, and `joined_subquery_requires_alias` (on by default) rejects a join with an
+    /// unnamed subquery, so joining a view by its name used to fail with `ALIAS_REQUIRED` under inlining
+    /// while the same query runs without it. The name also stays available as a qualifier, as it is
+    /// without inlining.
+    const bool aliased_by_view_name = table_node->getAlias().empty();
+    result_node->setAlias(aliased_by_view_name ? storage_id.getTableName() : table_node->getAlias());
 
     /// Fix scope tracking: the old TableNode pointer was inserted during initializeQueryJoinTreeNode.
     auto * old_ptr = join_tree_node.get();
@@ -6052,6 +6070,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
     join_tree_node = std::move(result_node);
     scope.table_expressions_in_resolve_process.insert(join_tree_node.get());
+
+    table_expression_to_inlined_view_name.emplace(join_tree_node.get(), InlinedViewName{storage_id, aliased_by_view_name});
 }
 
 /** Resolve query join tree.
@@ -6247,9 +6267,25 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
               * expression namespace, so it replaces the speculative entry (example: SELECT number AS x FROM (SELECT 1) AS x).
               * Genuine duplicate aliases between table expressions are rejected earlier by TableExpressionsAliasVisitor.
               */
+            /** The alias of a view inlined without an alias of its own is the view's name, and a table name
+              * may repeat in a FROM section: `FROM v JOIN v USING (k)` is accepted without inlining, where
+              * a reference to `v` resolves to the first of the two. Keep that resolution instead of
+              * rejecting the query only because the view was inlined.
+              */
+            auto takes_the_name_of_an_inlined_view = [&](const IQueryTreeNode * node)
+            {
+                auto inlined_view_it = table_expression_to_inlined_view_name.find(node);
+                return inlined_view_it != table_expression_to_inlined_view_name.end()
+                    && inlined_view_it->second.is_the_alias_as_well;
+            };
+
+            const bool duplicate_of_an_inlined_view_name
+                = takes_the_name_of_an_inlined_view(table_expression_node.get())
+                && takes_the_name_of_an_inlined_view(it->second.get());
+
             if (it->second->getNodeType() == QueryTreeNodeType::IDENTIFIER)
                 it->second = table_expression_node;
-            else
+            else if (!duplicate_of_an_inlined_view_name)
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
                     alias_name,
