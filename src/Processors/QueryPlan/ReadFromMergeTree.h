@@ -392,6 +392,12 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
+    /// Adopt the conditions another read of the same table built for the same query. A read that is
+    /// handed an analysis result never builds them itself (`selectRangesToRead` returns the analysis
+    /// straight away), and without them `supportsSkipIndexesOnDataRead` is false, so the skip indexes
+    /// that would otherwise be applied while reading granules are silently not applied at all.
+    void setIndexes(std::optional<Indexes> indexes_) { indexes = std::move(indexes_); }
+
     const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 

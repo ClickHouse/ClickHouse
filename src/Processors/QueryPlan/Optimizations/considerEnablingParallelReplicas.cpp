@@ -288,7 +288,15 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         if (!analyzed)
             analyzed = single_node_reads[i]->selectRangesToRead();
         if (analyzed)
+        {
             replicas_reads[i]->setAnalyzedResult(analyzed);
+            /// Hand over the conditions as well, not only the ranges they produced. The replicas plan is
+            /// built with `query_plan_optimize_primary_key` off, so its reads never build them, and a read
+            /// that already has an analysis result never will. Skip indexes applied while reading granules
+            /// (`use_skip_indexes_on_data_read`) need them, and without them they are simply not applied.
+            if (!replicas_reads[i]->getIndexes())
+                replicas_reads[i]->setIndexes(single_node_reads[i]->getIndexes());
+        }
     }
 }
 
@@ -512,6 +520,8 @@ void considerEnablingParallelReplicas(
                 if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);
+                    if (!local_replica_plan_reading_step->getIndexes())
+                        local_replica_plan_reading_step->setIndexes(source_reading_step->getIndexes());
                 }
                 else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
                 {
