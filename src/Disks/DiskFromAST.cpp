@@ -3,7 +3,6 @@
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
@@ -100,8 +99,8 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    if (!attach && !std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name can contain only alphanumeric and '_' ({})", disk_name);
+    if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
