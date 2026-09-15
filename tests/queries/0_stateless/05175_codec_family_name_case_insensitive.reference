@@ -1,0 +1,15 @@
+-- a column CODEC accepts any spelling and stores the canonical description
+a	CODEC(ZSTD(1))
+b	CODEC(ZSTD(3))
+c	CODEC(Delta(8), LZ4)
+d	CODEC(DoubleDelta, LZ4)
+e	CODEC(NONE)
+f	CODEC(Default)
+g	CODEC(T64(\'bit\'), LZ4)
+1000	3496500
+-- the codec-valued MergeTree settings
+1000	499500
+-- another path that takes a codec as a string
+1
+-- `Multiple` is still not nameable directly, in any spelling
+-- an unknown codec is still unknown

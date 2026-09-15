@@ -2776,6 +2776,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
+Codec names are case-insensitive, so `CODEC(ZSTD)`, `CODEC(zstd)` and `CODEC(ZStd)` all name the same codec.
+
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 </Tip>

@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Common/Documentation.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -13,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <source_location>
+#include <string_view>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
@@ -61,7 +63,31 @@ protected:
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
 
-    using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
+    /// A codec family name is matched case-insensitively, the way the `CODEC` keyword itself is, so
+    /// `CODEC(zstd)`, `CODEC(ZSTD)` and `CODEC(ZStd)` all name the same codec. The key of the dictionary
+    /// keeps the spelling used at registration: that is the canonical name, the one `system.codecs` reports.
+    struct FamilyNameHash
+    {
+        using is_transparent = void;
+
+        size_t operator()(std::string_view family_name) const
+        {
+            /// FNV-1a over the lower-cased name.
+            size_t hash = 0xcbf29ce484222325ULL;
+            for (char c : family_name)
+                hash = (hash ^ static_cast<unsigned char>(toLowerASCII(c))) * 0x100000001b3ULL;
+            return hash;
+        }
+    };
+
+    struct FamilyNameEqual
+    {
+        using is_transparent = void;
+
+        bool operator()(std::string_view lhs, std::string_view rhs) const { return equalsCaseInsensitive(lhs, rhs); }
+    };
+
+    using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType, FamilyNameHash, FamilyNameEqual>;
     using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
 
 public:
