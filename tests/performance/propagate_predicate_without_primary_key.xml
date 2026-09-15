@@ -3,6 +3,8 @@
         <enable_analyzer>1</enable_analyzer>
         <!-- Single thread keeps the baselines in the 0.1-1 s window -->
         <max_threads>1</max_threads>
+        <!-- Isolate the propagation from the runtime-filter pass -->
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
     </settings>
 
     <!-- `k` is deliberately not in the primary key, so the copied predicate cannot prune granules -->

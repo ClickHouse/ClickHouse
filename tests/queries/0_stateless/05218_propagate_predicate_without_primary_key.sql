@@ -32,6 +32,27 @@ FROM (
     INNER JOIN prop_nopk_big AS b ON s.k = b.k
 );
 
+-- On a primary key column a set lookup is copied, because pruning pays for it
+SELECT 'in set on a key column',
+       countIf(explain LIKE '%ilter column:%k IN (42, 43)%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_big WHERE k IN (42, 43)) AS b
+    INNER JOIN prop_nopk_small AS s ON b.k = s.k
+);
+
+-- ... but not when index analysis is off, because then it prunes nothing
+SELECT 'in set on a key column, no index analysis',
+       countIf(explain LIKE '%ilter column:%k IN (42, 43)%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_big WHERE k IN (42, 43)) AS b
+    INNER JOIN prop_nopk_small AS s ON b.k = s.k
+    SETTINGS use_primary_key = 0
+);
+
 SELECT 'correctness',
        (SELECT count() FROM (SELECT * FROM prop_nopk_small WHERE k = 42) AS s
         INNER JOIN prop_nopk_big AS b ON s.k = b.k)
