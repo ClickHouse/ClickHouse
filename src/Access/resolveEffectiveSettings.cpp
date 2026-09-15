@@ -257,7 +257,7 @@ namespace
                 profiles.emplace(id, std::move(profile));
         }
 
-        void apply(const PendingAccessEntities & pending)
+        void apply(const PendingAccessEntities & pending, bool new_users_are_shadowed = false)
         {
             for (const auto & [id, entity] : pending)
             {
@@ -267,10 +267,15 @@ namespace
 
                 if (auto user = typeid_cast<UserPtr>(entity))
                 {
-                    /// A user this write creates is assumed to shadow a same-name user of another storage.
-                    /// Assuming the opposite would let the write escape validation.
+                    /// A user this write creates goes ahead of every same-name user, unless the storage it
+                    /// lands in is looked up after one which already holds that name.
                     if (!was_user)
-                        user_order.insert(user_order.begin(), id);
+                    {
+                        if (new_users_are_shadowed)
+                            user_order.emplace_back(id);
+                        else
+                            user_order.insert(user_order.begin(), id);
+                    }
                     users.emplace(id, std::move(user));
                 }
                 else
@@ -615,7 +620,8 @@ namespace
         const AccessGraph & initial,
         const AccessControl & access_control,
         const PendingAccessEntities & pending,
-        const PendingAccessEntities & current)
+        const PendingAccessEntities & current,
+        bool new_users_are_shadowed)
     {
         auto refuse_if_restricted = [&](const String & setting_name)
         {
@@ -654,7 +660,7 @@ namespace
         }
 
         AccessGraph after = before;
-        after.apply(pending);
+        after.apply(pending, new_users_are_shadowed);
 
         /// A login is resolved by name across storages, so creating, dropping or renaming a user can
         /// expose or hide a same-name user of another storage. Compare what each touched name resolves
@@ -752,7 +758,11 @@ namespace
 
 
 FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
-    const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current, bool force)
+    const AccessControl & access_control,
+    const PendingAccessEntities & pending,
+    const PendingAccessEntities & current,
+    bool force,
+    bool new_users_are_shadowed)
 {
     if (!isAnyFeatureTierRestricted(access_control))
         return {};
@@ -778,17 +788,22 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
     /// Resolving a name needs every user, not only the ones the write names.
     bool changes_only_users = !force && !may_change_visible_user && changesOnlyUsers(access_control, pending, current);
     auto graph = std::make_shared<AccessGraph>(access_control, !changes_only_users, pending, current);
-    return [&access_control, graph](const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
+    return [&access_control, graph, new_users_are_shadowed](
+               const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
     {
-        checkFeatureTierForPendingAccessEntitiesWithGraph(*graph, access_control, pending_, current_);
+        checkFeatureTierForPendingAccessEntitiesWithGraph(*graph, access_control, pending_, current_, new_users_are_shadowed);
     };
 }
 
 
 void checkFeatureTierForPendingAccessEntities(
-    const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current)
+    const AccessControl & access_control,
+    const PendingAccessEntities & pending,
+    const PendingAccessEntities & current,
+    bool new_users_are_shadowed)
 {
-    auto checker = prepareFeatureTierAccessEntityChecker(access_control, pending, current);
+    auto checker
+        = prepareFeatureTierAccessEntityChecker(access_control, pending, current, /* force= */ false, new_users_are_shadowed);
     if (checker)
         checker(pending, current);
 }

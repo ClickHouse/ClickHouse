@@ -314,6 +314,8 @@ private:
         bool replace_if_exists,
         bool throw_if_exists,
         UUID * conflicting_id) TSA_REQUIRES(access_entities_mutex);
+    bool isShadowedInsertionUnlocked(const IAccessStorage & destination, const IAccessEntity & entity) const
+        TSA_REQUIRES(access_entities_mutex);
     bool checkNameCollisionInOtherStorage(
         IAccessStorage & storage,
         const AccessEntityPtr & entity,

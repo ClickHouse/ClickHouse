@@ -669,6 +669,20 @@ bool AccessControl::checkNameCollisionInOtherStorage(
     return false;
 }
 
+/// A login resolves to the first storage holding its name, so an entity inserted into a storage which
+/// is looked up later than one already holding that name stays hidden.
+bool AccessControl::isShadowedInsertionUnlocked(const IAccessStorage & destination, const IAccessEntity & entity) const
+{
+    for (const auto & storage : getStorages())
+    {
+        if (storage.get() == &destination)
+            return false;
+        if (storage->find(entity.getType(), entity.getName()))
+            return true;
+    }
+    return false;
+}
+
 bool AccessControl::insertImplUnlocked(
     IAccessStorage * storage,
     const UUID & id,
@@ -703,7 +717,8 @@ bool AccessControl::insertImplUnlocked(
         /// A replacement drops the entity that holds the name, which need not be `id`.
         if (replace_if_exists && existing_id && *existing_id != id)
             pending[*existing_id] = nullptr;
-        checkFeatureTierForPendingAccessEntities(*this, pending);
+        checkFeatureTierForPendingAccessEntities(
+            *this, pending, /* current= */ {}, isShadowedInsertionUnlocked(storage_for_insertion, *entity));
         FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
     }
 

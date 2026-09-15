@@ -66,11 +66,14 @@ using FeatureTierAccessEntityChecker = std::function<void(const PendingAccessEnt
 
 /// Prepares an immutable graph snapshot for checks which must run from inside an access storage's
 /// update callback. An empty result means the pending change cannot affect settings in effect.
+/// `new_users_are_shadowed` tells where a user the write creates lands in the lookup order: an earlier
+/// storage already holds that name, so the new user stays hidden and no login resolves to it.
 FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
     const AccessControl & access_control,
     const PendingAccessEntities & pending,
     const PendingAccessEntities & current = {},
-    bool force = false);
+    bool force = false,
+    bool new_users_are_shadowed = false);
 
 /// Refuses the pending write if it changes a setting whose tier `allow_feature_tier` disables for a
 /// user, or for a role or settings profile which could later carry that setting to a user.
@@ -80,7 +83,10 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
 /// clause and an override dropped by omission one case instead of many: none of them names a setting,
 /// and all of them change which settings are in effect.
 void checkFeatureTierForPendingAccessEntities(
-    const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current = {});
+    const AccessControl & access_control,
+    const PendingAccessEntities & pending,
+    const PendingAccessEntities & current = {},
+    bool new_users_are_shadowed = false);
 
 /// Refuses a write which changes the user a login resolves to, when the two definitions differ on a
 /// setting of a disabled tier. A move rewrites no entity, so both users belong to the same snapshot.
