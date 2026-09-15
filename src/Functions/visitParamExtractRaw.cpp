@@ -9,10 +9,11 @@ namespace DB
 struct ExtractRaw
 {
     using ExpectChars = PODArrayWithStackMemory<char, 64>;
+    using Scratch = ExpectChars;
 
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
+    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data, Scratch & expects_end)
     {
-        ExpectChars expects_end;
+        expects_end.clear();
         UInt8 current_expect_end = 0;
 
         for (const auto * extract_begin = pos; pos != end; ++pos)
