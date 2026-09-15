@@ -129,7 +129,6 @@
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_lightweight_update>1</enable_lightweight_update>
             <enable_materialized_cte>1</enable_materialized_cte>
-            <enable_nullable_tuple_type>1</enable_nullable_tuple_type>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
             <enable_quantized_codec>1</enable_quantized_codec>
