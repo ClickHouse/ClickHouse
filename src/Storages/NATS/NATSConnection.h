@@ -29,6 +29,9 @@ struct NATSConfiguration
     String token;
     String credential_file;
     String credentials;
+    String ca_file;
+    String client_cert_file;
+    String client_key_file;
 
     UInt64 max_connect_tries{};
     int reconnect_wait{};
@@ -37,6 +40,14 @@ struct NATSConfiguration
 };
 
 using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
+
+/// Loads the TLS material into `options`. Both calls parse the files immediately, so one which
+/// cannot be read or parsed is reported here instead of at connect time.
+void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration);
+
+/// Loads the TLS material into throwaway options, which reports a file that cannot be read or parsed
+/// without opening a connection.
+void validateNATSCertificates(const NATSConfiguration & configuration);
 
 class NATSConnection
 {
@@ -60,6 +71,13 @@ public:
 
     String connectionInfoForLog() const;
 
+    /// The error the client library recorded last on the connection, `Authorization Violation`
+    /// for a connection it closed for good after the server rejected the credentials twice. The
+    /// library keeps it on a closed connection, which lets the table report why it lost the one it
+    /// is replacing; the asynchronous error handler below cannot do that, because it only knows the
+    /// connection, not the table.
+    String lastErrorForLog();
+
 private:
     bool isConnectedImpl(const Lock & connection_lock) const;
     bool isDisconnectedImpl(const Lock & connection_lock) const;
@@ -71,6 +89,7 @@ private:
 
     static void disconnectedCallback(natsConnection * nc, void * connection);
     static void reconnectedCallback(natsConnection * nc, void * connection);
+    static void errorCallback(natsConnection * nc, natsSubscription * subscription, natsStatus status, void * connection);
 
     NATSConfiguration configuration;
     LoggerPtr log;
