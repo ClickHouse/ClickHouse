@@ -1010,7 +1010,7 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
 
             if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>)
             {
-                if (block_end < size && unlikely(best == terminalValue<strategy, T>()))
+                if (block_end < size && unlikely((best == terminalValue<strategy, T>())))
                 {
                     const size_t block_index = findFirstSelectedValue(
                         data + best_block_begin, best_block_end - best_block_begin, best, use_simd);
@@ -1083,7 +1083,7 @@ static void executeNumericData(const Element * data, const ColumnArray::Offsets 
 
         if constexpr (std::is_integral_v<Element> || std::is_floating_point_v<Element>)
         {
-            if (size > 1 && unlikely(data[begin] == terminalValue<strategy, Element>()))
+            if (size > 1 && unlikely((data[begin] == terminalValue<strategy, Element>())))
             {
                 result[row] = 1;
                 begin = end;
