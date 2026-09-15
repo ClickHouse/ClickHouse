@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
+#include <IO/ParallelGzipDeflatingWriteBuffer.h>
 #include <IO/LibdeflateDeflatingWriteBuffer.h>
 #include <IO/LibdeflateInflatingReadBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
@@ -283,10 +284,19 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
 
 template<typename WriteBufferT>
 std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
-    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, [[maybe_unused]] SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
+    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, [[maybe_unused]] SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty, size_t compression_threads)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
     {
+        /// Gzip output can be produced in parallel; the result is an ordinary gzip stream.
+        /// The parallel deflater writes the gzip wrapper lazily, so it honours compress_empty=false the
+        /// same way the serial buffers do and can be used on every path, including HTTP responses.
+        /// It deflates with zlib, which supports levels only up to 9; the libdeflate-only levels 10..12
+        /// stay on the serial libdeflate writer below, so enabling the setting never rejects a level
+        /// that `getCompressionLevelRange` allows.
+        if (method == CompressionMethod::Gzip && compression_threads > 1 && level <= 9)
+            return std::make_unique<ParallelGzipDeflatingWriteBuffer>(
+                std::forward<WriteBufferT>(nested), level, compression_threads, compress_empty);
 #if USE_LIBDEFLATE
         /// libdeflate is faster and compresses better; it produces a single valid gzip/zlib member.
         /// Levels outside libdeflate's [1, 12] range (e.g. 0 = store) keep using zlib.
@@ -322,7 +332,6 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
         return std::make_unique<HadoopSnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
     }
 #endif
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
@@ -336,11 +345,12 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    bool compress_empty)
+    bool compress_empty,
+    size_t compression_threads)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty, compression_threads);
 }
 
 
@@ -353,10 +363,11 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    bool compress_empty)
+    bool compress_empty,
+    size_t compression_threads)
 {
     chassert(method != CompressionMethod::None);
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty, compression_threads);
 }
 
 }
