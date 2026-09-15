@@ -3,6 +3,8 @@
 #include <base/extended_types.h>
 #include <base/strong_typedef.h>
 
+#include <cstring>
+
 
 namespace DB
 {
@@ -19,11 +21,10 @@ namespace DB
         using StrongTypedef::StrongTypedef;
         using StrongTypedef::operator=;
 
-        bool operator<(const IPv6 & rhs) const;
-
-        bool operator>(const IPv6 & rhs) const;
-
-        bool operator==(const IPv6 & rhs) const;
+        /// Ordered by the network byte representation, not by the little-endian UInt128 value.
+        bool operator<(const IPv6 & rhs) const { return std::memcmp(&toUnderType(), &rhs.toUnderType(), sizeof(UnderlyingType)) < 0; }
+        bool operator>(const IPv6 & rhs) const { return std::memcmp(&toUnderType(), &rhs.toUnderType(), sizeof(UnderlyingType)) > 0; }
+        bool operator==(const IPv6 & rhs) const { return toUnderType() == rhs.toUnderType(); }
 
         bool operator<=(const IPv6 & rhs) const { return !operator>(rhs); }
         bool operator>=(const IPv6 & rhs) const { return !operator<(rhs); }
