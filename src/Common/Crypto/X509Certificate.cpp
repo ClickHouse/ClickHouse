@@ -173,26 +173,45 @@ std::string X509Certificate::subjectName() const
     return buffer;
 }
 
+/// Extract the value of the first entry with the given NID from an X509 name as a length-delimited
+/// string. We read the ASN1_STRING bytes directly instead of X509_NAME_get_text_by_NID because that
+/// function copies into a fixed C buffer and NUL-terminates: an embedded NUL byte (e.g. a CN of
+/// "admin\0.evil.com") would be silently truncated to "admin", letting a certificate impersonate a
+/// different subject during authentication. Preserving the exact bytes makes such a value compare
+/// unequal to any NUL-free configured subject, and also avoids silent truncation of long names.
+static std::string extractNameEntry(X509_NAME * name, uint nid)
+{
+    if (!name)
+        return {};
+
+    const int index = X509_NAME_get_index_by_NID(name, static_cast<int>(nid), -1);
+    if (index < 0)
+        return {};
+
+    const X509_NAME_ENTRY * entry = X509_NAME_get_entry(name, index);
+    if (!entry)
+        return {};
+
+    const ASN1_STRING * data = X509_NAME_ENTRY_get_data(entry);
+    if (!data)
+        return {};
+
+    const unsigned char * bytes = ASN1_STRING_get0_data(data);
+    const int length = ASN1_STRING_length(data);
+    if (!bytes || length < 0)
+        return {};
+
+    return std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(length));
+}
+
 std::string X509Certificate::issuerName(uint nid) const
 {
-    if (X509_NAME * issuer = X509_get_issuer_name(certificate))
-    {
-        char buffer[X509Certificate::NAME_BUFFER_SIZE];
-        if (X509_NAME_get_text_by_NID(issuer, nid, buffer, sizeof(buffer)) >= 0)
-            return std::string(buffer);
-    }
-    return {};
+    return extractNameEntry(X509_get_issuer_name(certificate), nid);
 }
 
 std::string X509Certificate::subjectName(uint nid) const
 {
-    if (X509_NAME * subj = X509_get_subject_name(certificate))
-    {
-        char buffer[X509Certificate::NAME_BUFFER_SIZE];
-        if (X509_NAME_get_text_by_NID(subj, nid, buffer, sizeof(buffer)) >= 0)
-            return std::string(buffer);
-    }
-    return {};
+    return extractNameEntry(X509_get_subject_name(certificate), nid);
 }
 
 std::string X509Certificate::commonName() const
