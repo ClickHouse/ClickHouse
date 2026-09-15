@@ -508,6 +508,14 @@ protected:
     void increaseWaitingQueryAmount(const QueryStatusPtr & status);
     void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
 
+    /// The description of a concurrency limit that has no room for `status` to run, if there is one.
+    /// `status` is still counted as waiting, so a limit has room exactly when it would admit one more query.
+    std::optional<String> limitWithoutRoomToResume(const QueryStatusPtr & status, const Settings & settings) const;
+
+    /// Take back the concurrency slot the query gave up when it started waiting, then stop counting it
+    /// as waiting. Blocks while the limits are full and refuses the query if they stay full.
+    void stopWaitingAndReacquireSlot(const QueryStatusPtr & status, const Settings & settings, bool wait_failed);
+
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
@@ -540,6 +548,8 @@ public:
     {
         Lock lock(mutex);
         max_size = max_size_;
+        /// A raised limit can admit a query that is waiting for a slot, here or in `insert`.
+        have_space.notify_all();
     }
 
     size_t getMaxSize() const
@@ -552,6 +562,7 @@ public:
     {
         Lock lock(mutex);
         max_insert_queries_amount = max_insert_queries_amount_;
+        have_space.notify_all();
     }
 
     size_t getMaxInsertQueriesAmount() const
@@ -576,6 +587,7 @@ public:
     {
         Lock lock(mutex);
         max_select_queries_amount = max_select_queries_amount_;
+        have_space.notify_all();
     }
 
     size_t getMaxSelectQueriesAmount() const
@@ -595,9 +607,14 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    /// Register (unregister) `status` as waiting for load jobs.
+    /// A query's cancellation is settled: `cancelled_cv` for a thread waiting for that cancellation to
+    /// finish, and `have_space` because a query waiting for a concurrency slot gives up when killed.
+    void notifyCancellationSettled() const { cancelled_cv.notify_all(); have_space.notify_all(); }
+
+    /// Register (unregister) `status` as waiting for load jobs. Unregistering waits for the
+    /// concurrency limits to have room for the query again, so it must run without `LoadJob::mutex`.
     void incrementWaiters(const QueryStatusPtr & status);
-    void decrementWaiters(const QueryStatusPtr & status);
+    void decrementWaiters(const QueryStatusPtr & status, const Settings & settings, bool wait_failed);
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);

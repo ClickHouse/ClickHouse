@@ -340,3 +340,145 @@ def test_waiting_queries_do_not_hold_concurrency_slots(started_cluster):
             "<max_concurrent_queries>0</max_concurrent_queries>",
         )
         cleanup(handles)
+
+
+def processes(query_ids):
+    ids = ", ".join(f"'{query_id}'" for query_id in query_ids)
+    # Reading `system.processes` is exempt from the concurrency limits, so this is one of the few
+    # probes that still answers while they are full.
+    return node.query(
+        f"SELECT count() FROM system.processes WHERE query_id IN ({ids})"
+    ).strip()
+
+
+def test_resuming_query_takes_its_concurrency_slot_back(started_cluster):
+    handles = []
+    try:
+        # Three queries have to be able to wait at once here, one per outcome below.
+        set_config(
+            "<max_waiting_queries>2</max_waiting_queries>",
+            "<max_waiting_queries>3</max_waiting_queries>",
+        )
+        pin_startup_of_replicated_database(
+            "/test/max_waiting_queries/resume", create_table=False
+        )
+        assert server_setting("max_waiting_queries") == "3"
+
+        # All three block in DatabaseReplicated::waitDatabaseStarted. Each carries the limit it is to
+        # be held by, instead of the config installing one server wide, because the statements that
+        # drive the test (releasing the fail point, polling, killing) run while the limits are full and
+        # would be refused too. `queue_max_wait_ms` decides what a full limit does to a query that
+        # stops waiting: the default refuses at once, a nonzero value waits for a slot.
+        for_user = {"max_concurrent_queries_for_user": 2}
+        for_all_users = {"max_concurrent_queries_for_all_users": 2, "queue_max_wait_ms": 120000}
+        refused = node.get_query_request(
+            "CREATE TABLE re.w0 (a Int) ENGINE = MergeTree ORDER BY a", settings=for_user
+        )
+        killed = node.get_query_request(
+            "CREATE TABLE re.w1 (a Int) ENGINE = MergeTree ORDER BY a",
+            query_id="killed",
+            settings=for_all_users,
+        )
+        # A `Replicated` database drop runs no further non-internal query once it resumes, so its
+        # success does not depend on a second slot being free at that moment.
+        resumed = node.get_query_request(
+            "DROP DATABASE re SYNC", query_id="resumed", settings=for_all_users
+        )
+        handles.extend([refused, killed, resumed])
+        wait_for(
+            waiters_on_startup_job,
+            "3",
+            "all three queries to block on the startup job",
+            timeout=180,
+        )
+
+        # Every waiter is discounted, so these two take the slots they gave up.
+        occupancy_ids = ["occupancy0", "occupancy1"]
+        for query_id in occupancy_ids:
+            handles.append(
+                node.get_query_request(
+                    "SELECT sleepEachRow(1) FROM numbers(120) SETTINGS "
+                    "function_sleep_max_microseconds_per_block = 0, max_block_size = 1",
+                    query_id=query_id,
+                )
+            )
+        wait_for(
+            lambda: processes(occupancy_ids),
+            "2",
+            "both occupancy queries to enter the process list",
+            timeout=180,
+        )
+
+        # Both limits are full now, and the occupancy queries are what fills them: five queries in the
+        # process list, three of them discounted.
+        for limit, whose in [
+            ("max_concurrent_queries_for_user", "for user default"),
+            ("max_concurrent_queries_for_all_users", "for all users"),
+        ]:
+            error = node.query_and_get_error("SELECT 1", settings={limit: 2})
+            assert f"Too many simultaneous queries {whose}" in error, error
+            assert "maximum: 2, waiting: 3" in error, error
+
+        # Release the startup job while both occupancy queries keep running. No waiter may simply
+        # continue: that would run three queries against a limit of two. Waiting is over for all of
+        # them, so each has to take a slot back, and there is none.
+        node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
+
+        _, error = refused.get_answer_and_error()
+        assert "Cannot resume a query that was waiting for a load job" in error, error
+        assert "too many simultaneous queries for user default" in error, error
+        handles.remove(refused)
+
+        # The queries that are allowed to wait for a slot stay counted as waiting, even though no load
+        # job has a waiter any more: that is what keeps them from running beside the occupancy queries,
+        # and what keeps their own discount from admitting a third query in their place.
+        wait_for(
+            waiting_queries_metric, "2", "both remaining waiters to wait for a slot", timeout=180
+        )
+        wait_for(
+            lambda: node.query("SELECT sum(waiters) FROM system.asynchronous_loader").strip(),
+            "0",
+            "every load job to be left without waiters",
+            timeout=180,
+        )
+
+        # That wait is not a black hole: cancelling a query ends it at once, with the refusal it would
+        # have got when the wait expired. The bound is far below the two minutes of
+        # `queue_max_wait_ms` this query carries, and far above the time a loaded machine needs to
+        # deliver the cancellation.
+        started = time.monotonic()
+        node.query("KILL QUERY WHERE query_id = 'killed' SYNC")
+        _, error = killed.get_answer_and_error()
+        elapsed = time.monotonic() - started
+        assert "Cannot resume a query that was waiting for a load job" in error, error
+        assert elapsed < 45, f"cancelling the waiting query took {elapsed:.1f}s"
+        handles.remove(killed)
+
+        # Neither statement ran: both left the wait without a slot.
+        assert node.query("EXISTS TABLE re.w0").strip() == "0"
+        assert node.query("EXISTS TABLE re.w1").strip() == "0"
+        wait_for(waiting_queries_metric, "1", "the cancelled query to leave the waiting set", timeout=180)
+
+        # Freeing the slots is what lets the last one continue (`KILL QUERY` is exempt from the limit,
+        # so it is admitted while the limit is still full).
+        node.query(
+            f"KILL QUERY WHERE query_id IN ({', '.join(repr(i) for i in occupancy_ids)}) SYNC",
+            ignore_error=True,
+        )
+        _, error = resumed.get_answer_and_error()
+        assert error == "", error
+        handles.remove(resumed)
+        assert node.query("EXISTS DATABASE re").strip() == "0"
+        wait_for(
+            waiting_queries_metric, "0", "every waiter to leave the waiting set", timeout=180
+        )
+    finally:
+        set_config(
+            "<max_waiting_queries>3</max_waiting_queries>",
+            "<max_waiting_queries>2</max_waiting_queries>",
+        )
+        for query_id in ["killed", "resumed"] + ["occupancy0", "occupancy1"]:
+            node.query(
+                f"KILL QUERY WHERE query_id = '{query_id}' SYNC", ignore_error=True
+            )
+        cleanup(handles)

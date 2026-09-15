@@ -605,6 +605,10 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
+A query that stops waiting takes its place in these limits back before it continues, and is still counted
+as waiting until it has one. If a limit is full at that moment, the query waits for up to
+`queue_max_wait_ms`, and is refused only if the limit is still full then. Note that a query that has just arrived waits like that only for
+`max_concurrent_queries`, and is refused right away by the other four.
 </Note>
 
 <Note>
