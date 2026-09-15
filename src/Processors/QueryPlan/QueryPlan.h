@@ -142,8 +142,9 @@ public:
     void resolveStorages(const ContextPtr & context);
 
     /// Optimizes the query. With `make_distributed_plan` set, the plan must have been accepted by
-    /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it); otherwise this
-    /// throws a logical error, unless the plan already contains logical exchanges.
+    /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it), because set and CTE
+    /// expansion is then left to `convertToDistributed`; a plan that skipped the decision keeps its
+    /// `Delayed*` placeholder steps and fails with a logical error when the pipeline is built.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
@@ -195,7 +196,7 @@ public:
     auto getInterpretersContexts() const { return resources.interpreter_context; }
     /// Registers a context that `applyDistributedPlanFallbackToLocal` sets `make_distributed_plan = 0` on
     /// when this plan falls back (see `QueryPlanResourceHolder::distributed_plan_decision_contexts`).
-    void addDistributedPlanDecisionContext([[maybe_unused]] ContextMutablePtr context)
+    void addDistributedPlanDecisionContext(ContextMutablePtr context)
     {
         resources.distributed_plan_decision_contexts.emplace_back(std::move(context));
     }
