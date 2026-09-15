@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -12,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -194,6 +196,27 @@ public:
             context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
+    static DataTypePtr getTargetType(
+        const ColumnWithTypeAndName & type_argument,
+        const String & function_name,
+        const DataTypeValidationSettings & validation_settings)
+    {
+        const auto & column = type_argument.column;
+        if (!column)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
+                "Instead there is non-constant column of type {}", function_name, type_argument.type->getName());
+
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
+        if (!type_col)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
+                "Instead there is a column with the following structure: {}", function_name, column->dumpStructure());
+
+        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        validateDataType(type, validation_settings);
+
+        return type;
+    }
+
     static FunctionBasePtr createInternalCast(
         ColumnWithTypeAndName from,
         DataTypePtr to,
@@ -230,18 +253,7 @@ protected:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto & column = arguments.back().column;
-        if (!column)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
-                "Instead there is non-constant column of type {}", getName(), arguments.back().type->getName());
-
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
-        if (!type_col)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
-                "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());
-
-        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
-        validateDataType(type, data_type_validation_settings);
+        DataTypePtr type = getTargetType(arguments.back(), getName(), data_type_validation_settings);
 
         /// CAST to `DateTime` or `DateTime64` without an explicit time zone should preserve
         /// the time zone of the source argument when it is a `DateTime`/`DateTime64` with
@@ -293,6 +305,44 @@ private:
 };
 
 
+/// Apply the internal accurate conversion when the expression executes. Preparing the conversion
+/// earlier would reject unsupported source types even when no rows reach the expression.
+/// A distinct registered name preserves these semantics when a rewritten query is analyzed again.
+class FunctionInternalAccurateCast final : public IFunction
+{
+public:
+    static constexpr auto name = "_accurateCast";
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionInternalAccurateCast>();
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// Internal casts preserve the exact target type without query settings or time zone substitution.
+        return CastOverloadResolverImpl::getTargetType(arguments.back(), name, {});
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        return castColumnAccurate(arguments.front(), result_type);
+    }
+};
+
+
 FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
 {
     return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
@@ -301,7 +351,7 @@ FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, C
 REGISTER_FUNCTION(CastOverloadResolvers)
 {
     factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS, FunctionFactory::Case::Insensitive);
-    /// Note: "internal" (not affected by null preserving setting) versions of accurate cast functions are unneeded.
+    factory.registerFunction<FunctionInternalAccurateCast>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     /// CAST documentation
     FunctionDocumentation::Description CAST_description = R"(
