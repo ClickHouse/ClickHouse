@@ -697,13 +697,13 @@ int dumpStateMachine(
         LOG_INFO(logger, "Applying changelog entries from {} to {}", last_committed_index + 1, last_index_to_apply - 1);
         for (size_t i = last_committed_index + 1; i < last_index_to_apply; ++i)
         {
-            auto & entry = *changelog.entry_at(i);
-            if (entry.get_val_type() == nuraft::log_val_type::app_log)
+            auto entry = changelog.entry_at(i);
+            if (entry->get_val_type() == nuraft::log_val_type::app_log)
             {
                 if (debug_mode)
                 {
                     LOG_INFO(logger, "Current digest of state machine: {}", state_machine->getNodesDigest().value);
-                    auto batch = state_machine->parseRequestBatch(entry.get_buf(), true);
+                    auto batch = state_machine->parseRequestBatch(*entry, true);
                     for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
                     {
                         const auto & req = batch->requests[request_idx];
@@ -711,14 +711,14 @@ int dumpStateMachine(
                             logger,
                             "Applying log entry {}: term={}, zxid={}, session_id={}\nrequest:\n{}",
                             i,
-                            entry.get_term(),
+                            entry->get_term(),
                             batch->getZxid(request_idx),
                             req.session_id,
                             req.request->toString());
                     }
                 }
-                state_machine->pre_commit(i, entry.get_buf());
-                state_machine->commit(i, entry.get_buf());
+                state_machine->preCommitEntry(i, entry);
+                state_machine->commitEntry(i, entry);
             }
         }
     }
@@ -864,7 +864,7 @@ int deserializeChangelog(
                         continue;
                     }
 
-                    auto batch = state_machine->parseRequestBatch(entry->get_buf(), true);
+                    auto batch = state_machine->parseRequestBatch(*entry, true);
                     /// The digest is per batch (of the state after the whole batch); show it on every row of the batch.
                     const auto & digest = batch->digest;
 
@@ -966,9 +966,9 @@ int deserializeChangelog(
             {
                 try
                 {
-                    if (auto buffer = entry->get_buf_ptr(); buffer)
+                    if (entry->get_buf_ptr())
                     {
-                        auto batch = state_machine->parseRequestBatch(*buffer, true);
+                        auto batch = state_machine->parseRequestBatch(*entry, true);
                         if (batch->digest.version != KeeperDigestVersion::NO_DIGEST)
                             std::cout << fmt::format("Digest: {} ({})\n", batch->digest.value, batch->digest.version);
                         if (batch->dispatcher_server_id != -1)
