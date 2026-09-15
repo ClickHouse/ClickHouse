@@ -113,7 +113,7 @@ SQLQueryPiece applyComparisonOperator(
         auto apply_function_to_ast = [&](ASTPtr x, ASTPtr y) -> ASTPtr
         {
             return timeSeriesScalarASTCast(
-                makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y)), context.scalar_data_type);
+                makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y)), context.result_value_type);
         };
 
         return applySimpleBinaryOperator(

@@ -1,5 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -62,6 +64,10 @@ namespace
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
+
+        /// The aggregate function returns one of the samples as is, so its result has the same type as the values
+        /// in the TimeSeries table (which can be Float32) and must be cast to Float64.
+        bool returns_value_type = false;
     };
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -103,18 +109,21 @@ namespace
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+                 /* returns_value_type = */ true,
              }},
 
             {"max_over_time",
              {
                  "timeSeriesMaxToGrid",
                  /* drop_metric_name = */ true,
+                 /* returns_value_type = */ true,
              }},
 
             {"min_over_time",
              {
                  "timeSeriesMinToGrid",
                  /* drop_metric_name = */ true,
+                 /* returns_value_type = */ true,
              }},
 
             {"ts_of_max_over_time",
@@ -264,7 +273,7 @@ SQLQueryPiece applyFunctionOverRange(
             ///                             arrayResize([], <count_of_time_steps>, <scalar_value>)) AS values
             /// FROM <subquery>
             ASTPtr value = (argument.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(argument.scalar_value)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             /// arrayResize([], <count_of_time_steps>, <scalar_value>)
@@ -300,9 +309,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS samples).1
             ASTPtr ts = makeASTFunction(
                 "timeSeriesFromGrid",
-                timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
             ts->setAlias(ColumnNames::Samples);
             timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
@@ -344,9 +353,9 @@ SQLQueryPiece applyFunctionOverRange(
         /// timeSeriesRange(<start_time>, <end_time>, <step>)
         timestamps = makeASTFunction(
             "timeSeriesRange",
-            timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(argument.step, context.timestamp_data_type));
+            timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+            timeSeriesDurationToAST(argument.step, context.result_timestamp_type));
     }
 
     SelectQueryBuilder builder;
@@ -357,10 +366,20 @@ SQLQueryPiece applyFunctionOverRange(
     /// <aggregate_function>(<timestamps>, <values>) AS values
     auto aggregate_values = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
+        timeSeriesTimestampToAST(aggregation_start_time, context.result_timestamp_type),
+        timeSeriesTimestampToAST(aggregation_end_time, context.result_timestamp_type),
+        timeSeriesDurationToAST(aggregation_step, context.result_timestamp_type),
+        timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    if (impl_info->returns_value_type && (argument.store_method == StoreMethod::RAW_DATA))
+    {
+        /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
+        /// Only raw data can have Float32 values (see the comment for StoreMethod::RAW_DATA), and this is the point
+        /// where they are converted to Float64: the aggregated grid is much smaller than the raw data.
+        aggregate_values = timeSeriesASTCast(
+            std::move(aggregate_values),
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(context.result_value_type)));
+    }
 
     if (fixed_at_node)
     {

@@ -137,7 +137,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             makeASTFunction(
                 "if",
                 makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u)),
-                timeSeriesScalarToAST(1, context.scalar_data_type),
+                timeSeriesScalarToAST(1),
                 make_intrusive<ASTLiteral>(Field{}))),
         std::move(presence_counts)));
     builder.select_list.back()->setAlias(ColumnNames::Values);

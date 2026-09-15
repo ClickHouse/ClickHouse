@@ -22,7 +22,7 @@ struct AggregateFunctionTimeseriesCountTraits
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-    using ResultType = ValueType;
+    using ResultType = Float64;
 
     static String getName() { return "timeSeriesCountToGrid"; }
 

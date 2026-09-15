@@ -28,6 +28,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/getPromQLResultTypes.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -201,9 +202,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     evaluation_settings.time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(evaluation_settings.time_series_version);
-    std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
-        = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type);
-    UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
+    evaluation_settings.table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
+    UInt32 timestamp_scale = getPromQLResultTimestampScale(evaluation_settings.table_timestamp_type);
 
     if (!params.lookback_delta_param.empty())
     {

@@ -29,10 +29,10 @@ struct PrometheusQueryEvaluationSettings
 
     StorageID time_series_storage_id = StorageID::createEmpty();
 
-    /// Data types of the corresponding columns in the TimeSeries table.
-    /// We use these data types for the columns we read from table function prometheusQuery().
-    DataTypePtr timestamp_data_type;
-    DataTypePtr scalar_data_type;
+    /// Data type of the timestamp column in the TimeSeries table.
+    /// The data types of the columns returned by the table functions prometheusQuery() and prometheusQueryRange() are derived from it:
+    /// timestamps are DateTime64 with the scale getPromQLResultTimestampScale(table_timestamp_type), values are always Float64.
+    DataTypePtr table_timestamp_type;
 
     /// The version of the TimeSeries table.
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
@@ -44,7 +44,8 @@ struct PrometheusQueryEvaluationSettings
 
     /// Specifies that a prometheus query should be evaluated starting with `start_time` and ending with `end_time`
     /// with a specified `step`.
-    /// The scale of these fields is the same as the scale used in `timestamp_data_type`.
+    /// The scale of these fields is getPromQLResultTimestampScale(table_timestamp_type),
+    /// and the PromQL query must be parsed with the same scale.
     std::optional<TimestampType> start_time;
     std::optional<TimestampType> end_time;
     std::optional<DurationType> step;

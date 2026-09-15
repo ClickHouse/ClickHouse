@@ -1,9 +1,9 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRangeGetter.h>
 
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/alignTimestampWithStep.h>
+#include <Storages/TimeSeries/getPromQLResultTypes.h>
 
 
 namespace DB::ErrorCodes
@@ -28,8 +28,7 @@ namespace
 NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                                                      const PrometheusQueryEvaluationSettings & settings_)
     : promql_tree(promql_tree_)
-    , timestamp_data_type(settings_.timestamp_data_type)
-    , timestamp_scale(tryGetDecimalScale(*timestamp_data_type).value_or(0))
+    , timestamp_scale(getPromQLResultTimestampScale(settings_.table_timestamp_type))
 {
     if (promql_tree->getTimestampScale() != timestamp_scale)
     {
