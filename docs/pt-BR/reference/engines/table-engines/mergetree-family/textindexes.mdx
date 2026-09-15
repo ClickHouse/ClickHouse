@@ -557,6 +557,7 @@ Além disso, `LIKE` oferece suporte à avaliação por varredura de dicionário 
 ² `ILIKE` é compatível apenas por meio da avaliação por varredura de dicionário (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizador `splitByNonAlpha` ou `array`).
 Não há fallback para usar o índice como dica nos padrões que a varredura de dicionário não suporta: se a configuração estiver desabilitada ou o tokenizador não estiver no conjunto compatível, o índice não será usado para `ILIKE`.
 O pré-processador, se presente, deve ser `lower` ou `upper`; pós-processadores não são compatíveis.
+Alguns needles também não são elegíveis; consulte [consultas LIKE/ILIKE](#like-ilike-queries-perf).
 
 ³ `hasPhrase` em um índice de texto `splitByRegexp` **não** oferece suporte a pós-processador: a combinação é rejeitada com uma exceção, porque a reescrita em nível de linha do pós-processador pressupõe tokens no estilo `splitByNonAlpha`, divididos por espaços em branco. Sem um pós-processador, `splitByRegexp` é totalmente suportado por `hasPhrase`.
 
@@ -1447,22 +1448,22 @@ Essa ordenação permite ignorar ainda mais grânulos de dados do que os já ign
 
 ### Consultas LIKE/ILIKE {#like-ilike-queries-perf}
 
-Quando o pattern de uma consulta LIKE/ILIKE é `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` ou `%<alpha-numeric-characters-without-spaces>` e o tokenizer do índice de texto é `splitByNonAlpha` ou `array`, o ClickHouse aproveita o inverted index para acelerar significativamente as consultas LIKE/ILIKE. Para isso, em vez de fazer um full-table scan, o ClickHouse percorre o dicionário do inverted index para encontrar o pattern correspondente.
+Quando o pattern de uma consulta LIKE/ILIKE é `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` ou `%<alpha-numeric-characters-without-spaces>` e o tokenizer do índice de texto é `splitByNonAlpha` ou `array`, o ClickHouse aproveita o inverted index para acelerar significativamente as consultas LIKE/ILIKE. Para isso, em vez de fazer um full-table scan, o ClickHouse percorre o Dicionário do inverted index para encontrar o pattern correspondente.
 
-A forma como o resultado do dictionary scan é usado depende de onde a needle está ancorada:
+A forma como o resultado do Dicionário scan é usado depende de onde a needle está ancorada:
 
 * `%value%` corresponde a uma linha se e somente se corresponder a um dos tokens da linha, portanto o índice decide a consulta sozinho: uma [leitura direta (sem hint)](#direct-read) que remove o predicado original.
-* `value%` e `%value` ancoram a needle no valor inteiro, enquanto o dictionary scan só consegue ancorá-la em um token; assim, o scan retorna um superconjunto das linhas correspondentes e é usado como uma [leitura direta como hint](#direct-read).
+* `value%` e `%value` ancoram a needle no valor inteiro, enquanto o Dicionário scan só consegue ancorá-la em um token; assim, o scan retorna um superconjunto das linhas correspondentes e é usado como uma [leitura direta como hint](#direct-read).
 
-O mesmo dictionary scan atende `startsWith(col, 'value')` e `endsWith(col, 'value')` quando a needle não possui um token completo para pesquisar.
+O mesmo Dicionário scan atende `startsWith(col, 'value')` e `endsWith(col, 'value')` quando a needle não possui um token completo para pesquisar.
 Esse é o caminho que a maioria dos patterns `value%` e `%value` realmente segue, pois a passagem do analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/pt-BR/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (habilitada por padrão) reescreve `col LIKE 'value%'` como `startsWith(col, 'value')` e `col LIKE '%value'` como `endsWith(col, 'value')`.
-Needles que abrangem vários tokens continuam usando os tokens completos da needle e dispensam o dictionary scan.
+Needles que abrangem vários tokens continuam usando os tokens completos da needle e dispensam o Dicionário scan.
 
 Como caso especial, se o tokenizer do índice for `array`, então *qualquer* pattern se qualifica para a otimização: âncoras, pontuação, wildcards `_`, várias needles separadas por `%` e metacaracteres escapados.
 
-Quando a otimização está habilitada, as consultas LIKE/ILIKE tendem a ser significativamente mais rápidas que um full-table scan. No entanto, quando o pattern corresponde à maioria dos tokens do dicionário, o desempenho pode ser pior do que o de um full-table scan. Felizmente, existe um mecanismo de fallback para evitar isso.
+Quando a otimização está habilitada, as consultas LIKE/ILIKE tendem a ser significativamente mais rápidas que um full-table scan. No entanto, quando o pattern corresponde à maioria dos tokens do Dicionário, o desempenho pode ser pior do que o de um full-table scan. Felizmente, existe um mecanismo de fallback para evitar isso.
 
-O ganho de velocidade de um pattern `value%` ou `%value` vem do skipping de grânulos e, portanto, depende de como as linhas correspondentes estão distribuídas. Needles que correspondem a linhas em todos os grânulos não eliminam nada, e a consulta acaba pagando pelo dictionary scan além do full scan que teria feito de qualquer forma. Desabilite [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/pt-BR/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) para workloads desse tipo.
+O ganho de velocidade de um pattern `value%` ou `%value` vem do skipping de grânulos e, portanto, depende de como as linhas correspondentes estão distribuídas. Needles que correspondem a linhas em todos os grânulos não eliminam nada, e a consulta acaba pagando pelo Dicionário scan além do full scan que teria feito de qualquer forma. Desabilite [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/pt-BR/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) para workloads desse tipo.
 
 A otimização é controlada por uma configuração:
 
@@ -1474,6 +1475,12 @@ O mecanismo de fallback é controlado por duas configurações:
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/pt-BR/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Essa otimização suporta apenas as funções `like`, `ilike`, `startsWith` e `endsWith`.
+De modo geral, ela exige um índice sem pré-processador ou pós-processador (`ilike` também aceita `lower` ou `upper` como função de pré-processador).
+
+Para `ilike`, a busca recorre a um full-table scan em dois casos especiais, tanto para o tokenizer `splitByNonAlpha` quanto para o `array`:
+
+* A needle contém a letra `k`. O `ilike` trata `U+212A KELVIN SIGN` como um `k`, mas o Dicionário scan compara bytes e deixaria passar uma linha escrita dessa forma. `U+212A` é o único caractere que o `ilike` converte para uma letra ou dígito ASCII, portanto `k` é o único caractere de needle afetado.
+* A expressão do pré-processador do índice contém `lowerUTF8` ou `upperUTF8`. Essas funções reescrevem caracteres não ASCII como letras ASCII (`ß` como `SS`, `ſ` como `S`), o que faria o índice reportar linhas que o `ilike` não corresponde.
 
 ### Consultas triviais de contagem {#count-queries-perf}
 

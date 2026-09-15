@@ -528,7 +528,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 `support_phrase_search` がない場合、`hasPhrase` は索引をヒントとしてのみ使用し、残った各行を元の述語で検証します。さらに、ポストプロセッサはフレーズと haystack のトークンの両方を同じ方法で正規化するため、結果は読み取り経路に依存せず、ポストプロセッサが削除するトークンによってフレーズの隣接関係が崩れることもありません。`support_phrase_search = 1` の場合、`hasPhrase` は正確な direct read を使用します (存在する場合は、ポストプロセッサも引き続き適用されます) 。このポストプロセッサのサポートは `splitByRegexp` トークナイザーには適用されません。ポストプロセッサと組み合わせた `splitByRegexp` 索引に対する `hasPhrase` は拒否されます (以下の脚注 ³ を参照) 。
 ポストプロセッサによって空文字列にマップされる検索トークンは無視され、つまり検索フレーズに存在しないものとして扱われます。
 
-| 関数                                                                                                      | プリプロセッサ対応                   | 互換性のあるトークナイザー⁵                                                                        | ポストプロセッサ対応 |
+| 関数                                                                                                      | プリプロセッサ対応                   | 互換性のあるトークナイザー⁵                                                                    | ポストプロセッサ対応 |
 | ------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- | ---------- |
 | `=`                                                                                                     | はい                          | すべて                                                                               | はい         |
 | `IN`                                                                                                    | はい                          | すべて                                                                               | はい         |
@@ -557,6 +557,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ² `ILIKE` は、辞書スキャンによる評価でのみサポートされます (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー) 。
 辞書スキャンがサポートしないパターンについて、索引をヒントとして使うフォールバックはありません。設定が無効になっている場合、またはトークナイザーがサポート対象外の場合、`ILIKE` では索引は使用されません。
 プリプロセッサがある場合は `lower` または `upper` である必要があり、ポストプロセッサはサポートされません。
+さらに、一部の needle は対象外となります。[LIKE/ILIKE クエリ](#like-ilike-queries-perf) を参照してください。
 
 ³ `splitByRegexp` テキスト索引上の `hasPhrase` は ポストプロセッサ を**サポートしません**。ポストプロセッサ の row-level な rewrite が空白分割による `splitByNonAlpha` 形式のトークンを前提としているため、この組み合わせは例外で拒否されます。ポストプロセッサ を指定しない場合、`splitByRegexp` は `hasPhrase` で完全にサポートされます。
 
@@ -1474,6 +1475,12 @@ fallback の仕組みは 2 つの設定で制御されます。
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ja/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 この最適化がサポートするのは、`like`、`ilike`、`startsWith`、`endsWith` の各関数のみです。
+また一般に、プリプロセッサやポストプロセッサを持たない索引が必要です (`ilike` はプリプロセッサ関数として `lower` または `upper` も受け付けます)。
+
+`ilike` の場合、`splitByNonAlpha` トークナイザーと `array` トークナイザーのいずれにおいても、次の 2 つの特殊なケースでは検索がフルテーブルスキャンに falls back します。
+
+* needle に文字 `k` が含まれる場合。`ilike` は `U+212A KELVIN SIGN` を `k` として扱いますが、辞書スキャンはバイト単位で比較するため、その表記の行を取りこぼしてしまいます。`U+212A` は `ilike` が ASCII の英数字に畳み込む唯一の文字であるため、影響を受ける needle 中の文字は `k` のみです。
+* 索引のプリプロセッサ expression に `lowerUTF8` または `upperUTF8` が含まれる場合。これらは非 ASCII 文字を ASCII の文字に書き換える (`ß` を `SS` に、`ſ` を `S` に) ため、`ilike` が一致しない行を索引が報告してしまうことになります。
 
 ### 単純なカウントクエリ {#count-queries-perf}
 

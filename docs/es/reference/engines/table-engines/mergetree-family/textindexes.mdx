@@ -557,6 +557,7 @@ Además, `LIKE` admite la evaluación mediante un dictionary scan (habilitada me
 ² `ILIKE` solo es compatible mediante la evaluación con un dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizador `splitByNonAlpha` o `array`).
 No hay fallback al uso del índice como indicación para los patrones que el dictionary scan no admite: si la configuración está deshabilitada o el tokenizador no está en el conjunto compatible, el índice no se usa para `ILIKE`.
 El preprocesador, si está presente, debe ser `lower` o `upper`; los posprocesamientos no son compatibles.
+Además, algunas needles no son elegibles; véase [consultas LIKE/ILIKE](#like-ilike-queries-perf).
 
 ³ `hasPhrase` sobre un índice de texto `splitByRegexp` **no** admite un posprocesamiento: la combinación se rechaza con una excepción, porque la reescritura a nivel de fila del posprocesamiento asume tokens de estilo `splitByNonAlpha` divididos por espacios en blanco. Sin posprocesamiento, `splitByRegexp` es totalmente compatible con `hasPhrase`.
 
@@ -1474,6 +1475,12 @@ El mecanismo de fallback se controla mediante dos configuraciones:
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/es/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Esta optimización solo admite las funciones `like`, `ilike`, `startsWith` y `endsWith`.
+Por lo general, requiere un índice sin preprocessor ni posprocesamiento (`ilike` también acepta `lower` o `upper` como función de preprocessor).
+
+En el caso de `ilike`, la búsqueda recurre a un escaneo completo de tabla en dos casos especiales, tanto con el tokenizador `splitByNonAlpha` como con el `array`:
+
+* El needle contiene la letra `k`. `ilike` trata `U+212A KELVIN SIGN` como una `k`, pero el escaneo del Diccionario compara bytes y pasaría por alto una fila escrita de ese modo. `U+212A` es el único carácter que `ilike` convierte en una letra o dígito ASCII, por lo que `k` es el único carácter del needle afectado.
+* La preprocessor expression del índice contiene `lowerUTF8` o `upperUTF8`. Estas reescriben los caracteres no ASCII como letras ASCII (`ß` como `SS`, `ſ` como `S`), lo que haría que el índice informara de filas que `ilike` no hace coincidir.
 
 ### Consultas de recuento simples {#count-queries-perf}
 

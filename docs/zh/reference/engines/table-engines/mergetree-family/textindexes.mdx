@@ -556,6 +556,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ² `ILIKE` 仅支持通过字典扫描进行求值 (`use_text_index_like_evaluation_by_dictionary_scan = 1`，且分词器为 `splitByNonAlpha` 或 `array`) 。
 对于字典扫描不支持的模式，不会回退到将索引用作提示的方式：如果该设置被禁用，或分词器不在支持范围内，则不会对 `ILIKE` 使用索引。
 如果存在预处理器，则必须为 `lower` 或 `upper`；不支持后处理器。
+另外，某些 needle 也不符合条件，参见 [LIKE/ILIKE 查询](#like-ilike-queries-perf)。
 
 ³ 在 `splitByRegexp` 文本索引上使用 `hasPhrase` **不**支持后处理器：这种组合会被拒绝并抛出异常，因为后处理器的行级重写假定标记是按空白拆分的 `splitByNonAlpha` 风格标记。若不使用后处理器，`hasPhrase` 完全支持 `splitByRegexp`。
 
@@ -1473,6 +1474,12 @@ fallback 机制由以下两个设置控制：
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/zh/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 该优化仅支持 `like`、`ilike`、`startsWith` 和 `endsWith` 函数。
+它通常要求索引不带预处理器或后处理器 (`ilike` 也接受 `lower` 或 `upper` 作为预处理器函数) 。
+
+对于 `ilike`，在两种特殊情况下搜索会退化为全表扫描，这对 `splitByNonAlpha` 和 `array` 两种分词器都适用：
+
+* needle 中包含字母 `k`。`ilike` 会把 `U+212A KELVIN SIGN` 视作 `k`，但 dictionary scan 是按字节比较的，会漏掉以这种方式书写的行。`U+212A` 是 `ilike` 唯一会折叠为 ASCII 字母或数字的字符，因此 `k` 是唯一受影响的 needle 字符。
+* 索引的预处理器表达式中包含 `lowerUTF8` 或 `upperUTF8`。它们会把非 ASCII 字符改写为 ASCII 字母 (`ß` 改写为 `SS`，`ſ` 改写为 `S`) ，这会导致索引报告出 `ilike` 实际并不匹配的行。
 
 ### 简单计数查询 {#count-queries-perf}
 

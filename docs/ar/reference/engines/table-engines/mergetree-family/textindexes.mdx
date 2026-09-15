@@ -551,12 +551,13 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAny](/ar/reference/functions/regular-functions/array-functions#hasAny)                                 | نعم                                      | `array`                                                                           | نعم               |
 | [hasAll](/ar/reference/functions/regular-functions/array-functions#hasAll)                                 | نعم                                      | `array`                                                                           | نعم               |
 
-¹ يستخدم `LIKE` و`match` القراءة المباشرة كتلميح مع مُقسِّمات الرموز المذكورة، وإلا فيلجآن إلى مسح بالقوة الغاشمة.
+¹ يستخدم `LIKE` و`match` القراءة المباشرة كاستدلال مع مُقسِّمات الرموز المذكورة، وإلا فيلجآن إلى مسح بالقوة الغاشمة.
 ويدعم `LIKE` أيضًا التقييم عبر فحص القاموس (مفعّل عبر `use_text_index_like_evaluation_by_dictionary_scan`) مع مُقسِّمَي الرموز `splitByNonAlpha` و`array` من دون معالجة مسبقة أو لاحقة، انظر قسم [استعلامات LIKE/ILIKE](#like-ilike-queries-perf) أدناه.
 
 ² لا يدعم `ILIKE` إلا عبر التقييم بفحص القاموس (`use_text_index_like_evaluation_by_dictionary_scan = 1`، مع مُقسِّم الرموز `splitByNonAlpha` أو `array`).
-ولا يوجد مسار بديل لاستخدام الفهرس كتلميح للأنماط التي لا يدعمها فحص القاموس: إذا كان هذا الإعداد معطّلًا أو لم يكن مُقسِّم الرموز ضمن المجموعة المدعومة، فلن يُستخدَم الفهرس مع `ILIKE`.
+ولا يوجد مسار بديل لاستخدام الفهرس كاستدلال للأنماط التي لا يدعمها فحص القاموس: إذا كان هذا الإعداد معطّلًا أو لم يكن مُقسِّم الرموز ضمن المجموعة المدعومة، فلن يُستخدَم الفهرس مع `ILIKE`.
 ويجب أن تكون المعالجة المسبقة، إن وُجدت، هي `lower` أو `upper`؛ أما المعالجة اللاحقة فغير مدعومة.
+كما أن بعض needles غير مؤهلة أيضًا، انظر [استعلامات LIKE/ILIKE](#like-ilike-queries-perf).
 
 ³ لا تدعم `hasPhrase` على فهرس نصي من نوع `splitByRegexp` وجود معالجة لاحقة: إذ يُرفض هذا الجمع مع رمي استثناء، لأن إعادة الكتابة على مستوى الصف التي تجريها المعالجة اللاحقة تفترض رموزًا مقسّمة بالمسافات على نمط `splitByNonAlpha`. أما من دون معالجة لاحقة، فإن `splitByRegexp` مدعوم بالكامل من قِبل `hasPhrase`.
 
@@ -1452,9 +1453,9 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 تعتمد طريقة استخدام نتيجة فحص القاموس على موضع تثبيت الـ needle:
 
 * يطابق `%value%` صفاً إذا وفقط إذا طابق أحد رموز ذلك الصف، وبالتالي يحسم الفهرس الاستعلام بمفرده: [قراءة مباشرة (بدون تلميح)](#direct-read) تزيل الـ مسند الأصلي.
-* يثبّت كل من `value%` و`%value` الـ needle عند القيمة بأكملها، بينما لا يستطيع فحص القاموس تثبيته إلا عند token، لذا يُرجع الفحص مجموعة فائقة من الصفوف المطابقة ويُستخدم بوصفه [قراءة مباشرة كـ تلميح](#direct-read).
+* يثبّت كل من `value%` و`%value` الـ needle عند القيمة بأكملها، بينما لا يستطيع فحص القاموس تثبيته إلا عند رمز، لذا يُرجع الفحص مجموعة فائقة من الصفوف المطابقة ويُستخدم بوصفه [قراءة مباشرة كـ تلميح](#direct-read).
 
-ويخدم فحص القاموس نفسه كلاً من `startsWith(col, 'value')` و`endsWith(col, 'value')` عندما لا يحتوي الـ needle على token كامل للبحث عنه.
+ويخدم فحص القاموس نفسه كلاً من `startsWith(col, 'value')` و`endsWith(col, 'value')` عندما لا يحتوي الـ needle على رمز كامل للبحث عنه.
 وهذا هو المسار الذي تسلكه فعلياً معظم أنماط `value%` و`%value`، لأن مرحلة الـ analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ar/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (المفعّلة افتراضياً) تعيد كتابة `col LIKE 'value%'` إلى `startsWith(col, 'value')` و`col LIKE '%value'` إلى `endsWith(col, 'value')`.
 أما الـ needles التي تمتد عبر عدة رموز فتظل تستخدم الـ رموز الكاملة الخاصة بها ولا تحتاج إلى فحص القاموس.
 
@@ -1474,6 +1475,12 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ar/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 يدعم هذا التحسين الدوال `like` و`ilike` و`startsWith` و`endsWith` فقط.
+وهو يتطلب عموماً فهرساً بلا preprocessor أو postprocessor (كما يقبل `ilike` الدالة `lower` أو `upper` بوصفها دالة الـ preprocessor).
+
+بالنسبة إلى `ilike`، يرتد البحث إلى المسح الكامل للجدول في حالتين خاصتين، وذلك لكلا مُقسِّمَي الرموز `splitByNonAlpha` و`array`:
+
+* احتواء الـ needle على الحرف `k`. إذ تعامل `ilike` الرمز `U+212A KELVIN SIGN` معاملة `k`، بينما يقارن فحص القاموس البايتات وسيغفل أي صف مكتوب بتلك الطريقة. و`U+212A` هو المحرف الوحيد الذي تطويه `ilike` إلى حرف أو رقم ASCII، لذا فإن `k` هو محرف الـ needle الوحيد المتأثر.
+* احتواء تعبير الـ preprocessor الخاص بالفهرس على `lowerUTF8` أو `upperUTF8`. فهذه الدوال تعيد كتابة المحارف غير ASCII إلى حروف ASCII (`ß` إلى `SS`، و`ſ` إلى `S`)، مما يجعل الفهرس يُبلّغ عن صفوف لا تطابقها `ilike`.
 
 ### استعلامات العد البسيطة {#count-queries-perf}
 

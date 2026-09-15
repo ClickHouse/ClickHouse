@@ -528,7 +528,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 `support_phrase_search`가 없으면 `hasPhrase`는 인덱스를 힌트로만 사용하고, 남은 각 행은 원본 프레디케이트로 검증합니다. 또한 후처리기가 있으면 구문과 haystack 토큰 모두를 같은 방식으로 정규화하므로 결과는 읽기 경로와 무관하며, 후처리기가 제거한 토큰 때문에 구문 인접성이 깨지지 않습니다. `support_phrase_search = 1`이면 `hasPhrase`는 정확한 직접 읽기를 사용합니다(후처리기가 있으면 계속 적용됨). 이 후처리기 지원은 `splitByRegexp` 토크나이저에는 적용되지 않습니다. 후처리기와 결합된 `splitByRegexp` 인덱스에서의 `hasPhrase`는 거부됩니다(아래 각주 ³ 참조).
 후처리기가 빈 문자열로 매핑하는 검색 토큰은 무시되며, 즉 검색 구문에 없는 것으로 처리됩니다。
 
-| 함수                                                                                                      | 전처리기 지원                      | 호환되는 토크나이저⁵                                                                       | 후처리기 지원 |
+| 함수                                                                                                      | 전처리기 지원                      | 호환 토크나이저⁵                                                                       | 후처리기 지원 |
 | ------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | ------- |
 | `=`                                                                                                     | 예                            | 모두                                                                                | 예       |
 | `IN`                                                                                                    | 예                            | 모두                                                                                | 예       |
@@ -557,6 +557,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ² `ILIKE`는 딕셔너리 스캔을 통한 평가로만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
 딕셔너리 스캔이 지원하지 않는 패턴에 대해 인덱스를 힌트로 사용하는 폴백은 없습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
 전처리기가 있는 경우 `lower` 또는 `upper`여야 하며, 후처리기는 지원되지 않습니다.
+또한 일부 검색 패턴은 적용 대상에서 제외되므로, [LIKE/ILIKE 쿼리](#like-ilike-queries-perf)를 참조하십시오.
 
 ³ `splitByRegexp` 텍스트 인덱스에 대한 `hasPhrase`는 후처리기를 지원하지 **않습니다**. 후처리기의 행 수준 재작성이 공백으로 분할하는 `splitByNonAlpha` 방식의 토큰을 전제로 하기 때문에, 이 조합은 예외와 함께 거부됩니다. 후처리기가 없다면 `splitByRegexp`는 `hasPhrase`에서 완전히 지원됩니다.
 
@@ -1474,6 +1475,12 @@ needle에 검색할 완전한 토큰이 없을 때는 `startsWith(col, 'value')`
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ko/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 이 최적화는 `like`, `ilike`, `startsWith`, `endsWith` 함수만 지원합니다.
+또한 일반적으로 전처리기나 후처리기가 없는 인덱스가 필요합니다(`ilike`의 경우 전처리기 함수로 `lower` 또는 `upper`도 허용됩니다).
+
+`ilike`의 경우, `splitByNonAlpha`와 `array` 토크나이저 모두에서 다음 두 가지 특수한 상황에서는 검색이 full-table scan으로 폴백됩니다:
+
+* needle에 문자 `k`가 포함된 경우. `ilike`는 `U+212A KELVIN SIGN`을 `k`로 취급하지만, 딕셔너리 scan은 바이트를 비교하므로 그렇게 표기된 행을 놓칠 수 있습니다. `U+212A`는 `ilike`가 ASCII 문자나 숫자로 폴딩하는 유일한 문자이므로, 영향을 받는 needle 문자는 `k`뿐입니다.
+* 인덱스 전처리기 표현식에 `lowerUTF8` 또는 `upperUTF8`이 포함된 경우. 이들은 비ASCII 문자를 ASCII 문자로 변환하므로(`ß`를 `SS`로, `ſ`를 `S`로), 인덱스가 `ilike`와 일치하지 않는 행을 보고하게 됩니다.
 
 ### 단순 count 쿼리 {#count-queries-perf}
 

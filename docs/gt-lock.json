@@ -7,37 +7,37 @@
       "versionId": "0b240341596183431a2c0d2988a1d4211d0dfcc018e1a88b8cfa67f4b0deaf22",
       "translations": {
         "es": {
-          "updatedAt": "2026-09-15T16:47:35.380Z",
+          "updatedAt": "2026-09-15T18:23:22.192Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-15T16:47:35.578Z",
+          "updatedAt": "2026-09-15T18:23:22.498Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-15T16:47:35.747Z",
+          "updatedAt": "2026-09-15T18:23:22.865Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-15T16:47:35.916Z",
+          "updatedAt": "2026-09-15T18:23:23.166Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-15T16:47:36.097Z",
+          "updatedAt": "2026-09-15T18:23:23.376Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-15T16:47:36.271Z",
+          "updatedAt": "2026-09-15T18:23:23.595Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-15T16:47:36.437Z",
+          "updatedAt": "2026-09-15T18:23:23.807Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-15T16:47:36.601Z",
+          "updatedAt": "2026-09-15T18:23:24.041Z",
           "fileName": "docs.json",
-          "postProcessHash": "10001ee8d639cdcf3e006e3d4b73f4fe73d853d85af3cce4a2c431a5b0b152a9"
+          "postProcessHash": "0b7cf5469fc6c13c04d5952e492e64418ca84741915bcae9c32ad8aa4880a029"
         }
       },
       "fileName": "docs.json"
@@ -87250,47 +87250,47 @@
     },
     {
       "fileId": "aa2cf12758c94e9cc9c6ccdf36c67298cbc02e781bfc8522aedc5d39a5e5cfe9",
-      "versionId": "46f816afd11e76f88c918e3253b8b5e89f82b5ca2814aeaf2db85f47c4fc69bc",
+      "versionId": "ed288f499361accb967fe7b324811d5e6700f9c2550c79ce742e507dea8c1cb3",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:43.571Z",
-          "fileName": "es/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "64cabff99cebebb1401d784b40866f86c04ab96cf737702421f52b1cf60681f5"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:43.572Z",
-          "fileName": "ja/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "827596a38627c000ed4d88d42818c78355de588c2fbc798b0e8166a6629ffaa4"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:43.573Z",
-          "fileName": "ko/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "d4f4fdf3deab0e52632b370d11f2b8bf2f6c88599215f305172302957060bab0"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:43.574Z",
-          "fileName": "pt-BR/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "830aaea0046b7111befe1aa2249a1f79d1be908553b147d963a2627698dcca6d"
+        "zh": {
+          "updatedAt": "2026-09-15T18:23:29.910Z",
+          "fileName": "zh/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "4cec6711245a484b277962eb087023bf6225aad69b4f7f37101fdbea59cf891d"
         },
         "ru": {
-          "updatedAt": "2026-09-15T11:36:43.574Z",
+          "updatedAt": "2026-09-15T18:23:29.913Z",
           "fileName": "ru/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "06c5560e29463b247bbc2848e8ac7010b0ecffce687485d654768db337b99fbc"
+          "postProcessHash": "54aaefb4bb9b52c235a9b8cf1982b473e80701d53c05fcb535cd604e5fdde327"
         },
-        "zh": {
-          "updatedAt": "2026-09-15T11:36:43.575Z",
-          "fileName": "zh/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "8ee746837199807a78a6abe3012bff62861525a10a4fc0097d57f9e1f9741076"
+        "es": {
+          "updatedAt": "2026-09-15T18:23:29.916Z",
+          "fileName": "es/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "93fb8f63e123cedd582abd02e52663cd20c0e4038bf69177715f0827fc46e55b"
         },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:43.576Z",
-          "fileName": "ar/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "bbf6b968e7faa8f8275d6dd8ab237b793a21fa599fa8482a5e16574812f2dffc"
+        "pt-BR": {
+          "updatedAt": "2026-09-15T18:23:29.920Z",
+          "fileName": "pt-BR/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "a9ec4c0ad11009d4aed1963706f9a0b2cc33775d800bdbc6e6ed0346b3ebe1f1"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:43.577Z",
+          "updatedAt": "2026-09-15T18:23:29.921Z",
           "fileName": "fr/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "7ddd597e7c27ebcf651cf532f29fc5294569618579bea653d85342ce06b7916e"
+          "postProcessHash": "92d1c9d8ec3a90917340d60f192da86553182ba5a96a3ac7dd0e4f53238c3dcc"
+        },
+        "ko": {
+          "updatedAt": "2026-09-15T18:23:29.925Z",
+          "fileName": "ko/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "e19d85d5a1f547e546cbc3cca93567c6880ec5d7470c43bcef5ae663940864b4"
+        },
+        "ja": {
+          "updatedAt": "2026-09-15T18:23:29.926Z",
+          "fileName": "ja/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "c4d32e1f5c9d0f39c8283a95226c4e104f11cb79f4e1e22ea6c5a578a77f5e14"
+        },
+        "ar": {
+          "updatedAt": "2026-09-15T18:23:29.929Z",
+          "fileName": "ar/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "028b84baac6dd0ee0b1939d73f23c9d6a8768d6994f3eaa985b31e39f23cb0fe"
         }
       },
       "fileName": "reference/engines/table-engines/mergetree-family/textindexes.mdx"
@@ -138886,6 +138886,53 @@
         }
       },
       "fileName": "snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx"
+    },
+    {
+      "fileId": "555796a2c106b2adeee869bbb1cfb26e21eb8449f7564a6b0837e5785ce6ac90",
+      "versionId": "33b7c2e5d80fd763665816e1d58c05bea72e3150b36b9f152b8ba9f485698962",
+      "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-09-15T18:23:29.903Z",
+          "fileName": "pt-BR/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "f1e8b0efa7af94135525a7e780f504714b5ef9d6d18c79d9a8cfe97061a70bea"
+        },
+        "ja": {
+          "updatedAt": "2026-09-15T18:23:29.905Z",
+          "fileName": "ja/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "4d4741ea446dc44ea80c5d11724326016e00bbcbee4dcd3ede6a7cfce3133a7f"
+        },
+        "ru": {
+          "updatedAt": "2026-09-15T18:23:29.906Z",
+          "fileName": "ru/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "4e58788db03323732f47157d58b8bb83b23a52a0a6c07f2f82d968701f1777f4"
+        },
+        "ko": {
+          "updatedAt": "2026-09-15T18:23:29.911Z",
+          "fileName": "ko/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "bc976bd3b08fe4fe26fe18ab9038ac0452c062de7939493b642588d976a7a374"
+        },
+        "ar": {
+          "updatedAt": "2026-09-15T18:23:29.917Z",
+          "fileName": "ar/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "7898c130a243d0efb20f2272c1f96e6ba9b33078969ac424ca4eeb68a8008137"
+        },
+        "zh": {
+          "updatedAt": "2026-09-15T18:23:29.918Z",
+          "fileName": "zh/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "2151553172cf3aebbaf22d02267945e038edd8090333e80954cfd8b99f261cd4"
+        },
+        "fr": {
+          "updatedAt": "2026-09-15T18:23:29.922Z",
+          "fileName": "fr/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "44e61500f32885d3a54a3149322aa33c71397656f5862bdb4783fedf2da40745"
+        },
+        "es": {
+          "updatedAt": "2026-09-15T18:23:29.923Z",
+          "fileName": "es/clickstack/demo-days/2026/2026-09-10.mdx",
+          "postProcessHash": "2b691b3088b9a950063948a39c71205058b19df19fb544f42768b303d22f34ea"
+        }
+      },
+      "fileName": "clickstack/demo-days/2026/2026-09-10.mdx"
     }
   ]
 }

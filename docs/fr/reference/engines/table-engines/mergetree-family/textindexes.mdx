@@ -557,6 +557,7 @@ Les tokens de recherche que le postprocesseur transforme en chaîne vide sont ig
 ² `ILIKE` est uniquement pris en charge via l&#39;évaluation par dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`).
 Il n&#39;y a pas de solution de repli consistant à utiliser l&#39;index comme indication pour les patterns que le dictionary scan ne prend pas en charge : si le paramètre est désactivé ou si le tokenizer ne fait pas partie de l&#39;ensemble pris en charge, l&#39;index n&#39;est pas utilisé pour `ILIKE`.
 Le préprocesseur, s&#39;il est présent, doit être `lower` ou `upper` ; les postprocesseurs ne sont pas pris en charge.
+Certains needles ne sont en outre pas éligibles, voir [Requêtes LIKE/ILIKE](#like-ilike-queries-perf).
 
 ³ `hasPhrase` sur un index de texte `splitByRegexp` ne prend **pas** en charge de postprocesseur : la combinaison est rejetée avec une exception, car la réécriture row-level du postprocesseur suppose des tokens de style `splitByNonAlpha` découpés sur les espaces. Sans postprocesseur, `splitByRegexp` est entièrement pris en charge par `hasPhrase`.
 
@@ -1447,7 +1448,7 @@ Cet ordre permet d’ignorer encore plus de granules de données que l’index d
 
 ### Requêtes LIKE/ILIKE {#like-ilike-queries-perf}
 
-Lorsqu&#39;un pattern de requête LIKE/ILIKE est `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` ou `%<alpha-numeric-characters-without-spaces>` et que le tokenizer du text index est `splitByNonAlpha` ou `array`, ClickHouse s&#39;appuie sur l&#39;inverted index pour accélérer considérablement les requêtes LIKE/ILIKE. Pour ce faire, ClickHouse parcourt le dictionnaire de l&#39;inverted index au lieu d&#39;effectuer un parcours complet de la table afin de trouver le pattern correspondant.
+Lorsqu&#39;un pattern de requête LIKE/ILIKE est `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` ou `%<alpha-numeric-characters-without-spaces>` et que le tokenizer du index de texte est `splitByNonAlpha` ou `array`, ClickHouse s&#39;appuie sur l&#39;inverted index pour accélérer considérablement les requêtes LIKE/ILIKE. Pour ce faire, ClickHouse parcourt le dictionnaire de l&#39;inverted index au lieu d&#39;effectuer un parcours complet de la table afin de trouver le pattern correspondant.
 
 L&#39;utilisation du résultat du dictionary parcours dépend de l&#39;endroit où le needle est ancré :
 
@@ -1474,6 +1475,12 @@ Le mécanisme de fallback est contrôlé par deux paramètres :
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/fr/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Cette optimisation ne prend en charge que les fonctions `like`, `ilike`, `startsWith` et `endsWith`.
+Elle nécessite généralement un index sans preprocessor ni postprocessor (`ilike` accepte également `lower` ou `upper` comme fonction de preprocessor).
+
+Pour `ilike`, la recherche bascule vers un parcours complet de la table dans deux cas particuliers, aussi bien avec le tokenizer `splitByNonAlpha` qu&#39;avec le tokenizer `array` :
+
+* Le needle contient la lettre `k`. `ilike` traite `U+212A KELVIN SIGN` comme un `k`, mais le dictionary parcours compare des octets et manquerait une ligne écrite de cette façon. `U+212A` est le seul caractère que `ilike` replie sur une lettre ou un chiffre ASCII, c&#39;est donc le seul caractère de needle concerné.
+* L&#39;expression de preprocessor de l&#39;index contient `lowerUTF8` ou `upperUTF8`. Celles-ci réécrivent les caractères non ASCII en lettres ASCII (`ß` en `SS`, `ſ` en `S`), ce qui amènerait l&#39;index à signaler des lignes qui ne correspondent pas à `ilike`.
 
 ### Requêtes de comptage simples {#count-queries-perf}
 
