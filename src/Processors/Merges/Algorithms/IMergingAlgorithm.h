@@ -133,6 +133,9 @@ public:
     virtual MergedStats getMergedStats() const = 0;
 };
 
+/// Position of `filter_column_name` in `header`, or -1 if not set.
+ssize_t resolveFilterColumnPosition(const Block & header, const std::optional<String> & filter_column_name);
+
 // TODO: use when compile with clang which could support it
 // template <class T>
 // concept MergingAlgorithm = std::is_base_of<IMergingAlgorithm, T>::value;

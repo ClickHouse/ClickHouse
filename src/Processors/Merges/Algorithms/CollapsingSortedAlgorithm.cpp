@@ -32,6 +32,7 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     std::optional<size_t> max_dynamic_subcolumns_,
     LoggerPtr log_,
     WriteBuffer * out_row_sources_buf_,
+    const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool throw_if_invalid_sign_)
     : IMergingAlgorithmWithSharedChunks(
@@ -40,7 +41,8 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
         std::move(description_),
         out_row_sources_buf_,
         max_row_refs,
-        std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_))
+        std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_),
+        filter_column_name_)
     , sign_column_number(header_->getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
     , throw_if_invalid_sign(throw_if_invalid_sign_)
@@ -89,7 +91,7 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 
     if ((last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0))
     {
-        if (count_positive <= count_negative && !only_positive_sign)
+        if (count_positive <= count_negative && !only_positive_sign && !isRowFiltered(first_negative_row))
         {
             insertRow(first_negative_row);
 
@@ -97,7 +99,7 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
                 current_row_sources[first_negative_pos].setSkipFlag(false);
         }
 
-        if (count_positive >= count_negative)
+        if (count_positive >= count_negative && !isRowFiltered(last_positive_row))
         {
             if (merged_data->hasEnoughRows())
                 res = merged_data->pull();
@@ -210,10 +212,17 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// Do not return it for SELECT ... FINAL.
             if (!only_positive_sign)
             {
-                insertRow(current_row);
+                /// Counts the rows read, not the rows emitted: `insertRows` uses it to tell a key
+                /// group that produced nothing from one that was never there, and only the latter
+                /// may leave the row sources of the group unwritten.
                 ++count_invalid;
-                if (out_row_sources_buf)
-                    current_row_sources[current_pos].setSkipFlag(false);
+
+                if (!isRowFiltered(current_row))
+                {
+                    insertRow(current_row);
+                    if (out_row_sources_buf)
+                        current_row_sources[current_pos].setSkipFlag(false);
+                }
             }
 
             if (count_invalid_sign < MAX_ERROR_MESSAGES)
