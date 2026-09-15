@@ -361,11 +361,13 @@ void MemoryReservation::Metrics::apply()
 
 void MemoryReservation::killAllocation(const std::exception_ptr & reason)
 {
+    {
+        std::unique_lock lock(mutex);
+        metrics.killed++;
+        kill_reason = reason;
+        cv.notify_all(); // notify syncWithMemoryTracker
+    }
     onGrowthPressureResolved();
-    std::unique_lock lock(mutex);
-    metrics.killed++;
-    kill_reason = reason;
-    cv.notify_all(); // notify syncWithMemoryTracker
 }
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
@@ -405,16 +407,18 @@ void MemoryReservation::decreaseApproved(const DecreaseRequest & decrease)
 
 void MemoryReservation::allocationFailed(const std::exception_ptr & reason)
 {
+    {
+        std::unique_lock lock(mutex);
+        metrics.failed++;
+        fail_reason = reason;
+        removed = true; // failed allocation are auto-removed by the scheduler
+        if (enqueued_demand != 0)
+            demand_increment.sub(enqueued_demand);
+        approved_increment.sub(allocated_size);
+        allocated_size = 0;
+        cv.notify_all(); // notify dtor (e.g. for removal of pending allocation or queue purge) or syncWithMemoryTracker
+    }
     onGrowthPressureResolved();
-    std::unique_lock lock(mutex);
-    metrics.failed++;
-    fail_reason = reason;
-    removed = true; // failed allocation are auto-removed by the scheduler
-    if (enqueued_demand != 0)
-        demand_increment.sub(enqueued_demand);
-    approved_increment.sub(allocated_size);
-    allocated_size = 0;
-    cv.notify_all(); // notify dtor (e.g. for removal of pending allocation or queue purge) or syncWithMemoryTracker
 }
 
 }
