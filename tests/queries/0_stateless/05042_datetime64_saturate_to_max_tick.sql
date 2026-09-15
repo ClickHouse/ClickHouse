@@ -48,7 +48,5 @@ SELECT toTime64(toInt128('9223372036854775808'), 6), toTime64(toInt128('-9223372
 SELECT toTime64(toInt256('9223372036854775808'), 6), toTime64(toUInt128('9223372036854775808'), 6);
 SELECT toDateTime64(toInt128('9223372036854775808'), 9), toDateTime64(toInt128('-9223372036854775809'), 9);
 
--- The accurate casts honour their "fail when not representable" contract for these targets as well; `05099`
--- asserts that. A wide integer source is the one gap left: `createDecimalWrapper` rejects it outright, so
--- `accurateCast` of a wide integer to `DateTime64` or `Time64` reports `CANNOT_CONVERT_TYPE` whether or not
--- the value is representable. That predates this change and wants its own fix.
+-- The accurate casts honour their "fail when not representable" contract for these targets as well, including
+-- for a wide integer source; `05099` asserts that.

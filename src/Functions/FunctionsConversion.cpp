@@ -664,7 +664,14 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
     UInt32 scale = to_type->getScale();
 
     WhichDataType which(type_index);
-    bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
+    /// A 128- or 256-bit integer is a count of whole seconds like every other integer, and `ConvertImpl` routes it
+    /// through the same overflow-aware transforms as the native widths, so the `CAST` / `accurateCast*` surface to
+    /// `DateTime64` and `Time64` admits it too. Otherwise `CAST(toUInt128(1), 'DateTime64(3)')` is rejected while
+    /// `toDateTime64(toUInt128(1), 3)` succeeds, and `accurateCastOrNull` / `accurateCastOrDefault` report a
+    /// representable value as NULL / the default. The plain `Decimal` targets keep their native-integer admission.
+    static constexpr bool to_date_time = std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>;
+    bool ok = which.isNativeInt() || which.isNativeUInt() || (to_date_time && (which.isInt() || which.isUInt()))
+        || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
         || which.isTime() || which.isTime64() || which.isStringOrFixedString();
     if (!ok)
     {
