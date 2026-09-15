@@ -156,7 +156,7 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         if (format->as<ASTIdentifier>()->full_name == "csv")
             node->format = ASTCopyQuery::Formats::CSV;
         else if (format->as<ASTIdentifier>()->full_name == "tsv")
-            node->format = ASTCopyQuery::Formats::CSV;
+            node->format = ASTCopyQuery::Formats::TSV;
         else if (format->as<ASTIdentifier>()->full_name == "binary")
             node->format = ASTCopyQuery::Formats::Binary;
         else
