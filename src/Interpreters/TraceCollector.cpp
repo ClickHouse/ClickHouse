@@ -7,7 +7,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Interpreters/ProfileTraces.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/TraceSender.h>
@@ -28,6 +29,7 @@ namespace ErrorCodes
 }
 
 TraceCollector::TraceCollector()
+    : profile_traces_registry(InternalProfileTracesQueue::getRegistry())
 {
     TraceSender::pipe.open();
 
@@ -133,7 +135,7 @@ void TraceCollector::run()
 
     DB::setThreadName(ThreadName::TRACE_COLLECTOR);
 
-    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+    ProfileTracesBlocker untrack_lock;
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
@@ -146,8 +148,16 @@ void TraceCollector::run()
         {
             char is_last = 0;
             readChar(is_last, in);
-            if (is_last)
+            if (is_last == 1)
                 break;
+
+            UInt64 profile_traces_id = 0;
+            readPODBinary(profile_traces_id, in);
+            if (is_last == 2)
+            {
+                InternalProfileTracesQueue::acknowledgeFlush(profile_traces_registry, profile_traces_id);
+                continue;
+            }
 
             std::string query_id;
             UInt8 query_id_size = 0;
@@ -179,7 +189,7 @@ void TraceCollector::run()
             TraceType trace_type = {};
             readPODBinary(trace_type, in);
 
-            UInt64 cpu_id = 0;
+            Int32 cpu_id = 0;
             readPODBinary(cpu_id, in);
 
             UInt64 thread_id = 0;
@@ -205,6 +215,15 @@ void TraceCollector::run()
             ProfileEvents::Count increment = 0;
             readPODBinary(increment, in);
 
+            if (profile_traces_id)
+            {
+                struct timespec ts{};
+                clock_gettime(CLOCK_REALTIME, &ts); /// NOLINT(cert-err33-c)
+                UInt64 timestamp_us = static_cast<UInt64>(ts.tv_sec) * 1000000 + ts.tv_nsec / 1000;
+                InternalProfileTracesQueue::collect(
+                    profile_traces_registry, profile_traces_id, trace_type, thread_id, timestamp_us, trace, size);
+            }
+
             if (auto trace_log = getTraceLog())
             {
                 // time and time_in_microseconds are both being constructed from the same timespec so that the
@@ -223,7 +242,7 @@ void TraceCollector::run()
                         .event_time_microseconds = time_in_microseconds,
                         .timestamp_ns = timestamp_ns,
                         .trace_type = trace_type,
-                        .cpu_id = cpu_id,
+                        .cpu_id = static_cast<UInt64>(cpu_id),
                         .thread_id = thread_id,
                         .thread_name = static_cast<ThreadName>(thread_name_id),
                         .query_id = query_id,
