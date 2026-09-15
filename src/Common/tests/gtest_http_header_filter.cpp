@@ -77,6 +77,43 @@ TEST(HTTPHeaderFilter, ExactMatchLowerCaseConfigMixedCaseInput)
     EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
 }
 
+/// An operator who writes the name in upper case blocks the lower-case header too. The exact set
+/// holds the configured name lower-cased, so the spelling in the config does not matter.
+TEST(HTTPHeaderFilter, ExactMatchUpperCaseConfigBlocksEveryCase)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>AUTHORIZATION</header>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    EXPECT_TRUE(isForbidden(filter, "authorization"));
+    EXPECT_TRUE(isForbidden(filter, "Authorization"));
+    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
+}
+
+/// The same for a regexp written in upper case. The pattern is not lower-cased -- that would
+/// corrupt a metacharacter such as \D or [A-Z] -- so the case insensitivity comes from the RE2
+/// option instead.
+TEST(HTTPHeaderFilter, RegexpUpperCaseConfigBlocksEveryCase)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header_regexp>AUTHORIZATION</header_regexp>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    EXPECT_TRUE(isForbidden(filter, "authorization"));
+    EXPECT_TRUE(isForbidden(filter, "Authorization"));
+    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
+}
+
 /// A regexp pattern without an explicit (?i) flag must still match
 /// case-insensitively, because header names are case-insensitive.
 TEST(HTTPHeaderFilter, RegexpMatchIsCaseInsensitiveWithoutFlag)
