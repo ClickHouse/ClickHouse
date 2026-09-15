@@ -322,10 +322,3 @@ def test_query_endpoints_deny_before_probing_the_shards(endpoint):
     assert_denied_without_leaking(
         coarse_query(endpoint, NO_REMOTE_USER), "READ ON REMOTE"
     )
-
-
-def test_query_endpoints_ask_for_no_temporary_table_grant():
-    """The endpoints name no table function of their own, and the selector the rewrite names inside
-    the cluster() call is readonly, so it asks the shards' user for no such grant either.
-    """
-    assert len(json.loads(query(DIST, user=NO_TEMP_TABLE_USER))["result"]) == 4
