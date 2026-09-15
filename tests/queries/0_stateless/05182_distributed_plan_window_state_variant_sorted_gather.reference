@@ -1,0 +1,13 @@
+sorted gather above the window step: 	1
+-- contingency, distributed: finalized values
+0	0	nan
+0	4	0.707107
+0	8	0.816497
+0	12	0.816497
+0	16	0.774597
+-- contingency: distributed then local
+7796960712233641812
+7796960712233641812
+-- theilsU control: distributed then local
+8028078959096672967
+8028078959096672967
