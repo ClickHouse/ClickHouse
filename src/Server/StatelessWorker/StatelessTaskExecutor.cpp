@@ -40,6 +40,7 @@ namespace Setting
 {
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
+    extern const SettingsUInt64 distributed_plan_max_buffered_log_rows;
 }
 
 /// TODO: move
@@ -115,7 +116,12 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     const LogsLevel client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
     if (client_logs_level != LogsLevel::none)
     {
-        task_state->logs_queue = std::make_shared<InternalTextLogsQueue>();
+        /// Bound the buffer so a stalled or slow status poll cannot grow it without limit; 0 means
+        /// unbounded (the default queue blocks and never drops).
+        const UInt64 max_buffered_log_rows = query_context->getSettingsRef()[Setting::distributed_plan_max_buffered_log_rows];
+        task_state->logs_queue = max_buffered_log_rows != 0
+            ? std::make_shared<InternalTextLogsQueue>(max_buffered_log_rows)
+            : std::make_shared<InternalTextLogsQueue>();
         task_state->logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef()[Setting::send_logs_level].toString());
         task_state->logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
     }
@@ -214,11 +220,22 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 namespace
 {
 
-// Pops everything held in log currently
-Block drainLogs(const InternalTextLogsQueuePtr & logs_queue)
+struct DrainedLogs
 {
+    Block block;
+    /// Cumulative log lines dropped on the worker (buffer overflow) and drained into replies so far.
+    UInt64 num_dropped = 0;
+    UInt64 forwarded = 0;
+};
+
+// Drain everything currently buffered and read the running loss counters. `forwarded_log_count` counts
+// every line handed to a reply (whether or not the coordinator receives it), so a retried poll that
+// re-drains an emptied queue still reports the higher count and lets the coordinator detect loss.
+DrainedLogs drainLogs(const InternalTextLogsQueuePtr & logs_queue, std::atomic<UInt64> & forwarded_log_count)
+{
+    DrainedLogs result;
     if (!logs_queue)
-        return {};
+        return result;
 
     const auto logs = logs_queue->drainAll();
     MutableColumns columns = InternalTextLogsQueue::getSampleColumns();
@@ -231,9 +248,12 @@ Block drainLogs(const InternalTextLogsQueuePtr & logs_queue)
         }
     }
 
-    Block block = InternalTextLogsQueue::getSampleBlock();
-    block.setColumns(std::move(columns));
-    return block;
+    result.block = InternalTextLogsQueue::getSampleBlock();
+    result.block.setColumns(std::move(columns));
+
+    result.forwarded = forwarded_log_count.fetch_add(result.block.rows(), std::memory_order_relaxed) + result.block.rows();
+    result.num_dropped = logs_queue->dropped_logs.load(std::memory_order_relaxed);
+    return result;
 }
 
 }
@@ -244,31 +264,34 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     std::shared_future<std::optional<TaskFailure>> completion_future;
     std::shared_ptr<Progress> progress;
     InternalTextLogsQueuePtr logs_queue;
+    std::shared_ptr<std::atomic<UInt64>> forwarded_log_count;
     {
         std::lock_guard lock(tasks_mutex);
         auto it = tasks.find(task_id);
         if (it == tasks.end())
-            return TaskStatus{Result::UnknownTaskId, "", {}, {}, {}};
+            return TaskStatus{Result::UnknownTaskId, "", {}, {}, {}, 0, 0};
         completion_future = it->second->completion_future;
         progress = it->second->progress;
         logs_queue = it->second->logs_queue;
+        forwarded_log_count = it->second->forwarded_log_count;
     }
 
     if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
     {
+        DrainedLogs drained = drainLogs(logs_queue, *forwarded_log_count);
         Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
-        return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, drainLogs(logs_queue)};
+        return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, std::move(drained.block), drained.num_dropped, drained.forwarded};
     }
 
     /// Drain only after the future is ready
-    Block logs = drainLogs(logs_queue);
+    DrainedLogs drained = drainLogs(logs_queue, *forwarded_log_count);
     Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
     const auto & failure = completion_future.get();
 
     if (!failure)
-        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta), {}, std::move(logs)};
+        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta), 0, std::move(drained.block), drained.num_dropped, drained.forwarded};
     else
-        return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code, std::move(logs)};
+        return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code, std::move(drained.block), drained.num_dropped, drained.forwarded};
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)

@@ -47,6 +47,8 @@ DistributedQueryTaskStatus makeStatus(size_t num_log_rows)
     s.status = "Failed";
     s.error_message = "Code: 395. DB::Exception: boom on worker";
     s.error_code = 395;
+    s.num_dropped_logs = 17;
+    s.forwarded_log_count = 250;
     fillProgress(s.progress);
 
     if (num_log_rows > 0)
@@ -104,6 +106,8 @@ TEST(TaskStatusSerialization, Version3NoLogs)
     EXPECT_EQ(out.error_message, in.error_message);
     EXPECT_EQ(out.error_code, in.error_code);
     EXPECT_EQ(out.logs.rows(), 0u); /// logs field does not exist below task status version 4
+    EXPECT_EQ(out.num_dropped_logs, 0u); /// loss counters are not on the wire below version 4
+    EXPECT_EQ(out.forwarded_log_count, 0u);
     expectProgressCarriedEq(out.progress, in.progress);
 }
 
@@ -120,6 +124,8 @@ TEST(TaskStatusSerialization, Version4RoundTripsLogs)
     ASSERT_EQ(out.logs.rows(), 5u);
     EXPECT_EQ(out.logs.getByName("text").column->getDataAt(4), std::string_view("some log line"));
     EXPECT_EQ(out.logs.getByName("query_id").column->getDataAt(0), std::string_view("q::stage_0_0"));
+    EXPECT_EQ(out.num_dropped_logs, in.num_dropped_logs);
+    EXPECT_EQ(out.forwarded_log_count, in.forwarded_log_count);
 }
 
 /// The "no logs" case at version 4: has_logs=false, nothing else emitted, still symmetric.
@@ -130,6 +136,9 @@ TEST(TaskStatusSerialization, Version4EmptyLogs)
 
     EXPECT_EQ(out.status, in.status);
     EXPECT_EQ(out.logs.rows(), 0u);
+    /// The loss counters ride outside the has_logs branch, so they survive even with no logs.
+    EXPECT_EQ(out.num_dropped_logs, in.num_dropped_logs);
+    EXPECT_EQ(out.forwarded_log_count, in.forwarded_log_count);
 }
 
 /// The progress version gates total_bytes_to_read independently of the task status version: it is

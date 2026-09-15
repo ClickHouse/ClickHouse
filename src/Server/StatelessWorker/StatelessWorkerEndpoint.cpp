@@ -236,6 +236,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         DistributedQueryTaskStatus task_status;
         task_status.progress = std::move(status.progress);
         task_status.logs = std::move(status.logs);
+        task_status.num_dropped_logs = status.num_dropped_logs;
+        task_status.forwarded_log_count = status.forwarded_log_count;
 
         switch (status.result)
         {
