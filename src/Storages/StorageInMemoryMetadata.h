@@ -181,7 +181,7 @@ struct StorageInMemoryMetadata
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
-    TTLColumnsDescription getColumnTTLs() const;
+    const TTLColumnsDescription & getColumnTTLs() const;
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.
