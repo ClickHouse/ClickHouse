@@ -258,7 +258,7 @@ The following aggregate functions are supported:
 - [`groupUniqArrayArrayMap`](/reference/functions/aggregate-functions/combinators#-map)
 - [`sumMap` (`sumMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
 - [`minMap` (`minMappedArrays`)](/reference/functions/aggregate-functions/minMap)
-- [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
+- [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/maxMap)
 - [`timeSeriesGroupArray`](/reference/functions/aggregate-functions/timeSeriesGroupArray) (with a single argument of type `Array(Tuple(timestamp, value))`)
 
 <Note>
