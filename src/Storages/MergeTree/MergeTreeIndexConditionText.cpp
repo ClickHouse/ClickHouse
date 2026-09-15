@@ -637,8 +637,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
         {
             if (i > 0)
                 description += ", ";
-
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
+            description += tokenizer->formatTokenForLogs(all_search_tokens[i]);
         }
     }
 
