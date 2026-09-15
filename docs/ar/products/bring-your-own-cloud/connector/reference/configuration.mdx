@@ -1,22 +1,22 @@
 ---
 title: 'مرجع التهيئة'
 sidebarTitle: 'مرجع التهيئة'
-description: 'جميع مفاتيح تهيئة ClickHouse Connector: ملف config.yaml الخاص بالآلة الافتراضية وقيم مخطط Helm، مع القيم الافتراضية'
+description: 'جميع مفاتيح تهيئة ClickHouse Connector: ملف config.yaml الخاص بجهاز افتراضي وقيم مخطط Helm، مع القيم الافتراضية'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration', 'reference']
 doc_type: 'reference'
 ---
 
-تسرد هذه الصفحة جميع مفاتيح التهيئة التي قد تحتاج إلى تعديلها، مع قيمها الافتراضية ومعانيها: بدءًا من ملف تهيئة الآلة الافتراضية، ثم قيم مخطط Helm. للحصول على إرشادات عملية، راجع [دليل التهيئة](/ar/products/bring-your-own-cloud/connector/configuration).
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="vm-configuration-file">
-  ## ملف إعداد VM
-</div>
+<PrivatePreviewBadge />
+
+تسرد هذه الصفحة جميع مفاتيح التهيئة التي قد تحتاج إلى تعديلها، مع قيمها الافتراضية ومعانيها: بدءًا من ملف تهيئة جهاز افتراضي، ثم قيم مخطط Helm. للحصول على إرشادات عملية، راجع [دليل التهيئة](/ar/products/bring-your-own-cloud/connector/configuration).
+
+## ملف إعداد VM {#vm-configuration-file}
 
 على جهاز VM يعمل بنظام Linux، يقرأ الموصل الملف `/etc/clicklink/config.yaml` الذي ينشئه الأمر `clicklink clctl init` ويُحتفَظ به عند إعادة تشغيل الأمر ما لم يُمرَّر الخيار `--force`. تستخدم المفاتيح غير الموجودة في الملف الإعدادات الافتراضية المُصرَّفة أدناه. لا تُخزَّن بيانات الاعتماد مطلقًا في هذا الملف.
 
-<div id="vm-top-level">
-  ### المفاتيح العليا
-</div>
+### المفاتيح العليا {#vm-top-level}
 
 | المفتاح          | القيمة الافتراضية | المعنى                                                                                                                    |
 | ---------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -29,9 +29,7 @@ doc_type: 'reference'
 | `troubleshooter` |                   | كتلة العملية الخفية لأداة استكشاف الأخطاء وإصلاحها، راجع [troubleshooter](#vm-troubleshooter).                            |
 | `observability`  |                   | كتلة التسجيل والمنفذ المشتركة، راجع [observability](#vm-observability).                                                   |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#vm-api}
 
 | المفتاح                   | القيمة الافتراضية                          | المعنى                                                                                       |
 | ------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------- |
@@ -47,9 +45,7 @@ doc_type: 'reference'
 | `api.retry.max_delay`     | `30s`                                      | الحد الأقصى لتأخير التراجع.                                                                  |
 | `api.retry.jitter_factor` | `0.25`                                     | تذبذب عشوائي يُطبّق على تأخيرات التراجع.                                                     |
 
-<div id="vm-instances">
-  ### المثيلات
-</div>
+### المثيلات {#vm-instances}
 
 يصف كل إدخال ضمن `instances.<name>` هدفًا واحدًا لـ ClickHouse عبر البروتوكول الأصلي:
 
@@ -64,9 +60,7 @@ doc_type: 'reference'
 | `namespace`      |                   | مساحة أسماء Kubernetes الخاصة بالمثيل، وتُستخدم لتحديد نطاق قراءات Kubernetes لمكوّن استكشاف الأخطاء وإصلاحها. |
 | `cluster`        | `default`         | اسم كتلة ClickHouse المستخدم للاستعلامات الموزعة.                                                              |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#vm-scraper}
 
 | المفتاح                              | القيمة الافتراضية                   | المعنى                                                                                                                                                                                                                           |
 | ------------------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,9 +79,7 @@ doc_type: 'reference'
 | `scraper.observability.metrics_port` | `9092`                              | منفذ مقاييس scraper.                                                                                                                                                                                                             |
 | `scraper.access_directory`           | `/etc/clicklink/access/scraper`     | الدليل الجذر لحزم الوصول الخاصة بكل مثيل لـ scraper.                                                                                                                                                                             |
 
-<div id="vm-troubleshooter">
-  ### troubleshooter
-</div>
+### troubleshooter {#vm-troubleshooter}
 
 | المفتاح                                            | القيمة الافتراضية                                                    | المعنى                                                                                                                                  |
 | -------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -122,9 +114,7 @@ doc_type: 'reference'
 | `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`                          | مفتاح البوابة.                                                                                                                          |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (تملأ `init` اسم المضيف مسبقًا)                                 | أسماء SAN للشهادة الموقعة ذاتيًا التي تنشئها الخدمة عند عدم وجود شهادة؛ تتحول الإدخالات التي يمكن تحليلها كعناوين IP إلى عناوين IP SAN. |
 
-<div id="vm-observability">
-  ### قابلية الرصد
-</div>
+### قابلية الرصد {#vm-observability}
 
 | المفتاح                      | القيمة الافتراضية | المعنى                                  |
 | ---------------------------- | ----------------- | --------------------------------------- |
@@ -135,9 +125,7 @@ doc_type: 'reference'
 
 تتجاوز كتل `observability` الخاصة بكل مكوّن هذه الإعدادات الأساسية: يستخدم scraper المنفذين `8082`/`9092`، ويستخدم troubleshooter المنفذين `8084`/`9094`، وتستمع البوابة على المنفذ `8443` عند تفعيلها.
 
-<div id="default-table-allowlist">
-  ### قائمة السماح الافتراضية بالجداول
-</div>
+### قائمة السماح الافتراضية بالجداول {#default-table-allowlist}
 
 مجموعة `allowed_tables` الافتراضية لمكوّن troubleshooter، وهي مطابقة للقيمة الافتراضية `troubleshooter.allowedTables` في مخطط Helm:
 
@@ -155,15 +143,11 @@ system.functions        system.formats        system.table_engines
 system.users            system.roles          system.grants
 ```
 
-<div id="helm-chart-values">
-  ## قيم مخطط Helm
-</div>
+## قيم مخطط Helm {#helm-chart-values}
 
 في Kubernetes، تتم تهيئة الموصل عبر قيم مخطط `clicklink-connector`. ينشئ `clicklink clctl init` تراكبًا باسم `clicklink-values.yaml` يتضمن جميع القيم التالية بعد تعبئتها، ويحتفظ به عند إعادة التشغيل ما لم يُمرَّر الخيار `--force`. تعرض الجداول القيم الافتراضية للمخطط؛ وتتوافر إعدادات أعباء العمل القياسية (`resources`، `nodeSelector`، `tolerations`، `affinity`، `serviceAccount.annotations`، `env`، `imagePullSecrets`) في كل مكوّن بقيم افتراضية فارغة، ولا تُكرَّر في كل جدول.
 
-<div id="helm-cluster">
-  ### المجموعة
-</div>
+### المجموعة {#helm-cluster}
 
 | المفتاح                | القيمة الافتراضية   | المعنى                                                                                  |
 | ---------------------- | ------------------- | --------------------------------------------------------------------------------------- |
@@ -171,9 +155,7 @@ system.users            system.roles          system.grants
 | `cluster.region`       | `""` (يملؤه `init`) | تسمية المنطقة. مطلوب.                                                                   |
 | `cluster.cloud`        | `""` (يملؤه `init`) | تسمية موفّر Cloud. مطلوب.                                                               |
 
-<div id="helm-image">
-  ### image
-</div>
+### image {#helm-image}
 
 | المفتاح            | القيمة الافتراضية                                               | المعنى                                                                                                                                                                                                               |
 | ------------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -181,9 +163,7 @@ system.users            system.roles          system.grants
 | `image.tag`        | `""` (يتتبع `appVersion` الخاص بالمخطط؛ يثبّت `init` إصدار CLI) | وسم الصورة.                                                                                                                                                                                                          |
 | `image.pullPolicy` | `IfNotPresent`                                                  | سياسة سحب الصور في Kubernetes.                                                                                                                                                                                       |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#helm-api}
 
 | المفتاح           | القيمة الافتراضية   | المعنى                                                                                                                                                                                               |
 | ----------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -191,9 +171,7 @@ system.users            system.roles          system.grants
 | `api.tls.enabled` | `true`              | قدّم شهادة عميل mTLS عند الاتصال بواجهة برمجة التطبيقات.                                                                                                                                             |
 | `api.tls.caFile`  | `""` (جذور النظام)  | تُضاف شهادة CA إلى جذور النظام للتحقق من الخادم. عيّنها إلى `/etc/clicklink/secrets/mtls/ca.crt` (أو أعد تشغيل `init` باستخدام `--api-private-ca`) عندما تستخدم نقطة النهاية شهادة صادرة عن CA خاصة. |
 
-<div id="helm-secrets">
-  ### الأسرار
-</div>
+### الأسرار {#helm-secrets}
 
 يستخدم المخطط كائنات Secrets المُنشأة مسبقًا؛ وينشئها `init` قبل التثبيت.
 
@@ -203,9 +181,7 @@ system.users            system.roles          system.grants
 | `secrets.hmacSecretName` | `clicklink-hmac`  | كائن Secret معتم يحتوي على `access-key` و`secret-key` لتوقيع الطلبات.                                                                                                                                                                                                   |
 | `secrets.mtlsWriteback`  | `true`            | اسمح للعمليات الخفية بكتابة شهادة mTLS الطرفية المُجدَّدة تلقائيًا مجددًا في كائن Secret الخاص بـ mTLS. يمنح ServiceAccounts الخاصة بالمكوّن صلاحية `update` على كائن Secret واحد باسمه المطابق تمامًا؛ وبدون ذلك، لن تجد الشهادات المُجدَّدة مكانًا دائمًا لتُحفظ فيه. |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#helm-scraper}
 
 | المفتاح                                                                  | القيمة الافتراضية                   | المعنى                                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -221,9 +197,7 @@ system.users            system.roles          system.grants
 | `scraper.rbac.extraSecretNames`                                          | `[]`                                | أسماء Secret إضافية يمكن لـ ServiceAccount الخاص بـ scraper تنفيذ `get` عليها؛ وبأسماء مطابقة تمامًا فقط.                                                                                                                    |
 | `scraper.accessBundles`                                                  | `{}`                                | حزم وصول لكل مثيل، مفهرسة باسم المثيل، وتحتوي كل منها على `secretName` و`serviceAccountName`. تُربط في `/etc/clicklink/access/scraper/<instance>/`؛ ويُنشئها الأمر `clicklink clctl scraper access provision --target helm`. |
 
-<div id="helm-troubleshooter">
-  ### مستكشف الأعطال
-</div>
+### مستكشف الأعطال {#helm-troubleshooter}
 
 | المفتاح                                         | القيمة الافتراضية                                           | المعنى                                                                                                                                                                                                                                                        |
 | ----------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,9 +220,7 @@ system.users            system.roles          system.grants
 | `troubleshooter.rbac.extraSecretNames`          | `[]`                                                        | أسماء Secret إضافية يُسمح لـ ServiceAccount الخاص بمستكشف الأعطال بتنفيذ `get` عليها، بأسماء مطابقة تمامًا فقط.                                                                                                                                               |
 | `troubleshooter.accessBundles`                  | `{}`                                                        | حزم وصول لكل مثيل، بالبنية نفسها لـ `scraper.accessBundles`، ومربوطة عند `/etc/clicklink/access/troubleshooter/<instance>/`.                                                                                                                                  |
 
-<div id="helm-persistence">
-  ### الاستمرارية
-</div>
+### الاستمرارية {#helm-persistence}
 
 | المفتاح                    | القيمة الافتراضية                | المعنى                                                                                                                                           |
 | -------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -257,9 +229,7 @@ system.users            system.roles          system.grants
 | `persistence.size`         | `5Gi`                            | حجم المطالبة.                                                                                                                                    |
 | `persistence.accessModes`  | `[ReadWriteOnce]`                | أوضاع الوصول للمطالبة.                                                                                                                           |
 
-<div id="helm-clctl-gateway">
-  ### clctl.gateway
-</div>
+### clctl.gateway {#helm-clctl-gateway}
 
 بوابة الجلسات لـ[جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -279,9 +249,7 @@ system.users            system.roles          system.grants
 | `clctl.gateway.ingress.enabled`                                  | `false`                | إنشاء Ingress للبوابة. عند تعطيله، يصل المشغّلون إلى البوابة باستخدام `kubectl port-forward`؛ ولا يلزم استخدام وحدة تحكم Ingress أو cert-manager.                             |
 | `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | حقول Ingress القياسية؛ يشير `tls` إلى Secrets من نوع `kubernetes.io/tls`.                                                                                                     |
 
-<div id="helm-networkpolicy">
-  ### networkPolicy
-</div>
+### networkPolicy {#helm-networkpolicy}
 
 | المفتاح                               | القيمة الافتراضية | المعنى                                                                                                                                                                                                                  |
 | ------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

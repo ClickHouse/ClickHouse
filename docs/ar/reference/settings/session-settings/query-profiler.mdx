@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وهي مولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="query_profiler_cpu_time_period_ns">
-  ## query_profiler_cpu_time_period_ns
-</div>
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -31,13 +29,13 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 * 0 لإيقاف المؤقّت.
 
+القيمة الافتراضية هي 0 في بناء MemorySanitizer، حيث يكون مُحلّل أخذ العينات معطّلًا.
+
 انظر أيضًا:
 
 * جدول النظام [trace&#95;log](/ar/reference/system-tables/trace_log)
 
-<div id="query_profiler_real_time_period_ns">
-  ## query_profiler_real_time_period_ns
-</div>
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -53,6 +51,8 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   * 1000000000 (مرة واحدة في الثانية) للتنميط على مستوى المجموعة بالكامل.
 
 * 0 لإيقاف تشغيل المؤقّت.
+
+القيمة الافتراضية هي 0 في بُنى MemorySanitizer، حيث يكون مُحلّل أخذ العيّنات مُعطّلًا.
 
 انظر أيضًا:
 

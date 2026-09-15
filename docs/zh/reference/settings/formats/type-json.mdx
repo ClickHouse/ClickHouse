@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置是根据[源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)自动生成的。
 
-<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
-  ## type_json_allow_duplicated_key_with_literal_and_nested_object
-</div>
+## type_json_allow_duplicated_key_with_literal_and_nested_object {#type_json_allow_duplicated_key_with_literal_and_nested_object}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 启用后，将允许解析如下 JSON：`{"a" : 42, "a" : {"b" : 42}}`，即某个键重复出现，但其中一个值是嵌套对象。
 
-<div id="type_json_skip_duplicated_paths">
-  ## type_json_skip_duplicated_paths
-</div>
+## type_json_skip_duplicated_paths {#type_json_skip_duplicated_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 启用后，在将 JSON 对象解析为 JSON 类型时，会忽略重复路径，只插入第一个，而不会抛出异常
 
-<div id="type_json_skip_invalid_typed_paths">
-  ## type_json_skip_invalid_typed_paths
-</div>
+## type_json_skip_invalid_typed_paths {#type_json_skip_invalid_typed_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,18 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 * 0 — 禁用 (类型不匹配时抛出错误) 。
 * 1 — 启用 (类型不匹配时跳过字段) 。
 
-<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
-  ## type_json_use_partial_match_to_skip_paths_by_regexp
-</div>
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+启用后，JSON 列中值为 NULL 的类型化路径将被视为不存在，与动态路径的行为一致。这会影响 JSON 序列化输出，以及 `JSONAllPaths`、`JSONHas`、`JSONExtractRaw`、`has` 等内部信息函数和 `empty`/`notEmpty` 检查。
+
+可能的值：
+
+* 0 — 禁用 (类型化路径始终存在，即使其值为 NULL) 。
+* 1 — 启用 (值为 NULL 的类型化路径将被视为不存在) 。
+
+## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

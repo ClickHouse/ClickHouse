@@ -101,15 +101,11 @@ INSERT INTO t FORMAT TabSeparated
   ```
 </Note>
 
-<div id="constraints">
-  ## القيود
-</div>
+## القيود {#constraints}
 
 إذا كان للجدول [قيود](/ar/reference/statements/create/table#constraints)، فسيتم التحقق من تعبيراتها لكل صف من البيانات المُدخلة. وإذا لم يُستوفَ أيٌّ من هذه القيود، فسيُصدر الخادم استثناءً يتضمن اسم القيد وتعبيره، وسيتوقف الاستعلام.
 
-<div id="data-type-validation">
-  ## التحقق من صحة أنواع البيانات
-</div>
+## التحقق من صحة أنواع البيانات {#data-type-validation}
 
 يتحقق ClickHouse من أنواع البيانات المسموح بها (التي تتحكم فيها إعدادات مثل `enable_time_time64_type` و`allow_suspicious_low_cardinality_types` و`allow_suspicious_fixed_string_types` وغيرها) فقط عند إنشاء الجدول (`CREATE TABLE`) وتعديل المخطط (`ALTER TABLE`)، وليس أثناء `INSERT`.
 
@@ -148,9 +144,7 @@ ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
   ونتيجة لذلك، يمكن لعميل يعمل بإصدار أحدث (حيث يكون أحد الإعدادات مفعّلًا افتراضيًا) أن يُدرج بيانات ذات أنواع بيانات غير مسموح بها في خادم يعمل بإصدار أقدم (حيث يكون هذا الإعداد معطّلًا)، ما دام الجدول الهدف يحتوي بالفعل على أنواع الأعمدة المقابلة. ويُطبَّق هذا التحقق على مستوى DDL، وليس على مستوى DML.
 </Note>
 
-<div id="inserting-the-results-of-select">
-  ## إدراج نتائج SELECT
-</div>
+## إدراج نتائج SELECT {#inserting-the-results-of-select}
 
 **البنية**
 
@@ -176,9 +170,7 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
-<div id="inserting-data-from-a-file">
-  ## إدراج البيانات من ملف
-</div>
+## إدراج البيانات من ملف {#inserting-data-from-a-file}
 
 **الصيغة**
 
@@ -186,17 +178,15 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] [FORMAT format_name]
 ```
 
-استخدم الصياغة أعلاه لإدراج البيانات من ملف أو ملفات مخزّنة على جانب **العميل**. `file_name` و`type` هما قيمتان حرفيتان نصّيتان. يجب تحديد [format](/ar/reference/formats/index) لملف الإدخال في عبارة `FORMAT`.
+استخدم الصياغة أعلاه لإدراج البيانات من ملف أو ملفات مخزّنة على جانب **العميل**. `file_name` و`type` هما قيمتان حرفيتان نصّيتان. يجب تحديد [تنسيق](/ar/reference/formats/index) لملف الإدخال في عبارة `FORMAT`.
 
-الملفات المضغوطة مدعومة. يُكتشف نوع الضغط من امتداد اسم الملف، أو يمكن تحديده صراحةً في عبارة `COMPRESSION`. الأنواع المدعومة هي: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+الملفات المضغوطة مدعومة. يُكتشف نوع الضغط من امتداد اسم الملف، أو يمكن تحديده صراحةً في عبارة `COMPRESSION`. الأنواع المدعومة هي: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. بالنسبة إلى `snappy`، يُحدَّد تنسيق النقل عبر إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (`basic` افتراضيًا).
 
 تتوفر هذه الإمكانية في [عميل سطر الأوامر](/ar/concepts/features/interfaces/client) و[clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local).
 
 **أمثلة**
 
-<div id="single-file-with-from-infile">
-  ### ملف واحد باستخدام FROM INFILE
-</div>
+### ملف واحد باستخدام FROM INFILE {#single-file-with-from-infile}
 
 نفّذ الاستعلامات التالية باستخدام [عميل سطر الأوامر](/ar/concepts/features/interfaces/client):
 
@@ -214,9 +204,7 @@ clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
 └────┴──────┘
 ```
 
-<div id="multiple-files-with-from-infile-using-globs">
-  ### ملفات متعددة مع FROM INFILE باستخدام أنماط glob
-</div>
+### ملفات متعددة مع FROM INFILE باستخدام أنماط glob {#multiple-files-with-from-infile-using-globs}
 
 هذا المثال مشابه جدًا للمثال السابق، لكن عمليات الإدراج تُجرى من عدة ملفات باستخدام `FROM INFILE 'input_*.csv`.
 
@@ -237,9 +225,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
   ```
 </Tip>
 
-<div id="inserting-using-a-table-function">
-  ## الإدراج باستخدام دالة جدول
-</div>
+## الإدراج باستخدام دالة جدول {#inserting-using-a-table-function}
 
 يمكن إدراج البيانات في الجداول التي تشير إليها [دوال الجداول](/ar/reference/functions/table-functions/index).
 
@@ -266,9 +252,7 @@ SELECT * FROM simple_table;
 └─────┴───────────────────────┘
 ```
 
-<div id="inserting-into-clickhouse-cloud">
-  ## الإدراج في ClickHouse Cloud
-</div>
+## الإدراج في ClickHouse Cloud {#inserting-into-clickhouse-cloud}
 
 بشكل افتراضي، توفّر الخدمات على ClickHouse Cloud عدة نُسخ متماثلة لضمان الإتاحة العالية. وعند الاتصال بخدمة، يُنشأ الاتصال بإحدى هذه النُسخ المتماثلة.
 
@@ -282,17 +266,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 
 لاحظ أن استخدام `select_sequential_consistency` يزيد العبء على ClickHouse Keeper (الذي يستخدمه ClickHouse Cloud داخليًا)، وقد يؤدي إلى تباطؤ الأداء تبعًا لمقدار الحمل على الخدمة. لا نوصي بتمكين هذا الإعداد إلا عند الضرورة. والنهج الموصى به هو تنفيذ عمليات القراءة والكتابة ضمن الجلسة نفسها، أو استخدام برنامج تشغيل عميل يعتمد البروتوكول الأصلي (وبذلك يدعم الاتصالات المثبّتة).
 
-<div id="inserting-into-a-replicated-setup">
-  ## الإدراج في إعداد يعتمد النسخ المتماثل
-</div>
+## الإدراج في إعداد يعتمد النسخ المتماثل {#inserting-into-a-replicated-setup}
 
 في إعداد يعتمد النسخ المتماثل، تصبح البيانات مرئية على النسخ المتماثلة الأخرى بعد اكتمال نسخها متماثلًا. تبدأ عملية نسخ البيانات (وتنزيلها إلى النسخ المتماثلة الأخرى) مباشرةً بعد تنفيذ `INSERT`. ويختلف هذا عن ClickHouse Cloud، حيث تُكتب البيانات فورًا إلى التخزين المشترك، وتتابع النسخ المتماثلة تغييرات البيانات الوصفية.
 
 لاحظ أنه في الإعدادات التي تعتمد النسخ المتماثل، قد تستغرق عمليات `INSERTs` أحيانًا وقتًا ملحوظًا (في حدود ثانية واحدة)، لأنها تتطلب تنفيذ commit في ClickHouse Keeper لتحقيق التوافق الموزّع. كما أن استخدام S3 للتخزين يضيف زمن استجابة إضافيًا.
 
-<div id="performance-considerations">
-  ## اعتبارات الأداء
-</div>
+## اعتبارات الأداء {#performance-considerations}
 
 يقوم `INSERT` بفرز بيانات الإدخال حسب المفتاح الأساسي وتقسيمها إلى تقسيمات وفقًا لمفتاح التقسيم. إذا أدخلت البيانات في عدة تقسيمات دفعةً واحدة، فقد يؤدي ذلك إلى انخفاض ملحوظ في أداء استعلام `INSERT`. لتجنب ذلك:
 
@@ -304,17 +284,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 * أُضيفت البيانات في الوقت الفعلي.
 * حمّلت بيانات تكون عادةً مرتبة حسب الوقت.
 
-<div id="asynchronous-inserts">
-  ### الإدراجات غير المتزامنة
-</div>
+### الإدراجات غير المتزامنة {#asynchronous-inserts}
 
 يمكن إدراج البيانات بشكل غير متزامن عبر عمليات إدراج صغيرة الحجم ولكن متكررة. تُدمَج بيانات عمليات الإدراج هذه في دفعات، ثم تُدرَج بأمان في جدول. لاستخدام الإدراجات غير المتزامنة، فعِّل إعداد [`async_insert`](/ar/reference/settings/session-settings/async-insert#async_insert).
 
 يؤدي استخدام `async_insert` أو [محرك الجداول `Buffer`](/ar/reference/engines/table-engines/special/buffer) إلى إضافة تخزين مؤقت.
 
-<div id="large-or-long-running-inserts">
-  ### عمليات الإدراج الكبيرة أو طويلة التشغيل
-</div>
+### عمليات الإدراج الكبيرة أو طويلة التشغيل {#large-or-long-running-inserts}
 
 عند إدراج كميات كبيرة من البيانات، يعمل ClickHouse على تحسين أداء الكتابة من خلال عملية تُسمّى &quot;squashing&quot;. تُدمَج كتل البيانات الصغيرة المُدرجة في الذاكرة وتُجمع في كتل أكبر قبل كتابتها إلى القرص. تقلّل عملية squashing الأعباء الإضافية المرتبطة بكل عملية كتابة. أثناء هذه العملية، تصبح البيانات المُدرجة متاحة للاستعلام بعد أن يُكمل ClickHouse كتابة كل [`max_insert_block_size`](/ar/reference/settings/session-settings/max-insert#max_insert_block_size) صف.
 

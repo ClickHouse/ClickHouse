@@ -16,9 +16,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 هذه الميزة غير مدعومة من مهندسي ClickHouse، ومن المعروف أن جودتها متواضعة إلى حدٍّ ما. إذا واجهت أي مشكلات، فأصلحها بنفسك وقدّم طلب pull request.
 
-<div id="usage">
-  ## الاستخدام
-</div>
+## الاستخدام {#usage}
 
 ```sql
 ENGINE = HDFS(URI, format)
@@ -33,9 +31,7 @@ ENGINE = HDFS(URI, format)
   [التنسيقات](/ar/reference/formats/index#formats-overview).
 * [PARTITION BY expr]
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — اختياري. في معظم الحالات، لن تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فلن تحتاج عادةً إلى مفتاح تقسيم أكثر تفصيلاً من التقسيم الشهري. لا يؤدي التقسيم إلى تسريع الاستعلامات (على عكس تعبير ORDER BY). ويجب ألا تستخدم تقسيمًا مفرط التفصيل إطلاقًا. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (واجعل بدلًا من ذلك معرّف العميل أو اسمه هو العمود الأول في تعبير ORDER BY).
 
@@ -68,9 +64,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-<div id="implementation-details">
-  ## تفاصيل التنفيذ
-</div>
+## تفاصيل التنفيذ {#implementation-details}
 
 * يمكن تنفيذ عمليتَي القراءة والكتابة بالتوازي.
 * غير مدعوم:
@@ -78,19 +72,17 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   * الفهارس.
   * يمكن استخدام [النسخ المتماثل بدون نسخ](/ar/concepts/features/configuration/server-config/storing-data#zero-copy)، لكنه غير موصى به.
 
-<Info>
-  **النسخ المتماثل بدون نسخ غير جاهز لبيئات الإنتاج**
-
+<Note title="النسخ المتماثل بدون نسخ غير جاهز لبيئات الإنتاج">
   يكون النسخ المتماثل بدون نسخ معطّلًا افتراضيًا في ClickHouse الإصدار 22.8 وما بعده. هذه الميزة غير موصى بها للاستخدام في بيئات الإنتاج.
-</Info>
+</Note>
 
 **أنماط glob في المسار**
 
-يمكن أن يحتوي أكثر من مكوّن في المسار على أنماط glob. ولكي تتم معالجة الملف، يجب أن يكون موجودًا وأن يطابق نمط المسار بالكامل. ويُحدَّد سرد الملفات أثناء `SELECT` (وليس عند تنفيذ `CREATE`).
+يمكن أن يحتوي أكثر من مكوّن في المسار على أنماط glob. ولكي تتم معالجة الملف، يجب أن يكون موجودًا وأن يطابق نمط المسار بالكامل. ويُحدَّد سرد الملفات أثناء `SELECT` (وليس عند تنفيذ `CREATE`).
 
 * `*` — يستبدل أي عدد من المحارف باستثناء `/`، بما في ذلك السلسلة الفارغة.
 * `?` — يستبدل أي محرف واحد.
-* `{some_string,another_string,yet_another_one}` — يستبدل أيًّا من السلاسل `'some_string', 'another_string', 'yet_another_one'`.
+* `{some_string,another_string,yet_another_one}` — يستبدل أيًّا من السلاسل `'some_string', 'another_string', 'yet_another_one'`.
 * `{N..M}` — يستبدل أي رقم في النطاق من N إلى M، شاملًا الحدّين.
 
 التركيبات التي تحتوي على `{}` مشابهة للدالة الجدولية [remote](/ar/reference/functions/table-functions/remote).
@@ -138,9 +130,7 @@ CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-<div id="configuration">
-  ## الإعداد
-</div>
+## الإعداد {#configuration}
 
 على غرار GraphiteMergeTree، يدعم محرك HDFS الإعدادات الموسَّعة باستخدام ملف إعداد ClickHouse. هناك مفتاحا إعداد يمكنك استخدامهما: مفتاح عام (`hdfs`) وآخر على مستوى المستخدم (`hdfs_*`). يُطبَّق الإعداد العام أولًا، ثم يُطبَّق الإعداد على مستوى المستخدم (إن وُجد).
 
@@ -158,13 +148,9 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 </hdfs_root>
 ```
 
-<div id="configuration-options">
-  ### خيارات الإعداد
-</div>
+### خيارات الإعداد {#configuration-options}
 
-<div id="supported-by-libhdfs3">
-  #### المعلمات التي يدعمها libhdfs3
-</div>
+#### المعلمات التي يدعمها libhdfs3 {#supported-by-libhdfs3}
 
 | **المعلمة**                                                             | **القيمة الافتراضية**             |
 | ----------------------------------------------------------------------- | --------------------------------- |
@@ -212,9 +198,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 قد يوضّح [مرجع إعدادات HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) بعض هذه المعلمات.
 
-<div id="clickhouse-extras">
-  #### إضافات ClickHouse
-</div>
+#### إضافات ClickHouse {#clickhouse-extras}
 
 | **معلمة**                       | **القيمة الافتراضية** |
 | --------------------------------- | --------------------- |
@@ -222,15 +206,11 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 | hadoop&#95;kerberos&#95;principal | &quot;&quot;          |
 | libhdfs3&#95;conf                 | &quot;&quot;          |
 
-<div id="limitations">
-  ### القيود
-</div>
+### القيود {#limitations}
 
 * لا يمكن أن يكون `hadoop_security_kerberos_ticket_cache_path` و `libhdfs3_conf` إلا على المستوى العام، وليس على مستوى المستخدم
 
-<div id="kerberos-support">
-  ## دعم Kerberos
-</div>
+## دعم Kerberos {#kerberos-support}
 
 إذا كانت قيمة المعلَمة `hadoop_security_authentication` هي `kerberos`، فسيجري ClickHouse المصادقة عبر Kerberos.
 يمكن العثور على المعلَمات [هنا](#clickhouse-extras)، وقد يكون `hadoop_security_kerberos_ticket_cache_path` مفيدًا.
@@ -240,9 +220,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 إذا جرى تحديد `hadoop_kerberos_keytab` أو `hadoop_kerberos_principal` أو `hadoop_security_kerberos_ticket_cache_path`، فستُستخدم مصادقة Kerberos. وفي هذه الحالة، يكون كلٌّ من `hadoop_kerberos_keytab` و`hadoop_kerberos_principal` إلزاميًا.
 
-<div id="namenode-ha">
-  ## دعم الإتاحة العالية لـ HDFS Namenode
-</div>
+## دعم الإتاحة العالية لـ HDFS Namenode {#namenode-ha}
 
 يدعم libhdfs3 الإتاحة العالية لـ Namenode في HDFS.
 
@@ -257,9 +235,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 * ثم استخدم قيمة الوسم `dfs.nameservices` في ملف `hdfs-site.xml` كعنوان `namenode` في عنوان URI الخاص بـ HDFS. على سبيل المثال، استبدل `hdfs://appadmin@192.168.101.11:8020/abc/` بـ `hdfs://appadmin@my_nameservice/abc/`.
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
@@ -267,9 +243,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 * `_etag` — علامة ETag للملف. النوع: `LowCardinality(String)`. لا يوفّر HDFS علامة ETag أصلية، لذا تُولَّد القيمة من وقت تعديل الملف وحجمه بالتنسيق `<mtime_seconds>_<size>`. ولأن `libhdfs3` لا يوفّر وقت التعديل إلا بدقة ثانية واحدة، فإن إعادة كتابة الملف خلال الثانية نفسها مع الحفاظ على الحجم نفسه تؤدي إلى القيمة نفسها؛ لذلك لا تُستخدم علامة ETag المُولَّدة هذه كمفتاح لذاكرة التخزين المؤقت للمحتوى.
 
-<div id="storage-settings">
-  ## إعدادات التخزين
-</div>
+## إعدادات التخزين {#storage-settings}
 
 * [hdfs&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - يسمح بتفريغ الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.
 * [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - يسمح بإنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. يكون معطّلًا افتراضيًا.

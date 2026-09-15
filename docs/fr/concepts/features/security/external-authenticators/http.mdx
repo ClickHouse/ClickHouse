@@ -12,7 +12,7 @@ import SelfManaged from '/snippets/fr/_self_managed_only_no_roadmap.mdx';
 Le serveur HTTP peut être utilisé pour authentifier les utilisateurs de ClickHouse. L’authentification HTTP ne peut être utilisée que comme authentificateur externe pour des utilisateurs existants, définis dans `users.xml` ou dans les chemins locaux de contrôle d’accès. Actuellement, seul le schéma d’authentification [Basic](https://datatracker.ietf.org/doc/html/rfc7617) utilisant la méthode GET est pris en charge.
 
 <div id="http-auth-server-definition">
-  ## Définition du serveur d’authentification HTTP
+  ## Définition du serveur d’authentification HTTP {#http-auth-server-definition}
 </div>
 
 Pour définir un serveur d’authentification HTTP, vous devez ajouter la section `http_authentication_servers` à `config.xml`.
@@ -64,18 +64,16 @@ En-têtes transférés :
 
 Cette partie définit quels en-têtes seront transférés des en-têtes de requête du client vers le service d&#39;authentification HTTP externe. Notez que les en-têtes seront comparés à ceux de la config sans tenir compte de la casse, mais transférés tels quels, c&#39;est-à-dire sans être modifiés.
 
-<div id="enabling-http-auth-in-users-xml">
-  ### Activation de l’authentification HTTP dans `users.xml`
-</div>
+### Activation de l’authentification HTTP dans `users.xml` {#enabling-http-auth-in-users-xml}
 
 Pour activer l’authentification HTTP pour l’utilisateur, indiquez la section `http_authentication` au lieu de `password` ou d’autres sections similaires dans la définition de l’utilisateur.
 
-Paramètres :
+Paramètres :
 
 * `server` - Nom du serveur d’authentification HTTP configuré dans le fichier principal `config.xml`, comme décrit précédemment.
-* `scheme` - Schéma d’authentification HTTP. Seul `Basic` est actuellement pris en charge. Par défaut : Basic
+* `scheme` - Schéma d’authentification HTTP. Seul `Basic` est actuellement pris en charge. Par défaut : Basic
 
-Exemple (à placer dans `users.xml`) :
+Exemple (à placer dans `users.xml`) :
 
 ```xml
 <clickhouse>
@@ -95,7 +93,7 @@ Exemple (à placer dans `users.xml`) :
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### Activer l&#39;authentification HTTP avec SQL
+  ### Activer l&#39;authentification HTTP avec SQL {#enabling-http-auth-using-sql}
 </div>
 
 Lorsque la fonctionnalité de [contrôle d&#39;accès et de gestion des comptes pilotés par SQL](/fr/concepts/features/security/access-rights#access-control-usage) est activée dans ClickHouse, il est également possible de créer, à l&#39;aide d&#39;instructions SQL, des utilisateurs identifiés par authentification HTTP.
@@ -111,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### Transmission des paramètres de session
+  ### Transmission des paramètres de session {#passing-session-settings}
 </div>
 
 Si le corps de la réponse d&#39;un serveur d&#39;authentification HTTP est au format JSON et contient le sous-objet `settings`, ClickHouse essaiera d&#39;interpréter ses paires clé-valeur comme des valeurs de type chaîne et de les appliquer comme paramètres de session à la session en cours de l&#39;utilisateur authentifié. Si l&#39;analyse échoue, le corps de la réponse du serveur sera ignoré.

@@ -14,9 +14,7 @@ Tuple は、一時的にカラムをグループ化するために使用され�
 
 Tuple はクエリの結果になることもあります。この場合、JSON 以外のテキストフォーマットでは、値は `()` で囲まれたカンマ区切りで出力されます。JSON フォーマットでは、タプルは配列 (`[]`) として出力されます。
 
-<div id="creating-tuples">
-  ## Tuple の作成
-</div>
+## Tuple の作成 {#creating-tuples}
 
 関数を使ってタプルを作成できます。
 
@@ -64,9 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-<div id="data-type-detection">
-  ## データ型の検出
-</div>
+## データ型の検出 {#data-type-detection}
 
 その場でタプルを作成する際、ClickHouse は、指定された引数の値を格納できる最小の型として、各引数の型を推定します。値が [NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) の場合、推定される型は [Nullable](/ja/reference/data-types/nullable) です。
 
@@ -82,9 +78,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-<div id="referring-to-tuple-elements">
-  ## Tuple 要素の参照方法
-</div>
+## Tuple 要素の参照方法 {#referring-to-tuple-elements}
 
 Tuple 要素は、名前またはインデックスで参照できます。
 
@@ -108,9 +102,7 @@ SELECT a.2 FROM named_tuples; -- 索引で参照
 └────────────────────┘
 ```
 
-<div id="comparison-operations-with-tuple">
-  ## Tuple の比較演算
-</div>
+## Tuple の比較演算 {#comparison-operations-with-tuple}
 
 2 つのタプルは、左から右へ要素を順に比較していきます。最初のタプルの要素が 2 番目のタプルの対応する要素より大きい (小さい) 場合、最初のタプルは 2 番目のタプルより大きい (小さい) と見なされます。そうでない場合 (両方の要素が等しい場合) は、次の要素を比較します。
 
@@ -188,16 +180,12 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-<div id="nullable-tuple">
-  ## Nullable(Tuple(T1, T2, ...))
-</div>
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-  **ベータ機能**
-
+<Note title="ベータ機能">
   `SET enable_nullable_tuple_type = 1` が必要です
   これはベータ機能です。
-</Info>
+</Note>
 
 `Tuple(Nullable(T1), Nullable(T2), ...)` では個々の要素のみを `NULL` にできるのに対し、こちらではタプル全体を `NULL` にできます。
 

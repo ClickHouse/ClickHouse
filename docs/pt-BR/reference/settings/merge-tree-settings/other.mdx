@@ -15,26 +15,20 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Estas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="adaptive_write_buffer_initial_size">
-  ## adaptive_write_buffer_initial_size
-</div>
+## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
 Tamanho inicial de um buffer de escrita adaptativo
 
-<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
-  ## add_implicit_sign_column_constraint_for_collapsing_engine
-</div>
+## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Se true, adiciona uma restrição implícita à coluna `sign` de uma tabela CollapsingMergeTree
 ou VersionedCollapsingMergeTree para permitir somente valores válidos (`1` e `-1`).
 
-<div id="alter_column_secondary_index_mode">
-  ## alter_column_secondary_index_mode
-</div>
+## alter_column_secondary_index_mode {#alter_column_secondary_index_mode}
 
 <SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
 
@@ -51,18 +45,14 @@ Valores possíveis:
 * `compatibility`: Corresponde ao comportamento original: `throw` em `ALTER ... MODIFY COLUMN` e `rebuild` em `ALTER ... UPDATE/DELETE`.
 * `ignore`: Destinado a uso especializado. Deixa os índices em um estado inconsistente, o que pode permitir resultados de consulta incorretos.
 
-<div id="always_use_copy_instead_of_hardlinks">
-  ## always_use_copy_instead_of_hardlinks
-</div>
+## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Sempre copia os dados em vez de usar hard links durante mutações/substituições/desanexações
 e assim por diante.
 
-<div id="apply_patches_on_merge">
-  ## apply_patches_on_merge
-</div>
+## apply_patches_on_merge {#apply_patches_on_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,18 +60,14 @@ e assim por diante.
 
 Se true, as partes de patch são aplicadas durante as mesclagens
 
-<div id="assign_part_uuids">
-  ## assign_part_uuids
-</div>
+## assign_part_uuids {#assign_part_uuids}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Quando ativado, um identificador único de parte será atribuído a cada nova parte.
 Antes de ativar, verifique se todas as réplicas são compatíveis com a versão 4 de UUID.
 
-<div id="auto_statistics_types">
-  ## auto_statistics_types
-</div>
+## auto_statistics_types {#auto_statistics_types}
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
@@ -91,26 +77,20 @@ Lista separada por vírgulas dos tipos de estatística a serem calculados automa
 Tipos de estatística compatíveis: basic, tdigest, countmin, uniq, uniq&#95;v2.
 O tipo de estatística `minmax` está obsoleto: ele é um subconjunto de `basic`, que deve ser usado em seu lugar.
 
-<div id="background_task_preferred_step_execution_time_ms">
-  ## background_task_preferred_step_execution_time_ms
-</div>
+## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
 
 <SettingsInfoBlock type="Milissegundos" default_value="50" />
 
 Tempo alvo para a execução de um passo de mesclagem ou mutation. Pode ser excedido se
 um passo demorar mais
 
-<div id="clean_deleted_rows">
-  ## clean_deleted_rows
-</div>
+## clean_deleted_rows {#clean_deleted_rows}
 
 <SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />
 
 Configuração obsoleta, sem efeito.
 
-<div id="clone_replica_zookeeper_create_get_part_batch_size">
-  ## clone_replica_zookeeper_create_get_part_batch_size
-</div>
+## clone_replica_zookeeper_create_get_part_batch_size {#clone_replica_zookeeper_create_get_part_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -118,9 +98,7 @@ Configuração obsoleta, sem efeito.
 
 Tamanho do lote para solicitações get-part multi-create do ZooKeeper ao clonar uma réplica.
 
-<div id="compatibility_allow_sampling_expression_not_in_primary_key">
-  ## compatibility_allow_sampling_expression_not_in_primary_key
-</div>
+## compatibility_allow_sampling_expression_not_in_primary_key {#compatibility_allow_sampling_expression_not_in_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -128,9 +106,7 @@ Permite criar uma tabela com uma expressão de amostragem que não esteja na cha
 necessário apenas para permitir temporariamente a execução do servidor com tabelas incorretas, por
 compatibilidade retroativa.
 
-<div id="compute_exact_num_defaults_for_sparse_columns">
-  ## compute_exact_num_defaults_for_sparse_columns
-</div>
+## compute_exact_num_defaults_for_sparse_columns {#compute_exact_num_defaults_for_sparse_columns}
 
 <BetaBadge />
 
@@ -146,9 +122,7 @@ também precisam de `nullable_serialization_version = 'allow_sparse'`).
 Deixá-la desabilitada mantém inserções/mesclagens tão rápidas quanto antes; habilitá-la
 adiciona uma passagem O(rows) por coluna apta à serialização esparsa.
 
-<div id="deduplicate_merge_projection_mode">
-  ## deduplicate_merge_projection_mode
-</div>
+## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode}
 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
 
@@ -169,9 +143,7 @@ Possíveis valores:
 * `drop`
 * `rebuild`
 
-<div id="deduplication_hashes_cache_update_wait_ms">
-  ## deduplication_hashes_cache_update_wait_ms
-</div>
+## deduplication_hashes_cache_update_wait_ms {#deduplication_hashes_cache_update_wait_ms}
 
 <SettingsInfoBlock type="Milissegundos" default_value="100" />
 
@@ -182,9 +154,7 @@ versão mais recente antes de verificá-lo novamente em busca de blocos já inse
 diretório `deduplication_hashes` no ClickHouse Keeper para que os inserts possam detectar duplicatas sem precisar de uma
 ida e volta ao Keeper.
 
-<div id="default_compression_codec">
-  ## default_compression_codec
-</div>
+## default_compression_codec {#default_compression_codec}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "Nova configuração"}]}]} />
 
@@ -196,15 +166,11 @@ Ordem de seleção do codec de compressão para uma coluna:
 3. Codec de compressão padrão definido nas configurações de `compression`
    Valor padrão: uma string vazia (não definido).
 
-<div id="disk">
-  ## disco
-</div>
+## disco {#disk}
 
 Nome do disco de armazenamento. Pode ser especificado no lugar da política de armazenamento.
 
-<div id="dynamic_serialization_version">
-  ## dynamic_serialization_version
-</div>
+## dynamic_serialization_version {#dynamic_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
 
@@ -218,9 +184,7 @@ Possíveis valores:
 * `v2`
 * `v3`
 
-<div id="enforce_index_structure_match_on_partition_manipulation">
-  ## enforce_index_structure_match_on_partition_manipulation
-</div>
+## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -231,9 +195,7 @@ manipulação de partição (`ATTACH/MOVE/REPLACE PARTITION`), os índices e as 
 idênticos entre as tabelas de origem e de destino. Caso contrário, a tabela de destino
 poderá ter um superconjunto dos índices e das projeções da tabela de origem.
 
-<div id="execute_merges_on_single_replica_time_threshold">
-  ## execute_merges_on_single_replica_time_threshold
-</div>
+## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -247,18 +209,14 @@ Valores possíveis:
 
 * Qualquer número inteiro positivo.
 
-<div id="finished_mutations_to_keep">
-  ## finished_mutations_to_keep
-</div>
+## finished_mutations_to_keep {#finished_mutations_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Quantos registros sobre mutações concluídas devem ser mantidos. Se for zero, mantenha
 todos eles.
 
-<div id="force_read_through_cache_for_merges">
-  ## force_read_through_cache_for_merges
-</div>
+## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 
 <ExperimentalBadge />
 
@@ -266,25 +224,19 @@ todos eles.
 
 Forçar a leitura por meio do cache do sistema de arquivos para mesclagens
 
-<div id="initialization_retry_period">
-  ## initialization_retry_period
-</div>
+## initialization_retry_period {#initialization_retry_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
 Período entre tentativas de inicialização da tabela, em segundos.
 
-<div id="kill_threads">
-  ## kill_threads
-</div>
+## kill_threads {#kill_threads}
 
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
 Configuração obsoleta, sem efeito.
 
-<div id="lightweight_mutation_projection_mode">
-  ## lightweight_mutation_projection_mode
-</div>
+## lightweight_mutation_projection_mode {#lightweight_mutation_projection_mode}
 
 <SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
 
@@ -307,9 +259,7 @@ Valores possíveis:
 * `drop`
 * `rebuild`
 
-<div id="load_existing_rows_count_for_old_parts">
-  ## load_existing_rows_count_for_old_parts
-</div>
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -326,18 +276,14 @@ Valores possíveis:
 
 * configuração [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](/pt-BR/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge)
 
-<div id="lock_acquire_timeout_for_background_operations">
-  ## lock_acquire_timeout_for_background_operations
-</div>
+## lock_acquire_timeout_for_background_operations {#lock_acquire_timeout_for_background_operations}
 
 <SettingsInfoBlock type="Segundos" default_value="120" />
 
 Para operações em segundo plano, como mesclagens, mutações etc. Define quantos segundos esperar antes de
 falhar ao adquirir bloqueios de tabela.
 
-<div id="mutation_workload">
-  ## mutation_workload
-</div>
+## mutation_workload {#mutation_workload}
 
 Usado para controlar como os recursos são utilizados e compartilhados entre mutações e
 outros workloads. O valor especificado é usado como valor da configuração `workload` para
@@ -348,9 +294,7 @@ configuração do servidor `mutation_workload` será usada.
 
 * [Workload Scheduling](/pt-BR/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="non_replicated_deduplication_window">
-  ## non_replicated_deduplication_window
-</div>
+## non_replicated_deduplication_window {#non_replicated_deduplication_window}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -368,9 +312,7 @@ configuração [replicated&#95;deduplication&#95;window](/pt-BR/reference/settin
 abrange todo o bloco inserido. As somas de hash são gravadas em
 um arquivo local em disco, em vez de no ClickHouse Keeper.
 
-<div id="notify_newest_block_number">
-  ## notify_newest_block_number
-</div>
+## notify_newest_block_number {#notify_newest_block_number}
 
 <ExperimentalBadge />
 
@@ -380,9 +322,7 @@ um arquivo local em disco, em vez de no ClickHouse Keeper.
 
 Notifica o número do bloco mais recente ao SharedJoin ou ao SharedSet. Somente no ClickHouse Cloud.
 
-<div id="nullable_serialization_version">
-  ## nullable_serialization_version
-</div>
+## nullable_serialization_version {#nullable_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
 
@@ -396,9 +336,7 @@ Valores possíveis:
 
 * allow&#95;sparse — Permite que `Nullable(T)` use codificação esparsa.
 
-<div id="object_serialization_version">
-  ## object_serialization_version
-</div>
+## object_serialization_version {#object_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
 
@@ -414,9 +352,7 @@ Valores possíveis:
 
 Somente a versão `v3` oferece suporte à alteração da versão de serialização dos dados compartilhados.
 
-<div id="old_parts_lifetime">
-  ## old_parts_lifetime
-</div>
+## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
 
@@ -450,9 +386,7 @@ carga intensa no sistema de disco, os dados podem ser gravados bem mais tarde. E
 foi escolhido um valor de 480 segundos para `old_parts_lifetime`, período durante o qual se garante
 que uma nova parte seja gravada em disco.
 
-<div id="optimize_row_order">
-  ## optimize_row_order
-</div>
+## optimize_row_order {#optimize_row_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -523,9 +457,7 @@ isto é, uma tabela com poucos valores distintos de chave primária.
 Não se espera que chaves primárias de alta cardinalidade, por exemplo, envolvendo colunas de timestamp do tipo
 `DateTime64`, se beneficiem dessa configuração.
 
-<div id="packed_skip_index_max_bytes">
-  ## packed_skip_index_max_bytes
-</div>
+## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />
 
@@ -557,9 +489,7 @@ O formato em disco é autodescritivo: os leitores detectam `skp_idx.packed` e at
 subfluxos empacotados dentro dele de forma transparente. Alterar esta configuração afeta apenas as partes
 gravadas a partir daí; as partes existentes mantêm o layout que tinham no momento da gravação.
 
-<div id="part_minmax_index_columns">
-  ## part_minmax_index_columns
-</div>
+## part_minmax_index_columns {#part_minmax_index_columns}
 
 <SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
 
@@ -572,9 +502,7 @@ Valores possíveis:
 * `partition_key_only` — somente as colunas da chave de partição são rastreadas.
 * `with_block_number_offset` — colunas da chave de partição, além das colunas virtuais persistidas `_block_number` e `_block_offset`. Permite a poda em nível de parte com base nessas colunas.
 
-<div id="patch_parts_version">
-  ## patch_parts_version
-</div>
+## patch_parts_version {#patch_parts_version}
 
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
 
@@ -591,9 +519,7 @@ Valores possíveis:
 
 Os patches no formato antigo em disco permanecem legíveis independentemente desta configuração.
 
-<div id="propagate_types_serialization_versions_to_nested_types">
-  ## propagate_types_serialization_versions_to_nested_types
-</div>
+## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -601,9 +527,7 @@ Os patches no formato antigo em disco permanecem legíveis independentemente des
 
 Se true, versões de serialização como string&#95;serialization&#95;version serão propagadas para dentro de tipos aninhados como Array/Map/Nullable/JSON/etc. Se desabilitado, a versão de serialização terá efeito apenas nas colunas de nível superior desse tipo e Tuple el
 
-<div id="ratio_of_defaults_for_sparse_serialization">
-  ## ratio_of_defaults_for_sparse_serialization
-</div>
+## ratio_of_defaults_for_sparse_serialization {#ratio_of_defaults_for_sparse_serialization}
 
 <SettingsInfoBlock type="Float" default_value="0.9375" />
 
@@ -716,9 +640,7 @@ Você pode ver quais partes de `s` foram armazenadas com a serialização espars
 └────────┴────────────────────┘
 ```
 
-<div id="reduce_blocking_parts_sleep_ms">
-  ## reduce_blocking_parts_sleep_ms
-</div>
+## reduce_blocking_parts_sleep_ms {#reduce_blocking_parts_sleep_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -730,18 +652,14 @@ removido/substituído. Uma configuração menor acionará tarefas em background&
 resultará em um grande volume de solicitações ao ZooKeeper em clusters
 de grande escala
 
-<div id="replace_long_file_name_to_hash">
-  ## replace_long_file_name_to_hash
-</div>
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Se o nome do arquivo da coluna for muito longo (mais de &#39;max&#95;file&#95;name&#95;length&#39;
 bytes), substitua-o por SipHash128
 
-<div id="replicated_can_become_leader">
-  ## replicated_can_become_leader
-</div>
+## replicated_can_become_leader {#replicated_can_become_leader}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -753,9 +671,7 @@ Valores possíveis:
 * `true`
 * `false`
 
-<div id="search_orphaned_parts_disks">
-  ## search_orphaned_parts_disks
-</div>
+## search_orphaned_parts_disks {#search_orphaned_parts_disks}
 
 <SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
 
@@ -772,9 +688,7 @@ Valores possíveis:
 * local - o escopo é limitado aos disks locais.
 * none - escopo vazio, não pesquisar
 
-<div id="serialization_info_version">
-  ## serialization_info_version
-</div>
+## serialization_info_version {#serialization_info_version}
 
 <SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
 
@@ -788,14 +702,15 @@ Valores possíveis:
 * `basic` - Formato básico.
 * `with_types` - Formato com o campo adicional `types_serialization_versions`, permitindo versões de serialização por tipo.
   Isso faz com que configurações como `string_serialization_version` passem a ter efeito.
+* `with_missing_columns` - Tudo o que `with_types` registra, além de um campo `missing_columns`
+  que lista as colunas omitidas e o tipo cujo valor default representa seus valores.
+  Necessário para habilitar `skip_empty_columns_on_insert`.
 
 Durante atualizações graduais, defina esta opção como `basic` para que os novos servidores produzam
 partes de dados compatíveis com os servidores antigos. Após a conclusão do upgrade,
-mude para `WITH_TYPES` para habilitar versões de serialização por tipo.
+mude para `with_types` (ou `with_missing_columns`) para habilitar os recursos correspondentes.
 
-<div id="share_nested_offsets">
-  ## share_nested_offsets
-</div>
+## share_nested_offsets {#share_nested_offsets}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -808,9 +723,7 @@ Quando desabilitada, cada coluna Array recebe seu próprio arquivo de offset ind
 especial, e uma coluna escalar pode coexistir com colunas Array pontilhadas que compartilham o mesmo prefixo
 (por exemplo, n UInt32 ao lado de n.a Array(String)). Essa configuração é imutável após a criação da tabela.
 
-<div id="simultaneous_parts_removal_limit">
-  ## simultaneous_parts_removal_limit
-</div>
+## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -818,17 +731,35 @@ Se houver muitas partes desatualizadas, a thread de limpeza tentará excluir at�
 `simultaneous_parts_removal_limit` partes em uma única iteração.
 `simultaneous_parts_removal_limit` definido como `0` significa sem limite.
 
-<div id="storage_policy">
-  ## storage_policy
-</div>
+## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para não gravar em INSERT colunas cujos valores são todos o valor default do tipo"}]}]} />
+
+Quando ativada, as colunas cujos valores são todos iguais ao valor default do tipo em um determinado bloco
+INSERT não são gravadas na parte de dados em disco. Quando a parte é lida posteriormente,
+as colunas ausentes são preenchidas com o valor default do tipo registrado. Isso economiza
+espaço em disco em workloads com atualizações esparsas,
+nos quais a maioria das colunas em cada INSERT permanece com o valor default de seu tipo.
+Colunas com expressões `DEFAULT`, `MATERIALIZED` ou `ALIAS` nunca são
+ignoradas, pois o caminho de leitura avaliaria a expressão em vez de
+retornar o valor default do tipo que foi inserido explicitamente. As partes de patch
+(usadas por atualização leve de UPDATE) também são excluídas.
+Essa otimização registra as colunas ausentes no
+`serialization.json` da parte usando a versão de formato `with_missing_columns`, portanto,
+ela só tem efeito quando `serialization_info_version` está definido como
+`with_missing_columns`. Com uma versão inferior (por exemplo, fixada em um
+valor inferior durante uma atualização gradual para que servidores mais antigos possam ler partes recém-gravadas),
+nenhuma coluna é ignorada.
+
+## storage_policy {#storage_policy}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 Nome da política de armazenamento em disco
 
-<div id="string_serialization_version">
-  ## string_serialization_version
-</div>
+## string_serialization_version {#string_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
 
@@ -836,7 +767,7 @@ Nome da política de armazenamento em disco
 
 Controla o formato de serialização de colunas `String` de nível superior.
 
-Esta configuração só tem efeito quando `serialization_info_version` está definido como &quot;with&#95;types&quot;.
+Esta configuração só tem efeito quando `serialization_info_version` está definido como &quot;with&#95;types&quot; ou mais recente.
 Quando definido como `with_size_stream`, as colunas `String` de nível superior são serializadas com uma
 subcoluna `.size` separada para armazenar os comprimentos das strings, em vez de embuti-los inline. Isso permite subcolunas
 `.size` reais e pode melhorar a eficiência da compressão.
@@ -849,9 +780,7 @@ Possíveis valores:
 * `single_stream` — Use o formato de serialização padrão com tamanhos inline.
 * `with_size_stream` — Use um fluxo separado de tamanhos para colunas `String` de nível superior.
 
-<div id="temporary_directories_lifetime">
-  ## temporary_directories_lifetime
-</div>
+## temporary_directories_lifetime {#temporary_directories_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="86400" />
 
@@ -859,9 +788,7 @@ Por quantos segundos os diretórios tmp&#95; devem ser mantidos. Você não deve
 pois mesclagens e mutações podem não conseguir funcionar com um valor baixo dessa
 configuração.
 
-<div id="try_fetch_recompressed_part_timeout">
-  ## try_fetch_recompressed_part_timeout
-</div>
+## try_fetch_recompressed_part_timeout {#try_fetch_recompressed_part_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="7200" />
 
@@ -877,9 +804,7 @@ Valores possíveis:
 
 * Qualquer inteiro positivo.
 
-<div id="ttl_only_drop_parts">
-  ## ttl_only_drop_parts
-</div>
+## ttl_only_drop_parts {#ttl_only_drop_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -892,9 +817,7 @@ expiraram com base em suas configurações de `TTL` são removidas.
 Quando `ttl_only_drop_parts` está habilitado, a parte inteira é removida se todas as
 linhas dessa parte tiverem expirado de acordo com suas configurações de `TTL`.
 
-<div id="wait_for_unique_parts_send_before_shutdown_ms">
-  ## wait_for_unique_parts_send_before_shutdown_ms
-</div>
+## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milissegundos" default_value="0" />
 
@@ -902,9 +825,7 @@ Antes do desligamento, a tabela aguardará o tempo necessário para que partes �
 (que existem apenas na réplica atual) sejam obtidas por outras réplicas (0 significa
 desabilitado).
 
-<div id="zookeeper_session_expiration_check_period">
-  ## zookeeper_session_expiration_check_period
-</div>
+## zookeeper_session_expiration_check_period {#zookeeper_session_expiration_check_period}
 
 <SettingsInfoBlock type="Segundos" default_value="60" />
 

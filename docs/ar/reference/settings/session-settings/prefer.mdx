@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="prefer_column_name_to_alias">
-  ## prefer_column_name_to_alias
-</div>
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,6 +24,22 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 * 0 — يُستبدل اسم العمود بالاسم المستعار.
 * 1 — لا يُستبدل اسم العمود بالاسم المستعار.
+
+إذا كان اسم العمود ملتبسًا بين الجداول المدموجة ووُجد اسم مستعار يحمل الاسم نفسه، فيُستخدم الاسم المستعار:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+هنا `id` في `id AS x` هو عمود موجود في كل من `t1` و`t3`، لذا يُحلّ إلى الاسم المستعار `t1.id + 10`.
 
 **مثال**
 
@@ -60,9 +74,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-<div id="prefer_external_sort_block_bytes">
-  ## prefer_external_sort_block_bytes
-</div>
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -70,9 +82,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 فضّل الحد الأقصى لحجم الكتلة بالبايتات للفرز الخارجي، وقلّل استهلاك الذاكرة أثناء الدمج.
 
-<div id="prefer_global_in_and_join">
-  ## prefer_global_in_and_join
-</div>
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +105,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * [الاستعلامات الفرعية الموزعة](/ar/reference/statements/in#distributed-subqueries) لمزيد من المعلومات حول كيفية استخدام `GLOBAL IN`/`GLOBAL JOIN`
 
-<div id="prefer_localhost_replica">
-  ## prefer_localhost_replica
-</div>
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -114,9 +122,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   أما إذا كان يُستخدم على عنقود يحتوي على جزء واحد وعدة نسخ متماثلة، فسيكون لتعطيل هذا الإعداد آثار سلبية.
 </Note>
 
-<div id="prefer_warmed_unmerged_parts_seconds">
-  ## prefer_warmed_unmerged_parts_seconds
-</div>
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

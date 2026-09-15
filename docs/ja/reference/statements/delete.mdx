@@ -12,23 +12,21 @@ doc_type: 'reference'
 論理削除 `DELETE` ステートメントは、式 `expr` に一致するテーブル `[db.]table` から行を削除します。これは *MergeTree テーブルエンジンファミリーでのみ使用できます。
 
 ```sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr;
 ```
 
 これは、重量級の処理である [ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) コマンドと対比して、&quot;論理削除&quot; と呼ばれています。
 
-<div id="examples">
-  ## 例
-</div>
+`IN PARTITION` 句は、削除対象を列挙されたパーティションに限定します。これを指定しない場合、`ReplicatedMergeTree` ファミリーのテーブルでは、[optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ja/reference/settings/session-settings/optimize) 設定が有効 (デフォルト) であれば、ClickHouse は `expr` 内のパーティションキー条件を自動的に検出し、影響を受けるパーティションからのみ削除します。レプリケートされていない `MergeTree` テーブルでは、削除を特定のパーティションに限定するために明示的に `IN PARTITION` 句を使用してください。
+
+## 例 {#examples}
 
 ```sql
 -- `hits` テーブルから `Title` カラムに `hello` というテキストを含むすべての行を削除する
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## 論理削除 ではデータはすぐには削除されません
-</div>
+## 論理削除 ではデータはすぐには削除されません {#lightweight-delete-does-not-delete-data-immediately}
 
 論理削除 は、行を削除済みとしてマークするものの、ただちに物理的に削除はしない [ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。
 
@@ -38,27 +36,19 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 データが予測可能な時間内にストレージから削除されることを確実にしたい場合は、テーブル設定 [`min_age_to_force_merge_seconds`](/ja/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds) の使用を検討してください。あるいは、[ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) コマンドを使用することもできます。`ALTER TABLE ... DELETE` によるデータ削除では、影響を受けるすべてのパーツを再作成するため、大量のリソースを消費する可能性がある点に注意してください。
 
-<div id="deleting-large-amounts-of-data">
-  ## 大量のデータを削除する
-</div>
+## 大量のデータを削除する {#deleting-large-amounts-of-data}
 
 大量削除は ClickHouse のパフォーマンスに悪影響を及ぼす可能性があります。テーブル内のすべての行を削除する場合は、[`TRUNCATE TABLE`](/ja/reference/statements/truncate) コマンドの使用を検討してください。
 
 削除が頻繁に発生することが見込まれる場合は、[カスタムパーティションキー](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key) の使用を検討してください。そうすれば、[`ALTER TABLE ... DROP PARTITION`](/ja/reference/statements/alter/partition#drop-partitionpart) コマンドを使用して、そのパーティションに属するすべての行をすばやく削除できます。
 
-<div id="limitations-of-lightweight-delete">
-  ## 論理削除 の制限事項
-</div>
+## 論理削除 の制限事項 {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### プロジェクションを使用する論理削除
-</div>
+### プロジェクションを使用する論理削除 {#lightweight-deletes-with-projections}
 
 デフォルトでは、プロジェクションを持つテーブルでは `DELETE` は機能しません。これは、プロジェクション内の行が `DELETE` 操作の影響を受ける可能性があるためです。ただし、動作を変更するための [MergeTree setting](/ja/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode` があります。
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## 論理削除 を使用する際のパフォーマンスに関する考慮事項
-</div>
+## 論理削除 を使用する際のパフォーマンスに関する考慮事項 {#performance-considerations-when-using-lightweight-delete}
 
 **論理削除 ステートメントで大量のデータを削除すると、SELECT クエリのパフォーマンスに悪影響を及ぼす可能性があります。**
 
@@ -69,9 +59,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 * 対象のテーブルに非常に多くのデータパーツがある。
 * compact パーツ に大量のデータがある。Compact part では、すべてのカラムが 1 つのファイルに格納されます。
 
-<div id="delete-permissions">
-  ## DELETE 権限
-</div>
+## DELETE 権限 {#delete-permissions}
 
 `DELETE` を実行するには、`ALTER DELETE` 権限が必要です。特定のユーザーに対して特定のテーブルで `DELETE` ステートメントを有効にするには、次のコマンドを実行します。
 
@@ -79,9 +67,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## ClickHouse における論理削除の内部的な仕組み
-</div>
+## ClickHouse における論理削除の内部的な仕組み {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **影響を受ける行に「マスク」が適用される**
 
@@ -111,9 +97,7 @@ GRANT ALTER DELETE ON db.table to username;
 
    以上のステップからわかるように、マスキング手法を用いた論理削除 `DELETE` は、影響を受けるパーツについてすべてのカラムのファイルを書き換える必要がないため、従来の `ALTER TABLE ... DELETE` よりも高い性能を発揮します。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseでの更新と削除の処理](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

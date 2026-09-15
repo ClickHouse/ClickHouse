@@ -17,10 +17,10 @@ ClickHouse Connect는 다양한 Python 애플리케이션과 상호 운용되도
 
 * 주요 인터페이스는 `clickhouse_connect.driver`의 동기식 `Client`와 네이티브 aiohttp 기반 `AsyncClient`입니다. 드라이버 패키지는 쿼리 및 삽입 컨텍스트, 스트리밍 헬퍼, DB-API 지원, 그리고 더 낮은 수준의 HTTP 메서드도 제공합니다.
 * `clickhouse_connect.datatypes` 패키지는 ClickHouse 네이티브 바이너리 열 지향 포맷을 사용해 ClickHouse 타입을 serialize 및 deserialize합니다.
-* `clickhouse_connect.driverc`의 선택적 Cython 확장 기능은 일반적인 serialization, conversion, buffering 경로를 가속합니다. 확장 기능을 빌드할 수 없는 플랫폼에서는 pure Python 경로도 계속 사용할 수 있습니다.
+* `clickhouse_connect.driverc`의 선택적 Cython 확장 기능은 일반적인 serialization, conversion, buffering 경로를 가속합니다. 확장 기능을 빌드할 수 없는 플랫폼에서는 pure Python 경로도 계속 사용할 수 있습니다. 실험적으로 선택 적용할 수 있는 [Rust codec](/ko/integrations/language-clients/python/rust-codec)은 Native 형식 processing을 완전히 대체할 수 있습니다.
 * 이 패키지는 PEP 561 타입 정보를 포함하므로, 하위 타입 검사기는 공개 드라이버, DB-API, SQLAlchemy 인터페이스에 대한 어노테이션을 사용할 수 있습니다.
 * `clickhouse_connect.cc_sqlalchemy`의 [SQLAlchemy](https://www.sqlalchemy.org/) 방언은 SQLAlchemy Core, 스키마 reflection, ClickHouse 전용 쿼리 절과 테이블 엔진, Alembic migration을 지원합니다. 기본적인 ORM 읽기와 삽입은 동작하지만, 이 방언은 완전한 unit-of-work ORM 동작보다는 분석 워크로드에 맞게 설계되었습니다.
-* 핵심 드라이버와 [ClickHouse Connect SQLAlchemy](/ko/integrations/language-clients/python/sqlalchemy) 구현은 ClickHouse를 Apache Superset에 연결하는 데 권장되는 메서드입니다. `ClickHouse Connect` 데이터베이스 connection을 사용하거나 `clickhousedb` SQLAlchemy 방언 connection string을 사용하십시오.
+* 핵심 드라이버와 [ClickHouse Connect SQLAlchemy](/ko/integrations/language-clients/python/sqlalchemy) 구현은 ClickHouse를 Apache Superset에 연결하는 데 권장되는 메서드입니다. `ClickHouse Connect` 데이터베이스 연결을 사용하거나 `clickhousedb` SQLAlchemy 방언 연결 string을 사용하십시오.
 
 이 문서는 clickhouse-connect 1.6.0 기준으로 최신 상태입니다. 0.15.x 또는 그 이전 버전에서 업그레이드하는 경우 [1.0 migration guide](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md)를 참조하십시오.
 
@@ -28,9 +28,7 @@ ClickHouse Connect는 다양한 Python 애플리케이션과 상호 운용되도
   표준 ClickHouse Connect 클라이언트는 HTTP 인터페이스를 사용합니다. 따라서 HTTP load balancer, 프록시, 일반적인 엔터프라이즈 네트워크 제어를 지원할 수 있습니다. ClickHouse Connect에는 실험적인 in-process [chDB](#embedded-chdb-backend) 백엔드도 있습니다.
 </Note>
 
-<div id="requirements-and-compatibility">
-  ## 요구 사항 및 호환성
-</div>
+## 요구 사항 및 호환성 {#requirements-and-compatibility}
 
 | 구성 요소      | 지원 버전                                                           |
 | ---------- | --------------------------------------------------------------- |
@@ -44,9 +42,7 @@ ClickHouse Connect는 다양한 Python 애플리케이션과 상호 운용되도
 
 이 package에는 가능한 경우 컴파일된 wheel이 포함되며, Cython 확장 기능을 빌드할 수 없으면 pure Python 구현으로 대체됩니다. PyArrow는 Python 3.10~3.14에서 지원됩니다. Python 3.14에는 PyArrow 22 이상이 필요합니다.
 
-<div id="installation">
-  ## 설치
-</div>
+## 설치 {#installation}
 
 pip를 사용하여 [PyPI](https://pypi.org/project/clickhouse-connect/)에서 ClickHouse Connect를 설치합니다:
 
@@ -64,6 +60,7 @@ pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
+pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
@@ -72,36 +69,52 @@ ClickHouse Connect는 소스 코드에서 직접 설치할 수도 있습니다:
 * [GitHub 리포지토리](https://github.com/ClickHouse/clickhouse-connect)를 `git clone`합니다.
 * 프로젝트 루트 디렉터리로 이동한 다음 `pip install .`를 실행합니다. 빌드 시스템이 선택적 C 확장 기능을 컴파일할 수 있도록 Cython을 자동으로 설치합니다.
 
+### 소스 빌드 모드 {#source-build-modes}
+
+소스 빌드는 세 가지 모드를 지원합니다. 기본(Default) 모드와 필수(Required) 모드는 Cython을 사용할 수 없거나 `cythonize()`가 실패하면 빌드가 실패합니다. 건너뛰기(Skip) 모드는 Cython을 가져오지 않습니다.
+
+| 모드          | 명령                                               | 동작                                                              |
+| ----------- | ------------------------------------------------ | --------------------------------------------------------------- |
+| Default     | `pip install .`                                  | C 확장 기능 컴파일을 시도합니다. 컴파일러 또는 링커가 실패하면 빌드는 pure Python 설치로 폴백합니다. |
+| Pure Python | `CLICKHOUSE_CONNECT_SKIP_CYTHON=1 pip install .` | 확장 기능 빌드를 시도하지 않고 pure Python으로 빌드합니다.                          |
+| Required    | `CLICKHOUSE_CONNECT_REQUIRE_C=1 pip install .`   | 확장 기능을 컴파일할 수 없으면 빌드를 실패 처리합니다. CI 및 재배포용 wheel 빌드에 권장됩니다.      |
+
+`CLICKHOUSE_CONNECT_SKIP_CYTHON=1`과 `CLICKHOUSE_CONNECT_REQUIRE_C=1`을 함께 설정하면 오류가 발생합니다.
+
+기본 폴백 wheel에는 컴파일된 확장 기능이 포함되지 않지만, 플랫폼 및 인터프리터 태그는 유지됩니다. `py3-none-any`를 생성하는 것은 건너뛰기 모드뿐입니다. `pip`는 인덱스의 sdist로 빌드한 폴백 wheel을 캐시해 두었다가, 컴파일러 문제를 해결한 뒤에도 호환되는 Python 및 플랫폼에 대해 이를 재사용할 수 있습니다. 다음 명령으로 캐시를 삭제하십시오:
+
+```bash
+pip cache remove clickhouse_connect
+```
+
+세 개의 확장 기능 모듈이 모두 존재하는지 확인하십시오. 모두 존재하면 `True`가 출력됩니다:
+
+```bash
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+```
+
+`clickhouse_connect.driverc.npconv`을 직접 임포트하는 경우에도 NumPy가 설치되어 있어야 합니다.
+
 설치된 버전은 `clickhouse_connect.__version__`으로 확인할 수 있습니다.
 
-<div id="support-policy">
-  ## 지원 정책
-</div>
+## 지원 정책 {#support-policy}
 
 이슈를 보고하기 전에 ClickHouse Connect를 최신 릴리스로 업데이트하십시오. 이슈는 [GitHub 프로젝트](https://github.com/ClickHouse/clickhouse-connect/issues)에 등록하십시오. ClickHouse Connect는 각 드라이버 릴리스 시점에 [현재 활발히 지원되는 ClickHouse 릴리스](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)를 대상으로 합니다. 이전 서버 버전에서도 작동하는 경우가 많지만, 최신 데이터 타입과 프로토콜 기능을 사용하려면 더 새로운 서버가 필요할 수 있습니다.
 
-<div id="basic-usage">
-  ## 기본 사용법
-</div>
+## 기본 사용법 {#basic-usage}
 
-<div id="gather-your-connection-details">
-  ### 연결 정보를 확인합니다
-</div>
+### 연결 정보를 확인합니다 {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-<div id="establish-a-connection">
-  ### 연결 설정
-</div>
+### 연결 설정 {#establish-a-connection}
 
 ClickHouse에 연결하는 방법에는 다음 두 가지 예시가 있습니다:
 
 * localhost에서 실행 중인 ClickHouse 서버에 연결합니다.
 * ClickHouse Cloud 서비스에 연결합니다.
 
-<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
-  #### ClickHouse Connect 클라이언트 인스턴스를 사용해 localhost에서 실행 중인 ClickHouse 서버에 연결합니다:
-</div>
+#### ClickHouse Connect 클라이언트 인스턴스를 사용해 localhost에서 실행 중인 ClickHouse 서버에 연결합니다: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost}
 
 ```python
 import clickhouse_connect
@@ -113,9 +126,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
-  #### ClickHouse Connect 클라이언트 인스턴스를 사용하여 ClickHouse Cloud 서비스에 연결합니다:
-</div>
+#### ClickHouse Connect 클라이언트 인스턴스를 사용하여 ClickHouse Cloud 서비스에 연결합니다: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service}
 
 <Tip>
   앞서 확인한 연결 정보를 사용하세요. ClickHouse Cloud 서비스에는 TLS가 필요하므로 포트 8443을 사용하세요.
@@ -132,9 +143,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-<div id="interact-with-your-database">
-  ### 데이터베이스 사용하기
-</div>
+### 데이터베이스 사용하기 {#interact-with-your-database}
 
 ClickHouse SQL 명령을 실행하려면 클라이언트 `command` 메서드를 사용하세요:
 
@@ -165,9 +174,7 @@ print(result.result_rows)
 client.close()
 ```
 
-<div id="embedded-chdb-backend">
-  ## 내장 chDB 백엔드
-</div>
+## 내장 chDB 백엔드 {#embedded-chdb-backend}
 
 실험 단계의 chDB 백엔드는 HTTP 서버 없이 Python 프로세스 내에서 ClickHouse 쿼리를 실행합니다. `chdb` extra를 설치한 후 `interface="chdb"` 또는 `chdb://` DSN으로 백엔드를 선택하세요:
 

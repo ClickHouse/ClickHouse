@@ -25,16 +25,16 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 それでは、QUOTA を定義する &#39;users.xml&#39; ファイル内のセクションを見ていきましょう。
 
 ```xml
-<!-- QUOTA -->
+<!-- Quotas -->
 <quotas>
-    <!-- QUOTA名 -->
+    <!-- Quota name. -->
     <default>
-        <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
         <interval>
-            <!-- インターバルの長さ -->
+            <!-- Length of the interval. -->
             <duration>3600</duration>
 
-            <!-- 無制限。指定したインターバルのデータを収集するのみ。 -->
+            <!-- Unlimited. Just collect data for the specified time interval. -->
             <queries>0</queries>
             <query_selects>0</query_selects>
             <query_inserts>0</query_inserts>
@@ -52,9 +52,9 @@ QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設�
 
 ```xml
 <statbox>
-    <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
-        <!-- インターバルの長さ。 -->
+        <!-- Length of the interval. -->
         <duration>3600</duration>
 
         <queries>1000</queries>
@@ -184,7 +184,7 @@ QUOTA は、config の &#39;users&#39; セクションでユーザーに割り�
 サーバーを再起動すると、QUOTA はリセットされます。
 
 <div id="related-content">
-  ## 関連コンテンツ
+  ## 関連コンテンツ {#related-content}
 </div>
 
 * ブログ: [ClickHouse を使用したシングルページアプリケーションの構築](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

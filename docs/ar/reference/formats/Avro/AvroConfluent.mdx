@@ -17,9 +17,7 @@ import DataTypesMatching from '/snippets/ar/data-types-matching.mdx';
 | ------- | ------- | -------- |
 | ✔       | ✔       |          |
 
-<div id="description">
-  ## الوصف
-</div>
+## الوصف {#description}
 
 يُعد [Apache Avro](https://avro.apache.org/) تنسيق تسلسل موجَّهًا للصفوف يستخدم الترميز الثنائي لمعالجة البيانات بكفاءة. ويدعم تنسيق `AvroConfluent` قراءة الرسائل المرمّزة بـ Avro وكتابتها باستخدام [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (أو الخدمات المتوافقة مع واجهة برمجة التطبيقات).
 
@@ -27,36 +25,28 @@ import DataTypesMatching from '/snippets/ar/data-types-matching.mdx';
 
 <a id="data-types-matching" />
 
-<div id="data-type-mapping">
-  ## تعيين أنواع البيانات
-</div>
+## تعيين أنواع البيانات {#data-type-mapping}
 
 <DataTypesMatching />
 
-<div id="format-settings">
-  ## إعدادات التنسيق
-</div>
+## إعدادات التنسيق {#format-settings}
 
 [//]: # "ملاحظة: يمكن ضبط هذه الإعدادات على مستوى الجلسة، لكن هذا غير شائع، وقد يؤدي توثيق ذلك بشكل بارز جدًا إلى إرباك المستخدمين."
 
-| الإعداد                                          | الوصف                                                                                                                                            | القيمة الافتراضية |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| `input_format_avro_allow_missing_fields`         | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند عدم العثور على حقل في المخطط.                                                       | `0`               |
-| `input_format_avro_null_as_default`              | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند إدراج قيمة `null` في عمود لا يقبل NULL.                                             | `0`               |
-| `format_avro_schema_registry_url`                | عنوان URL الخاص بـ Confluent Schema Registry. عند استخدام المصادقة الأساسية، يمكن تضمين بيانات الاعتماد المرمّزة بتنسيق URL مباشرةً في مسار URL. |                   |
-| `format_avro_schema_registry_connection_timeout` | مهلة الاتصال بالثواني لعميل HTTP الخاص بـ Schema Registry (تُستخدم لكل من جلب المخطط والتسجيل). يجب أن تكون أكبر من 0 وأقل من 600 (10 دقائق).    | `1`               |
-| `format_avro_schema_registry_send_timeout`       | مهلة الإرسال بالثواني لعميل HTTP الخاص بـ Schema Registry. يجب أن تكون أكبر من 0 وأقل من 600 (10 دقائق).                                         | `1`               |
-| `format_avro_schema_registry_receive_timeout`    | مهلة الاستلام بالثواني لعميل HTTP الخاص بـ Schema Registry. يجب أن تكون أكبر من 0 وأقل من 600 (10 دقائق).                                        | `1`               |
-| `output_format_avro_confluent_subject`           | للإخراج: اسم subject الذي يُسجَّل المخطط تحته في Schema Registry. وهو مطلوب عند الكتابة.                                                         |                   |
-| `output_format_avro_string_column_pattern`       | للإخراج: تعبير نمطي لأعمدة String لتسلسلها كـ Avro `string` (القيمة الافتراضية هي `bytes`).                                                      |                   |
+| الإعداد                                          | الوصف                                                                                                                                                                         | القيمة الافتراضية |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `input_format_avro_allow_missing_fields`         | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند عدم العثور على حقل في المخطط.                                                                                    | `0`               |
+| `input_format_avro_null_as_default`              | ما إذا كان سيتم استخدام قيمة افتراضية بدلًا من إصدار خطأ عند إدراج قيمة `null` في عمود لا يقبل NULL.                                                                          | `0`               |
+| `format_avro_schema_registry_url`                | عنوان URL الخاص بـ Confluent Schema Registry. عند استخدام المصادقة الأساسية، يمكن تضمين بيانات الاعتماد المرمّزة وفق URL مباشرةً في مسار URL.                              |                   |
+| `format_avro_schema_registry_connection_timeout` | مهلة الاتصال بالثواني لعميل HTTP الخاص بـ Schema Registry (تُستخدم لكل من جلب المخطط والتسجيل). يجب أن تكون أكبر من 0؛ وأي قيمة تساوي 600 (10 دقائق) أو أكثر تُخفَّض إلى 599. | `1`               |
+| `format_avro_schema_registry_send_timeout`       | مهلة الإرسال بالثواني لعميل HTTP الخاص بـ Schema Registry. يجب أن تكون أكبر من 0؛ وأي قيمة تساوي 600 (10 دقائق) أو أكثر تُخفَّض إلى 599.                                      | `1`               |
+| `format_avro_schema_registry_receive_timeout`    | مهلة الاستلام بالثواني لعميل HTTP الخاص بـ Schema Registry. يجب أن تكون أكبر من 0؛ وأي قيمة تساوي 600 (10 دقائق) أو أكثر تُخفَّض إلى 599.                                     | `1`               |
+| `output_format_avro_confluent_subject`           | للإخراج: اسم subject الذي يُسجَّل المخطط تحته في Schema Registry. وهو مطلوب عند الكتابة.                                                                                      |                   |
+| `output_format_avro_string_column_pattern`       | للإخراج: تعبير نمطي لأعمدة String لتسلسلها كـ Avro `string` (القيمة الافتراضية هي `bytes`).                                                                                   |                   |
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
-<div id="reading-from-kafka">
-  ### القراءة من Kafka
-</div>
+### القراءة من Kafka {#reading-from-kafka}
 
 لقراءة موضوع Kafka مُشفَّرًا باستخدام Avro عبر [محرك جدول Kafka](/ar/reference/engines/table-engines/integrations/kafka)، استخدم الإعداد `format_avro_schema_registry_url` لتحديد URL لسجل المخططات.
 
@@ -77,9 +67,7 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-<div id="writing-to-kafka">
-  ### الكتابة إلى Kafka
-</div>
+### الكتابة إلى Kafka {#writing-to-kafka}
 
 لكتابة رسائل AvroConfluent إلى موضوع Kafka، عيّن عنوان URL لسجل المخططات واسم الـsubject. يُسجَّل المخطط تلقائيًا في السجل عند أول عملية كتابة.
 
@@ -100,9 +88,7 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-<div id="using-basic-authentication">
-  #### استخدام المصادقة الأساسية
-</div>
+#### استخدام المصادقة الأساسية {#using-basic-authentication}
 
 إذا كان سجل المخططات لديك يتطلب المصادقة الأساسية (على سبيل المثال، إذا كنت تستخدم Confluent Cloud)، فيمكنك تمرير بيانات الاعتماد المرمَّزة وفق URL في الإعداد `format_avro_schema_registry_url`.
 
@@ -121,9 +107,7 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-<div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
-</div>
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 
 لمراقبة تقدّم الإدخال واستكشاف أخطاء مستهلك Kafka، يمكنك الاستعلام عن [جدول النظام `system.kafka_consumers`](/ar/reference/system-tables/kafka_consumers). إذا كان النشر لديك يتضمن عدة نُسخ متماثلة (على سبيل المثال، ClickHouse Cloud)، فيجب عليك استخدام [دالة الجدول `clusterAllReplicas`](/ar/reference/functions/table-functions/cluster).
 

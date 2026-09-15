@@ -1,0 +1,80 @@
+---
+slug: /cloud/managed-postgres/clickpipes
+sidebarTitle: 'ClickPipes'
+title: 'المزامنة مع ClickHouse باستخدام ClickPipes'
+description: 'انسخ بيانات Postgres إلى ClickHouse باستخدام إمكانات CDC المدمجة'
+keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'clickpipes', 'data sync']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
+
+يأتي كل ClickHouse Managed Postgres instance مزوّدًا بقدرات CDC مدمجة نحو أي من خدمات ClickHouse لديك. ويتيح لك ذلك نقل بعض أو كل البيانات الموجودة في Postgres instance إلى ClickHouse، مع انعكاس التغييرات الحاصلة على بيانات Postgres في ClickHouse بشكل مستمر وشبه لحظي. ويعمل ذلك في الخلفية بالاعتماد على [ClickPipes](/ar/integrations/clickpipes/home).
+
+للوصول إلى هذه الميزة، انقر على **Sync to ClickHouse** في الشريط الجانبي لـ Postgres instance.
+
+<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="ClickHouse integration landing page showing the integration option in the sidebar" size="md" border />
+
+<Note>
+  قبل المتابعة، تأكد من أن Postgres service لديك متاح للوصول من خدمة ClickPipes. وهذا هو الوضع الافتراضي عادةً، لكن إذا كنت قد قيّدت الوصول عبر عناوين IP فقد تحتاج إلى منح الوصول لبعض عناوين IP المصدر من [هذه](/ar/integrations/clickpipes/networking/static-ips) القائمة، وفقًا للمنطقة التي توجد فيها **ClickHouse service** الخاصة بك.
+</Note>
+
+انقر على **Replicate data in ClickHouse** لبدء إعداد ClickPipe الخاص بك.
+
+<Steps>
+  <Step title="تهيئة خدمة النسخ المتماثل" id="configure-replication-service">
+    املأ إعدادات النسخ المتماثل:
+
+    * **Integration name**: اسم لهذا الـ ClickPipe
+    * **ClickHouse service**: اختر خدمة ClickHouse Cloud موجودة أو أنشئ واحدة جديدة
+    * **Postgres database**: قاعدة البيانات المصدر التي سيتم النسخ المتماثل منها
+    * **Replication method**: اختر أحد الخيارات التالية:
+      * **تحميل أولي + CDC**: استيراد البيانات الموجودة وإبقاء الجداول محدَّثة بالتغييرات الجديدة (موصى به)
+      * **تحميل أولي فقط**: لقطة واحدة للبيانات الموجودة دون تحديثات مستمرة
+      * **CDC only**: تخطّي اللقطة الأولية والتقاط التغييرات الجديدة فقط
+
+    <Image img="/images/managed-postgres/replication-service-step.webp" alt="تهيئة خدمة النسخ المتماثل تُظهر اسم التكامل وخدمة الوجهة وخيارات طريقة النسخ المتماثل" size="md" border />
+
+    انقر على **Next** للمتابعة.
+  </Step>
+
+  <Step title="تهيئة إعدادات النسخ المتماثل" id="replication-settings">
+    اضبط تفاصيل كيفية نسخ البيانات:
+
+    * **Sync interval (seconds)**: مدى تكرار سحب التغييرات من Postgres (الافتراضي: 60)
+    * **Parallel threads for initial load**: عدد الخيوط المستخدمة أثناء اللقطة الأولية (الافتراضي: 4)
+    * **Pull batch size**: عدد الصفوف التي يتم جلبها في كل دفعة أثناء النسخ المتماثل (الافتراضي: 100000)
+    * **Snapshot number of rows per partition**: عدد الصفوف لكل partition أثناء اللقطة الأولية (الافتراضي: 100000)
+    * **Snapshot number of tables in parallel**: عدد الجداول التي تُؤخذ لها لقطة بالتوازي (الافتراضي: 1)
+
+    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="خطوة إعدادات النسخ المتماثل تُظهر فترة المزامنة والخيوط المتوازية وحجم دفعة السحب وخيارات تهيئة اللقطة" size="md" border />
+
+    انقر على **Next** للمتابعة.
+  </Step>
+
+  <Step title="اختيار الجداول المراد نسخها" id="select-tables">
+    اختر قاعدة بيانات هدف وحدِّد الجداول التي سيتم نسخها:
+
+    * **Destination database**: اختر قاعدة بيانات ClickHouse موجودة أو أنشئ واحدة جديدة
+    * **Prefix default destination table names with schema name**: يضيف schema الخاص بـ Postgres كبادئة لتجنّب تعارض الأسماء
+    * **Preserve NULL values from source**: يحافظ على قيم NULL بدلاً من تحويلها إلى القيم الافتراضية للنوع. ينطبق هذا الإعداد على جميع الجداول في الـ pipe ولا يمكن تغييره بعد إنشائه.
+    * **Remove deleted rows during merges**: بالنسبة لجداول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree)، يزيل الصفوف المحذوفة فعلياً أثناء عمليات الدمج في الخلفية
+
+    وسّع المخططات وحدِّد الجداول التي تريد نسخها. يمكنك أيضاً تخصيص أسماء جداول الوجهة وإعدادات الأعمدة.
+
+    <Image img="/images/managed-postgres/select-tables-step.webp" alt="خطوة اختيار الجداول تُظهر تحديد قاعدة البيانات وخيارات النسخ المتماثل ومنتقي الجداول المجمّع حسب المخطط" size="md" border />
+
+    انقر على **Replicate data to ClickHouse** لبدء النسخ المتماثل.
+  </Step>
+
+  <Step title="مراقبة الـ ClickPipe الخاص بك" id="monitor-clickpipe">
+    بمجرد بدء الـ ClickPipe، ستجده مدرجاً في القائمة نفسها. وقد تستغرق اللقطة الأولية لجميع البيانات بعض الوقت حسب حجم جداولك.
+
+    <Image img="/images/managed-postgres/integration-running.webp" alt="قائمة تكاملات ClickHouse تُظهر ClickPipe قيد التشغيل مع خدمة الوجهة والحالة" size="md" border />
+
+    انقر على اسم التكامل لعرض الحالة التفصيلية ومتابعة التقدم وعرض الأخطاء وإدارة الـ ClickPipe. راجع [دورة حياة ClickPipe الخاص بـ Postgres](/ar/integrations/clickpipes/postgres/lifecycle) لفهم الحالات المختلفة التي قد يمرّ بها الـ ClickPipe الخاص بك.
+  </Step>
+</Steps>

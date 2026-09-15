@@ -16,6 +16,7 @@ Consulta la documentación de Mintlify sobre [scripts personalizados](https://ww
 </div>
 
 * `ask-ai-button.js` — ajusta el estilo y el comportamiento del botón Ask-AI.
+* `cloud-sidebar-ad.js` — añade un anuncio de ClickHouse Cloud localizado y descartable de forma permanente debajo del control del MCP Server de la documentación en la barra lateral derecha de las páginas `/get-started/`, excepto en las configuraciones regionales rusa y china.
 * `custom-footer.js` — renderiza el pie de página personalizado del sitio (`#ch-custom-footer`).
 * `galaxy.js` — inicializa la analítica de ClickHouse Galaxy, aplica a cada evento el mismo modelo de atribución de último contacto de 30 días, referente no directo y UTM que el sitio web de marketing, rastrea los eventos del ciclo de vida de las páginas de la documentación y la base de conocimientos a través de la navegación SPA de Mintlify, envía el tráfico canónico de `https://clickhouse.com/docs` a la API de Galaxy de production y el tráfico de vista previa de `.mintlify.app` a la API de Galaxy de Development (deshabilitado en localhost y en orígenes desconocidos), y añade los parámetros de campaña almacenados y el ID de visitante de Galaxy a los enlaces de ClickHouse Cloud solo en la documentación canónica de production.
 * `inkeep-init.js` — reemplaza la búsqueda nativa de Mintlify (⌘K / barra de búsqueda de la barra de navegación) por el modal de búsqueda de Inkeep. Solo para búsquedas; el chat con IA sigue en Kapa.

@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="query_profiler_cpu_time_period_ns">
-  ## query_profiler_cpu_time_period_ns
-</div>
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -31,13 +29,13 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 * 타이머를 끄려면 0
 
+샘플링 프로파일러가 비활성화되는 MemorySanitizer 빌드에서는 기본값이 0입니다.
+
 관련 항목:
 
 * 시스템 테이블 [trace&#95;log](/ko/reference/system-tables/trace_log)
 
-<div id="query_profiler_real_time_period_ns">
-  ## query_profiler_real_time_period_ns
-</div>
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -53,6 +51,8 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
   * 클러스터 전체 프로파일링의 경우 1000000000(초당 1회)
 
 * 타이머를 끄려면 0입니다.
+
+샘플링 프로파일러가 비활성화되는 MemorySanitizer 빌드에서는 기본값이 0입니다.
 
 관련 항목:
 

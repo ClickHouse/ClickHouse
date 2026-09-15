@@ -10,17 +10,13 @@ doc_type: 'reference'
 
 Permet d&#39;exécuter des requêtes `SELECT` et `INSERT` sur des données stockées sur un serveur MySQL distant.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -38,9 +34,7 @@ Les clauses `WHERE` simples telles que `=, !=, >, >=, <, <=` sont actuellement e
 
 Le reste des conditions et la contrainte d’échantillonnage `LIMIT` ne sont exécutés dans ClickHouse qu’une fois la requête MySQL terminée.
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 Les identifiants d&#39;une connexion chiffrée à MySQL sont transmis sous forme de clés d&#39;une collection nommée (ou d&#39;arguments clé-valeur) :
 
@@ -54,26 +48,24 @@ Les valeurs correspondent au contenu des fichiers PEM correspondants, qui peut �
 
 Les mêmes identifiants peuvent également être fournis sous forme de chemins vers des fichiers sur le serveur, dans `ssl_ca`, `ssl_cert` et `ssl_key` — mais **uniquement dans une collection nommée définie dans le fichier de configuration du serveur** ; une telle valeur ne peut pas être remplacée dans une requête. Le serveur ouvre ces fichiers avec ses propres privilèges : accepter un chemin depuis SQL permettrait donc à tout utilisateur capable de définir une source MySQL d&#39;explorer le système de fichiers local et de s&#39;authentifier avec un certificat et une clé auxquels il n&#39;est pas autorisé à accéder.
 
-<div id="passing-a-query">
-  ## Utilisation d’une requête à la place d’un nom de table
-</div>
+## Utilisation d’une requête à la place d’un nom de table {#passing-a-query}
 
-À la place d’un nom de table, le troisième argument peut être une requête `SELECT` transmise à MySQL telle quelle. La structure de la table résultante est inférée à partir du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
+À la place d’un nom de table, le troisième argument peut être une requête `SELECT` transmise à MySQL telle quelle. La structure de la table résultante est inférée à partir du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
 
 ```sql
 SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-Cela est utile pour déporter vers MySQL les jointures, agrégations ou tout autre traitement. Une telle table est en lecture seule : `INSERT` n&#39;y est pas autorisé. La même syntaxe est prise en charge par le moteur de table [`MySQL`](/fr/reference/engines/table-engines/integrations/mysql).
+Cela est utile pour déporter vers MySQL les jointures, agrégations ou tout autre traitement. Une telle table est en lecture seule : `INSERT` n&#39;y est pas autorisé. La même syntaxe est prise en charge par le moteur de table [`MySQL`](/fr/reference/engines/table-engines/integrations/mysql).
 
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse, puis re-sérialisée dans le dialecte MySQL (identifiants délimités par des accents graves) avant d&#39;être envoyée au serveur. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe propre à MySQL que ClickHouse n&#39;analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé à MySQL tel quel.
 
-  Tout `WHERE`, `LIMIT`, agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** déporté dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être déporté est rejeté avec une exception au lieu d&#39;être appliqué localement.
+  Tout `WHERE`, `LIMIT`, agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** déporté dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe portant sur les colonnes de la fonction de table est rejeté avec une exception au lieu d&#39;être appliqué localement, car il ne peut pas être intégré à la requête transmise. La vérification couvre le prédicat `WHERE` de premier niveau ainsi que chaque conjonction d&#39;un `AND` de premier niveau. Un `PREWHERE` sur les colonnes de cette table ne relève pas de ce paramètre : ce moteur de table ne prend pas en charge `PREWHERE`, et une telle requête est rejetée avec `ILLEGAL_PREWHERE` quel que soit le paramètre. Avec l&#39;analyzer (par défaut), la vérification ne s&#39;exécute que là où un filtre pourrait effectivement être déporté : lorsque cette table est la seule table de la requête, de chaque côté d&#39;un `INNER JOIN`, ou du côté préservé d&#39;une jointure externe (le côté gauche d&#39;un `LEFT JOIN`, le côté droit d&#39;un `RIGHT JOIN`). Du côté non préservé d&#39;un `LEFT`/`RIGHT JOIN` et de chaque côté d&#39;un `FULL JOIN`, rien n&#39;est déporté et rien n&#39;est vérifié : un filtre sur les colonnes de cette table est donc appliqué localement après la jointure, même en mode strict. Là où la vérification s&#39;exécute, un prédicat qui référence d&#39;autres tables jointes dans la requête englobante n&#39;est pas déporté et est exclu de la vérification, qu&#39;il référence uniquement le côté joint ou qu&#39;il le combine avec cette table au sein d&#39;une même expression non-`AND` (par exemple un `OR`) ; un tel prédicat conserve son point d&#39;évaluation habituel dans ClickHouse (`WHERE` après la jointure, `PREWHERE` avant) et n&#39;est pas rejeté. Avec l&#39;ancien analyzer (`enable_analyzer = 0`), cette délimitation ne s&#39;applique pas : l&#39;intégralité du filtre externe est vérifiée lorsque cette table est la première table de l&#39;arbre de jointure, y compris un prédicat portant sur le côté joint, et une table jointe à droite n&#39;est pas vérifiée.
 </Note>
 
-Prend en charge plusieurs répliques, qui doivent être listées à l&#39;aide de `|`. Par exemple :
+Prend en charge plusieurs répliques, qui doivent être listées à l&#39;aide de `|`. Par exemple :
 
 ```sql
 SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
@@ -85,9 +77,7 @@ ou
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-<div id="returned-value">
-  ## Valeur retournée
-</div>
+## Valeur retournée {#returned-value}
 
 Un objet de table avec les mêmes colonnes que la table MySQL d’origine.
 
@@ -99,9 +89,7 @@ Un objet de table avec les mêmes colonnes que la table MySQL d’origine.
   Dans la requête `INSERT`, pour distinguer la fonction de table `mysql(...)` d’un nom de table accompagné d’une liste de noms de colonnes, vous devez utiliser les mots-clés `FUNCTION` ou `TABLE FUNCTION`. Voir les exemples ci-dessous.
 </Note>
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Table dans MySQL :
 
@@ -145,9 +133,7 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 Active la compression pour les connexions via le protocole MySQL.
 
@@ -215,9 +201,7 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-<div id="related">
-  ## Voir aussi
-</div>
+## Voir aussi {#related}
 
 * [Le moteur de table « MySQL »](/fr/reference/engines/table-engines/integrations/mysql)
 * [Utiliser MySQL comme source d’un dictionnaire](/fr/reference/statements/create/dictionary/sources/mysql)

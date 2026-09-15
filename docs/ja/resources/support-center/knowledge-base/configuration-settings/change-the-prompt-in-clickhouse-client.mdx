@@ -20,7 +20,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 プロンプトを更新する方法はいくつかあり、ここではそれぞれを順に見ていきます。
 
 <div id="--prompt-flag">
-  ## --prompt フラグ
+  ## --prompt フラグ {#--prompt-flag}
 </div>
 
 このフラグを変更する最初の方法は、`--prompt` を使用することです。
@@ -34,7 +34,7 @@ clickhouse --prompt 👉
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="指の絵文字が付いたClickHouse clientプロンプト" />
 
 <div id="config-file---top-level">
-  ## 設定ファイル - トップレベル
+  ## 設定ファイル - トップレベル {#config-file---top-level}
 </div>
 
 また、`config.xml` ファイルでプロンプトのプレフィックスを指定することもできます。
@@ -78,9 +78,7 @@ clickhouse -C christmas.yaml
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="黄色い丸の絵文字付きのClickHouse clientのプロンプト" />
 
-<div id="config-file---connections_credentials">
-  ## 設定ファイル - connections_credentials
-</div>
+## 設定ファイル - connections_credentials {#config-file---connections_credentials}
 
 あるいは、接続認証情報ごとにプロンプトを指定することもできます。
 これは、clickhouse-client を使用する場合にのみ有効です。

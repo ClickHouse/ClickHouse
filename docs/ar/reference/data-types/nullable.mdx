@@ -18,19 +18,15 @@ doc_type: 'reference'
 
 ومع ذلك، **يمكن لأنواع البيانات المركبة أن تتضمن** قيمًا من النوع `Nullable`، مثل `Array(Nullable(Int8))` أو `Tuple(Nullable(String), Nullable(Int64))`.
 
-<Info>
-  **بيتا: Nullable Tuples**
-
+<Note title="بيتا: Nullable Tuples">
   * [Nullable(Tuple(...))](/ar/reference/data-types/tuple#nullable-tuple) مدعوم عند تفعيل `enable_nullable_tuple_type = 1`.
-</Info>
+</Note>
 
 لا يمكن تضمين حقل من النوع `Nullable` في فهارس الجدول.
 
-تكون `NULL` هي القيمة الافتراضية لأي نوع `Nullable`، ما لم يُحدَّد خلاف ذلك في إعدادات خادم ClickHouse.
+تكون `NULL` هي default value لأي نوع `Nullable`، ما لم يُحدَّد خلاف ذلك في إعدادات خادم ClickHouse.
 
-<div id="storage-features">
-  ## ميزات التخزين
-</div>
+## ميزات التخزين {#storage-features}
 
 لتخزين قيم النوع `Nullable` في عمود بجدول، يستخدم ClickHouse ملفًا منفصلًا لأقنعة `NULL` بالإضافة إلى الملف العادي الذي يحتوي على القيم. وتُمكّن البيانات الموجودة في ملف الأقنعة ClickHouse من التمييز بين `NULL` و`default value` لنوع البيانات المقابل في كل صف من صفوف الجدول. وبسبب هذا الملف الإضافي، يستهلك العمود `Nullable` مساحة تخزين إضافية مقارنةً بعمود عادي مماثل.
 
@@ -38,9 +34,7 @@ doc_type: 'reference'
   يؤثر استخدام `Nullable` سلبًا في الأداء في الغالب، لذا ضع ذلك في الحسبان عند تصميم قواعد البيانات لديك.
 </Note>
 
-<div id="finding-null">
-  ## العثور على NULL
-</div>
+## العثور على NULL {#finding-null}
 
 يمكن العثور على قيم `NULL` في عمود باستخدام العمود الفرعي `null` من دون قراءة العمود بأكمله. ويُرجع `1` إذا كانت القيمة المقابلة هي `NULL`، و`0` في غير ذلك.
 
@@ -63,9 +57,7 @@ SELECT n.null FROM nullable;
 └────────┘
 ```
 
-<div id="usage-example">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#usage-example}
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

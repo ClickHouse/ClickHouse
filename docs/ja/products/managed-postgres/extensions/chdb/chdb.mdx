@@ -1,0 +1,166 @@
+---
+sidebarTitle: 'chdb'
+description: 'Postgres chdb 拡張機能の完全なリファレンスドキュメント'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb'
+title: 'chdb 拡張機能リファレンスドキュメント'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
+---
+
+## 概要 {#synopsis}
+
+```psql
+# CREATE EXTENSION chdb;
+CREATE EXTENSION
+
+# SELECT * FROM chdb_query('version()') AS (version text);
+ version
+----------
+ 26.7.2.1
+(1 row)
+```
+
+## 説明 {#description}
+
+`chdb` 拡張機能は、[chDB] クエリをヘルパープロセス内で実行します。
+
+## 関数 {#functions}
+
+<div id="pgchdb_version">
+  ### `pgchdb_version`
+</div>
+
+```sql
+SELECT pgchdb_version();
+```
+
+chdb 拡張機能ライブラリの現在の[セマンティックバージョン][semver]を返します。chdb 拡張機能のバージョンはバージョン番号の `x.y` の部分のみを使用しますが、ライブラリは完全な `x.y.z` 形式の[セマンティックバージョン][semver]を提供します。この値は、Postgres 18 以降の [`pg_get_loaded_modules()`] 関数が返す値と同じです:
+
+```sql
+SELECT version
+  FROM pg_get_loaded_modules()
+ WHERE module_name = 'chdb';
+```
+
+### `chdb_query` {#chdb_query}
+
+```sql
+SELECT * FROM chdb_query('SELECT version()') AS (version text);
+```
+
+[chDB] のクエリを実行し、その結果の行を relation として返します。呼び出しごとにディスク上に一時的な chDB データベースが作成され、クエリの完了時に削除されます。そのため、DDL など、以前の `chdb_query()` の呼び出しで作成されたオブジェクトは、後続の呼び出しには引き継がれません。
+
+カラム定義リスト (`AS (col type, ...)`) は必須です。PostgreSQL は行を取得する前に行の構造定義を必要とし、その構造はクエリが返すカラムと一致していなければなりません。値は chDB から宣言された型へ変換されます。
+
+デフォルトではどのロールにも `EXECUTE` 権限はありません。この関数の使用を許可するには、対象のロールに `GRANT` してください。
+
+```sql
+GRANT EXECUTE ON FUNCTION chdb_query(text) TO chdb_admin;
+```
+
+**例:**
+
+```sql
+SELECT * FROM chdb_query(
+    'SELECT number AS n, number * number FROM numbers(5) ORDER BY n'
+) AS (n int2, p int);
+```
+
+出力:
+
+```
+ n | p
+---+----
+ 0 |  0
+ 1 |  1
+ 2 |  4
+ 3 |  9
+ 4 | 16
+(5 rows)
+```
+
+## テキストエンコーディング {#text-encoding}
+
+chDB の byte strings が Postgres の `text`、`bytea` などの types にどのようにマッピングされるかについては、[`chdb_hook` ドキュメントのテキストエンコーディング][text encoding]を参照してください。
+
+## 設定 {#settings}
+
+### `chdb.max_memory` {#chdbmax_memory}
+
+```sql
+SET chdb.max_memory = '1 GB';
+```
+
+chDB クエリで使用できるメモリの最大量です。chDB の
+[`max_memory_usage`] 設定を指定するために使用されます。superuser 権限が必要です。メガバイト数を整数で
+指定するか、以下のメモリ単位のいずれかを付けて指定します:
+
+* `B` (バイト)
+* `kB` (キロバイト)
+* `MB` (メガバイト)
+* `GB` (ギガバイト)
+* `TB` (テラバイト)
+
+デフォルトは `0` で、この場合メモリは制限されません。
+
+### `chdb.max_threads` {#chdmax_threads}
+
+```sql
+SET chdb.max_threads = 4;
+```
+
+chDB クエリのクエリ処理に使用する最大スレッド数で、chDB の [`max_threads`] 設定に値を設定するために使用します。superuser 権限が必要です。デフォルトは `0` で、この場合は chDB が値を決定します。
+
+大規模なクエリを実行する前に `chdb.max_threads` を設定することを強く推奨します。これにより、chDB が PostgreSQL を犠牲にして CPU を使い切ってしまうことを防げます。
+
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+
+```sql
+SET chdb.max_parsing_threads = 2;
+```
+
+並列パースに対応する入力フォーマットのデータをパースする際に chDB が使用できる最大スレッド数で、chDB の [`max_parsing_threads`] 設定に反映されます。superuser 権限が必要です。デフォルトは `0` で、この場合は chDB が値を決定します。
+
+[table functions] からのデータ読み込みなど、大量のデータをパースするクエリを実行する前に `chdb.max_parsing_threads` を設定することを推奨します。これにより、chDB が PostgreSQL を犠牲にして CPU 使用率を使い切ってしまうことを防げます。
+
+## Versioning Policy {#versioning-policy}
+
+chdb 拡張機能は、公開リリースにおいて [セマンティックバージョニング][semver] に準拠しています。
+
+* major version は API の変更時にインクリメントされます
+* minor version は後方互換性のある SQL の変更時にインクリメントされます
+* patch version は binary のみの変更時にインクリメントされます
+
+インストールすると、PostgreSQL は 2 種類のバージョンを管理します。
+
+* ライブラリ バージョン(PostgreSQL 18 以降では `PG_MODULE_MAGIC` で定義)には完全なセマンティックバージョンが含まれ、`pgchdb_version()` 関数または Postgres の [`pg_get_loaded_modules()`] 関数の出力で確認できます。
+* 拡張機能 バージョン(control ファイルで定義)には major および minor のバージョンのみが含まれ、`pg_catalog.pg_extension` テーブル、`pg_available_extension_versions()` 関数の出力、および `\dx chdb` で確認できます。
+
+つまり実際には、patch version がインクリメントされるリリース(例: `v0.1.0` から `v0.1.1`)は `v0.1` を読み込んでいるすべての database に適用され、アップグレードの効果を得るために `ALTER EXTENSION` を実行する必要はありません。
+
+一方、minor または major のバージョンがインクリメントされるリリースには SQL アップグレード script が付属するため、拡張機能を含む既存のすべての database でアップグレードの効果を得るには `ALTER EXTENSION chdb UPDATE` を実行する必要があります。
+
+## 著者 {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## 著作権 {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB - 高速かつ信頼性が高く、スケーラブルな in-process データベース"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* セッション設定"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* セッション設定"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: max_parsing_threads セッション設定"
+
+[table functions]: https://clickhouse.com/docs/reference/functions/table-functions "ClickHouse Docs: テーブル関数"
+
+[text encoding]: /products/managed-postgres/extensions/chdb/chdb_hook#text-encoding "chdb_hook Docs: テキストエンコーディング"
+
+[semver]: https://semver.org/spec/v2.0.0.html "セマンティックバージョニング 2.0.0"

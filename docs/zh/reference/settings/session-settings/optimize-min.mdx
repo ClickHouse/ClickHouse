@@ -12,17 +12,13 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="optimize_min_equality_disjunction_chain_length">
-  ## optimize_min_equality_disjunction_chain_length
-</div>
+## optimize_min_equality_disjunction_chain_length {#optimize_min_equality_disjunction_chain_length}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 可进行优化的表达式 `expr = x1 OR ... expr = xN` 的最小长度
 
-<div id="optimize_min_inequality_conjunction_chain_length">
-  ## optimize_min_inequality_conjunction_chain_length
-</div>
+## optimize_min_inequality_conjunction_chain_length {#optimize_min_inequality_conjunction_chain_length}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 

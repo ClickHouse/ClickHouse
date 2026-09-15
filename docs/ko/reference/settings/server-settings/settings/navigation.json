@@ -101,6 +101,7 @@
     "ko/reference/settings/server-settings/settings/query",
     "ko/reference/settings/server-settings/settings/query-cache-max",
     "ko/reference/settings/server-settings/settings/query-condition",
+    "ko/reference/settings/server-settings/settings/reader-executor",
     "ko/reference/settings/server-settings/settings/remote",
     "ko/reference/settings/server-settings/settings/replicated-fetches",
     "ko/reference/settings/server-settings/settings/s3",

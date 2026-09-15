@@ -10,9 +10,7 @@ doc_type: 'référence'
 
 Ce moteur s&#39;intègre à l&#39;écosystème [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs), permettant l&#39;importation de données en streaming.
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE test (name String, value UInt32)
@@ -42,18 +40,14 @@ ENGINE = AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;
 SETTINGS mode = 'unordered'
 ```
 
-<div id="settings">
-  ## Paramètres
-</div>
+## Paramètres {#settings}
 
 L’ensemble des paramètres pris en charge est pour l’essentiel le même que pour le moteur de table `S3Queue`, mais sans le préfixe `s3queue_`. Voir la [liste complète des paramètres](/fr/reference/engines/table-engines/integrations/s3queue#settings).
 Pour obtenir la liste des paramètres configurés pour la table, utilisez la table `system.azure_queue_settings`. Disponible à partir de `24.10`.
 
 Vous trouverez ci-dessous les paramètres compatibles uniquement avec AzureQueue et non applicables à S3Queue.
 
-<div id="after_processing_move_connection_string">
-  ### `after_processing_move_connection_string`
-</div>
+### `after_processing_move_connection_string` {#after_processing_move_connection_string}
 
 Chaîne de connexion à Azure Blob Storage vers laquelle déplacer les fichiers traités avec succès, si la destination est un autre conteneur Azure.
 
@@ -63,9 +57,7 @@ Valeurs possibles :
 
 Valeur par défaut : chaîne vide.
 
-<div id="after_processing_move_container">
-  ### `after_processing_move_container`
-</div>
+### `after_processing_move_container` {#after_processing_move_container}
 
 Nom du conteneur vers lequel déplacer les fichiers traités avec succès si la destination est un autre conteneur Azure.
 
@@ -91,17 +83,13 @@ SETTINGS
     after_processing_move_container = 'dst-container';
 ```
 
-<div id="select">
-  ## SELECT à partir du moteur de table AzureQueue
-</div>
+## SELECT à partir du moteur de table AzureQueue {#select}
 
 Les requêtes SELECT sont interdites par défaut sur les tables AzureQueue. Cela suit le modèle classique des files d&#39;attente, où les données sont lues une seule fois, puis retirées de la file d&#39;attente. SELECT est interdit afin d&#39;éviter toute perte accidentelle de données.
 Cependant, cela peut parfois s&#39;avérer utile. Pour ce faire, vous devez définir le paramètre `stream_like_engine_allow_direct_select` sur `True`.
-Le moteur AzureQueue dispose d&#39;un paramètre spécial pour les requêtes SELECT : `commit_on_select`. Définissez-le sur `False` pour conserver les données dans la file d&#39;attente après leur lecture, ou sur `True` pour les supprimer.
+Le moteur AzureQueue dispose d&#39;un paramètre spécial pour les requêtes SELECT : `commit_on_select`. Définissez-le sur `False` pour conserver les données dans la file d&#39;attente après leur lecture, ou sur `True` pour les supprimer. (Remarque : ce paramètre n&#39;a pas de sens en mode `exclusive` et est ignoré ; le mode `exclusive` se comporte toujours comme si `commit_on_select` valait `True`.)
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 `SELECT` n’est pas particulièrement utile pour l’importation en continu (sauf pour le débogage), car chaque fichier ne peut être importé qu’une seule fois. Il est plus pratique de mettre en place un traitement en temps réel à l’aide de [vues matérialisées](/fr/reference/statements/create/view). Pour ce faire :
 
@@ -130,18 +118,14 @@ AS SELECT key, data FROM azure_queue_engine_table;
 SELECT * FROM stats ORDER BY key;
 ```
 
-<div id="virtual-columns">
-  ## Colonnes virtuelles
-</div>
+## Colonnes virtuelles {#virtual-columns}
 
 * `_path` — Chemin d’accès au fichier.
 * `_file` — Nom du fichier.
 
 Pour plus d’informations sur les colonnes virtuelles, consultez [ici](/fr/reference/engines/table-engines/index#table_engines-virtual_columns).
 
-<div id="introspection">
-  ## Introspection
-</div>
+## Introspection {#introspection}
 
 Activez la journalisation pour la table via le paramètre de table `enable_logging_to_queue_log=1`.
 
@@ -213,9 +197,7 @@ exception:
 
 ```
 
-<div id="limitations">
-  ## Limitations
-</div>
+## Limitations {#limitations}
 
 `AzureQueue` partage la même implémentation que `S3Queue` et présente les mêmes [limitations](/fr/reference/engines/table-engines/integrations/s3queue#limitations). En particulier, une coupure d&#39;alimentation au niveau matériel du nœud ClickHouse peut entraîner la perte silencieuse de lignes consommées : un fichier est enregistré comme traité dans Keeper (et, avec `after_processing = 'delete'`, son blob source est supprimé) dès la fin de l’insert, mais les lignes insérées ne sont durablement écrites qu’une fois la part cible synchronisée avec `fsync`, ce qui ne se produit pas de manière synchrone par défaut (`fsync_after_insert = 0`). Pour le chemin de consommation recommandé via une vue matérialisée, définir `fsync_after_insert = 1` (et `fsync_part_directory = 1`) sur la table `MergeTree` cible réduit considérablement cette fenêtre.
 

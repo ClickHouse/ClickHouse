@@ -6,9 +6,7 @@ title: '第三方开发者提供的图形界面'
 doc_type: 'reference'
 ---
 
-<div id="open-source">
-  ## 开源
-</div>
+## 开源 {#open-source}
 
 <Accordion title="agx">
   [agx](https://github.com/agnosticeng/agx) 是一款基于 Tauri 和 SvelteKit 构建的桌面应用，提供现代化界面，可使用 ClickHouse 的嵌入式数据库引擎 (chdb) 探索和查询数据。
@@ -428,9 +426,38 @@ doc_type: 'reference'
   * 基于 Docker 的部署，可在开发环境中快速完成设置。
 </Accordion>
 
-<div id="commercial">
-  ## 商业
-</div>
+<Accordion title="Beekeeper Studio">
+  [Beekeeper Studio](https://www.beekeeperstudio.io/) 是一款免费的 开源 SQL 编辑器和数据库管理工具，支持 ClickHouse。
+
+  功能特性：
+
+  * 现代化的 SQL 编辑器，支持 自动补全 和多选项卡查询执行。
+  * 可浏览表、视图和列的 schema 浏览器。
+  * 保存并整理常用查询。
+  * 跨平台桌面应用 (Windows、macOS、Linux) ，并提供 自托管／Web 版本。
+
+  [Beekeeper Studio 与 ClickHouse 指南](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
+</Accordion>
+
+## 商业 {#commercial}
+
+<Accordion title="ADQM Notebook">
+  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) 是一个笔记本式 SQL 工作区，包含在 [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html) 企业版中，后者是 Arenadata 基于 ClickHouse 构建的列式 DBMS。它在内置的 ClickHouse Web 界面基础上扩展了多单元笔记本、交互式结果、查询计划分析和集群范围的 schema 浏览器，可在 ADQM 主机 HTTP 端口 (`8123`) 上的 `/notebook` 处开箱即用地访问，与 `/play` 并列，也可通过 Chproxy 访问。
+
+  功能：
+
+  * SQL 和 Markdown 单元，每个单元最多五条语句，并可为每个笔记本或单元设置内存、时间和线程限制。
+  * 具有语法高亮、自动补全、`{{variable}}` 替换和 `Beautify SQL` 的 SQL 编辑器。
+  * 结果以可排序、可搜索的网格呈现，并显示每列的 NULL 占比、唯一值数量和取值范围。
+  * 折线图、面积图和柱状图；可下载为 CSV、TSV、JSON、JSONLines 或 Parquet。
+  * 预估和实际查询计划、`EXPLAIN PIPELINE` 和逻辑视图，以及带有建议修复方案的分析结论。
+  * 来自 `system.query_log` 的查询统计信息，并按节点细分；保留最近五次运行的运行历史。
+  * 面向本地主机或整个集群的数据库面板，包含列统计信息和现成查询。
+  * 表、视图、materialized view、字典和投影的依赖关系图。
+  * 正在运行的查询的实时视图，并提供 `KILL` 按钮。
+  * 通过 Chproxy 作为集群的单一入口进行访问，查询在所有主机之间均衡分配。
+  * 自动保存、JSON 导出和导入、在 ClickHouse 服务器上存储笔记本，以及通过链接共享。
+</Accordion>
 
 <Accordion title="ProbeDeck">
   [ProbeDeck](https://probedeck.app) 是一款用于监控和查询 ClickHouse 的 iOS 和 iPadOS 客户端。
@@ -439,7 +466,7 @@ doc_type: 'reference'
 
   * ProbeDeck 可显示正在运行的查询、副本、parts、合并、变更、磁盘和服务器指标。
   * 您可以使用 `KILL QUERY` 终止查询，并使用 `KILL MUTATION` 终止变更。
-  * 您可以浏览模式和数据，或在编辑器中运行 SQL。
+  * 您可以浏览 schema 和数据，或在编辑器中运行 SQL。
   * ProbeDeck 可通过设备网络或 SSH 隧道使用 HTTP(S) 连接。
   * ProbeDeck 将凭据存储在 iOS Keychain 中，并支持为每个连接设置只读模式。
   * 该应用包含附带数据的离线演示。
@@ -491,14 +518,14 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) 是一个数据平台和商业智能工具，支持包括 ClickHouse 在内的 50 多种数据库方言。Looker 提供 SaaS 平台和自托管版本。用户可通过浏览器使用 Looker 探索数据、构建可视化和仪表盘、定时报表，并与同事分享洞察。Looker 提供了丰富的工具，可将这些功能嵌入其他应用程序，并提供 API
-  以便与其他应用程序集成数据。
+  [Looker](https://looker.com) 是一个数据平台和商业智能工具，支持包括 ClickHouse 在内的 50 多种数据库方言。Looker 既提供 SaaS 平台，也支持自托管。用户可以通过浏览器使用 Looker 探索数据、构建可视化和仪表板、安排报告，并与同事分享洞见。Looker 提供了丰富的工具，可将这些功能嵌入其他应用程序，并提供 API
+  以将数据与其他应用程序集成。
 
   功能：
 
-  * 使用 LookML 进行轻松灵活的开发，这是一种支持精心设计的
-    [数据建模](https://looker.com/platform/data-modeling)的语言，可为报表编写人员和最终用户提供支持。
-  * 通过 Looker 的[数据操作](https://looker.com/platform/actions)实现强大的工作流集成。
+  * 使用 LookML 进行简单、敏捷的开发，该语言支持精心设计的
+    [数据建模](https://looker.com/platform/data-modeling)，以支持报告编写者和最终用户。
+  * 通过 Looker 的 [Data Actions](https://looker.com/platform/actions) 实现强大的工作流集成。
 
   [如何在 Looker 中配置 ClickHouse。](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 </Accordion>
@@ -571,4 +598,19 @@ doc_type: 'reference'
   * 支持在结果表中内联编辑数据并按批次保存，同时可使用 ClickHouse 的原生格式导入和导出 CSV/JSON/SQL。
   * 连接选项包括：HTTP/HTTPS、用于访问 firewall 后私有集群的 SSH 隧道，以及用于安全浏览 production 环境的可选只读模式。
   * 支持 ClickHouse Cloud 和 自托管 部署。
+</Accordion>
+
+<Accordion title="ADQM Control">
+  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) 是一个面向以 [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html) 形式部署的 ClickHouse 集群的可观测性平台，ADQM 是 Arenadata 基于 ClickHouse 构建的列式 DBMS。它将来自 Prometheus 的主机指标与从集群中采集的主机、表和查询数据结合起来，展示表的增长情况、查询的运行表现以及哪些主机负载吃紧，并可覆盖一个或多个 ADQM 集群。ADQM Control 通过 [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) 作为独立集群部署，并将采集的数据存储在 PostgreSQL 中。
+
+  功能：
+
+  * 所选 ADQM 集群的主机状态热力图。
+  * 按时间将相关告警归组为事件，灵敏度可调。
+  * 表大小、行数和请求数随时间的变化，以及各主机之间的偏斜和不均衡指标。
+  * 每列的压缩和未压缩大小、压缩节省量以及编解码器，并配有图表。
+  * 完整的查询历史记录，包含状态、异常码、耗时、内存以及读写的行数和字节数。
+  * 可按文本、表、用户、主机、耗时、状态和异常码预设对查询进行过滤。
+  * 按耗时、用户和类型展示的查询图表；带异常检测的各主机负载图表。
+  * 针对主机资源的阈值告警，可说明问题并推荐修复方案。
 </Accordion>

@@ -25,16 +25,16 @@ Em contraste com as restrições de complexidade de consulta, as cotas:
 Vamos examinar a seção do arquivo &#39;users.xml&#39; que define as cotas.
 
 ```xml
-<!-- Cotas -->
+<!-- Quotas -->
 <quotas>
-    <!-- Nome da QUOTA. -->
+    <!-- Quota name. -->
     <default>
-        <!-- Restrições para um período de tempo. É possível definir vários intervalos com restrições diferentes. -->
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
         <interval>
-            <!-- Duração do intervalo. -->
+            <!-- Length of the interval. -->
             <duration>3600</duration>
 
-            <!-- Sem limite. Apenas coleta dados para o intervalo de tempo especificado. -->
+            <!-- Unlimited. Just collect data for the specified time interval. -->
             <queries>0</queries>
             <query_selects>0</query_selects>
             <query_inserts>0</query_inserts>
@@ -52,9 +52,9 @@ O consumo de recursos calculado para cada intervalo é registrado no log do serv
 
 ```xml
 <statbox>
-    <!-- Restrições para um período de tempo. Você pode definir vários intervalos com diferentes restrições. -->
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
-        <!-- Duração do intervalo. -->
+        <!-- Length of the interval. -->
         <duration>3600</duration>
 
         <queries>1000</queries>
@@ -117,9 +117,9 @@ Aqui estão as quantidades que podem ser restringidas:
 Se o limite for excedido em pelo menos um intervalo de tempo, uma exceção será lançada com um texto informando qual restrição foi excedida, para qual intervalo e quando o novo intervalo começa (ou seja, quando as consultas podem ser enviadas novamente).
 
 <Note>
-  **Consultas excluídas da contabilização de QUOTA**
+  **Consultas excluídas da contabilização de cota**
 
-  Para permitir que a configuração e o uso da QUOTA sejam inspecionados mesmo quando uma QUOTA estiver esgotada, consultas `SELECT` que leem exclusivamente de uma das seguintes tabelas de sistema não são contabilizadas nas QUOTAs e não estão sujeitas a limites de complexidade de consulta:
+  Para permitir que a configuração e o uso da cota sejam inspecionados mesmo quando uma cota estiver esgotada, consultas `SELECT` que leem exclusivamente de uma das seguintes tabelas de sistema não são contabilizadas nas cotas e não estão sujeitas a limites de complexidade de consulta:
 
   * `system.quotas`
   * `system.quota_limits`
@@ -128,7 +128,7 @@ Se o limite for excedido em pelo menos um intervalo de tempo, uma exceção ser�
   * `system.one`
 </Note>
 
-As QUOTAs podem usar o recurso &quot;QUOTA key&quot; para contabilizar recursos de várias chaves de forma independente. Veja um exemplo:
+As cotas podem usar o recurso &quot;cota key&quot; para contabilizar recursos de várias chaves de forma independente. Veja um exemplo:
 
 ```xml
 <!-- For the global reports designer. -->
@@ -157,7 +157,7 @@ As QUOTAs podem usar o recurso &quot;QUOTA key&quot; para contabilizar recursos 
 </web_global>
 ```
 
-Você também pode definir QUOTAs com base no hash normalizado da consulta, para que cada padrão de consulta distinto tenha seu próprio bucket de QUOTA independente. Na configuração XML, isso é escrito como `<keyed_by_normalized_query_hash />`:
+Você também pode definir cotas com base no hash normalizado da consulta, para que cada padrão de consulta distinto tenha seu próprio bucket de cota independente. Na configuração XML, isso é escrito como `<keyed_by_normalized_query_hash />`:
 
 ```xml
 <my_quota>
@@ -177,14 +177,14 @@ CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX que
 
 Neste exemplo, o usuário pode executar até 100 vezes por hora cada consulta normalizada distinta. `SELECT number FROM numbers(1)` e `SELECT number FROM numbers(2)` compartilham o mesmo bucket (porque têm a mesma forma normalizada), mas `SELECT number, number FROM numbers(1)` usa um bucket separado.
 
-A QUOTA é atribuída aos usuários na seção &#39;users&#39; da configuração. Consulte a seção &quot;Direitos de acesso&quot;.
+A cota é atribuída aos usuários na seção &#39;users&#39; da configuração. Consulte a seção &quot;Direitos de acesso&quot;.
 
-No processamento de consultas distribuídas, os valores acumulados são armazenados no servidor que faz a solicitação. Portanto, se o usuário acessar outro servidor, a QUOTA nele vai &quot;recomeçar&quot;.
+No processamento de consultas distribuídas, os valores acumulados são armazenados no servidor que faz a solicitação. Portanto, se o usuário acessar outro servidor, a cota nele vai &quot;recomeçar&quot;.
 
-Quando o servidor é reiniciado, as QUOTAs são redefinidas.
+Quando o servidor é reiniciado, as cotas são redefinidas.
 
 <div id="related-content">
-  ## Conteúdo relacionado
+  ## Conteúdo relacionado {#related-content}
 </div>
 
 * Blog: [Criando aplicações de página única com ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

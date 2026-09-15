@@ -6,13 +6,14 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ja/components/Image.jsx";
+
+<PrivatePreviewBadge />
 
 このページでは、登録トークンの取得から正常に稼働し検証済みのコネクタの準備までの手順を説明します。コネクタは、Kubernetes クラスター (Helm) または Linux VM (systemd) のいずれかにインストールできます。標準的な手順はトークン登録です。環境から ClickHouse のエンドポイントに直接アクセスできない場合は、[エアギャップ環境およびミラーインストール](#air-gapped-and-mirrored-installs)を参照してください。
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 すべてのインストールに共通する要件:
 
@@ -40,9 +41,7 @@ Linux VM (systemd) インストールの場合:
   `--skip-provision`はKubernetes要件を回避する唯一の方法ですが、ステージング専用です。ClickHouseユーザーのプロビジョニングをスキップし、VMではユニットの有効化と検証もスキップするため、これだけでは実行中のコネクタは作成されません。
 </Note>
 
-<div id="install-and-enroll">
-  ## インストールと登録
-</div>
+## インストールと登録 {#install-and-enroll}
 
 <Steps>
   <Step title="コネクタのエンドポイントと登録トークンを取得する" id="get-endpoint-and-token">
@@ -153,9 +152,7 @@ Linux VM (systemd) インストールの場合:
   </Step>
 </Steps>
 
-<div id="air-gapped-and-mirrored-installs">
-  ## エアギャップ環境およびミラーインストール
-</div>
+## エアギャップ環境およびミラーインストール {#air-gapped-and-mirrored-installs}
 
 環境からアクセスできる範囲に応じて、2 つの独立した要素を帯域外でやり取りできます。
 
@@ -167,9 +164,7 @@ Kubernetes では、`--chart` に、`--chart-repo` で解決されるチャー�
 
 インストーラーはミラーからも利用できます。リリースアーティファクトと `install.sh` を独自のミラーでホストし、`CLICKLINK_MIRROR_URL` で指定してください。
 
-<div id="manual-download-and-verification">
-  ### 手動でのダウンロードと検証
-</div>
+### 手動でのダウンロードと検証 {#manual-download-and-verification}
 
 インストーラーをパイプで実行したくない場合は、リリースを自分で取得して検証してください。このスクリプトはプラットフォームとアーキテクチャを検出するため、macOS または Linux、amd64 または arm64 でそのまま実行できます。
 
@@ -207,9 +202,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 VM では、tarball を展開し、展開先のディレクトリで `sudo ./install.sh` を実行します。リリースアーティファクトの隣に配置すると、`--host` と同じホストインストールが実行されます。
 
-<div id="if-something-fails">
-  ## 問題が発生した場合
-</div>
+## 問題が発生した場合 {#if-something-fails}
 
 同じコマンドを再実行してください。`init`は冪等であり、再実行しても同じ状態に収束します。既存のconfigとステージング済みファイルは保持され、完了済みの作業はスキップされます。手順の途中で失敗した場合、CLIは状況に応じた正確な復旧コマンドを出力します。出力されたコマンドは安全に繰り返し実行できます。
 

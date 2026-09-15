@@ -18,9 +18,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
-<div id="managing-roles">
-  ## Gerenciamento de roles
-</div>
+`CREATE ROLE` requer o privilégio [CREATE ROLE](/pt-BR/reference/statements/grant#access-management). `OR REPLACE` descarta uma role existente com o mesmo nome, junto com os privilégios concedidos a ela, portanto requer adicionalmente o privilégio [DROP ROLE](/pt-BR/reference/statements/grant#access-management). O privilégio `DROP ROLE` é exigido para cada nome listado na instrução, exista ou não essa role, de modo que a instrução não pode ser usada para descobrir quais roles existem.
+
+## Gerenciamento de roles {#managing-roles}
 
 Um usuário pode ter várias roles atribuídas. Os usuários podem aplicar suas roles atribuídas em combinações arbitrárias por meio da instrução [SET ROLE](/pt-BR/reference/statements/set-role). O escopo final dos privilégios é a combinação de todos os privilégios de todas as roles aplicadas. Se um usuário tiver privilégios concedidos diretamente à sua conta de usuário, eles também serão combinados com os privilégios concedidos pelas roles.
 
@@ -30,9 +30,7 @@ Para revogar uma role, use a instrução [REVOKE](/pt-BR/reference/statements/re
 
 Para excluir uma role, use a instrução [DROP ROLE](/pt-BR/reference/statements/drop#drop-role). A role excluída é automaticamente revogada de todos os usuários e roles aos quais foi atribuída.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 ```sql
 CREATE ROLE accountant;

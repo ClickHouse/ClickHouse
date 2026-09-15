@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouseサーバーを構成するもので、ClickHouse のソースコードから自動生成されています。
 
-<div id="max_active_parts_loading_thread_pool_size">
-  ## max_active_parts_loading_thread_pool_size
-</div>
+## max_active_parts_loading_thread_pool_size {#max_active_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="Yes" />起動時にアクティブなデータパーツ群 (Active なもの) を読み込むためのスレッド数。
 
-<div id="max_authentication_methods_per_user">
-  ## max_authentication_methods_per_user
-</div>
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />
 
@@ -32,15 +28,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   `0` は無制限を意味します。
 </Note>
 
-<div id="max_backup_bandwidth_for_server">
-  ## max_backup_bandwidth_for_server
-</div>
+## max_backup_bandwidth_for_server {#max_backup_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />server 上のすべてのバックアップに対する、1 秒あたりの最大読み取り速度 (バイト/秒) です。0 は無制限を意味します。
 
-<div id="max_build_vector_similarity_index_thread_pool_size">
-  ## max_build_vector_similarity_index_thread_pool_size
-</div>
+## max_build_vector_similarity_index_thread_pool_size {#max_build_vector_similarity_index_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />
 
@@ -50,33 +42,23 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   値 `0` は、すべてのコアを意味します。
 </Note>
 
-<div id="max_connections">
-  ## max_connections
-</div>
+## max_connections {#max_connections}
 
 <SettingsInfoBlock type="Int32" default_value="4096" changeable_without_restart="No" />サーバーの最大接続数。
 
-<div id="max_entries_for_hash_table_stats">
-  ## max_entries_for_hash_table_stats
-</div>
+## max_entries_for_hash_table_stats {#max_entries_for_hash_table_stats}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />集約中に収集されるハッシュテーブル統計で保持できるエントリ数
 
-<div id="max_fetch_partition_thread_pool_size">
-  ## max_fetch_partition_thread_pool_size
-</div>
+## max_fetch_partition_thread_pool_size {#max_fetch_partition_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="Yes" />ALTER TABLE FETCH PARTITION に使用するスレッド数。
 
-<div id="max_held_snapshots">
-  ## max_held_snapshots
-</div>
+## max_held_snapshots {#max_held_snapshots}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />同時に保持できる軽量スナップショットの最大数。0 は無制限を意味します。スナップショット数がこの上限に達すると、新しいスナップショットを作成しようとした際に例外がスローされます。
 
-<div id="max_http_index_page_size">
-  ## max_http_index_page_size
-</div>
+## max_http_index_page_size {#max_http_index_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="いいえ" />
 
@@ -85,9 +67,21 @@ HTTP 経由でディレクトリ一覧を表示する際に使用される、HTT
 
 デフォルト: `10485760` (10 MiB)。
 
-<div id="max_keep_alive_requests">
-  ## max_keep_alive_requests
-</div>
+## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+Iceberg のデータマニフェストファイルをデコードするスレッドプールに保持しておく、アイドル状態の待機スレッドの最大数。
+
+## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
+
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
+
+Iceberg のデータマニフェストファイル のデコードに使用するスレッドの合計最大数。
+
+このスレッドプールは意図的に I/O スレッドプールとは分離されています。デコードタスクは、生成したエントリがクエリによって消費されるまでブロックされることがある一方で、削除マニフェストのデコードはエントリが消費される前に I/O スレッドプール上のタスクの完了を待機します。1 つのスレッドプールを共有すると、デッドロックが発生する可能性があります。
+
+## max_keep_alive_requests {#max_keep_alive_requests}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />
 
@@ -99,9 +93,7 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
 <max_keep_alive_requests>10</max_keep_alive_requests>
 ```
 
-<div id="max_materialized_views_count_for_table">
-  ## max_materialized_views_count_for_table
-</div>
+## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -111,21 +103,15 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
   ここでは直接依存するビューのみが対象であり、あるビューの上に別のビューを作成する場合は考慮されません。
 </Note>
 
-<div id="max_merges_bandwidth_for_server">
-  ## max_merges_bandwidth_for_server
-</div>
+## max_merges_bandwidth_for_server {#max_merges_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />server上のすべてのマージにおける最大読み取り速度 (1秒あたりのバイト数) です。0は無制限を意味します。
 
-<div id="max_mutations_bandwidth_for_server">
-  ## max_mutations_bandwidth_for_server
-</div>
+## max_mutations_bandwidth_for_server {#max_mutations_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />サーバー上のすべてのミューテーションに対する読み取り速度の上限を、1 秒あたりのバイト数で指定します。0 は無制限を意味します。
 
-<div id="max_open_files">
-  ## max_open_files
-</div>
+## max_open_files {#max_open_files}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -135,24 +121,18 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
   macOS では getrlimit() 関数が正しくない値を返すため、このオプションの使用を推奨します。
 </Note>
 
-<div id="max_os_cpu_wait_time_ratio_to_drop_connection">
-  ## max_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## max_os_cpu_wait_time_ratio_to_drop_connection {#max_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 
 接続を切断するかどうかを判断する際に考慮する、OS の CPU 待機時間 (`OSCPUWaitMicroseconds` メトリクス) とビジー時間 (`OSCPUVirtualTimeMicroseconds` メトリクス) の最大比率です。確率の計算には最小比率と最大比率の間の線形補間が使用され、この時点で確率は 1 になります。
 詳細については、[server の CPU 過負荷時の動作制御](/ja/concepts/features/configuration/settings/server-overload)を参照してください。
 
-<div id="max_outdated_parts_loading_thread_pool_size">
-  ## max_outdated_parts_loading_thread_pool_size
-</div>
+## max_outdated_parts_loading_thread_pool_size {#max_outdated_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="32" changeable_without_restart="Yes" />起動時に非アクティブなデータパーツ (outdated なもの) のセットを読み込むためのスレッド数。
 
-<div id="max_part_num_to_warn">
-  ## max_part_num_to_warn
-</div>
+## max_part_num_to_warn {#max_part_num_to_warn}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="Yes" />
 
@@ -164,9 +144,7 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
-<div id="max_partition_size_to_drop">
-  ## max_partition_size_to_drop
-</div>
+## max_partition_size_to_drop {#max_partition_size_to_drop}
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" changeable_without_restart="Yes" />
 
@@ -187,23 +165,17 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
 <max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
-<div id="max_parts_cleaning_thread_pool_size">
-  ## max_parts_cleaning_thread_pool_size
-</div>
+## max_parts_cleaning_thread_pool_size {#max_parts_cleaning_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="Yes" />非アクティブなデータパーツを同時に削除するためのスレッド数。
 
-<div id="max_per_cpu_untracked_memory">
-  ## max_per_cpu_untracked_memory
-</div>
+## max_per_cpu_untracked_memory {#max_per_cpu_untracked_memory}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Yes" />
 
 1 つの CPU 上で実行中のすべてのスレッドが、memory tracker にフラッシュされる前に一度に保持できる未追跡メモリ量の上限を、バイト単位で指定します。`max_untracked_memory` は単一スレッドを制限するのに対し、これは CPU ごとの合計を制限するため、多数のスレッドが各スレッドの許容量を積み上げてサーバー全体で大きなオーバーコミットを引き起こすことを防ぎます。したがって、未追跡メモリの合計はおおむね `number_of_cpus * max_per_cpu_untracked_memory` によって制限されます。値 `0` は CPU ごとの上限を無効にします (スレッドごとの `max_untracked_memory` のみが適用されます) 。Linux のみ。
 
-<div id="max_session_timeout">
-  ## max_session_timeout
-</div>
+## max_session_timeout {#max_session_timeout}
 
 セッションの最大タイムアウト時間 (秒) 。
 
@@ -213,9 +185,7 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-<div id="max_temporary_data_on_disk_size">
-  ## max_temporary_data_on_disk_size
-</div>
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -231,15 +201,11 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
 * [`max_temporary_data_on_disk_size_for_user`](/ja/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
 * [`max_temporary_data_on_disk_size_for_query`](/ja/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
-<div id="max_unexpected_parts_loading_thread_pool_size">
-  ## max_unexpected_parts_loading_thread_pool_size
-</div>
+## max_unexpected_parts_loading_thread_pool_size {#max_unexpected_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="8" changeable_without_restart="No" />起動時に、非アクティブなデータパーツ群 (Unexpected なもの) を読み込むためのスレッド数です。
 
-<div id="max_waiting_queries">
-  ## max_waiting_queries
-</div>
+## max_waiting_queries {#max_waiting_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -264,9 +230,7 @@ ClickHouseサーバー によって接続が閉じられるまでに、単一の
   この設定は実行時に変更でき、変更は即座に反映されます。すでに実行中のクエリには影響しません。
 </Note>
 
-<div id="max_zookeeper_pooled_connections">
-  ## max_zookeeper_pooled_connections
-</div>
+## max_zookeeper_pooled_connections {#max_zookeeper_pooled_connections}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 

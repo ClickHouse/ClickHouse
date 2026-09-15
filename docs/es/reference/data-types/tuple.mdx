@@ -14,9 +14,7 @@ Las tuplas se usan para la agrupación temporal de columnas. Las columnas pueden
 
 Las tuplas pueden ser el resultado de una consulta. En este caso, en los formatos de texto distintos de JSON, los valores aparecen separados por comas entre `()`. En los formatos JSON, las tuplas se representan como arrays (en `[]`).
 
-<div id="creating-tuples">
-  ## Creación de tuplas
-</div>
+## Creación de tuplas {#creating-tuples}
 
 Puede usar una función para crear una tupla:
 
@@ -64,9 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-<div id="data-type-detection">
-  ## Detección de tipos de datos
-</div>
+## Detección de tipos de datos {#data-type-detection}
 
 Al crear tuplas sobre la marcha, ClickHouse infiere el tipo de los argumentos de las tuplas como los tipos más pequeños capaces de contener el valor del argumento proporcionado. Si el valor es [NULL](/es/reference/settings/formats/input-format#input_format_null_as_default), el tipo inferido es [Nullable](/es/reference/data-types/nullable).
 
@@ -82,9 +78,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-<div id="referring-to-tuple-elements">
-  ## Referencia a los elementos de Tuple
-</div>
+## Referencia a los elementos de Tuple {#referring-to-tuple-elements}
 
 Se puede hacer referencia a los elementos de Tuple por nombre o por índice:
 
@@ -108,9 +102,7 @@ SELECT a.2 FROM named_tuples; -- por índice
 └────────────────────┘
 ```
 
-<div id="comparison-operations-with-tuple">
-  ## Operaciones de comparación con Tuple
-</div>
+## Operaciones de comparación con Tuple {#comparison-operations-with-tuple}
 
 Dos tuplas se comparan secuencialmente, de izquierda a derecha. Si un elemento de la primera tupla es mayor (o menor) que el elemento correspondiente de la segunda, entonces la primera tupla es mayor (o menor) que la segunda; de lo contrario, si ambos elementos son iguales, se compara el siguiente elemento.
 
@@ -188,16 +180,12 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-<div id="nullable-tuple">
-  ## Nullable(Tuple(T1, T2, ...))
-</div>
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-  **Funcionalidad Beta**
-
+<Note title="Funcionalidad Beta">
   Requiere `SET enable_nullable_tuple_type = 1`
   Esta es una funcionalidad Beta.
-</Info>
+</Note>
 
 Permite que la tupla completa sea `NULL`, a diferencia de `Tuple(Nullable(T1), Nullable(T2), ...)`, donde solo los elementos individuales pueden ser `NULL`.
 

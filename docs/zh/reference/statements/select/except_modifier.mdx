@@ -11,20 +11,18 @@ doc_type: 'reference'
 
 > 指定要从结果中排除的一个或多个列名。所有匹配的列名都不会出现在输出中。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+排除单个列时，括号可以省略。
+
+## 示例 {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) from columns_transformers;
+SELECT * EXCEPT i FROM columns_transformers;
 ```
 
 ```response title="Response"

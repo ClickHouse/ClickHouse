@@ -140,9 +140,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 如果提供的哈希值与模块代码计算出的 SHA256 不一致，则插入会失败。在从 S3 或 HTTP 等外部来源加载模块时，这会很有用。
 
-<div id="distribute-a-module-across-a-cluster">
-  ### 在 cluster 中分发模块
-</div>
+### 在 cluster 中分发模块 {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules` 是按实例划分的表——`INSERT` 只会写入处理该 connection 的副本。`INSERT` statement 没有 `ON CLUSTER` 这种形式，因此后续执行 `CREATE FUNCTION ... ON CLUSTER` 时，会在没有该模块的副本上失败：
 
@@ -287,7 +285,7 @@ WebAssembly 不区分有符号参数和无符号参数，而是通过不同的�
 
 通过 WASM 内存进行 (反) 序列化，一次处理整个块。支持任意参数类型和返回类型。
 
-数据通过 WASM 内存中的缓冲区交换。缓冲区是一个 8 字节的结构，包含一个指向数据的指针和数据大小 (两个小端序 `u32` 值) 。缓冲区通过句柄传递——即指向该结构的指针，而非指向数据本身的指针。guest 代码必须导出两个函数，用于创建和销毁这些缓冲区。
+数据通过 WASM 内存中的缓冲区交换。缓冲区是一个 8 字节的结构，包含一个指向数据的指针和数据大小 (两个小端序 `u32` 值) 。缓冲区通过句柄传递——即指向该结构的指针，而非指向数据本身的指针。guest 代码必须导出两个函数，用于创建和销毁这些缓冲区。当大小非零时，数据指针也必须非零：声明了正的大小却指向线性内存偏移 `0` 的缓冲区不是有效缓冲区，guest 代码不得产生这样的缓冲区；ClickHouse 会拒绝此类缓冲区，并以 `WASM_ERROR` 使查询失败。
 
 对于每个输入块，ClickHouse 会：
 
@@ -297,7 +295,9 @@ WebAssembly 不区分有符号参数和无符号参数，而是通过不同的�
 4. 读取结果缓冲区：其中必须恰好包含一列，且行数必须与输入完全相同，并以相同格式序列化。对于具有命名字段的格式，例如 `JSONEachRow`，结果列必须命名为 `result`。
 5. 对输入缓冲区 (如有) 和结果缓冲区的句柄调用 `clickhouse_destroy_buffer`。guest 代码不得自行释放结果缓冲区，也不得将输入句柄作为结果返回——否则该缓冲区会被销毁两次。
 
-函数会对每个输入块调用一次：大型查询会由查询管道拆分为多个块 (每次调用的最大行数还可通过 `webassembly_udf_max_input_block_size` 设置加以限制) ，因此每次调用传入的行数是该块的大小，而不是整个查询的大小。
+函数会对每个输入块调用一次：大型查询会由查询管道拆分为多个块，因此每次调用传入的行数是该块的大小，而不是整个查询的大小。
+
+管道块仍可能过宽，超出模块的线性内存，因此会被进一步拆分。默认情况下，`webassembly_udf_input_split_memory_ratio` 会动态拆分：ClickHouse 会度量已序列化的行，并在输入超过 guest 线性内存的该比例之前开始新的调用，因此行数会随数据而变化。将 `webassembly_udf_max_input_block_size` 设为非零值则会以每次调用固定的行数上限取代该机制，而比例为 `0` 时会在一次调用中传入整个块。一次调用的行数永远不会低于一行，因此单独一行若过大而超出模块内存，仍会在 guest 内部失败。
 
 <Note>
   缓冲区中的确切字节由所选格式定义，guest 代码必须自行解码和编码。对于 `String` 值，尤其需要注意：
@@ -328,7 +328,7 @@ WebAssembly 不区分有符号参数和无符号参数，而是通过不同的�
 )
 ```
 
-一个完整的独立运行 C 示例：`str_reverse` 使用 `serialization_format = 'RowBinary'` 反转每个输入字符串的字节。模块实例会跨块复用，因此 `clickhouse_destroy_buffer` 必须真正回收内存；这里会在所有缓冲区销毁后重置分配器。
+一个完整的 freestanding C 示例：`str_reverse` 使用 `serialization_format = 'RowBinary'` 反转每个输入字符串的字节。模块实例会在多个块之间复用，因此 `clickhouse_destroy_buffer` 必须真正回收内存——这里的分配器会在所有缓冲区都被销毁后进行重置。
 
 ```c
 #include <stdint.h>
@@ -530,11 +530,13 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 以下查询级设置用于控制 WebAssembly UDF 的执行：
 
-* `webassembly_udf_max_fuel` — 每个 WebAssembly UDF 实例每次执行的 fuel 上限。每条 WebAssembly 指令都会消耗一定数量的 fuel。在传递给 runtime 之前，该值会先按 1024 进行缩放，因此 `webassembly_udf_max_fuel = 1` 对应大约 1024 个 fuel 单位。设为 0 表示没有有限上限。仅适用于每函数设置 `webassembly_udf_enable_fuel` 为 true 的函数，默认即为如此。
+* `webassembly_udf_max_fuel` — 每个 WebAssembly UDF 实例每次执行的 fuel 上限。每条 WebAssembly 指令都会消耗一定数量的 fuel。在传递给运行时之前，该值会先按 1024 进行缩放，因此 `webassembly_udf_max_fuel = 1` 对应大约 1024 个 fuel 单位。设为 0 表示没有有限上限。仅适用于每函数设置 `webassembly_udf_enable_fuel` 为 true 的函数，默认即为如此。
 
 * `webassembly_udf_max_memory` — 每个 WebAssembly UDF 实例的内存上限 (以字节为单位) 。
 
-* `webassembly_udf_max_input_block_size` — 单个块中传递给 WebAssembly UDF 的最大行数。设为 0 表示一次处理所有行。
+* `webassembly_udf_max_input_block_size` — 对所有 ABI 而言，单个块中传递给 WebAssembly UDF 的最大行数。设为 0 时，`ABI BUFFERED_V1` 函数每次调用的大小由 `webassembly_udf_input_split_memory_ratio` 决定；其他 ABI 则会接收整个管道块。
+
+* `webassembly_udf_input_split_memory_ratio` — 单次调用的输入可占用的线性内存比例，其基准为 module 声明的初始线性内存 (对于初始没有数据页的 module，则以其内存上限为基准) 。当 `webassembly_udf_max_input_block_size` 为 0 时，用于对 `ABI BUFFERED_V1` 函数的块进行 split；其他 ABI 不携带序列化的输入块，因此会忽略该设置。默认值：`0.5`，其余内存留给 guest 自身的 working set — 接近 1 的 ratio 仍可能导致 guest 的 allocator 内部失败。设为 0，或将 `compatibility` 设为 26.9 之前的版本，即可在一次调用中传递整个管道块。取值必须不小于 0 且不大于 1。
 
 * `webassembly_udf_max_instances` — 每个函数可并行运行的 WebAssembly UDF 实例最大数量。
 

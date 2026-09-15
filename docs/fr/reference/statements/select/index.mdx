@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Les requêtes `SELECT` servent à extraire des données. Par défaut, les données demandées sont renvoyées au client ; associées à [INSERT INTO](/fr/reference/statements/insert-into), elles peuvent être redirigées vers une autre table.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 [WITH expr_list(subquery)]
@@ -30,6 +28,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
+[LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
 [SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
@@ -73,17 +72,13 @@ FROM table
 |> ORDER BY c DESC
 ```
 
-<div id="select-clause">
-  ## Clause SELECT
-</div>
+## Clause SELECT {#select-clause}
 
 Les [expressions](/fr/reference/syntax#expressions) spécifiées dans la clause `SELECT` sont calculées une fois toutes les opérations des clauses décrites ci-dessus terminées. Ces expressions se comportent comme si elles s’appliquaient à des lignes distinctes du résultat. Si des expressions de la clause `SELECT` contiennent des fonctions d’agrégation, ClickHouse traite alors les fonctions d’agrégation ainsi que les expressions utilisées comme arguments lors de l’agrégation [GROUP BY](/fr/reference/statements/select/group-by).
 
 Si vous souhaitez inclure toutes les colonnes dans le résultat, utilisez le symbole astérisque (`*`). Par exemple, `SELECT * FROM ...`.
 
-<div id="dynamic-column-selection">
-  ### Sélection dynamique de colonnes
-</div>
+### Sélection dynamique de colonnes {#dynamic-column-selection}
 
 La sélection dynamique de colonnes (également appelée expression COLUMNS) vous permet de faire correspondre certaines colonnes d’un résultat à une expression régulière [re2](https://en.wikipedia.org/wiki/RE2_\(software\)).
 
@@ -142,9 +137,7 @@ Dans cet exemple, `COLUMNS('a')` renvoie deux colonnes : `aa` et `ab`. `COLUMNS
 
 Les colonnes correspondant à l’expression `COLUMNS` peuvent avoir des types de données différents. Si `COLUMNS` ne correspond à aucune colonne et qu’il s’agit de la seule expression dans `SELECT`, ClickHouse génère une exception.
 
-<div id="select-columns-with-like-or-ilike">
-  #### Sélectionner des colonnes avec `LIKE` ou `ILIKE`
-</div>
+#### Sélectionner des colonnes avec `LIKE` ou `ILIKE` {#select-columns-with-like-or-ilike}
 
 Vous pouvez également sélectionner des colonnes en faisant correspondre leurs noms à un motif après `*`, en utilisant `LIKE` (sensible à la casse) ou `ILIKE` (insensible à la casse) :
 
@@ -178,9 +171,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 └────┘
 ```
 
-<div id="asterisk">
-  ### Astérisque
-</div>
+### Astérisque {#asterisk}
 
 Vous pouvez mettre un astérisque à n&#39;importe quel endroit d&#39;une requête à la place d&#39;une expression. Lors de l&#39;analyse de la requête, l&#39;astérisque est remplacé par la liste de toutes les colonnes de la table (à l&#39;exclusion des colonnes `MATERIALIZED` et `ALIAS`). Il n&#39;existe que quelques cas où l&#39;utilisation d&#39;un astérisque se justifie :
 
@@ -192,29 +183,23 @@ Vous pouvez mettre un astérisque à n&#39;importe quel endroit d&#39;une requê
 
 Dans tous les autres cas, nous ne recommandons pas d&#39;utiliser l&#39;astérisque, car cela ne vous donne que les inconvénients d&#39;un SGBD colonnaire, sans ses avantages. En d&#39;autres termes, l&#39;utilisation de l&#39;astérisque n&#39;est pas recommandée.
 
-<div id="extreme-values">
-  ### Valeurs extrêmes
-</div>
+### Valeurs extrêmes {#extreme-values}
 
 En plus des résultats, vous pouvez également obtenir les valeurs minimales et maximales des colonnes de résultat. Pour ce faire, définissez le paramètre **extremes** sur 1. Les minima et maxima sont calculés pour les types numériques, les dates et les dates avec heure. Pour les autres colonnes, les valeurs par défaut sont affichées.
 
-Deux lignes supplémentaires sont calculées : l’une pour les minima et l’autre pour les maxima. Ces deux lignes supplémentaires sont affichées dans les [formats](/fr/reference/formats/index) `XML`, `JSON*`, `TabSeparated*`, `CSV*`, `Vertical`, `Template` et `Pretty*`, séparément des autres lignes. Elles ne sont pas affichées dans les autres formats.
+Deux lignes supplémentaires sont calculées : l’une pour les minima et l’autre pour les maxima. Ces deux lignes supplémentaires sont affichées dans les [formats](/fr/reference/formats/index) `XML`, `JSON*`, `TabSeparated*`, `CSV*`, `Vertical`, `Template` et `Pretty*`, séparément des autres lignes. Elles ne sont pas affichées dans les autres formats.
 
 Dans les formats `JSON*` et `XML`, les valeurs extrêmes sont affichées dans un champ `extremes` distinct. Dans les formats `TabSeparated*`, `CSV*` et `Vertical`, la ligne apparaît après le résultat principal, et après `totals` s’il est présent. Elle est précédée d’une ligne vide (après les autres données). Dans les formats `Pretty*`, la ligne est affichée sous la forme d’une table distincte après le résultat principal, et après `totals` s’il est présent. Dans le format `Template`, les valeurs extrêmes sont affichées conformément au modèle spécifié.
 
-Les valeurs extrêmes sont calculées sur les lignes avant `LIMIT`, mais après `LIMIT BY`. Toutefois, lors de l’utilisation de `LIMIT offset, size`, les lignes avant `offset` sont incluses dans `extremes`. Dans les requêtes en flux, le résultat peut également inclure un petit nombre de lignes ayant passé `LIMIT`.
+Les valeurs extrêmes sont calculées sur les lignes avant `LIMIT`, mais après `LIMIT BY`. Toutefois, lors de l’utilisation de `LIMIT offset, size`, les lignes avant `offset` sont incluses dans `extremes`. Une plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until) se comporte ici comme `LIMIT` : les valeurs extrêmes sont calculées sur les lignes lues avant l’application de la plage. Dans les requêtes en flux, le résultat peut également inclure un petit nombre de lignes ayant passé `LIMIT`.
 
-<div id="notes">
-  ### Remarques
-</div>
+### Remarques {#notes}
 
 Vous pouvez utiliser des synonymes (alias `AS`) dans n’importe quelle partie d’une requête.
 
 Les clauses `GROUP BY`, `ORDER BY` et `LIMIT BY` peuvent accepter des arguments positionnels. Pour activer cette fonctionnalité, activez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). Ainsi, par exemple, `ORDER BY 1,2` triera les lignes de la table d’abord selon la première colonne, puis selon la deuxième.
 
-<div id="implementation-details">
-  ## Détails d’implémentation
-</div>
+## Détails d’implémentation {#implementation-details}
 
 Si la requête omet les clauses `DISTINCT`, `GROUP BY` et `ORDER BY`, ainsi que les sous-requêtes `IN` et `JOIN`, elle sera entièrement traitée en flux, avec une consommation de RAM en O(1). Sinon, la requête peut consommer beaucoup de RAM si les limites appropriées ne sont pas définies :
 
@@ -234,9 +219,7 @@ Si la requête omet les clauses `DISTINCT`, `GROUP BY` et `ORDER BY`, ainsi que 
 
 Pour plus d’informations, consultez la section « Paramètres ». Il est possible d’utiliser le tri externe (en enregistrant des tables temporaires sur un disque) et l’agrégation externe.
 
-<div id="select-modifiers">
-  ## Modificateurs de `SELECT`
-</div>
+## Modificateurs de `SELECT` {#select-modifiers}
 
 Vous pouvez utiliser les modificateurs suivants dans les requêtes `SELECT`.
 
@@ -246,9 +229,7 @@ Vous pouvez utiliser les modificateurs suivants dans les requêtes `SELECT`.
 | [`EXCEPT`](/fr/reference/statements/select/except_modifier)   | Spécifie le nom d&#39;une ou de plusieurs colonnes à exclure du résultat. Tous les noms de colonnes correspondants sont omis de la sortie.                                                                                                                                                                                                                                                                                              |
 | [`REPLACE`](/fr/reference/statements/select/replace_modifier) | Spécifie un ou plusieurs [alias d&#39;expression](/fr/reference/syntax#expression-aliases). Chaque alias doit correspondre au nom d&#39;une colonne de l&#39;instruction `SELECT *`. Dans la liste des colonnes de sortie, la colonne correspondant à l&#39;alias est remplacée par l&#39;expression de ce `REPLACE`. Ce modificateur ne change ni les noms ni l&#39;ordre des colonnes. Il peut toutefois modifier la valeur et son type. |
 
-<div id="modifier-combinations">
-  ### Combinaisons de modificateurs
-</div>
+### Combinaisons de modificateurs {#modifier-combinations}
 
 Vous pouvez utiliser chaque modificateur séparément ou les combiner.
 
@@ -278,9 +259,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 └─────────────────┴────────┘
 ```
 
-<div id="settings-in-select-query">
-  ## SETTINGS dans la requête SELECT
-</div>
+## SETTINGS dans la requête SELECT {#settings-in-select-query}
 
 Vous pouvez spécifier les paramètres nécessaires directement dans la requête `SELECT`. La valeur du paramètre s’applique uniquement à cette requête, puis est réinitialisée à sa valeur par défaut ou à sa valeur précédente une fois la requête exécutée.
 

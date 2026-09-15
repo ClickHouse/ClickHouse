@@ -14,9 +14,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 理解 [S3Queue 实现的 original PR](https://github.com/ClickHouse/ClickHouse/pull/49086/files#diff-e1106769c9c8fbe48dd84f18310ef1a250f2c248800fde97586b3104e9cd6af8R183) 中的这条说明非常重要：当 `MATERIALIZED VIEW` 关联到该引擎时，S3Queue 表引擎就会开始在后台收集数据。
 
-<div id="creating-a-table">
-  ## CREATE 表
-</div>
+## CREATE 表 {#creating-a-table}
 
 ```sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
@@ -84,37 +82,32 @@ SETTINGS
     mode = 'ordered';
 ```
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 要获取为该表配置的设置列表，请使用 `system.s3_queue_settings` 表。该功能从 `24.10` 版本开始可用。
 
-<Info>
-  **设置名称 (24.7+)&#x20;**
-
+<Note title="设置名称 (24.7+)">
   从 24.7 版本开始，S3Queue 设置既可以使用 `s3queue_` 前缀指定，也可以不使用：
 
-  * **现代语法** (24.7+) ：`processing_threads_num`、`tracked_file_ttl_sec` 等。
-  * **旧语法** (所有版本) ：`s3queue_processing_threads_num`、`s3queue_tracked_file_ttl_sec` 等。
+  * **现代语法** (24.7+)：`processing_threads_num`、`tracked_file_ttl_sec` 等。
+  * **旧语法** (所有版本)：`s3queue_processing_threads_num`、`s3queue_tracked_file_ttl_sec` 等。
 
   24.7+ 同时支持这两种形式。本页中的示例使用不带前缀的现代语法。
-</Info>
+</Note>
 
-<div id="mode">
-  ### 模式
-</div>
+### 模式 {#mode}
 
 可选值：
 
 * unordered — 在 unordered 模式下，会通过 ZooKeeper 中的持久节点跟踪所有已处理文件的集合。
-* ordered — 在有序模式下，文件按字典序处理。这意味着，如果某个名为 &#39;BBB&#39; 的文件已在某个时间点被处理，之后又有一个名为 &#39;AA&#39; 的文件被添加到存储桶中，那么它会被忽略。ZooKeeper 中只会存储已成功消费文件里名称最大的文件名 (按字典序) ，以及因加载失败而需要重试的文件名。
+* ordered — 在 ordered 模式下，文件按字典序处理。这意味着，如果某个名为 &#39;BBB&#39; 的文件已在某个时间点被处理，之后又有一个名为 &#39;AA&#39; 的文件被添加到 bucket 中，那么它会被忽略。ZooKeeper 中只会存储已成功消费文件里名称最大的文件名 (按字典序) ，以及因加载失败而需要重试的文件名。
+* exclusive - 在 exclusive 模式下，不会在 ZooKeeper 中跟踪任何内容。你的 S3 URL (`S3Queue()` 中的第一个参数) *必须*解析为唯一的主机或路径。此模式仅适用于高吞吐量和/或自托管场景。
 
 默认值：在 24.6 之前的版本中为 `ordered`。从 24.6 开始不再提供默认值，必须手动指定该设置。对于在更早版本中创建的表，出于兼容性考虑，默认值将继续保持为 `Ordered`。
 
-<div id="after_processing">
-  ### `after_processing`
-</div>
+使用 `exclusive` 模式时，支持在 S3 URL 中使用 `{replica}` 宏。
+
+### `after_processing` {#after_processing}
 
 成功处理后如何处置文件。
 
@@ -150,9 +143,7 @@ SETTINGS
 
 添加标签时，需要通过 `after_processing_tag_key` 和 `after_processing_tag_value` 提供标签键和值。
 
-<div id="after_processing_retries">
-  ### `after_processing_retries`
-</div>
+### `after_processing_retries` {#after_processing_retries}
 
 在放弃之前，对请求的后处理操作进行重试的次数。
 
@@ -162,9 +153,7 @@ SETTINGS
 
 默认值：`10`。
 
-<div id="after_processing_move_access_key_id">
-  ### `after_processing_move_access_key_id`
-</div>
+### `after_processing_move_access_key_id` {#after_processing_move_access_key_id}
 
 如果目标端是另一个 S3 bucket，则用于将处理成功的文件移动到该 bucket 的 Access Key ID。
 
@@ -174,9 +163,7 @@ SETTINGS
 
 默认值：空字符串。
 
-<div id="after_processing_move_prefix">
-  ### `after_processing_move_prefix`
-</div>
+### `after_processing_move_prefix` {#after_processing_move_prefix}
 
 用于移动已成功处理文件后的路径前缀。适用于以下两种情况：在同一个 bucket 内移动，或移动到另一个 bucket。
 
@@ -186,9 +173,7 @@ SETTINGS
 
 默认值：空字符串。
 
-<div id="after_processing_move_preserve_path">
-  ### `after_processing_move_preserve_path`
-</div>
+### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
 
 如果为 `true`，在移动已成功处理的文件时，会将完整的源对象路径追加到 `after_processing_move_prefix` 后面，从而在目标端保留 bucket 下的源目录结构。如果为 `false`，则只使用文件名，源目录结构会被展平。
 
@@ -198,9 +183,7 @@ SETTINGS
 
 默认值：`false`。
 
-<div id="after_processing_move_secret_access_key">
-  ### `after_processing_move_secret_access_key`
-</div>
+### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
 
 如果目标端是另一个 S3 bucket，则这是用于将已成功处理的文件移动到该bucket的 Secret Access Key。
 
@@ -210,9 +193,7 @@ SETTINGS
 
 默认值：空字符串。
 
-<div id="after_processing_move_uri">
-  ### `after_processing_move_uri`
-</div>
+### `after_processing_move_uri` {#after_processing_move_uri}
 
 如果目标端是另一个 S3 bucket，则用于将已成功处理的文件移动到该 S3 bucket 的 URI。
 
@@ -222,9 +203,7 @@ SETTINGS
 
 默认值：空字符串。
 
-<div id="after_processing_tag_key">
-  ### `after_processing_tag_key`
-</div>
+### `after_processing_tag_key` {#after_processing_tag_key}
 
 当 `after_processing='tag'` 时，用于为处理成功的文件添加标签的标签键。
 
@@ -234,9 +213,7 @@ SETTINGS
 
 默认值：空字符串。
 
-<div id="after_processing_tag_value">
-  ### `after_processing_tag_value`
-</div>
+### `after_processing_tag_value` {#after_processing_tag_value}
 
 当 `after_processing='tag'` 时，用于为成功处理的文件添加标签的标签值。
 
@@ -246,9 +223,7 @@ SETTINGS
 
 默认值：空字符串。
 
-<div id="keeper_path">
-  ### `keeper_path`
-</div>
+### `keeper_path` {#keeper_path}
 
 ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会根据 `s3queue_default_zookeeper_path`、数据库 UUID 和表 UUID 构建该路径。绝对路径值 (以 `/` 开头) 会按原样使用，而相对路径值会追加到已配置的前缀后。诸如 `{database}` 或 `{uuid}` 这样的宏会在引擎连接到 ZooKeeper 之前展开。
 
@@ -260,9 +235,7 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`/`。
 
-<div id="loading_retries">
-  ### `loading_retries`
-</div>
+### `loading_retries` {#loading_retries}
 
 文件加载最多可重试指定次数。
 可能的值：
@@ -271,17 +244,13 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`10`。
 
-<div id="processing_threads_num">
-  ### `processing_threads_num`
-</div>
+### `processing_threads_num` {#processing_threads_num}
 
-用于执行处理操作的线程数。仅适用于 `Unordered` 模式。
+用于执行处理操作的线程数。仅适用于 `Unordered` 或 `Exclusive` 模式。
 
 默认值：CPU 数量或 16。
 
-<div id="parallel_inserts">
-  ### `parallel_inserts`
-</div>
+### `parallel_inserts` {#parallel_inserts}
 
 默认情况下，`processing_threads_num` 只会产生一个 `INSERT`，因此只会用多线程下载文件并进行解析。
 但这会限制并行度，因此为了获得更好的吞吐量，建议使用 `parallel_inserts=true`，这样就可以并行写入数据 (但请注意，这会导致 MergeTree 家族生成更多的数据分区片段) 。
@@ -292,17 +261,13 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`false`。
 
-<div id="enable_logging_to_queue_log">
-  ### `enable_logging_to_queue_log`
-</div>
+### `enable_logging_to_queue_log` {#enable_logging_to_queue_log}
 
 启用向 `system.s3queue_log` 写入日志。
 
 默认值：`1`。
 
-<div id="polling_min_timeout_ms">
-  ### `polling_min_timeout_ms`
-</div>
+### `polling_min_timeout_ms` {#polling_min_timeout_ms}
 
 指定 ClickHouse 在发起下一次轮询之前的最短等待时间，单位为毫秒。
 
@@ -312,9 +277,7 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`1000`。
 
-<div id="polling_max_timeout_ms">
-  ### `polling_max_timeout_ms`
-</div>
+### `polling_max_timeout_ms` {#polling_max_timeout_ms}
 
 定义 ClickHouse 在发起下一次轮询前最多等待多长时间，单位为毫秒。
 
@@ -324,9 +287,7 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`600000`。
 
-<div id="polling_backoff_ms">
-  ### `polling_backoff_ms`
-</div>
+### `polling_backoff_ms` {#polling_backoff_ms}
 
 用于确定在未发现新文件时，在上一次轮询间隔基础上额外增加的等待时间。下一次轮询会在上一次间隔与该 backoff 值之和，或最大间隔 (取较小者) 之后进行。
 
@@ -336,11 +297,9 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`30000`。
 
-<div id="tracked_files_limit">
-  ### `tracked_files_limit`
-</div>
+### `tracked_files_limit` {#tracked_files_limit}
 
-如果使用“unordered”模式，该参数可用于限制 Zookeeper 节点数量；对于“ordered”模式则不生效。
+如果使用“unordered”模式，该参数可用于限制 Zookeeper 节点数量；对于“ordered”或“exclusive”模式则不生效。
 达到限制后，最早处理的文件会从 ZooKeeper 节点中删除，并被重新处理。
 
 可能的值：
@@ -349,11 +308,9 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`1000`。
 
-<div id="tracked_file_ttl_sec">
-  ### `tracked_file_ttl_sec`
-</div>
+### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
-在“unordered”模式下，用于指定已处理文件在 ZooKeeper 节点中保留的最长时长 (默认永久保留) ；在“ordered”模式下，此设置无效。
+在“unordered”模式下，用于指定已处理文件在 ZooKeeper 节点中保留的最长时长 (默认永久保留) ；在“ordered”或“exclusive”模式下，此设置无效。
 超过指定秒数后，文件将被重新导入。
 
 可能的值：
@@ -362,53 +319,39 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`0`。
 
-<div id="cleanup_interval_min_ms">
-  ### `cleanup_interval_min_ms`
-</div>
+### `cleanup_interval_min_ms` {#cleanup_interval_min_ms}
 
 用于“Ordered”模式。定义后台任务重新调度间隔的最小下限；该任务负责维护已跟踪文件的生存时间 (TTL) 和已跟踪文件集合的最大数量。
 
 默认值：`60000`。
 
-<div id="cleanup_interval_max_ms">
-  ### `cleanup_interval_max_ms`
-</div>
+### `cleanup_interval_max_ms` {#cleanup_interval_max_ms}
 
 用于“Ordered”模式。定义后台任务重新调度间隔的最大上限，该任务负责维护已跟踪文件的生存时间 (TTL) 以及已跟踪文件的最大数量。
 
 默认值：`60000`。
 
-<div id="buckets">
-  ### `buckets`
-</div>
+### `buckets` {#buckets}
 
 适用于“Ordered”模式。自 `24.6` 起可用。如果 S3Queue 表存在多个副本，且每个副本都使用 Keeper 中相同的元数据目录，那么 `buckets` 的值至少应等于副本数量。如果同时还使用了 `processing_threads` 设置，则通常还应进一步增大 `buckets` 的值，因为它决定了 `S3Queue` 处理的实际并行度。
 
-<div id="use_persistent_processing_nodes">
-  ### `use_persistent_processing_nodes`
-</div>
+### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
 
 持久化处理节点可避免在处理已开始、但 S3Queue 尚未提交已处理文件时 Keeper 会话过期所导致的重复处理。早期版本使用临时处理中节点，在这种情况下可能会产生重复项。
 
 此设置已弃用，其值会被忽略：始终使用持久化处理节点。即使使用 `use_persistent_processing_nodes = 0` 创建表，仍会使用持久化处理节点；设置内部信息 (包括 `SHOW CREATE TABLE`) 也会始终报告 `1`，无论提供的值为何。
 
-<div id="persistent_processing_node_ttl_seconds">
-  ### `persistent_processing_node_ttl_seconds`
-</div>
+### `persistent_processing_node_ttl_seconds` {#persistent_processing_node_ttl_seconds}
 
 如果服务器发生非正常终止，则可能会遗留未被移除的处理中节点。此设置定义了一个时间段，超过该时间后，可以安全地清理这些处理中节点。同样的生存时间 (TTL) 也用于 `Ordered` 模式下的存储桶锁，而该锁的持有时间可能会长于单个处理中节点，因此设置该值时也应将这一点考虑在内。
 
 默认值：`21600` (6 小时) 。
 
-<div id="s3-settings">
-  ## S3 相关设置
-</div>
+## S3 相关设置 {#s3-settings}
 
 该引擎支持所有与 S3 相关的设置。有关 S3 设置的更多信息，请参见[这里](/zh/reference/engines/table-engines/integrations/s3)。
 
-<div id="s3-role-based-access">
-  ## S3 基于角色的访问
-</div>
+## S3 基于角色的访问 {#s3-role-based-access}
 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
@@ -431,9 +374,7 @@ SETTINGS
     ...
 ```
 
-<div id="ordered-mode">
-  ## S3Queue ordered 模式
-</div>
+## S3Queue ordered 模式 {#ordered-mode}
 
 `S3Queue` 处理模式可以在 ZooKeeper 中存储更少的元数据，但有一个限制：按时间后添加的文件，其名称按字母数字顺序必须更大。
 
@@ -445,17 +386,13 @@ SETTINGS
 不建议在 `24.6` 版本之前使用 `(s3queue_)processing_threads_num` 设置。
 `(s3queue_)buckets` 设置从 `24.6` 版本开始可用。
 
-<div id="select">
-  ## 从 S3Queue 表引擎中 SELECT
-</div>
+## 从 S3Queue 表引擎中 SELECT {#select}
 
 默认情况下，S3Queue 表禁止执行 SELECT 查询。这遵循了常见的队列模式：数据读取一次后就会从队列中移除。禁止 SELECT 是为了防止意外的数据丢失。
 不过，在某些情况下，这样做也可能很有用。为此，你需要将设置 `stream_like_engine_allow_direct_select` 设为 `True`。
-S3Queue 引擎针对 SELECT 查询有一个特殊设置：`commit_on_select`。将其设为 `False` 可在读取后保留队列中的数据，设为 `True` 则会将其移除。
+S3Queue 引擎针对 SELECT 查询有一个特殊设置：`commit_on_select`。将其设为 `False` 可在读取后保留队列中的数据，设为 `True` 则会将其移除。 (注意：此设置在 `exclusive` 模式下没有意义，会被忽略；`exclusive` 模式始终表现得如同 `commit_on_select` 为 `True`。)
 
-<div id="description">
-  ## 描述
-</div>
+## 描述 {#description}
 
 `SELECT` 对流式导入并没有太大用处 (调试除外) ，因为每个文件只能导入一次。更实用的做法是使用 [materialized views](/zh/reference/statements/create/view) 创建实时处理线程。为此：
 
@@ -482,9 +419,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
   SELECT * FROM stats ORDER BY name;
 ```
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。
 * `_file` — 文件名。
@@ -493,9 +428,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 有关虚拟列的更多信息，请参见[此处](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)。
 
-<div id="wildcards-in-path">
-  ## 路径中的通配符
-</div>
+## 路径中的通配符 {#wildcards-in-path}
 
 `path` 参数可以使用类似 bash 的通配符来指定多个文件。要被处理的文件必须存在，并且与整个路径模式匹配。文件列表是在执行 `SELECT` 时确定的 (而不是在 `CREATE` 时) 。
 
@@ -507,9 +440,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 带有 `{}` 的写法与 [remote](/zh/reference/functions/table-functions/remote) 表函数类似。
 
-<div id="limitations">
-  ## 限制
-</div>
+## 限制 {#limitations}
 
 1. 出现重复行可能是由以下原因造成的：
 
@@ -523,9 +454,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 3. ClickHouse 节点发生设备级断电时可能会丢失行。文件一旦完成插入，就会在 Keeper 中记录为已处理 (当 `after_processing = 'delete'` 时，其源对象也会被删除) ，但插入的行只有在目标分片执行 fsync 后才会持久化，而默认情况下这不会同步发生 (`fsync_after_insert = 0`) 。Keeper 会被强制同步，并且通常运行在单独的节点上，因此能够在该节点断电后继续存活。如果节点在文件提交为已处理后、目标分片 fsync 前断电，重启时不会重新读取该文件，其行将丢失 (使用 `after_processing = 'delete'` 时无法恢复) 。普通的进程 kill 不会暴露此问题，因为页缓存仍会保留。对于推荐的 materialized view 消费路径 (仅在整个插入管道完成后才提交文件) ，在目标 `MergeTree` 表上设置 `fsync_after_insert = 1` (以及 `fsync_part_directory = 1`) 可确保在文件提交为已处理前插入的分片已持久化，从而大幅缩小这一时间窗口。这不适用于设置了 `commit_on_select = 1` 的直接 `INSERT ... SELECT`，在这种情况下，文件会在读取结束时提交，而目标 sink 尚未完成其最后一个分片。
 
-<div id="introspection">
-  ## 内部信息
-</div>
+## 内部信息 {#introspection}
 
 如需查看内部信息，可使用无状态表 `system.s3queue_metadata_cache` 和 `system.s3_queue_metadata`，以及持久化表 `system.s3queue_log`。
 

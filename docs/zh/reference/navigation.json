@@ -124,6 +124,7 @@
                     "zh/reference/statements/create/table/replace-table"
                   ]
                 },
+                "zh/reference/statements/create/token",
                 "zh/reference/statements/create/user",
                 "zh/reference/statements/create/view"
               ]
@@ -139,6 +140,7 @@
             "zh/reference/statements/explain",
             "zh/reference/statements/grant",
             "zh/reference/statements/hypothetical-index",
+            "zh/reference/statements/hypothetical-projection",
             "zh/reference/statements/in",
             "zh/reference/statements/insert-into",
             "zh/reference/statements/kill",
@@ -419,13 +421,20 @@
             "zh/reference/engines/database-engines/atomic",
             "zh/reference/engines/database-engines/backup",
             "zh/reference/engines/database-engines/datalake",
+            "zh/reference/engines/database-engines/dictionary",
+            "zh/reference/engines/database-engines/filesystem",
+            "zh/reference/engines/database-engines/hdfs",
             "zh/reference/engines/database-engines/materialized-postgresql",
+            "zh/reference/engines/database-engines/memory",
             "zh/reference/engines/database-engines/mysql",
+            "zh/reference/engines/database-engines/ordinary",
             "zh/reference/engines/database-engines/postgresql",
             "zh/reference/engines/database-engines/remote",
             "zh/reference/engines/database-engines/replicated",
+            "zh/reference/engines/database-engines/s3",
             "zh/reference/engines/database-engines/shared",
-            "zh/reference/engines/database-engines/sqlite"
+            "zh/reference/engines/database-engines/sqlite",
+            "zh/reference/engines/database-engines/url"
           ]
         }
       ]
@@ -1066,14 +1075,17 @@
         "zh/reference/system-tables/histogram_metric_log",
         "zh/reference/system-tables/histogram_metrics",
         "zh/reference/system-tables/hypothetical_indexes",
+        "zh/reference/system-tables/hypothetical_projections",
         "zh/reference/system-tables/iceberg_files",
         "zh/reference/system-tables/iceberg_history",
         "zh/reference/system-tables/iceberg_metadata_log",
         "zh/reference/system-tables/information_schema",
         "zh/reference/system-tables/instrumentation",
+        "zh/reference/system-tables/jemalloc_arena_bins",
         "zh/reference/system-tables/jemalloc_bins",
         "zh/reference/system-tables/jemalloc_stats",
         "zh/reference/system-tables/jemalloc_profile_text",
+        "zh/reference/system-tables/jemalloc_sampled_allocations",
         "zh/reference/system-tables/kafka_consumers",
         "zh/reference/system-tables/keeper_changelogs",
         "zh/reference/system-tables/keeper_cluster",
@@ -1135,6 +1147,7 @@
         "zh/reference/system-tables/schema_inference_cache",
         "zh/reference/system-tables/server_settings",
         "zh/reference/system-tables/session_log",
+        "zh/reference/system-tables/session_query_ids",
         "zh/reference/system-tables/settings",
         "zh/reference/system-tables/settings_changes",
         "zh/reference/system-tables/settings_profile_elements",

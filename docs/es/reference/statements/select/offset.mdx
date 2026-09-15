@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+Las formas del estándar SQL `OFFSET ... FETCH` no se pueden combinar con la forma de rango [`LIMIT ... AFTER ... UNTIL`](/es/reference/statements/select/limit#limit-after-until).
+
 El valor de `offset_row_count` o `fetch_row_count` puede ser un número o una constante literal. Puede omitir `fetch_row_count`; de forma predeterminada, es igual a 1.
 
 `OFFSET` especifica cuántas filas se omiten antes de empezar a devolver filas del conjunto de resultados de la consulta. `OFFSET n` omite las primeras `n` filas del resultado.
@@ -57,9 +59,7 @@ La opción `WITH TIES` se usa para devolver también las filas adicionales que e
   El `offset` real también puede depender de la configuración [offset](/es/reference/settings/session-settings/other#offset).
 </Note>
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 Tabla de entrada:
 

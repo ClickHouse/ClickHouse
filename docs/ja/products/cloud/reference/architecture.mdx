@@ -8,11 +8,12 @@ doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Cloud のアーキテクチャ" />
 
 <div id="storage-backed-by-object-store">
-  ## オブジェクトストアをバックエンドとするストレージ
+  ## オブジェクトストアをバックエンドとするストレージ {#storage-backed-by-object-store}
 </div>
 
 * 事実上無制限のストレージ
@@ -20,7 +21,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * データの保存コストを大幅に抑えられ、特にアクセス頻度の低いデータに適しています
 
 <div id="compute">
-  ## コンピュート
+  ## コンピュート {#compute}
 </div>
 
 * 自動スケーリングとアイドル化: 事前にサイジングする必要がなく、ピーク時の利用に備えて過剰にプロビジョニングする必要もありません
@@ -28,30 +29,30 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * デフォルトでセキュアかつ高可用性を確保
 
 <div id="administration">
-  ## 管理
+  ## 管理 {#administration}
 </div>
 
 * セットアップ、監視、バックアップ、請求は当社が行います。
 * コスト管理機能はデフォルトで有効になっており、Cloud Console から調整できます。
 
 <div id="service-isolation">
-  ## サービス分離
+  ## サービス分離 {#service-isolation}
 </div>
 
 <div id="network-isolation">
-  ### ネットワーク分離
+  ### ネットワーク分離 {#network-isolation}
 </div>
 
 すべてのサービスは、ネットワークレイヤーで分離されています。
 
 <div id="compute-isolation">
-  ### コンピュート分離
+  ### コンピュート分離 {#compute-isolation}
 </div>
 
 すべてのサービスは、それぞれの Kubernetes 名前空間内の別々のポッドにデプロイされ、ネットワークレベルで分離されています。
 
 <div id="storage-isolation">
-  ### ストレージ分離
+  ### ストレージ分離 {#storage-isolation}
 </div>
 
 すべてのサービスは、共有バケット (AWS、GCP) またはストレージコンテナー (Azure) 内の個別のサブパスを使用します。
@@ -61,14 +62,22 @@ AWS では、ストレージへのアクセスは AWS IAM によって制御さ�
 GCP と Azure では、サービスごとにオブジェクトストレージレベルで分離されます (すべてのサービスがそれぞれ専用のバケットまたはストレージコンテナーを持ちます) 。
 
 <div id="compute-compute-separation">
-  ## Compute-compute separation
+  ## Compute-compute separation {#compute-compute-separation}
 </div>
 
 [Compute-compute separation](/ja/products/cloud/features/infrastructure/warehouses) を使用すると、共有のオブジェクトストレージを利用しながら、それぞれが独自のサービスURLを持つ複数のコンピュートノードグループを作成できます。これにより、同じデータを共有したまま、書き込みと読み取りのように異なるユースケースごとにコンピュートを分離できます。また、必要に応じて各コンピュートグループを個別にスケーリングできるため、リソースの利用効率も向上します。
 
-<div id="concurrency-limits">
-  ## 同時実行数の制限
-</div>
+## On-Demand コンピュート {#on-demand-compute}
+
+<PrivatePreviewBadge />
+
+On-Demand コンピュート は、既存の ClickHouse Cloud サービスを介して、ClickHouse が管理するプールの **ワーカー** をサポート対象のワークロードに一時的に割り当てる機能です。クエリの認証と調整はお使いのサービスが行い、割り当てられたワーカーが対象となるスキャン、JOIN、集計処理の大部分をサービスのコンピュート外で実行します。プールは複数の ClickHouse Cloud サービス間で共有されますが、各ワーカーが同時に担当するサービスは 1 つだけです。
+
+プライベートプレビュー期間中、On-Demand コンピュート がサポートするのは対象となる `SELECT` クエリのみです。可用性はベストエフォートであり、パフォーマンスは変動します。また、ClickHouse Cloud の SLO および SLA は適用されません。
+
+[プライベートプレビュー利用規約](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
+
+## 同時実行数の制限 {#concurrency-limits}
 
 お使いの ClickHouse Cloud サービスでは、1 秒あたりのクエリ数 (QPS) に制限はありません。ただし、レプリカごとに同時実行できるクエリ数の上限は 1000 件です。QPS は最終的に、平均クエリ実行時間とサービス内のレプリカ数によって決まります。
 

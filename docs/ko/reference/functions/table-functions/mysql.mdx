@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 원격 MySQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-<div id="arguments">
-  ## 인수
-</div>
+## 인수 {#arguments}
 
 | 인수                    | 설명                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,9 +35,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 그 외 조건과 `LIMIT` 샘플링 제약은 MySQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-값 인수)로 전달됩니다.
 
@@ -55,9 +49,7 @@ MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-�
 
 동일한 자격 증명을 서버의 파일 경로로 `ssl_ca`, `ssl_cert`, `ssl_key`에 지정할 수도 있습니다. 단, **서버 구성 파일에 정의된 명명된 컬렉션에서만** 가능하며, 이러한 값은 쿼리에서 재정의할 수 없습니다. 서버는 자체 권한으로 해당 파일을 열므로, SQL에서 경로를 허용하면 MySQL 소스를 정의할 수 있는 모든 사용자가 로컬 파일 시스템을 탐색하고, 본인에게 읽기 권한이 없는 인증서와 키를 사용해 인증할 수 있게 됩니다.
 
-<div id="passing-a-query">
-  ## 테이블 이름 대신 쿼리 전달하기
-</div>
+## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
 
 테이블 이름 대신, 세 번째 인수로 MySQL에 그대로 전달할 `SELECT` 쿼리를 지정할 수 있습니다. 결과 테이블의 구조는 쿼리 결과를 바탕으로 자동 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸서 작성할 수 있습니다:
 
@@ -71,7 +63,7 @@ SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2
 <Note>
   서브쿼리 형식 `(SELECT ...)`은 ClickHouse에서 파싱된 후 서버로 전송되기 전에 MySQL 방언(백틱 식별자 인용)으로 다시 직렬화됩니다. 따라서 유효한 ClickHouse SQL이어야 합니다. ClickHouse가 파싱하지 않는 MySQL 전용 구문을 전달하려면 `query('...')` 형식을 사용하십시오. 이 형식의 텍스트는 MySQL로 원문 그대로 전송됩니다.
 
-  전달된 쿼리 바깥의 ClickHouse 쿼리에 있는 `WHERE`, `LIMIT`, 집계 등은 **푸시다운되지 않으며**, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. MySQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 푸시다운할 수 없는 바깥쪽 필터는 로컬에서 적용되는 대신 예외를 발생시키며 거부됩니다.
+  전달된 쿼리 바깥의 ClickHouse 쿼리에 있는 `WHERE`, `LIMIT`, 집계 등은 **푸시다운되지 않으며**, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. MySQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 테이블 함수의 컬럼에 대한 바깥쪽 필터는 전달된 쿼리로 푸시할 수 없기 때문에 로컬에서 적용되는 대신 예외를 발생시키며 거부됩니다. 이 검사는 최상위 `WHERE` 프레디케이트와 최상위 `AND`의 각 논리곱 항을 대상으로 합니다. 이 테이블의 컬럼에 대한 `PREWHERE`는 이 설정의 대상이 아닙니다. 이 테이블 엔진은 `PREWHERE`를 지원하지 않으므로, 해당 쿼리는 설정과 무관하게 `ILLEGAL_PREWHERE`로 거부됩니다. 분석기(기본값)를 사용하는 경우, 검사는 애초에 필터를 푸시다운할 수 있는 위치에서만 수행됩니다. 즉, 이 테이블이 쿼리의 유일한 테이블인 경우, `INNER JOIN`의 양쪽 중 어느 한쪽인 경우, 또는 외부 조인의 보존 측(`LEFT JOIN`의 왼쪽, `RIGHT JOIN`의 오른쪽)인 경우입니다. `LEFT`/`RIGHT JOIN`의 비보존 측과 `FULL JOIN`의 양쪽에서는 아무것도 푸시다운되지 않고 아무것도 검사되지 않으므로, 엄격 모드에서도 이 테이블의 컬럼에 대한 필터는 조인 이후 로컬에서 적용됩니다. 검사가 수행되는 위치에서, 바깥 쿼리에서 조인된 다른 테이블을 참조하는 프레디케이트는 푸시다운되지 않으며 검사 대상에서 제외됩니다. 이는 조인된 쪽만 참조하든, 하나의 비-`AND` 표현식(예: `OR`) 안에서 이 테이블과 혼합해 참조하든 동일합니다. 이러한 프레디케이트는 평소의 ClickHouse 평가 시점(조인 이후의 `WHERE`, 조인 이전의 `PREWHERE`)을 유지하며 거부되지 않습니다. 구 분석기(`enable_analyzer = 0`)에서는 이러한 범위 제한이 적용되지 않습니다. 이 테이블이 조인 트리의 첫 번째 테이블인 경우 조인된 쪽에 대한 프레디케이트를 포함해 바깥쪽 필터 전체가 검사되며, 조인된 오른쪽 테이블은 검사되지 않습니다.
 </Note>
 
 여러 레플리카를 지원하며, 각 레플리카는 `|`로 구분해 나열해야 합니다. 예시는 다음과 같습니다.
@@ -86,9 +78,7 @@ SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'us
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-<div id="returned-value">
-  ## 반환 값
-</div>
+## 반환 값 {#returned-value}
 
 원본 MySQL 테이블과 동일한 컬럼으로 이루어진 테이블 객체입니다.
 
@@ -100,9 +90,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
   `INSERT` 쿼리에서 테이블 함수 `mysql(...)`를 컬럼 이름 목록이 포함된 테이블 이름과 구분하려면 `FUNCTION` 또는 `TABLE FUNCTION` 키워드를 사용해야 합니다. 아래 예시를 참조하십시오.
 </Note>
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 MySQL 테이블:
 
@@ -146,9 +134,7 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 MySQL 프로토콜 연결에 대한 압축을 활성화합니다.
 
@@ -216,9 +202,7 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-<div id="related">
-  ## 관련
-</div>
+## 관련 {#related}
 
 * [「MySQL」 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql)
 * [MySQL을 딕셔너리 소스로 사용](/ko/reference/statements/create/dictionary/sources/mysql)

@@ -14,9 +14,25 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="webassembly_udf_max_fuel">
-  ## webassembly_udf_max_fuel
-</div>
+## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Nueva configuración que controla la fracción de la memoria lineal de una instancia de WebAssembly UDF que puede ocupar la entrada serializada de una llamada, lo que también permite dividir dinámicamente dicha entrada según su tamaño serializado; `compatibility` inferior a 26.9 la establece en 0 y restaura el comportamiento anterior, en el que `webassembly_udf_max_input_block_size = 0` significaba una llamada por bloque del pipeline."}]}]} />
+
+Fracción de la memoria lineal de una instancia de WebAssembly UDF que puede ocupar la entrada serializada de una llamada. Debe ser como mínimo 0 y como máximo 1; el valor predeterminado reserva la otra mitad para que el guest mantenga su propio conjunto de trabajo junto al búfer de entrada.
+
+El margen por debajo de 1 es lo que hace seguro el batching: los datos del guest, la pila y el allocator comparten esa memoria y son invisibles para el host. Una proporción cercana a 1 no les deja espacio, por lo que una llamada dimensionada según ella puede seguir fallando dentro del allocator del guest.
+
+Es de solo lectura para `ABI BUFFERED_V1` y dimensiona las llamadas solo mientras `webassembly_udf_max_input_block_size` sea 0; un tamaño de bloque distinto de cero limita las filas por llamada.
+
+Un batch nunca se reduce por debajo de una sola fila, por lo que una fila cuyo tamaño serializado supera el presupuesto se pasa por sí sola, y una demasiado grande para la memoria lineal del módulo falla dentro del allocator del guest.
+
+Establézcalo en 0 para dejar la entrada sin dividir: todo el bloque del pipeline se pasa en una llamada.
+
+## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
 
 <ExperimentalBadge />
 
@@ -26,21 +42,19 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Límite de fuel por ejecución de cada instancia de WebAssembly UDF. Cada instrucción de WebAssembly consume cierta cantidad de fuel. El valor se escala en 1024 antes de pasarse al entorno de ejecución, por lo que `webassembly_udf_max_fuel = 1` corresponde a aproximadamente 1024 unidades de fuel. Establézcalo en 0 para no tener ningún límite finito. Se aplica solo a las funciones cuyo ajuste por función `webassembly_udf_enable_fuel` es true, que es el valor predeterminado.
 
-<div id="webassembly_udf_max_input_block_size">
-  ## webassembly_udf_max_input_block_size
-</div>
+## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración para limitar el tamaño del bloque de entrada de las UDF de WebAssembly."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración para limitar el tamaño del bloque de entrada de las WebAssembly UDF."}]}]} />
 
-Número máximo de filas que se pasan a una UDF de WebAssembly en un único bloque. Establézcalo en 0 para procesar todas las filas de una sola vez.
+Número máximo de filas que se pasan a una WebAssembly UDF en una única llamada. Un valor distinto de cero limita las filas por llamada y se aplica a todas las ABI.
 
-<div id="webassembly_udf_max_instances">
-  ## webassembly_udf_max_instances
-</div>
+Establézcalo en 0 para dimensionar las llamadas según su entrada serializada. Esto se aplica únicamente a `ABI BUFFERED_V1`, la única ABI que serializa un bloque de entrada completo en la memoria del guest: sus bloques se dividen de modo que la entrada de una llamada se mantenga dentro del valor de `webassembly_udf_input_split_memory_ratio` de la memoria lineal del módulo. `ROW_DIRECT` pasa sus argumentos como valores de WebAssembly y `ASSEMBLYSCRIPT` construye un objeto por fila, por lo que ninguna de las dos tiene una entrada serializada con la que dimensionar una llamada, y 0 deja intacto su bloque del pipeline.
+
+## webassembly_udf_max_instances {#webassembly_udf_max_instances}
 
 <ExperimentalBadge />
 
@@ -50,9 +64,7 @@ Número máximo de filas que se pasan a una UDF de WebAssembly en un único bloq
 
 Número máximo de instancias de WebAssembly UDF que pueden ejecutarse en paralelo por función.
 
-<div id="webassembly_udf_max_memory">
-  ## webassembly_udf_max_memory
-</div>
+## webassembly_udf_max_memory {#webassembly_udf_max_memory}
 
 <ExperimentalBadge />
 

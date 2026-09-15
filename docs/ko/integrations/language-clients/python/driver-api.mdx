@@ -13,15 +13,11 @@ doc_type: 'reference'
   *여기에 문서화되지 않은 메서드는 API의 일부로 간주되지 않으며, 제거되거나 변경될 수 있습니다.*
 </Note>
 
-<div id="client-initialization">
-  ## 클라이언트 초기화
-</div>
+## 클라이언트 초기화 {#client-initialization}
 
 동기 `Client`를 생성하려면 `clickhouse_connect.get_client`를 사용하십시오. 네이티브 `AsyncClient`를 생성하려면 `async` extra를 설치한 후 `clickhouse_connect.get_async_client`를 await하십시오.
 
-<div id="connection-arguments">
-  ### 연결 인수
-</div>
+### 연결 인수 {#connection-arguments}
 
 | 매개변수                       | 유형                                    | 기본값                         | 설명                                                                                                                                                                                                                                                                                                                                              |
 | -------------------------- | ------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -54,13 +50,12 @@ doc_type: 'reference'
 | `show_clickhouse_errors`   | bool, Boolean 문자열, `"scrub"`, 또는 None | `True`                      | 서버 오류, 전송 오류 및 스트림 도중 발생하는 `StreamFailureError`의 `str(exc)`를 제어합니다. `True`이면 요청 URL과 서버 버전 정보가 포함됩니다. `"scrub"`은 SQL 오류 텍스트와 심볼릭 이름은 유지하지만 호스트/URL 및 `(version ...)` 정보는 제거합니다. `False`는 일반 메시지를 반환합니다(서버 오류에서도 `code`는 설정됨). Boolean 문자열도 사용할 수 있습니다. 그 밖의 문자열은 `ProgrammingError`를 발생시킵니다. 전송 오류의 경우 `__cause__`와 트레이스백에는 원래 전송 예외가 계속 포함됩니다. |
 | `proxy_path`               | str                                   | `""`                        | 프록시를 통해 라우팅할 때 서버 URL에 추가되는 경로 접두사입니다.                                                                                                                                                                                                                                                                                                          |
 | `form_encode_query_params` | bool                                  | `False`                     | 쿼리 매개변수를 항상 form-encoded 요청 본문에 넣습니다. 이 값이 false여도 큰 비바이너리 매개변수 페이로드는 자동으로 이동됩니다.                                                                                                                                                                                                                                                               |
+| `native_codec`             | str 또는 None                           | 전역 설정, `"python"`           | 클라이언트가 관리하는 Native 형식 트래픽에 사용하는 실험적 코덱: `"python"`, `"rust"`, 또는 `"rust_strict"`. Rust 값을 사용하려면 `clickhouse-connect-core` 휠이 필요합니다. [Rust 코덱](/ko/integrations/language-clients/python/rust-codec)을 참조하십시오.                                                                                                                                        |
 | `rename_response_column`   | str 또는 None                           | `None`                      | 컬럼 이름 변경 방식: `"remove_prefix"`, `"to_camelcase"`, `"to_camelcase_without_prefix"`, `"to_underscore"`, 또는 `"to_underscore_without_prefix"`.                                                                                                                                                                                                      |
 
 비동기 팩토리에서는 aiohttp 연결 풀을 구성하기 위해 `connector_limit=100`, `connector_limit_per_host=20`, `keepalive_timeout=30.0`도 사용할 수 있습니다. `pool_mgr`는 사용할 수 없습니다. 동기식 chDB 백엔드에서는 `path`와 `chdb_options`를 사용할 수 있습니다. 자세한 내용은 [내장 chDB 백엔드](#embedded-chdb-backend)를 참조하십시오.
 
-<div id="httpstls-arguments">
-  ### HTTPS/TLS 인수
-</div>
+### HTTPS/TLS 인수 {#httpstls-arguments}
 
 | 매개변수               | 유형          | 기본값    | 설명                                                                                                                                                                  |
 | ------------------ | ----------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,9 +66,7 @@ doc_type: 'reference'
 | `server_host_name` | str or None | `None` | 터널 또는 Private Endpoint를 사용하는 경우처럼 `host`와 다를 때 사용할 TLS 인증서/SNI 호스트명입니다.                                                                                             |
 | `tls_mode`         | str or None | `None` | `"mutual"`은 ClickHouse 상호 TLS 인증을 사용합니다. `"proxy"`와 `"strict"`는 ClickHouse 인증서 인증 헤더를 활성화하지 않고 TLS 계층에서 인증서를 전송합니다. 기본값 `None`은 클라이언트 인증서가 제공되면 `"mutual"`처럼 동작합니다. |
 
-<div id="settings-argument">
-  ### 설정 인수
-</div>
+### 설정 인수 {#settings-argument}
 
 마지막으로, `get_client`의 `settings` 인수는 각 클라이언트 요청마다 추가 ClickHouse 설정을 서버에 전달하는 데 사용됩니다. 대부분의 경우 *readonly*=*1* 권한을 가진 사용자는 쿼리와 함께 전송된 설정을 변경할 수 없으므로, ClickHouse Connect는 최종 요청에서 이러한 설정을 제외하고 경고를 기록합니다. 다음 설정은 ClickHouse Connect에서 사용하는 HTTP 쿼리/세션에만 적용되며, 일반적인 ClickHouse 설정으로 문서화되어 있지 않습니다.
 
@@ -93,9 +86,7 @@ doc_type: 'reference'
 
 각 쿼리와 함께 전송할 수 있는 다른 ClickHouse 설정은 [ClickHouse 문서](/ko/reference/settings/session-settings)를 참조하십시오.
 
-<div id="client-creation-examples">
-  ### 클라이언트 생성 예시
-</div>
+### 클라이언트 생성 예시 {#client-creation-examples}
 
 * 매개변수를 지정하지 않으면 ClickHouse Connect 클라이언트는 `localhost`의 기본 HTTP 포트에 `default` 사용자로 비밀번호 없이 연결됩니다:
 
@@ -141,9 +132,7 @@ print(client.database)
 # Output: github
 ```
 
-<div id="embedded-chdb-backend">
-  ### 내장 chDB 백엔드
-</div>
+### 내장 chDB 백엔드 {#embedded-chdb-backend}
 
 실험적인 인프로세스 chDB 백엔드를 사용하려면 `clickhouse-connect[chdb]`를 설치하십시오. 이 백엔드는 동기식 클라이언트의 쿼리, 삽입, 스트리밍 및 Arrow 메서드를 제공합니다:
 
@@ -158,24 +147,18 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 
 기본값은 인메모리 데이터베이스입니다. 영구 저장소를 사용하려면 `path="/data/my_chdb"`를 지정하거나 `dsn="chdb:///data/my_chdb"`를 사용하십시오. 백엔드는 프로세스당 하나의 엔진 경로만 허용하며 `get_async_client` 또는 외부 데이터를 지원하지 않습니다.
 
-<div id="client-lifecycle-and-best-practices">
-  ## 클라이언트 수명 주기와 모범 사례
-</div>
+## 클라이언트 수명 주기와 모범 사례 {#client-lifecycle-and-best-practices}
 
 ClickHouse Connect 클라이언트를 생성하는 작업은 연결을 설정하고, 서버 메타데이터를 가져오고, 설정을 초기화하는 과정이 포함되므로 비용이 많이 드는 작업입니다. 최적의 성능을 위해 다음 모범 사례를 따르십시오:
 
-<div id="core-principles">
-  ### 핵심 원칙
-</div>
+### 핵심 원칙 {#core-principles}
 
 * **클라이언트 재사용**: 애플리케이션 시작 시 클라이언트를 한 번만 생성하고, 애플리케이션이 실행되는 동안 계속 재사용합니다
 * **빈번한 생성 방지**: 각 쿼리나 요청마다 새 클라이언트를 생성하지 마십시오
 * **적절한 정리**: 종료할 때는 연결 풀 리소스를 해제할 수 있도록 항상 클라이언트를 닫으십시오
 * **가능하면 공유**: 단일 클라이언트는 연결 풀을 통해 많은 동시 쿼리를 처리할 수 있습니다(아래의 스레딩 참고 사항 참조)
 
-<div id="basic-patterns">
-  ### 기본 패턴
-</div>
+### 기본 패턴 {#basic-patterns}
 
 단일 클라이언트를 재사용하세요:
 
@@ -211,9 +194,7 @@ for i in range(1000):
     client.close()
 ```
 
-<div id="multi-threaded-applications">
-  ### 멀티스레드 애플리케이션
-</div>
+### 멀티스레드 애플리케이션 {#multi-threaded-applications}
 
 <Warning>
   세션 ID를 사용하는 경우 클라이언트 인스턴스는 **스레드 안전하지 않습니다**. 기본적으로 클라이언트에는 자동 생성된 세션 ID가 있으며, 동일한 세션 내에서 동시 쿼리를 실행하면 `ProgrammingError`가 발생합니다.
@@ -262,9 +243,7 @@ def worker(thread_id):
     client.close()
 ```
 
-<div id="proper-cleanup">
-  ### 올바른 정리
-</div>
+### 올바른 정리 {#proper-cleanup}
 
 종료 시에는 항상 클라이언트를 닫으십시오. `client.close()`는 클라이언트가 자체 풀 관리자(pool manager)를 소유한 경우에만(예: 사용자 지정 TLS/프록시 옵션으로 생성된 경우) 클라이언트를 정리하고 풀링된 HTTP 연결을 닫습니다. 이 점에 유의하십시오. 기본 공유 풀에서는 `client.close_connections()`를 사용해 소켓을 미리 정리하십시오. 그렇지 않으면 연결은 idle 만료 시점이나 프로세스 종료 시 자동으로 회수됩니다.
 
@@ -291,9 +270,7 @@ with clickhouse_connect.get_client(
     result = client.query("SELECT 1")
 ```
 
-<div id="when-to-use-multiple-clients">
-  ### 여러 클라이언트를 사용해야 하는 경우
-</div>
+### 여러 클라이언트를 사용해야 하는 경우 {#when-to-use-multiple-clients}
 
 여러 클라이언트는 다음과 같은 경우에 적합합니다.
 
@@ -303,21 +280,15 @@ with clickhouse_connect.get_client(
 * **격리된 세션**: 임시 테이블 또는 세션별 설정을 위해 별도의 세션이 필요한 경우
 * **스레드별 격리**: 스레드마다 독립적인 세션이 필요한 경우(위 예시 참조)
 
-<div id="common-method-arguments">
-  ## 공통 메서드 인수
-</div>
+## 공통 메서드 인수 {#common-method-arguments}
 
 여러 클라이언트 메서드는 공통 `parameters` 및 `settings` 인수 중 하나 또는 둘 다를 사용합니다. 이러한 키워드 인수는 아래에서 설명합니다.
 
-<div id="parameters-argument">
-  ### 매개변수 인수
-</div>
+### 매개변수 인수 {#parameters-argument}
 
 ClickHouse Connect Client의 `query*` 및 `command` 메서드는 Python 표현식을 ClickHouse 값 표현식에 바인딩하는 데 사용하는 선택적 키워드 인수 `parameters`를 지원합니다. 바인딩은 두 가지 방식으로 사용할 수 있습니다.
 
-<div id="server-side-binding">
-  #### 서버 측 바인딩
-</div>
+#### 서버 측 바인딩 {#server-side-binding}
 
 ClickHouse는 쿼리 값에 대해 [서버 측 바인딩](/ko/concepts/features/interfaces/client#cli-queries-with-parameters)을 지원합니다. 바인딩된 값은 쿼리와 별도로 HTTP 매개변수로 전송됩니다. ClickHouse Connect는 `{<name>:<datatype>}` 형식의 표현식이 감지되면 이 모드를 사용합니다. 값은 Python 딕셔너리로 전달하십시오.
 
@@ -357,9 +328,7 @@ WHERE date >= '2022-10-01 15:20:05'
   서버 측 바인딩은 `SELECT` 쿼리에서 지원됩니다. `ALTER`, `DELETE`, `INSERT` 또는 기타 문 유형에서는 지원되지 않습니다.
 </Warning>
 
-<div id="client-side-binding">
-  #### 클라이언트 측 바인딩
-</div>
+#### 클라이언트 측 바인딩 {#client-side-binding}
 
 ClickHouse Connect는 클라이언트 측 매개변수 바인딩도 지원하며, 이를 통해 템플릿 기반 SQL 쿼리를 더 유연하게 생성할 수 있습니다. 클라이언트 측 바인딩에서는 `parameters` 인수가 딕셔너리 또는 시퀀스여야 합니다. 클라이언트 측 바인딩은 매개변수 치환을 위해 Python의 [&quot;printf&quot; 스타일](https://docs.python.org/3/library/stdtypes.html#old-string-formatting) 문자열 포맷팅을 사용합니다.
 
@@ -434,9 +403,7 @@ WHERE metric >= 35200.44
   `datetime.time` 또는 `datetime.timedelta` 매개변수는 두 바인딩 스타일 모두에서, 그리고 `Array` 및 `Tuple` 값 내부에서 ClickHouse `Time` 및 `Time64` 컬럼용 `[-]HH:MM:SS[.ffffff]` 리터럴로 포맷됩니다. 클라이언트가 따옴표를 추가하므로 쿼리에서 플레이스홀더를 따옴표로 묶지 마십시오. `timedelta`는 음수일 수 있으며 24시간을 초과할 수 있습니다. pandas `Timedelta`는 나노초를 유지하며 `Time64(9)`에 대해 9자리 소수 부분으로 포맷됩니다. ClickHouse `Time`에는 시간대가 없으므로 시간대 인식 `time`의 시간대 정보는 무시됩니다.
 </Note>
 
-<div id="settings-argument">
-  ### 설정 인수
-</div>
+### 설정 인수 {#settings-argument-1}
 
 주요 ClickHouse Connect Client의 &quot;insert&quot; 및 &quot;select&quot; 메서드는 모두 포함된 SQL 문에 대해 ClickHouse 서버 [사용자 설정](/ko/reference/settings/session-settings)을 전달할 수 있도록 선택적 `settings` 키워드 인수를 지원합니다. `settings` 인수는 딕셔너리여야 합니다. 각 항목은 ClickHouse 설정 이름과 해당 값으로 이루어져야 합니다. 값은 서버로 쿼리 매개변수로 전송될 때 문자열로 변환된다는 점에 유의하십시오.
 
@@ -457,9 +424,7 @@ client.query(
 )
 ```
 
-<div id="client-command-method">
-  ## Client `command` 메서드
-</div>
+## Client `command` 메서드 {#client-command-method}
 
 표 형식의 데이터셋을 반환하지 않는 SQL 문이나, 단일 원시 값 또는 단일 행을 반환하는 쿼리에는 `Client.command`를 사용합니다. 응답에 따라 문자열, 정수, 문자열 시퀀스 또는 `QuerySummary`를 반환합니다. 빈 결과 집합을 생성하는 읽기 작업은 빈 문자열을 반환합니다.
 
@@ -473,13 +438,9 @@ client.query(
 | external&#95;data      | ExternalData     | *None*     | 쿼리와 함께 사용할 파일 또는 바이너리 데이터가 포함된 `ExternalData` 객체입니다. [고급 쿼리(외부 데이터)](/ko/integrations/language-clients/python/advanced-querying#external-data)를 참조하십시오. |
 | transport&#95;settings | dict             | *None*     | 이 요청에 포함할 HTTP 헤더의 선택적 딕셔너리입니다. 각 키-값 쌍은 HTTP 헤더로 추가됩니다(예: `{'X-Custom-Header': 'value'}`). 프록시 인증, 요청 추적 또는 중간 인프라에 필요한 헤더를 전달할 때 유용합니다.            |
 
-<div id="command-examples">
-  ### 명령 예시
-</div>
+### 명령 예시 {#command-examples}
 
-<div id="ddl-statements">
-  #### DDL 문
-</div>
+#### DDL 문 {#ddl-statements}
 
 ```python
 import clickhouse_connect
@@ -510,9 +471,7 @@ print(result)
 client.command("DROP TABLE test_command")
 ```
 
-<div id="simple-queries-returning-single-values">
-  #### 단일 값을 반환하는 간단한 쿼리
-</div>
+#### 단일 값을 반환하는 간단한 쿼리 {#simple-queries-returning-single-values}
 
 ```python
 import clickhouse_connect
@@ -528,9 +487,7 @@ version = client.command("SELECT version()")
 print(version)
 ```
 
-<div id="commands-with-parameters">
-  #### 매개변수를 사용하는 명령
-</div>
+#### 매개변수를 사용하는 명령 {#commands-with-parameters}
 
 ```python
 import clickhouse_connect
@@ -551,9 +508,7 @@ result = client.command(
 )
 ```
 
-<div id="commands-with-settings">
-  #### 설정이 포함된 명령
-</div>
+#### 설정이 포함된 명령 {#commands-with-settings}
 
 ```python
 import clickhouse_connect
@@ -567,9 +522,7 @@ result = client.command(
 )
 ```
 
-<div id="client-query-method">
-  ## Client `query` 메서드
-</div>
+## Client `query` 메서드 {#client-query-method}
 
 `Client.query`는 ClickHouse Native 형식의 테이블형 데이터셋을 가져와 `QueryResult`를 반환합니다. 결과 속성에 접근하는 시점에 전체 결과가 구체화됩니다. 메모리에 보관하지 않아야 하는 결과에는 스트리밍 메서드를 사용하세요.
 
@@ -592,13 +545,9 @@ result = client.command(
 | `transport_settings` | dict             | `None`    | 이 요청에 추가되는 HTTP 헤더입니다.                                                                                                |
 | `tz_mode`            | str              | 클라이언트 기본값 | `"naive_utc"`, `"aware"`, 또는 `"schema"` 시간대 처리에 대한 쿼리별 재정의입니다.                                                        |
 
-<div id="query-examples">
-  ### 쿼리 예시
-</div>
+### 쿼리 예시 {#query-examples}
 
-<div id="basic-query">
-  #### 기본 쿼리
-</div>
+#### 기본 쿼리 {#basic-query}
 
 ```python
 import clickhouse_connect
@@ -625,9 +574,7 @@ print([col_type.name for col_type in result.column_types])
 # Output: ['UInt64', 'String']
 ```
 
-<div id="accessing-query-results">
-  #### 쿼리 결과 조회하기
-</div>
+#### 쿼리 결과 조회하기 {#accessing-query-results}
 
 ```python
 import clickhouse_connect
@@ -661,9 +608,7 @@ print(result.first_row)
 # Output: (0, '0')
 ```
 
-<div id="query-with-client-side-parameters">
-  #### 클라이언트 측 매개변수를 사용한 쿼리
-</div>
+#### 클라이언트 측 매개변수를 사용한 쿼리 {#query-with-client-side-parameters}
 
 ```python
 import clickhouse_connect
@@ -681,9 +626,7 @@ parameters = ("system", 5)
 result = client.query(query, parameters=parameters)
 ```
 
-<div id="query-with-server-side-parameters">
-  #### 서버 측 매개변수를 사용하는 쿼리
-</div>
+#### 서버 측 매개변수를 사용하는 쿼리 {#query-with-server-side-parameters}
 
 ```python
 import clickhouse_connect
@@ -697,9 +640,7 @@ parameters = {"db": "system", "tbl": "query_log"}
 result = client.query(query, parameters=parameters)
 ```
 
-<div id="query-with-settings">
-  #### 설정을 지정한 쿼리
-</div>
+#### 설정을 지정한 쿼리 {#query-with-settings}
 
 ```python
 import clickhouse_connect
@@ -716,9 +657,7 @@ result = client.query(
 )
 ```
 
-<div id="the-queryresult-object">
-  ### `QueryResult` 객체
-</div>
+### `QueryResult` 객체 {#the-queryresult-object}
 
 기본 `query` 메서드는 다음 공개 속성을 포함하는 `QueryResult` 객체를 반환합니다.
 
@@ -736,21 +675,15 @@ result = client.query(
 
 지원되는 `StreamContext` API는 [스트리밍 쿼리](/ko/integrations/language-clients/python/advanced-querying#streaming-queries)에서 확인하십시오.
 
-<div id="consuming-query-results-with-numpy-pandas-or-arrow">
-  ## NumPy, Pandas 또는 Arrow로 쿼리 결과 처리하기
-</div>
+## NumPy, Pandas 또는 Arrow로 쿼리 결과 처리하기 {#consuming-query-results-with-numpy-pandas-or-arrow}
 
 ClickHouse Connect는 NumPy, Pandas, Arrow 데이터 포맷용 전용 쿼리 메서드를 제공합니다. 예시, 스트리밍 지원, 고급 타입 처리 등 이러한 메서드의 사용법에 관한 자세한 내용은 [고급 쿼리(NumPy, Pandas 및 Arrow 쿼리)](/ko/integrations/language-clients/python/advanced-querying#numpy-pandas-and-arrow-queries)를 참조하십시오.
 
-<div id="client-streaming-query-methods">
-  ## 클라이언트 스트리밍 쿼리 메서드
-</div>
+## 클라이언트 스트리밍 쿼리 메서드 {#client-streaming-query-methods}
 
 대규모 결과 집합(result set)을 스트리밍하려면 ClickHouse Connect에서 여러 스트리밍 메서드를 제공합니다. 자세한 내용과 예시는 [고급 쿼리(Streaming Queries)](/ko/integrations/language-clients/python/advanced-querying#streaming-queries)를 참조하십시오.
 
-<div id="client-insert-method">
-  ## 클라이언트 `insert` 메서드
-</div>
+## 클라이언트 `insert` 메서드 {#client-insert-method}
 
 여러 레코드를 ClickHouse에 삽입하는 일반적인 경우에는 `Client.insert` 메서드를 사용합니다. 이 메서드는 다음 매개변수를 받습니다.
 
@@ -775,15 +708,11 @@ Pandas DataFrame, PyArrow 테이블, Arrow 기반 DataFrame에서 작동하는 �
   NumPy 배열은 유효한 Sequence of Sequences이므로 기본 `insert` 메서드의 `data` 인수로 사용할 수 있으며, 별도의 특수 메서드는 필요하지 않습니다.
 </Note>
 
-<div id="examples">
-  ### 예시
-</div>
+### 예시 {#examples}
 
 아래 예시에서는 스키마(schema)가 `(id UInt32, name String, age UInt8)`인 기존 `users` 테이블(table)이 이미 있다고 가정합니다.
 
-<div id="basic-row-oriented-insert">
-  #### 기본적인 행 지향 삽입
-</div>
+#### 기본적인 행 지향 삽입 {#basic-row-oriented-insert}
 
 ```python
 import clickhouse_connect
@@ -799,9 +728,7 @@ data = [
 client.insert("users", data, column_names=["id", "name", "age"])
 ```
 
-<div id="column-oriented-insert">
-  #### 컬럼 지향 방식 삽입
-</div>
+#### 컬럼 지향 방식 삽입 {#column-oriented-insert}
 
 ```python
 import clickhouse_connect
@@ -818,9 +745,7 @@ data = [
 client.insert("users", data, column_names=["id", "name", "age"], column_oriented=True)
 ```
 
-<div id="insert-with-explicit-column-types">
-  #### 명시적으로 컬럼 타입을 지정해 삽입
-</div>
+#### 명시적으로 컬럼 타입을 지정해 삽입 {#insert-with-explicit-column-types}
 
 ```python
 import clickhouse_connect
@@ -841,9 +766,7 @@ client.insert(
 )
 ```
 
-<div id="insert-into-specific-database">
-  #### 특정 데이터베이스에 삽입하기
-</div>
+#### 특정 데이터베이스에 삽입하기 {#insert-into-specific-database}
 
 ```python
 import clickhouse_connect
@@ -864,21 +787,15 @@ client.insert(
 )
 ```
 
-<div id="file-inserts">
-  ## 파일 삽입
-</div>
+## 파일 삽입 {#file-inserts}
 
 파일의 데이터를 ClickHouse 테이블에 직접 삽입하는 방법은 [고급 삽입(파일 삽입)](/ko/integrations/language-clients/python/advanced-inserting#file-inserts)을 참조하십시오.
 
-<div id="raw-api">
-  ## Raw API
-</div>
+## Raw API {#raw-api}
 
 유형 변환 없이 ClickHouse HTTP 인터페이스에 직접 액세스해야 하는 고급 사용 사례는 [고급 사용법(Raw API)](/ko/integrations/language-clients/python/advanced-usage#raw-api)을 참조하십시오.
 
-<div id="python-db-api-20">
-  ## Python DB-API 2.0
-</div>
+## Python DB-API 2.0 {#python-db-api-20}
 
 `clickhouse_connect.dbapi` 모듈은 PEP 249의 연결 및 cursor 인터페이스를 구현합니다. 이 모듈은 API 수준 2.0, `threadsafety=2`, `paramstyle="pyformat"`를 선언합니다. 또한 PEP 249 유형 생성자인 `Date`, `Time`, `Timestamp`, `Binary`와 `DateFromTicks`, `TimeFromTicks`, `TimestampFromTicks` 함수를 제공합니다.
 
@@ -912,46 +829,32 @@ finally:
 
 ClickHouse는 이 HTTP 인터페이스를 통해 전통적인 트랜잭션을 제공하지 않습니다. `Connection.commit()` 및 `Connection.rollback()`은 아무 작업도 수행하지 않습니다. 연결을 공유하는 경우에도 [session ID 동시성 규칙](/ko/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)이 계속 적용됩니다.
 
-<div id="utility-classes-and-functions">
-  ## 유틸리티 클래스와 함수
-</div>
+## 유틸리티 클래스와 함수 {#utility-classes-and-functions}
 
 다음 모듈은 클라이언트 애플리케이션에서 사용하는 추가 공개 도우미를 제공합니다.
 
 설치된 패키지 버전은 문자열 `clickhouse_connect.__version__`으로 노출됩니다.
 
-<div id="exceptions">
-  ### 예외
-</div>
+### 예외 {#exceptions}
 
 DB-API 2.0 예외 계층을 포함한 사용자 정의 예외는 `clickhouse_connect.driver.exceptions`에 정의되어 있습니다. `DatabaseError`와 `OperationalError`는 ClickHouse 오류 코드가 담긴 숫자 `code` 속성과 `UNKNOWN_TABLE` 같은 기호 이름이 담긴 `name` 속성을 제공하므로, 애플리케이션은 메시지를 파싱하지 않고 `exc.code`를 기준으로 분기할 수 있습니다. `show_clickhouse_errors`가 비활성화되어 있어도 `code`는 설정되지만, `name`을 사용하려면 오류 세부 정보(`True` 또는 `"scrub"`)가 필요합니다. 전송 오류처럼 사용할 수 없는 경우에는 둘 다 `None`입니다. 최종 사용자에게 호스트 또는 서버 버전 정보 없이 SQL 오류를 표시해야 하는 경우 `show_clickhouse_errors="scrub"`를 사용하십시오. 이 설정은 스트림 도중 발생하는 `StreamFailureError` 메시지와 일반 전송 메시지도 제어합니다. 이 설정은 `str(exc)`에만 적용됩니다. 전송 오류는 여전히 `__cause__`로 연결되며, 트레이스백에는 원래 호스트, URL 또는 라이브러리 오류 텍스트가 포함될 수 있습니다.
 
-<div id="clickhouse-sql-utilities">
-  ### ClickHouse SQL 유틸리티
-</div>
+### ClickHouse SQL 유틸리티 {#clickhouse-sql-utilities}
 
 `clickhouse_connect.driver.binding` 모듈의 함수와 DT64Param 클래스는 ClickHouse SQL 쿼리를 올바르게 구성하고 이스케이프 처리하는 데 사용할 수 있습니다. 마찬가지로 `clickhouse_connect.driver.parser` 모듈의 함수는 ClickHouse 데이터 타입 이름을 파싱하는 데 사용할 수 있습니다.
 
-<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
-  ## 멀티스레드, 멀티프로세스 및 비동기/이벤트 기반 사용 사례
-</div>
+## 멀티스레드, 멀티프로세스 및 비동기/이벤트 기반 사용 사례 {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
 멀티스레드, 멀티프로세스 및 비동기/이벤트 기반 애플리케이션에서 ClickHouse Connect를 사용하는 방법에 대한 자세한 내용은 [고급 사용법(멀티스레드, 멀티프로세스 및 비동기/이벤트 기반 사용 사례)](/ko/integrations/language-clients/python/advanced-usage#multithreaded-multiprocess-and-asyncevent-driven-use-cases)를 참조하십시오.
 
-<div id="asyncclient">
-  ## AsyncClient
-</div>
+## AsyncClient {#asyncclient}
 
 asyncio 환경에서 네이티브로 사용하는 방법은 [고급 사용법(AsyncClient)](/ko/integrations/language-clients/python/advanced-usage#asyncclient)를 참조하십시오.
 
-<div id="managing-clickhouse-session-ids">
-  ## ClickHouse 세션 ID 관리
-</div>
+## ClickHouse 세션 ID 관리 {#managing-clickhouse-session-ids}
 
 멀티스레드 또는 동시 처리 애플리케이션에서 ClickHouse 세션 ID를 관리하는 방법에 대한 자세한 내용은 [고급 사용법(ClickHouse 세션 ID 관리)](/ko/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)을 참조하십시오.
 
-<div id="customizing-the-http-connection-pool">
-  ## HTTP 연결 풀 사용자 지정
-</div>
+## HTTP 연결 풀 사용자 지정 {#customizing-the-http-connection-pool}
 
 대규모 멀티스레드 애플리케이션에서 HTTP 연결 풀을 사용자 지정하는 방법에 대한 자세한 내용은 [고급 사용법(HTTP 연결 풀 사용자 지정)](/ko/integrations/language-clients/python/advanced-usage#customizing-the-http-connection-pool)을 참조하십시오.

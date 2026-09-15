@@ -10,20 +10,18 @@ keywords: ['백업', '재해 복구', '데이터 보호', '복원', '클라우�
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Note>
-  외부 버킷으로의 자동 백업은 24시간마다 &quot;전체&quot; 백업으로 실행되도록 구성되어 있으며, 실행 주기는 변경할 수 없습니다.
+  외부 버킷으로의 자동 백업은 서로 독립적인 전체 백업입니다. 해당 서비스에 구성된 백업 주기와 시작 시간(기본값은 24시간마다)을 따릅니다. 또한 ClickHouse는 24시간마다 ClickHouse가 관리하는 버킷에 별도의 백업을 생성하며, 이 주기는 고정되어 있습니다.
 </Note>
 
 <div id="AWS">
-  ## AWS
+  ## AWS {#AWS}
 </div>
 
 <div id="taking-backups-to-aws">
-  ### AWS에 백업하기
+  ### AWS에 백업하기 {#taking-backups-to-aws}
 </div>
 
-<div id="aws-steps">
-  #### 1. AWS에서 수행할 단계
-</div>
+#### 1. AWS에서 수행할 단계 {#aws-steps}
 
 <Note>
   이 단계는 [&quot;S3 데이터에 안전하게 액세스하기&quot;](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)에 설명된 보안 S3 설정과 유사하지만, 역할 권한에는 추가로 설정해야 할 항목이 있습니다.
@@ -106,9 +104,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="cloud-steps">
-  #### 2. ClickHouse Cloud에서 수행할 단계
-</div>
+#### 2. ClickHouse Cloud에서 수행할 단계 {#cloud-steps}
 
 외부 버킷을 구성하려면 아래 단계를 ClickHouse Cloud Console에서 수행하십시오.
 
@@ -129,12 +125,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     설정을 저장하려면 &quot;Save External Bucket&quot;을 클릭하십시오.
   </Step>
 
-  <Step title="기본 일정에서 백업 일정 변경" id="changing-the-backup-schedule">
-    이제 외부 백업은 기본 일정에 따라 사용자의 버킷에 저장됩니다.
+  <Step title="기본 스케줄에서 백업 일정 변경" id="changing-the-backup-schedule">
+    이제 외부 백업은 기본 스케줄에 따라 사용자의 버킷에 저장됩니다.
     또는 &quot;설정&quot; 페이지에서 백업 일정을 구성할 수 있습니다.
-    다르게 구성한 경우에는 사용자 지정 일정이 사용자의
-    버킷에 백업을 저장하는 데 사용되며, 기본 일정(24시간마다 백업)은
-    ClickHouse Cloud 소유 버킷의 백업에 사용됩니다.
+    다르게 구성하면 사용자 지정 일정과 보존 설정이 사용자의 버킷에
+    기록되는 백업에 적용됩니다. ClickHouse Cloud 관리형 버킷의 백업에는
+    기본 스케줄(24시간마다 백업)과 기본 보존 정책이 사용됩니다.
   </Step>
 
   <Step title="버킷에 저장된 백업 보기" id="view-backups-stored-in-your-bucket">
@@ -145,9 +141,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="restoring-backups-from-aws">
-  ### AWS에서 백업 복원하기
-</div>
+### AWS에서 백업 복원하기 {#restoring-backups-from-aws}
 
 아래 단계에 따라 AWS에서 백업을 복원하십시오.
 
@@ -193,18 +187,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Steps>
 
 <div id="gcp">
-  ## GCP
+  ## GCP {#gcp}
 </div>
 
 <div id="taking-backups-to-gcp">
-  ### GCP에 백업 생성하기
+  ### GCP에 백업 생성하기 {#taking-backups-to-gcp}
 </div>
 
 아래 단계에 따라 GCP에 백업을 생성하십시오:
 
-<div id="gcp-steps-to-follow">
-  #### GCP에서 따라야 할 단계
-</div>
+#### GCP에서 따라야 할 단계 {#gcp-steps-to-follow}
 
 <Steps>
   <Step title="GCP 스토리지 버킷 생성" id="create-a-gcp-storage-bucket">
@@ -233,9 +225,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### ClickHouse Cloud에서 수행할 단계
-</div>
+#### ClickHouse Cloud에서 수행할 단계 {#gcp-cloud-steps}
 
 외부 버킷을 구성하려면 아래 단계를 ClickHouse Cloud Console에서 수행하십시오.
 
@@ -256,12 +246,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     설정을 저장하려면 `Save External Bucket`을 클릭합니다.
   </Step>
 
-  <Step title="기본 일정 대신 백업 일정 변경" id="gcp-changing-the-backup-schedule">
-    이제 외부 백업은 기본 일정에 따라 버킷에 수행됩니다.
+  <Step title="기본 스케줄 대신 백업 일정 변경" id="gcp-changing-the-backup-schedule">
+    이제 외부 백업은 기본 스케줄에 따라 버킷에 수행됩니다.
     또는 `설정` 페이지에서 백업 일정을 구성할 수 있습니다.
-    다르게 구성한 경우 사용자 지정 일정은
-    버킷에 백업을 저장하는 데 사용되며, 기본 일정(24시간마다 백업)은
-    ClickHouse Cloud 소유 버킷의 백업에 사용됩니다.
+    다르게 구성한 경우 사용자 지정 일정과 보존 설정은 버킷에 기록되는
+    백업에 적용됩니다. ClickHouse Cloud 관리형 버킷의 백업은
+    기본 스케줄(24시간마다 백업)과 기본 보존 정책을 사용합니다.
   </Step>
 
   <Step title="버킷에 저장된 백업 보기" id="gcp-view-backups-stored-in-your-bucket">
@@ -271,9 +261,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="gcp-restoring-backups-from-gcp">
-  ### GCP에서 백업 복원
-</div>
+### GCP에서 백업 복원 {#gcp-restoring-backups-from-gcp}
 
 아래 단계에 따라 GCP에서 백업을 복원하세요:
 
@@ -314,18 +302,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Steps>
 
 <div id="azure">
-  ## Azure
+  ## Azure {#azure}
 </div>
 
 <div id="taking-backups-to-azure">
-  ### Azure에 백업하기
+  ### Azure에 백업하기 {#taking-backups-to-azure}
 </div>
 
 Azure에 백업하려면 아래 단계를 따르십시오:
 
-<div id="steps-to-follow-in-azure">
-  #### Azure에서 수행할 단계
-</div>
+#### Azure에서 수행할 단계 {#steps-to-follow-in-azure}
 
 <Steps>
   <Step title="스토리지 계정 생성" id="azure-create-a-storage-account">
@@ -339,9 +325,7 @@ Azure에 백업하려면 아래 단계를 따르십시오:
   </Step>
 </Steps>
 
-<div id="azure-cloud-steps">
-  #### ClickHouse Cloud에서 따라야 할 단계
-</div>
+#### ClickHouse Cloud에서 따라야 할 단계 {#azure-cloud-steps}
 
 외부 버킷을 구성하려면 아래 단계를 ClickHouse Cloud Console에서 수행하십시오.
 
@@ -362,8 +346,8 @@ Azure에 백업하려면 아래 단계를 따르십시오:
     설정을 저장하려면 `Save External Bucket`을 클릭합니다.
   </Step>
 
-  <Step title="기본 schedule에서 backup schedule 변경" id="azure-changing-the-backup-schedule">
-    이제 외부 백업은 기본 schedule에 따라 사용자의 버킷에 생성됩니다. 또는 `설정` 페이지에서 backup schedule을 구성할 수 있습니다. 다르게 구성한 경우에는 사용자 지정 schedule이 사용자의 버킷에 백업을 기록하는 데 사용되며, 기본 schedule(24시간마다 백업)은 ClickHouse Cloud 소유 버킷의 백업에 사용됩니다.
+  <Step title="기본 스케줄에서 백업 일정 변경" id="azure-changing-the-backup-schedule">
+    이제 외부 백업은 기본 스케줄에 따라 사용자의 버킷에 생성됩니다. 또는 `설정` 페이지에서 백업 일정을 구성할 수 있습니다. 다르게 구성한 경우, 사용자 지정 일정과 보존 설정은 사용자의 버킷에 기록되는 백업에 적용됩니다. ClickHouse Cloud 관리형 버킷의 백업에는 기본 스케줄(24시간마다 백업)과 기본 보존 정책이 사용됩니다.
   </Step>
 
   <Step title="버킷에 저장된 백업 보기" id="azure-view-backups-stored-in-your-bucket">
@@ -373,9 +357,7 @@ Azure에 백업하려면 아래 단계를 따르십시오:
   </Step>
 </Steps>
 
-<div id="azure-restore-steps">
-  ### Azure에서 백업 복원
-</div>
+### Azure에서 백업 복원 {#azure-restore-steps}
 
 Azure에서 백업을 복원하려면 아래 단계를 따르십시오.
 

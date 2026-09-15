@@ -14,16 +14,14 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ClickHouse Managed Postgres는 데이터를 보호하고 컴플라이언스 요구 사항을 충족할 수 있도록 엔터프라이즈급 보안 기능을 갖추고 있습니다. 이 페이지에서는 네트워크 보안, 암호화, 백업 보존 정책을 설명합니다.
 
-<div id="ip-whitelisting">
-  ## IP 허용 목록
-</div>
+## IP 허용 목록 {#ip-whitelisting}
 
 IP 필터는 ClickHouse Managed Postgres 인스턴스에 연결할 수 있는 소스 IP 주소를 제어하며, 인증되지 않은 연결로부터 데이터베이스를 보호하는 네트워크 수준의 액세스 제어를 제공합니다.
 
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP 액세스 목록 구성" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### IP 필터 구성
+  ### IP 필터 구성 {#configuring-ip-filters}
 </div>
 
 IP 필터를 구성하려면:
@@ -51,27 +49,21 @@ IP 필터를 구성하려면:
   * 자동 배포를 위한 CI/CD pipeline IP
 </Warning>
 
-<div id="encryption">
-  ## 암호화
-</div>
+## 암호화 {#encryption}
 
 ClickHouse Managed Postgres는 포괄적인 데이터 보호를 위해 저장 시과 전송 중 모두 데이터를 암호화합니다.
 
-<div id="encryption-at-rest">
-  ### 저장 시 암호화
-</div>
+### 저장 시 암호화 {#encryption-at-rest}
 
 ClickHouse Managed Postgres에 저장되는 모든 데이터는 기반 스토리지 인프라에 대한 무단 액세스를 방지하기 위해 저장 시 암호화됩니다.
 
 <div id="nvme-encryption">
-  #### NVMe 스토리지 암호화
+  #### NVMe 스토리지 암호화 {#nvme-encryption}
 </div>
 
 NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그, 임시 파일은 업계 표준 암호화 알고리즘으로 암호화됩니다. 이 암호화는 애플리케이션에 투명하게 적용되며 별도의 구성이 필요하지 않습니다.
 
-<div id="s3-encryption">
-  #### 객체 스토리지 암호화 (S3)
-</div>
+#### 객체 스토리지 암호화 {#s3-encryption}
 
 객체 스토리지에 저장되는 백업 및 Write-Ahead Log(WAL) 아카이브도 저장 시 암호화됩니다. 여기에는 다음이 포함됩니다.
 
@@ -86,36 +78,32 @@ NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그
 </Info>
 
 <div id="encryption-in-transit">
-  ### 전송 중 암호화
+  ### 전송 중 암호화 {#encryption-in-transit}
 </div>
 
 ClickHouse Managed Postgres에 대한 모든 네트워크 연결은 애플리케이션과 데이터베이스 간에 데이터가 전송되는 동안 이를 보호하기 위해 TLS(Transport Layer Security)로 보호됩니다.
 
 <div id="tls-ssl">
-  #### TLS/SSL 구성
+  #### TLS/SSL 구성 {#tls-ssl}
 </div>
 
 기본적으로 연결은 인증서 검증 없이 TLS로 암호화됩니다. 프로덕션 환경에서는 올바른 서버와 통신하고 있는지 확인할 수 있도록 인증서가 검증된 TLS로 연결하는 것을 권장합니다.
 
 TLS 구성 및 연결 옵션에 대한 자세한 내용은 [Connection](/ko/products/managed-postgres/connection#tls) 페이지를 참조하십시오.
 
-<div id="private-link">
-  ## Private Link
-</div>
+## AWS PrivateLink {#private-link}
 
-Private Link를 사용하면 ClickHouse Managed Postgres 인스턴스와 Virtual Private Cloud(VPC) 사이에 퍼블릭 인터넷으로 트래픽을 노출하지 않는 프라이빗 연결을 설정할 수 있습니다. 이를 통해 네트워크 격리와 보안을 한층 강화할 수 있습니다.
+AWS PrivateLink를 사용하면 ClickHouse Managed Postgres 인스턴스와 AWS Virtual Private Cloud(VPC) 사이에 퍼블릭 인터넷으로 트래픽을 노출하지 않는 프라이빗 연결을 설정할 수 있습니다. 이를 통해 네트워크 격리와 보안을 한층 강화할 수 있습니다.
 
 <Info>
   **수동 설정 필요**
 
-  Private Link는 지원되지만, ClickHouse 지원팀을 통한 수동 구성이 필요합니다. 이 기능은 엄격한 네트워크 격리 요구 사항이 있는 엔터프라이즈 고객에게 적합합니다.
+  AWS PrivateLink는 지원되지만, ClickHouse 지원팀을 통한 수동 구성이 필요합니다. 이 기능은 엄격한 네트워크 격리 요구 사항이 있는 엔터프라이즈 고객에게 적합합니다.
 </Info>
 
-<div id="requesting-private-link">
-  ### Private Link 설정 요청
-</div>
+### AWS PrivateLink 설정 요청 {#requesting-private-link}
 
-ClickHouse Managed Postgres 인스턴스에서 Private Link를 활성화하려면 다음 단계를 수행하십시오.
+ClickHouse Managed Postgres 인스턴스에서 AWS PrivateLink를 활성화하려면 다음 단계를 수행하십시오.
 
 1. **지원 티켓을 생성하여 ClickHouse 지원팀에 문의합니다**
 
@@ -129,27 +117,29 @@ ClickHouse Managed Postgres 인스턴스에서 Private Link를 활성화하려�
    * ClickHouse Managed Postgres 측에 Private Link 엔드포인트를 프로비저닝합니다
    * 엔드포인트 인터페이스를 생성하는 데 사용할 수 있도록 엔드포인트 연결 정보를 제공합니다.
 
-4. **Private Link를 설정합니다**:
-   * AWS 설정에서 엔드포인트 인터페이스로 이동한 다음 ClickHouse 지원팀이 제공한 구성을 사용해 Private Link를 생성합니다.
-   * Private Link 상태가 &quot;Available&quot;이 되면 AWS UI에 표시된 Private DNS 이름을 사용하여 연결할 수 있습니다.
+4. **AWS PrivateLink를 설정합니다**:
+   * AWS 설정에서 엔드포인트 인터페이스로 이동한 다음 ClickHouse 지원팀이 제공한 구성을 사용해 AWS PrivateLink를 생성합니다.
+   * AWS PrivateLink 상태가 &quot;Available&quot;이 되면 AWS UI에 표시된 Private DNS 이름을 사용하여 연결할 수 있습니다.
 
-<div id="backup-retention">
-  ## 백업 보존
-</div>
+## GCP Private Service Connect {#gcp-private-service-connect}
+
+Private Service Connect를 사용하면 ClickHouse Managed Postgres 인스턴스와 GCP Virtual Private Cloud(VPC) 사이에 퍼블릭 인터넷으로 트래픽을 노출하지 않는 프라이빗 연결을 설정할 수 있습니다.
+
+ClickHouse Managed Postgres 인스턴스에 Private Service Connect를 활성화하려면 지원 티켓을 생성하여 ClickHouse 지원팀에 문의하십시오.
+
+## 백업 보존 {#backup-retention}
 
 ClickHouse Managed Postgres는 실수로 인한 삭제, 손상 및 기타 데이터 손실 상황으로부터 데이터를 보호하기 위해 자동으로 백업을 수행합니다.
 
 <div id="retention-policy">
-  ### 보존 정책
+  ### 보존 정책 {#retention-policy}
 </div>
 
 * **기본 보존 기간**: 7일
 * **백업 빈도**: 매일 전체 백업 + 연속 WAL 아카이빙(60초마다 또는 16MB에 도달할 때마다, 둘 중 먼저 도래하는 시점 기준)
 * **복구 세분화 수준**: 보존 기간 내 임의 시점으로 시점 복구
 
-<div id="backup-security">
-  ### 백업 보안
-</div>
+### 백업 보안 {#backup-security}
 
 백업은 프라이머리 데이터와 동일한 수준의 보안이 보장된 상태로 저장됩니다:
 

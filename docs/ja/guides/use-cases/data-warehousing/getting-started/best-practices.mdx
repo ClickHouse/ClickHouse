@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 [スタートガイド](/ja/guides/use-cases/data-warehousing/getting-started/overview)では、[Apache Iceberg](/ja/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/ja/reference/engines/table-engines/integrations/deltalake)、[Apache Hudi](/ja/reference/engines/table-engines/integrations/hudi)、[Apache Paimon](/ja/reference/functions/table-functions/paimon) を初めてクエリする手順を説明します。セットアップが完了したら、このページを使って適切なアクセスパターンを選び、クエリパフォーマンスを最適化し、本番環境でデータレイクのクエリをデバッグしてください。
 
-<div id="choose-access-method">
-  ## アクセス方法を選択する
-</div>
+## アクセス方法を選択する {#choose-access-method}
 
 | アクセス方法                       | 使用するケース                                   | 例                                                                                                                                                                                                                                        |
 | ---------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -19,9 +17,7 @@ doc_type: 'guide'
 | テーブルエンジン                     | カタログなしで、同じパスに対して繰り返しクエリを実行する場合            | [IcebergS3](/ja/reference/engines/table-engines/integrations/iceberg), [DeltaLake](/ja/reference/engines/table-engines/integrations/deltalake), [Hudi](/ja/reference/engines/table-engines/integrations/hudi)                                     |
 | `DataLakeCatalog` データベースエンジン | カタログを使用する本番ワークロードや、多数のテーブルをまたぐフェデレーテッドクエリ | [AWS Glue](/ja/guides/use-cases/data-warehousing/glue-catalog), [Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog), [REST カタログ](/ja/guides/use-cases/data-warehousing/rest-catalog)                                             |
 
-<div id="table-functions">
-  ### テーブル関数
-</div>
+### テーブル関数 {#table-functions}
 
 保存先がわかっていて永続テーブルの定義が不要な場合は、ストレージのパスと認証情報をインラインで指定します。
 
@@ -35,9 +31,7 @@ AWS S3 と GCS には S3 バリアントを使用します。Azure とローカ�
 
 [Paimon](/ja/reference/functions/table-functions/paimon) では、テーブル関数と[実験的なテーブルエンジン](/ja/reference/engines/table-engines/integrations/paimon)が提供されています。
 
-<div id="table-engines">
-  ### テーブルエンジン
-</div>
+### テーブルエンジン {#table-engines}
 
 同じパスに対して繰り返しクエリを実行する場合は、テーブルエンジンを使ってテーブルを作成します。ClickHouse はパスと認証情報をテーブルのメタデータに保存するため、毎回関数呼び出しを組み立て直すことなく、通常のテーブル名に対してクエリを実行できます。
 
@@ -50,9 +44,7 @@ SELECT count() FROM events WHERE event_date = today()
 
 テーブルエンジンは、[データキャッシュ](/ja/reference/engines/table-engines/integrations/iceberg#data-cache) や [メタデータキャッシュ](/ja/reference/engines/table-engines/integrations/iceberg#metadata-cache) を含め、テーブル関数と同じ読み取り機能をサポートしています。データが ClickHouse 内で複製されることはありません。チームでアクセスを共有する場合や、同じテーブルに対して定期的なジョブを実行する場合は、テーブルエンジンが便利です。
 
-<div id="datalakecatalog">
-  ### `DataLakeCatalog` データベースエンジン
-</div>
+### `DataLakeCatalog` データベースエンジン {#datalakecatalog}
 
 外部の[データカタログ](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)にテーブルを登録したら、ClickHouse を一度接続するだけで済みます。接続の作成後にアップストリームで追加されたテーブルも含め、すべてのカタログテーブルが自動的に ClickHouse テーブルとして表示されます。
 
@@ -76,9 +68,7 @@ SELECT count() FROM my_lake.`analytics.events`
   カタログでは `database.table` 形式の命名がよく使われます。上記の例のように、データベース修飾名をバッククォートで囲んでください。
 </Note>
 
-<div id="required-settings">
-  ## 必要な設定
-</div>
+## 必要な設定 {#required-settings}
 
 多くのインテグレーションでは、初回利用前に機能フラグが必要です。`CREATE DATABASE` が権限エラーで失敗する場合は、サービスのバージョンを確認してください。
 
@@ -86,17 +76,13 @@ SELECT count() FROM my_lake.`analytics.events`
 
 書き込みでは、Iceberg で [allow&#95;insert&#95;into&#95;iceberg](/ja/reference/settings/session-settings/allow#allow_insert_into_iceberg) が必要です (25.7+、26.2 以降はベータ) 。詳しくは [データレイクへの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) を参照してください。Delta Lake で [allow&#95;delta&#95;lake&#95;writes](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) が必要です (25.9+) 。[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix) には、各フォーマットと操作にどのフラグが適用されるかが示されています。
 
-<div id="query-performance">
-  ## クエリパフォーマンスを向上させる
-</div>
+## クエリパフォーマンスを向上させる {#query-performance}
 
 このページのバージョン番号は、ClickHouse のリリースバージョン (Cloud およびセルフマネージド) に対応しています。設定や機能を有効にする前に、ご利用中のサービスのバージョンを確認してください。
 
 Lake のクエリパフォーマンスは、ClickHouse がオブジェクトストレージから読み取るメタデータの量と [Parquet](/ja/reference/formats/Parquet/Parquet) ファイル数に左右されます。他の ClickHouse テーブルと同様に、パーティションカラムで絞り込み、取得するカラムを少なくすることで、クエリパフォーマンスを向上できます。
 
-<div id="query-habits">
-  ### クエリの習慣
-</div>
+### クエリの習慣 {#query-habits}
 
 `WHERE` 句では、パーティションカラムに対してフィルタを指定します。Iceberg と Delta Lake はパーティションのメタデータを保持しているため、ClickHouse はクエリプランの作成時に無関係なファイルをスキップできます。フィルタ対象がパーティション仕様に含まれないカラムの場合、ClickHouse は一致するすべてのファイルをスキャンします。
 
@@ -117,9 +103,7 @@ WHERE event_time >= '2026-03-01'
 
 マルチノード構成では、[cluster table functions](#parallel-cluster-reads) を使用して、レプリカ間でファイル読み取りを分散してください。
 
-<div id="parallel-cluster-reads">
-  ### マルチノードクラスターでの並列読み取り
-</div>
+### マルチノードクラスターでの並列読み取り {#parallel-cluster-reads}
 
 ClickHouse Cloud とセルフマネージドのマルチノードサービスでは、レイク向けテーブル関数のクラスター版によって [Parquet](/ja/reference/formats/Parquet/Parquet) ファイルの読み取りがレプリカ間に分散されます。イニシエーターノードは、ファイルをワーカーに並列に振り分けます。大規模なテーブルに対するバッチ読み取りや定期ロードには、クラスター版を使用してください。シングルノードのデプロイメントでは、通常のテーブル関数で十分です。
 
@@ -134,9 +118,13 @@ ClickHouse Cloud とセルフマネージドのマルチノードサービスで
 
 クラスター読み取りは、ほかのパフォーマンス設定と組み合わせることもできます。
 
-<div id="snapshot-bounds">
-  ### バッチ読み取りの対象をスナップショットに限定する
-</div>
+### クラスター関数と On-Demand Compute {#cluster-functions-and-on-demand-compute}
+
+[`icebergS3Cluster`](/ja/reference/functions/table-functions/icebergCluster) や [`deltaLakeCluster`](/ja/reference/functions/table-functions/deltalakeCluster) などのクラスター版の関数は、既存のクラスター内のノード間でファイルの読み取りを分散します。ただし、クラスター関数自体がコンピュートを追加するわけではありません。On-Demand Compute は ClickHouse Cloud の機能で、マネージドプールから追加のワーカーを一時的に割り当て、既存のサービスおよびエンドポイントを通じて対象となるクエリで利用できるようにします。
+
+プライベートプレビュー期間中、On-Demand Compute がサポートするのは、サポート対象の Apache Iceberg および Delta Lake データに対する対象の `SELECT` クエリのみです。対象条件と制限事項については、[On-Demand Compute のドキュメント](/ja/products/cloud/features/infrastructure/on-demand-compute)を参照してください。
+
+### バッチ読み取りの対象をスナップショットに限定する {#snapshot-bounds}
 
 レイクテーブルからバッチ読み込みを繰り返す場合は、毎回テーブル全体を再読み取りするのではなく、各実行の対象をスナップショットの範囲に限定してください。範囲を指定しないと、ClickHouse は実行のたびにすべてのバージョンとファイルをスキャンする可能性があり、オブジェクトストレージの読み取り量とクエリ時間が増加します。
 
@@ -145,21 +133,15 @@ ClickHouse Cloud とセルフマネージドのマルチノードサービスで
 * Iceberg では、[iceberg&#95;snapshot&#95;id](/ja/reference/settings/session-settings/iceberg#iceberg_snapshot_id) または [iceberg&#95;timestamp&#95;ms](/ja/reference/settings/session-settings/iceberg#iceberg_timestamp_ms) (25.4+) を使用して特定時点のビューを読み取ります。追記専用テーブルでは、スナップショット設定を `WHERE` のパーティションフィルターと組み合わせてください。実行間のスナップショット ID を確認するには、[system.iceberg&#95;history](/ja/reference/system-tables/iceberg_history) (25.6+) を使用します。
 * Delta Lake では、[delta&#95;lake&#95;snapshot&#95;start&#95;version](/ja/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) と [delta&#95;lake&#95;snapshot&#95;end&#95;version](/ja/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) (25.12+) を使用して、2 つのバージョン間の変更を読み取ります。[delta&#95;lake&#95;snapshot&#95;version](/ja/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version) (25.8+) を使用すると、単一のスナップショットを読み取れます。CDF の例については、[Delta 変更データフィード](#delta-incremental-sync) を参照してください。
 
-<div id="filesystem-cache">
-  ### Parquetファイルをローカルにキャッシュする
-</div>
+### Parquetファイルをローカルにキャッシュする {#filesystem-cache}
 
 どちらのフォーマットでも、クエリ間で頻繁に使われる [Parquet](/ja/reference/formats/Parquet/Parquet) ファイルをローカルディスクに保持するために、[enable&#95;filesystem&#95;cache](/ja/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) を利用できます。セルフマネージド環境では、この設定の書き込み先となるストレージを確保するため、サーバー設定で [ファイルシステムキャッシュディスク](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache) を構成してください。ClickHouse Cloud ではキャッシュは自動的に管理されます。ベンチマーク時には、キャッシュヒットによって実行ごとの差異が見えにくくならないよう、`enable_filesystem_cache = 0` を設定してください。
 
-<div id="iceberg-settings">
-  ### Apache Iceberg
-</div>
+### Apache Iceberg {#iceberg-settings}
 
 Iceberg の読み取り最適化のほとんどは、デフォルトで有効になっています。以下の設定では、パーティションプルーニング、メタデータキャッシュ、カタログとの往復通信を制御できます。
 
-<div id="iceberg-read-settings">
-  #### 読み取り設定
-</div>
+#### 読み取り設定 {#iceberg-read-settings}
 
 | 設定                                                                                                                                    | 導入時期 | デフォルト       | 注記                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----------- | -------------------------------------------------------- |
@@ -168,9 +150,7 @@ Iceberg の読み取り最適化のほとんどは、デフォルトで有効に
 | [iceberg&#95;metadata&#95;staleness&#95;ms](/ja/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_staleness_ms)      | 26.3 | `0`         | クエリ設定です。毎回カタログを呼び出す代わりに、この時間枠より新しい場合はキャッシュされたメタデータを使用します |
 | [iceberg&#95;use&#95;version&#95;hint](/ja/reference/functions/table-functions/iceberg#writes-into-iceberg-table)                        | 25.6 | —           | 直接パスアクセス時のメタデータ解決を高速化するために `version-hint.text` を読み取ります   |
 
-<div id="iceberg-catalog-latency">
-  #### カタログのレイテンシを抑える
-</div>
+#### カタログのレイテンシを抑える {#iceberg-catalog-latency}
 
 カタログに接続されたIcebergテーブルでは、キャッシュしない限り、クエリごとにメタデータのフェッチが発生します。次の2つの設定を組み合わせて使います (26.4+) :
 
@@ -191,9 +171,7 @@ SETTINGS iceberg_metadata_staleness_ms = 60000;
 
 ClickHouse が誤ったメタデータファイルを選択する場合 (テーブルパスに複数の `.metadata.json` ファイルがある場合) は、テーブル作成時に [iceberg&#95;metadata&#95;file&#95;path](/ja/reference/engines/table-engines/integrations/iceberg#metadata-file-resolution) (25.4+) または [iceberg&#95;metadata&#95;table&#95;uuid](/ja/reference/engines/table-engines/integrations/iceberg#metadata-file-resolution) を使って参照先を固定してください。[メタデータファイルの解決](/ja/reference/engines/table-engines/integrations/iceberg#metadata-file-resolution) を参照してください。
 
-<div id="iceberg-time-travel">
-  #### タイムトラベル
-</div>
+#### タイムトラベル {#iceberg-time-travel}
 
 [iceberg&#95;timestamp&#95;ms](/ja/reference/settings/session-settings/iceberg#iceberg_timestamp_ms) または [iceberg&#95;snapshot&#95;id](/ja/reference/settings/session-settings/iceberg#iceberg_snapshot_id) (いずれも 25.4+) を使用すると、過去時点のスナップショットを読み取れます。同じクエリで両方を設定しないでください。ID を選択する前に、[system.iceberg&#95;history](/ja/reference/system-tables/iceberg_history) (25.6+) でスナップショットの系統を確認してください。繰り返しのバッチロードについては、[バッチ読み取りをスナップショットに制限する](#snapshot-bounds) を参照してください。
 
@@ -203,9 +181,7 @@ FROM my_iceberg_table
 SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
-<div id="iceberg-write-settings">
-  #### Iceberg への書き込み
-</div>
+#### Iceberg への書き込み {#iceberg-write-settings}
 
 [allow&#95;insert&#95;into&#95;iceberg](/ja/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+、26.2 以降はベータ) に加え、INSERT 時の出力ファイルサイズとパーティション数を制御することもできます。
 
@@ -217,15 +193,11 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
 
 [データレイクへの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) と [Iceberg エンジンのリファレンス](/ja/reference/engines/table-engines/integrations/iceberg) を参照してください。
 
-<div id="delta-lake-settings">
-  ### Delta Lake
-</div>
+### Delta Lake {#delta-lake-settings}
 
 バージョン 25.6 以降、ClickHouse は Delta Lake Rust カーネルを通じて、S3 および GCS 上の Delta Lake を読み取ります。この設定は、バージョン 26.8 以降では [`allow_delta_kernel_rs`](/ja/reference/settings/session-settings/allow#allow_delta_kernel_rs)、バージョン 25.5 から 26.7 では `allow_experimental_delta_kernel_rs` です。Azure Blob Storage ではカーネルが無効になっているため、従来の reader を使用して [deltaLakeAzure()](/ja/reference/functions/table-functions/deltalake) を利用してください。カーネルを使用しない場合、パーティションプルーニング、変更データフィード、スナップショットバージョン の読み取りは利用できません。
 
-<div id="delta-kernel">
-  #### Delta Kernel
-</div>
+#### Delta Kernel {#delta-kernel}
 
 Delta kernel 設定は、パーティションプルーニング、変更データフィード、スナップショット バージョンの読み取りを利用するには有効にする必要があります。25.5 以降では、S3 と GCS でデフォルトで有効です。明示的に有効化する場合は、ClickHouse のバージョンに対応する名前を使用してください。
 
@@ -241,9 +213,7 @@ SET allow_delta_kernel_rs = 1;
 SET allow_experimental_delta_kernel_rs = 1;
 ```
 
-<div id="iceberg-read-settings">
-  #### 読み取り設定
-</div>
+#### 読み取り設定 {#delta-read-settings}
 
 | 設定                                                                                                                                                                                                                                                                          | 導入    | デフォルト | 注記                                                                        |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----- | ------------------------------------------------------------------------- |
@@ -254,9 +224,7 @@ SET allow_experimental_delta_kernel_rs = 1;
 
 [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html) を持つテーブル (26.2+) では、読み取り時に行レベルのフィルタリングが適用されます。ClickHouse はこれを自動的に処理しますが、DV の多いテーブルでは、スキャン時にファイルごとの処理負荷が増えます。
 
-<div id="delta-incremental-sync">
-  #### Delta の変更データフィード
-</div>
+#### Delta の変更データフィード {#delta-incremental-sync}
 
 2 つの Delta スナップショット間で変更された行のみを読み取るには、[delta&#95;lake&#95;snapshot&#95;start&#95;version](/ja/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) と [delta&#95;lake&#95;snapshot&#95;end&#95;version](/ja/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) (25.12+) を設定します。テーブルでは、アップストリームで変更データフィード (`delta.enableChangeDataFeed`) が有効になっている必要があります。開始バージョンと終了バージョンの両方をクエリ設定で指定してください。終了バージョンだけを指定するとエラーになります。
 
@@ -270,9 +238,7 @@ SETTINGS
 
 各回の読み込みが成功するたびに終了バージョンを保存し、次回の実行時にそれを開始バージョンとして渡します。結果には CDF のカラム (`_change_type`、`_commit_version`、`_commit_timestamp`) が含まれます。ターゲットテーブルに読み込む前に、これらを処理してください。一般的なスナップショットのパターンについては、[バッチ読み取りをスナップショットにバインドする](#snapshot-bounds)を参照してください。
 
-<div id="delta-write-settings">
-  #### Delta Lake への書き込み
-</div>
+#### Delta Lake への書き込み {#delta-write-settings}
 
 [allow&#95;delta&#95;lake&#95;writes](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+) に加え、INSERT 時の出力ファイルサイズを制御できます。
 
@@ -293,15 +259,11 @@ SELECT * FROM source_table
 
 書き込みには、S3 または GCS 上の Delta Kernel が必要です。例については、[DeltaLake エンジン リファレンス](/ja/reference/engines/table-engines/integrations/deltalake)を参照してください。
 
-<div id="debug-system-tables">
-  ## データレイククエリのデバッグ
-</div>
+## データレイククエリのデバッグ {#debug-system-tables}
 
 遅いデータレイククエリや想定外の結果を返すクエリは、多くの場合、メタデータの読み取り、パーティションプルーニング、またはカタログへの接続に起因します。まずは以下のチェックを行い、必要に応じてフォーマット固有のメタデータログを使用してください。
 
-<div id="debug-catalog">
-  ### カタログ接続を確認する
-</div>
+### カタログ接続を確認する {#debug-catalog}
 
 `CREATE DATABASE` と `DataLakeCatalog` では認証情報は検証されません。カタログへの接続が切れていても、database 自体は存在し得ます。ClickHouse 26.4 以降では、軽量なヘルスチェックを実行してください。
 
@@ -317,9 +279,7 @@ SHOW CREATE TABLE my_lake.`db.table`;
 
 カタログのテーブルが`system.tables`に表示されない場合は、[show&#95;remote&#95;databases&#95;in&#95;system&#95;tables](/ja/reference/settings/session-settings/show#show_remote_databases_in_system_tables) (25.8+) を有効にしてください。カタログのテーブルは、デフォルトではシステムのイントロスペクションの対象外になっています。26.6より前のバージョンでは、以前の名称である`show_data_lake_catalogs_in_system_tables`を使用してください。
 
-<div id="debug-files">
-  ### 読み取られているファイルを確認する
-</div>
+### 読み取られているファイルを確認する {#debug-files}
 
 Iceberg と Delta Lake では、読み取り時に毎回 [仮想カラム](/ja/reference/functions/table-functions/iceberg#virtual-columns) (`_path`、`_file`、`_size`、`_time`、`_etag`) が公開されます。`_path` でグループ化すると、パーティションプルーニングが機能しているか、あるいはクエリが想定以上に多くのファイルをスキャンしているかを確認できます。隠しパーティション化を使用する Iceberg テーブルでは、別のパーティションカラムではなく、元のカラム (たとえば `event_time`) で絞り込んでください。
 
@@ -332,17 +292,13 @@ GROUP BY _path
 ORDER BY rows DESC;
 ```
 
-<div id="debug-query-log">
-  ### スキャン量を確認する
-</div>
+### スキャン量を確認する {#debug-query-log}
 
 フィルターの追加や設定の調整の前後で、[`system.query_log`](/ja/reference/system-tables/query_log) の `read_rows` と `read_bytes` を比較します。`ReadBufferFromS3Bytes` や `CachedReadBufferReadFromCacheBytes` などの `ProfileEvents` を見ると、オブジェクトストレージ由来のデータ量とローカル cache 由来のデータ量を確認できます。`query_log` と `EXPLAIN` の詳しい手順については、[低速なクエリを診断する](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) を参照してください。
 
 ベンチマーク時には、キャッシュヒットによって実行ごとの差が見えにくくならないよう、[enable&#95;filesystem&#95;cache](/ja/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) を無効にしてください。
 
-<div id="debug-metadata-logs">
-  ### メタデータログ
-</div>
+### メタデータログ {#debug-metadata-logs}
 
 ClickHouse には、メタデータレベルのデバッグ用システムテーブルが 3 つあります。ログの有効化はクエリ時のみにしてください。継続的な監視用途には適していません。
 
@@ -371,9 +327,7 @@ Iceberg の詳細なログレベルでは、マニフェストリストとファ
 
 カラムの詳細と詳細度オプションについては、[iceberg&#95;metadata&#95;log](/ja/reference/system-tables/iceberg_metadata_log) と [delta&#95;lake&#95;metadata&#95;log](/ja/reference/system-tables/delta_metadata_log) のリファレンスページを参照してください。
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 * [はじめに](/ja/guides/use-cases/data-warehousing/getting-started/overview) — 直接クエリからデータの書き戻しまでを一貫して解説
 * [直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) — 4つすべてのフォーマットで使用できるテーブル関数、エンジン、クラスター版

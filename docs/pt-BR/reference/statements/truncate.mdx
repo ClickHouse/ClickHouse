@@ -10,9 +10,7 @@ doc_type: 'referência'
 
 A instrução `TRUNCATE` no ClickHouse é usada para remover rapidamente todos os dados de uma tabela ou banco de dados, preservando sua estrutura.
 
-<div id="truncate-table">
-  ## TRUNCATE TABLE
-</div>
+## TRUNCATE TABLE {#truncate-table}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -32,7 +30,7 @@ Você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/sess
 Você pode especificar por quanto tempo (em segundos) aguardar que réplicas inativas executem consultas `TRUNCATE` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, será lançada uma exceção `UNFINISHED`.
+  Se `alter_sync` estiver definido como `2`, ou como `3` em `ReplicatedMergeTree`, e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, será lançada uma exceção `UNFINISHED`.
 </Note>
 
 A consulta `TRUNCATE TABLE` **não tem suporte** para os seguintes motores de tabela:
@@ -43,9 +41,7 @@ A consulta `TRUNCATE TABLE` **não tem suporte** para os seguintes motores de ta
 * [`Buffer`](/pt-BR/reference/engines/table-engines/special/buffer)
 * [`Null`](/pt-BR/reference/engines/table-engines/special/null)
 
-<div id="truncate-all-tables">
-  ## TRUNCATE DE TODAS AS TABELAS
-</div>
+## TRUNCATE DE TODAS AS TABELAS {#truncate-all-tables}
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -63,9 +59,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 Remove todos os dados de todas as tabelas de um banco de dados.
 
-<div id="truncate-database">
-  ## TRUNCATE DATABASE
-</div>
+## TRUNCATE DATABASE {#truncate-database}
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

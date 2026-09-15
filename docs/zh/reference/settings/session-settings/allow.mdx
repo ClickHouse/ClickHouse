@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="allow_aggregate_partitions_independently">
-  ## allow_aggregate_partitions_independently
-</div>
+## allow_aggregate_partitions_independently {#allow_aggregate_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 当分区键适合 GROUP BY 键时，启用在独立线程上对各分区分别进行聚合。当分区数量接近 CPU 核心数，且各分区大小大致相同时，此功能最有利。`ReadFromMergeTree` 中的启发式规则会在布局不理想时 (分区过少、分区过多，或分区大小严重失衡) 自动禁用该优化；如需绕过这些检查，请参见 `force_aggregate_partitions_independently`。
 
-<div id="allow_archive_path_syntax">
-  ## allow_archive_path_syntax
-</div>
+## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,17 +31,13 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> :: <file>`，前提是归档文件具有正确的扩展名。
 
-<div id="allow_asynchronous_read_from_io_pool_for_merge_tree">
-  ## allow_asynchronous_read_from_io_pool_for_merge_tree
-</div>
+## allow_asynchronous_read_from_io_pool_for_merge_tree {#allow_asynchronous_read_from_io_pool_for_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 使用后台 I/O 线程池从 MergeTree 表中读取数据。此设置可能会提高受 I/O 限制的查询的性能
 
-<div id="allow_calculating_subcolumns_sizes_for_merge_tree_reading">
-  ## allow_calculating_subcolumns_sizes_for_merge_tree_reading
-</div>
+## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,26 +45,20 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 启用后，ClickHouse 将计算读取每个子列所需文件的大小，以便更准确地计算任务大小和块大小。
 
-<div id="allow_changing_replica_until_first_data_packet">
-  ## allow_changing_replica_until_first_data_packet
-</div>
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 如果启用，在对冲请求中，即使已经有了一些进度，也可以在收到第一个数据包之前发起新的连接
 (但在 `receive_data_timeout` 超时时间内进度没有更新) ；否则，一旦首次取得进度，就会禁止切换副本。
 
-<div id="allow_create_index_without_type">
-  ## allow_create_index_without_type
-</div>
+## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许执行不带 TYPE 的 CREATE INDEX 查询。该查询会被忽略。此设置用于 SQL 兼容性测试。
 
-<div id="allow_creating_set_partitions_independently">
-  ## allow_creating_set_partitions_independently
-</div>
+## allow_creating_set_partitions_independently {#allow_creating_set_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,25 +66,19 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 当子查询的 `MergeTree` 表的分区表达式是子查询输出列的确定性函数时，启用在为 `IN (subquery)` 构建 Set 期间对该子查询结果按分区并行预去重。每个分区通过独立的 stream 读取并单独去重，因此唯一的 Set 填充转换仅会对唯一行计算哈希。此优化不适用于 `FINAL`、并行副本或 `GLOBAL IN`。仅当数据包含多个分区，且最大分区的行数不超过平均分区行数的两倍时，才会请求按分区读取 (参阅 [force&#95;creating&#95;set&#95;partitions&#95;independently](/zh/reference/settings/session-settings/force#force_creating_set_partitions_independently) 以跳过数据倾斜检查) ；如果流已因其他按分区功能而被拆分，因而彼此不包含重叠分区 (例如按分区的 `LIMIT BY`) ，则无论如何都会执行预去重，因为读取布局已确定。构建 Set 期间，各 stream 的去重表合计会额外存储约一份唯一键副本。
 
-<div id="allow_custom_error_code_in_throwif">
-  ## allow_custom_error_code_in_throwif
-</div>
+## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 在 throwIf() 函数中启用自定义错误代码。如果为 true，抛出的异常可能带有非预期的错误代码。
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果设置为 true，则用户可以执行 DDL 查询。
 
-<div id="allow_delta_kernel_rs">
-  ## allow_delta_kernel_rs
-</div>
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
 
 <BetaBadge />
 
@@ -110,9 +90,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许使用 `delta-kernel-rs` 实现读取 Delta Lake 表。
 
-<div id="allow_distinct_partitions_independently">
-  ## allow_distinct_partitions_independently
-</div>
+## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,25 +100,19 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 设置 [max&#95;rows&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct) 或 [max&#95;bytes&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) 时，不会应用此设置：这些限制由可见整个合并结果的单个 `DISTINCT` 转换执行，因此会保留跨流合并，以确保其全局语义。
 
-<div id="allow_distributed_ddl">
-  ## allow_distributed_ddl
-</div>
+## allow_distributed_ddl {#allow_distributed_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果设置为 true，则允许用户执行分布式 DDL 查询。
 
-<div id="allow_drop_detached">
-  ## allow_drop_detached
-</div>
+## allow_drop_detached {#allow_drop_detached}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许执行 ALTER TABLE ... DROP DETACHED PART[ITION] ... 语句
 
-<div id="allow_dynamic_type_in_join_keys">
-  ## allow_dynamic_type_in_join_keys
-</div>
+## allow_dynamic_type_in_join_keys {#allow_dynamic_type_in_join_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -148,17 +120,13 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许在 JOIN 连接键中使用 Dynamic 类型。此设置是为兼容性而添加的。不建议在 JOIN 连接键中使用 Dynamic 类型，因为与其他类型比较时可能会产生意外结果。
 
-<div id="allow_execute_multiif_columnar">
-  ## allow_execute_multiif_columnar
-</div>
+## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许以列式方式执行 multiIf 函数
 
-<div id="allow_fuzz_query_functions">
-  ## allow_fuzz_query_functions
-</div>
+## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
 <ExperimentalBadge />
 
@@ -168,9 +136,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 启用 `fuzzQuery` 函数，该函数会对查询字符串进行随机 AST 变更。
 
-<div id="allow_general_join_planning">
-  ## allow_general_join_planning
-</div>
+## allow_general_join_planning {#allow_general_join_planning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -178,9 +144,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许使用一种更通用的 JOIN 规划算法，可处理更复杂的条件，但仅适用于 hash join。如果未启用 hash join，则无论此设置的值如何，都会使用常规的 JOIN 规划算法。
 
-<div id="allow_get_client_http_header">
-  ## allow_get_client_http_header
-</div>
+## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -188,17 +152,13 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许使用函数 `getClientHTTPHeader`，该函数可用于获取当前 HTTP 请求的请求头值。出于安全考虑，此功能默认未启用，因为某些请求头 (如 `Cookie`) 可能包含敏感信息。请注意，`X-ClickHouse-*`、`Authentication` 和 `Authorization` 请求头始终受限，无法通过此函数获取。
 
-<div id="allow_hyperscan">
-  ## allow_hyperscan
-</div>
+## allow_hyperscan {#allow_hyperscan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许使用 Hyperscan 库的函数。禁用此设置可避免潜在的编译时间过长以及资源占用过高。
 
-<div id="allow_iceberg_remove_orphan_files">
-  ## allow_iceberg_remove_orphan_files
-</div>
+## allow_iceberg_remove_orphan_files {#allow_iceberg_remove_orphan_files}
 
 <ExperimentalBadge />
 
@@ -208,9 +168,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许对 Iceberg 表执行 &#39;ALTER TABLE ... EXECUTE remove&#95;orphan&#95;files()&#39;。
 
-<div id="allow_insert_into_iceberg">
-  ## allow_insert_into_iceberg
-</div>
+## allow_insert_into_iceberg {#allow_insert_into_iceberg}
 
 <BetaBadge />
 
@@ -222,9 +180,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许执行向 Iceberg 插入数据的 `insert` 查询。
 
-<div id="allow_introspection_functions">
-  ## allow_introspection_functions
-</div>
+## allow_introspection_functions {#allow_introspection_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -240,9 +196,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 * [采样查询分析器](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * 系统表 [trace&#95;log](/zh/reference/system-tables/trace_log)
 
-<div id="allow_key_condition_coalesce_rewrite">
-  ## allow_key_condition_coalesce_rewrite
-</div>
+## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -252,9 +206,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 此外，形如 `nullIf(key, sentinel) = const` 的精确相等谓词 (其中 `sentinel != const` 且类型完全匹配) 会被重写为 `key = const`，以便 `key` 上的主键、分区和跳过索引可以直接裁剪粒度。不支持对范围条件和析取式 nullIf 进行裁剪。
 
-<div id="allow_limit_by_partitions_independently">
-  ## allow_limit_by_partitions_independently
-</div>
+## allow_limit_by_partitions_independently {#allow_limit_by_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -262,9 +214,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 当分区表达式是 `LIMIT BY` 列的确定性函数时，启用在独立线程中按分区分别计算 `LIMIT BY`。
 
-<div id="allow_lossy_numeric_supertype">
-  ## allow_lossy_numeric_supertype
-</div>
+## allow_lossy_numeric_supertype {#allow_lossy_numeric_supertype}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -272,9 +222,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 启用后，`if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` 在处理一组不存在无损公共类型的数值参数时 (例如 `Decimal` 与 `Float64`，或 `Int64` 与 `Float64`) ，会将其解析为数值超类型 (`Float64`) ，而非报错，但可能损失精度。这样，结果便可直接用于 `sum`、`avg`、`min` 和 `max` 等合并值的聚合函数。此设置独立于 `use_variant_as_common_type`：无论是否启用 `use_variant_as_common_type`，都会生成数值超类型。禁用时 (默认) ，此类参数集没有公共类型，因此若启用了 `use_variant_as_common_type`，会成为 `Variant`；否则会引发 `NO_COMMON_TYPE`。
 
-<div id="allow_materialized_view_with_bad_select">
-  ## allow_materialized_view_with_bad_select
-</div>
+## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -282,9 +230,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许 CREATE MATERIALIZED VIEW 使用引用不存在表或列的 SELECT 查询。但该查询在语法上仍必须有效。不适用于 refreshable MV。如果 MV 的 schema 需要从 SELECT 查询中推断，也不适用 (即 CREATE 没有列列表，且没有 TO table) 。可用于在源表创建之前先创建 MV。
 
-<div id="allow_metadata_only_named_tuple_alter">
-  ## allow_metadata_only_named_tuple_alter
-</div>
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -293,9 +239,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 如果为 true，则对于仅添加新子字段的命名 Tuple，ALTER MODIFY COLUMN 操作仅修改元数据 (不会进行数据变更) 。
 设为 false 可强制使用旧的完整变更行为。
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -304,25 +248,19 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 允许在 JSON (Object) 列上创建 minmax 跳过索引。默认处于禁用状态，因为 minmax
 索引的序列化过程无法处理 JSON 列中可能包含的不同类型的 Field 值。
 
-<div id="allow_named_collection_override_by_default">
-  ## allow_named_collection_override_by_default
-</div>
+## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 默认允许覆盖命名集合中的字段。
 
-<div id="allow_non_metadata_alters">
-  ## allow_non_metadata_alters
-</div>
+## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许执行不仅会影响表元数据，还会影响磁盘上数据的 alter 操作
 
-<div id="allow_nonconst_timezone_arguments">
-  ## allow_nonconst_timezone_arguments
-</div>
+## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -333,9 +271,7 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 启用此设置会给人一种错误的印象，仿佛同一列中的不同值可以具有不同的时区。
 因此，请不要启用此设置。
 
-<div id="allow_nullable_tuple_in_extracted_subcolumns">
-  ## allow_nullable_tuple_in_extracted_subcolumns
-</div>
+## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -353,9 +289,15 @@ ClickHouse 使用服务器启动时加载的此设置值。
 通过 `SET` 或查询级 `SETTINGS` 所做的更改不会改变提取子列的行为。
 要更改提取子列的行为，请在启动 profile 配置 (例如 users.xml) 中更新 `allow_nullable_tuple_in_extracted_subcolumns`，然后重启服务器。
 
-<div id="allow_rank_dense_rank_arguments">
-  ## allow_rank_dense_rank_arguments
-</div>
+## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：允许预先 `DISTINCT` 在输入数据大多唯一时放弃去重，因为最终 `DISTINCT` 会再次对其输出去重。"}]}]} />
+
+允许预先 (按流执行的) `DISTINCT` 在输入数据大多唯一时放弃去重，释放其哈希表并让其余行直接通过。预先 `DISTINCT` 在设计上是尽力而为的——即使执行去重，不同流中的重复项仍会通过——而最终 `DISTINCT` 会再次对其输出去重。因此，放弃预先去重几乎不会减少重复项的移除效果，却能节省存储第二份唯一键副本所需的内存和哈希计算。当预先 `DISTINCT` 带有 limit hint (即后续没有排序的普通 `LIMIT`) 时，不会应用此设置。
+
+## allow_rank_dense_rank_arguments {#allow_rank_dense_rank_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -372,9 +314,7 @@ ClickHouse 使用服务器启动时加载的此设置值。
 抛出 `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`。当设为 `true` 时，将恢复旧版的宽松行为——
 参数会被静默忽略，与 26.5 之前的行为一致。
 
-<div id="allow_reorder_prewhere_conditions">
-  ## allow_reorder_prewhere_conditions
-</div>
+## allow_reorder_prewhere_conditions {#allow_reorder_prewhere_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -382,9 +322,7 @@ ClickHouse 使用服务器启动时加载的此设置值。
 
 将条件从 WHERE 移至 PREWHERE 时，允许重新排序这些条件，以优化筛选
 
-<div id="allow_replace_partition_from_empty_source">
-  ## allow_replace_partition_from_empty_source
-</div>
+## allow_replace_partition_from_empty_source {#allow_replace_partition_from_empty_source}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -396,9 +334,7 @@ ClickHouse 使用服务器启动时加载的此设置值。
 
 启用此设置可恢复之前的行为，例如当你有意使用空源分区来清空目标端数据时。若要无条件删除，建议直接改用 `ALTER TABLE ... DROP PARTITION ...`。
 
-<div id="allow_settings_after_format_in_insert">
-  ## allow_settings_after_format_in_insert
-</div>
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -428,17 +364,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
   仅当你的用例依赖旧语法、需要保持向后兼容时，才使用此设置。
 </Note>
 
-<div id="allow_simdjson">
-  ## allow_simdjson
-</div>
+## allow_simdjson {#allow_simdjson}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果支持 AVX2 指令，则允许在 `JSON*` 函数中使用 simdjson 库。禁用后将使用 rapidjson。
 
-<div id="allow_special_serialization_kinds_in_output_formats">
-  ## allow_special_serialization_kinds_in_output_formats
-</div>
+## allow_special_serialization_kinds_in_output_formats {#allow_special_serialization_kinds_in_output_formats}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -447,17 +379,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 允许直接输出具有 Sparse 和 Replicated 等特殊序列化类型的列，而无需将其转换为普通列表示。
 这有助于避免格式化过程中不必要的数据复制。
 
-<div id="allow_unrestricted_reads_from_keeper">
-  ## allow_unrestricted_reads_from_keeper
-</div>
+## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许从 system.zookeeper 表进行不受限制的读取 (即不对 path 作条件限制) 。这可能会比较方便，但对 ZooKeeper 来说并不安全
 
-<div id="allow_window_partitions_independently">
-  ## allow_window_partitions_independently
-</div>
+## allow_window_partitions_independently {#allow_window_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

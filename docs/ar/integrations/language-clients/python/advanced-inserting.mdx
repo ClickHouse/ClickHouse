@@ -7,13 +7,9 @@ title: 'الإدراج المتقدم'
 doc_type: 'reference'
 ---
 
-<div id="inserting-data-with-clickhouse-connect--advanced-usage">
-  ## إدراج البيانات باستخدام ClickHouse Connect: الاستخدام المتقدم
-</div>
+## إدراج البيانات باستخدام ClickHouse Connect: الاستخدام المتقدم {#inserting-data-with-clickhouse-connect--advanced-usage}
 
-<div id="insertcontexts">
-  ### سياقات الإدراج
-</div>
+### سياقات الإدراج {#insertcontexts}
 
 ينفّذ ClickHouse Connect عمليات الإدراج بتنسيق Native، والطريقتين `insert` و`insert_df`، ضمن `InsertContext`. أما الطرائق `insert_arrow` و`insert_df_arrow` و`raw_insert` فترسل الحمولات مباشرة ولا تستخدمه. يتضمّن `InsertContext` جميع القيم المُرسلة كوسيطات إلى الطريقة `insert` الخاصة بالعميل. بالإضافة إلى ذلك، عند إنشاء `InsertContext` لأول مرة، يسترجع ClickHouse Connect أنواع البيانات لأعمدة الإدراج المطلوبة لتنفيذ عمليات الإدراج بكفاءة باستخدام تنسيق Native. ومن خلال إعادة استخدام `InsertContext` في عمليات إدراج متعددة، يمكن تجنّب هذا &quot;الاستعلام التمهيدي&quot;، وتُنَفَّذ عمليات الإدراج بسرعة وكفاءة أكبر.
 
@@ -35,50 +31,47 @@ assert qr.first_row[0] == 113
 
 تتضمن `InsertContext`s حالة قابلة للتغيير تُحدَّث أثناء عملية الإدراج، لذا فهي غير آمنة للاستخدام من عدة خيوط.
 
-<div id="write-formats">
-  ### تنسيقات الكتابة
-</div>
+### تنسيقات الكتابة {#write-formats}
 
 تُطبَّق تنسيقات الكتابة على عدد محدود من الأنواع. وفي معظم الحالات، يحدِّد ClickHouse Connect تلقائيًا تنسيق الكتابة الصحيح للعمود بالاستناد إلى أول قيمة بيانات غير NULL فيه. على سبيل المثال، عندما تكون أول قيمة في عمود `DateTime` عددًا صحيحًا، يتعامل العميل معها على أنها ثانية `الحقبة`.
 
 وعادةً لا تكون هناك حاجة إلى تجاوز تنسيق الكتابة، لكن يمكن للطرق الموجودة في `clickhouse_connect.datatypes.format` تعيين تنسيق على مستوى عام. كما تحافظ أغلفة الحاويات مثل `Array` و`Nullable` و`LowCardinality` على سلوك تنسيق نوع العنصر.
 
-<div id="write-format-options">
-  #### خيارات تنسيقات الكتابة
-</div>
+#### خيارات تنسيقات الكتابة {#write-format-options}
 
-| ClickHouse Type       | نوع بايثون الأصلي       | تنسيقات الكتابة   | التعليقات                                                                                                                                  |
-| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                            |
-| UInt64                | int                     |                   |                                                                                                                                            |
-| [U]Int[128,256]       | int                     |                   |                                                                                                                                            |
-| BFloat16              | float                   |                   |                                                                                                                                            |
-| Float32               | float                   |                   |                                                                                                                                            |
-| Float64               | float                   |                   |                                                                                                                                            |
-| Decimal               | decimal.Decimal         |                   |                                                                                                                                            |
-| String                | str or bytes            |                   | يجب أن يحتوي العمود دائمًا على نص أو bytes فقط.                                                                                            |
-| FixedString           | bytes                   | string            | تُملأ قيم String ببايتات صفرية. وتُكتب البايتات الفارغة على هيئة بايتات صفرية بالكامل.                                                     |
-| Enum[8,16]            | str or int              |                   | أدرِج labels كسلاسل نصية أو كقيمها الصحيحة الأساسية.                                                                                       |
-| Date                  | datetime.date           | int               | تُفسَّر القيم الصحيحة على أنها عدد الأيام منذ 1970-01-01.                                                                                  |
-| Date32                | datetime.date           | int               | تُفسَّر القيم الصحيحة على أنها إزاحات أيام موقَّعة.                                                                                        |
-| DateTime              | datetime.datetime       | int               | تُفسَّر القيم الصحيحة على أنها ثوانٍ منذ الحقبة.                                                                                           |
-| DateTime64            | datetime.datetime       | int               | تُفسَّر القيم الصحيحة على أنها tick وفق دقة العمود.                                                                                        |
-| Time                  | datetime.timedelta      | int, string, time | تُفسَّر القيم الصحيحة على أنها ثوانٍ.                                                                                                      |
-| Time64                | datetime.timedelta      | int, string, time | تُفسَّر القيم الصحيحة على أنها tick وفق دقة العمود.                                                                                        |
-| IPv4                  | `ipaddress.IPv4Address` | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كعناوين IPv4                                                                                 |
-| IPv6                  | `ipaddress.IPv6Address` | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كعناوين IPv6                                                                                 |
-| Tuple                 | dict or tuple           |                   |                                                                                                                                            |
-| Map                   | dict                    |                   |                                                                                                                                            |
-| Nested                | Sequence[dict]          |                   |                                                                                                                                            |
-| UUID                  | uuid.UUID               | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كمعرّفات UUID في ClickHouse                                                                  |
-| JSON                  | dict                    | string            | القواميس وسلاسل كائنات JSON النصية مدعومة. النوع legacy `Object('json')` غير مدعوم.                                                        |
-| Variant               | object                  |                   | تستخدم القيم آلية serialization الأصلية للعضو. استخدم `clickhouse_connect.datatypes.dynamic.typed_variant` عندما تكون أنواع بايثون ملتبسة. |
-| Dynamic               | object                  |                   | تُدرَج القيم حاليًا من خلال string representation الخاص بها.                                                                               |
-| QBit                  | Sequence[float]         |                   | يُستخدم NumPy تلقائيًا لإجراء تبديل البتات بسرعة أكبر عند تثبيته.                                                                          |
+| ClickHouse Type       | نوع بايثون الأصلي       | تنسيقات الكتابة   | التعليقات                                                                                                                                                                                                 |
+| --------------------- | ----------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                                                                                           |
+| UInt64                | int                     |                   |                                                                                                                                                                                                           |
+| [U]Int[128,256]       | int                     |                   |                                                                                                                                                                                                           |
+| BFloat16              | float                   |                   |                                                                                                                                                                                                           |
+| Float32               | float                   |                   |                                                                                                                                                                                                           |
+| Float64               | float                   |                   |                                                                                                                                                                                                           |
+| Decimal               | decimal.Decimal         |                   |                                                                                                                                                                                                           |
+| Interval*             | int                     |                   | القيم هي أعداد موقَّعة بحجم 64 بت بوحدة نوع interval.                                                                                                                                                     |
+| String                | str or bytes            |                   | يجب أن يحتوي العمود دائمًا على نص أو bytes فقط.                                                                                                                                                           |
+| FixedString           | bytes                   | string            | تُملأ قيم String ببايتات صفرية. وتُكتب البايتات الفارغة على هيئة بايتات صفرية بالكامل.                                                                                                                    |
+| Enum[8,16]            | str or int              |                   | أدرِج labels كسلاسل نصية أو كقيمها الصحيحة الأساسية.                                                                                                                                                      |
+| Date                  | datetime.date           | int               | تُفسَّر القيم الصحيحة على أنها عدد الأيام منذ 1970-01-01.                                                                                                                                                 |
+| Date32                | datetime.date           | int               | تُفسَّر القيم الصحيحة على أنها إزاحات أيام موقَّعة.                                                                                                                                                       |
+| DateTime              | datetime.datetime       | int               | تُفسَّر القيم الصحيحة على أنها ثوانٍ منذ الحقبة.                                                                                                                                                          |
+| DateTime64            | datetime.datetime       | int               | تُفسَّر القيم الصحيحة على أنها tick وفق دقة العمود.                                                                                                                                                       |
+| Time                  | datetime.timedelta      | int, string, time | تُفسَّر القيم الصحيحة على أنها ثوانٍ.                                                                                                                                                                     |
+| Time64                | datetime.timedelta      | int, string, time | المقاييس من 0 إلى 9 مدعومة. تُفسَّر القيم الصحيحة على أنها tick وفق دقة العمود. وتعمل قيم timedelta في NumPy وعمليات الإدراج عبر DataFrame عند كل مقياس. أما أنواع الوقت في بايثون فمحدودة بالميكروثانية. |
+| IPv4                  | `ipaddress.IPv4Address` | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كعناوين IPv4                                                                                                                                                |
+| IPv6                  | `ipaddress.IPv6Address` | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كعناوين IPv6                                                                                                                                                |
+| Tuple                 | dict or tuple           |                   | استخدم `()` مع `Tuple()`.                                                                                                                                                                                 |
+| Map                   | dict                    |                   |                                                                                                                                                                                                           |
+| Nested                | Sequence[dict]          |                   |                                                                                                                                                                                                           |
+| UUID                  | uuid.UUID               | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كمعرّفات UUID في ClickHouse                                                                                                                                 |
+| JSON                  | dict                    | string            | القواميس وسلاسل كائنات JSON النصية مدعومة. النوع legacy `Object('json')` غير مدعوم.                                                                                                                       |
+| Variant               | object                  |                   | تستخدم القيم آلية serialization الأصلية للعضو. استخدم `clickhouse_connect.datatypes.dynamic.typed_variant` عندما تكون أنواع بايثون ملتبسة.                                                                |
+| Dynamic               | object                  |                   | تُدرَج القيم حاليًا من خلال string representation الخاص بها.                                                                                                                                              |
+| MultiPoint            | Sequence[tuple]         |                   | كل Point هو tuple ثنائي. ويتطلب إدراج قيم MultiPoint إصدار ClickHouse 26.8 أو أحدث.                                                                                                                       |
+| Geometry              | tuple or list           |                   | قيم Point هي tuple ثنائية. لِف القيم المبنية على القوائم، بما فيها MultiPoint، بـ `typed_variant` لاختيار عضو Geometry.                                                                                   |
+| QBit                  | Sequence[float]         |                   | يُستخدم NumPy تلقائيًا لإجراء تبديل البتات بسرعة أكبر عند تثبيته.                                                                                                                                         |
 
-<div id="specialized-insert-methods">
-  ### طرق `insert` المتخصصة
-</div>
+### طرق `insert` المتخصصة {#specialized-insert-methods}
 
 يوفّر ClickHouse Connect طرق `insert` متخصصة لتنسيقات البيانات الشائعة:
 
@@ -92,9 +85,7 @@ assert qr.first_row[0] == 113
   تُعد مصفوفة NumPy من نوع Sequence of Sequences صالحة، ويمكن استخدامها باعتبارها الوسيط `data` في طريقة `insert` الرئيسية، لذلك لا حاجة إلى طريقة متخصصة.
 </Note>
 
-<div id="pandas-dataframe-insert">
-  #### إدراج DataFrame من Pandas
-</div>
+#### إدراج DataFrame من Pandas {#pandas-dataframe-insert}
 
 ```python
 import clickhouse_connect
@@ -111,9 +102,7 @@ df = pd.DataFrame({
 client.insert_df("users", df)
 ```
 
-<div id="pyarrow-table-insert">
-  #### إدراج جدول PyArrow
-</div>
+#### إدراج جدول PyArrow {#pyarrow-table-insert}
 
 ```python
 import clickhouse_connect
@@ -130,9 +119,7 @@ arrow_table = pa.table({
 client.insert_arrow("users", arrow_table)
 ```
 
-<div id="arrow-backed-dataframe-insert-pandas-2">
-  #### إدراج DataFrame مدعوم بـ Arrow ‏(pandas 2.x)
-</div>
+#### إدراج DataFrame مدعوم بـ Arrow ‏(pandas 2.x) {#arrow-backed-dataframe-insert-pandas-2}
 
 ```python
 import clickhouse_connect
@@ -150,9 +137,7 @@ df = pd.DataFrame({
 client.insert_df_arrow("users", df)
 ```
 
-<div id="create-table-from-pyarrow-schema">
-  ### إنشاء جدول من مخطط PyArrow
-</div>
+### إنشاء جدول من مخطط PyArrow {#create-table-from-pyarrow-schema}
 
 تُنشئ `create_table_from_arrow_schema` تعليمة `CREATE TABLE` من حقول Arrow القياسية أحادية القيمة. ويغطي هذا الربط الأعداد الصحيحة الموقعة وغير الموقعة، والقيم ذات الفاصلة العائمة، والقيم المنطقية، والسلاسل النصية، والتواريخ، والطوابع الزمنية. كما أنها تُنشئ عمدًا أعمدة ClickHouse غير قابلة لـ NULL وتُطلق `TypeError` لأنواع Arrow غير المدعومة، لذا راجع عبارة DDL المُولَّدة قبل تنفيذها.
 
@@ -179,15 +164,11 @@ ddl = create_table_from_arrow_schema(
 client.command(ddl)
 ```
 
-<div id="time-zones">
-  ### المناطق الزمنية
-</div>
+### المناطق الزمنية {#time-zones}
 
 عند إدراج كائنات `datetime` من بايثون في أعمدة `DateTime` أو `DateTime64`، يحوّلها ClickHouse Connect إلى قيم محسوبة منذ الحقبة.
 
-<div id="timezone-aware-datetime-objects">
-  #### كائنات datetime المزوّدة بمعلومات المنطقة الزمنية
-</div>
+#### كائنات datetime المزوّدة بمعلومات المنطقة الزمنية {#timezone-aware-datetime-objects}
 
 تحافظ الكائنات المزوّدة بمعلومات المنطقة الزمنية على اللحظة الزمنية التي تمثلها. ولا يلزم أن تتطابق المنطقة الزمنية للمصدر مع المنطقة الزمنية المحددة في عمود ClickHouse.
 
@@ -216,9 +197,7 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   تستخدم ClickHouse Connect وحدة `zoneinfo` من المكتبة القياسية. ولم يعد المشغّل يعتمد على `pytz`.
 </Note>
 
-<div id="timezone-naive-datetime-objects">
-  #### كائنات datetime غير المزوّدة بمنطقة زمنية
-</div>
+#### كائنات datetime غير المزوّدة بمنطقة زمنية {#timezone-naive-datetime-objects}
 
 يتحكم الإعداد العام `naive_datetime_insert` في عمليات الإدراج الأصلية لكائنات `datetime` غير المزوّدة بمنطقة زمنية في بايثون. وينطبق أيضًا على سلاسل ISO غير المزوّدة بمنطقة زمنية التي تقبلها أعمدة `DateTime64`.
 
@@ -259,9 +238,7 @@ client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 
 تستخدم معاملات الاستعلام `datetime` غير المرتبطة بمنطقة زمنية إعداد `naive_datetime_binding` المنفصل. يرسل الوضع الافتراضي `"wall"` حقول الوقت كما هي دون تحويل وفق المنطقة الزمنية المحلية للمضيف. راجع قسم [وسيطة Parameters](/ar/integrations/language-clients/python/driver-api#parameters-argument).
 
-<div id="datetime-columns-with-timezone-metadata">
-  #### أعمدة DateTime ذات البيانات الوصفية للمنطقة الزمنية
-</div>
+#### أعمدة DateTime ذات البيانات الوصفية للمنطقة الزمنية {#datetime-columns-with-timezone-metadata}
 
 يمكن لأعمدة ClickHouse تحديد بيانات وصفية للمنطقة الزمنية، على سبيل المثال `DateTime('America/Denver')` أو `DateTime64(3, 'Asia/Tokyo')`. وتتحكم هذه البيانات الوصفية في كيفية عرض القيم عند الاستعلام عنها.
 
@@ -286,9 +263,7 @@ assert returned.hour == 7
 assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
 ```
 
-<div id="file-inserts">
-  ## إدراج الملفات
-</div>
+## إدراج الملفات {#file-inserts}
 
 يقوم `clickhouse_connect.driver.tools.insert_file` بتمرير ملف محلي إلى جدول موجود، ويوكل عملية التحليل إلى ClickHouse.
 

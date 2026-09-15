@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشيفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_aggregate_partitions_independently">
-  ## allow_aggregate_partitions_independently
-</div>
+## allow_aggregate_partitions_independently {#allow_aggregate_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمكين التجميع المستقل لـ partitions على threads منفصلة عندما يكون مفتاح partition مناسبًا لمفتاح `GROUP BY`. يكون ذلك مفيدًا عندما يكون عدد partitions قريبًا من عدد الأنوية وتكون أحجام partitions متقاربة إلى حدٍّ ما. تقوم الآليات الاستدلالية في `ReadFromMergeTree` تلقائيًا بتعطيل هذا التحسين في التخطيطات غير الملائمة (عدد قليل جدًا من partitions، أو عدد كبير جدًا منها، أو أحجام partitions غير متوازنة بشكل ملحوظ)؛ راجع `force_aggregate_partitions_independently` لتجاوز هذه الفحوصات.
 
-<div id="allow_archive_path_syntax">
-  ## allow_archive_path_syntax
-</div>
+## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,17 +31,13 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 ستفسّر محركات File/S3/دالة الجدول المسارات التي تحتوي على &#39;::&#39; على أنها `<archive> :: <file>` إذا كان للأرشيف امتداد صحيح.
 
-<div id="allow_asynchronous_read_from_io_pool_for_merge_tree">
-  ## allow_asynchronous_read_from_io_pool_for_merge_tree
-</div>
+## allow_asynchronous_read_from_io_pool_for_merge_tree {#allow_asynchronous_read_from_io_pool_for_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 استخدم مجموعة I/O في الخلفية للقراءة من جداول MergeTree. قد يؤدي هذا الإعداد إلى تحسين الأداء للاستعلامات المقيّدة بعمليات I/O
 
-<div id="allow_calculating_subcolumns_sizes_for_merge_tree_reading">
-  ## allow_calculating_subcolumns_sizes_for_merge_tree_reading
-</div>
+## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,26 +45,20 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 عند التمكين، سيحسب ClickHouse أحجام الملفات المطلوبة لقراءة كل عمود فرعي، لتحسين حساب أحجام المهام والكتل.
 
-<div id="allow_changing_replica_until_first_data_packet">
-  ## allow_changing_replica_until_first_data_packet
-</div>
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 إذا كان هذا الإعداد مُمكّنًا، ففي الطلبات المتحوّطة يمكننا بدء connection جديد حتى استلام أول packet بيانات، حتى لو كنّا قد أحرزنا بعض التقدّم بالفعل
 (لكن لم يتم تحديث التقدّم خلال مهلة `receive_data_timeout`)؛ وإلا فسنُعطّل تغيير الـ replica بعد أول مرة نُحرز فيها تقدّمًا.
 
-<div id="allow_create_index_without_type">
-  ## allow_create_index_without_type
-</div>
+## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح بتنفيذ استعلام CREATE INDEX بدون TYPE. سيتم تجاهل الاستعلام. وُضع هذا لأغراض اختبار التوافق مع SQL.
 
-<div id="allow_creating_set_partitions_independently">
-  ## allow_creating_set_partitions_independently
-</div>
+## allow_creating_set_partitions_independently {#allow_creating_set_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,25 +66,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح إزالة التكرار المسبقة والمتوازية لكل partition من نتيجة الاستعلام الفرعي عند بناء المجموعة لـ `IN (subquery)`، عندما يكون تعبير partition في جدول `MergeTree` الخاص بالاستعلام الفرعي دالة حتمية لأعمدة إخراج الاستعلام الفرعي. يُقرأ كل partition عبر تدفق منفصل وتُزال تكراراته بشكل مستقل، لذلك لا يحسب تحويل ملء المجموعة الوحيد التجزئة إلا للصفوف الفريدة. لا يُطبَّق مع `FINAL` أو النسخ المتماثلة المتوازية أو `GLOBAL IN`. لا يطلب التحسين القراءة لكل partition إلا عندما تحتوي البيانات على أكثر من partition واحد، ولا يتجاوز عدد صفوف أكبر partition ضعف عدد صفوف partition المتوسط (راجع [force&#95;creating&#95;set&#95;partitions&#95;independently](/ar/reference/settings/session-settings/force#force_creating_set_partitions_independently) لتجاوز فحص عدم التوازن). وعندما تكون التدفقات منفصلة بحسب partition أصلًا لأن ميزة أخرى لكل partition قد فصلتها (مثل `LIMIT BY` لكل partition)، تُطبَّق إزالة التكرار المسبقة بغض النظر عن ذلك، لأن تخطيط القراءة محدد مسبقًا. أثناء بناء المجموعة، تحتفظ جداول إزالة التكرار الخاصة بكل تدفق مجتمعةً بنسخة إضافية واحدة تقريبًا من المفاتيح الفريدة.
 
-<div id="allow_custom_error_code_in_throwif">
-  ## allow_custom_error_code_in_throwif
-</div>
+## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يتيح استخدام رمز خطأ مخصص في الدالة throwIf(). إذا كانت القيمة true، فقد تحمل الاستثناءات المُطلَقة رموز خطأ غير متوقعة.
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 إذا ضُبطت القيمة على true، فسيُسمح للمستخدم بتنفيذ استعلامات DDL.
 
-<div id="allow_delta_kernel_rs">
-  ## allow_delta_kernel_rs
-</div>
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
 
 <BetaBadge />
 
@@ -110,9 +90,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح باستخدام تنفيذ `delta-kernel-rs` لقراءة جداول Delta Lake.
 
-<div id="allow_distinct_partitions_independently">
-  ## allow_distinct_partitions_independently
-</div>
+## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,25 +100,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 لا يُطبَّق عند تعيين [max&#95;rows&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-rows#max_rows_in_distinct) أو [max&#95;bytes&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_distinct): إذ تُفرض هذه الحدود بواسطة تحويل `DISTINCT` الواحد الذي يعالج النتيجة المدمجة بالكامل، لذلك يُحتفظ بالدمج بين التدفقات للحفاظ على دلالتها الشاملة.
 
-<div id="allow_distributed_ddl">
-  ## allow_distributed_ddl
-</div>
+## allow_distributed_ddl {#allow_distributed_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 إذا ضُبطت هذه القيمة على true، فسيُسمح للمستخدم بتنفيذ استعلامات DDL الموزعة.
 
-<div id="allow_drop_detached">
-  ## allow_drop_detached
-</div>
+## allow_drop_detached {#allow_drop_detached}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح بتنفيذ استعلامات ALTER TABLE ... DROP DETACHED PART[ITION] ...
 
-<div id="allow_dynamic_type_in_join_keys">
-  ## allow_dynamic_type_in_join_keys
-</div>
+## allow_dynamic_type_in_join_keys {#allow_dynamic_type_in_join_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -148,17 +120,13 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح باستخدام نوع Dynamic في مفاتيح JOIN. أُضيف لأغراض التوافق. لا يُنصح باستخدام نوع Dynamic في مفاتيح JOIN لأن المقارنة مع الأنواع الأخرى قد تؤدي إلى نتائج غير متوقعة.
 
-<div id="allow_execute_multiif_columnar">
-  ## allow_execute_multiif_columnar
-</div>
+## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 السماح بتنفيذ الدالة multiIf بشكل عمودي
 
-<div id="allow_fuzz_query_functions">
-  ## allow_fuzz_query_functions
-</div>
+## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
 <ExperimentalBadge />
 
@@ -168,9 +136,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُمكِّن الدالة `fuzzQuery` التي تُجري تعديلات عشوائية على AST لاستعلامٍ ما.
 
-<div id="allow_general_join_planning">
-  ## allow_general_join_planning
-</div>
+## allow_general_join_planning {#allow_general_join_planning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -178,9 +144,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح هذا استخدام خوارزمية أكثر عمومية لتخطيط JOIN يمكنها التعامل مع شروط أكثر تعقيدًا، لكنها لا تعمل إلا مع hash join. وإذا لم يكن hash join مُمكّنًا، فستُستخدم خوارزمية تخطيط JOIN المعتادة بغض النظر عن قيمة هذا الإعداد.
 
-<div id="allow_get_client_http_header">
-  ## allow_get_client_http_header
-</div>
+## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -188,17 +152,13 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح هذا الإعداد باستخدام الدالة `getClientHTTPHeader` التي تتيح الحصول على قيمة ترويسة طلب HTTP الحالي. وهي غير مُمكّنة افتراضيًا لأسباب أمنية، لأن بعض الترويسات، مثل `Cookie`، قد تحتوي على معلومات حساسة. لاحظ أن ترويسات `X-ClickHouse-*` و`Authentication` و`Authorization` تكون مقيّدة دائمًا، ولا يمكن الحصول عليها باستخدام هذه الدالة.
 
-<div id="allow_hyperscan">
-  ## allow_hyperscan
-</div>
+## allow_hyperscan {#allow_hyperscan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 يسمح بالدوال التي تستخدم مكتبة Hyperscan. عطّل هذا الخيار لتجنّب أوقات تجميع طويلة محتملة والاستهلاك المفرط للموارد.
 
-<div id="allow_iceberg_remove_orphan_files">
-  ## allow_iceberg_remove_orphan_files
-</div>
+## allow_iceberg_remove_orphan_files {#allow_iceberg_remove_orphan_files}
 
 <ExperimentalBadge />
 
@@ -208,9 +168,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح باستخدام &#39;ALTER TABLE ... EXECUTE remove&#95;orphan&#95;files()&#39; لجداول Iceberg.
 
-<div id="allow_insert_into_iceberg">
-  ## allow_insert_into_iceberg
-</div>
+## allow_insert_into_iceberg {#allow_insert_into_iceberg}
 
 <BetaBadge />
 
@@ -222,9 +180,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح بتنفيذ استعلامات `insert` في Iceberg.
 
-<div id="allow_introspection_functions">
-  ## allow_introspection_functions
-</div>
+## allow_introspection_functions {#allow_introspection_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -240,9 +196,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * [Sampling Query Profiler](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * جدول النظام [trace&#95;log](/ar/reference/system-tables/trace_log)
 
-<div id="allow_key_condition_coalesce_rewrite">
-  ## allow_key_condition_coalesce_rewrite
-</div>
+## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -251,9 +205,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 أعِد كتابة الشروط من الشكل `coalesce(a_1, ..., a_N) <op> const` (وكذلك `ifNull` بصورة مكافئة، أو عندما يكون الثابت على اليسار) إلى الفصل المنطقي `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` قبل تحليل الفهارس، بحيث يمكن استخدام المفتاح الأساسي وفهارس التخطي الخاصة بكل عمود على كل `a_i`. تُعالَج الأشكال ذات الثوابت الجزئية مثل `coalesce(a, 42, b)` و`coalesce(a, b, 42)`: إذ تُطبَّع قائمة الوسائط كما يفعل `coalesce` نفسه (تُحذف القيم الحرفية `NULL`، وتُحذف الوسائط التي تلي أول وسيطة غير `Nullable`)، ويُضاف الثابت غير `NULL` الختامي، إن وُجد، باعتباره الفرع الأخير. تُستخدم إعادة الكتابة فقط كإضافة لتحسين استبعاد البيانات عبر الفهارس؛ ويستمر الترشيح وقت التشغيل في استخدام الشرط الأصلي.
 بالإضافة إلى ذلك، يُعاد كتابة شروط المساواة الدقيقة من الشكل `nullIf(key, sentinel) = const` (حيث `sentinel != const` وتتطابق الأنواع تمامًا) إلى `key = const`، بحيث يتمكن المفتاح الأساسي وpartition وفهارس التخطي على `key` من استبعاد الحبيبات مباشرةً. لا يُدعم استبعاد البيانات عبر `nullIf` للنطاقات أو الشروط الفصلية.
 
-<div id="allow_limit_by_partitions_independently">
-  ## allow_limit_by_partitions_independently
-</div>
+## allow_limit_by_partitions_independently {#allow_limit_by_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -261,9 +213,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُمكّن التقييم المستقل لـ `LIMIT BY` لكل partition على خيوط تنفيذ منفصلة عندما يكون تعبير partition دالة حتمية لأعمدة `LIMIT BY`.
 
-<div id="allow_lossy_numeric_supertype">
-  ## allow_lossy_numeric_supertype
-</div>
+## allow_lossy_numeric_supertype {#allow_lossy_numeric_supertype}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +221,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 عند التمكين، تُوحِّد `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` مجموعةً من الوسائط الرقمية التي لا نوعًا مشتركًا بينها دون فقدان (مثل `Decimal` و`Float64`، أو `Int64` و`Float64`) إلى نوع فائق رقمي (`Float64`) بدلًا من أن تفشل، مع احتمال فقدان الدقة. يتيح ذلك استخدام النتيجة مباشرةً مع دوال التجميع التي تدمج القيم، مثل `sum` و`avg` و`min` و`max`. وهذا مستقل عن `use_variant_as_common_type`: إذ يُنتَج النوع الفائق الرقمي سواء أكان `use_variant_as_common_type` مُمكّنًا أم لا. عند التعطيل (الإعداد الافتراضي)، لا يكون لهذه المجموعات من الوسائط نوع مشترك، لذا فإنها إما تصبح `Variant` (إذا كان `use_variant_as_common_type` مُمكّنًا) أو تُصدر `NO_COMMON_TYPE`.
 
-<div id="allow_materialized_view_with_bad_select">
-  ## allow_materialized_view_with_bad_select
-</div>
+## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,9 +229,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح باستخدام CREATE MATERIALIZED VIEW مع استعلام SELECT يشير إلى جداول أو أعمدة غير موجودة. ويجب أن يظل صحيحًا من حيث الصياغة النحوية. لا ينطبق ذلك على MVs القابلة للتحديث. كما لا ينطبق إذا كان يجب استنتاج مخطط MV من استعلام SELECT (أي إذا كان CREATE لا يتضمن قائمة أعمدة ولا TO table). ويمكن استخدامه لإنشاء MV قبل الجدول المصدر الخاص بها.
 
-<div id="allow_metadata_only_named_tuple_alter">
-  ## allow_metadata_only_named_tuple_alter
-</div>
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -292,9 +238,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 إذا كانت القيمة true، فإن عملية ALTER MODIFY COLUMN على Tuple مُسمّى تضيف حقولًا فرعية جديدة فقط تكون مقتصرة على البيانات الوصفية (من دون mutation للبيانات).
 اضبطها على false لفرض السلوك القديم الذي يتضمن mutation كاملًا.
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -303,25 +247,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 السماح بإنشاء فهارس minmax للتخطي على أعمدة JSON ‏(Object). يكون هذا الخيار معطّلًا افتراضيًا لأن مسار
 تسلسل فهرس minmax لا يمكنه التعامل مع قيم Field غير المتجانسة التي قد تحتويها أعمدة JSON.
 
-<div id="allow_named_collection_override_by_default">
-  ## allow_named_collection_override_by_default
-</div>
+## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 السماح افتراضيًا بتجاوز حقول المجموعات المسماة.
 
-<div id="allow_non_metadata_alters">
-  ## allow_non_metadata_alters
-</div>
+## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 السماح بتنفيذ عمليات ALTER التي لا تؤثر فقط في البيانات الوصفية للجداول، بل أيضًا في البيانات المخزنة على القرص
 
-<div id="allow_nonconst_timezone_arguments">
-  ## allow_nonconst_timezone_arguments
-</div>
+## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -332,9 +270,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 يُوحي تمكين هذا الإعداد خطأً بأن القيم المختلفة داخل العمود يمكن أن تكون لها timezones مختلفة.
 لذلك، يُرجى عدم تمكين هذا الإعداد.
 
-<div id="allow_nullable_tuple_in_extracted_subcolumns">
-  ## allow_nullable_tuple_in_extracted_subcolumns
-</div>
+## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -352,9 +288,15 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 ولا تؤدي التغييرات التي تُجرى باستخدام `SET` أو `SETTINGS` على مستوى الاستعلام إلى تغيير سلوك الأعمدة الفرعية المستخرجة.
 ولتغيير سلوك الأعمدة الفرعية المستخرجة، حدّث `allow_nullable_tuple_in_extracted_subcolumns` في تهيئة ملف التعريف عند بدء التشغيل (على سبيل المثال، users.xml) ثم أعد تشغيل الخادم.
 
-<div id="allow_rank_dense_rank_arguments">
-  ## allow_rank_dense_rank_arguments
-</div>
+## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد يتيح لـ `DISTINCT` التمهيدي التوقف عن إزالة التكرارات من إدخال تكون معظم قيمه فريدة، لأن `DISTINCT` النهائي يزيل التكرارات من مخرجاته مجددًا."}]}]} />
+
+اسمح لـ `DISTINCT` التمهيدي (لكل تدفق) بالتوقف عن إزالة التكرارات من إدخال تكون معظم قيمه فريدة، مما يحرر جدول التجزئة الخاص به ويمرر الصفوف المتبقية. صُمم `DISTINCT` التمهيدي ليعمل بأفضل جهد؛ إذ تمر التكرارات القادمة من تدفقات مختلفة عبره حتى عند إزالة التكرارات، بينما يزيل `DISTINCT` النهائي التكرارات من مخرجاته مجددًا. لذلك، لا يؤدي التوقف إلى التخلي إلا عن إزالة عدد ضئيل جدًا من التكرارات، ويوفر الذاكرة وعمليات التجزئة اللازمة لنسخة ثانية من المفاتيح الفريدة. لا يُطبّق ذلك عندما يتضمن `DISTINCT` التمهيدي تلميح حدّ (عبارة `LIMIT` عادية دون ترتيب لاحق).
+
+## allow_rank_dense_rank_arguments {#allow_rank_dense_rank_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -371,9 +313,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 الاستثناء `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`. وعند ضبطه على `true`، يُستعاد السلوك القديم المتساهل
 — إذ تُتجاهل الوسائط بصمت، بما يطابق السلوك السابق قبل الإصدار 26.5.
 
-<div id="allow_reorder_prewhere_conditions">
-  ## allow_reorder_prewhere_conditions
-</div>
+## allow_reorder_prewhere_conditions {#allow_reorder_prewhere_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -381,9 +321,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح بإعادة ترتيب الشروط عند نقلها من WHERE إلى PREWHERE لتحسين التصفية
 
-<div id="allow_replace_partition_from_empty_source">
-  ## allow_replace_partition_from_empty_source
-</div>
+## allow_replace_partition_from_empty_source {#allow_replace_partition_from_empty_source}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -395,9 +333,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 فعّل هذا الإعداد لاستعادة السلوك السابق، على سبيل المثال عندما تستخدم عمدًا partition فارغًا في المصدر لمسح البيانات في الوجهة. وإذا أردت حذفًا غير مشروط، فالأفضل استخدام `ALTER TABLE ... DROP PARTITION ...` بدلًا من ذلك.
 
-<div id="allow_settings_after_format_in_insert">
-  ## allow_settings_after_format_in_insert
-</div>
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -427,17 +363,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
   استخدم هذا الإعداد فقط للحفاظ على التوافق مع الإصدارات السابقة إذا كانت حالات الاستخدام لديك تعتمد على الصياغة القديمة.
 </Note>
 
-<div id="allow_simdjson">
-  ## allow_simdjson
-</div>
+## allow_simdjson {#allow_simdjson}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 يسمح باستخدام مكتبة simdjson في دوال &#39;JSON*&#39; إذا كانت تعليمات AVX2 متوفرة. وإذا كان هذا الخيار معطّلًا، فستُستخدم rapidjson.
 
-<div id="allow_special_serialization_kinds_in_output_formats">
-  ## allow_special_serialization_kinds_in_output_formats
-</div>
+## allow_special_serialization_kinds_in_output_formats {#allow_special_serialization_kinds_in_output_formats}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -446,17 +378,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 يسمح بإخراج الأعمدة ذات أنواع التسلسل الخاصة مثل Sparse وReplicated دون تحويلها إلى تمثيل الأعمدة الكامل.
 ويساعد ذلك على تجنب نسخ البيانات غير الضروري عند التنسيق.
 
-<div id="allow_unrestricted_reads_from_keeper">
-  ## allow_unrestricted_reads_from_keeper
-</div>
+## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح بعمليات قراءة غير مقيّدة (من دون شرط على مسار) من جدول system.zookeeper، وقد يكون ذلك مفيدًا، لكنه غير آمن لـ ZooKeeper
 
-<div id="allow_window_partitions_independently">
-  ## allow_window_partitions_independently
-</div>
+## allow_window_partitions_independently {#allow_window_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

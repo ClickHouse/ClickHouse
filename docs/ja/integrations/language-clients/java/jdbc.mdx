@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     パフォーマンスや直接アクセスが重要な場合は、最新の Java クライアントを直接使用することを推奨します。
   </Note>
 
-  ## 環境要件
+  ## 環境要件 {#environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) バージョン 8 以上
 
-  ### Setup
+  ### Setup {#setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -59,7 +59,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     * シェーディング済みの依存関係をすべて含む jar を取得するには、修飾子 `all` を使用します。
   * または公式リポジトリの[こちら](https://github.com/ClickHouse/clickhouse-java/releases)から
 
-  ## 設定
+  ## 設定 {#configuration}
 
   **ドライバークラス**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -86,16 +86,19 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * ドライバーはポート番号からプロトコルを推測しないため、明示的に指定する必要があります
   * プロトコルが指定されている場合、`ssl` パラメータは不要です。
 
-  ### 接続プロパティ
+  <div id="connection-properties">
+    ### 接続プロパティ
+  </div>
 
-  主な設定パラメーターは [Java クライアント](/ja/integrations/language-clients/java/client#client-configuration) で定義されています。これらはそのままドライバーに渡してください。ドライバー固有のプロパティでクライアント設定に含まれないものは、以下に一覧を示します。
+  主な設定パラメーターは [Java クライアント](/ja/integrations/language-clients/java/client#client-configuration) で定義されています。これらはそのまま
+  ドライバーに渡してください。ドライバーには、クライアント設定に含まれない独自のプロパティがいくつかあり、以下に一覧を示します。
 
   **ドライバーのプロパティ**:
 
   | プロパティ                               | デフォルト    | 説明                                                                                                                |
   | ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
   | `disable_frameworks_detection`      | `true`   | ユーザーエージェントのフレームワーク検出を無効にします                                                                                       |
-  | `jdbc_ignore_unsupported_values`    | `false`  | `SQLFeatureNotSupportedException` がドライバーの動作に影響しない場合は、この例外を抑制します                                                   |
+  | `jdbc_ignore_unsupported_values`    | `false`  | `SQLFeatureNotSupportedException` がドライバーの動作に影響しない場合、この例外を抑制します                                                    |
   | `clickhouse.jdbc.v1`                | `false`  | 新しい JDBC ではなく、従来の JDBC 実装を使用します                                                                                   |
   | `default_query_settings`            | `null`   | クエリ実行時にデフォルトのクエリ設定を渡せるようにします                                                                                      |
   | `jdbc_resultset_auto_close`         | `true`   | `Statement` を閉じると `ResultSet` も自動的に閉じます                                                                           |
@@ -145,10 +148,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   **読み取り専用プロファイル**
 
   読み取り専用プロファイルとの問題を避けるため、接続プロパティにデフォルト設定を意図的に追加していません。
-  ただし、フォーマット設定を渡す必要があるユーザー (例: JSON を String として読み取る場合) には、`readonly=2` プロファイルの使用を推奨します。
+  ただし、フォーマット設定を渡す必要があるユーザー (例：JSON を String として読み取る場合) には、`readonly=2` プロファイルの使用を推奨します。
   読み取り専用プロファイルの詳細については、[こちら](/ja/concepts/features/configuration/settings/constraints-on-settings#read-only)を参照してください。
 
-  ### クライアント識別
+  ### クライアント識別 {#client-identification}
 
   リクエストを発行したアプリケーションを識別する方法は2つあります。接続プロパティで `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` を設定するか、`java.sql.Connection#setClientInfo(String name, String value)` メソッドを使用します。
 
@@ -162,7 +165,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   conn.setClientInfo(com.clickhouse.jdbc.ClientInfoProperties.APPLICATION_NAME.getKey(), "my-app-01");
   ```
 
-  どちらの方法でも、クエリログの `http_user_agent` の値は次のようになります：
+  どちらの方法でも、クエリログの `http_user_agent` の値は次のようになります:
 
   ```
   my-app-01/1.0 jdbc-v2/0.9.7 clickhouse-java-v2/0.9.6 (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
@@ -170,7 +173,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **注意:** `client_name` プロパティには `app_name/version` フォーマットの使用を推奨します。クエリログでアプリケーションを識別しやすくなるためです。
 
-  ### オペレーションの識別
+  ### オペレーションの識別 {#operation-identification}
 
   JDBCドライバーは操作ごとに `query_id` を生成します (現在はサーバーの例外に含まれています) 。
 
@@ -183,11 +186,11 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **注意:** `localSettings` はスレッド間で共有されるため、このアプローチはステートメントのシングルスレッド使用時にのみ有効です。
 
-  ## サポートされているデータ型
+  ## サポートされているデータ型 {#supported-data-types}
 
   JDBCドライバーは、基盤となる[Java クライアント](/ja/integrations/language-clients/java/index#supported-data-types)と同じデータフォーマットをサポートしています。
 
-  ### JDBC 型マッピング
+  ### JDBC 型マッピング {#jdbc-type-mapping}
 
   以下のマッピングが適用される対象：
 
@@ -255,7 +258,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **日付/時刻型**
 
-  | ClickHouse 型 | JDBC 型    | Javaクラス            |
+  | ClickHouse 型 | JDBC 型    | Java クラス           |
   | ------------ | --------- | ------------------ |
   | Date         | DATE      | java.sql.Date      |
   | Date32       | DATE      | java.sql.Date      |
@@ -292,11 +295,11 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   **Array要素型のメタデータ**
 
   `Array.getBaseTypeName()` は ClickHouse の要素型名を返し、`Array.getBaseType()` は JDBC 型コードを返します。
-  JDBC V2 は、V1 が省略するラッパー型や型パラメーターを含む完全な型シグネチャを保持します。
+  JDBC V2 は、V1 で削除されるラッパー型や型パラメーターを含む完全な型シグネチャを保持します。
 
   配列の一般的なマッピングルールは以下のとおりです：
 
-  | ClickHouse 型                               | `getBaseTypeName()`                   | `getBaseType()`      |
+  | ClickHouse Type                            | `getBaseTypeName()`                   | `getBaseType()`      |
   | ------------------------------------------ | ------------------------------------- | -------------------- |
   | `Array(<プリミティブ型>)`                         | `<プリミティブ型>`                           | `<JDBC プリミティブ型>`     |
   | `Array(<Parameterized Type>(<N>))`         | `<Parameterized Type>(<N>)`           | `<基本型のJDBC型>`        |
@@ -356,7 +359,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * `typeName` - 配列要素の型名。例: `Array(Int32)` -&gt; `"Int32"`。
   * `elements` - 配列の実際の要素。たとえば `[[1, 2, 3], [4, 5, 6]]` -&gt; `new Integer[][] {{1, 2, 3}, {4, 5, 6}}`。
 
-  Tupleは`Object[]`または`java.sql.Struct`として表現できます (タプルの記述方法については以下を参照してください) 。
+  Tupleは`Object[]`または`java.sql.Struct`として表現できます (タプルの記述方法については以下を参照してください)。
 
   **例**
 
@@ -372,8 +375,8 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **Arrayの読み取り**
 
-  `ResultSet#getArray(columnIndex)` を使用して `Array` オブジェクトを読み取ります。このオブジェクトを使用すると、任意のネスト深度のArrayにアクセスできます。
-  `Array#getResultSet()` メソッドを使用すると、配列要素を `java.sql.ResultSet` として統一的な方法で読み取ることができます。配列要素の正確な型が不明な場合に便利です。
+  `ResultSet#getArray(columnIndex)` を使用して `Array` オブジェクトを読み取ります。オブジェクトを使用すると、任意のネスト深度の配列にアクセスできます。
+  `Array#getResultSet()` メソッドを使用すると、配列要素を `java.sql.ResultSet` としてより統一的に読み取ることができます。配列要素の正確な型が不明な場合に便利です。
 
   **例**
 
@@ -449,7 +452,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **Mapの書き込み**
 
-  Map は `java.collections.Map` オブジェクトとしてのみ書き込み可能です。このデータ型はキー・バリューペアを必要とするためです (`java.sql.Struct` はキー・バリューペアをサポートしていません) 。
+  Map は `java.collections.Map` オブジェクトとしてのみ書き込めます。これはこの型がキーと値のペアを必要とするためです (`java.sql.Struct` はキーと値のペアをサポートしていません) 。
 
   **例**
 
@@ -465,9 +468,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  **地図の読み方**
+  **Mapの読み取り**
 
-  Mapは`getObject(columnIndex, Map.class)`メソッドを使用することで、`java.collections.Map`オブジェクトとして読み取ることができます。
+  Mapは`getObject(columnIndex, Map.class)`メソッドを使用して、`java.collections.Map`オブジェクトとして読み取ることができます。
 
   **例**
 
@@ -593,7 +596,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }});
   ```
 
-  接続プロパティにサーバー設定 `jdbc_read_json_as_string=true` を渡すことで、JSONをStringとして読み取るより便利な方法があります。
+  接続プロパティにサーバー設定 `output_format_binary_write_json_as_string=1` を渡すことで、JSONをStringとして読み取るより便利な方法があります。
   これにより、ドライバーはJSON値をStringとして返すようになり、任意のJSONライブラリを使用して解析できます。
 
   ```java
@@ -620,11 +623,11 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### 日付、時刻、タイムゾーンの処理
+  ### 日付、時刻、タイムゾーンの処理 {#handling-dates-times-and-timezones}
 
   日付/時刻およびタイムスタンプの処理におけるドライバーの動作と注意点については、[Date/Time Guide](/ja/integrations/language-clients/java/date-time-guide)を参照してください。
 
-  ## 接続の作成
+  ## 接続の作成 {#creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -635,7 +638,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## 認証情報と設定の指定
+  ## 認証情報と設定の指定 {#supplying-credentials-and-settings}
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -657,7 +660,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## シンプルなステートメント
+  ## シンプルなステートメント {#simple-statement}
 
   ```java showLineNumbers
 
@@ -670,7 +673,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## インサート
+  ## インサート {#insert}
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -682,7 +685,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP`
+  ## `HikariCP` {#hikaricp}
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -705,17 +708,17 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 詳細情報
+  ## 詳細情報 {#more-information}
 
   詳細については、[GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-java)および [Java クライアントのドキュメント](/ja/integrations/language-clients/java/client)を参照してください。
 
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 
-  ### ロギング
+  ### ロギング {#logging}
 
   ドライバーはロギングに[slf4j](https://www.slf4j.org/)を使用し、`classpath`上で最初に見つかった実装を使用します。
 
-  ### 大規模インサート時のJDBCタイムアウトの解消
+  ### 大規模インサート時のJDBCタイムアウトの解消 {#resolving-jdbc-timeout-on-large-inserts}
 
   ClickHouseで実行時間の長い大規模なinsertを実行する際、次のようなJDBCタイムアウトエラーが発生する場合があります：
 
@@ -723,9 +726,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   Caused by: java.sql.SQLException: Read timed out, server myHostname [uri=https://hostname.aws.clickhouse.cloud:8443]
   ```
 
-  これらのエラーはデータの挿入プロセスを妨げ、システムの安定性に影響を及ぼす可能性があります。この問題に対処するには、クライアントのOSでいくつかのタイムアウト設定を調整する必要があります。
+  これらのエラーはデータ挿入プロセスを妨げ、システムの安定性に影響を及ぼす可能性があります。この問題に対処するには、クライアントの OS のいくつかのタイムアウト設定を調整する必要があるかもしれません。
 
-  #### Mac OS
+  #### Mac OS {#mac-os}
 
   Mac OS では、以下の設定を調整することで問題を解決できます：
 
@@ -735,7 +738,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux
+  #### Linux {#linux}
 
   Linuxでは、同等の設定だけでは問題が解決しない場合があります。Linuxのソケットキープアライブ設定の処理方法が異なるため、追加の手順が必要です。以下の手順に従ってください。
 
@@ -762,9 +765,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## 移行ガイド
+  ## 移行ガイド {#migration-guide}
 
-  ### 主な変更点
+  ### 主な変更点 {#key-changes}
 
   | 機能                                  | V1 (旧) | V2 (新)        |
   | ----------------------------------- | ------ | ------------- |
@@ -779,7 +782,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * JDBC V2 では明示的な設定が必要です。フェイルオーバーのデフォルト設定はありません。
     * URLにはプロトコルを指定する必要があります。ポート番号による暗黙的なプロトコル判別は行われません。
 
-  ### 設定の変更
+  ### 設定の変更 {#configuration-changes}
 
   enumは2つのみです：
 
@@ -809,7 +812,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### データ型の変更
+  ### データ型の変更 {#data-types-changes}
 
   **数値型**
 
@@ -839,10 +842,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **文字列型**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)    |
-  | --------------- | ---- | -------------- | ---------------- | -------------- | ---------------- |
-  | String          | ✅    | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
-  | FixedString     | ✅    | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | ClickHouse Type | V1との互換性 | JDBC Type (V2) | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)    |
+  | --------------- | ------- | -------------- | ---------------- | -------------- | ---------------- |
+  | String          | ✅       | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | FixedString     | ✅       | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
 
   * `FixedString` は、どちらのバージョンでもそのまま読み取られます。たとえば、`'John'` に対する `FixedString(10)` は `'John\0\0\0\0\0\0\0\0\0'` として読み取られます。
   * `PreparedStatement#setBytes` を使用すると、`unhex('<hex_string>')` に変換され、その後 `String` として読み込まれます。
@@ -850,34 +853,34 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **日付/時刻型**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)      | JDBC Type (V1)                  | Javaクラス (V1)             |
-  | --------------- | ---- | -------------- | ------------------ | ------------------------------- | ------------------------ |
-  | Date            | ❌    | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
-  | Date32          | ❌    | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
-  | DateTime        | ❌    | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
-  | DateTime64      | ❌    | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
-  | Time            | ✅    | TIME           | java.sql.Time      | 新しい型／未サポート                      | 新しい型／未サポート               |
-  | Time64          | ✅    | TIME           | java.sql.Time      | 新しい型/サポート対象外                    | 新しい型/サポート対象外             |
+  | ClickHouse Type | V1との互換性 | JDBC Type (V2) | Java クラス (V2)      | JDBC Type (V1)                  | Java クラス (V1)            |
+  | --------------- | ------- | -------------- | ------------------ | ------------------------------- | ------------------------ |
+  | Date            | ❌       | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | Date32          | ❌       | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | DateTime        | ❌       | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | DateTime64      | ❌       | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | Time            | ✅       | TIME           | java.sql.Time      | 新しい型／未サポート                      | 新しい型／未サポート               |
+  | Time64          | ✅       | TIME           | java.sql.Time      | 新しい型/サポート対象外                    | 新しい型/サポート対象外             |
 
   * `Time` と `Time64` は、V2 でのみ新しい型としてサポートされています。
   * `DateTime` と `DateTime64` は、JDBC との互換性を高めるため、`java.sql.Timestamp` にマッピングされます。
 
   **列挙型**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)    |
-  | --------------- | ---- | -------------- | ---------------- | -------------- | ---------------- |
-  | Enum            | ✅    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
-  | Enum8           | ✅    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
-  | Enum16          | ✅    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+  | ClickHouse Type | V1との互換性 | JDBC Type (V2) | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)    |
+  | --------------- | ------- | -------------- | ---------------- | -------------- | ---------------- |
+  | Enum            | ✅       | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+  | Enum8           | ✅       | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+  | Enum16          | ✅       | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
 
   **ネストされた型**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2)  | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)                  |
-  | --------------- | ---- | --------------- | ---------------- | -------------- | ------------------------------ |
-  | Array           | ❌    | ARRAY           | java.sql.Array   | ARRAY          | Object[] またはプリミティブ型の配列 |
-  | Tuple           | ❌    | OTHER           | Object[] | STRUCT         | java.sql.Struct                |
-  | Map             | ❌    | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                  |
-  | Nested          | ❌    | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                |
+  | ClickHouse Type | V1との互換性 | JDBC Type (V2)  | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)                  |
+  | --------------- | ------- | --------------- | ---------------- | -------------- | ------------------------------ |
+  | Array           | ❌       | ARRAY           | java.sql.Array   | ARRAY          | Object[] またはプリミティブ型の配列 |
+  | Tuple           | ❌       | OTHER           | Object[] | STRUCT         | java.sql.Struct                |
+  | Map             | ❌       | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                  |
+  | Nested          | ❌       | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                |
 
   * V2 では、JDBC との互換性を保つため、`Array` はデフォルトで `java.sql.Array` にマッピングされます。これは、返される配列値に関する情報をより多く提供するためでもあります。型推論に役立ちます。
   * V2では、`Array` は元の配列と同じ内容を持つ `java.sql.ResultSet` を返す `getResultSet()` メソッドを実装しています。
@@ -891,12 +894,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **Geo Types**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)                                  | JDBC Type (V1) | Java クラス (V1)                                  |
-  | --------------- | ---- | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
-  | Point           | ✅    | OTHER          | double[]                               | OTHER          | double[]                               |
-  | Ring            | ✅    | OTHER          | double[][]                     | OTHER          | double[][]                     |
-  | Polygon         | ✅    | OTHER          | double[][][]           | OTHER          | double[][][]           |
-  | MultiPolygon    | ✅    | OTHER          | double[][][][] | OTHER          | double[][][][] |
+  | ClickHouse Type | V1との互換性 | JDBC Type (V2) | Java クラス (V2)                                  | JDBC Type (V1) | Java クラス (V1)                                  |
+  | --------------- | ------- | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
+  | Point           | ✅       | OTHER          | double[]                               | OTHER          | double[]                               |
+  | Ring            | ✅       | OTHER          | double[][]                     | OTHER          | double[][]                     |
+  | Polygon         | ✅       | OTHER          | double[][][]           | OTHER          | double[][][]           |
+  | MultiPolygon    | ✅       | OTHER          | double[][][][] | OTHER          | double[][][][] |
 
   **NullableとLowCardinalityの型**
 
@@ -905,16 +908,16 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **特殊型**
 
-  | ClickHouse Type         | V1互換 | JDBC Type (V2) | Java クラス (V2)         | JDBC Type (V1) | Java クラス (V1)         |
-  | ----------------------- | ---- | -------------- | --------------------- | -------------- | --------------------- |
-  | JSON                    | ❌    | OTHER          | java.lang.String      | 非対応            | 非対応                   |
-  | AggregateFunction       | ✅    | OTHER          | (バイナリ表現)              | OTHER          | (バイナリ表現)              |
-  | SimpleAggregateFunction | ✅    | (ラップ対象の型)      | (ラップ対象のクラス)           | (ラップ対象の型)      | (ラップ対象のクラス)           |
-  | UUID                    | ✅    | OTHER          | java.util.UUID        | VARCHAR        | java.util.UUID        |
-  | IPv4                    | ✅    | OTHER          | java.net.Inet4Address | VARCHAR        | java.net.Inet4Address |
-  | IPv6                    | ✅    | OTHER          | java.net.Inet6Address | VARCHAR        | java.net.Inet6Address |
-  | Dynamic                 | ❌    | OTHER          | java.Object           | 未対応            | 未対応                   |
-  | Variant                 | ❌    | OTHER          | java.Object           | 未対応            | 未対応                   |
+  | ClickHouse Type         | V1との互換性 | JDBC Type (V2) | Java クラス (V2)         | JDBC Type (V1) | Java クラス (V1)         |
+  | ----------------------- | ------- | -------------- | --------------------- | -------------- | --------------------- |
+  | JSON                    | ❌       | OTHER          | java.lang.String      | 非対応            | 非対応                   |
+  | AggregateFunction       | ✅       | OTHER          | (バイナリ表現)              | OTHER          | (バイナリ表現)              |
+  | SimpleAggregateFunction | ✅       | (ラップ対象の型)      | (ラップ対象のクラス)           | (ラップ対象の型)      | (ラップ対象のクラス)           |
+  | UUID                    | ✅       | OTHER          | java.util.UUID        | VARCHAR        | java.util.UUID        |
+  | IPv4                    | ✅       | OTHER          | java.net.Inet4Address | VARCHAR        | java.net.Inet4Address |
+  | IPv6                    | ✅       | OTHER          | java.net.Inet6Address | VARCHAR        | java.net.Inet6Address |
+  | Dynamic                 | ❌       | OTHER          | java.Object           | 未対応            | 未対応                   |
+  | Variant                 | ❌       | OTHER          | java.Object           | 未対応            | 未対応                   |
 
   * V1 では `UUID` に `VARCHAR` を使用していますが、常に `java.util.UUID` オブジェクトを返します。V2 では、`UUID` を `OTHER` にマッピングすることでこの問題を修正し、`java.util.UUID` オブジェクトを返します。
   * V1 では `IPv4` と `IPv6` に `VARCHAR` を使用していますが、返されるのは常に `java.net.Inet4Address` および `java.net.Inet6Address` オブジェクトです。V2 では、`IPv4` と `IPv6` を `OTHER` にマッピングすることでこの問題を修正し、`java.net.Inet4Address` および `java.net.Inet6Address` オブジェクトを返すようになりました。
@@ -923,7 +926,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * IPv4 および IPv6 の値は、`getBytes(columnIndex)` メソッドを使用して `byte[]` として読み取ることもできます。ただし、これらの型については専用のクラスを使用することを推奨します。
   * V2 は、変換が InetAddress クラスでより適切に実装されているため、IP アドレスを数値として読み取ることには対応していません。
 
-  ### データベースメタデータの変更
+  ### データベースメタデータの変更 {#database-metadata-changes}
 
   * V2 では、データベースの名称には `Schema` のみを使用します。`Catalog` は今後のために予約されています。
   * V2 では、`DatabaseMetaData.supportsTransactions()` と `DatabaseMetaData.supportsSavepoints()` は `false` を返します。これは今後変更される予定です。
@@ -940,11 +943,11 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   `clickhouse-jdbc` APIは同期的であり、一般的にオーバーヘッドが大きくなります (例：SQLのパース、型マッピング/変換など) 。パフォーマンスが重要な場合や、ClickHouseへのより直接的なアクセス方法を希望する場合は、[clickhouse-client](/ja/integrations/connectors/sql-clients/sql-console)の使用を検討してください。
 
-  ## 環境要件
+  ## 環境要件 {#v07-environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) バージョン8以上
 
-  ### Setup
+  ### Setup {#v07-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1006,7 +1009,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## 設定
+  ## 設定 {#v07-configuration}
 
   **ドライバークラス**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1031,7 +1034,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   注意: 詳細は[JDBC固有の設定](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java)を参照してください。
 
-  ## サポートされているデータ型
+  ## サポートされているデータ型 {#v07-supported-data-types}
 
   JDBCドライバーは、クライアントライブラリと同じデータフォーマットをサポートしています。
 
@@ -1042,7 +1045,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     * UInt64 - `long` にマッピングされます (client-v1)
   </Note>
 
-  ## 接続の作成
+  ## 接続の作成 {#v07-creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1055,7 +1058,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## シンプルなステートメント
+  ## シンプルなステートメント {#v07-simple-statement}
 
   ```java showLineNumbers
 
@@ -1068,7 +1071,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## インサート
+  ## インサート {#v07-insert}
 
   <Note>
     * `Statement` の代わりに `PreparedStatement` を使用してください
@@ -1086,7 +1089,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### inputテーブル関数を使用する場合
+  ### inputテーブル関数を使用する場合 {#with-input-table-function}
 
   優れたパフォーマンス特性を持つオプション：
 
@@ -1105,7 +1108,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   * 可能であれば、[input function doc](/ja/reference/functions/table-functions/input)を使用してください
 
-  ### プレースホルダーを使用したInsert
+  ### プレースホルダーを使用したInsert {#insert-with-placeholders}
 
   このオプションは小規模なinsertにのみ推奨されます。長いSQL expressionが必要となるためです (クライアント側でparseされ、CPUとメモリを消費します) ：
 
@@ -1120,7 +1123,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## DateTimeとタイムゾーンの処理
+  ## DateTimeとタイムゾーンの処理 {#handling-datetime-and-time-zones}
 
   `java.sql.Timestamp` の代わりに `java.time.LocalDateTime` または `java.time.OffsetDateTime` を、`java.sql.Date` の代わりに `java.time.LocalDate` を使用してください。
 
@@ -1135,7 +1138,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `AggregateFunction`の扱い
+  ## `AggregateFunction`の扱い {#handling-aggregatefunction}
 
   <Note>
     `AggregateFunction` 状態をバイナリとして直接読み取れるのは `groupBitmap` のみです。他の集約関数 (`min`、`max`、`avg` など) については、クエリで `-Merge` コンビネータ (例: `SELECT minMerge(min_state) FROM ...`) を使用し、サーバー側で集約状態を解決してプレーンな値を返してください。
@@ -1183,7 +1186,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## HTTPライブラリの設定
+  ## HTTPライブラリの設定 {#v07-configuring-http-library}
 
   ClickHouse の JDBC コネクタは、[`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html)、[`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html)、[Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/) の 3 つの HTTP ライブラリをサポートしています。
 
@@ -1207,11 +1210,11 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## SSLを使用してClickHouseに接続する
+  ## SSLを使用してClickHouseに接続する {#connect-to-clickhouse-with-ssl}
 
   SSLを使用してClickHouseへの安全なJDBC接続を確立するには、SSLパラメータを含むようにJDBCプロパティを設定する必要があります。通常は、JDBC URLまたはPropertiesオブジェクトに`sslmode`や`sslrootcert`などのSSLプロパティを指定します。
 
-  ## SSLプロパティ
+  ## SSLプロパティ {#ssl-properties}
 
   | 名前                   | デフォルト値 | 指定可能な値       | 説明                                                |
   | -------------------- | ------ | ------------ | ------------------------------------------------- |
@@ -1244,7 +1247,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## 大規模insertにおけるJDBC timeoutの解消
+  ## 大規模insertにおけるJDBC timeoutの解消 {#v07-resolving-jdbc-timeout-on-large-inserts}
 
   ClickHouseで実行時間の長い大規模なinsertを実行する際、次のようなJDBCタイムアウトエラーが発生する場合があります：
 
@@ -1254,7 +1257,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   これらのエラーはデータの挿入プロセスを妨げ、システムの安定性に影響を及ぼす可能性があります。この問題に対処するには、クライアントのOSでいくつかのタイムアウト設定を調整する必要があります。
 
-  ### Mac OS
+  ### Mac OS {#v07-mac-os}
 
   Mac OS では、以下の設定を調整することで問題を解決できます。
 
@@ -1264,7 +1267,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux
+  ### Linux {#v07-linux}
 
   Linuxでは、同等の設定だけでは問題が解決しない場合があります。Linuxのソケットキープアライブ設定の処理方法が異なるため、追加の手順が必要です。以下の手順に従ってください。
 

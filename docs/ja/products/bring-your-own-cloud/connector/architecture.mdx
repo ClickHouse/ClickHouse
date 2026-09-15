@@ -6,11 +6,12 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'コネクタ']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-<div id="components">
-  ## コンポーネント
-</div>
+<PrivatePreviewBadge />
+
+## コンポーネント {#components}
 
 ClickHouse Connector は、いずれも `clicklink` バイナリに組み込まれた 2 つのデーモンを実行します。
 
@@ -21,9 +22,7 @@ Kubernetes では、どちらも選択したネームスペース (デフォル�
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector のアーキテクチャ" />
 
-<div id="connections">
-  ## 接続
-</div>
+## 接続 {#connections}
 
 コネクタが確立するすべての接続はアウトバウンドです。全一覧は次のとおりです。
 
@@ -40,9 +39,7 @@ Kubernetes では、どちらも選択したネームスペース (デフォル�
 
 インバウンドでは、コネクタはローカルのヘルスチェックおよびメトリクスポートと、[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)ページで説明されているオプトインのセッションゲートウェイのみを公開します。ClickHouse のコントロールプレーンがこれらに接続することはありません。
 
-<div id="certificate-lifecycle">
-  ## 証明書のライフサイクル
-</div>
+## 証明書のライフサイクル {#certificate-lifecycle}
 
 コネクタは、自ら取得・管理するクライアント証明書を使用してエンドポイントに対して認証を行います。
 
@@ -52,32 +49,24 @@ Kubernetes では、どちらも選択したネームスペース (デフォル�
 
 コネクタは、エンドポイントのサーバー証明書をシステムトラストストアで検証します。エンドポイントが private CA を使用している場合は、登録時に配布された CA bundle を使用します。
 
-<div id="data-flow">
-  ## データフロー
-</div>
+## データフロー {#data-flow}
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse Connectorのデータフロー" />
 
-<div id="what-leaves">
-  ### 環境外に送信されるもの
-</div>
+### 環境外に送信されるもの {#what-leaves}
 
 * **許可リストに登録されたシステムテーブルのメトリクス。** スクレイパーのデフォルトセットは `metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings` です。許可リストは明示的に設定されており、スクレイパーはこれ以外を読み取りません。
 * **インフラストラクチャのメタデータ。** API を介して同期されるインスタンス、インフラストラクチャ、バックアップのインベントリ。
 * **ヘルス情報と自己メトリクス。** コンポーネントのステータスとコネクタ自体の運用メトリクス。
 * **サポートセッションの出力。** 有効化したセッション中に実行された読み取り専用診断の結果 (機密情報のマスキング後) 。
 
-<div id="what-never-leaves">
-  ### デフォルトで外部に送信されないもの
-</div>
+### デフォルトで外部に送信されないもの {#what-never-leaves}
 
 * **スクレイプパス上の生のクエリテキスト。** `system.query_log` は、クエリカラムにリテラル値、ひいては PII やシークレットが含まれる可能性があるため、意図的にデフォルトのスクレイプ対象から除外されています。これを再追加するかどうかは、各デプロイメントでリスクを理解したうえで判断するオーバーライドです。サポートセッション中は、デフォルトのテーブル許可リストに、実行中のクエリテキストを表示する `system.processes` が含まれます。トリミング方法については、[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
 * **認証情報。** 構成ファイルには認証情報は含まれず、ClickHouse が保存するのはコネクタユーザーのパスワードの bcrypt ハッシュのみです。シークレットは Kubernetes Secrets またはホスト上で root のみが読み取れるファイルに保持されます。スクレイプパスや同期パスでこれらが送信されることはありません。
 * **マスキングされていない troubleshooter の出力。** troubleshooter が返すすべての内容は、外部に送信される前に、組み込みおよび独自のマスキングパターンによってマスキングされます。[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
 
-<div id="trust-boundaries">
-  ## 信頼境界
-</div>
+## 信頼境界 {#trust-boundaries}
 
 * **境界はお客様の環境です。** ClickHouse Cloudが受信するのは、スクレイパーが送信するデータと、有効なサポートセッションから返されるデータだけです。お客様の環境に向けて接続を開始することはありません。
 * **セッションゲートウェイはお客様の管理下にあります。** イングレス経由で公開しない限り、Kubernetesでは`kubectl port-forward`経由で、VMではローカルからのみ、お客様の環境内でアクセスできます。ClickHouseのコントロールプレーンが接続することはありません。

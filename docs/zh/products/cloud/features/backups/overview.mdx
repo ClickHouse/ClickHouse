@@ -13,12 +13,10 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 数据库备份旨在支持您通过最近一次成功备份将服务恢复到之前的状态。
 
 <div id="backups">
-  ## 备份
+  ## 备份 {#backups}
 </div>
 
-<div id="how-backups-work-in-clickhouse-cloud">
-  ### ClickHouse Cloud 中备份的工作原理
-</div>
+### ClickHouse Cloud 中备份的工作原理 {#how-backups-work-in-clickhouse-cloud}
 
 ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，形成一条备份链。每条链都始于一次全量备份，随后在接下来几个计划时间周期内执行增量备份，从而形成一系列备份。当备份链达到一定长度后，就会开始新的一条链。必要时，可以利用整条备份链将数据恢复到新的服务中。一旦某条链中的所有备份都超过了为该服务设置的保留期 (有关保留期的更多信息见下文) ，该链就会被丢弃。
 
@@ -28,18 +26,14 @@ ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud 中的备份链示例" />
 
-<div id="default-backup-policy">
-  ### 默认备份策略
-</div>
+### 默认备份策略 {#default-backup-policy}
 
 在基础版、Scale 和 Enterprise 层级中，备份会单独计量和计费，不包含在存储费用内。
 目前，服务默认每天备份一次，保留 24 小时。备份配置可能因服务和协议而异。
 
 更多详情，请参阅[&quot;查看和恢复备份&quot;](/zh/products/cloud/guides/backups/review-and-restore-backups)。
 
-<div id="configurable-backups">
-  ## 可配置备份
-</div>
+## 可配置备份 {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
@@ -57,12 +51,11 @@ ClickHouse Cloud 支持为 **Scale** 和 **Enterprise** 层级的服务配置备
 
 请参阅[&quot;配置备份计划&quot;](/zh/products/cloud/guides/backups/configurable-backups)了解配置备份的步骤。
 
-<div id="byob">
-  ## 自带存储桶 (BYOB) 备份
-</div>
+## 自带存储桶 (BYOB) 备份 {#byob}
 
 ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) 账户存储 (AWS S3、Google Cloud Storage 或 Azure Blob 存储) 。
 如果您将备份配置到自己的存储桶，ClickHouse Cloud 默认也会继续创建自己的备份。
+备份保留策略设置适用于写入到您存储桶中的备份。由 ClickHouse Cloud 管理的备份则使用默认的备份保留策略。
 
 有关 ClickHouse Cloud 备份工作机制的详细信息，请参阅 [backups](/zh/products/cloud/guides/backups/review-and-restore-backups) 文档。
 
@@ -81,9 +74,7 @@ ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) �
 
 有关如何对 AWS、GCP、Azure 对象存储执行全量备份和增量备份，以及如何从这些备份中恢复的示例，请参阅[“将备份导出到您自己的 Cloud 账户”](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)。
 
-<div id="backup-options">
-  ### 备份选项
-</div>
+### 备份选项 {#backup-options}
 
 要将备份导出到您自己的云账户，您有两种方式可选：
 
@@ -101,7 +92,7 @@ ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) �
 </Steps>
 
 <Warning>
-  ClickHouse Cloud 不会管理客户存储桶中备份的生命周期。
-  客户有责任确保其存储桶中的备份得到妥善管理，以满足合规要求并控制成本。
+  ClickHouse Cloud 不会管理通过 SQL 命令导出的备份的生命周期。
+  客户有责任确保这些备份得到妥善管理，以满足合规要求并控制成本。
   如果备份已损坏，将无法恢复。
 </Warning>

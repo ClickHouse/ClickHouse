@@ -12,9 +12,7 @@ doc_type: 'reference'
 Este motor fornece integração somente leitura com tabelas Apache [Paimon](https://paimon.apache.org/) existentes no Amazon S3, Azure, HDFS e em armazenamento local.
 Ele oferece suporte a leituras de snapshot, leituras incrementais e à poda básica de partições.
 
-<div id="create-table">
-  ## Criar tabela
-</div>
+## Criar tabela {#create-table}
 
 Observe que a tabela Paimon já deve existir no armazenamento; este comando não aceita parâmetros de DDL para criar uma nova tabela.
 A criação de tabelas `Paimon*` é condicionada por `allow_experimental_paimon_storage_engine` (desabilitado por padrão), portanto habilite-o antes de executar `CREATE TABLE`.
@@ -35,18 +33,14 @@ CREATE TABLE paimon_table_local
     ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="engine-arguments">
-  ## Argumentos do mecanismo
-</div>
+## Argumentos do mecanismo {#engine-arguments}
 
 A descrição dos argumentos corresponde à descrição dos argumentos nos motores `S3`, `AzureBlobStorage`, `HDFS` e `File`, respectivamente.
 `format` indica o formato dos arquivos de dados na tabela Paimon.
 
 Os parâmetros do mecanismo podem ser especificados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections)
 
-<div id="example">
-  ### Exemplo
-</div>
+### Exemplo {#example}
 
 ```sql
 CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -70,9 +64,7 @@ Usando coleções nomeadas:
 CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="capabilities">
-  ## Recursos
-</div>
+## Recursos {#capabilities}
 
 * Leituras de snapshot a partir do snapshot mais recente da tabela.
 * Leituras incrementais com base no ID do snapshot confirmado, quando habilitado.
@@ -80,14 +72,12 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * Atualização opcional de metadados em segundo plano quando configurada.
 * UUID estável da tabela ao usar bancos de dados Atomic/Replicated, permitindo macros `{uuid}` em caminhos do Keeper.
 
-<div id="settings">
-  ## Configurações
-</div>
+## Configurações {#settings}
 
 Este motor usa as mesmas configurações dos motores correspondentes de armazenamento de objetos e adiciona configurações específicas do Paimon:
 
 * `allow_experimental_paimon_storage_engine` — habilita a criação dos motores de tabela `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS` e `PaimonLocal`. Padrão: `0` (desabilitado).
-* `use_paimon_metadata_files_cache` — habilita o cache de arquivos de metadados do Paimon (armazena em cache listas de manifest e manifests desserializados). Defina como `1` para habilitar e `0` para desabilitar. Padrão: `0`. A forma como essa configuração entra em vigor difere entre table functions e motores de tabela persistentes — veja a observação abaixo.
+* `use_paimon_metadata_files_cache` — habilita o cache de arquivos de metadados do Paimon (armazena em cache listas de manifest e manifests desserializados). Defina como `1` para habilitar e `0` para desabilitar. Padrão: `0`. A forma como essa configuração entra em vigor difere entre funções de tabela e motores de tabela persistentes — veja a observação abaixo.
 * `paimon_incremental_read` — habilita o modo de leitura incremental.
 * `paimon_metadata_refresh_interval_sec` — intervalo, em segundos, da atualização de metadados em segundo plano. Quando definido como um valor maior que 0, uma tarefa em segundo plano busca periodicamente o snapshot e o esquema mais recentes no armazenamento de objetos. Padrão: 30.
 * `paimon_keeper_path` — caminho do Keeper para o estado da leitura incremental. Deve ser definido e ser único por tabela; oferece suporte a macros como `{database}`, `{table}`, `{uuid}`.
@@ -103,20 +93,16 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-  **Ciclo de vida de `use_paimon_metadata_files_cache`**
-
+<Note title="Ciclo de vida de `use_paimon_metadata_files_cache`">
   A forma como `use_paimon_metadata_files_cache` é aplicado depende de como a tabela Paimon é acessada:
 
   * **Funções de tabela** (por exemplo, `SELECT ... FROM paimonS3(...)`): a decisão de usar o cache é avaliada por consulta, portanto você pode passar `SETTINGS use_paimon_metadata_files_cache = 1` diretamente no `SELECT`.
   * **Motores de tabela persistentes** (`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal` e o alias `Paimon`): a decisão de usar o cache é fixada uma única vez quando os metadados da tabela são inicializados e armazenada em componentes persistentes imutáveis; o caminho de atualização de metadados deliberadamente não relê essa configuração. Portanto, passar `SETTINGS use_paimon_metadata_files_cache = 1` em um `SELECT` sobre uma tabela persistente já inicializada não tem efeito — a decisão fixada anteriormente continua sendo usada. Para alterá-la, defina `use_paimon_metadata_files_cache` antes da inicialização dos metadados da tabela ou execute `DROP` e recrie a tabela com `CREATE` usando o valor desejado.
 
   A capacidade do cache no nível do servidor (`paimon_metadata_files_cache_size`) *não* é fixada: é uma configuração de runtime que pode ser alterada por meio de `SYSTEM RELOAD CONFIG` e entra em vigor imediatamente, mesmo para tabelas já inicializadas.
-</Info>
+</Note>
 
-<div id="incremental-read-examples">
-  ## Exemplos de leitura incremental
-</div>
+## Exemplos de leitura incremental {#incremental-read-examples}
 
 Leitura incremental com estado do Keeper:
 
@@ -129,9 +115,7 @@ SETTINGS
     paimon_replica_name = '{replica}';
 ```
 
-<div id="query-level-settings-for-incremental-read">
-  ### Configurações no nível da consulta para leitura incremental
-</div>
+### Configurações no nível da consulta para leitura incremental {#query-level-settings-for-incremental-read}
 
 As configurações a seguir são **no nível da consulta** (passadas via `SELECT ... SETTINGS`, não em `CREATE TABLE`). Elas controlam o comportamento das leituras incrementais em cada consulta:
 
@@ -154,9 +138,7 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
-<div id="paimon-to-mergetree-via-refresh-mv">
-  ## Paimon para MergeTree por meio de view materializada atualizável
-</div>
+## Paimon para MergeTree por meio de view materializada atualizável {#paimon-to-mergetree-via-refresh-mv}
 
 Você pode criar um pipeline de ponta a ponta que sincroniza continuamente dados de uma tabela Paimon com uma tabela MergeTree usando uma view materializada atualizável no modo `APPEND`. Cada ciclo de atualização lê apenas novos dados incrementais do Paimon e os adiciona à tabela de destino.
 
@@ -221,9 +203,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
   Interrompa a MV antes de removê-la para evitar que a atualização em segundo plano impeça operações de DDL.
 </Note>
 
-<div id="limitations">
-  ## Limitações
-</div>
+## Limitações {#limitations}
 
 * A leitura incremental requer que o Keeper (ZooKeeper) esteja configurado.
 * A leitura incremental requer que `paimon_keeper_path` esteja definido e seja único para cada tabela.
@@ -233,15 +213,11 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * A leitura incremental não lida com exclusões de dados históricos na origem Paimon. Se os dados de upstream do Paimon forem excluídos ou atualizados, as linhas correspondentes já gravadas em uma tabela de destino MergeTree no ClickHouse não serão removidas automaticamente. Você deve executar manualmente `ALTER TABLE ... DELETE` na tabela MergeTree para limpar dados desatualizados.
 * Se a tabela Paimon subjacente for removida e recriada no mesmo caminho de armazenamento de objetos (por exemplo, via Flink ou Spark), você deverá executar `DROP` e `CREATE` novamente na tabela ClickHouse correspondente. O ClickHouse detecta a recriação comparando o timestamp de criação do schema-0 e gera um erro; a tabela ClickHouse desatualizada não poderá ser usada até ser recriada.
 
-<div id="aliases">
-  ## Aliases
-</div>
+## Aliases {#aliases}
 
 O `Paimon` motor de tabela detecta automaticamente o backend de armazenamento com base na configuração `disk` e direciona para `PaimonS3`, `PaimonAzure` ou `PaimonLocal`, conforme o caso. Quando nenhum `disk` é especificado, a implementação padrão é `PaimonS3`.
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
@@ -249,9 +225,7 @@ O `Paimon` motor de tabela detecta automaticamente o backend de armazenamento co
 * `_time` — Data e hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a data e hora forem desconhecidas, o valor será `NULL`.
 * `_etag` — O etag do arquivo. Tipo: `LowCardinality(String)`. Se o etag for desconhecido, o valor será `NULL`.
 
-<div id="data-types-supported">
-  ## Tipos de dados compatíveis
-</div>
+## Tipos de dados compatíveis {#data-types-supported}
 
 | Tipo de dado do Paimon            | Tipo de dado do ClickHouse |
 | --------------------------------- | -------------------------- |
@@ -273,9 +247,7 @@ O `Paimon` motor de tabela detecta automaticamente o backend de armazenamento co
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
 
-<div id="partition-supported">
-  ## Partições compatíveis
-</div>
+## Partições compatíveis {#partition-supported}
 
 Tipos de dados compatíveis com chaves de partição do Paimon:
 

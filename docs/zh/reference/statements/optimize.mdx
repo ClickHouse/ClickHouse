@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 `OPTIMIZE` 查询支持 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族 (包括 [materialized views](/zh/reference/statements/create/view#materialized-view)) 和 [Buffer](/zh/reference/engines/table-engines/special/buffer) 引擎。其他表引擎不支持。
 
-当 `OPTIMIZE` 与 [ReplicatedMergeTree](/zh/reference/engines/table-engines/mergetree-family/replication) 家族的表引擎一起使用时，ClickHouse 会创建一个合并任务，并等待它在所有副本上执行完成 (如果 [alter&#95;sync](/zh/reference/settings/session-settings/alter#alter_sync) 设置为 `2`) ，或在当前副本上执行完成 (如果 [alter&#95;sync](/zh/reference/settings/session-settings/alter#alter_sync) 设置为 `1`) 。
+当 `OPTIMIZE` 与 [ReplicatedMergeTree](/zh/reference/engines/table-engines/mergetree-family/replication) 家族的表引擎一起使用时，ClickHouse 会创建一个合并任务，并等待它在所有副本上执行完成 (如果 [alter&#95;sync](/zh/reference/settings/session-settings/alter#alter_sync) 设置为 `2`，或在 `ReplicatedMergeTree` 上设置为 `3`) ，或在当前副本上执行完成 (如果 [alter&#95;sync](/zh/reference/settings/session-settings/alter#alter_sync) 设置为 `1`) 。
 
 * 如果 `OPTIMIZE` 因任何原因未执行合并，不会通知客户端。要启用通知，请使用 [optimize&#95;throw&#95;if&#95;noop](/zh/reference/settings/session-settings/optimize#optimize_throw_if_noop) 设置。
 * 如果指定了 `PARTITION`，则只会优化指定分区。[如何设置分区表达式](/zh/reference/statements/alter/partition#how-to-set-partition-expression)。
@@ -36,12 +36,10 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 你可以通过 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/zh/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 设置，指定等待非活动副本执行 `OPTIMIZE` 查询的时长 (以秒为单位) 。
 
 <Note>
-  如果 `alter_sync` 设置为 `2`，并且某些副本处于非活动状态的时间超过了 `replication_wait_for_inactive_replica_timeout` 设置指定的时长，则会抛出 `UNFINISHED` 异常。
+  如果 `alter_sync` 设置为 `2`，或在 `ReplicatedMergeTree` 上设置为 `3`，并且某些副本处于非活动状态的时间超过了 `replication_wait_for_inactive_replica_timeout` 设置指定的时长，则会抛出 `UNFINISHED` 异常。
 </Note>
 
-<div id="dry-run">
-  ## DRY RUN
-</div>
+## DRY RUN {#dry-run}
 
 `DRY RUN` 子句会在不提交结果的情况下模拟合并指定的 parts。合并后的分片会写入临时位置，经过校验后再丢弃。原始 parts 和表数据均保持不变。
 
@@ -90,9 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-<div id="by-expression">
-  ## BY 表达式
-</div>
+## BY 表达式 {#by-expression}
 
 如果你想基于自定义的一组列而不是所有列执行去重，可以显式指定列列表，也可以使用 [`*`](/zh/reference/statements/select/index#asterisk)、[`COLUMNS`](/zh/reference/statements/select/index#select-clause) 或 [`EXCEPT`](/zh/reference/statements/select/except_modifier) 表达式的任意组合。显式写出的或隐式展开的列列表，必须包含行排序表达式 (包括主键和排序键) 以及分区表达式 (分区键) 中指定的所有列。
 
@@ -159,9 +155,7 @@ SELECT * FROM example;
 
 以下所有示例均基于这一包含 5 行的状态执行。
 
-<div id="deduplicate">
-  #### `DEDUPLICATE`
-</div>
+#### `DEDUPLICATE` {#deduplicate}
 
 如果未指定去重列，则默认考虑所有列。只有当所有列的值都与上一行中对应的值相等时，才会删除该行：
 
@@ -186,9 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-">
-  #### `DEDUPLICATE BY *`
-</div>
+#### `DEDUPLICATE BY *` {#deduplicate-by-}
 
 当列为隐式指定时，表会按所有不是 `ALIAS` 或 `MATERIALIZED` 的列去重。以上表为例，这些列包括 `primary_key`、`secondary_key`、`value` 和 `partition_key`：
 
@@ -213,9 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by--except">
-  #### `DEDUPLICATE BY * EXCEPT`
-</div>
+#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 
 按所有既非 `ALIAS`、也非 `MATERIALIZED`，且明确排除 `value` 的列进行去重：`primary_key`、`secondary_key` 和 `partition_key` 列。
 
@@ -239,9 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-list-of-columns">
-  #### `DEDUPLICATE BY <list of columns>`
-</div>
+#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
 
 按 `primary_key`、`secondary_key` 和 `partition_key` 列进行显式去重：
 
@@ -265,9 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-columnsregex">
-  #### `DEDUPLICATE BY COLUMNS(<regex>)`
-</div>
+#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
 
 按所有匹配正则表达式的列去重：`primary_key`、`secondary_key` 和 `partition_key` 列：
 

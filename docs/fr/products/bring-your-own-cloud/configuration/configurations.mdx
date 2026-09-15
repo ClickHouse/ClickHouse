@@ -9,9 +9,7 @@ doc_type: 'référence'
 
 Cette page décrit les différentes options de configuration de l’infrastructure disponibles pour votre déploiement BYOC. Ces configurations vous permettent de personnaliser le réseau, la sécurité et les ressources de calcul afin de répondre à vos besoins spécifiques.
 
-<div id="load-balancers">
-  ## Répartiteurs de charge
-</div>
+## Répartiteurs de charge {#load-balancers}
 
 Les déploiements BYOC utilisent des **répartiteurs de charge réseau (NLB)** pour gérer et acheminer le trafic vers vos services ClickHouse. Vous pouvez choisir entre des points de terminaison de répartiteur de charge *publics* et *privés* en fonction de votre modèle réseau.
 
@@ -34,9 +32,7 @@ Les déploiements BYOC utilisent des **répartiteurs de charge réseau (NLB)** p
 
 Vous pouvez activer le répartiteur de charge privé de votre infrastructure BYOC directement dans la ClickHouse Cloud console. Pour tout autre ajustement des points de terminaison (par exemple, la suppression du répartiteur de charge public), contactez **ClickHouse Cloud Support**.
 
-<div id="private-load-balancer-security-group">
-  ### Groupe de sécurité de l’équilibreur de charge privé pour AWS
-</div>
+### Groupe de sécurité de l’équilibreur de charge privé pour AWS {#private-load-balancer-security-group}
 
 Si vous choisissez d&#39;utiliser un équilibreur de charge privé pour votre déploiement BYOC, vous devez vous assurer que les règles de groupe de sécurité appropriées sont en place pour autoriser l&#39;accès depuis les réseaux privés concernés (par exemple, des VPC appairés). Par défaut, le groupe de sécurité n&#39;autorise le trafic qu&#39;au sein du VPC.
 
@@ -52,25 +48,19 @@ Pour configurer le groupe de sécurité de votre équilibreur de charge privé 
   Toutes les modifications des groupes de sécurité des équilibreurs de charge privés doivent être effectuées par ClickHouse Support. Cela garantit la cohérence de la configuration et évite les conflits dans l&#39;environnement géré par ClickHouse Cloud.
 </Note>
 
-<div id="privatelink-or-private-service-connect">
-  ## PrivateLink, Private Service Connect ou Private Link
-</div>
+## PrivateLink, Private Service Connect ou Private Link {#privatelink-or-private-service-connect}
 
 Pour une isolation réseau et une sécurité maximales, les déploiements BYOC peuvent utiliser **AWS PrivateLink**, **GCP Private Service Connect** ou **Azure Private Link**. Ces options permettent à vos applications de se connecter aux services ClickHouse Cloud via une connexion privée, sans recourir au VPC/VNet peering ni exposer de points de terminaison à l’Internet public.
 
 Pour obtenir des instructions de configuration étape par étape, consultez le guide [Private Networking Setup](/fr/products/bring-your-own-cloud/onboarding/network).
 
-<div id="k8s-api-private-connection">
-  ## Connexion privée à l’API Kubernetes
-</div>
+## Connexion privée à l’API Kubernetes {#k8s-api-private-connection}
 
-Par défaut, le point de terminaison du serveur d’API Kubernetes de votre cluster BYOC est accessible depuis l’internet public, mais l’accès est restreint par filtrage IP afin de n’autoriser que les adresses IP de la passerelle NAT de ClickHouse. Pour renforcer la sécurité, vous pouvez limiter l’accès au serveur d’API Kubernetes afin qu’il soit accessible exclusivement via des connexions à un réseau privé.
+Par défaut, le point de terminaison du serveur d’API Kubernetes de votre cluster BYOC est accessible depuis l’internet public. Sur AWS, l’accès est restreint par filtrage IP afin de n’autoriser que les adresses IP de la passerelle NAT de ClickHouse ; sur GCP et Azure, il est plutôt contrôlé par l’IAM du cloud (voir [Exposition du serveur d’API Kubernetes](/fr/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). Pour renforcer la sécurité, vous pouvez limiter l’accès au serveur d’API Kubernetes afin qu’il soit accessible exclusivement via des connexions à un réseau privé.
 
-Deux options de connexion privée sont disponibles :
+Deux options de connexion privée sont disponibles :
 
-<div id="k8s-api-private-connection-tailscale">
-  ### Tailscale (par défaut)
-</div>
+### Tailscale (par défaut) {#k8s-api-private-connection-tailscale}
 
 Lorsqu’un point de terminaison d’API privé est activé, les services de gestion de ClickHouse se connectent au serveur d’API Kubernetes via le même réseau Tailscale Zero Trust que celui utilisé pour l’accès de dépannage. Consultez [Tailscale Private Network](/fr/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) pour plus de détails sur le fonctionnement de cette connexion.
 
@@ -78,9 +68,7 @@ Lorsqu’un point de terminaison d’API privé est activé, les services de ges
   Si vous vous appuyez uniquement sur Tailscale pour la connectivité privée, ClickHouse Support risque de perdre l’accès à votre environnement si l’agent Tailscale devient indisponible. Cela pourrait retarder le dépannage ou allonger les délais de réponse du support.
 </Note>
 
-<div id="k8s-api-private-connection-vpc-lattice">
-  ### AWS VPC Lattice
-</div>
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
 <Info>
   La connectivité VPC Lattice est actuellement en private preview. Contactez ClickHouse Support pour l’activer pour votre déploiement.
@@ -95,15 +83,11 @@ Pour les déploiements AWS, le serveur d’API Kubernetes peut également être 
 
 **Contactez ClickHouse Support** pour demander la configuration d’un point de terminaison d’API privé.
 
-<div id="node-groups">
-  ## Groupes de nœuds
-</div>
+## Groupes de nœuds {#node-groups}
 
 Les groupes de nœuds Kubernetes sont des ensembles d’instances de calcul qui fournissent les ressources nécessaires à l’exécution de vos services ClickHouse dans un déploiement BYOC. ClickHouse Cloud gère ces groupes de nœuds et prend automatiquement en charge leur configuration ainsi que leur mise à l’échelle.
 
-<div id="default-configuration">
-  ### Configuration par défaut
-</div>
+### Configuration par défaut {#default-configuration}
 
 Les clusters BYOC sont provisionnés avec deux principaux types de groupes de nœuds :
 
@@ -113,9 +97,7 @@ Les clusters BYOC sont provisionnés avec deux principaux types de groupes de n�
 * **Workload Node Groups**
   Dédiés aux charges de travail de données ClickHouse, y compris les serveurs et les services Keeper. Par défaut, les nœuds de workload s&#39;exécutent sur des instances basées sur ARM, offrant un bon équilibre entre performances et coût. Toutefois, ils peuvent aussi être configurés avec d&#39;autres profils CPU/mémoire ou basculés vers une architecture x86 sur demande.
 
-<div id="customizing-node-groups">
-  ### Personnalisation des groupes de nœuds
-</div>
+### Personnalisation des groupes de nœuds {#customizing-node-groups}
 
 Besoin de ressources ou d’architectures spécifiques ? Les options de personnalisation suivantes sont disponibles — contactez ClickHouse Support pour en discuter et les mettre en place :
 
@@ -132,9 +114,7 @@ Besoin de ressources ou d’architectures spécifiques ? Les options de personn
   Toute personnalisation des groupes de nœuds et toute modification de configuration doivent être coordonnées avec ClickHouse Support. Cela garantit la compatibilité, la stabilité et des performances optimales.
 </Note>
 
-<div id="auto-scaling">
-  ### Mise à l’échelle automatique
-</div>
+### Mise à l’échelle automatique {#auto-scaling}
 
 Les groupes de nœuds du cluster s’ajustent automatiquement via le cluster autoscaler, en fonction des éléments suivants :
 

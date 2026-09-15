@@ -14,9 +14,7 @@ Tuple используются для временной группировки 
 
 Tuple могут быть результатом запроса. В этом случае в текстовых форматах, кроме JSON, значения разделяются запятыми в `()`. В форматах JSON Tuple выводятся как массивы (в `[]`).
 
-<div id="creating-tuples">
-  ## Создание Tuple
-</div>
+## Создание Tuple {#creating-tuples}
 
 Для создания Tuple можно использовать функцию:
 
@@ -64,9 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-<div id="data-type-detection">
-  ## Определение типов данных
-</div>
+## Определение типов данных {#data-type-detection}
 
 При создании Tuple на лету ClickHouse определяет типы аргументов Tuple как минимальные типы, в которые помещаются переданные значения. Если значение — [NULL](/ru/reference/settings/formats/input-format#input_format_null_as_default), тип определяется как [Nullable](/ru/reference/data-types/nullable).
 
@@ -82,9 +78,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-<div id="referring-to-tuple-elements">
-  ## Обращение к элементам Tuple
-</div>
+## Обращение к элементам Tuple {#referring-to-tuple-elements}
 
 К элементам Tuple можно обращаться по имени или индексу:
 
@@ -108,9 +102,7 @@ SELECT a.2 FROM named_tuples; -- по индексу
 └────────────────────┘
 ```
 
-<div id="comparison-operations-with-tuple">
-  ## Операции сравнения с Tuple
-</div>
+## Операции сравнения с Tuple {#comparison-operations-with-tuple}
 
 Два значения Tuple сравниваются последовательно: их элементы сопоставляются слева направо. Если элемент первого Tuple больше (меньше), чем соответствующий элемент второго Tuple, то первый Tuple больше (меньше) второго; в противном случае (если оба элемента равны) сравнивается следующий элемент.
 
@@ -188,16 +180,12 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-<div id="nullable-tuple">
-  ## Nullable(Tuple(T1, T2, ...))
-</div>
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-  **Бета-возможность**
-
+<Note title="Бета-возможность">
   Требуется `SET enable_nullable_tuple_type = 1`
   Это бета-возможность.
-</Info>
+</Note>
 
 Позволяет всему Tuple принимать значение `NULL`, в отличие от `Tuple(Nullable(T1), Nullable(T2), ...)`, где значение `NULL` могут принимать только отдельные элементы.
 

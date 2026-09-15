@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="query_profiler_cpu_time_period_ns">
-  ## query_profiler_cpu_time_period_ns
-</div>
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -31,13 +29,13 @@ Valores posibles:
 
 * 0 para desactivar el temporizador.
 
+El valor predeterminado es 0 en los builds con MemorySanitizer, donde el perfilador por muestreo está desactivado.
+
 Véase también:
 
 * Tabla del sistema [trace&#95;log](/es/reference/system-tables/trace_log)
 
-<div id="query_profiler_real_time_period_ns">
-  ## query_profiler_real_time_period_ns
-</div>
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -53,6 +51,8 @@ Valores posibles:
   * 1000000000 (una vez por segundo) para el perfilado en todo el clúster.
 
 * 0 para desactivar el temporizador.
+
+El valor predeterminado es 0 en las compilaciones con MemorySanitizer, donde el perfilador por muestreo está desactivado.
 
 Véase también:
 

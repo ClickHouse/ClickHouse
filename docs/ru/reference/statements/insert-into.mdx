@@ -101,15 +101,11 @@ INSERT INTO t FORMAT TabSeparated
   ```
 </Note>
 
-<div id="constraints">
-  ## Ограничения
-</div>
+## Ограничения {#constraints}
 
 Если у таблицы есть [ограничения](/ru/reference/statements/create/table#constraints), их выражения будут проверяться для каждой вставляемой строки данных. Если какое-либо из этих ограничений не выполняется, сервер выдаст исключение с именем ограничения и его выражением, а запрос будет остановлен.
 
-<div id="data-type-validation">
-  ## Проверка типов данных
-</div>
+## Проверка типов данных {#data-type-validation}
 
 ClickHouse проверяет допустимые типы данных (которые контролируются настройками вроде `enable_time_time64_type`, `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types` и т. д.) только при создании таблицы (`CREATE TABLE`) и изменении схемы (`ALTER TABLE`), но не при `INSERT`.
 
@@ -148,9 +144,7 @@ ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
   В результате клиент с более новой версией (где параметр по умолчанию включен) может выполнять вставку данных с недопустимыми типами данных на сервер с более старой версией (где параметр отключен), если в целевой таблице уже есть столбцы соответствующих типов. Проверка выполняется на уровне DDL, а не DML.
 </Note>
 
-<div id="inserting-the-results-of-select">
-  ## Вставка результатов запроса SELECT
-</div>
+## Вставка результатов запроса SELECT {#inserting-the-results-of-select}
 
 **Синтаксис**
 
@@ -176,9 +170,7 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
-<div id="inserting-data-from-a-file">
-  ## Вставка данных из файла
-</div>
+## Вставка данных из файла {#inserting-data-from-a-file}
 
 **Синтаксис**
 
@@ -188,15 +180,13 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION
 
 Используйте приведённый выше синтаксис для вставки данных из файла или файлов, хранящихся на стороне **клиента**. `file_name` и `type` — строковые литералы. Входной [формат](/ru/reference/formats/index) файла должен быть задан в предложении `FORMAT`.
 
-Поддерживаются сжатые файлы. Тип сжатия определяется по расширению имени файла. Либо его можно явно указать в предложении `COMPRESSION`. Поддерживаются следующие типы: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+Поддерживаются сжатые файлы. Тип сжатия определяется по расширению имени файла. Либо его можно явно указать в предложении `COMPRESSION`. Поддерживаются следующие типы: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (по умолчанию `basic`).
 
 Эта возможность доступна в [клиенте командной строки](/ru/concepts/features/interfaces/client) и [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local).
 
 **Примеры**
 
-<div id="single-file-with-from-infile">
-  ### Один файл с использованием FROM INFILE
-</div>
+### Один файл с использованием FROM INFILE {#single-file-with-from-infile}
 
 Выполните следующие запросы с помощью [клиента командной строки](/ru/concepts/features/interfaces/client):
 
@@ -214,9 +204,7 @@ clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
 └────┴──────┘
 ```
 
-<div id="multiple-files-with-from-infile-using-globs">
-  ### Несколько файлов в FROM INFILE с использованием глоб-шаблонов
-</div>
+### Несколько файлов в FROM INFILE с использованием глоб-шаблонов {#multiple-files-with-from-infile-using-globs}
 
 Этот пример очень похож на предыдущий, но здесь вставка выполняется из нескольких файлов с помощью `FROM INFILE 'input_*.csv`.
 
@@ -237,9 +225,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
   ```
 </Tip>
 
-<div id="inserting-using-a-table-function">
-  ## Вставка с помощью табличной функции
-</div>
+## Вставка с помощью табличной функции {#inserting-using-a-table-function}
 
 Данные можно вставлять в таблицы, указанные через [табличные функции](/ru/reference/functions/table-functions/index).
 
@@ -266,9 +252,7 @@ SELECT * FROM simple_table;
 └─────┴───────────────────────┘
 ```
 
-<div id="inserting-into-clickhouse-cloud">
-  ## Вставка в ClickHouse Cloud
-</div>
+## Вставка в ClickHouse Cloud {#inserting-into-clickhouse-cloud}
 
 По умолчанию сервисы в ClickHouse Cloud предоставляют несколько реплик для высокой доступности. При подключении к сервису соединение устанавливается с одной из этих реплик.
 
@@ -282,17 +266,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 
 Обратите внимание, что использование `select_sequential_consistency` увеличивает нагрузку на ClickHouse Keeper (который ClickHouse Cloud использует внутри своей инфраструктуры) и, в зависимости от нагрузки на сервис, может приводить к снижению производительности. Мы не рекомендуем включать этот параметр без необходимости. Рекомендуемый подход — выполнять операции чтения и записи в рамках одного сеанса или использовать клиентский драйвер, работающий через собственный протокол (и, следовательно, поддерживающий sticky connections).
 
-<div id="inserting-into-a-replicated-setup">
-  ## Вставка в реплицируемой конфигурации
-</div>
+## Вставка в реплицируемой конфигурации {#inserting-into-a-replicated-setup}
 
 В реплицируемой конфигурации данные становятся видны на других репликах после репликации. Репликация данных (то есть их загрузка на другие реплики) начинается сразу после `INSERT`. Это отличается от ClickHouse Cloud, где данные сразу записываются в общее хранилище, а реплики отслеживают изменения метаданных.
 
 Обратите внимание: в реплицируемых конфигурациях операции `INSERT` иногда могут занимать заметное время (порядка одной секунды), поскольку для этого требуется фиксация в ClickHouse Keeper для достижения распределённого консенсуса. Использование S3 в качестве хранилища также увеличивает задержку.
 
-<div id="performance-considerations">
-  ## Рекомендации по производительности
-</div>
+## Рекомендации по производительности {#performance-considerations}
 
 `INSERT` сортирует входные данные по первичному ключу и разбивает их на партиции по ключу партиционирования. Если вставлять данные сразу в несколько партиций, это может значительно снизить производительность запроса `INSERT`. Чтобы этого избежать:
 
@@ -304,17 +284,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 * Данные добавляются в реальном времени.
 * Вы загружаете данные, которые обычно уже отсортированы по времени.
 
-<div id="asynchronous-inserts">
-  ### Асинхронные вставки
-</div>
+### Асинхронные вставки {#asynchronous-inserts}
 
 Можно асинхронно вставлять данные небольшими, но частыми порциями. Данные из таких вставок объединяются в батчи, а затем безопасно вставляются в таблицу. Чтобы использовать асинхронные вставки, включите настройку [`async_insert`](/ru/reference/settings/session-settings/async-insert#async_insert).
 
 Использование `async_insert` или [`Buffer` движка таблицы](/ru/reference/engines/table-engines/special/buffer) приводит к дополнительной буферизации.
 
-<div id="large-or-long-running-inserts">
-  ### Крупные или длительные вставки
-</div>
+### Крупные или длительные вставки {#large-or-long-running-inserts}
 
 При вставке больших объёмов данных ClickHouse оптимизирует производительность записи с помощью процесса, называемого «squashing». Небольшие блоки вставляемых данных в памяти сливаются и объединяются в более крупные блоки перед записью на диск. Squashing уменьшает накладные расходы, связанные с каждой операцией записи. В ходе этого процесса данные становятся доступными для запросов после того, как ClickHouse завершит запись каждых [`max_insert_block_size`](/ru/reference/settings/session-settings/max-insert#max_insert_block_size) строк.
 

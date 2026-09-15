@@ -1,0 +1,89 @@
+---
+slug: /cloud/managed-postgres/walshadow
+sidebarTitle: 'WalShadow'
+title: 'WalShadow で ClickHouse に同期する'
+description: 'PostgreSQL の WAL から直接読み取るネイティブなレプリケーションエンジン WalShadow を使用して、Postgres のデータを ClickHouse にレプリケートします'
+keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'walshadow', 'wal', 'data sync']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+`WalShadow` は、PostgreSQL の先行書き込みログ (WAL) から直接読み取る、ClickHouse Managed Postgres 向けのネイティブなレプリケーションエンジンです。低レイテンシかつ高スループットのワークロード向けに最適化されており、Postgres から ClickHouse へのレプリケーションラグをサブ秒に抑えます。開発はオープンな形で [ClickHouse/walshadow](https://github.com/ClickHouse/walshadow) にて進められています。
+
+`WalShadow` は、**Sync to ClickHouse** で利用できる2つのレプリケーション方式のうちの1つです。もう一方の [ClickPipes](/ja/cloud/managed-postgres/clickpipes) は、完全マネージド型のデータパイプラインです。レイテンシとレプリケーションのオーバーヘッドを最小限に抑えたい場合は `WalShadow` を選択してください。
+
+お使いのサービスで `WalShadow` が利用可能になると、**概要** ページに **プライベートプレビュー** バナーが表示されます。**Configure WalShadow** をクリックして開始してください。
+
+<Image img="/images/managed-postgres/walshadow/overview-banner.webp" alt="Learn more と Configure WalShadow のリンクを含む WalShadow プライベートプレビューバナーが表示された Postgres サービスの概要ページ" size="md" border />
+
+<Note>
+  作業を進める前に、Postgres サービスが ClickHouse からアクセス可能であることを確認してください。`WalShadow` は宛先の ClickHouse サービスに直接接続するため、データベースとテーブルを作成する権限を持つ ClickHouse ユーザーとパスワードが必要です。
+</Note>
+
+レプリケーションを設定するには、Postgres インスタンスのサイドバーで **Sync to ClickHouse** をクリックし、続いて **Replicate data in ClickHouse** をクリックします。
+
+<Image img="/images/managed-postgres/walshadow/sync-landing.webp" alt="ClickPipes と WalShadow のレプリケーション方式が表示された Sync to ClickHouse のランディングページ" size="md" border />
+
+<Steps>
+  <Step title="レプリケーションエンジンを選択する" id="select-replication-engine">
+    レプリケーションエンジンとして **WalShadow** を選択し、**Next** をクリックします。
+
+    <Image img="/images/managed-postgres/walshadow/select-engine.webp" alt="ClickPipes と WalShadow のオプションが表示され、WalShadow が選択されているレプリケーションエンジン選択のステップ" size="md" border />
+  </Step>
+
+  <Step title="レプリケーションサービスを設定する" id="configure-replication-service">
+    レプリケーションの設定を入力します:
+
+    * **ClickHouse サービス**: 既存の ClickHouse サービスを選択するか、新規に作成します
+    * **Postgres database**: レプリケーション元となるソースデータベースを選択するか、新規に作成します
+    * **レプリケーション方式**: 次のいずれかを選択します:
+      * **初期ロード + CDC**: 既存データを取り込み、その後もテーブルを新しい変更に追従させます (推奨)
+      * **初期ロード only**: 既存データを一回限り取り込み、その後の更新は行いません
+      * **CDC only**: 初期取り込みは行わず、以降の新しい変更のみをキャプチャします
+
+    <Image img="/images/managed-postgres/walshadow/configure-service.webp" alt="ClickHouse サービス、Postgres database、レプリケーション方式のオプションが表示されたレプリケーションサービス設定のステップ" size="md" border />
+
+    **Next** をクリックして次に進みます。
+  </Step>
+
+  <Step title="レプリケーションするテーブルを選択する" id="select-tables">
+    宛先データベースを選択し、レプリケーションするテーブルを指定します:
+
+    * **Destination database**: 既存の ClickHouse データベースを選択するか、新規に作成します
+    * **Tables**: 各スキーマを展開して個別のテーブルを選択するか、**Select all tables** を切り替えます。テーブルごとに **Destination table name** をカスタマイズしたり、**Column settings** を調整したりできます。
+    * **ClickHouse ユーザー** および **ClickHouse password**: `WalShadow` は宛先の ClickHouse サービスに直接接続するため、移行先データベースおよびテーブルを作成する権限を持つ認証情報が必要です。
+
+    <Image img="/images/managed-postgres/walshadow/select-tables.webp" alt="スキーマとテーブルの選択、宛先テーブル名、ClickHouse の認証情報が表示されたテーブル選択のステップ" size="md" border />
+
+    **Replicate data to ClickHouse** をクリックしてレプリケーションを開始します。
+  </Step>
+
+  <Step title="WalShadow を監視する" id="monitor-walshadow">
+    レプリケーションを開始すると、**Sync to ClickHouse** ページに `WalShadow` が表示されます。パイプラインのプロビジョニングと初期ロードの準備が行われている間、ステータスは **Creating** になります。
+
+    <Image img="/images/managed-postgres/walshadow/walshadow-creating.webp" alt="WalShadow が Creating 状態で表示されている Sync to ClickHouse ページ" size="md" border />
+
+    プロビジョニングが完了すると、ステータスは **Running** に変わります。このページには、レプリケーションのリアルタイムなメトリクスが表示されます:
+
+    * **Status**: パイプラインの現在の状態 (例: `Running`)
+    * **Rows synced**: ClickHouse にレプリケーションされた行の総数
+    * **Backfills pending**: 初期ロード待ちのテーブル数
+    * **Lag**: 未適用の WAL データ量
+    * **Lag time**: 宛先が Postgres からどれだけ遅れているか
+    * **Uptime**: パイプラインの稼働時間
+    * **Last updated**: メトリクスが最後に報告された時刻
+
+    <Image img="/images/managed-postgres/walshadow/walshadow-running.webp" alt="同期済み行数、ラグ、稼働時間のメトリクスとともに WalShadow が Running 状態で表示されている Sync to ClickHouse ページ" size="md" border />
+  </Step>
+</Steps>
+
+## 注意事項 {#caveats}
+
+`WalShadow` はプライベートプレビュー中のため、以下の点にご注意ください:
+
+* 現時点では、Postgres サービスごとに `WalShadow` は 1 つのみです。
+* 操作とより詳細なメトリクスはロードマップに含まれています。

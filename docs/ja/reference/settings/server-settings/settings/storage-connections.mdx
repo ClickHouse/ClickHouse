@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーの設定項目であり、ClickHouseのソースコードから自動生成されています。
 
-<div id="storage_connections_hard_limit">
-  ## storage_connections_hard_limit
-</div>
+## storage_connections_hard_limit {#storage_connections_hard_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200000" changeable_without_restart="No" />この制限に達すると、新規作成時に例外がスローされます。ハード制限を無効にするには 0 に設定します。この制限はストレージ接続に適用されます。
 
-<div id="storage_connections_rcvbuf">
-  ## storage_connections_rcvbuf
-</div>
+## storage_connections_rcvbuf {#storage_connections_rcvbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />ストレージ接続 (レプリケーション、分散クエリ) の `SO_RCVBUF` オプションのバッファサイズです。0 より大きい値に設定すると、受信バッファに対するカーネルの TCP 自動調整を上書きします。0 = カーネルのデフォルト (自動調整) 。注: この設定を 0 に戻しても、自動調整が復元されるのは新しく作成される接続のみです。既存のプールされた接続は、再作成されるまで固定のバッファサイズを保持します。
 
-<div id="storage_connections_sndbuf">
-  ## storage_connections_sndbuf
-</div>
+## storage_connections_sndbuf {#storage_connections_sndbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />ストレージ接続 (レプリケーション、分散クエリ) における SO&#95;SNDBUF オプションのサイズです。0 より大きい値を設定すると、送信バッファに対するカーネルの TCP 自動調整を上書きします。0 = カーネルのデフォルト (自動調整) 。注: この設定を 0 に戻しても、自動調整が復元されるのは新しく作成される接続のみです。既存のプールされた接続は、再作成されるまで固定のバッファサイズを維持します。
 
-<div id="storage_connections_soft_limit">
-  ## storage_connections_soft_limit
-</div>
+## storage_connections_soft_limit {#storage_connections_soft_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />この制限を超えた接続は、存続時間が大幅に短くなります。この制限はストレージ接続に適用されます。
 
-<div id="storage_connections_store_limit">
-  ## storage_connections_store_limit
-</div>
+## storage_connections_store_limit {#storage_connections_store_limit}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />この上限を超える接続は、使用後にリセットされます。接続 cache を無効にするには、0 に設定します。この上限はストレージ接続に適用されます。
+<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />再利用のためにプールに保持されるアイドル接続の最大数です。この数まで接続が保持されると、それ以降の接続は保持されずに使用後にリセットされます。この上限は使用中の接続には適用されません。接続 cache を無効にするには、0 に設定します。この上限はストレージ接続に適用されます。
 
-<div id="storage_connections_warn_limit">
-  ## storage_connections_warn_limit
-</div>
+## storage_connections_warn_limit {#storage_connections_warn_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />使用中の接続数がこの制限を超えると、警告メッセージがログに書き込まれます。この制限はストレージ接続に適用されます。
 

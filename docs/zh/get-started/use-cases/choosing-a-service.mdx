@@ -1,0 +1,67 @@
+---
+title: '为你的工作负载选择服务'
+sidebarTitle: '选择服务'
+description: '在 ClickHouse Cloud 中为分析或事务场景选择 ClickHouse 或 Postgres 服务，为可观测性选择托管 ClickStack，或使用 chDB 进行本地分析。'
+keywords: ['database selection', 'analytical database', 'transactional database', 'managed postgres', 'report history']
+doc_type: 'guide'
+---
+
+首先应明确你的应用需要支持哪些查询以及对正确性的要求。数据行数庞大本身并不足以决定选用哪种数据库，而一个生成报表的应用可能同时包含分析型和事务型工作负载。
+
+ClickHouse Cloud 是提供托管服务的平台，其中包括用于分析的 ClickHouse 以及用于事务型工作负载的 ClickHouse Managed Postgres。这两种服务运行的数据库引擎不同——分别是 ClickHouse 和 PostgreSQL——其 SQL 行为也各不相同。你可以单独使用其中任一服务，也可以在 ClickHouse Cloud 中将两者结合使用。
+
+## 将工作负载映射到起点 {#workload-map}
+
+| 应用需求                              | 从评估以下内容开始                                                                              | 选择前需要确认的事项                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------- |
+| 对大量事件或结果历史数据进行聚合、筛选和比较            | [ClickHouse Cloud 中的 ClickHouse 服务](/zh/products/cloud/getting-started/intro)             | 具有代表性的查询、摄取批次、数据新鲜度、并发查询，以及更新或重试的设计         |
+| 事务型应用状态，例如订单、库存预留，或状态流转需要事务和约束的作业 | [ClickHouse Cloud 中的 ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) | 事务边界、约束、索引、连接管理，以及该服务支持的功能和可用性              |
+| 事务型应用状态，再加上需要独立服务系统承载的分析查询        | [ClickHouse Cloud 中的 Postgres 与 ClickHouse 服务](/zh/products/managed-postgres/clickpipes)  | 哪些表需要复制、可接受的复制延迟、schema 变更，以及运行两个服务的成本和运维投入 |
+| 用于搜索和排查应用日志、指标与链路追踪的托管式体验         | [托管 ClickStack](/zh/clickstack/getting-started/managed)                                   | 埋点、遥测数据摄取、保留期，以及团队所需的可观测性工作流                |
+| 在本地应用或 notebook 中分析文件或内存中的数据      | [chDB](/zh/chdb/index)                                                                    | 本地资源，以及是否需要单独托管的共享数据库服务                     |
+
+请查阅相关产品文档，了解当前的可用性、区域和限制。ClickHouse Managed Postgres 目前处于 Public Beta 阶段；请参阅其[快速入门](/zh/products/managed-postgres/quickstart)。
+
+如需了解自管理 ClickHouse 服务器或其他本地部署方式，请参阅[部署模式](/zh/get-started/about/deployment-modes)。
+
+## 示例：报表结果与运行历史 {#report-results-and-history}
+
+假设某个应用需要处理上传的文件、生成报表，并保留可查询的结果和运行历史。在选择数据库之前，先把结果行与运行记录区分开：
+
+* **结果：** 查询是为单个报表读取少量行，还是要跨多个报表、数据集和时间范围做聚合？预计哪张表会达到数亿行？
+* **运行记录：** 是在一次运行结束时写入一条不可变记录，还是应用需要协调进行中任务的归属和状态流转？
+* **正确性：** 是否必须在同一个事务中修改多条记录？数据库是否必须保证唯一性，或防止两个工作线程认领同一个任务？
+* **新鲜度：** 一次成功写入需要在多久内可见？查询能否容忍不完整或有延迟的分析副本？
+
+### 已完成的运行与分析结果 {#completed-runs}
+
+如果主要工作负载是对结果行进行分析，且运行记录可在运行完成时追加写入，那么 ClickHouse Cloud 中的 ClickHouse 服务就是一个合适的候选方案。仅仅为了一张小型元数据表，并不需要额外引入第二个数据库。
+
+请设计并测试：读取方如何区分一次完整的运行与仅部分摄取的运行。明确定义稳定的运行标识符、重试行为，以及重复结果行的处理方式。分别写入结果表和运行历史表的插入操作不能被当作单个跨表事务来对待。
+
+如果同一条运行记录存储了多个版本，则需要定义查询如何选取当前版本。[ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 支持配合 `FINAL` 在查询时去重；但正确性不应依赖后台合并是否已经完成。[update 参考文档](/zh/reference/statements/update)介绍了另一种更新机制及其局限性。这两种方式都不应被假定能提供 PostgreSQL 式的事务保证。
+
+### 事务型任务状态 {#transactional-job-state}
+
+当运行记录表同时还充当事务型工作队列或权威记录系统时，可考虑使用 ClickHouse Managed Postgres：例如，某个工作线程必须以原子方式认领一个任务，而其他工作线程同时在争抢该任务；又或者多条应用记录必须一并变更，并强制执行相应的约束。
+
+Postgres 同样可以承担报表类查询。只有当实际的查询性能、并发或隔离性要求确有必要时，才引入分析型服务，而不要想当然地认为每个报表应用都需要两套数据库。
+
+### 事务与分析并存 {#transactions-and-analytics}
+
+当两类工作负载确实需要各自独立的服务时，请将事务性状态保留在 Postgres 中，并使用 [ClickPipes](/zh/products/managed-postgres/clickpipes) 或 [WalShadow](/zh/products/managed-postgres/walshadow) 将所需的表复制到 ClickHouse。要将复制延迟考虑在内；对于依赖应用当前状态的决策，仍应以事务性数据源为准。复制并不会让一次 Postgres 写入和一次 ClickHouse 读取处于同一个事务中。
+
+[pg&#95;clickhouse 扩展](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction)可以通过 Postgres 提供对 ClickHouse 的访问。共享同一个查询入口并不会把这两个服务变成同一个数据库引擎，也不意味着无需再关注数据新鲜度。
+
+## 预配前先验证适配性 {#check-fit}
+
+整理一小组具有代表性的查询,并在贴近真实的数据量下进行测试。测试内容应涵盖精确的点查(lookup)、跨历史数据的聚合、预期的并发负载,以及对应用而言至关重要的正确性场景。在给出任何基准测试结果时,请同时说明 schema、查询形态、硬件或服务规格以及摄取行为。
+
+对于托管部署,还需检查:
+
+* 区域、网络、访问控制和恢复方面的要求。
+* 在 [ClickHouse Cloud 计费指南](/zh/products/cloud/reference/billing/billing-overview) 或 [Managed Postgres 定价指南](/zh/products/managed-postgres/pricing) 中查看预期的活跃时长、存储数据量、备份和数据传输费用。
+* 间歇性的分析工作负载能否容忍 [自动空闲](/zh/products/cloud/features/autoscaling/idling) 带来的连接延迟。
+* 即使基础设施由服务方托管,团队仍需负责 schema 设计、应用侧重试、查询调优和成本控制。
+
+对于 ClickHouse Cloud 中的 ClickHouse 或 Postgres 服务,可使用 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) 在终端中创建和管理资源。对于托管 ClickStack 和 chDB,请参考工作负载对照表中链接的产品指南。

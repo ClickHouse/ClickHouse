@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="use_iceberg_metadata_files_cache">
-  ## use_iceberg_metadata_files_cache
-</div>
+## use_iceberg_manifest_list_partition_pruning {#use_iceberg_manifest_list_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "manifest 목록의 파티션 요약이 쿼리 필터와 일치할 수 없는 Iceberg manifest 파일을 읽지 않고 건너뛰는 새로운 설정."}]}]} />
+
+manifest 목록의 파티션 요약이 쿼리 필터와 일치할 수 없는 Iceberg manifest 파일은 읽지 않고 전체를 건너뜁니다. [use&#95;iceberg&#95;partition&#95;pruning](/ko/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)이 활성화되어 있어야 하며, manifest 파일에 포함된 고유 파티션 값의 수가 적을 때만 효과가 있습니다. 이러한 형태는 파티션 컬럼을 기준으로 클러스터링한 `rewriteManifests`가 생성합니다.
+
+## use_iceberg_metadata_files_cache {#use_iceberg_metadata_files_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,9 +34,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 - 비활성화
 * 1 - 활성화
 
-<div id="use_iceberg_partition_pruning">
-  ## use_iceberg_partition_pruning
-</div>
+## use_iceberg_partition_pruning {#use_iceberg_partition_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

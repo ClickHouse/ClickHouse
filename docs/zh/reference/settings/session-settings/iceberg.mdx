@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="iceberg_delete_data_on_drop">
-  ## iceberg_delete_data_on_drop
-</div>
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,25 +22,35 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 执行 drop 时，是否删除所有 Iceberg 文件。
 
-<div id="iceberg_delete_manifest_decode_concurrency">
-  ## iceberg_delete_manifest_decode_concurrency
-</div>
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "为此前硬编码的队列容量（位于 Iceberg data manifest 解码任务与查询之间）新增的设置。"}]}]} />
+
+Iceberg data manifest 解码任务与查询之间队列的容量，以数据文件条目数计。
+
+队列已满且查询未消费数据时，解码任务会暂停，因此该设置也限定了预读量。
+
+必须大于零。
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "新增设置，用于限制读取第一行之前可并发解码的 Iceberg 删除 manifest 文件数量。在 26.8 之前，每次解码一个 manifest，同时拉取下一个 manifest，因此 `2` 是最接近此前行为的等效值；此前行为会将这些 manifest 的对象存储往返时间之和置于返回第一行前的关键路径上。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "新增设置，用于限制并发解码的 Iceberg manifest 文件数量，对 delete manifest 和 data manifest 同样适用。它取代了 `iceberg_delete_manifest_decode_concurrency`（保留为别名）。取值 `2` 近似于 26.9 之前的数据路径行为：一次解码一个 manifest，同时下一个 manifest 的拉取已在进行中；因此当 `compatibility` 为 26.8 或更低时，delete 解码也会以 2 而非其发布默认值 4 运行，从而保持旧数据路径的内存占用规模，代价是损失部分 delete 解码的重叠执行。"}]}]} />
 
-在读取任何数据文件之前，查询执行期间可并发解码的 Iceberg 删除 manifest 文件的最大数量。
+读取表时并发解码的 Iceberg manifest 文件的最大数量。
 
-必须先解码所有删除 manifest，才能读取任何数据文件，因此这项工作位于返回第一行之前的关键路径上。一次解码多个 manifest 可重叠执行对象存储往返和按行剪枝工作。
+所有 delete manifest 都会在读取任何数据文件之前解码完成；data manifest 则在生成查询所需的数据文件列表的过程中解码，且只有当查询消费掉已解码的条目后，才会继续解码新的 manifest。同时解码多个 manifest，可以让对象存储的往返请求与逐条目的裁剪工作重叠进行。
 
-当 Iceberg 元数据文件缓存被禁用或已满时，较高的值会增加查询初始化期间的峰值内存占用，因为每个正在处理的 manifest 都会保留各自解码后的内容。
+当 Iceberg 元数据文件缓存被禁用或已满时，取值越高峰值内存占用越大，因为此时每个处理中的 manifest 都会各自持有自己解码后的内容。
 
-必须大于零；`1` 表示每次解码一个 manifest。
+该值必须大于零；取 `1` 表示逐个解码 manifest。
 
-<div id="iceberg_manifest_min_count_to_compact">
-  ## iceberg_manifest_min_count_to_compact
-</div>
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -54,9 +62,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 如果当前 manifest 文件数量小于或等于该阈值，则会跳过合并整理。
 需要启用 allow&#95;experimental&#95;iceberg&#95;compaction。
 
-<div id="iceberg_max_number_datafiles_to_compact">
-  ## iceberg_max_number_datafiles_to_compact
-</div>
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 Iceberg 中参与合并整理的数据文件数量阈值。
 
-<div id="iceberg_orphan_files_older_than_seconds">
-  ## iceberg_orphan_files_older_than_seconds
-</div>
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -76,9 +80,7 @@ Iceberg 中参与合并整理的数据文件数量阈值。
 
 Iceberg 表中删除孤立文件时使用的默认文件期限阈值 (以秒为单位) 。新于该阈值的文件不会被视为孤立文件。当在 `remove_orphan_files()` 过程调用中省略 `older_than` 参数时，将使用此设置。默认值为 259200 (3 天) 。
 
-<div id="iceberg_snapshot_id">
-  ## iceberg_snapshot_id
-</div>
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -86,9 +88,7 @@ Iceberg 表中删除孤立文件时使用的默认文件期限阈值 (以秒为�
 
 使用指定的快照 ID 查询 Iceberg 表。
 
-<div id="iceberg_timestamp_ms">
-  ## iceberg_timestamp_ms
-</div>
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

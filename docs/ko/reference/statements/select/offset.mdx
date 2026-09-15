@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+SQL 표준 `OFFSET ... FETCH` 형식은 [`LIMIT ... AFTER ... UNTIL`](/ko/reference/statements/select/limit#limit-after-until) 범위 형식과 함께 사용할 수 없습니다.
+
 `offset_row_count` 또는 `fetch_row_count` 값은 숫자 또는 리터럴 상수일 수 있습니다. `fetch_row_count`는 생략할 수 있으며, 기본값은 1입니다.
 
 `OFFSET`은 쿼리 결과 집합에서 행 반환을 시작하기 전에 건너뛸 행 수를 지정합니다. `OFFSET n`은 결과의 처음 `n`개 행을 건너뜁니다.
@@ -57,9 +59,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   실제 오프셋은 [offset](/ko/reference/settings/session-settings/other#offset) 설정의 영향을 받을 수도 있습니다.
 </Note>
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 입력 테이블(table):
 

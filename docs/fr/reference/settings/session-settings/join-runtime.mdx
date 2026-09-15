@@ -10,73 +10,50 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="join_runtime_bloom_filter_bytes">
-  ## join_runtime_bloom_filter_bytes
-</div>
-
-<ExperimentalBadge />
+## join_runtime_bloom_filter_bytes {#join_runtime_bloom_filter_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="524288" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "524288"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "524288"},{"label": "Les filtres runtime JOIN sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "524288"},{"label": "Nouveau paramètre"}]}]} />
 
 Taille, en octets, d’un filtre de Bloom utilisé comme filtre runtime pour JOIN (voir le paramètre enable&#95;join&#95;runtime&#95;filters).
 
-<div id="join_runtime_bloom_filter_hash_functions">
-  ## join_runtime_bloom_filter_hash_functions
-</div>
-
-<ExperimentalBadge />
+## join_runtime_bloom_filter_hash_functions {#join_runtime_bloom_filter_hash_functions}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "3"},{"label": "Les filtres runtime JOIN sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "3"},{"label": "Nouveau paramètre"}]}]} />
 
 Nombre de fonctions de hachage d’un filtre de Bloom utilisé comme filtre runtime pour JOIN (voir le paramètre enable&#95;join&#95;runtime&#95;filters).
 
-<div id="join_runtime_bloom_filter_max_ratio_of_set_bits">
-  ## join_runtime_bloom_filter_max_ratio_of_set_bits
-</div>
-
-<ExperimentalBadge />
+## join_runtime_bloom_filter_max_ratio_of_set_bits {#join_runtime_bloom_filter_max_ratio_of_set_bits}
 
 <SettingsInfoBlock type="Double" default_value="0.7" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0.7"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.7"},{"label": "Les filtres runtime JOIN sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0.7"},{"label": "Nouveau paramètre"}]}]} />
 
 Si le nombre de bits à 1 dans un filtre de Bloom à l’exécution dépasse ce ratio, le filtre est entièrement désactivé afin de réduire le surcoût.
 
-<div id="join_runtime_filter_blocks_to_skip_before_reenabling">
-  ## join_runtime_filter_blocks_to_skip_before_reenabling
-</div>
-
-<ExperimentalBadge />
+## join_runtime_filter_blocks_to_skip_before_reenabling {#join_runtime_filter_blocks_to_skip_before_reenabling}
 
 <SettingsInfoBlock type="UInt64" default_value="30" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "30"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "30"},{"label": "Les filtres runtime JOIN sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "30"},{"label": "Nouveau paramètre"}]}]} />
 
 Nombre de blocs ignorés avant de tenter de réactiver dynamiquement un filtre runtime précédemment désactivé en raison d&#39;un ratio de filtrage insuffisant.
 
-<div id="join_runtime_filter_exact_values_limit">
-  ## join_runtime_filter_exact_values_limit
-</div>
-
-<ExperimentalBadge />
+## join_runtime_filter_exact_values_limit {#join_runtime_filter_exact_values_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "10000"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "Les filtres runtime JOIN sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "10000"},{"label": "Nouveau paramètre"}]}]} />
 
 Nombre maximal d’éléments dans le runtime filter stockés tels quels dans un Set ; au-delà de ce seuil, il bascule vers un filtre de Bloom.
 
-<div id="join_runtime_filter_from_fixed_hash_table">
-  ## join_runtime_filter_from_fixed_hash_table
-</div>
+## join_runtime_filter_from_fixed_hash_table {#join_runtime_filter_from_fixed_hash_table}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -84,33 +61,23 @@ Nombre maximal d’éléments dans le runtime filter stockés tels quels dans un
 
 Lorsque le côté build du hash join est converti en FixedHashMap (voir `enable_join_fixed_hash_table_conversion`), cette table de hachage est utilisée directement comme filtre runtime.
 
-<div id="join_runtime_filter_min_probe_rows">
-  ## join_runtime_filter_min_probe_rows
-</div>
-
-<ExperimentalBadge />
+## join_runtime_filter_min_probe_rows {#join_runtime_filter_min_probe_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1000"},{"label": "Nouveau paramètre permettant de contrôler la taille minimale du côté sonde pour l'installation de filtres runtime JOIN. Elle n'était auparavant pas limitée, la valeur précédente était donc 0, ce qui signifiait qu'ils étaient toujours installés."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "Les filtres runtime JOIN sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1000"},{"label": "Nouveau paramètre permettant de contrôler la taille minimale du côté sonde pour l'installation de filtres runtime JOIN. Elle n'était auparavant pas limitée, la valeur précédente était donc 0, ce qui signifiait qu'ils étaient toujours installés."}]}]} />
 
 Si, lors de la planification de la requête, le côté sonde d&#39;un JOIN est estimé produire au plus ce nombre de lignes, le filtre runtime JOIN n&#39;est pas créé. La création et l&#39;application d&#39;un filtre runtime pour un côté sonde très petit coûtent plus qu&#39;elles ne permettent d&#39;économiser. Définissez cette valeur sur 0 pour toujours créer le filtre runtime, quelle que soit la taille estimée du côté sonde.
 
-<div id="join_runtime_filter_pass_ratio_threshold_for_disabling">
-  ## join_runtime_filter_pass_ratio_threshold_for_disabling
-</div>
-
-<ExperimentalBadge />
+## join_runtime_filter_pass_ratio_threshold_for_disabling {#join_runtime_filter_pass_ratio_threshold_for_disabling}
 
 <SettingsInfoBlock type="Double" default_value="0.7" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0.7"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.7"},{"label": "Les filtres runtime JOIN sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0.7"},{"label": "Nouveau paramètre"}]}]} />
 
 Si le ratio entre les lignes qui passent le filtre et les lignes vérifiées est supérieur à ce seuil, le filtre runtime est considéré comme peu performant et est désactivé pour les `join_runtime_filter_blocks_to_skip_before_reenabling` blocs suivants afin de réduire le surcoût.
 
-<div id="join_runtime_filter_size_from_hash_table_stats">
-  ## join_runtime_filter_size_from_hash_table_stats
-</div>
+## join_runtime_filter_size_from_hash_table_stats {#join_runtime_filter_size_from_hash_table_stats}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

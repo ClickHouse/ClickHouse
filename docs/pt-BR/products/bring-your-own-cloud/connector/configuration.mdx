@@ -6,11 +6,13 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'conector', 'configuração'
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 Esta página aborda as alterações de configuração que você provavelmente fará após instalar o ClickHouse Connector. Para ver todas as chaves, seus valores padrão e significados, consulte a [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration); para flags de comando, consulte a [referência da CLI](/pt-BR/products/bring-your-own-cloud/connector/reference/cli).
 
-<div id="configuration-surfaces">
-  ## Superfícies de configuração
-</div>
+## Superfícies de configuração {#configuration-surfaces}
 
 O conector tem uma superfície de configuração para cada destino de instalação.
 
@@ -56,9 +58,7 @@ O conector tem uma superfície de configuração para cada destino de instalaç�
   </Tab>
 </Tabs>
 
-<div id="clickhouse-instances">
-  ## Adicionar ou alterar instâncias do ClickHouse
-</div>
+## Adicionar ou alterar instâncias do ClickHouse {#clickhouse-instances}
 
 Cada entrada em `instances` nomeia um endpoint do protocolo nativo do ClickHouse a partir do qual o conector lê: `host`, `port`, `database`, `secure`, além de `namespace` e `cluster` no Kubernetes. As credenciais nunca ficam na configuração; cada componente obtém seu usuário somente leitura do ClickHouse a partir do pacote de acesso criado pelo provisionamento.
 
@@ -153,9 +153,7 @@ Cada entrada em `instances` nomeia um endpoint do protocolo nativo do ClickHouse
   Os mesmos comandos `access provision`, com `--force`, rotacionam as credenciais do ClickHouse de uma instância. Consulte [operações](/pt-BR/products/bring-your-own-cloud/connector/operations).
 </Tip>
 
-<div id="operator-allowlist">
-  ## Lista de permissões de operadores
-</div>
+## Lista de permissões de operadores {#operator-allowlist}
 
 As sessões gerenciadas pelo gateway de sessão são controladas por uma lista de permissões de endereços de e-mail de operadores: cada solicitação ao gateway de sessão deve incluir um token de ID OIDC de curta duração cujo e-mail atestado conste na lista. Uma lista de permissões vazia fecha o gateway, impedindo que qualquer pessoa abra uma sessão por meio dele. Em uma VM, o usuário root no host também pode gerenciar sessões diretamente pelo arquivo de sessão local; a lista de permissões controla apenas o acesso pelo gateway. Consulte [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) para conhecer o modelo de confiança completo.
 
@@ -185,9 +183,7 @@ As sessões gerenciadas pelo gateway de sessão são controladas por uma lista d
   </Tab>
 </Tabs>
 
-<div id="network-policy">
-  ## Política de rede e tráfego de saída
-</div>
+## Política de rede e tráfego de saída {#network-policy}
 
 No Kubernetes, o chart inclui uma NetworkPolicy padrão que nega todo o tráfego, com uma lista de permissão de saída (`networkPolicy.enabled: true`). Os objetos NetworkPolicy só têm efeito quando são aplicados pelo CNI; com um CNI que os aplica, o conector não tem tráfego de saída até que `allowEgressCIDRs` especifique os CIDRs por trás do endpoint da API do conector.
 
@@ -227,9 +223,7 @@ Um exemplo é o intervalo `private.googleapis.com`, que abrange um provedor de i
 
 Outros dois controles de Entrada: `metricsScrapeSelector` restringe a Entrada para coleta de métricas a um Espaço de nomes específico do Prometheus por rótulo, e `kubeletProbeCIDRs` permite explicitamente sondas de integridade do agente de nó do Kubernetes em ambientes com negação padrão estrita. Consulte a [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration) para ver a lista completa de chaves.
 
-<div id="redaction-patterns">
-  ## Padrões de redação
-</div>
+## Padrões de redação {#redaction-patterns}
 
 A saída do solucionador de problemas é redigida antes de sair do seu ambiente. Os padrões integrados abrangem `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key` e `connection-string-credentials`. Você pode adicionar seus próprios padrões em um arquivo YAML; eles são executados primeiro, na ordem em que aparecem no arquivo, seguidos pelos padrões integrados. Uma entrada que reutiliza o `name` de um padrão integrado o substitui.
 
@@ -254,9 +248,7 @@ Em uma VM, o arquivo é `/etc/clicklink/redaction-patterns.yaml`; o instalador f
   O solucionador de problemas se recusa a iniciar se houver um arquivo de padrões inválido e registra nos logs a entrada problemática. `clicklink clctl preflight` valida o arquivo; portanto, execute-o antes de reiniciar o daemon.
 </Warning>
 
-<div id="private-mirrors">
-  ## Espelhos privados e endpoints dentro da fronteira
-</div>
+## Espelhos privados e endpoints dentro da fronteira {#private-mirrors}
 
 O chart publicado predefine `image.repository` para a imagem pública do conector, compatível com várias arquiteturas e assinada com cosign; portanto, instalações simples não exigem values de imagem. Para inspecionar os padrões publicados:
 
@@ -283,9 +275,7 @@ clicklink clctl init --handoff handoff.yaml --target helm \
 
 Quando o endpoint da API do conector estiver por trás de uma CA privada dentro da sua fronteira, passe `--api-private-ca` para `init`: isso configura `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, para que o endpoint seja verificado em relação à cadeia de CAs do pacote de inscrição, em vez das raízes do sistema. Em uma VM, o equivalente é `api.tls.ca_file` em `/etc/clicklink/config.yaml`; `init` instala a cadeia do pacote em `/etc/clicklink/tls/ca.crt`, que é adicionada às raízes do sistema para verificação. Para inscrição e assinatura de certificados em ambientes totalmente isolados da internet, consulte [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding).
 
-<div id="storage">
-  ## Armazenamento
-</div>
+## Armazenamento {#storage}
 
 <Tabs>
   <Tab title="Kubernetes">

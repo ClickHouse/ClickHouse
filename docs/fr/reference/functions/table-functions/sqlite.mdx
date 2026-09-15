@@ -10,49 +10,39 @@ doc_type: 'reference'
 
 Permet d’exécuter des requêtes sur des données stockées dans une base de données [SQLite](/fr/reference/engines/database-engines/sqlite).
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 sqlite('db_path', 'table_name')
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 * `db_path` — Chemin d’accès à un fichier contenant une base de données SQLite. [String](/fr/reference/data-types/string).
 * `table_name` — Nom d’une table de la base de données SQLite, ou d’une requête transmise à SQLite telle quelle (voir [Transmettre une requête au lieu d’un nom de table](#passing-a-query)). [String](/fr/reference/data-types/string).
 
-<div id="returned-value">
-  ## Valeur renvoyée
-</div>
+## Valeur renvoyée {#returned-value}
 
 * Un objet de table avec les mêmes colonnes que la table `SQLite` d’origine.
 
-<div id="passing-a-query">
-  ## Utilisation d’une requête à la place d’un nom de table
-</div>
+## Utilisation d’une requête à la place d’un nom de table {#passing-a-query}
 
-Au lieu d’un nom de table, le deuxième argument peut être une requête `SELECT` transmise telle quelle à SQLite. La structure de la table obtenue est déduite du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
+Au lieu d’un nom de table, le deuxième argument peut être une requête `SELECT` transmise telle quelle à SQLite. La structure de la table obtenue est déduite du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
 
 ```sql
 SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
 SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
-Une telle table est en lecture seule : `INSERT` n’y est pas autorisé. La même syntaxe est prise en charge par le moteur de table [`SQLite`](/fr/reference/engines/table-engines/integrations/sqlite).
+Une telle table est en lecture seule : `INSERT` n’y est pas autorisé. La même syntaxe est prise en charge par le moteur de table [`SQLite`](/fr/reference/engines/table-engines/integrations/sqlite).
 
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse, puis re-sérialisée avant d’être envoyée à SQLite. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe propre à SQLite que ClickHouse n’analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à SQLite.
 
-  Les clauses externes `WHERE`, `LIMIT`, les agrégations, etc., de la requête ClickHouse englobante ne sont **pas** répercutées dans la requête transmise — elles sont appliquées dans ClickHouse après la récupération du résultat complet de la requête. Pour limiter les données lues depuis SQLite, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être répercuté provoque une exception au lieu d’être appliqué localement.
+  Les clauses externes `WHERE`, `LIMIT`, les agrégations, etc., de la requête ClickHouse englobante ne sont **pas** répercutées dans la requête transmise — elles sont appliquées dans ClickHouse après la récupération du résultat complet de la requête. Pour limiter les données lues depuis SQLite, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe portant sur les colonnes de la fonction de table provoque une exception au lieu d’être appliqué localement, car il ne peut pas être répercuté dans la requête transmise. La vérification porte sur le prédicat `WHERE` de premier niveau et sur chaque conjonction d’un `AND` de premier niveau. Un `PREWHERE` sur les colonnes de cette table ne relève pas de ce paramètre : ce moteur de table ne prend pas en charge `PREWHERE`, et une telle requête est rejetée avec `ILLEGAL_PREWHERE` quel que soit le paramètre. Avec l’analyzer (le comportement par défaut), la vérification n’a lieu que là où un filtre pourrait effectivement être répercuté : lorsque cette table est la seule table de la requête, de part et d’autre d’un `INNER JOIN`, ou du côté préservé d’un outer join (le côté gauche d’un `LEFT JOIN`, le côté droit d’un `RIGHT JOIN`). Du côté non préservé d’un `LEFT`/`RIGHT JOIN` et de part et d’autre d’un `FULL JOIN`, rien n’est répercuté et rien n’est vérifié : un filtre sur les colonnes de cette table est donc appliqué localement après le join, même en mode strict. Là où la vérification s’applique, un prédicat qui référence d’autres tables jointes dans la requête englobante n’est pas répercuté et est exclu de la vérification, qu’il référence uniquement le côté joint ou qu’il le combine avec cette table au sein d’une même expression non-`AND` (par exemple un `OR`) ; un tel prédicat conserve son point d’évaluation ClickHouse habituel (`WHERE` après le join, `PREWHERE` avant) et n’est pas rejeté. Avec l’ancien analyzer (`enable_analyzer = 0`), ce cadrage ne s’applique pas : l’ensemble du filtre externe est vérifié lorsque cette table est la première table de l’arbre de jointure, y compris un prédicat portant sur le côté joint, et une table jointe à droite n’est pas vérifiée.
 </Note>
 
-<div id="example">
-  ## Exemple
-</div>
+## Exemple {#example}
 
 ```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
@@ -66,9 +56,7 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 └───────┴──────┘
 ```
 
-<div id="related">
-  ## Voir aussi
-</div>
+## Voir aussi {#related}
 
 * [SQLite](/fr/reference/engines/table-engines/integrations/sqlite) moteur de table
 * [SQLite database engine](/fr/reference/engines/database-engines/sqlite) — section consacrée à la prise en charge des types de données

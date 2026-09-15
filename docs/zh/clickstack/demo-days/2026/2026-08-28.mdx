@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-28
+title: '演示日 - 2026-08-28'
+sidebarTitle: '2026-08-28'
+description: '2026-08-28 的 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## PromQL 与 Lucene 中的仪表盘变量 {#dashboard-variables-in-promql-and-lucene}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/q5pP20p4nY4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表盘变量现已支持 PromQL 图表：变量引用可自动补全，遇到缺失的变量或不受支持的用法 (例如 macro，或需要加引号的引用) 会给出警告。生成的 PromQL 预览与既有的 generated SQL 面板并排显示，展示代入当前所选值后的查询。
+
+Lucene 变量现在支持精确匹配。此前，`ServiceName:$service` 会展开为 `ServiceName:("add" OR "cart")`。未加引号的 Lucene 字段匹配属于子串匹配，因此实际会变成 `ServiceName ILIKE '%add%' OR ServiceName ILIKE '%cart%'`——你只选了两个 service，结果却返回了四个。
+
+给变量加上引号，即 `ServiceName:"$service"`，现在会展开为 `(ServiceName:"add" OR ServiceName:"cart")`，对每个所选值进行精确匹配。这与不含变量的带引号字段匹配的既有行为保持一致。自动补全也会优先建议带引号的写法。
+
+从图表工具提示或表格行下钻到搜索页面时，现在会先展开变量和 macro 再跳转。搜索页面无法识别变量，因此此前直接传入原始的 `$service` 会得到错误结果或查询报错。未做任何选择的 macro 会展开为 `(1=1)`，在搜索页面的 `WHERE` 输入框中看起来略显别扭，但能保证查询有效。
+
+过滤器的选择项现在以变量名而非表达式为键。两个使用相同表达式的 过滤器 (例如来自不同 source 的 `ServiceName`) 不再共享同一组选择。
+
+按照 Brandon 的建议，编辑 过滤器 时按下 Escape 现在会先询问是否放弃更改。此前，想关闭工具提示却可能把整段编辑内容弄丢。
+
+仪表盘变量已于本周上线到 production。功能开关已移除，[公开文档](https://clickhouse.com/docs/clickstack/features/dashboards/overview#dashboard-variables) 中介绍了各种引用形式和 macro。
+
+**相关 PR：** [#2994](https://github.com/hyperdxio/hyperdx/pull/2994) 在 PromQL 图表中代入变量、[#2995](https://github.com/hyperdxio/hyperdx/pull/2995) 为 PromQL 变量添加补全、[#2997](https://github.com/hyperdxio/hyperdx/pull/2997) 对无效的 PromQL 变量用法显示警告、[#2998](https://github.com/hyperdxio/hyperdx/pull/2998) 添加生成的 PromQL 预览、[#2987](https://github.com/hyperdxio/hyperdx/pull/2987) 分发精确匹配的 Lucene 变量引用、[#3008](https://github.com/hyperdxio/hyperdx/pull/3008) 通过下钻跳转到搜索页面前先展开变量、[#2963](https://github.com/hyperdxio/hyperdx/pull/2963) 接受以变量为键的仪表盘 过滤器 值、[#2964](https://github.com/hyperdxio/hyperdx/pull/2964) 持久化并读取以变量为键的 过滤器 状态、[#3005](https://github.com/hyperdxio/hyperdx/pull/3005) 关闭 过滤器 编辑器时在放弃未保存更改前进行确认、[#3009](https://github.com/hyperdxio/hyperdx/pull/3009) 移除仪表盘变量的功能开关
+
+## Span links，双向可查 {#span-links-in-both-directions}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tdK9JU6unoE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+span links 早已可以查看，但只能从 consumer 一侧查看。每个链接都只显示为一个 &quot;Open trace&quot; 操作，无法从 producer span 出发反向找出链接到它的 spans。曾有用户在 GitHub issue 中提出了这一需求。
+
+Span Links 区域现在会显示每个 target span 的名称、service、耗时和 timestamp，这样在多个链接之间做选择时就不必逐个打开了。当找不到 target span 时，仍会回退为 &quot;Open trace&quot;。
+
+新增的 &quot;Linked from&quot; 区域会列出链接到当前 span 的 spans。现在你可以顺着 consumer 的链接找到其 producer，并在那里看到这个 consumer。
+
+沿链接跳转到面包屑路径中的上一个 span 时，会直接回到该条目，因此在两个相互链接的 spans 之间来回切换不会不断产生重复条目。如果二者之间还有其他条目，导航则照常新增一个条目。
+
+反向 lookup 会先找出 span links 中包含所选 span ID 的行，再校验 trace ID 是否匹配。trace ID 的 lookups 可以利用该列上的 bloom filter 索引，但反向 lookup 需要 scan，因此在比演示中更大的 traces 表上可能会更慢。如果这成为问题，我们可以按代码 comment 中的建议，为链接的 span ID 添加索引。
+
+**相关 PR：** [#3011](https://github.com/hyperdxio/hyperdx/pull/3011) 新增反向 span links，显示 span link 详情
+
+## 开箱即用的 LLM 可观测性 {#llm-observability-out-of-the-box}
+
+*演示者：[@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/m49DZ5cuI64" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+已经有不少团队把 LLM 和编码 agent 的 telemetry 发送到 ClickStack，但此前一直缺少针对性的支持：既没有对话渲染，也没有 token 与成本跟踪或模型分析。
+
+现在，除已有的 ClickHouse、Kubernetes 和 services 预设之外，还新增了 LLM 仪表盘，涵盖 token 用量、成本、模型调用、工具调用、cache hits 和响应时间，并在存在用户 attribute 时按用户细分。
+
+它在 查询 time 直接读取你已有的 traces 和日志，无需固定 schema、专用表，也无需在摄取时做额外处理。支持采用通用约定、OpenLLMetry 或 OpenInference 的 telemetry，包括来自 OpenAI 和 Anthropic SDKs、Vercel AI SDK、LangChain、Claude Code 和 opencode 的数据，对已经采集的 telemetry 同样有效。
+
+latency 视图会把与 AI 相关的 spans 置顶，无需通读整条 trace 即可快速定位耗时较长的模型调用。
+
+sessions 视图按 conversation 对 spans 分组。打开某个 session 即可查看其 spans，再选中其中一个查看详情，包括已记录的 prompt。这在调试 agent 运行时很有帮助，你还可以用同一个 session 过滤器搜索日志。
+
+其覆盖范围有意小于 Langfuse 这类专门的 LLM 可观测性工具 (后者还支持 Evaluation 等更多能力) 。它基于 ClickStack 中已有的 telemetry，满足错误率、成本、tokens 和 latency 等常见的 Monitoring 需求。
+
+**相关 PR：** [#2990](https://github.com/hyperdxio/hyperdx/pull/2990) LLM 可观测性仪表盘、span chat 视图和 sessions
+
+## 在图表编辑器中浏览指标 {#browsing-metrics-in-the-chart-editor}
+
+*演示者：[@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/TkFa6Zzq23o" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+以往要选中一个指标，需要在每种类型多达 3,000 个名称的扁平列表中翻找。如果你大致知道自己在找什么，自动补全还算好用，但用户反馈中多次提到希望能够直接浏览。
+
+现在指标选择框旁边新增了 &quot;Browse metrics&quot; 控件，点击即可打开浏览器：左侧是指标目录，右侧显示所选指标的详细信息。指标名称会按点和下划线拆分成一棵树，只有一个子节点的片段会合并折叠，以减少不必要的点击。`Metric`、`Type` 和 `Unit` 列在各层级始终保持对齐。你可以搜索整个目录，也可以切换为扁平列表。
+
+此前，单位、描述和标签只有在选定指标后，才能在 series 行下方的折叠面板中查看。而详情面板让你在选择之前就能查看这些信息，从而了解你的部署输出了哪些内容、可以按哪些标签分组。点击 &quot;Use metric&quot; 即可将所选指标应用到正在编辑的 series。
+
+在功能稳定之前，该入口暂时放在不太显眼的位置。
+
+**相关 PR：**[#3000](https://github.com/hyperdxio/hyperdx/pull/3000) 为图表编辑器添加指标浏览器、[#3025](https://github.com/hyperdxio/hyperdx/pull/3025) 从主索引流式读取指标名称 (进行中) 、[#3054](https://github.com/hyperdxio/hyperdx/pull/3054) 指标下拉列表的体验优化
+
+## Grafana 中原始 SQL 查询的日志量 {#log-volume-for-raw-sql-queries-in-grafana}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/uehh44q56yE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+一个视觉上的小改动，实际投入的工作却超出预期。
+
+在 Grafana 中，通过 查询 builder 构建的日志查询会在结果上方显示一个日志量 histogram，因为 plugin 知道该用哪些列。而同样的查询在 SQL Editor 中却没有 histogram，因为 plugin 无从得知你选了哪些列。在 Explore 中，你看到的则是 Grafana 基于行数的 histogram，它受查询 `LIMIT` 的制约，也不会跟随所选的 time range。
+
+现在，plugin 会去掉末尾的 `ORDER BY` 和 `LIMIT`，把你的 SQL 包装成派生表，并在完整的 time range 上做聚合。去掉 `LIMIT` 在这里很关键：若保留它，计数就只会局限于原始查询返回的那些行。
+
+histogram 会体现你的 SQL 过滤器s，并在你调整 time range 时同步更新。这既适用于你自己编写的 SQL，也适用于在 查询 builder 中通过 &quot;Edit as SQL&quot; 打开的查询。
+
+查询 rewrite 可能仍有一些无法处理的 edge case。
+
+**相关 PR：** [grafana/clickhouse-datasource#2141](https://github.com/grafana/clickhouse-datasource/pull/2141) 为 SQL Editor 查询显示日志量 (未合并)
+
+## 告警页面上的通知渠道 {#notification-channels-on-the-alerts-pages}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Gr-QkVVWam8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+一条告警最多可通知十个 webhook，但告警列表和详情页头部只显示第一个，而且标注为 “Webhook” 而不是它的名称。两处都仍在读取旧版的单渠道字段。
+
+多目标分发其实是正常工作的，只是显示效果让人误以为其余渠道没有保存成功。
+
+现在，列表和详情页头部会按名称显示每一个已配置的渠道。添加和移除渠道也更加方便，webhook 和 incident.io 集成同样适用。通知时间会按目标分别记录，便于定位响应缓慢的集成。
+
+已配置的渠道现在会被直接通知。此前，它们会被转换成 webhook 提及并追加到消息体中，这可能导致通知丢失：如果消息体中的临时提及数量已达到单事件上限，告警中已配置的渠道就会被跳过。
+
+控件一多，页面就显得拥挤。行操作 (包括导出和 Terraform) 现已归入同一个菜单。
+
+**相关 PR：** [#3001](https://github.com/hyperdxio/hyperdx/pull/3001) 在告警页面显示所有通知目标；[#2991](https://github.com/hyperdxio/hyperdx/pull/2991) 在摘要行显示所有通知渠道；[#2984](https://github.com/hyperdxio/hyperdx/pull/2984) 直接通知已配置渠道，而不再通过提及字符串；[#2961](https://github.com/hyperdxio/hyperdx/pull/2961) 避免失败的提及占用通知配额；[#3003](https://github.com/hyperdxio/hyperdx/pull/3003) 将告警通知时间归属到各个目标；[#3002](https://github.com/hyperdxio/hyperdx/pull/3002) 为告警页面每一行提供一致的尾部控件；[#3016](https://github.com/hyperdxio/hyperdx/pull/3016) 将告警详情页头部整合进共享行菜单
+
+## 渲染数以万计的告警 {#rendering-1000s-alerts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/P9BPD9yoElo" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+告警评估已在 16,000 个并发告警的场景下完成测试，表现良好。但在告警数量如此之多时打开告警页面，会导致页面崩溃。
+
+该列表现已实现虚拟化，可渲染 16,000 个告警。但由于所有告警都会被拉取并在客户端进行过滤，加载速度仍然较慢。分页功能正在开发中，以解决该问题。
+
+此次变更还包含一个脚本，用于在 MongoDB 中批量生成并清理大量告警，便于在本地按此规模测试该页面。
+
+**相关 PR：** [#3012](https://github.com/hyperdxio/hyperdx/pull/3012) 将告警页面列表虚拟化
+
+## 将 API key 隐藏在显示控件之后 {#hiding-api-keys-behind-a-reveal}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/MNXABmTVEkE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，应用各处的凭据都以明文显示：Team Settings 页面会完整展示摄取 API key，MCP 安装代码片段的命令中也包含个人访问密钥。二者在屏幕共享或截图时都很容易泄露。
+
+现在，密钥默认处于遮蔽状态，需要时可通过控件将其显示出来。摄取密钥、个人访问密钥以及 MCP 安装代码片段 (包括社区贡献的片段) 均由同一个共享组件统一处理。
+
+复制时得到的仍是真实的值，因此无需显示密钥即可复制。同样的改动也将应用于 ClickStack Cloud 的 onboarding 流程。
+
+**相关 PR：** [#2988](https://github.com/hyperdxio/hyperdx/pull/2988) 使用共享的 RevealSnippet 遮蔽 API key 和 MCP 安装代码片段中的 secret
+
+## 产品内的发布说明 {#release-notes-in-the-product}
+
+*演示者：[@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/4vrzXy8JwZY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+帮助菜单中的 &quot;What&#39;s new&quot; 面板此前基于逐个 PR 的变更集，挑选带 `feat:` 前缀的条目。结果 v2.36.0 把仪表盘变量列了三次，却漏掉了公式和 alert 相关改动——而这些才是该版本的主要变更。
+
+现在它改为读取根目录下的 `CHANGELOG.md`，该文件会作为 release PR 的一部分撰写并评审。发布生成器还会为面板中的每个版本提供标题，标题下方依次是 breaking changes、新功能、缺陷修复和改进内容，并附有指向 changelog 的链接。
+
+当有未读的发布说明时，帮助按钮现在会闪烁，效果由无需 JavaScript 的动画 SVG 实现。
+
+未读状态的跟踪也需要修复。它此前依据应用的 build 版本，因此只要 deployments 中包含 git 短 SHA 或 CI build 编号，即便没有新版本发布，每次 deploy 都会触发闪烁。现在则改用 changelog 中的最新 release 版本。
+
+发布说明的格式也在调整，因此面板中还会呈现更多此类内容。
+
+**相关 PR：** [#2993](https://github.com/hyperdxio/hyperdx/pull/2993) 基于生成的发布说明构建 &quot;What&#39;s new&quot;，[#3042](https://github.com/hyperdxio/hyperdx/pull/3042) 将 What&#39;s new 闪烁效果关联到 release 而非 build，[#3007](https://github.com/hyperdxio/hyperdx/pull/3007) 在 release-marker 查询失败时给出明确的警告

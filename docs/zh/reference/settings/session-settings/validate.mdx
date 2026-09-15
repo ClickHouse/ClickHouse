@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,17 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用后，会根据枚举类型检查 `IN`、`NOT IN`、`==` 和 `!=` 等运算符中的枚举字面量；如果字面量不是有效的枚举值，则抛出异常。
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_mutation_query {#validate_mutation_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "默认启用的新设置，用于验证变更查询。"}]}]} />
 
-在接受变更查询之前先验证其有效性。变更操作在后台执行，运行无效查询会导致变更操作卡住，并需要手动干预。
+在接受变更查询之前先验证其有效性。变更操作在后台执行，运行无效查询可能导致变更操作卡住，并需要手动干预。
 
 只有在遇到向后不兼容的 bug 时，才应更改此设置。
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

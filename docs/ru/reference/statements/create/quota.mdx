@@ -32,6 +32,8 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 
 Предложение `ON CLUSTER` позволяет создавать QUOTA в кластере, см. [распределённый DDL](/ru/reference/statements/distributed-ddl).
 
+Для `CREATE QUOTA` требуется привилегия [CREATE QUOTA](/ru/reference/statements/grant#access-management). `OR REPLACE` удаляет существующую QUOTA с тем же именем, включая список ролей, к которым она применяется, поэтому дополнительно требуется привилегия [DROP QUOTA](/ru/reference/statements/grant#access-management). Привилегия `DROP QUOTA` требуется независимо от того, существует ли уже такая QUOTA, поэтому этот оператор нельзя использовать для выяснения того, какие QUOTA существуют.
+
 **Примеры**
 
 Ограничьте максимальное количество запросов для текущего пользователя условием: 123 запроса за 15 месяцев:
@@ -60,9 +62,7 @@ CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO defa
 
 Дополнительные примеры с использованием XML-конфигурации (не поддерживается в ClickHouse Cloud) можно найти в [руководстве по QUOTA](/ru/concepts/features/configuration/server-config/quotas).
 
-<div id="related-content">
-  ## См. также
-</div>
+## См. также {#related-content}
 
 * Блог: [Создание одностраничных приложений с ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
 

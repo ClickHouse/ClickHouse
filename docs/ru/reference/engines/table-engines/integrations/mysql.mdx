@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Движок MySQL позволяет выполнять запросы `SELECT` и `INSERT` к данным, которые хранятся на удалённом сервере MySQL.
 
-<div id="creating-a-table">
-  ## Создание таблицы
-</div>
+## Создание таблицы {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -58,9 +56,7 @@ SETTINGS
 
 Остальные условия и ограничение выборки `LIMIT` выполняются в ClickHouse только после завершения запроса к MySQL.
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 Учетные данные для зашифрованного соединения с MySQL передаются как ключи именованной коллекции (или как аргументы «ключ-значение»):
 
@@ -86,9 +82,7 @@ SETTINGS
 </named_collections>
 ```
 
-<div id="passing-a-query">
-  ## Передача запроса вместо имени таблицы
-</div>
+## Передача запроса вместо имени таблицы {#passing-a-query}
 
 Вместо имени таблицы аргумент `table` может представлять собой запрос `SELECT`, который передаётся в MySQL как есть. Структура таблицы определяется по результату запроса. Запрос можно записать либо как подзапрос, либо обернуть в функцию `query`:
 
@@ -102,7 +96,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 <Note>
   Форма подзапроса `(SELECT ...)` разбирается в ClickHouse и перед отправкой на сервер повторно сериализуется в диалекте MySQL (с экранированием идентификаторов обратными кавычками). Поэтому она должна быть корректным ClickHouse SQL. Чтобы передать синтаксис, специфичный для MySQL и не разбираемый ClickHouse, используйте форму `query('...')`, текст которой отправляется в MySQL дословно.
 
-  Любые внешние `WHERE`, `LIMIT`, агрегация и т. д. из окружающего запроса к ClickHouse **не** проталкиваются в переданный запрос — они применяются в ClickHouse после получения полного результата запроса. Чтобы ограничить объём данных, читаемых из MySQL, поместите фильтр внутрь переданного запроса. При [`external_table_strict_query = 1`](/ru/reference/settings/session-settings/external-table#external_table_strict_query) внешний фильтр, который нельзя протолкнуть, приводит к исключению вместо локального применения.
+  Любые внешние `WHERE`, `LIMIT`, агрегация и т. д. из окружающего запроса к ClickHouse **не** проталкиваются в переданный запрос — они применяются в ClickHouse после получения полного результата запроса. Чтобы ограничить объём данных, читаемых из MySQL, поместите фильтр внутрь переданного запроса. При [`external_table_strict_query = 1`](/ru/reference/settings/session-settings/external-table#external_table_strict_query) внешний фильтр по столбцам таблицы приводит к исключению вместо локального применения, поскольку его нельзя протолкнуть в переданный запрос. Проверка охватывает предикат верхнего уровня в `WHERE` и каждый конъюнкт `AND` верхнего уровня. `PREWHERE` по столбцам этой таблицы не относится к области действия этой настройки: данный движок таблицы не поддерживает `PREWHERE`, и такой запрос отклоняется с ошибкой `ILLEGAL_PREWHERE` независимо от настройки. С analyzer (используется по умолчанию) проверка выполняется только там, где фильтр в принципе может быть протолкнут: когда эта таблица является единственной таблицей запроса, с любой стороны `INNER JOIN` или на сохраняющей стороне внешнего JOIN (левая сторона `LEFT JOIN`, правая сторона `RIGHT JOIN`). На несохраняющей стороне `LEFT`/`RIGHT JOIN` и с любой стороны `FULL JOIN` ничего не проталкивается и ничего не проверяется, поэтому фильтр по столбцам этой таблицы применяется локально после JOIN даже в строгом режиме. Там, где проверка выполняется, предикат, ссылающийся на другие таблицы, соединённые в окружающем запросе, не проталкивается и исключается из проверки — как если он ссылается только на присоединённую сторону, так и если смешивает её с этой таблицей внутри одного выражения без `AND` (например, `OR`); такой предикат сохраняет обычную точку вычисления в ClickHouse (`WHERE` после JOIN, `PREWHERE` до него) и не отклоняется. Со старым analyzer (`enable_analyzer = 0`) эта область действия не применяется: весь внешний фильтр проверяется, когда эта таблица является первой таблицей дерева JOIN, включая предикат по присоединённой стороне, а присоединённая правая таблица не проверяется.
 </Note>
 
 Поддерживается несколько реплик, которые должны быть перечислены через `|`. Например:
@@ -111,9 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-<div id="usage-example">
-  ## Пример использования
-</div>
+## Пример использования {#usage-example}
 
 Создайте таблицу в MySQL:
 
@@ -178,15 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-<div id="mysql-settings">
-  ## Настройки
-</div>
+## Настройки {#mysql-settings}
 
 Настройки по умолчанию не очень эффективны, поскольку при них даже не переиспользуются соединения. Эти настройки позволяют увеличить число запросов, выполняемых сервером в секунду.
 
-<div id="connection-auto-close">
-  ### `connection_auto_close`
-</div>
+### `connection_auto_close` {#connection-auto-close}
 
 Позволяет автоматически закрывать соединение после выполнения запроса, то есть отключать его повторное использование.
 
@@ -197,9 +185,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `1`.
 
-<div id="connection-max-tries">
-  ### `connection_max_tries`
-</div>
+### `connection_max_tries` {#connection-max-tries}
 
 Задаёт число повторных попыток в пуле с failover.
 
@@ -210,9 +196,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `3`.
 
-<div id="connection-pool-size">
-  ### `connection_pool_size`
-</div>
+### `connection_pool_size` {#connection-pool-size}
 
 Размер пула соединений (если все соединения заняты, запрос будет ждать, пока одно из них не освободится).
 
@@ -222,9 +206,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `16`.
 
-<div id="connection-wait-timeout">
-  ### `connection_wait_timeout`
-</div>
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 Тайм-аут (в секундах) ожидания свободного соединения (если уже имеется `connection_pool_size` активных соединений), 0 — не ждать.
 
@@ -234,9 +216,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `5`.
 
-<div id="connect-timeout">
-  ### `connect_timeout`
-</div>
+### `connect_timeout` {#connect-timeout}
 
 Тайм-аут подключения (в секундах).
 
@@ -246,9 +226,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `10`.
 
-<div id="read-write-timeout">
-  ### `read_write_timeout`
-</div>
+### `read_write_timeout` {#read-write-timeout}
 
 Тайм-аут операций чтения/записи (в секундах).
 
@@ -258,9 +236,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `300`.
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 Включает сжатие для соединения по протоколу MySQL.
 
@@ -289,9 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="see-also">
-  ## См. также
-</div>
+## См. также {#see-also}
 
 * [Табличная функция MySQL](/ru/reference/functions/table-functions/mysql)
 * [Использование MySQL в качестве источника данных для словаря](/ru/reference/statements/create/dictionary/sources/mysql)

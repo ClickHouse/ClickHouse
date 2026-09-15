@@ -54,9 +54,7 @@ Ces instructions `ALTER` modifient les entités liées au contrôle d’accès b
 | [ALTER DATABASE ... MODIFY COMMENT](/fr/reference/statements/alter/database-comment) | Ajoute, modifie ou supprime les commentaires de la base de données, qu’un commentaire ait déjà été défini ou non. |
 | [ALTER NAMED COLLECTION](/fr/reference/statements/alter/named-collection)            | Modifie les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections).              |
 
-<div id="mutations">
-  ## Mutations
-</div>
+## Mutations {#mutations}
 
 Les requêtes `ALTER` destinées à modifier les données des tables sont mises en œuvre au moyen d’un mécanisme appelé « mutations », notamment [ALTER TABLE ... DELETE](/fr/reference/statements/alter/delete) et [ALTER TABLE ... UPDATE](/fr/reference/statements/alter/update). Il s’agit de processus asynchrones en arrière-plan, similaires aux fusions dans les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/index), qui produisent de nouvelles versions « mutées » des parts.
 
@@ -69,9 +67,7 @@ Une requête de mutation renvoie immédiatement après l’ajout de l’entrée 
 
 Les entrées des mutations terminées ne sont pas supprimées immédiatement (le nombre d’entrées conservées est déterminé par le paramètre du moteur de stockage `finished_mutations_to_keep`). Les entrées de mutation plus anciennes sont supprimées.
 
-<div id="synchronicity-of-alter-queries">
-  ## Exécution synchrone des requêtes ALTER
-</div>
+## Exécution synchrone des requêtes ALTER {#synchronicity-of-alter-queries}
 
 Pour les tables non répliquées, toutes les requêtes `ALTER` sont exécutées de manière synchrone. Pour les tables répliquées, la requête se contente d&#39;ajouter dans `ZooKeeper` les instructions correspondant aux actions appropriées, et ces actions sont ensuite exécutées dès que possible. Toutefois, la requête peut attendre que ces actions soient terminées sur toutes les répliques.
 
@@ -82,12 +78,10 @@ Pour les autres requêtes `ALTER` qui modifient uniquement les métadonnées, vo
 Vous pouvez spécifier, avec le paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout), combien de temps (en secondes) attendre que les répliques inactives exécutent toutes les requêtes `ALTER`.
 
 <Note>
-  Pour toutes les requêtes `ALTER`, si `alter_sync = 2` et que certaines répliques restent inactives au-delà de la durée spécifiée par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
+  Pour toutes les requêtes `ALTER`, si `alter_sync = 2`, ou `alter_sync = 3` sur `ReplicatedMergeTree`, et que certaines répliques restent inactives au-delà de la durée spécifiée par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
 </Note>
 
-<div id="concurrent-alter-assignment-on-one-table">
-  ### Attribution concurrente d’`ALTER` sur une même table
-</div>
+### Attribution concurrente d’`ALTER` sur une même table {#concurrent-alter-assignment-on-one-table}
 
 Sur les tables répliquées, l’envoi rapide de plusieurs instructions `ALTER` distinctes sur une même table peut échouer avec `CANNOT_ASSIGN_ALTER` (code 517). Le chemin de réplication déclenche cette erreur lorsque la réplique n’a pas encore appliqué certains `ALTER` précédents (la version des métadonnées est toujours en retard par rapport aux métadonnées communes — le serveur peut indiquer que la réplique « still not applied some of previous alters » ou « Probably too many alters executing concurrently »). Cette condition peut persister même lorsqu’un `ALTER` précédent a déjà été attribué. Il s’agit d’une condition **générale de concurrence entre `ALTER` de métadonnées et mutations** — elle ne se limite pas aux instructions produisant uniquement des mutations. Des modifications concurrentes ordinaires des métadonnées (`ADD` / `DROP` / `MODIFY` et similaires) peuvent déclencher le même code pouvant donner lieu à un réessai (voir, par exemple, le chemin de réessai couvert par `tests/queries/0_stateless/03518_alter_logical_race.sh`).
 
@@ -97,9 +91,7 @@ Approches permettant d’éviter la condition de concurrence :
 * Sérialisez les instructions `ALTER` et réessayez en cas de code 517 jusqu’à ce que les `ALTER` précédents aient été appliqués sur la réplique.
 * Pour les `ALTER` produisant des mutations, attendez la fin de la mutation précédente à l’aide d’un indicateur observable documenté, tel que [`mutations_sync`](/fr/reference/settings/session-settings/mutations#mutations_sync) ou `is_done` dans [`system.mutations`](/fr/reference/system-tables/mutations), avant d’envoyer la suivante.
 
-<div id="combining-materialize-index-clauses">
-  ### Combinaison de clauses `MATERIALIZE INDEX`
-</div>
+### Combinaison de clauses `MATERIALIZE INDEX` {#combining-materialize-index-clauses}
 
 Plusieurs clauses `MATERIALIZE INDEX` peuvent figurer dans une même instruction `ALTER`. Le cas couvert dans le code source consiste à regrouper plusieurs clauses `ADD INDEX` et les clauses `MATERIALIZE INDEX` correspondantes pour ces nouveaux index dans une seule instruction (voir `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). Cette forme combinant `ADD INDEX` et `MATERIALIZE INDEX` mêle un segment `AlterCommand` à un segment `MutationCommand` ; **`DatabaseReplicated` la rejette donc** avec `QUERY_IS_PROHIBITED` (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). Considérez l’exemple `02911` comme valide pour les bases de données ordinaires (non-`DatabaseReplicated`) ; avec `DatabaseReplicated`, conservez les modifications de métadonnées et les mutations de matérialisation dans des instructions distinctes.
 
@@ -107,9 +99,7 @@ Dans l’implémentation actuelle, chaque clause `MATERIALIZE INDEX` est résolu
 
 Si vous avez besoin d’appliquer les mutations dans un ordre précis, vous pouvez toujours émettre une instruction `MATERIALIZE INDEX` par instruction et attendre avec [`mutations_sync`](/fr/reference/settings/session-settings/mutations#mutations_sync).
 
-<div id="related-content">
-  ## Articles connexes
-</div>
+## Articles connexes {#related-content}
 
 * Blog : [Gestion des mises à jour et des suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

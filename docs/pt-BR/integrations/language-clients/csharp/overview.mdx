@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Visão geral'
+sidebarTitle: 'C#'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'cliente', 'driver', 'conectar', 'integrar']
 slug: /integrations/csharp
 description: 'O cliente C# oficial para se conectar ao ClickHouse.'
@@ -25,18 +25,14 @@ A biblioteca fornece duas APIs principais:
 
 Ambas as APIs compartilham o mesmo pool de conexões HTTP subjacente e podem ser usadas juntas na mesma aplicação.
 
-<div id="migration-guide">
-  ## Guia de migração
-</div>
+## Guia de migração {#migration-guide}
 
 1. Atualize o arquivo `.csproj` com o novo nome do pacote `ClickHouse.Driver` e [a versão mais recente no NuGet](https://www.nuget.org/packages/ClickHouse.Driver).
 2. Atualize todas as referências a `ClickHouse.Client` para `ClickHouse.Driver` no seu código.
 
 ***
 
-<div id="supported-net-versions">
-  ## Versões compatíveis do .NET
-</div>
+## Versões compatíveis do .NET {#supported-net-versions}
 
 `ClickHouse.Driver` oferece suporte às seguintes versões do .NET:
 
@@ -45,15 +41,11 @@ Ambas as APIs compartilham o mesmo pool de conexões HTTP subjacente e podem ser
 * .NET 9.0
 * .NET 10.0
 
-<div id="supported-clickhouse-versions">
-  ## Versões compatíveis do ClickHouse
-</div>
+## Versões compatíveis do ClickHouse {#supported-clickhouse-versions}
 
 O cliente oferece suporte oficial aos 3 lançamentos mais recentes, além dos 2 lançamentos LTS mais recentes.
 
-<div id="installation">
-  ## Instalação
-</div>
+## Instalação {#installation}
 
 Instale o pacote via NuGet:
 
@@ -67,9 +59,7 @@ Ou use o Gerenciador de Pacotes NuGet:
 Install-Package ClickHouse.Driver
 ```
 
-<div id="quick-start">
-  ## Início rápido
-</div>
+## Início rápido {#quick-start}
 
 ```csharp
 using ClickHouse.Driver;
@@ -82,9 +72,7 @@ var version = await client.ExecuteScalarAsync("SELECT version()");
 Console.WriteLine(version);
 ```
 
-<div id="configuration">
-  ## Configuração
-</div>
+## Configuração {#configuration}
 
 Há duas formas de configurar sua conexão com o ClickHouse:
 
@@ -93,9 +81,7 @@ Há duas formas de configurar sua conexão com o ClickHouse:
 
 Abaixo está a lista completa de todas as configurações, seus valores padrão e seus efeitos.
 
-<div id="connection-settings">
-  ### Configurações de conexão
-</div>
+### Configurações de conexão {#connection-settings}
 
 | Propriedade | Tipo       | Padrão                     | Chave da string de conexão | Descrição                                                                   |
 | ----------- | ---------- | -------------------------- | -------------------------- | --------------------------------------------------------------------------- |
@@ -108,26 +94,25 @@ Abaixo está a lista completa de todas as configurações, seus valores padrão 
 | Path        | `string`   | `null`                     | `Path`                     | Caminho da URL para cenários com reverse proxy (por exemplo, `/clickhouse`) |
 | Timeout     | `TimeSpan` | 2 minutos                  | `Timeout`                  | Tempo limite da operação (armazenado como segundos na string de conexão)    |
 
-<div id="data-format-serialization">
-  ### Formato e serialização de dados
-</div>
+### Formato e serialização de dados {#data-format-serialization}
 
-| Propriedade             | Tipo                     | Padrão         | Chave da string de conexão | Descrição                                                                                                                                                                                                                                                                                          |
-| ----------------------- | ------------------------ | -------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UseCompression          | `bool`                   | `true`         | `Compression`              | Ativa a compactação gzip para a transferência de dados                                                                                                                                                                                                                                             |
-| UseCustomDecimals       | `bool`                   | `true`         | `UseCustomDecimals`        | Usa `ClickHouseDecimal` para precisão arbitrária; se `false`, usa o `decimal` do .NET (limite de 128 bits)                                                                                                                                                                                         |
-| ReadStringsAsByteArrays | `bool`                   | `false`        | `ReadStringsAsByteArrays`  | Lê colunas `String` e `FixedString` como `byte[]` em vez de `string`; útil para dados binários                                                                                                                                                                                                     |
-| UseFormDataParameters   | `bool`                   | `false`        | `UseFormDataParameters`    | Envia parâmetros como form data em vez de string de consulta da URL                                                                                                                                                                                                                                |
-| ReadBufferSize          | `int`                    | `8192` (8 KiB) | `ReadBufferSize`           | Tamanho em bytes do buffer usado para ler respostas HTTP de consultas. Aumente-o para reduzir o reabastecimento do buffer em grandes result sets. Valores iguais ou superiores a 85.000 bytes são alocados no Large Object Heap, o que pode causar fragmentação do LOH e pausas mais longas do GC. |
-| ParameterTypeResolver   | `IParameterTypeResolver` | `null`         | —                          | Resolver personalizado para mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping)                                                                                                                                       |
-| ParameterFormatter      | `IParameterFormatter`    | `null`         | —                          | Formatador personalizado para serialização de valores de parâmetros; consulte [Formatação personalizada de valores de parâmetros](#parameter-value-formatting)                                                                                                                                      |
-| ReadValueConverter      | `IReadValueConverter`    | `null`         | —                          | Transformação personalizada aplicada aos valores retornados pelo leitor de dados; consulte [Conversão personalizada de valores lidos](#read-value-conversion)                                                                                                                                      |
-| JsonReadMode            | `JsonReadMode`           | `Binary`       | `JsonReadMode`             | Como os dados JSON são retornados: `Binary` (retorna `JsonObject`) ou `String` (retorna a string JSON bruta)                                                                                                                                                                                       |
-| JsonWriteMode           | `JsonWriteMode`          | `String`       | `JsonWriteMode`            | Como os dados JSON são enviados: `String` (serializa via `JsonSerializer`, aceita todas as entradas) ou `Binary` (somente POCOs registrados com type hints)                                                                                                                                        |
+| Propriedade             | Tipo                     | Padrão           | Chave da string de conexão | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ------------------------ | ---------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`           | `Compression`              | Controla a compressão de transporte em ambas as direções para uma consulta comum: solicita ao servidor que comprima a resposta (`enable_http_compression`; consulte `AcceptEncoding` para o codec, que um valor explícito pode solicitar mesmo com esta opção desativada) **e** comprime o corpo da requisição com gzip — exceto com `UseFormDataParameters`, cujo corpo multipart é sempre enviado sem compressão. Inserts binários nunca a consultam; eles usam `InsertOptions.Compressor` — consulte [compressão na inserção](#insert-compression) |
+| AcceptEncoding          | `string`                 | `null`           | `AcceptEncoding`           | `Accept-Encoding` enviado em cada requisição, substituindo os codecs que o driver anuncia por padrão (`zstd, lz4, gzip, deflate`). O que quer que o servidor responda é decodificado de forma transparente. Consulte [Descompressão da resposta](#response-decompression)                                                                                                                                                                                                                                                                           |
+| UseCustomDecimals       | `bool`                   | `true`           | `UseCustomDecimals`        | Usa `ClickHouseDecimal` para precisão arbitrária; se `false`, usa o `decimal` do .NET (limite de 128 bits)                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ReadStringsAsByteArrays | `bool`                   | `false`          | `ReadStringsAsByteArrays`  | Lê colunas `String` e `FixedString` como `byte[]` em vez de `string`; útil para dados binários                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| UseFormDataParameters   | `bool`                   | `false`          | `UseFormDataParameters`    | Envia parâmetros como form data em vez de string de consulta da URL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ReadBufferSize          | `int`                    | `65536` (64 KiB) | `ReadBufferSize`           | Tamanho em bytes do buffer que lê as respostas HTTP de consultas. O driver aluga o buffer de um pool compartilhado e o devolve ao descartar o leitor, portanto não há uma alocação a cada consulta. Aumente-o para reduzir o reabastecimento do buffer em grandes result sets. O driver mantém um buffer para cada leitor concorrente, portanto o uso de memória cresce com o tamanho do buffer e com o número de leitores concorrentes. Consulte [Buffers](#perf-buffers).                                                                         |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`           | —                          | Resolver personalizado para mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping)                                                                                                                                                                                                                                                                                                                                                                                        |
+| ParameterFormatter      | `IParameterFormatter`    | `null`           | —                          | Formatador personalizado para serialização de valores de parâmetros; consulte [Formatação personalizada de valores de parâmetros](#parameter-value-formatting)                                                                                                                                                                                                                                                                                                                                                                                      |
+| ReadValueConverter      | `IReadValueConverter`    | `null`           | —                          | Transformação personalizada aplicada aos valores retornados pelo leitor de dados; consulte [Conversão personalizada de valores lidos](#read-value-conversion)                                                                                                                                                                                                                                                                                                                                                                                       |
+| JsonReadMode            | `JsonReadMode`           | `Binary`         | `JsonReadMode`             | Como os dados JSON são retornados: `Binary` (retorna `JsonObject`) ou `String` (retorna a string JSON bruta)                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| JsonWriteMode           | `JsonWriteMode`          | `String`         | `JsonWriteMode`            | Como os dados JSON são enviados: `String` (serializa via `JsonSerializer`, aceita todas as entradas) ou `Binary` (somente POCOs registrados com type hints)                                                                                                                                                                                                                                                                                                                                                                                         |
+| MapReadMode             | `MapReadMode`            | `Dictionary`     | `MapReadMode`              | Como os dados `Map(K, V)` são retornados: `Dictionary` (retorna `Dictionary<K, V>`; uma chave repetida mantém apenas seu último valor) ou `KeyValuePairs` (retorna `List<KeyValuePair<K, V>>`, mantendo todos os pares). Consulte [Tipo map](#type-map-reading-map)                                                                                                                                                                                                                                                                                 |
+| AllowDuplicateJsonKeys  | `bool`                   | `false`          | `AllowDuplicateJsonKeys`   | Como ler uma linha `JSON` em que ambos os paths sobrepostos contêm um valor. `false` lança uma exceção, pois manter um dos valores significa descartar o outro; `true` mantém o último valor presente na linha. Consulte [Paths sobrepostos](#type-map-reading-json)                                                                                                                                                                                                                                                                                |
 
-<div id="session-management">
-  ### Gerenciamento de sessão
-</div>
+### Gerenciamento de sessão {#session-management}
 
 | Propriedade | Tipo     | Padrão  | Chave da string de conexão | Descrição                                                                          |
 | ----------- | -------- | ------- | -------------------------- | ---------------------------------------------------------------------------------- |
@@ -140,17 +125,13 @@ Abaixo está a lista completa de todas as configurações, seus valores padrão 
   A classe `ClickHouseConnection` normalmente permite operação paralela (várias threads podem executar consultas concorrentemente). No entanto, habilitar o sinalizador `UseSession` limitará isso a uma consulta ativa por conexão a qualquer momento (esta é uma limitação do servidor).
 </Note>
 
-<div id="security">
-  ### Segurança
-</div>
+### Segurança {#security}
 
 | Propriedade                     | Tipo   | Padrão  | Chave da string de conexão | Descrição                                                        |
 | ------------------------------- | ------ | ------- | -------------------------- | ---------------------------------------------------------------- |
 | SkipServerCertificateValidation | `bool` | `false` | —                          | Ignora a validação do certificado HTTPS; **não use em produção** |
 
-<div id="http-client-configuration">
-  ### Configuração do cliente HTTP
-</div>
+### Configuração do cliente HTTP {#http-client-configuration}
 
 | Propriedade       | Tipo                 | Padrão | Chave da string de conexão | Descrição                                                          |
 | ----------------- | -------------------- | ------ | -------------------------- | ------------------------------------------------------------------ |
@@ -158,18 +139,14 @@ Abaixo está a lista completa de todas as configurações, seus valores padrão 
 | HttpClientFactory | `IHttpClientFactory` | `null` | —                          | Fábrica personalizada para criar instâncias de HttpClient          |
 | HttpClientName    | `string`             | `null` | —                          | Nome usado pelo HttpClientFactory para criar um cliente específico |
 
-<div id="logging-debugging">
-  ### Logging e depuração
-</div>
+### Logging e depuração {#logging-debugging}
 
 | Propriedade     | Tipo             | Padrão  | Chave da string de conexão | Descrição                                                                                                                               |
 | --------------- | ---------------- | ------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | LoggerFactory   | `ILoggerFactory` | `null`  | —                          | Fábrica de loggers para diagnóstico                                                                                                     |
 | EnableDebugMode | `bool`           | `false` | —                          | Habilita o rastreamento de rede do .NET (requer LoggerFactory com o nível definido como Trace); **impacto significativo no desempenho** |
 
-<div id="custom-settings-roles">
-  ### Configurações personalizadas e roles
-</div>
+### Configurações personalizadas e roles {#custom-settings-roles}
 
 | Propriedade     | Tipo                                  | Padrão | Chave da string de conexão | Descrição                                                                                                 |
 | --------------- | ------------------------------------- | ------ | -------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -185,21 +162,15 @@ Abaixo está a lista completa de todas as configurações, seus valores padrão 
 
 ***
 
-<div id="connection-string-examples">
-  ### Exemplos de string de conexão
-</div>
+### Exemplos de string de conexão {#connection-string-examples}
 
-<div id="basic-connection">
-  #### Conexão básica
-</div>
+#### Conexão básica {#basic-connection}
 
 ```text
 Host=localhost;Port=8123;Username=default;Password=secret;Database=mydb
 ```
 
-<div id="with-custom-clickhouse-settings">
-  #### Com configurações personalizadas do ClickHouse
-</div>
+#### Com configurações personalizadas do ClickHouse {#with-custom-clickhouse-settings}
 
 ```text
 Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
@@ -207,27 +178,25 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 
 ***
 
-<div id="query-options">
-  ### QueryOptions
-</div>
+### QueryOptions {#query-options}
 
 `QueryOptions` permite substituir configurações do cliente individualmente para cada consulta. Todas as propriedades são opcionais e só substituem os padrões do cliente quando especificadas.
 
-| Propriedade           | Tipo                          | Descrição                                                                                                                                                                                                                               |
-| --------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| QueryId               | `string`                      | Identificador personalizado da consulta para rastreamento em `system.query_log` ou cancelamento                                                                                                                                         |
-| Database              | `string`                      | Substitui o banco de dados padrão desta consulta                                                                                                                                                                                        |
-| Roles                 | `IReadOnlyList<string>`       | Substitui os roles do cliente para esta consulta                                                                                                                                                                                        |
-| CustomSettings        | `IDictionary<string, object>` | Configurações do servidor ClickHouse para esta consulta (por exemplo, `max_threads`)                                                                                                                                                    |
-| CustomHeaders         | `IDictionary<string, string>` | Cabeçalhos HTTP adicionais para esta consulta                                                                                                                                                                                           |
-| UseSession            | `bool?`                       | Substitui o comportamento da sessão para esta consulta                                                                                                                                                                                  |
-| SessionId             | `string`                      | ID da sessão para esta consulta (requer `UseSession = true`)                                                                                                                                                                            |
-| BearerToken           | `string`                      | Substitui o token de autenticação para esta consulta                                                                                                                                                                                    |
-| ParameterTypeResolver | `IParameterTypeResolver`      | Substitui o resolver do cliente para o mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping)                                                                 |
-| ParameterFormatter    | `IParameterFormatter`         | Substitui o formatador do cliente para a serialização do valor do parâmetro no estilo `@`; consulte [Formatação personalizada do valor do parâmetro](#parameter-value-formatting)                                                       |
-| ReadValueConverter    | `IReadValueConverter`         | Substitui a transformação no nível do cliente aplicada aos valores retornados pelo leitor de dados; consulte [Conversão personalizada de valor lido](#read-value-conversion)                                                            |
-| MaxExecutionTime      | `TimeSpan?`                   | Timeout da consulta no servidor (passado como configuração `max_execution_time`); o servidor cancela a consulta se esse limite for excedido                                                                                             |
-| AcceptEncoding        | `string`                      | Substituição do cabeçalho `Accept-Encoding` por consulta (por exemplo, `"zstd"`, `"zstd, gzip;q=0.5"`); também força `enable_http_compression=1` na URL. Consulte [Compactação de transporte por consulta](#per-query-accept-encoding). |
+| Propriedade           | Tipo                          | Descrição                                                                                                                                                                                                                                                                                |
+| --------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QueryId               | `string`                      | Identificador personalizado da consulta para rastreamento em `system.query_log` ou cancelamento                                                                                                                                                                                          |
+| Database              | `string`                      | Substitui o banco de dados padrão desta consulta                                                                                                                                                                                                                                         |
+| Roles                 | `IReadOnlyList<string>`       | Substitui os roles do cliente para esta consulta                                                                                                                                                                                                                                         |
+| CustomSettings        | `IDictionary<string, object>` | Configurações do servidor ClickHouse para esta consulta (por exemplo, `max_threads`)                                                                                                                                                                                                     |
+| CustomHeaders         | `IDictionary<string, string>` | Cabeçalhos HTTP adicionais para esta consulta                                                                                                                                                                                                                                            |
+| UseSession            | `bool?`                       | Substitui o comportamento da sessão para esta consulta                                                                                                                                                                                                                                   |
+| SessionId             | `string`                      | ID da sessão para esta consulta (requer `UseSession = true`)                                                                                                                                                                                                                             |
+| BearerToken           | `string`                      | Substitui o token de autenticação para esta consulta                                                                                                                                                                                                                                     |
+| ParameterTypeResolver | `IParameterTypeResolver`      | Substitui o resolver do cliente para o mapeamento de tipo de parâmetro no estilo `@`; consulte [Mapeamento personalizado de tipo de parâmetro](#parameter-type-mapping)                                                                                                                  |
+| ParameterFormatter    | `IParameterFormatter`         | Substitui o formatador do cliente para a serialização do valor do parâmetro no estilo `@`; consulte [Formatação personalizada do valor do parâmetro](#parameter-value-formatting)                                                                                                        |
+| ReadValueConverter    | `IReadValueConverter`         | Substitui a transformação no nível do cliente aplicada aos valores retornados pelo leitor de dados; consulte [Conversão personalizada de valor lido](#read-value-conversion)                                                                                                             |
+| MaxExecutionTime      | `TimeSpan?`                   | Timeout da consulta no servidor (passado como configuração `max_execution_time`); o servidor cancela a consulta se esse limite for excedido                                                                                                                                              |
+| AcceptEncoding        | `string`                      | Substituição de `Accept-Encoding` por consulta (por exemplo, `"br"`, `"identity"`), que tem precedência sobre `ClickHouseClientSettings.AcceptEncoding`; também força `enable_http_compression=1` na URL. Consulte [Compactação de transporte por consulta](#per-query-accept-encoding). |
 
 **Exemplo:**
 
@@ -253,19 +222,19 @@ var reader = await client.ExecuteReaderAsync(
 
 ***
 
-<div id="insert-options">
-  ### InsertOptions
-</div>
+### InsertOptions {#insert-options}
 
 `InsertOptions` estende `QueryOptions` com configurações específicas para operações de inserção em massa via `InsertBinaryAsync`.
 
-| Property               | Type                                  | Default     | Description                                                                                                          |
-| ---------------------- | ------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
-| BatchSize              | `int`                                 | 100,000     | Número de linhas por lote                                                                                            |
-| MaxDegreeOfParallelism | `int`                                 | 1           | Número de envios paralelos de lotes                                                                                  |
-| Format                 | `RowBinaryFormat`                     | `RowBinary` | Formato binário: `RowBinary` ou `RowBinaryWithDefaults`                                                              |
-| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`      | Nome da coluna → string do tipo ClickHouse. Ignora a consulta de sondagem de esquema quando definido.                |
-| UseSchemaCache         | `bool`                                | `false`     | Mantém em cache o esquema completo da tabela para cada (banco de dados, tabela) durante toda a vida útil do cliente. |
+| Property               | Type                                  | Default                  | Description                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BatchSize              | `int`                                 | 100,000                  | Número de linhas por lote                                                                                                                                                                             |
+| MaxDegreeOfParallelism | `int`                                 | 1                        | Número de envios paralelos de lotes                                                                                                                                                                   |
+| Format                 | `RowBinaryFormat`                     | `RowBinary`              | Formato binário: `RowBinary` ou `RowBinaryWithDefaults`                                                                                                                                               |
+| Compressor             | `IClickHouseCompressor`               | `ZstdCompressor.Default` | Codec aplicado ao corpo da inserção (`Content-Encoding`). `null` envia sem compressão. Veja [Compressão na inserção](#insert-compression)                                                             |
+| QueryPlacement         | `InsertQueryPlacement`                | `Body`                   | Onde a instrução `INSERT INTO ... FORMAT ...` é enviada: `Body` (antes das linhas) ou `Url` (como o parâmetro de URL `query`). Veja [Posicionamento da consulta de inserção](#insert-query-placement) |
+| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`                   | Nome da coluna → string do tipo ClickHouse. Ignora a consulta de sondagem do esquema quando definido.                                                                                                 |
+| UseSchemaCache         | `bool`                                | `false`                  | Mantém em cache o esquema completo da tabela para cada (banco de dados, tabela) durante toda a vida útil do cliente.                                                                                  |
 
 Todas as propriedades de `QueryOptions` também estão disponíveis em `InsertOptions`.
 
@@ -287,9 +256,7 @@ long rowsInserted = await client.InsertBinaryAsync(
 );
 ```
 
-<div id="skip-schema-query">
-  #### Ignorando a consulta de sondagem do esquema
-</div>
+#### Ignorando a consulta de sondagem do esquema {#skip-schema-query}
 
 Por padrão, `InsertBinaryAsync` envia uma consulta `SELECT ... WHERE 1=0` antes de cada inserção para identificar os tipos das colunas. Em cenários de alta taxa de transferência, você pode eliminar essa sobrecarga de duas formas:
 
@@ -331,15 +298,11 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
   * O cache tem escopo na instância de `ClickHouseClient` e é indexado por (banco de dados, tabela). Diferentes subconjuntos de colunas da mesma tabela compartilham um único esquema em cache.
 </Note>
 
-<div id="clickhouse-client">
-  ## ClickHouseClient
-</div>
+## ClickHouseClient {#clickhouse-client}
 
 `ClickHouseClient` é a API recomendada para interagir com o ClickHouse. Ela é thread-safe, foi projetada para uso como singleton e gerencia internamente um pool de conexões HTTP.
 
-<div id="creating-a-client">
-  ### Criando um cliente
-</div>
+### Criando um cliente {#creating-a-client}
 
 Crie um `ClickHouseClient` com uma string de conexão ou um objeto `ClickHouseClientSettings`. Consulte a seção [Configuração](#configuration) para conhecer as opções disponíveis.
 
@@ -380,13 +343,11 @@ using var client = new ClickHouseClient(settings);
 Para cenários com injeção de dependência, use `IHttpClientFactory`:
 
 ```csharp
-// In your DI configuration
+// In your DI configuration. No AutomaticDecompression needed — the driver decodes
+// compressed responses itself, and a mask here would widen its Accept-Encoding.
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-{
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
 // Create client with factory
@@ -400,9 +361,7 @@ var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
 
 ***
 
-<div id="executing-queries">
-  ### Executando consultas
-</div>
+### Executando consultas {#executing-queries}
 
 Use `ExecuteNonQueryAsync` para instruções que não retornam resultados:
 
@@ -428,13 +387,9 @@ Console.WriteLine($"Versão do servidor: {version}");
 
 ***
 
-<div id="inserting-data">
-  ### Inserção de dados
-</div>
+### Inserção de dados {#inserting-data}
 
-<div id="parameterized-inserts">
-  #### Inserções parametrizadas
-</div>
+#### Inserções parametrizadas {#parameterized-inserts}
 
 Insira dados por meio de consultas parametrizadas com `ExecuteNonQueryAsync`. Os tipos dos parâmetros devem ser especificados no SQL usando a sintaxe `{name:Type}`:
 
@@ -454,9 +409,7 @@ await client.ExecuteNonQueryAsync(
 
 ***
 
-<div id="bulk-insert">
-  #### Inserção em massa
-</div>
+#### Inserção em massa {#bulk-insert}
 
 Use `InsertBinaryAsync` para inserir grandes volumes de linhas com eficiência. Ele transmite os dados usando o formato binário nativo de linhas do ClickHouse, oferece suporte ao envio paralelo de lotes e evita erros de &quot;URL muito longa&quot; que podem ocorrer com consultas parametrizadas.
 
@@ -488,9 +441,7 @@ var options = new InsertOptions
   * Use `RowBinaryFormat.RowBinaryWithDefaults` em `InsertOptions.Format` se quiser que o servidor aplique valores DEFAULT às colunas não fornecidas.
 </Note>
 
-<div id="poco-insert">
-  #### Inserções com POCO
-</div>
+#### Inserções com POCO {#poco-insert}
 
 Em vez de construir arrays `object[]`, você pode inserir diretamente objetos POCO com tipagem forte. Registre o tipo uma vez e, em seguida, passe `IEnumerable<T>`:
 
@@ -554,17 +505,26 @@ Quando **todas** as propriedades mapeadas especificam um `Type` explícito, a co
   Se `ColumnTypes` estiver definido em `InsertOptions`, eles substituirão os atributos do POCO.
 </Note>
 
-<div id="poco-insert-schema-evolution">
-  #### Evolução do esquema
-</div>
+#### Evolução do esquema {#poco-insert-schema-evolution}
 
-Os inserts de POCO funcionam perfeitamente quando colunas são adicionadas à tabela de destino depois que o tipo é registrado. Como o driver insere apenas as colunas mapeadas pelo POCO, quaisquer novas colunas com `DEFAULT` (ou outras expressões padrão) são preenchidas automaticamente pelo servidor. Não é necessário alterar o código nem fazer um novo registro.
+As inserções com POCO funcionam perfeitamente quando colunas são adicionadas à tabela de destino depois que o tipo é registrado. Como o driver insere apenas as colunas mapeadas pelo POCO, quaisquer novas colunas com `DEFAULT` (ou outras expressões padrão) são preenchidas automaticamente pelo servidor. Não é necessário alterar o código nem fazer um novo registro.
+
+#### Posicionamento da consulta de inserção {#insert-query-placement}
+
+Um insert binário escreve sua instrução `INSERT INTO ... FORMAT ...` na primeira linha do corpo da requisição, antes das linhas de dados. O corpo é comprimido por padrão, de modo que mecanismos de roteamento e logging que inspecionam apenas a URL não enxergam a instrução. Defina `InsertOptions.QueryPlacement` como `InsertQueryPlacement.Url` para enviar a instrução no parâmetro de URL `query`, deixando o corpo somente para as linhas:
+
+```csharp
+var options = new InsertOptions { QueryPlacement = InsertQueryPlacement.Url };
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+Use essa opção quando um proxy, balanceador de carga ou gateway roteia ou inspeciona o parâmetro `query`, ou quando você quiser a instrução nos logs de acesso e em ferramentas de observabilidade. É opt-in porque, nesse caso, a instrução passa a contar para o comprimento da URL. O limite efetivo é o menor entre os impostos pelo runtime do .NET, por um intermediário e pelo servidor. Do .NET 6 ao .NET 9, `System.Uri` limita a URI de requisição completa e codificada a 65.519 caracteres; o driver lança uma `InvalidOperationException` que o direciona de volta para `InsertQueryPlacement.Body` quando esse limite é excedido. O `http_max_uri_size` do ClickHouse é de 1 MiB por padrão, mas um intermediário pode impor um limite menor. No modo body, a instrução e as linhas não têm esse limite de comprimento de URL; outras opções da requisição ainda podem aparecer na URL.
+
+A configuração é independente de `Compressor`: o corpo é codificado da mesma forma nos dois modos.
 
 ***
 
-<div id="reading-data">
-  ### Lendo dados
-</div>
+### Lendo dados {#reading-data}
 
 Use `ExecuteReaderAsync` para executar consultas SELECT. O `ClickHouseDataReader` retornado fornece acesso tipado às colunas do resultado por meio de métodos como `GetInt64()`, `GetString()` e `GetFieldValue<T>()`.
 
@@ -587,9 +547,7 @@ while (reader.Read())
 }
 ```
 
-<div id="poco-read">
-  #### Leitura com POCO
-</div>
+#### Leitura com POCO {#poco-read}
 
 Em vez de ler colunas por índice ou nome, você pode direcionar os resultados da consulta diretamente para suas próprias classes. Registre o tipo uma vez no cliente e, em seguida, use `QueryAsync<T>`:
 
@@ -617,9 +575,7 @@ await foreach (var reading in client.QueryAsync<SensorReading>(
 }
 ```
 
-<div id="poco-read-registration">
-  ##### Registro
-</div>
+##### Registro {#poco-read-registration}
 
 `RegisterPocoType<T>()` configura os mapeamentos de inserção e de leitura e valida ambos de antemão. `RegisterBinaryInsertType<T>()` permanece inalterado e continua sendo exclusivo para inserção por compatibilidade com versões anteriores.
 
@@ -628,19 +584,58 @@ Um tipo registrado deve ter:
 * Um construtor público sem parâmetros.
 * Pelo menos uma propriedade pública com um setter público que não seja `init`. Propriedades `required` são compatíveis.
 
-<div id="poco-read-column-matching">
-  ##### Correspondência de colunas
-</div>
+##### Correspondência de colunas {#poco-read-column-matching}
 
 A correspondência de colunas diferencia maiúsculas de minúsculas. Colunas de resultado ausentes mantêm as propriedades com seu valor padrão; colunas de resultado adicionais são ignoradas.
 
-Não há conversões automáticas, e uma incompatibilidade de tipo lança `InvalidOperationException`.
+O driver não amplia nem reduz valores. Além das representações alternativas listadas abaixo,
+o tipo de framework da coluna deve ser atribuível ao tipo da propriedade, e uma incompatibilidade lança
+`InvalidOperationException`. Portanto, uma propriedade `object` aceita qualquer coluna.
 
-<div id="poco-read-mapto">
-  ##### Materializando uma única linha
-</div>
+##### Tipos de propriedade suportados {#poco-read-types}
 
-Ao iterar manualmente sobre um reader, use `ClickHouseDataReader.MapTo<T>()` para materializar a linha atual em um POCO registrado sem avançar o reader:
+`QueryAsync<T>` lê cada uma dessas colunas diretamente em uma propriedade correspondente:
+
+| Coluna do ClickHouse                    | Tipo(s) de propriedade                                                                    |
+| --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `Int8`/`Int16`/`Int32`/`Int64`          | `sbyte`/`short`/`int`/`long`                                                              |
+| `UInt8`/`UInt16`/`UInt32`/`UInt64`      | `byte`/`ushort`/`uint`/`ulong`                                                            |
+| `Int128`/`UInt128`                      | `BigInteger` ou os tipos nativos `System.Int128`/`System.UInt128` no .NET 8 e posteriores |
+| `Int256`/`UInt256`                      | `BigInteger`                                                                              |
+| `Float32`/`Float64`/`BFloat16`          | `float`/`double`/`float`                                                                  |
+| `Bool`                                  | `bool`                                                                                    |
+| `Decimal`                               | `decimal` ou `ClickHouseDecimal`                                                          |
+| `Date`/`Date32`/`DateTime`/`DateTime64` | `DateTime`, `DateTimeOffset` ou `DateOnly`                                                |
+| `Time`/`Time64`                         | `TimeSpan`                                                                                |
+| `UUID`                                  | `Guid`                                                                                    |
+| `IPv4`/`IPv6`                           | `IPAddress`                                                                               |
+| `Enum8`/`Enum16`                        | `string` (o label) ou `int` (o ordinal em wire)                                           |
+| `String`/`FixedString`                  | `string` ou `byte[]`                                                                      |
+
+Cada linha também aceita a forma anulável do seu tipo de propriedade (`long?`, `DateOnly?` e assim por diante),
+independentemente de a coluna ser `Nullable(...)` ou não. Uma propriedade de tipo por valor não anulável em uma coluna
+`Nullable(T)` é aceita no registro, mas lança uma exceção quando chega um NULL.
+
+Wrappers como `LowCardinality(T)`, `SimpleAggregateFunction(f, T)` e `Object(T)` são mapeados exatamente como `T`.
+
+Colunas compostas também são suportadas e assumem o tipo do framework indicado na
+[referência de tipos de leitura](#clickhouse-native-type-map-reading): `Array(T)` para `T[]`, `Tuple(...)`
+para `System.Tuple<...>`, `Nested(...)` para `Tuple<...>[]`, `JSON` para `JsonObject` (ou `string`
+sob [`JsonReadMode=String`](#type-map-reading-json)) e `Variant`/`Dynamic` para `object`.
+
+Uma coluna `Map(K, V)` é um caso especial: uma propriedade `List<KeyValuePair<K, V>>` ou `KeyValuePair<K, V>[]`
+é lida pelo caminho sem boxing e preserva a ordem em wire e quaisquer chaves repetidas, em qualquer
+[`MapReadMode`](#type-map-reading-map). Já uma propriedade `Dictionary<K, V>` funciona apenas no modo padrão.
+Os tipos de chave e de valor devem corresponder exatamente, portanto
+`Map(String, Nullable(Int32))` requer `KeyValuePair<string, int?>`.
+
+Quando uma coluna oferece mais de um tipo de propriedade (uma coluna `DateTime` como `DateTime`,
+`DateTimeOffset` ou `DateOnly`; uma coluna `String` como `string` ou `byte[]`), o tipo de propriedade declarado define a representação. Essas representações alternativas
+pertencem ao caminho POCO, portanto estão disponíveis em `QueryAsync<T>`, mas não em `MapTo<T>`.
+
+##### Materializando uma única linha {#poco-read-mapto}
+
+Ao iterar manualmente sobre um leitor, use `ClickHouseDataReader.MapTo<T>()` para materializar a linha atual em um POCO registrado sem avançar o leitor:
 
 ```csharp
 var reader = await client.ExecuteReaderAsync("SELECT Id, SensorName, Value, Timestamp FROM sensors");
@@ -652,17 +647,27 @@ while (reader.Read())
 }
 ```
 
-<div id="poco-read-diagnostics">
-  ##### Diagnósticos de registro
-</div>
+Use `MapTo<T>` quando você mesmo precisar controlar o laço do leitor — por exemplo, para combinar acesso bruto às colunas
+com materialização de POCO. Ele lê a linha por meio dos valores boxed do leitor, portanto não oferece
+os tipos de propriedade alternativos citados acima, e aloca mais do que `QueryAsync<T>`. Prefira
+`QueryAsync<T>` quando você precisar apenas das linhas; consulte
+[escolha o caminho de materialização](#perf-read-path) para ver os números.
+
+##### Conversores de valores de leitura {#poco-read-converters}
+
+Um [conversor de valores de leitura](#read-value-conversion) definido no nível do cliente ou por consulta se aplica a ambos os caminhos e
+não desativa a leitura sem boxing. O driver converte cada coluna na sobrecarga correspondente à forma como
+a coluna foi lida: o `ConvertValue<T>` tipado para uma coluna
+sem boxing e o `ConvertValue` com boxing para uma coluna composta. Implemente as duas sobrecargas
+de forma consistente; caso contrário, a mesma coluna produzirá resultados diferentes em caminhos diferentes.
+
+##### Diagnósticos de registro {#poco-read-diagnostics}
 
 Quando uma `LoggerFactory` está configurada, `RegisterPocoType<T>()` e `RegisterBinaryInsertType<T>()` geram um log no nível `Debug` (categoria `ClickHouse.Driver.Client`) informando quais propriedades foram mapeadas para quais colunas e quais foram ignoradas, bem como o motivo. Consulte [Logging e diagnósticos](#logging-and-diagnostics).
 
 ***
 
-<div id="sql-parameters">
-  ### Parâmetros SQL
-</div>
+### Parâmetros SQL {#sql-parameters}
 
 No ClickHouse, o formato padrão para parâmetros em consultas SQL é `{parameter_name:DataType}`.
 
@@ -684,9 +689,24 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
   Os parâmetros SQL de &#39;bind&#39; são passados como parâmetros de consulta do URI HTTP, portanto o uso excessivo deles pode resultar em uma exceção de &quot;URL too long&quot;. Use `InsertBinaryAsync` para inserção de dados em massa e evitar essa limitação.
 </Note>
 
-<div id="identifier-parameters">
-  #### Parâmetros do tipo Identifier
-</div>
+#### Placeholders `@name` no estilo ADO {#at-style-placeholders}
+
+O driver também aceita placeholders `@name`, emitidos por ORMs como o Dapper. Trata-se de uma
+conveniência do lado do cliente: antes do envio da requisição, cada um é reescrito como
+`{name:ResolvedType}`, de modo que o servidor nunca vê um `@`. Consulte
+[resolução de tipos](#parameter-type-mapping) para saber como o tipo é escolhido. Sempre que possível,
+use a forma explícita `{name:Type}`.
+
+Um `@name` sem parâmetro correspondente é mantido intacto, para que o servidor o rejeite. A
+correspondência diferencia maiúsculas de minúsculas, portanto `@ID` não faz bind de um parâmetro chamado `id`.
+
+<Note>
+  Para desativar essa reescrita, defina o switch de AppContext `ClickHouse.Driver.DisableReplacingParameters`
+  antes do primeiro uso do driver. Apenas a reescrita do texto é interrompida; os parâmetros continuam
+  sendo enviados, de modo que consultas escritas com a sintaxe nativa `{name:Type}` continuam funcionando.
+</Note>
+
+#### Parâmetros do tipo Identifier {#identifier-parameters}
 
 O tipo de parâmetro `Identifier` permite vincular com segurança o nome de um banco de dados, tabela ou coluna, em vez de um literal de string entre aspas. Use-o com a sintaxe `{name:Identifier}` em SQL ou definindo `ClickHouseDbParameter.ClickHouseType = "Identifier"`:
 
@@ -708,9 +728,7 @@ O valor é enviado literalmente, e o servidor o substitui como um identificador 
 
 ***
 
-<div id="query-id">
-  ### ID da consulta
-</div>
+### ID da consulta {#query-id}
 
 Cada consulta recebe um `query_id` único, que pode ser usado para obter dados da tabela `system.query_log` ou cancelar consultas de longa execução. Você pode especificar um ID de consulta personalizado por meio de `QueryOptions`:
 
@@ -733,9 +751,7 @@ var reader = await client.ExecuteReaderAsync(
 
 ***
 
-<div id="parameter-type-mapping">
-  ### Mapeamento personalizado de tipos de parâmetro
-</div>
+### Mapeamento personalizado de tipos de parâmetro {#parameter-type-mapping}
 
 Ao usar parâmetros no estilo `@` (por exemplo, `WHERE id = @id`), o driver infere automaticamente o tipo do ClickHouse com base no tipo de valor do .NET. Por exemplo, `int` é mapeado para `Int32`.
 
@@ -804,9 +820,7 @@ O resolver também funciona com o caminho do ADO.NET `ClickHouseConnection` — 
 
 ***
 
-<div id="parameter-value-formatting">
-  ### Formatação personalizada de valores de parâmetros
-</div>
+### Formatação personalizada de valores de parâmetros {#parameter-value-formatting}
 
 `IParameterFormatter` é um hook que define como os valores dos parâmetros são serializados. Use-o quando a formatação padrão (por exemplo, precisão de DateTime, convenção decimal, escaping de strings, representação de números) não corresponder ao que seu esquema ou suas ferramentas downstream esperam.
 
@@ -865,9 +879,7 @@ O formatador não é consultado para valores `null` ou `DBNull`; eles são sempr
 
 ***
 
-<div id="read-value-conversion">
-  ### Conversão personalizada de valores lidos
-</div>
+### Conversão personalizada de valores lidos {#read-value-conversion}
 
 `IReadValueConverter` permite transformar os valores retornados pelo leitor de dados após a desserialização, sem alterar o tipo CLR deles. Usos típicos: definir `DateTime.Kind = Utc` em uma coluna `DateTime` sem timezone, aparar ou normalizar strings, ou fazer o pós-processamento de uma coluna JSON antes que ela chegue ao código da aplicação.
 
@@ -898,16 +910,16 @@ Se você precisar despachar com base na string de tipo do lado do ClickHouse (po
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickhouseType)
+    public object ConvertValue(object value, string columnName, string clickHouseType)
     {
-        if (value is DateTime dt && clickhouseType == "DateTime")
+        if (value is DateTime dt && clickHouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
@@ -922,13 +934,27 @@ Você também pode definir um conversor por consulta via `QueryOptions.ReadValue
 
 O conversor é invocado uma vez por coluna com o valor completo da célula desserializada; ele **não** processa recursivamente contêineres compostos. Para uma coluna `Array(Int32)`, o valor passado é um `int[]`; para `Tuple(Int32, String)`, é um `ITuple`.
 
+**Qual sobrecarga é executada:**
+
+Ambas as sobrecargas devem ser consistentes entre si, porque a que o driver chama depende de como o chamador leu a
+coluna:
+
+* `ConvertValue<T>` — os acessadores tipados `GetByte`, `GetSByte`, `GetInt16`/`32`/`64`,
+  `GetUInt16`/`32`/`64`, `GetFloat`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetIPAddress`,
+  `GetBigInteger` e `GetFieldValue<T>`, além de todas as colunas sem boxing no
+  [caminho de leitura POCO](#poco-read-converters).
+* `ConvertValue` (com boxing) — `GetValue`, `GetValues`, os indexadores, `GetChar`, `GetTuple` e os
+  caminhos de coerção em `GetBoolean`, `GetDecimal` e `GetString`.
+
+`IsDBNull` não executa nenhum conversor: ele lê o indicador de nulo diretamente, portanto um conversor nunca pode
+alterar se um valor conta como nulo. `TryGetEnumOrdinal` também o ignora — veja
+[lendo o ordinal de um enum](#ado-net-reader-enum-ordinal).
+
 O conversor funciona com o caminho `ClickHouseConnection` do ADO.NET — as configurações são herdadas pelas conexões criadas a partir do cliente.
 
 ***
 
-<div id="raw-streaming">
-  ### Fluxo bruto
-</div>
+### Fluxo bruto {#raw-streaming}
 
 Use `ExecuteRawResultAsync` para transmitir diretamente os resultados da `consulta` em um formato específico, sem passar pelo leitor de dados. Isso é útil para exportar dados para arquivos ou repassá-los a outros sistemas:
 
@@ -946,11 +972,9 @@ Formatos comuns: `JSONEachRow`, `CSV`, `TSV`, `Parquet`, `Native`. Consulte a [d
 
 ***
 
-<div id="per-query-accept-encoding">
-  ### Compressão de transporte por consulta
-</div>
+### Compressão de transporte por consulta {#per-query-accept-encoding}
 
-Por padrão, o cliente negocia `gzip, deflate` quando `Compression=true` (o padrão da string de conexão), e o cliente HTTP descomprime o fluxo de forma transparente.
+Por padrão, o cliente negocia `zstd, lz4, gzip, deflate` quando `Compression=true` (o padrão da string de conexão) e decodifica o fluxo por conta própria, de forma transparente.
 
 Para exportações brutas (por exemplo, Parquet, Arrow, Native), talvez você queira negociar um codec diferente (por exemplo, `zstd` ou `lz4`) para trocar CPU por largura de banda sem alterar a configuração da conexão como um todo. `QueryOptions.AcceptEncoding` e `ClickHouseCommand.AcceptEncoding` definem o cabeçalho HTTP `Accept-Encoding` para uma única solicitação, substituindo qualquer valor padrão definido anteriormente, e forçam `enable_http_compression=1` na URL (o que o ClickHouse exige antes de respeitar `Accept-Encoding`).
 
@@ -963,66 +987,312 @@ using var result = await client.ExecuteRawResultAsync(
 await using var body = await result.ReadAsStreamAsync();
 ```
 
-<div id="per-query-accept-encoding-httpclient">
-  #### Configuração do HttpClient
-</div>
+#### Configuração do HttpClient {#per-query-accept-encoding-httpclient}
 
-O `HttpClient` padrão que o driver cria tem `AutomaticDecompression = GZip | Deflate`, o que descomprime esses algoritmos de forma transparente e remove `Content-Encoding` da resposta. Isso é o ideal para consultas normais, mas não se você quiser processar por conta própria os dados brutos e comprimidos.
-
-Nesse caso, passe um `HttpClient` ou `HttpClientFactory` para o ClickHouseClient com `AutomaticDecompression = DecompressionMethods.None`
+Não há nada a configurar: o `HttpClient` construído pelo driver mantém `AutomaticDecompression` em `DecompressionMethods.None` e o próprio driver decodifica as respostas, de modo que o `Content-Encoding` nunca é removido sem o seu conhecimento e o corpo bruto chega até você exatamente como o servidor o enviou.
 
 <Warning>
-  Se `AcceptEncoding` solicitar um codec que o `HttpClient` configurado não consegue descomprimir automaticamente, somente `ExecuteRawResultAsync` é seguro. Chamar `ExecuteReaderAsync`, `ExecuteScalarAsync` ou `ExecuteNonQueryAsync` nesse mesmo fluxo de consulta fará com que o sistema tente analisar os bytes comprimidos como se fossem o formato normal do resultado, produzindo dados sem sentido.
+  Se você fornecer seu próprio `HttpClient`, mantenha `AutomaticDecompression` desativado também. Não se trata apenas de uma configuração do lado da resposta: no momento do envio, o handler **adiciona todos os algoritmos de sua máscara que estiverem ausentes no `Accept-Encoding` de saída**. Um handler com `GZip | Deflate`, portanto, transforma um `AcceptEncoding = "lz4"` explícito em `lz4, gzip, deflate` e um `"identity"` explícito em `identity, gzip, deflate` on the wire — e, como o ClickHouse resolve o cabeçalho pela sua própria preferência fixa de codec (ignorando a ordem e os valores q), ele pode responder com um codec que você nunca solicitou, que o handler então decodifica e remove, de modo que você nem chega a perceber que isso aconteceu. Manter a máscara desativada garante que a oferta seja exatamente a que você escolheu.
 </Warning>
 
-<div id="per-query-accept-encoding-errors">
-  #### Corpos de erro
-</div>
+<Warning>
+  Se `AcceptEncoding` solicitar um codec que o driver não consegue decodificar (`snappy`), apenas `ExecuteRawResultAsync` é seguro. `ExecuteReaderAsync`, `ExecuteScalarAsync` e `ExecuteNonQueryAsync` falham com uma `NotSupportedException` que nomeia o codec (anteriormente, eles interpretavam os bytes comprimidos como o format do resultado e produziam lixo).
+</Warning>
 
-Quando o servidor responde com um 4xx/5xx e `enable_http_compression=1` foi definido, ele compacta o corpo do erro com o mesmo codec que usaria em uma resposta bem-sucedida. O driver descompacta esses corpos para os codecs incluídos na BCL (`gzip`, `deflate`, `br`/`brotli`), para que a mensagem exibida em `ClickHouseServerException` seja legível. Para codecs que ele não consegue decodificar (`zstd`, `lz4`, …), o driver retorna uma mensagem substituta que informa o codec e aponta para `system.query_log`, onde está o texto original do erro.
+#### Corpos de erro {#per-query-accept-encoding-errors}
+
+Quando o servidor responde com um 4xx/5xx e `enable_http_compression=1` foi definido, ele compacta o corpo do erro com o mesmo codec que usaria em uma resposta bem-sucedida. O driver decodifica esses corpos para todos os codecs que suporta (`lz4`, `zstd`, `gzip`, `deflate`, `br`/`brotli`), para que a mensagem em `ClickHouseServerException` seja legível. Para qualquer outro caso (`snappy`, …), ele retorna uma mensagem substituta que informa o codec e aponta para `system.query_log`, onde está o texto original do erro.
 
 ***
 
-<div id="raw-stream-insert">
-  ### Inserção bruta via stream
-</div>
+### Descompressão da resposta {#response-decompression}
 
-Use `InsertRawStreamAsync` para inserir dados diretamente de streams de arquivo ou de memória em formatos como CSV, JSON, Parquet ou qualquer [formato compatível do ClickHouse](/pt-BR/reference/formats/index).
+`Accept-Encoding` apenas pede ao servidor que comprima a resposta — algo ainda precisa decodificá-la. O próprio driver faz isso, com base no `Content-Encoding` da resposta, de modo que todas as APIs normais de leitura (`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, Dapper, EF Core, linq2db) funcionam com uma resposta comprimida sem nenhuma configuração adicional. Ele decodifica `lz4`, `zstd`, `gzip`, `deflate` e `br`; `snappy` não é suportado.
 
-**Inserir de um arquivo CSV:**
+Por padrão, o driver anuncia **`zstd, lz4, gzip, deflate`**, e o ClickHouse responde com `zstd`. Para escolher outra opção, defina o `Accept-Encoding` manualmente — para todo o cliente:
 
 ```csharp
-await using var fileStream = File.OpenRead("data.csv");
+using var client = new ClickHouseClient(new ClickHouseClientSettings("Host=localhost")
+{
+    AcceptEncoding = "br",      // decodable, but not advertised by default
+});
+```
 
+por consulta, o que tem precedência:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "identity" });   // opt this query out
+```
+
+ou na connection string, para usuários de ORM que nunca mexem em `ClickHouseClientSettings`:
+
+```text
+Host=localhost;AcceptEncoding=br, gzip
+```
+
+Defini-lo também força `enable_http_compression=1` na URL, o que o ClickHouse exige antes de sequer respeitar o cabeçalho — inclusive quando `UseCompression` é `false`, já que nomear um codec explicitamente é interpretado como um pedido de compressão. Sem nenhum valor definido, `UseCompression=false` não envia nenhum `Accept-Encoding`.
+
+`Accept-Encoding` pode ser definido em quatro lugares. Prevalece o primeiro deles que nomear um codec:
+
+1. `QueryOptions.AcceptEncoding` (ou `ClickHouseCommand.AcceptEncoding`)
+2. `CustomHeaders["Accept-Encoding"]` na consulta
+3. `CustomHeaders["Accept-Encoding"]` no cliente
+4. `ClickHouseClientSettings.AcceptEncoding`, ou a palavra-chave de string de conexão `AcceptEncoding`
+
+Se nenhum deles nomear um codec, o driver envia sua lista padrão. Um valor que não nomeia nenhum codec (null, vazio,
+espaço em branco ou apenas vírgulas) é considerado não definido e passa para o próximo lugar. Para desativar a compressão, use `identity`.
+
+**Quem escolhe o codec é o servidor, não o cliente.** O ClickHouse examina o `Accept-Encoding` em busca de tokens seguindo sua própria ordem fixa de preferência — `zstd` &gt; `br` &gt; `lz4` &gt; `snappy` &gt; `gzip` &gt; `deflate` — e ignora tanto a ordem em que você os lista quanto quaisquer q-values. Portanto, o cabeçalho é um anúncio de capacidades, não uma exigência, e a única forma de influenciar a escolha é decidir quais tokens deixar de fora. O padrão inclui `zstd`, então uma consulta padrão é respondida com zstd; os tokens restantes funcionam como fallback. `br` é decodificável, mas não é anunciado por padrão.
+
+A comparação entre os codecs em tamanho de payload, CPU do servidor e CPU do cliente depende dos seus dados, do seu link e do `http_zlib_compression_level` do servidor (padrão de fábrica: 3) — veja [Ajuste da compressão](#tuning-compression).
+
+* **`http_zlib_compression_level`.** Essa configuração se aplica a todos os codecs HTTP, e o valor padrão é 3. Esse valor deve ser ajustado conforme seus dados, a velocidade do link e o uso de CPU.
+* **Um cliente CPU-bound em um link rápido.** O driver decodifica o corpo da resposta na thread chamadora, portanto, quando a rede não é o gargalo, a velocidade de decodificação no lado do cliente pode se tornar o fator limitante.
+
+Solicite um codec diferente por consulta, ou para todo o cliente, sempre que um desses casos se aplicar:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "lz4" });   // decode this one with lz4 instead
+```
+
+Como a decisão é tomada com base na resposta, o corpo é decodificado sempre que seu `Content-Encoding` assim indicar, independentemente do que foi solicitado: se estiver ausente ou for `identity`, o conteúdo passa intacto; se for um codec suportado, é decodificado; e qualquer outro valor gera um erro que o identifica. Não há risco de decodificação dupla — se o `AutomaticDecompression` de um handler fornecido pelo chamador já tiver decodificado o corpo, ele também remove o `Content-Encoding`, de modo que o driver vê o conteúdo em texto simples e não o altera.
+
+**Resultados brutos não anunciam nenhum codec.** `ExecuteRawResultAsync` (e os públicos `PostStreamAsync` / `InsertRawStreamAsync`) entregam o corpo a você tal como veio, portanto, a menos que você mesmo indique um codec, eles não solicitam nenhum — nada no driver decodifica um corpo desse tipo, de modo que oferecer um codec ali transformaria silenciosamente uma exportação em um arquivo comprimido. A regra, portanto, é simples e independe de como o `HttpClient` esteja configurado: **um corpo sem processamento chega exatamente como o servidor o enviou, e o servidor envia texto simples a menos que você peça um codec.** Pedir um (para todo o client ou por consulta) é a forma de exportar bytes comprimidos de propósito.
+
+Um `AcceptEncoding` explícito (em qualquer um dos níveis) continua valendo para requisições brutas, e `ClickHouseRawResult.ReadDecompressedStreamAsync()` decodifica o resultado quando você quiser isso; `ReadAsStreamAsync`, `ReadAsByteArrayAsync`, `ReadAsStringAsync` e `CopyToAsync` sempre retornam os bytes exatamente como chegaram.
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT JSONEachRow",
+    options: new QueryOptions { AcceptEncoding = "lz4" });
+
+Console.WriteLine(result.ContentEncoding); // "lz4"
+
+await using var body = await result.ReadDecompressedStreamAsync();
+using var bodyReader = new StreamReader(body);
+var json = await bodyReader.ReadToEndAsync();
+```
+
+Leia o stream retornado até o fim antes que ele saia de escopo, como acima. Quando a resposta *está* comprimida, você recebe um decoder criado com `leaveOpen`, de modo que descartá-lo mantém a resposta intacta; quando ela **não** está comprimida, você recebe o próprio stream de conteúdo HTTP, e descartá-lo encerra o corpo. Em qualquer um dos casos, o `ClickHouseRawResult` é o dono da resposta — não chame seus outros membros de leitura depois que o stream tiver sido descartado. Descartar o `ClickHouseRawResult` é sempre obrigatório e, por si só, suficiente: isso libera tanto a resposta quanto qualquer decoder inserido aqui (decoders mantêm buffers do pool). Portanto, o `await using` acima é opcional, mas é seguro mantê-lo. Chamadas sequenciais repetidas devolvem o mesmo stream; o tipo não é seguro para uso concorrente.
+
+Veja [Select&#95;007&#95;ResponseCompression.cs](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/Select/Select_007_ResponseCompression.cs) para um exemplo executável.
+
+#### Compressão de insert (requisição) {#insert-compression}
+
+Zstd é o codec padrão para inserts: `InsertOptions.Compressor` tem como valor inicial `ZstdCompressor.Default`,
+que corresponde ao zstd no nível 3. Defina outro compressor para alterar o codec, ou `null` para enviar o
+corpo sem compressão.
+
+```csharp
+var options = new InsertOptions { Compressor = GZipCompressor.Default };  // Content-Encoding: gzip
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+O driver inclui quatro codecs. Cada um possui uma instância `Default` e um construtor que recebe um nível
+e o tamanho do write buffer:
+
+| Compressor         | `Content-Encoding` | Construtor                                                                     | `Default`       |
+| ------------------ | ------------------ | ------------------------------------------------------------------------------ | --------------- |
+| `ZstdCompressor`   | `zstd`             | `(int level = 3, int bufferSize = 262144)`                                     | nível 3         |
+| `Lz4Compressor`    | `lz4`              | `(Lz4Level level = Lz4Level.Fast, int bufferSize = 262144)`                    | `Lz4Level.Fast` |
+| `GZipCompressor`   | `gzip`             | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest`       |
+| `BrotliCompressor` | `br`               | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest`       |
+
+```csharp
+var options = new InsertOptions { Compressor = new ZstdCompressor(level: 1) };
+```
+
+<Note>
+  *Compartilhe instâncias de compressor.* Cada `Default` é uma única instância compartilhada, e os quatro compressores
+  podem ser usados com segurança por várias threads ao mesmo tempo — que é justamente o que acontece quando
+  `InsertOptions.MaxDegreeOfParallelism` é maior que 1, já que cada insert usa um compressor por
+  batch. Nenhum deles implementa `IDisposable`. Crie sua própria instância uma única vez e reutilize-a, da
+  mesma forma que `Default` é usado.
+</Note>
+
+##### Um codec personalizado {#custom-compressor}
+
+`IClickHouseCompressor` é público, e uma implementação precisa fornecer apenas dois membros:
+
+```csharp
+public sealed class MyCompressor : IClickHouseCompressor
+{
+    public string ContentEncoding => "my-codec";
+
+    public Stream Compress(Stream destination, bool leaveOpen) => /* a compressing write stream */;
+}
+```
+
+O servidor deve aceitar o `Content-Encoding` que você indicar. Os demais membros —
+`Decompress`, `MethodByte`, `MaxEncodedLength`, `Encode` e `Decode` — têm implementações
+padrão que lançam `NotSupportedException`, portanto sobrescreva apenas os que seu codec precisar.
+Implemente `Decompress` para decodificar corpos de resposta além de comprimir requisições, e lance
+`InvalidDataException` a partir do stream que ele retorna quando um corpo estiver corrompido ou em formato incorreto.
+
+`InsertOptions.Compressor` rege apenas o insert binário. Os demais corpos de requisição do driver são comprimidos por regras diferentes, e nenhum deles passa por ele:
+
+* **Toda requisição de texto SQL** (`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, `ExecuteRawResultAsync`, a camada ADO.NET) envia sua instrução com `Content-Encoding: gzip` sempre que `UseCompression` for `true` — ou seja, por padrão. O codec não é configurável: `AcceptEncoding` controla apenas a resposta, então a escolha é gzip ou nada. Com `Compression=false`, a instrução é enviada sem compressão. As instruções são pequenas, então isso raramente merece atenção — mas é bom saber quando você estiver observando requisições em um proxy ou em uma captura de pacotes.
+* **Um corpo multipart** — uma consulta cujos parâmetros são enviados como form data (`UseFormDataParameters=true`) — é sempre enviado sem compressão, independentemente do que diga `UseCompression`.
+* **Um upload bruto** (`InsertRawStreamAsync`, `PostStreamAsync`) usa sua própria flag por chamada e não consulta nem `UseCompression` nem `InsertOptions.Compressor`: gzip quando a flag está definida, sem compressão caso contrário. Observe que o parâmetro `useCompression` de `InsertRawStreamAsync` tem valor padrão `true`, então um upload bruto é comprimido com gzip a menos que você passe `false` — mesmo com `Compression=false` no client.
+
+***
+
+### Ajustando a compressão {#tuning-compression}
+
+A compressão troca CPU por bytes. Se essa troca compensa depende quase inteiramente da velocidade
+do seu link em relação à velocidade de execução do codec. Não existe uma configuração adequada para
+todos.
+
+<div id="the-one-number-that-decides-it">
+  #### O único número que decide
+</div>
+
+Comprimir vale a pena desde que o codec seja mais rápido que a rede.
+
+Esse limite é mais baixo do que a maioria das pessoas imagina no caminho de leitura, porque o ClickHouse comprime
+as respostas HTTP em thread única no buffer de saída. Medido em um service do ClickHouse Cloud com 16 vCPUs
+(`hits`, RowBinary, nível 3), o servidor produz saída comprimida a aproximadamente 100-200MB/s.
+
+Portanto, para um resultado grande, e supondo que apenas uma consulta seja processada por vez, a compressão deixa de compensar por volta de 100 MB/s. Um único stream HTTPS
+dentro de uma mesma região de nuvem costuma superar esse valor, enquanto qualquer tráfego que atravesse a internet pública, uma VPN ou a fronteira entre regiões normalmente fica abaixo dele.
+
+O caminho de insert tolera compressão em links mais rápidos, porque o client comprime em um core próprio e costuma ser mais rápido que a compressão de resposta do servidor.
+
+<div id="rough-guide-by-deployment">
+  #### Guia aproximado por tipo de implantação
+</div>
+
+| Onde seu cliente executa         | Largura de banda típica | Leituras            | Inserts                      |
+| -------------------------------- | ----------------------- | ------------------- | ---------------------------- |
+| Mesmo host / loopback            | &gt; 500 MB/s           | `identity`          | `lz4` mais rápido, ou nenhum |
+| Mesma região, mesma nuvem        | ~100–500 MB/s           | `identity` ou `lz4` | `zstd:1`                     |
+| Entre regiões, mesma nuvem       | ~10–100 MB/s            | `zstd`              | `zstd:3`                     |
+| Internet / VPN / nuvem diferente | &lt; 25 MB/s            | `zstd`              | `zstd:3`                     |
+| Tarifado ou muito restrito       | &lt; 5 MB/s             | `zstd`              | `zstd:5`+ ou `br`            |
+
+Três aspectos que esta tabela não contempla:
+
+* **Custo de egress:** se você é cobrado pela transferência de dados, os bytes têm um preço que vai além da latência, e isso
+  favorece uma compressão mais alta independentemente da velocidade do link.
+* **Resultados pequenos:** tudo o que foi dito acima vale para payloads grandes. Em respostas pequenas, o codec quase não
+  importa e a sobrecarga por requisição é o que predomina.
+* **Inserts em paralelo elevam os limiares de insert.** Todos os números de throughput acima se referem a uma *única* thread. `InsertOptions.MaxDegreeOfParallelism` tem `1` como valor padrão, mas aumentá-lo faz com que os batches sejam comprimidos de forma concorrente, de modo que a taxa agregada de codificação do cliente escala aproximadamente com os núcleos que você disponibilizar. Ou seja, em um link rápido, ainda pode valer a pena comprimir um insert paralelo
+  bem depois do ponto em que um insert de thread única deixa de compensar. Trate as linhas de insert da tabela como um *piso* e, se você já faz batches em paralelo, refaça os testes antes de concluir que seu link é rápido demais para compressão.
+
+O caminho de leitura só é paralelizado entre múltiplas consultas.
+
+<div id="choosing-a-codec">
+  #### Escolhendo um codec
+</div>
+
+| Codec  | Razão                      | Use quando                                                                                                                                                                                                             | Fique atento a                                                                                                                                                                                                                                                                                                                                     |
+| ------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lz4`  | mais baixa                 | Links rápidos; a CPU é mais escassa que a largura de banda. De longe o mais barato para decodificar e o mais rápido em resultados pequenos — o que o torna o codec a indicar quando você quer abandonar o padrão zstd. | Ele **não tem codificador de entropia**, portanto, em dados enviesados mas não repetitivos (longas sequências de texto numérico, por exemplo), sua razão fica bem atrás de todos os outros. É também o codec mais penalizado pelo aumento de `http_zlib_compression_level`: passar do nível 1 para o 3 custa ~2,7× mais CPU para ~29% menos bytes. |
+| `zstd` | alta                       | A escolha de propósito geral sempre que houver uma rede real envolvida. Melhor razão por CPU na faixa que importa e, no nível 3, supera o `lz4` em bytes, *em* CPU do servidor *e* em tempo de relógio.                | é mais caro que o `lz4` para **decodificar** — 1,6× no nível 3 em nossas medições, embora no nível 1 os dois sejam comparáveis — e o driver decodifica na thread que fez a chamada. Especificamente com `http_zlib_compression_level=1`, consome um pouco *mais* CPU do servidor que o `lz4`.                                                      |
+| `gzip` | média                      | Interoperabilidade — universalmente compreendido por proxies e gateways.                                                                                                                                               | É superado em todos os aspectos tanto pelo `lz4` quanto pelo `zstd` em nossas medições: maior que o `zstd` e, ainda assim, custa várias vezes mais CPU para codificar e de 5 a 9× mais para decodificar. Escolha-o por compatibilidade, não por desempenho.                                                                                        |
+| `br`   | mais alta em níveis baixos | A largura de banda é realmente a restrição limitante e você pode gastar CPU por isso.                                                                                                                                  | Despenca feio em níveis mais altos — com `http_zlib_compression_level=6`, medimos de 3 a 4× a CPU de servidor do `zstd`. Não é anunciado por padrão, porque supera todo token de fallback da lista padrão.                                                                                                                                         |
+
+<div id="levels">
+  #### Níveis
+</div>
+
+A compressão da resposta é controlada por uma única configuração de servidor, `http_zlib_compression_level`, que se aplica a *todos* os codecs HTTP, não apenas ao zlib. O padrão é 3.
+
+Não mexa nela a menos que tenha medições que justifiquem. Acima do padrão, ganha-se muito pouco em tamanho ao custo de muita CPU (para `zstd`, 3 → 6 praticamente dobra a CPU do servidor em troca de ~14% menos bytes), e o `br` se torna patológico. Abaixo dele, no nível 1, o cenário muda de verdade: o `lz4` fica muito mais barato e o `zstd` perde sua vantagem de CPU sobre ele. Defina o valor por consulta, se necessário:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions
+    {
+        AcceptEncoding = "zstd",
+        CustomSettings = new Dictionary<string, object> { ["http_zlib_compression_level"] = 1 },
+    });
+```
+
+<div id="measuring-your-own-crossover">
+  #### Medindo seu próprio ponto de cruzamento
+</div>
+
+A maneira mais rápida de otimizar a escolha do codec e do nível de compressão é medir o tempo da mesma consulta com alguns codecs e comparar os resultados.
+
+```csharp
+foreach (var codec in new[] { "identity", "lz4", "zstd" })
+{
+    var sw = Stopwatch.StartNew();
+    using var reader = await client.ExecuteReaderAsync(
+        "SELECT ... FROM big_table",
+        options: new QueryOptions { AcceptEncoding = codec });
+    while (await reader.ReadAsync()) { }
+    Console.WriteLine($"{codec,-9} {sw.ElapsedMilliseconds} ms");
+}
+```
+
+Para ver o lado do servidor desse mesmo cenário, leia os `ProfileEvents` a partir de `system.query_log` — defina
+`QueryOptions.QueryId` para conseguir localizar a linha:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+Uma armadilha caso você mesmo faça esse benchmark: um `LIMIT n` isolado, sem `ORDER BY`, retorna *linhas diferentes
+a cada execução*, de modo que cada repetição comprime dados diferentes e as razões viram ruído. Compare
+sempre contra um result set fixo.
+
+***
+
+### Inserção via raw stream {#raw-stream-insert}
+
+Use `InsertRawStreamAsync` para inserir dados diretamente de arquivos ou de streams em memória em formatos como CSV, JSON, Parquet ou qualquer [formato suportado pelo ClickHouse](/pt-BR/reference/formats/index).
+
+**Inserir a partir de um arquivo CSV:**
+
+```csharp
 using var response = await client.InsertRawStreamAsync(
     table: "my_table",
-    stream: fileStream,
+    stream: File.OpenRead("data.csv"),
     format: "CSV",
     columns: ["id", "product", "price"] // Optional: specify columns
 );
 ```
 
+<Warning>
+  *O driver assume a propriedade do stream.* `InsertRawStreamAsync` e `PostStreamAsync` descartam o
+  stream que você fornece assim que a requisição termina, tenha ela sido bem-sucedida ou não. Não o descarte
+  você mesmo e não o reutilize depois — por isso o exemplo acima não envolve o
+  `FileStream` em um `using`.
+
+  Um `using` seu seria executado depois que o driver já descartou o stream. Para um `FileStream` ou
+  `MemoryStream`, essa segunda chamada é inofensiva, mas para um stream cujo `Dispose` devolve um buffer
+  do pool ou reduz uma contagem de referências, o recurso acaba sendo liberado duas vezes.
+
+  A propriedade só é transferida quando os argumentos são aceitos: se a chamada lançar `ArgumentException` ou
+  `ArgumentNullException` por table, stream ou format ausente, o stream continua sendo seu.
+</Warning>
+
 <Note>
-  Consulte a [documentação das configurações de formato](/pt-BR/reference/settings/formats) para ver as opções de controle do comportamento da ingestão de dados.
+  Consulte a [documentação de configurações de formato](/pt-BR/reference/settings/formats) para ver as opções que controlam o comportamento da ingestão de dados.
 </Note>
 
 ***
 
-<div id="more-examples">
-  ### Mais exemplos
-</div>
+### Mais exemplos {#more-examples}
 
 Para mais exemplos práticos de uso, consulte o [diretório examples](https://github.com/ClickHouse/clickhouse-cs/tree/main/examples) no repositório do GitHub.
 
-<div id="ado-net">
-  ## ADO.NET
-</div>
+## ADO.NET {#ado-net}
 
 A biblioteca oferece suporte completo ao ADO.NET por meio de `ClickHouseConnection`, `ClickHouseCommand` e `ClickHouseDataReader`. Essa API é necessária para a integração com ORMs (Dapper, Linq2db) e quando você precisa das abstrações padrão de banco de dados do .NET.
 
-<div id="ado-net-datasource">
-  ### Gerenciamento do ciclo de vida com ClickHouseDataSource
-</div>
+### Gerenciamento do ciclo de vida com ClickHouseDataSource {#ado-net-datasource}
 
 **Sempre crie conexões a partir de um `ClickHouseDataSource`** para garantir o gerenciamento adequado do ciclo de vida e o uso de pool de conexões. A DataSource gerencia internamente um único `ClickHouseClient`, e todas as conexões compartilham seu pool de conexões HTTP.
 
@@ -1082,9 +1352,7 @@ public class MyService
 
 ***
 
-<div id="ado-net-command">
-  ### Usando o ClickHouseCommand
-</div>
+### Usando o ClickHouseCommand {#ado-net-command}
 
 Crie comandos usando uma conexão para executar SQL:
 
@@ -1111,9 +1379,7 @@ Métodos de comando:
 
 ***
 
-<div id="ado-net-reader">
-  ### Usando ClickHouseDataReader
-</div>
+### Usando ClickHouseDataReader {#ado-net-reader}
 
 O `ClickHouseDataReader` fornece acesso tipado aos resultados da consulta:
 
@@ -1140,13 +1406,26 @@ while (reader.Read())
 }
 ```
 
-<div id="best-practices">
-  ## Boas práticas
-</div>
+#### Lendo o ordinal de um enum {#ado-net-reader-enum-ordinal}
 
-<div id="best-practices-connection-lifetime">
-  ### Ciclo de vida da conexão e pool de conexões
-</div>
+Uma coluna `Enum8` ou `Enum16` é materializada como seu label: `GetFieldType` informa `string`, e `GetString`, `GetValue` e `GetFieldValue<string>` retornam o label. Os accessors numéricos lançam `InvalidCastException` em uma coluna enum, porque o valor armazenado é uma string.
+
+Use `TryGetEnumOrdinal` para obter o número por trás do label:
+
+```csharp
+if (reader.TryGetEnumOrdinal(ordinal, out int value))
+    Console.WriteLine(value);   // e.g. 1 for 'Active' in Enum8('Active' = 1)
+```
+
+Retorna `true` e define `value` para colunas `Enum8`/`Enum16` e para colunas
+`Nullable(Enum...)` cuja célula não seja NULL. Retorna `false`, com `value` definido como `0`, para células NULL ou para
+qualquer coluna que não seja um enum. O ordinal é o
+valor com sinal obtido do wire, portanto pode ser negativo, e um ordinal `Enum16` pode ser maior que um
+byte.
+
+## Boas práticas {#best-practices}
+
+### Ciclo de vida da conexão e pool de conexões {#best-practices-connection-lifetime}
 
 `ClickHouse.Driver` usa `System.Net.Http.HttpClient` internamente. O `HttpClient` tem um pool de conexões por endpoint. Como consequência:
 
@@ -1172,9 +1451,7 @@ while (reader.Read())
 
 ***
 
-<div id="best-practice-datetime">
-  ### Tratamento de DateTime
-</div>
+### Tratamento de DateTime {#best-practice-datetime}
 
 1. **Use UTC sempre que possível.** Armazene timestamps como colunas `DateTime('UTC')` e use `DateTimeKind.Utc` no seu código. Isso elimina ambiguidades de fuso horário.
 
@@ -1193,9 +1470,7 @@ while (reader.Read())
 
 ***
 
-<div id="async-inserts">
-  ### Inserções assíncronas
-</div>
+### Inserções assíncronas {#async-inserts}
 
 [Inserções assíncronas](/pt-BR/concepts/features/operations/insert/asyncinserts) transferem do cliente para o servidor a responsabilidade pelo agrupamento em lotes. Em vez de exigir esse agrupamento no lado do cliente, o servidor armazena em buffer os dados recebidos e os grava no armazenamento com base em limites configuráveis. Isso é útil em cenários de alta concorrência, como workloads de observabilidade, em que muitos agentes enviam payloads pequenos.
 
@@ -1232,9 +1507,7 @@ settings.CustomSettings["wait_for_async_insert"] = 1; // Recomendado: aguardar c
 
 ***
 
-<div id="best-practices-sessions">
-  ### Sessões
-</div>
+### Sessões {#best-practices-sessions}
 
 Ative sessões apenas quando precisar de recursos com estado no servidor, por exemplo:
 
@@ -1249,7 +1522,7 @@ var settings = new ClickHouseClientSettings
 {
     Host = "localhost",
     UseSession = true,
-    SessionId = "my-session", // Opcional -- será gerado automaticamente se não informado
+    SessionId = "my-session", // Optional -- will be auto-generated if not provided
 };
 
 using var client = new ClickHouseClient(settings);
@@ -1285,19 +1558,15 @@ await using var cmd3 = connection.CreateCommand("SELECT * FROM users WHERE id IN
 await using var reader = await cmd3.ExecuteReaderAsync();
 ```
 
-<div id="supported-data-types">
-  ## Tipos de dados compatíveis
-</div>
+***
+
+## Tipos de dados compatíveis {#supported-data-types}
 
 `ClickHouse.Driver` é compatível com todos os tipos de dados do ClickHouse. As tabelas abaixo mostram o mapeamento entre os tipos do ClickHouse e os tipos nativos do .NET na leitura de dados do banco de dados.
 
-<div id="clickhouse-native-type-map-reading">
-  ### Mapeamento de tipos: leitura do ClickHouse
-</div>
+### Mapeamento de tipos: leitura do ClickHouse {#clickhouse-native-type-map-reading}
 
-<div id="type-map-reading-integer">
-  #### Tipos inteiros
-</div>
+#### Tipos inteiros {#type-map-reading-integer}
 
 | Tipo do ClickHouse | Tipo do .NET |
 | ------------------ | ------------ |
@@ -1316,9 +1585,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-floating-points">
-  #### Tipos de ponto flutuante
-</div>
+#### Tipos de ponto flutuante {#type-map-reading-floating-points}
 
 | Tipo do ClickHouse | Tipo .NET |
 | ------------------ | --------- |
@@ -1328,9 +1595,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-decimal">
-  #### Tipos decimais
-</div>
+#### Tipos decimais {#type-map-reading-decimal}
 
 | Tipo do ClickHouse | Tipo .NET                       |
 | ------------------ | ------------------------------- |
@@ -1346,9 +1611,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-boolean">
-  #### Tipo booleano
-</div>
+#### Tipo booleano {#type-map-reading-boolean}
 
 | Tipo do ClickHouse | Tipo .NET |
 | ------------------ | --------- |
@@ -1356,9 +1619,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-strings">
-  #### Tipos String
-</div>
+#### Tipos String {#type-map-reading-strings}
 
 | Tipo do ClickHouse | Tipo .NET |
 | ------------------ | --------- |
@@ -1367,13 +1628,15 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 <Note>
   Por padrão, as colunas `String` e `FixedString(N)` são retornadas como `string`. Defina `ReadStringsAsByteArrays=true` na string de conexão para lê-las como `byte[]`. Isso é útil ao armazenar dados binários que podem não estar em UTF-8 válido.
+
+  A configuração também se aplica a strings aninhadas dentro de outros tipos, de modo que `Array(String)` é lido como `byte[][]`
+  e `Map(String, String)` como `Dictionary<byte[], byte[]>` — inclusive as chaves. A única exceção é uma
+  coluna `JSON`, cujas folhas de string são sempre texto; veja [Tipo JSON](#type-map-reading-json).
 </Note>
 
 ***
 
-<div id="type-map-reading-datetime">
-  #### Tipos de data e hora
-</div>
+#### Tipos de data e hora {#type-map-reading-datetime}
 
 | Tipo do ClickHouse | Tipo .NET  |
 | ------------------ | ---------- |
@@ -1415,9 +1678,7 @@ Se você precisar de um comportamento sensível a fuso horário para colunas sem
 
 ***
 
-<div id="type-map-reading-json">
-  #### Tipo JSON
-</div>
+#### Tipo JSON {#type-map-reading-json}
 
 | Tipo ClickHouse | Tipo .NET    | Observações                    |
 | --------------- | ------------ | ------------------------------ |
@@ -1431,21 +1692,135 @@ O tipo de retorno das colunas JSON é controlado pela configuração `JsonReadMo
 * **`String`**: Retorna o JSON bruto como `string`. Preserva a representação exata do JSON no ClickHouse, o que é útil quando você precisa repassar o JSON sem fazer o parsing ou quando deseja cuidar da desserialização por conta própria.
 
 ```csharp
-// Configurar o modo string via settings
+// Configure string mode via settings
 var settings = new ClickHouseClientSettings("Host=localhost")
 {
     JsonReadMode = JsonReadMode.String
 };
 
-// Ou via connection string
+// Or via connection string
 // "Host=localhost;JsonReadMode=String"
+```
+
+`None` é um terceiro modo. Ele faz a leitura exatamente como o `Binary`, mas não envia nenhuma server setting junto com a
+consulta — use-o em uma connection que não tem permissão para definir uma.
+
+##### Typed paths e nulls {#type-map-reading-json-nulls}
+
+Um path declarado no column type é um **typed path**; qualquer outro path do documento é um
+**dynamic path**. Os dois se diferenciam quando o valor é nulo.
+
+Um typed path sempre aparece no `JsonObject`. Declarado como `Nullable(T)` ou `Dynamic`, ele é retornado
+como um JSON null tanto quando o valor armazenado é nulo quanto quando o documento não possui esse path — os dois
+casos são indistinguíveis:
+
+```csharp
+// Column type JSON(x Nullable(Int64))
+// stored '{"x":null}'  ->  {"x":null}
+// stored '{}'          ->  {"x":null}
+```
+
+Declarado com um tipo não Nullable, um caminho ausente assume o valor padrão do tipo — `JSON(x String)`
+resulta em `{"x":""}` e `JSON(x Int64)` resulta em `{"x":0}`.
+
+Um caminho dinâmico cujo valor é nulo é removido por completo do objeto, de modo que `ContainsKey` retorna
+false para ele. Ler `{"x":null}` de uma coluna `JSON` simples resulta em `{}`.
+
+Caminhos tipados aninhados criam seus parents, portanto `JSON(a.b Nullable(Int64))` produz `{"a":{"b":null}}`
+mesmo para um documento vazio.
+
+<Note>
+  É isso que o próprio servidor renderiza, portanto os modes `Binary` e `String` agora coincidem. Antes da 1.4.0, um
+  caminho tipado contendo null era removido do `JsonObject`, o que fazia `{"x":null}` ser lido como
+  `{}` — e, para um caminho aninhado como `JSON(a.b Nullable(Int64))`, toda a subárvore `a` desaparecia.
+</Note>
+
+##### Strings dentro de uma coluna JSON {#type-map-reading-json-strings}
+
+Folhas de string dentro de uma coluna JSON são sempre retornadas como texto, qualquer que seja o
+valor de `ReadStringsAsByteArrays` — `JsonValue` não possui uma forma de array de bytes, portanto um `byte[]` seria
+renderizado como base64. Isso vale para `String`, `FixedString` e para os tipos encapsulados em
+`LowCardinality`, `Nullable` ou `SimpleAggregateFunction`, além das strings dentro de `Array` e `Map`,
+incluindo as chaves do map.
+
+<Note>
+  Um array de bytes cujo tipo o leitor JSON não consegue identificar continua sendo renderizado como base64: um
+  typed path `Variant` ou `Dynamic` guarda um valor cujo tipo só é conhecido linha a linha, então uma string
+  sob `Variant(Array(UInt8), String)` retorna codificada em Base64. Isso ocorre da mesma forma em ambas as configurações.
+
+  Um tipo de chave de map JSON que não seja exatamente `String` — `Map(LowCardinality(String), String)`, por
+  exemplo — lança `NotSupportedException`.
+</Note>
+
+<div id="overlapping-paths">
+  ##### Caminhos sobrepostos
+</div>
+
+O ClickHouse aceita uma coluna que declara um caminho tanto como valor quanto como pai de outro
+caminho, por exemplo `JSON(a Int64, a.b Int64)`. Ambos os caminhos estão presentes em todas as linhas, portanto o servidor
+renderiza a linha com uma chave duplicada: `{"a":0,"a":{"b":7}}`. Um `JsonObject` não pode conter dois valores
+para uma mesma chave, então `JsonReadMode.Binary` lança uma `SerializationException` indicando os dois caminhos. O
+mesmo vale quando o valor é um `Map`, como em `JSON(a Map(String, Int64))` lido de uma linha que
+também tem um `a.b` dinâmico.
+
+Isso se aplica apenas quando ambos os lados contêm um valor naquela linha. O lado que não contém nada — um null,
+um objeto vazio ou uma subárvore cujos valores são todos null — cede lugar ao lado que tem os dados,
+qualquer que seja o caminho enviado primeiro pelo servidor. Portanto, uma sobreposição declarada com tipos `Nullable` preenche um lado por linha e é lida sem
+erro: `JSON(a Nullable(Int64), a.b Nullable(Int64))` produz `{"a":5}` e `{"a":{"b":7}}`, conforme
+esperado.
+
+Leia essa coluna com `JsonReadMode.String` para obter o texto JSON do servidor inalterado, incluindo a chave
+duplicada.
+
+Defina `AllowDuplicateJsonKeys` para continuar lendo a coluna como um `JsonObject` em vez de lançar uma exceção. Nesse caso, o
+driver mantém, entre os dois, o valor que vier por último na linha e descarta o outro, de modo que o
+resultado é com perda: `JSON(a Int64, a.b Int64)` contendo `{"a.b":7}` é lido como `{"a":0}`. Um caminho que
+contém um valor e cujo pai contém um scalar ou um array continua lançando exceção, porque não há como
+colocar uma subárvore sob nenhum dos dois.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    AllowDuplicateJsonKeys = true
+};
+
+// Or via connection string
+// "Host=localhost;AllowDuplicateJsonKeys=true"
 ```
 
 ***
 
-<div id="type-map-reading-other">
-  #### Outros tipos
-</div>
+#### Map type {#type-map-reading-map}
+
+| ClickHouse Type | .NET Type                  | Notes                              |
+| --------------- | -------------------------- | ---------------------------------- |
+| Map(K, V)       | `Dictionary<K, V>`         | Padrão (`MapReadMode=Dictionary`)  |
+| Map(K, V)       | `List<KeyValuePair<K, V>>` | Quando `MapReadMode=KeyValuePairs` |
+
+Um `Map(K, V)` do ClickHouse é fisicamente um `Array(Tuple(K, V))` e pode conter várias entradas com a mesma chave. Um `Dictionary` não pode; por isso, no modo padrão, uma chave repetida mantém apenas o último valor e os pares anteriores são descartados. A configuração `MapReadMode` define a representação:
+
+* **`Dictionary` (padrão)**: retorna `Dictionary<K, V>`.
+
+* **`KeyValuePairs`**: retorna `List<KeyValuePair<K, V>>` na ordem em que o servidor enviou os pares, preservando todos eles, inclusive as entradas que repetem uma chave.
+
+```csharp
+// Configure key-value-pair mode via settings
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    MapReadMode = MapReadMode.KeyValuePairs
+};
+
+// Or via connection string
+// "Host=localhost;MapReadMode=KeyValuePairs"
+```
+
+O mode seleciona o tipo de framework de uma coluna `Map`, portanto também se aplica a `GetFieldValue<T>`, aos tipos de schema que o driver informa e ao mapeamento de propriedades POCO. Ele vale onde quer que um map apareça na árvore de tipos de uma coluna — incluindo `Array(Map(...))`, `Map(K, Map(...))`, `Tuple(..., Map(...))` e `Dynamic`.
+
+Ambas as representações são aceitas no caminho de gravação em qualquer um dos modes — consulte [gravação de maps](#type-map-writing-other).
+
+***
+
+#### Outros tipos {#type-map-reading-other}
 
 | Tipo do ClickHouse      | Tipo .NET                                                                                                                                                                             |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1456,7 +1831,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 | Dynamic                 | Consulte a nota                                                                                                                                                                       |
 | Array(T)                | `T[]` (`Array(Array(T))` aninhado é lido como `T[][]` irregular; use `reader.GetFieldValue<T[,]>(ordinal)` para materializar dados retangulares como uma matriz CLR multidimensional) |
 | Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                                                                                                   |
-| Map(K, V)               | `Dictionary<K, V>`                                                                                                                                                                    |
+| Map(K, V)               | `Dictionary<K, V>`, ou `List<KeyValuePair<K, V>>` quando `MapReadMode=KeyValuePairs` — consulte [Map type](#type-map-reading-map)                                                     |
 | Nullable(T)             | `T?`                                                                                                                                                                                  |
 | Enum8                   | `string`                                                                                                                                                                              |
 | Enum16                  | `string`                                                                                                                                                                              |
@@ -1472,9 +1847,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-geometry">
-  #### Tipos de geometria
-</div>
+#### Tipos de geometria {#type-map-reading-geometry}
 
 | Tipo ClickHouse | Tipo .NET                 |
 | --------------- | ------------------------- |
@@ -1492,15 +1865,11 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="clickhouse-native-type-map-writing">
-  ### Mapeamento de tipos: escrita no ClickHouse
-</div>
+### Mapeamento de tipos: escrita no ClickHouse {#clickhouse-native-type-map-writing}
 
 Ao inserir dados, o driver converte tipos .NET nos tipos correspondentes do ClickHouse. As tabelas abaixo mostram quais tipos .NET são aceitos para cada tipo de coluna do ClickHouse.
 
-<div id="type-map-reading-integer">
-  #### Tipos inteiros
-</div>
+#### Tipos inteiros {#type-map-writing-integer}
 
 | Tipo do ClickHouse | Tipos .NET aceitos                                                                                                           | Observações |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -1519,9 +1888,7 @@ Ao inserir dados, o driver converte tipos .NET nos tipos correspondentes do Clic
 
 ***
 
-<div id="type-map-reading-floating-points">
-  #### Tipos de ponto flutuante
-</div>
+#### Tipos de ponto flutuante {#type-map-writing-floating-point}
 
 | Tipo do ClickHouse | Tipos .NET aceitos                                          | Observações                               |
 | ------------------ | ----------------------------------------------------------- | ----------------------------------------- |
@@ -1531,9 +1898,7 @@ Ao inserir dados, o driver converte tipos .NET nos tipos correspondentes do Clic
 
 ***
 
-<div id="type-map-reading-boolean">
-  #### Tipo booleano
-</div>
+#### Tipo booleano {#type-map-writing-boolean}
 
 | Tipo do ClickHouse | Tipos .NET aceitos | Observações |
 | ------------------ | ------------------ | ----------- |
@@ -1541,9 +1906,7 @@ Ao inserir dados, o driver converte tipos .NET nos tipos correspondentes do Clic
 
 ***
 
-<div id="type-map-reading-strings">
-  #### Tipos String
-</div>
+#### Tipos String {#type-map-writing-strings}
 
 | Tipo do ClickHouse | Tipos .NET aceitos                                   | Observações                                                                                 |
 | ------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -1552,19 +1915,17 @@ Ao inserir dados, o driver converte tipos .NET nos tipos correspondentes do Clic
 
 ***
 
-<div id="type-map-reading-datetime">
-  #### Tipos de data e hora
-</div>
+#### Tipos de data e hora {#type-map-writing-datetime}
 
-| Tipo do ClickHouse | Tipos .NET aceitos                                                | Observações                                                                             |
-| ------------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Date               | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Convertido em dias Unix como UInt16; intervalo suportado `[1970-01-01, 2149-06-06]`     |
-| Date32             | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Convertido em dias Unix como Int32; intervalo suportado `[1900-01-01, 2299-12-31]`      |
-| DateTime           | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Veja abaixo mais detalhes; intervalo suportado `[1970-01-01, 2106-02-07 06:28:15]` UTC  |
-| DateTime32         | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Igual a DateTime                                                                        |
-| DateTime64         | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime          | Precisão baseada no parâmetro de escala                                                 |
-| Time               | `TimeSpan`, `int`                                                 | Limitado a ±999:59:59; `int` é tratado como segundos                                    |
-| Time64             | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | `string` é interpretada como `[-]HHH:MM:SS[.fraction]`; limitado a ±999:59:59.999999999 |
+| Tipo do ClickHouse | Tipos .NET aceitos                                                            | Observações                                                                             |
+| ------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Date               | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime                      | Convertido em dias Unix como UInt16; intervalo suportado `[1970-01-01, 2149-06-06]`     |
+| Date32             | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime                      | Convertido em dias Unix como Int32; intervalo suportado `[1900-01-01, 2299-12-31]`      |
+| DateTime           | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime                      | Veja abaixo mais detalhes; intervalo suportado `[1970-01-01, 2106-02-07 06:28:15]` UTC  |
+| DateTime32         | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime                      | Igual a DateTime                                                                        |
+| DateTime64         | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos NodaTime                      | Precisão baseada no parâmetro de escala                                                 |
+| Time               | `TimeSpan`, `TimeOnly`, `int`                                                 | Limitado a ±999:59:59; `int` é tratado como segundos                                    |
+| Time64             | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | `string` é interpretada como `[-]HHH:MM:SS[.fraction]`; limitado a ±999:59:59.999999999 |
 
 <Note>
   **Valores fora do intervalo**
@@ -1601,9 +1962,7 @@ var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
 
 **Recomendação:** para obter o comportamento mais simples e previsível, use `DateTimeKind.Utc` ou `DateTimeOffset` em todas as operações com DateTime. Isso garante que seu código funcione de forma consistente, independentemente do fuso horário do servidor, do cliente ou da coluna.
 
-<div id="datetime-http-param-vs-bulkcopy">
-  #### Parâmetros HTTP vs bulk copy
-</div>
+#### Parâmetros HTTP vs bulk copy {#datetime-http-param-vs-bulkcopy}
 
 Há uma diferença importante entre a vinculação de parâmetros HTTP e o bulk copy ao gravar valores `Unspecified` de DateTime:
 
@@ -1632,9 +1991,7 @@ command.AddParameter("dt", myDateTime);
 
 ***
 
-<div id="type-map-writing-decimal">
-  #### Tipos Decimal
-</div>
+#### Tipos Decimal {#type-map-writing-decimal}
 
 | Tipo do ClickHouse | Tipos .NET aceitos                                                                 | Observações                                     |
 | ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -1646,9 +2003,7 @@ command.AddParameter("dt", myDateTime);
 
 ***
 
-<div id="type-map-reading-json">
-  #### Tipo JSON
-</div>
+#### Tipo JSON {#type-map-writing-json}
 
 | Tipo ClickHouse | Tipos .NET aceitos                                  | Observações                                             |
 | --------------- | --------------------------------------------------- | ------------------------------------------------------- |
@@ -1685,15 +2040,11 @@ using var client = new ClickHouseClient(settings);
 client.RegisterJsonSerializationType<MyPocoType>();
 ```
 
-<div id="json-typed-columns">
-  ##### Colunas JSON tipadas
-</div>
+##### Colunas JSON tipadas {#json-typed-columns}
 
 Quando uma coluna JSON tem dicas de tipo (por exemplo, `JSON(id UInt64, price Decimal128(2))`), o driver usa essas dicas para serializar valores com total fidelidade aos tipos. Isso preserva a precisão de tipos como `UInt64`, `Decimal`, `UUID` e `DateTime64`, que, de outra forma, perderiam precisão ao serem serializados como JSON genérico.
 
-<div id="json-poco-serialization">
-  ##### Serialização de POCO
-</div>
+##### Serialização de POCO {#json-poco-serialization}
 
 POCOs podem ser gravados em colunas JSON de duas formas, dependendo do `JsonWriteMode`:
 
@@ -1754,34 +2105,30 @@ A correspondência entre o nome da propriedade e as dicas de tipo da coluna dife
 
 ***
 
-<div id="type-map-reading-other">
-  #### Outros tipos
-</div>
+#### Outros tipos {#type-map-writing-other}
 
-| ClickHouse Type         | Accepted .NET Types                      | Notas                                                                                                                                                                                                                                                                                                      |
-| ----------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UUID                    | `Guid`, `string`                         | `string` é analisada como `Guid`                                                                                                                                                                                                                                                                           |
-| IPv4                    | `IPAddress`, `string`                    | Deve ser IPv4; `string` é analisada via `IPAddress.Parse()`                                                                                                                                                                                                                                                |
-| IPv6                    | `IPAddress`, `string`                    | Deve ser IPv6; `string` é analisada via `IPAddress.Parse()`                                                                                                                                                                                                                                                |
-| Nothing                 | Qualquer                                 | Não grava nada (no-op)                                                                                                                                                                                                                                                                                     |
-| Dynamic                 | —                                        | **Sem suporte** (lança `NotImplementedException`)                                                                                                                                                                                                                                                          |
-| Array(T)                | `IList`, `null`                          | `null` grava um array vazio. Para tipos Nested (`Array(Array(T))` e mais profundos), são aceitos tanto formatos irregulares (`T[][]`, `List<List<T>>`) quanto arrays CLR multidimensionais retangulares (`T[,]`, `T[,,]`, …); o rank do CLR deve corresponder à profundidade de aninhamento no ClickHouse. |
-| Tuple(T1, T2, ...)      | `ITuple`, `IList`                        | A quantidade de elementos deve corresponder à aridade da tupla. Veja a [ressalva sobre ValueTuple](#valuetuple-caveat) para mais de 7 elementos.                                                                                                                                                           |
-| Map(K, V)               | `IDictionary`                            |                                                                                                                                                                                                                                                                                                            |
-| Nullable(T)             | `null`, `DBNull`, ou tipos aceitos por T | Grava o byte indicador de null antes do valor                                                                                                                                                                                                                                                              |
-| Enum8                   | `string`, `sbyte`, tipos numéricos       | `string` é procurada no dicionário do enum                                                                                                                                                                                                                                                                 |
-| Enum16                  | `string`, `short`, tipos numéricos       | `string` é procurada no dicionário do enum                                                                                                                                                                                                                                                                 |
-| LowCardinality(T)       | Tipos aceitos por T                      | Delega ao tipo subjacente                                                                                                                                                                                                                                                                                  |
-| SimpleAggregateFunction | Tipos aceitos pelo tipo subjacente       | Delega ao tipo subjacente                                                                                                                                                                                                                                                                                  |
-| Nested(...)             | `IList` de tuplas                        | A quantidade de elementos deve corresponder à quantidade de campos                                                                                                                                                                                                                                         |
-| Variant(T1, T2, ...)    | Valor correspondente a um de T1, T2, ... | Lança `ArgumentException` se não houver correspondência de tipo                                                                                                                                                                                                                                            |
-| QBit(T, dim)            | `IList`                                  | Delega a Array; a dimensão é apenas metadado                                                                                                                                                                                                                                                               |
+| ClickHouse Type         | Accepted .NET Types                              | Notas                                                                                                                                                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                                 | `string` é analisada como `Guid`                                                                                                                                                                                                                                                                           |
+| IPv4                    | `IPAddress`, `string`                            | Deve ser IPv4; `string` é analisada via `IPAddress.Parse()`                                                                                                                                                                                                                                                |
+| IPv6                    | `IPAddress`, `string`                            | Deve ser IPv6; `string` é analisada via `IPAddress.Parse()`                                                                                                                                                                                                                                                |
+| Nothing                 | Qualquer                                         | Não grava nada (no-op)                                                                                                                                                                                                                                                                                     |
+| Dynamic                 | —                                                | **Sem suporte** (lança `NotImplementedException`)                                                                                                                                                                                                                                                          |
+| Array(T)                | `IList`, `null`                                  | `null` grava um array vazio. Para tipos Nested (`Array(Array(T))` e mais profundos), são aceitos tanto formatos irregulares (`T[][]`, `List<List<T>>`) quanto arrays CLR multidimensionais retangulares (`T[,]`, `T[,,]`, …); o rank do CLR deve corresponder à profundidade de aninhamento no ClickHouse. |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                                | A quantidade de elementos deve corresponder à aridade da tupla. Veja a [ressalva sobre ValueTuple](#valuetuple-caveat) para mais de 7 elementos.                                                                                                                                                           |
+| Map(K, V)               | `IDictionary`, `IEnumerable<KeyValuePair<K, V>>` | Uma sequência de pares (por exemplo, a `List<KeyValuePair<K, V>>` produzida por `MapReadMode=KeyValuePairs`) é aceita em qualquer modo de leitura e pode repetir uma chave. Aplica-se a inserts binários e a query parameters                                                                            |
+| Nullable(T)             | `null`, `DBNull`, ou tipos aceitos por T         | Grava o byte indicador de null antes do valor                                                                                                                                                                                                                                                              |
+| Enum8                   | `string`, `sbyte`, tipos numéricos               | `string` é procurada no dicionário do enum                                                                                                                                                                                                                                                                 |
+| Enum16                  | `string`, `short`, tipos numéricos               | `string` é procurada no dicionário do enum                                                                                                                                                                                                                                                                 |
+| LowCardinality(T)       | Tipos aceitos por T                              | Delega ao tipo subjacente                                                                                                                                                                                                                                                                                  |
+| SimpleAggregateFunction | Tipos aceitos pelo tipo subjacente               | Delega ao tipo subjacente                                                                                                                                                                                                                                                                                  |
+| Nested(...)             | `IList` de tuplas                                | A quantidade de elementos deve corresponder à quantidade de campos                                                                                                                                                                                                                                         |
+| Variant(T1, T2, ...)    | Valor correspondente a um de T1, T2, ...         | Lança `ArgumentException` se não houver correspondência de tipo                                                                                                                                                                                                                                            |
+| QBit(T, dim)            | `IList`                                          | Delega a Array; a dimensão é apenas metadado                                                                                                                                                                                                                                                               |
 
 ***
 
-<div id="type-map-reading-geometry">
-  #### Tipos de geometria
-</div>
+#### Tipos de geometria {#type-map-writing-geometry}
 
 | Tipo do ClickHouse | Tipos .NET aceitos                                      | Observações                            |
 | ------------------ | ------------------------------------------------------- | -------------------------------------- |
@@ -1795,9 +2142,7 @@ A correspondência entre o nome da propriedade e as dicas de tipo da coluna dife
 
 ***
 
-<div id="type-map-writing-not-supported">
-  #### Não suportado para escrita
-</div>
+#### Não suportado para escrita {#type-map-writing-not-supported}
 
 | Tipo do ClickHouse | Notas                              |
 | ------------------ | ---------------------------------- |
@@ -1806,9 +2151,7 @@ A correspondência entre o nome da propriedade e as dicas de tipo da coluna dife
 
 ***
 
-<div id="nested-type-handling">
-  ### Tratamento do tipo Nested
-</div>
+### Tratamento do tipo Nested {#nested-type-handling}
 
 Os tipos aninhados do ClickHouse (`Nested(...)`) podem ser lidos e gravados usando semântica de arrays.
 
@@ -1830,15 +2173,11 @@ await client.InsertBinaryAsync(
 );
 ```
 
-<div id="logging-and-diagnostics">
-  ## Logging e diagnósticos
-</div>
+## Logging e diagnósticos {#logging-and-diagnostics}
 
 O cliente .NET do ClickHouse se integra às abstrações `Microsoft.Extensions.Logging` para oferecer logging leve e opcional. Quando habilitado, o driver emite mensagens estruturadas para eventos do ciclo de vida da conexão, execução de comandos, operações de transporte e operações de inserção em massa. O logging é totalmente opcional — aplicações que não configuram um logger continuam em execução sem sobrecarga adicional.
 
-<div id="logging-quick-start">
-  ### Início rápido
-</div>
+### Início rápido {#logging-quick-start}
 
 ```csharp
 using ClickHouse.Driver;
@@ -1859,9 +2198,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-appsettings-config">
-  #### Usando appsettings.json
-</div>
+#### Usando appsettings.json {#logging-appsettings-config}
 
 Você pode configurar os níveis de log usando a configuração padrão do .NET:
 
@@ -1890,9 +2227,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-inmemory-config">
-  #### Usando configuração em memória
-</div>
+#### Usando configuração em memória {#logging-inmemory-config}
 
 Você também pode configurar o nível de verbosidade do logging por categoria no código:
 
@@ -1927,9 +2262,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-categories">
-  ### Categorias e emissores
-</div>
+### Categorias e emissores {#logging-categories}
 
 O driver usa categorias específicas para que você possa ajustar com precisão os níveis de log por componente:
 
@@ -1941,9 +2274,7 @@ O driver usa categorias específicas para que você possa ajustar com precisão 
 | `ClickHouse.Driver.Client`     | `ClickHouseClient`     | Insert binário, consultas e outras operações                                                                                  |
 | `ClickHouse.Driver.NetTrace`   | `TraceHelper`          | Rastreamento de rede, somente quando o modo de depuração está habilitado                                                      |
 
-<div id="logging-config-example">
-  #### Exemplo: Diagnóstico de problemas de conexão
-</div>
+#### Exemplo: Diagnóstico de problemas de conexão {#logging-config-example}
 
 ```json
 {
@@ -1966,9 +2297,7 @@ Isso registrará:
 * Eventos de abertura/fechamento de conexões
 * Rastreamento do ID da sessão
 
-<div id="logging-debugmode">
-  ### Modo de depuração: rastreamento de rede e diagnósticos
-</div>
+### Modo de depuração: rastreamento de rede e diagnósticos {#logging-debugmode}
 
 Para ajudar a diagnosticar problemas de rede, a biblioteca do driver inclui um auxiliar que habilita o rastreamento de baixo nível dos componentes internos de rede do .NET. Para habilitá-lo, você deve passar uma LoggerFactory com o nível definido como Trace e definir EnableDebugMode como true (ou habilitá-lo manualmente pela classe `ClickHouse.Driver.Diagnostic.TraceHelper`). Os eventos serão registrados na categoria `ClickHouse.Driver.NetTrace`. Aviso: isso gerará logs extremamente detalhados e afetará o desempenho. Não é recomendável habilitar o modo de depuração em production.
 
@@ -1987,15 +2316,11 @@ var settings = new ClickHouseClientSettings()
 };
 ```
 
-<div id="opentelemetry">
-  ## OpenTelemetry
-</div>
+## OpenTelemetry {#opentelemetry}
 
 O driver oferece suporte nativo ao rastreamento distribuído com OpenTelemetry por meio da API .NET [`System.Diagnostics.Activity`](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/distributed-tracing). Quando habilitado, o driver emite spans para operações de banco de dados que podem ser exportados para backends de observabilidade, como Jaeger ou o próprio ClickHouse (por meio do [OpenTelemetry Collector](/pt-BR/guides/use-cases/observability/build-your-own/integrating-opentelemetry)).
 
-<div id="opentelemetry-enabling">
-  ### Habilitando o rastreamento
-</div>
+### Habilitando o rastreamento {#opentelemetry-enabling}
 
 Em aplicações ASP.NET Core, adicione o `ActivitySource` do driver do ClickHouse à configuração do OpenTelemetry:
 
@@ -2019,9 +2344,7 @@ var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .Build();
 ```
 
-<div id="opentelemetry-attributes">
-  ### Atributos de span
-</div>
+### Atributos de span {#opentelemetry-attributes}
 
 Cada span inclui atributos de banco de dados padrão do OpenTelemetry, além de estatísticas de consulta específicas do ClickHouse que podem ser usadas para depuração.
 
@@ -2037,9 +2360,7 @@ Cada span inclui atributos de banco de dados padrão do OpenTelemetry, além de 
 | `db.clickhouse.written_bytes` | Bytes gravados pela consulta                   |
 | `db.clickhouse.elapsed_ns`    | Tempo de execução no servidor em nanossegundos |
 
-<div id="opentelemetry-configuration">
-  ### Opções de configuração
-</div>
+### Opções de configuração {#opentelemetry-configuration}
 
 Controle o comportamento do rastreamento por meio de `ClickHouseDiagnosticsOptions`:
 
@@ -2057,15 +2378,11 @@ ClickHouseDiagnosticsOptions.StatementMaxLength = 500;
   Ativar `IncludeSqlInActivityTags` pode expor dados sensíveis nos seus traces. Use com cautela em ambientes de produção.
 </Warning>
 
-<div id="tls-configuration">
-  ## Configuração de TLS
-</div>
+## Configuração de TLS {#tls-configuration}
 
 Ao se conectar ao ClickHouse via HTTPS, você pode configurar o comportamento do TLS/SSL de várias formas.
 
-<div id="custom-certificate-validation">
-  ### Validação personalizada de certificados
-</div>
+### Validação personalizada de certificados {#custom-certificate-validation}
 
 Para ambientes de produção que exigem uma lógica personalizada de validação de certificados, forneça seu próprio `HttpClient` com um handler `ServerCertificateCustomValidationCallback` configurado:
 
@@ -2076,20 +2393,18 @@ using ClickHouse.Driver;
 
 var handler = new HttpClientHandler
 {
-    // Obrigatório quando a compactação está ativada (padrão)
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-
+    // No AutomaticDecompression needed: the driver decodes compressed responses itself.
     ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) =>
     {
-        // Exemplo: Aceitar a impressão digital de um certificado específico
+        // Example: Accept a specific certificate thumbprint
         if (cert?.Thumbprint == "YOUR_EXPECTED_THUMBPRINT")
             return true;
 
-        // Exemplo: Aceitar certificados de um emissor específico
+        // Example: Accept certificates from a specific issuer
         if (cert?.Issuer.Contains("YourOrganization") == true)
             return true;
 
-        // Padrão: usar a validação padrão
+        // Default: Use standard validation
         return sslPolicyErrors == SslPolicyErrors.None;
     },
 };
@@ -2109,13 +2424,203 @@ using var client = new ClickHouseClient(settings);
 <Note>
   Considerações importantes ao fornecer um HttpClient personalizado
 
-  * **Descompressão automática**: Você deve habilitar `AutomaticDecompression` se a compressão não estiver desabilitada (a compressão é habilitada por padrão).
+  * **Descompressão automática**: deixe `AutomaticDecompression` desativado. O próprio driver decodifica as respostas comprimidas, portanto ele não é necessário — e habilitá-lo trabalha contra você no lado da requisição: no momento do envio, o handler *também adiciona* todos os algoritmos de sua máscara ao `Accept-Encoding` de saída, ampliando o que o driver havia anunciado, de modo que o ClickHouse pode responder com um codec que você não solicitou. Consulte [Descompressão de respostas](#response-decompression).
   * **Tempo limite de inatividade**: Defina `PooledConnectionIdleTimeout` com um valor menor que o `keep_alive_timeout` do servidor (10 segundos para ClickHouse Cloud) para evitar erros de conexão causados por conexões semiabertas.
 </Note>
 
-<div id="orm-support">
-  ## Suporte a ORMs
-</div>
+## Tuning de desempenho {#performance-tuning}
+
+Esta seção descreve como usar o client para obter o melhor desempenho possível, além das diversas opções que você pode ajustar para deixar o client mais performático no seu caso de uso específico.
+
+### Visão geral {#perf-at-a-glance}
+
+| Se você | Faça isto |
+|---|---|---|
+| Lê linhas para POCOs | Use [`QueryAsync<T>`](#perf-read-path), e não `MapTo<T>` |
+| Faz inserções grandes | Aumente o [`InsertOptions.BatchSize`](#perf-insert-batching) |
+| Executa um aplicativo de console ou worker com muitas inserções | Ative o [Server GC](#perf-gc) |
+| Lê resultados grandes pela rede | Mantenha a compressão da resposta ativada (padrão) |
+| Insere por uma conexão rápida | Experimente [`InsertOptions.Compressor = null`](#perf-compression) |
+| Insere na mesma tabela muitas vezes | Use [`UseSchemaCache` ou `ColumnTypes`](#skip-schema-query) |
+| Lê resultados muito grandes | Aumente o [`ReadBufferSize`](#perf-buffers) |
+
+***
+
+### Leitura: escolha o caminho de materialização {#perf-read-path}
+
+Há três maneiras de obter uma linha de um resultado, e elas não têm o mesmo custo. Alguns desses caminhos fazem boxing dos resultados, o que aumenta as alocações e reduz o desempenho.
+
+| Como você lê                                                                                                    | Faz boxing de cada valor | Notas                                                                             |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------- |
+| `QueryAsync<T>`                                                                                                 | **No**                   | Lê do stream diretamente para as suas propriedades. O caminho rápido.               |
+| Accessors tipados do leitor (`GetInt32`, `GetInt64`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetFieldValue<T>`) | **No**                   | Leitura sem boxing a partir de um armazenamento de valores tipados.               |
+| `MapTo<T>`                                                                                                      | Sim                      | Materializa a linha primeiro e depois copia os valores dela.                      |
+| `GetValue` e `GetValues`                                                                                        | Sim                      | Retornam `object`, portanto o valor precisa sofrer boxing quando você o solicita. |
+
+Para uma leitura de 1.000.000 de linhas em 105 colunas do dataset *hits*:
+
+| API             |      Alocado |
+| --------------- | -----------: |
+| `QueryAsync<T>` | **1.372 MB** |
+| `MapTo<T>`      |     3.133 MB |
+
+```csharp
+// Fast path: register the type once, then stream rows directly into it.
+client.RegisterPocoType<HitRow>();
+
+await foreach (var row in client.QueryAsync<HitRow>("SELECT * FROM hits"))
+    Process(row);
+```
+
+<Note>
+  *ORMs seguem o caminho rápido quando usam accessors tipados.* O linq2db registra `GetInt64`,
+  `GetDouble` e `GetDateTime` para cada coluna, portanto faz a leitura sem boxing. Código que lê por meio de
+  `GetValue` (incluindo um resultado `dynamic` do Dapper) aplica boxing a cada valor. Se uma consulta de ORM for muito frequente
+  e ler por meio de `GetValue`, use `QueryAsync<T>` para essa consulta específica.
+</Note>
+
+***
+
+### Inserção: tamanho do lote e paralelismo {#perf-insert-batching}
+
+O tamanho do lote é o principal fator de controle sobre o throughput de inserção. `InsertOptions.BatchSize` tem
+valor padrão de 100.000 linhas.
+
+**Use lotes grandes.** Em uma inserção de 1.000.000 de linhas, aumentar de 10.000 para 100.000 linhas por
+lote resultou em:
+
+| Inserção   | 10.000 linhas/lote | 100.000 linhas/lote |      |
+| ---------- | -----------------: | ------------------: | ---: |
+| POCO       |          15.308 ms |            7.853 ms | −49% |
+| `object[]` |          17.027 ms |           10.671 ms | −37% |
+
+Se você não puder controlar o tamanho do lote (por exemplo, quando muitos produtores pequenos enviam linhas de forma independente), use [async inserts](#async-inserts) e deixe o servidor fazer o batching.
+
+**Uploads paralelos.** `InsertOptions.MaxDegreeOfParallelism` tem valor padrão `1`. Aumente-o para enviar
+lotes simultaneamente. O ganho é maior quando a compressão está ativada, pois cada lote é comprimido
+em sua própria thread. Sessions não funcionam com inserções paralelas: desative as sessions ou mantenha
+`MaxDegreeOfParallelism = 1`.
+
+**Remova o schema probe.** Cada chamada `InsertBinaryAsync` envia primeiro uma consulta `SELECT ... WHERE 1=0`
+para descobrir os column types. Consulte [Ignorando a schema probe query](#skip-schema-query) para eliminar esse
+round trip com `ColumnTypes` ou `UseSchemaCache`.
+
+<Note>
+  O caminho de inserção sem boxing se aplica ao format padrão `RowBinary`. O `RowBinaryWithDefaults` precisa
+  examinar cada value para encontrar o marker `DBDefault`, portanto mantém o caminho mais lento.
+</Note>
+
+***
+
+### Compressão: as duas direções discordam {#perf-compression}
+
+A compressão troca CPU por bytes. Se essa troca vale a pena depende da direção da
+transferência, da largura de banda da sua conexão com o servidor ClickHouse, de como seus dados interagem com o algoritmo de compressão escolhido e de você pagar ou não por cada byte transferido.
+
+**Leituras:** mantenha a compressão ativada, a menos que o servidor esteja em execução na mesma máquina. Esse é o padrão. Em comparação com a ausência de compressão, o `zstd` no nível 1
+resultou em:
+
+| Cliente para servidor   | Efeito da compressão |
+| ----------------------- | -------------------- |
+| Mesmo host (loopback)   | Custa 8%             |
+| Mesma região de nuvem   | **Economiza 16%**    |
+| Uma região de distância | **Economiza 33%**    |
+
+**Inserções:** meça antes de comprimir. A economia pode não ser suficiente para justificar a ativação. Lembre-se também de que a descompressão gera carga adicional no servidor; essa carga é modesta para Zstd e LZ4, mas pode ser alta para outros algoritmos (por exemplo, Brotli).
+
+Para desativar a compressão de inserções:
+
+```csharp
+var options = new InsertOptions { Compressor = null };
+await client.InsertBinaryAsync("my_table", columns, rows, options);
+```
+
+Para a escolha do codec, os níveis de compressão e como encontrar seu próprio ponto de equilíbrio, consulte
+[Ajuste da compressão](#tuning-compression).
+
+***
+
+### Buffers {#perf-buffers}
+
+`ReadBufferSize` define o tamanho do buffer que lê as respostas HTTP. O padrão é 64 KiB.
+
+O driver toma emprestado esse buffer de um pool compartilhado e o devolve ao descartar o leitor, ou seja, não há uma alocação a cada consulta. Aumente esse valor para reduzir o número de recargas do buffer em resultados grandes. O driver mantém um buffer para cada leitor aberto simultaneamente, portanto o uso de memória cresce conforme o tamanho do buffer e o número de leitores concorrentes.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost") { ReadBufferSize = 256 * 1024 };
+```
+
+<Warning>
+  *Sempre descarte os leitores.* Ao ser descartado, um leitor devolve seu buffer ao pool e libera sua
+  conexão HTTP. Abandonar um leitor não devolve o buffer ao pool e pode deixar a conexão HTTP
+  indisponível; a coleta de lixo comum não substitui o descarte explícito.
+</Warning>
+
+***
+
+### Runtime e GC {#perf-gc}
+
+**Ative o Server GC em aplicações com alto volume de inserções.** Com o mesmo código e a mesma quantidade de
+bytes alocados, o Workstation GC foi até 97% mais lento nas inserções do que o Server GC.
+
+```xml
+<PropertyGroup>
+  <ServerGarbageCollection>true</ServerGarbageCollection>
+</PropertyGroup>
+```
+
+Projetos ASP.NET Core já definem isso. Aplicações de console, worker services e a maioria das imagens
+de contêiner não.
+
+A causa é o tamanho do orçamento da geração 0. O Workstation GC usa um orçamento pequeno, de modo que
+os buffers de vida curta criados por um insert não morrem na geração 0. Em vez disso, eles migram para
+a geração 1, o que aumenta a promoção e gera muito mais trabalho na geração 2. Em um caso de insert,
+as coletas da geração 2 a cada 1.000 operações foram 4.000 com o Server GC e 73.000 com o
+Workstation GC.
+
+<Note>
+  O Server GC é uma configuração de throughput, não de latência. Nas mesmas medições, o Server GC passou
+  menos da metade do tempo total pausado, mas suas pausas individuais foram mais longas
+  (percentil 95 de 114,6 ms contra 61,9 ms). Se o seu service for sensível a latência de cauda, meça
+  os dois modes antes de escolher.
+</Note>
+
+***
+
+### Latência: reutilize conexões {#perf-latency}
+
+Estabelecer uma nova conexão TCP e realizar o handshake TLS leva um tempo considerável.
+Reutilizar conexões reduz significativamente a latência das suas consultas.
+
+* Não crie um client para cada requisição. Cada novo client, com seu próprio `HttpClient`, cria um novo
+  pool de conexões e paga novamente pelo handshake. Use um único `ClickHouseClient` durante todo o ciclo de vida da aplicação. Ele é thread-safe e foi projetado para
+  uso como singleton.
+* Para ADO.NET e ORMs, use `ClickHouseDataSource`, de modo que todas as conexões compartilhem um único pool.
+
+Para o conjunto completo de padrões, consulte
+[Ciclo de vida e pooling de conexões](#best-practices-connection-lifetime).
+
+***
+
+### Meça você mesmo {#perf-measuring}
+
+Em muitos casos, o desempenho dependerá do formato dos seus dados, da velocidade da sua conexão com o servidor,
+de você querer ou não trocar CPU do cliente por CPU do servidor (ou vice-versa), das limitações do seu hardware, etc.
+Por isso, recomenda-se medir o desempenho você mesmo, com base nos seus dados e no seu ambiente.
+
+Para ver a parcela de trabalho do servidor, defina `QueryOptions.QueryId` e leia os counters:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+***
+
+## Suporte a ORMs {#orm-support}
 
 ORMs exigem a API ADO.NET (`ClickHouseConnection`). Para gerenciar corretamente o ciclo de vida da conexão, crie as conexões a partir de um `ClickHouseDataSource`:
 
@@ -2128,9 +2633,7 @@ await using var connection = await dataSource.OpenConnectionAsync();
 // Passe a conexão para o seu ORM...
 ```
 
-<div id="orm-support-dapper">
-  ### Dapper
-</div>
+### Dapper {#orm-support-dapper}
 
 `ClickHouse.Driver` funciona com Dapper. O driver converte automaticamente a sintaxe `@parameter` do Dapper para a sintaxe nativa `{parameter:Type}` do ClickHouse, com os tipos inferidos a partir dos valores do .NET.
 
@@ -2143,9 +2646,7 @@ services.AddSingleton(dataSource); // Registrar como singleton na injeção de d
 using var connection = dataSource.CreateConnection();
 ```
 
-<div id="dapper-parameter-passing">
-  #### Estilos de passagem de parâmetros
-</div>
+#### Estilos de passagem de parâmetros {#dapper-parameter-passing}
 
 Todos os estilos padrão de passagem de parâmetros do Dapper são compatíveis:
 
@@ -2190,9 +2691,7 @@ var rows = await connection.QueryAsync<User>(
     "SELECT id, name FROM users WHERE id = @Id", dynParams);
 ```
 
-<div id="dapper-pocos">
-  #### Consultas com POCOs
-</div>
+#### Consultas com POCOs {#dapper-pocos}
 
 O Dapper mapeia colunas para propriedades pelo nome (sem diferenciar maiúsculas de minúsculas):
 
@@ -2211,9 +2710,7 @@ var users = (await connection.QueryAsync<User>("SELECT id, name, balance FROM us
 var row = (await connection.QueryAsync<User>("SELECT 1 as id, 'hello' as name, 2.5 as balance")).Single();
 ```
 
-<div id="dapper-clickhouse-param-syntax">
-  #### Sintaxe nativa de parâmetros do ClickHouse
-</div>
+#### Sintaxe nativa de parâmetros do ClickHouse {#dapper-clickhouse-param-syntax}
 
 Quando precisar de controle explícito sobre o tipo, use diretamente no SQL a sintaxe `{param:Type}` do ClickHouse com um `Dictionary<string, object>` para os valores dos parâmetros. Não combine a sintaxe `@param` com a sintaxe `{param:Type}` para o mesmo parâmetro.
 
@@ -2222,9 +2719,7 @@ var parameters = new Dictionary<string, object> { { "value", 42 } };
 var result = await connection.QueryAsync<int>("SELECT {value:Int32}", parameters);
 ```
 
-<div id="dapper-where-in">
-  #### WHERE IN
-</div>
+#### WHERE IN {#dapper-where-in}
 
 **A expansão nativa do IN no Dapper funciona:**
 
@@ -2245,9 +2740,7 @@ var rows = await connection.QueryAsync<User>(
     parameters);
 ```
 
-<div id="dapper-type-handlers">
-  #### Manipuladores de tipo personalizados
-</div>
+#### Manipuladores de tipo personalizados {#dapper-type-handlers}
 
 Alguns tipos do ClickHouse, como `ITuple`, `BigInteger` e `ClickHouseDecimal`, precisam ter manipuladores registrados na inicialização:
 
@@ -2264,9 +2757,7 @@ SqlMapper.AddTypeHandler(new IpAddressHandler());
 
 Consulte o [exemplo do Dapper](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/ORM/ORM_001_Dapper.cs) para ver uma implementação de exemplo de um manipulador de tipos.
 
-<div id="dapper-contrib">
-  #### Dapper.Contrib
-</div>
+#### Dapper.Contrib {#dapper-contrib}
 
 `GetAll<T>()` e `Get<T>(id)` funcionam. `Insert<T>()` não — ele gera sintaxe do SQL Server (`SCOPE_IDENTITY`, `[]`). Recomenda-se usar, em vez disso, o método nativo `InsertBinaryAsync` do `ClickHouseClient`.
 
@@ -2280,9 +2771,7 @@ var one = await connection.GetAsync<UserRecord>(1);
 
 Os nomes das propriedades devem corresponder exatamente aos nomes de coluna do ClickHouse (diferenciam maiúsculas de minúsculas).
 
-<div id="dapper-limitations">
-  #### Limitações
-</div>
+#### Limitações {#dapper-limitations}
 
 | O que                          | Status        | Detalhes                                                                        |
 | ------------------------------ | ------------- | ------------------------------------------------------------------------------- |
@@ -2293,9 +2782,7 @@ Os nomes das propriedades devem corresponder exatamente aos nomes de coluna do C
 | `Dapper.Contrib.Insert<T>()`   | Não suportado | Gera sintaxe específica do SQL Server                                           |
 | Tipo `Nothing`                 | Não suportado | Sem representação significativa no .NET                                         |
 
-<div id="orm-support-linq2db">
-  ### Linq2db
-</div>
+### Linq2db {#orm-support-linq2db}
 
 Este driver é compatível com o [linq2db](https://github.com/linq2db/linq2db), um ORM leve e provedor LINQ para .NET. Consulte o site do projeto para obter a documentação detalhada.
 
@@ -2355,9 +2842,7 @@ var options = new BulkCopyOptions
 await table.BulkCopyAsync(options, products);
 ```
 
-<div id="orm-support-ef-core">
-  ### Entity Framework Core
-</div>
+### Entity Framework Core {#orm-support-ef-core}
 
 O provedor oficial do Entity Framework Core para ClickHouse. Mapeie classes C# para tabelas do ClickHouse, faça consultas com LINQ e insira dados via `SaveChanges` — tudo usando os padrões familiares do EF Core.
 
@@ -2368,9 +2853,7 @@ O provedor oficial do Entity Framework Core para ClickHouse. Mapeie classes C# p
   Este provedor está em desenvolvimento ativo. O lançamento atual oferece suporte a consultas LINQ (incluindo junções, subconsultas e operações de conjunto), `INSERT` via `SaveChanges` / `BulkInsertAsync`, migrations com DDL completo (CREATE / ALTER / DROP) e configuração específica do motor de tabela do ClickHouse. `UPDATE` / `DELETE` não são suportados.
 </Note>
 
-<div id="ef-core-installation">
-  #### Instalação
-</div>
+#### Instalação {#ef-core-installation}
 
 ```bash
 dotnet add package ClickHouse.EntityFrameworkCore
@@ -2378,9 +2861,7 @@ dotnet add package ClickHouse.EntityFrameworkCore
 
 Requer o .NET 10.0 e o EF Core 10.
 
-<div id="ef-core-quick-start">
-  #### Início rápido
-</div>
+#### Início rápido {#ef-core-quick-start}
 
 Defina sua entidade e o `DbContext` e, em seguida, consulte com LINQ:
 
@@ -2415,9 +2896,7 @@ var topPages = await ctx.PageViews
     .ToListAsync();
 ```
 
-<div id="ef-core-types">
-  #### Tipos com suporte
-</div>
+#### Tipos com suporte {#ef-core-types}
 
 | Categoria             | Tipos do ClickHouse                                                                     | Tipos CLR                                                                                                      |
 | --------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -2443,9 +2922,7 @@ var topPages = await ctx.PageViews
 
 Use `ClickHouseDecimal` (de `ClickHouse.Driver.Numerics`) em vez de `decimal` quando precisar da precisão total de colunas `Decimal128`/`Decimal256` — o `decimal` do .NET é limitado a 28–29 dígitos significativos.
 
-<div id="ef-core-linq">
-  #### Operações LINQ compatíveis
-</div>
+#### Operações LINQ compatíveis {#ef-core-linq}
 
 **Consultas:** `Where`, `OrderBy`, `Take`, `Skip`, `Select`, `First`, `Single`, `Any`, `All`, `Count`, `Distinct`, `AsNoTracking`
 
@@ -2463,9 +2940,7 @@ Use `ClickHouseDecimal` (de `ClickHouse.Driver.Numerics`) em vez de `decimal` qu
 
 **Funções matemáticas:** métodos padrão de `Math` e `MathF` traduzidos para seus equivalentes no ClickHouse — funções aritméticas, logarítmicas, trigonométricas e utilitárias.
 
-<div id="ef-core-join-nulls">
-  ##### Semântica de NULL em LEFT JOIN
-</div>
+##### Semântica de NULL em LEFT JOIN {#ef-core-join-nulls}
 
 O provider injeta `set_join_use_nulls=1` automaticamente em cada conexão para atender às expectativas do Entity Framework em relação ao comportamento de JOIN.
 
@@ -2477,11 +2952,9 @@ optionsBuilder.UseClickHouse(connectionString, o => o.DisableJoinNullSemantics()
 
 Com o opt-out ativado, o LEFT JOIN retorna os valores padrão das colunas do ClickHouse, e a detecção de navegação baseada em nulos do EF não funciona mais como esperado. Use comparações explícitas com `0` / `""` em vez de `== null`.
 
-<div id="ef-core-insert">
-  #### Inserção de dados
-</div>
+#### Inserção de dados {#ef-core-insert}
 
-`SaveChanges` usa a API nativa `InsertBinaryAsync` do driver — codificação RowBinary com compressão GZip, muito mais eficiente do que SQL parametrizado:
+`SaveChanges` usa a API nativa `InsertBinaryAsync` do driver — codificação RowBinary com corpo da requisição comprimido, muito mais eficiente do que SQL parametrizado:
 
 ```csharp
 await using var ctx = new AnalyticsContext();
@@ -2505,11 +2978,9 @@ As entidades passam de `Added` para `Unchanged` após salvar, assim como em qual
 optionsBuilder.UseClickHouse("Host=localhost", o => o.MaxBatchSize(5000));
 ```
 
-<div id="bulk-insert">
-  #### Inserção em massa
-</div>
+#### Inserção em massa {#ef-core-bulk-insert}
 
-Para cargas de alta taxa de transferência, use `BulkInsertAsync` em vez de `SaveChanges`. Esse é um método de extensão no `DbContext` que ignora completamente o rastreador de alterações, a resolução de identidade e o gerenciamento de estado do EF Core — ele chama diretamente o `InsertBinaryAsync` do driver com codificação RowBinary e compressão GZip.
+Para cargas de alta taxa de transferência, use `BulkInsertAsync` em vez de `SaveChanges`. Esse é um método de extensão no `DbContext` que ignora completamente o rastreador de alterações, a resolução de identidade e o gerenciamento de estado do EF Core — ele chama diretamente o `InsertBinaryAsync` do driver com codificação RowBinary e um corpo da requisição comprimido.
 
 Isso o torna ideal para carregar grandes conjuntos de dados quando você não precisa rastrear entidades após a inserção:
 
@@ -2527,9 +2998,7 @@ long rowsInserted = await ctx.BulkInsertAsync(events);
 
 A entrada pode ser qualquer `IEnumerable<T>` — ela processa as entidades em fluxo, sem carregá-las todas na memória. O valor retornado é o número de linhas inseridas. As entidades **não** ficam vinculadas ao `DbContext` após a inserção, portanto não há transição de estado de `Added` → `Unchanged`.
 
-<div id="ef-core-enums">
-  #### Enums
-</div>
+#### Enums {#ef-core-enums}
 
 As colunas `Enum8`/`Enum16` do ClickHouse podem ser mapeadas como propriedades `string` ou como tipos `enum` em C#. Ao usar enums em C#, o provedor converte automaticamente entre o enum e sua representação textual:
 
@@ -2548,9 +3017,7 @@ var active = await ctx.Users
     .ToListAsync();
 ```
 
-<div id="ef-core-value-converters">
-  #### Conversões de tipos personalizadas
-</div>
+#### Conversões de tipos personalizadas {#ef-core-value-converters}
 
 O sistema `ValueConverter` do EF Core permite mapear tipos personalizados para tipos que o provedor já suporta. O provedor nunca vê seu tipo personalizado — o EF Core faz a conversão na interface entre os dois.
 
@@ -2609,9 +3076,7 @@ protected override void ConfigureConventions(ModelConfigurationBuilder configura
 }
 ```
 
-<div id="ef-core-column-types">
-  #### Anotações de tipo de coluna
-</div>
+#### Anotações de tipo de coluna {#ef-core-column-types}
 
 Para tipos escalares como `string`, `int`, `DateTime` etc., o provedor deduz automaticamente o tipo do ClickHouse. Para tipos parametrizados e wrappers, é necessário especificar explicitamente o tipo do ClickHouse.
 
@@ -2656,9 +3121,7 @@ modelBuilder.Entity<SensorReading>(e =>
 
 Wrappers aninhados como `Array(Nullable(Int32))` e `LowCardinality(Nullable(String))` são suportados — o provedor desempacota `Nullable` e `LowCardinality` automaticamente em todos os níveis de aninhamento.
 
-<div id="ef-core-variant-dynamic">
-  #### Colunas Variant e Dynamic
-</div>
+#### Colunas Variant e Dynamic {#ef-core-variant-dynamic}
 
 As colunas `Variant(T1, T2, ...)` e `Dynamic` do ClickHouse são mapeadas para `object` no .NET. Como `object` é genérico demais para a inferência automática de tipos, você deve declarar explicitamente o tipo de armazenamento por meio de `.HasColumnType()`:
 
@@ -2677,9 +3140,7 @@ entity.Property(e => e.Payload).HasColumnType("Dynamic");
 
 Ao ler, o valor é desserializado automaticamente para o tipo .NET correspondente ao discriminador armazenado (por exemplo, `string`, `ulong`, `ulong[]`).
 
-<div id="ef-core-json">
-  #### Colunas JSON
-</div>
+#### Colunas JSON {#ef-core-json}
 
 O provedor dá suporte ao tipo de coluna `Json` do ClickHouse, com mapeamento para `System.Text.Json.Nodes.JsonNode` (principal) ou `string` (via `ValueConverter` automático):
 
@@ -2728,9 +3189,7 @@ entity.Property(e => e.Data).HasColumnType("Json");
   * **Precisão de inteiros** — o JSON do ClickHouse armazena todos os inteiros como `Int64`. Ao ler com `JsonNode`, use `GetValue<long>()` em vez de `GetValue<int>()`.
 </Note>
 
-<div id="ef-core-engines">
-  #### Motores de tabela
-</div>
+#### Motores de tabela {#ef-core-engines}
 
 Configure os motores de tabela do ClickHouse e as cláusulas específicas de cada motor por meio da API fluente `ToTable(name, t => ...)`. Quando nenhum motor é configurado, o provedor usa `MergeTree`, com `ORDER BY` derivado da chave primária da entidade.
 
@@ -2781,9 +3240,7 @@ modelBuilder.Entity<Event>()
 
 Índices padrão (sem skipping) são ignorados silenciosamente, já que não têm equivalente no ClickHouse. Índices únicos geram exceção, pois o ClickHouse não impõe unicidade.
 
-<div id="ef-core-migrations">
-  #### Migrações
-</div>
+#### Migrações {#ef-core-migrations}
 
 Fluxo de trabalho padrão das migrações do EF Core:
 
@@ -2805,9 +3262,7 @@ Operações suportadas:
 | `ALTER TABLE ADD INDEX` / `DROP INDEX` | Somente índices de data skipping                                                                          |
 | `CREATE DATABASE` / `DROP DATABASE`    | Via `EnsureCreated` / `EnsureDeleted` e migrações                                                         |
 
-<div id="ef-core-limitations">
-  #### Limitações de migração
-</div>
+#### Limitações de migração {#ef-core-limitations}
 
 | Recurso                                                      | Motivo                                                                                                                                                                                           |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -2823,13 +3278,9 @@ Além das migrações, o provedor também ainda não oferece suporte a:
 * **Transações**: `BeginTransaction` é um no-op. Não há suporte a transações ACID no ClickHouse.
 * **Tradução de consultas com caminho JSON**: `entity.Data["key"]` em LINQ não é traduzido para a sintaxe SQL `data.key` do ClickHouse. Aplique filtros em colunas não JSON e inspecione o JSON na memória.
 
-<div id="limitations">
-  ## Limitações
-</div>
+## Limitações {#limitations}
 
-<div id="valuetuple-caveat">
-  ### Tuple com 8+ elementos e uma tupla aninhada na última posição
-</div>
+### Tuple com 8+ elementos e uma tupla aninhada na última posição {#valuetuple-caveat}
 
 Tipos `ValueTuple` de C# com mais de 7 elementos usam um esquema de aninhamento gerado pelo compilador: o 8º argumento genérico (`TRest`) é, ele próprio, um `ValueTuple` que contém os elementos restantes. Por exemplo, `(int, int, int, int, int, int, int, string, string)` é compilado como `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`.
 
@@ -2856,9 +3307,7 @@ Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create(Tuple.Create("a", "b")))
 
 ***
 
-<div id="aggregatefunction-columns">
-  ### Colunas do tipo AggregateFunction
-</div>
+### Colunas do tipo AggregateFunction {#aggregatefunction-columns}
 
 Colunas do tipo `AggregateFunction(...)` não podem ser consultadas nem inseridas diretamente.
 

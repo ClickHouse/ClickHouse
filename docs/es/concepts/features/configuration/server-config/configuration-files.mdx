@@ -28,7 +28,7 @@ Los archivos de configuración XML deben usar `<clickhouse>...</clickhouse>` com
 En los archivos de configuración YAML, `clickhouse:` es opcional; si no está presente, el analizador lo inserta automáticamente.
 
 <div id="merging">
-  ## Combinación de archivos de configuración
+  ## Combinación de archivos de configuración {#merging}
 </div>
 
 Dos archivos de configuración (normalmente, el archivo de configuración principal y otro archivo de configuración de `config.d/`) se combinan de la siguiente manera:
@@ -84,7 +84,7 @@ El archivo de configuración resultante de la combinación será:
 ```
 
 <div id="from_env_zk">
-  ### Sustitución por variables de entorno y nodos de ZooKeeper
+  ### Sustitución por variables de entorno y nodos de ZooKeeper {#from_env_zk}
 </div>
 
 Para indicar que el valor de un elemento debe sustituirse por el valor de una variable de entorno, puedes usar el atributo `from_env`.
@@ -138,7 +138,7 @@ Esto da como resultado la siguiente configuración:
 ```
 
 <div id="default-values">
-  #### Valores predeterminados
+  #### Valores predeterminados {#default-values}
 </div>
 
 Un elemento con los atributos `from_env` o `from_zk` también puede tener el atributo `replace="1"` (este último debe aparecer antes de `from_env`/`from_zk`).
@@ -170,7 +170,7 @@ Dando lugar a la siguiente configuración:
 ```
 
 <div id="substitution-with-file-content">
-  ## Sustitución con contenido de archivos
+  ## Sustitución con contenido de archivos {#substitution-with-file-content}
 </div>
 
 También es posible reemplazar partes de la configuración por el contenido de archivos. Esto puede hacerse de dos maneras:
@@ -200,7 +200,7 @@ A continuación se muestra un ejemplo:
 Si desea combinar el contenido sustituido con la configuración existente en lugar de añadirlo, puede usar el atributo `merge="true"`. Por ejemplo: `<include from_zk="/some_path" merge="true">`. En este caso, la configuración existente se combinará con el contenido de la sustitución y los valores de configuración existentes se reemplazarán por los de la sustitución.
 
 <div id="encryption">
-  ## Cifrado y ocultación de la configuración
+  ## Cifrado y ocultación de la configuración {#encryption}
 </div>
 
 Puede usar cifrado simétrico para cifrar un elemento de configuración, por ejemplo, una contraseña en texto plano o una clave privada.
@@ -322,7 +322,7 @@ Por ejemplo:
 ```
 
 <div id="user-settings">
-  ## Configuración de usuarios
+  ## Configuración de usuarios {#user-settings}
 </div>
 
 El archivo `config.xml` puede especificar una configuración independiente con ajustes de usuario, perfiles y cuotas. La ruta relativa a esta configuración se establece en el elemento `users_config`. De forma predeterminada, es `users.xml`. Si se omite `users_config`, los ajustes de usuario, los perfiles y las cuotas se especifican directamente en `config.xml`.
@@ -335,7 +335,7 @@ Los fragmentos de configuración de usuarios se combinan en orden lexicográfico
 Tenga en cuenta que los archivos de configuración primero se [combinan](#merging) teniendo en cuenta la configuración, y después se procesan las inclusiones.
 
 <div id="example">
-  ## Ejemplo de XML
+  ## Ejemplo de XML {#example}
 </div>
 
 Por ejemplo, puede tener un archivo de configuración independiente para cada usuario, así:
@@ -359,9 +359,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-<div id="example-1">
-  ## Ejemplos de YAML
-</div>
+## Ejemplos de YAML {#example-1}
 
 Aquí puede ver la configuración predeterminada escrita en YAML: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
@@ -477,7 +475,7 @@ XML correspondiente:
 ```
 
 <div id="implementation-details">
-  ## Detalles de implementación
+  ## Detalles de implementación {#implementation-details}
 </div>
 
 Para cada archivo de configuración, el servidor también genera archivos `file-preprocessed.xml` al iniciarse. Estos archivos contienen todas las sustituciones y anulaciones resueltas, y están pensados para uso informativo. Si se usaron sustituciones de ZooKeeper en los archivos de configuración, pero ZooKeeper no está disponible cuando se inicia el servidor, el servidor carga la configuración desde el archivo preprocesado.

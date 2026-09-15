@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="storage_connections_hard_limit">
-  ## storage_connections_hard_limit
-</div>
+## storage_connections_hard_limit {#storage_connections_hard_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200000" changeable_without_restart="No" />达到此限制时，如再尝试创建连接将抛出异常。将其设为 0 可关闭硬性限制。该限制适用于存储连接。
 
-<div id="storage_connections_rcvbuf">
-  ## storage_connections_rcvbuf
-</div>
+## storage_connections_rcvbuf {#storage_connections_rcvbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="是" />存储连接 (复制、分布式查询) 的 `SO_RCVBUF` 选项大小。如果设置为大于 0 的值，将覆盖内核对接收缓冲区的 TCP 自动调优。0 = 内核默认值 (自动调优) 。注意：将此设置改回 0 只会对新建连接恢复 自动调优；现有连接池中的连接会继续保留固定的缓冲区大小，直到被重新创建。
 
-<div id="storage_connections_sndbuf">
-  ## storage_connections_sndbuf
-</div>
+## storage_connections_sndbuf {#storage_connections_sndbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />存储连接 (复制、分布式查询) 的 `SO_SNDBUF` 选项的大小。如果将其设置为大于 0 的值，则会覆盖内核 TCP 对发送缓冲区的自动调优。0 = 内核默认值 (自动调优) 。注意：将此设置改回 0 后，只有新创建的连接才会恢复自动调优；连接池中的现有连接会继续保留固定的缓冲区大小，直到重新创建为止。
 
-<div id="storage_connections_soft_limit">
-  ## storage_connections_soft_limit
-</div>
+## storage_connections_soft_limit {#storage_connections_soft_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />超过此限制的连接其生存时间会显著缩短。该限制适用于存储连接。
 
-<div id="storage_connections_store_limit">
-  ## storage_connections_store_limit
-</div>
+## storage_connections_store_limit {#storage_connections_store_limit}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />超过此限制的连接在使用后会被重置。将其设为 0 可关闭连接缓存。该限制适用于存储连接。
+<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />池中保留以供复用的空闲连接的最大数量。当已存储的连接达到该数量后，后续连接在使用后会被重置，而不再保留。该限制不约束正在使用中的连接。将其设为 0 可关闭连接缓存。该限制适用于存储连接。
 
-<div id="storage_connections_warn_limit">
-  ## storage_connections_warn_limit
-</div>
+## storage_connections_warn_limit {#storage_connections_warn_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />如果正在使用的连接数超过此限制，系统会将 Warning 消息写入日志。该限制适用于存储连接。
 

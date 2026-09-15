@@ -7,13 +7,9 @@ title: '고급 데이터 삽입'
 doc_type: 'reference'
 ---
 
-<div id="inserting-data-with-clickhouse-connect--advanced-usage">
-  ## ClickHouse Connect를 사용한 데이터 삽입: 고급 사용법
-</div>
+## ClickHouse Connect를 사용한 데이터 삽입: 고급 사용법 {#inserting-data-with-clickhouse-connect--advanced-usage}
 
-<div id="insertcontexts">
-  ### InsertContexts
-</div>
+### InsertContexts {#insertcontexts}
 
 ClickHouse Connect는 Native 형식 삽입 작업과 `insert`, `insert_df` 메서드를 `InsertContext` 내에서 실행합니다. `insert_arrow`, `insert_df_arrow`, `raw_insert` 메서드는 payload를 직접 전송하며 `InsertContext`를 사용하지 않습니다. `InsertContext`에는 클라이언트 `insert` 메서드에 인수로 전달되는 모든 값이 포함됩니다. 또한 `InsertContext`가 처음 생성될 때 ClickHouse Connect는 효율적인 Native 형식 삽입에 필요한 대상 컬럼의 데이터 타입을 가져옵니다. 여러 번의 삽입에 `InsertContext`를 재사용하면 이러한 &quot;사전 쿼리&quot;를 수행하지 않아도 되므로, 삽입을 더 빠르고 효율적으로 실행할 수 있습니다.
 
@@ -35,50 +31,47 @@ assert qr.first_row[0] == 113
 
 `InsertContext`s에는 삽입 과정에서 갱신되는 가변 상태가 포함되어 있으므로 스레드에 안전하지 않습니다.
 
-<div id="write-formats">
-  ### 쓰기 포맷
-</div>
+### 쓰기 포맷 {#write-formats}
 
 쓰기 포맷은 일부 타입에 대해서만 구현되어 있습니다. 대부분의 경우 ClickHouse Connect는 컬럼의 첫 번째 NULL이 아닌 데이터 값을 기준으로 올바른 쓰기 포맷을 자동으로 결정합니다. 예를 들어 `DateTime` 컬럼의 첫 번째 값이 정수이면 클라이언트는 이를 epoch 초로 처리합니다.
 
 일반적으로 쓰기 포맷을 재정의할 필요는 없지만, `clickhouse_connect.datatypes.format`의 메서드를 사용하면 전역으로 설정할 수 있습니다. `Array`, `Nullable`, `LowCardinality`와 같은 컨테이너 래퍼는 내부 타입의 포맷 동작을 그대로 유지합니다.
 
-<div id="write-format-options">
-  #### 쓰기 포맷 옵션
-</div>
+#### 쓰기 포맷 옵션 {#write-format-options}
 
-| ClickHouse 유형         | 네이티브 Python 유형          | 쓰기 포맷             | 설명                                                                                                     |
-| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------ |
-| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                        |
-| UInt64                | int                     |                   |                                                                                                        |
-| [U]Int[128,256]       | int                     |                   |                                                                                                        |
-| BFloat16              | float                   |                   |                                                                                                        |
-| Float32               | float                   |                   |                                                                                                        |
-| Float64               | float                   |                   |                                                                                                        |
-| Decimal               | decimal.Decimal         |                   |                                                                                                        |
-| String                | str or bytes            |                   | 하나의 컬럼에는 텍스트 또는 bytes 중 하나만 일관되게 포함되어야 합니다.                                                            |
-| FixedString           | bytes                   | string            | String 값은 0 바이트로 채워집니다. 빈 bytes는 모두 0 바이트로 기록됩니다.                                                      |
-| Enum[8,16]            | str or int              |                   | 레이블은 문자열 또는 해당 내부 정수 값으로 삽입합니다.                                                                        |
-| Date                  | datetime.date           | int               | 정수 값은 1970-01-01 이후 경과한 일수로 해석됩니다.                                                                     |
-| Date32                | datetime.date           | int               | 정수 값은 부호 있는 일 오프셋으로 해석됩니다.                                                                             |
-| DateTime              | datetime.datetime       | int               | 정수 값은 epoch 초로 해석됩니다.                                                                                  |
-| DateTime64            | datetime.datetime       | int               | 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다.                                                                      |
-| Time                  | datetime.timedelta      | int, string, time | 정수 값은 초 단위로 해석됩니다.                                                                                     |
-| Time64                | datetime.timedelta      | int, string, time | 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다.                                                                      |
-| IPv4                  | `ipaddress.IPv4Address` | string            | 올바른 포맷의 문자열은 IPv4 주소로 삽입할 수 있습니다                                                                       |
-| IPv6                  | `ipaddress.IPv6Address` | string            | 올바른 포맷의 문자열은 IPv6 주소로 삽입할 수 있습니다                                                                       |
-| Tuple                 | dict or tuple           |                   |                                                                                                        |
-| Map                   | dict                    |                   |                                                                                                        |
-| Nested                | Sequence[dict]          |                   |                                                                                                        |
-| UUID                  | uuid.UUID               | string            | 올바른 포맷의 문자열은 ClickHouse UUID로 삽입할 수 있습니다                                                               |
-| JSON                  | dict                    | string            | 딕셔너리와 JSON 객체 문자열을 지원합니다. 기존 `Object('json')` 타입은 지원되지 않습니다.                                           |
-| Variant               | object                  |                   | 값은 네이티브 멤버 직렬화를 사용합니다. Python 타입이 모호한 경우 `clickhouse_connect.datatypes.dynamic.typed_variant`를 사용하십시오. |
-| Dynamic               | object                  |                   | 현재 값은 String 표현으로 삽입됩니다.                                                                               |
-| QBit                  | Sequence[float]         |                   | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                                                             |
+| ClickHouse 유형         | 네이티브 Python 유형          | 쓰기 포맷             | 설명                                                                                                                                        |
+| --------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                           |
+| UInt64                | int                     |                   |                                                                                                                                           |
+| [U]Int[128,256]       | int                     |                   |                                                                                                                                           |
+| BFloat16              | float                   |                   |                                                                                                                                           |
+| Float32               | float                   |                   |                                                                                                                                           |
+| Float64               | float                   |                   |                                                                                                                                           |
+| Decimal               | decimal.Decimal         |                   |                                                                                                                                           |
+| Interval*             | int                     |                   | 값은 해당 인터벌 타입의 단위로 표현된 부호 있는 64비트 카운트입니다.                                                                                                  |
+| String                | str or bytes            |                   | 하나의 컬럼에는 텍스트 또는 bytes 중 하나만 일관되게 포함되어야 합니다.                                                                                               |
+| FixedString           | bytes                   | string            | String 값은 0 바이트로 채워집니다. 빈 bytes는 모두 0 바이트로 기록됩니다.                                                                                         |
+| Enum[8,16]            | str or int              |                   | 레이블은 문자열 또는 해당 내부 정수 값으로 삽입합니다.                                                                                                           |
+| Date                  | datetime.date           | int               | 정수 값은 1970-01-01 이후 경과한 일수로 해석됩니다.                                                                                                        |
+| Date32                | datetime.date           | int               | 정수 값은 부호 있는 일 오프셋으로 해석됩니다.                                                                                                                |
+| DateTime              | datetime.datetime       | int               | 정수 값은 epoch 초로 해석됩니다.                                                                                                                     |
+| DateTime64            | datetime.datetime       | int               | 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다.                                                                                                         |
+| Time                  | datetime.timedelta      | int, string, time | 정수 값은 초 단위로 해석됩니다.                                                                                                                        |
+| Time64                | datetime.timedelta      | int, string, time | scale 0부터 9까지 지원됩니다. 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다. NumPy timedelta 값과 데이터프레임 삽입은 모든 scale에서 동작합니다. Python time 타입은 마이크로초까지만 지원됩니다. |
+| IPv4                  | `ipaddress.IPv4Address` | string            | 올바른 포맷의 문자열은 IPv4 주소로 삽입할 수 있습니다                                                                                                          |
+| IPv6                  | `ipaddress.IPv6Address` | string            | 올바른 포맷의 문자열은 IPv6 주소로 삽입할 수 있습니다                                                                                                          |
+| Tuple                 | dict or tuple           |                   | `Tuple()`에는 `()`를 사용하십시오.                                                                                                                 |
+| Map                   | dict                    |                   |                                                                                                                                           |
+| Nested                | Sequence[dict]          |                   |                                                                                                                                           |
+| UUID                  | uuid.UUID               | string            | 올바른 포맷의 문자열은 ClickHouse UUID로 삽입할 수 있습니다                                                                                                  |
+| JSON                  | dict                    | string            | 딕셔너리와 JSON 객체 문자열을 지원합니다. 기존 `Object('json')` 타입은 지원되지 않습니다.                                                                              |
+| Variant               | object                  |                   | 값은 네이티브 멤버 직렬화를 사용합니다. Python 타입이 모호한 경우 `clickhouse_connect.datatypes.dynamic.typed_variant`를 사용하십시오.                                    |
+| Dynamic               | object                  |                   | 현재 값은 String 표현으로 삽입됩니다.                                                                                                                  |
+| MultiPoint            | Sequence[tuple]         |                   | 각 point는 2-튜플입니다. MultiPoint 값을 삽입하려면 ClickHouse 26.8 이상이 필요합니다.                                                                          |
+| Geometry              | tuple or list           |                   | Point 값은 2-튜플입니다. MultiPoint를 포함한 리스트 기반 값은 `typed_variant`로 감싸서 geometry 멤버를 선택하십시오.                                                     |
+| QBit                  | Sequence[float]         |                   | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                                                                                                |
 
-<div id="specialized-insert-methods">
-  ### 특수화된 삽입 메서드
-</div>
+### 특수화된 삽입 메서드 {#specialized-insert-methods}
 
 ClickHouse Connect는 일반적으로 사용되는 데이터 포맷에 대해 특수화된 삽입 메서드를 제공합니다.
 
@@ -92,9 +85,7 @@ ClickHouse Connect는 일반적으로 사용되는 데이터 포맷에 대해 �
   NumPy array는 유효한 시퀀스(Sequence)의 시퀀스이므로 기본 `insert` 메서드의 `data` 인수로 사용할 수 있습니다. 따라서 별도의 특수화된 메서드는 필요하지 않습니다.
 </Note>
 
-<div id="pandas-dataframe-insert">
-  #### Pandas 데이터프레임 삽입
-</div>
+#### Pandas 데이터프레임 삽입 {#pandas-dataframe-insert}
 
 ```python
 import clickhouse_connect
@@ -111,9 +102,7 @@ df = pd.DataFrame({
 client.insert_df("users", df)
 ```
 
-<div id="pyarrow-table-insert">
-  #### PyArrow Table 삽입
-</div>
+#### PyArrow Table 삽입 {#pyarrow-table-insert}
 
 ```python
 import clickhouse_connect
@@ -130,9 +119,7 @@ arrow_table = pa.table({
 client.insert_arrow("users", arrow_table)
 ```
 
-<div id="arrow-backed-dataframe-insert-pandas-2">
-  #### Arrow 기반 DataFrame 삽입 (pandas 2.x)
-</div>
+#### Arrow 기반 DataFrame 삽입 (pandas 2.x) {#arrow-backed-dataframe-insert-pandas-2}
 
 ```python
 import clickhouse_connect
@@ -150,9 +137,7 @@ df = pd.DataFrame({
 client.insert_df_arrow("users", df)
 ```
 
-<div id="create-table-from-pyarrow-schema">
-  ### PyArrow 스키마에서 테이블 만들기
-</div>
+### PyArrow 스키마에서 테이블 만들기 {#create-table-from-pyarrow-schema}
 
 `create_table_from_arrow_schema`는 일반적인 스칼라 Arrow 필드를 바탕으로 `CREATE TABLE` 문을 생성합니다. 이 매핑은 signed 및 unsigned 정수, 부동소수점 값, 불리언, 문자열, 날짜, 타임스탬프를 지원합니다. 의도적으로 NULL을 허용하지 않는 ClickHouse 컬럼을 생성하며, 지원되지 않는 Arrow 타입에는 `TypeError`를 발생시키므로 실행하기 전에 생성된 DDL을 검토하십시오.
 
@@ -179,15 +164,11 @@ ddl = create_table_from_arrow_schema(
 client.command(ddl)
 ```
 
-<div id="time-zones">
-  ### 시간대
-</div>
+### 시간대 {#time-zones}
 
 Python `datetime` 객체를 `DateTime` 또는 `DateTime64` 컬럼에 삽입하면, ClickHouse Connect가 이를 epoch 값으로 변환합니다.
 
-<div id="timezone-aware-datetime-objects">
-  #### 시간대 정보를 포함한 datetime 객체
-</div>
+#### 시간대 정보를 포함한 datetime 객체 {#timezone-aware-datetime-objects}
 
 시간대 정보를 포함한 객체는 나타내는 시점을 그대로 유지합니다. 소스 시간대가 ClickHouse 컬럼에 선언된 시간대와 일치할 필요는 없습니다.
 
@@ -216,9 +197,7 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   ClickHouse Connect는 표준 라이브러리 `zoneinfo` 모듈을 사용합니다. 드라이버는 더 이상 `pytz`에 의존하지 않습니다.
 </Note>
 
-<div id="timezone-naive-datetime-objects">
-  #### 시간대 정보가 없는 datetime 객체
-</div>
+#### 시간대 정보가 없는 datetime 객체 {#timezone-naive-datetime-objects}
 
 전역 `naive_datetime_insert` 설정은 시간대 정보가 없는 `datetime` 값의 네이티브 Python 객체 삽입 방식을 제어합니다. 또한 `DateTime64` 컬럼에서 허용하는 시간대 정보가 없는 ISO 문자열에도 적용됩니다.
 
@@ -259,9 +238,7 @@ client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 
 시간대 정보가 없는 `datetime` 쿼리 매개변수에는 별도의 `naive_datetime_binding` 설정이 사용됩니다. 기본 `"wall"` 모드에서는 호스트 로컬 시간으로 변환하지 않고 wall 필드를 전송합니다. [매개변수 인수](/ko/integrations/language-clients/python/driver-api#parameters-argument) 섹션을 참조하십시오.
 
-<div id="datetime-columns-with-timezone-metadata">
-  #### 시간대 메타데이터가 있는 DateTime 컬럼
-</div>
+#### 시간대 메타데이터가 있는 DateTime 컬럼 {#datetime-columns-with-timezone-metadata}
 
 ClickHouse 컬럼은 `DateTime('America/Denver')` 또는 `DateTime64(3, 'Asia/Tokyo')`처럼 시간대 메타데이터를 선언할 수 있습니다. 이 메타데이터는 쿼리 시 값이 어떻게 표시되는지를 제어합니다.
 
@@ -286,9 +263,7 @@ assert returned.hour == 7
 assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
 ```
 
-<div id="file-inserts">
-  ## 파일 삽입
-</div>
+## 파일 삽입 {#file-inserts}
 
 `clickhouse_connect.driver.tools.insert_file`은 로컬 파일을 기존 테이블에 스트리밍으로 삽입하고, 파싱은 ClickHouse에 맡깁니다.
 

@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-28
+title: 'デモデイズ - 2026-08-28'
+sidebarTitle: '2026-08-28'
+description: '2026-08-28 の ClickStack デモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## PromQL と Lucene でのダッシュボード変数 {#dashboard-variables-in-promql-and-lucene}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/q5pP20p4nY4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボード変数が PromQL チャートでも利用できるようになりました。変数参照のオートコンプリートに加え、変数が見つからない場合や、マクロや引用符が必要な参照といったサポート対象外の使い方に対する警告も表示されます。既存の生成された SQL パネルの横には生成された PromQL のプレビューが並び、現在の選択内容を反映したクエリを確認できます。
+
+Lucene 変数が完全一致に対応しました。従来、`ServiceName:$service` は `ServiceName:("add" OR "cart")` に展開されていました。引用符なしの Lucene フィールドマッチは部分一致となるため、これは `ServiceName ILIKE '%add%' OR ServiceName ILIKE '%cart%'` になります。2 つのサービスを選択したのに 4 件返ってくる、といったことが起こり得ました。
+
+変数を引用符で囲んだ `ServiceName:"$service"` は `(ServiceName:"add" OR ServiceName:"cart")` に展開され、選択した各値に完全一致するようになりました。これは、変数を使わない引用符付きフィールドマッチの既存の動作に合わせたものです。オートコンプリートでも引用符付きの形式が提案されます。
+
+チャートのツールチップやテーブル行から Search ページへドリルダウンする際、遷移前に変数とマクロが展開されるようになりました。Search ページは変数を解釈しないため、これまでは `$service` がそのまま渡され、誤った結果やクエリエラーになっていました。選択のないマクロは `(1=1)` に展開されます。Search ページの `WHERE` 入力欄では少々見栄えが悪いものの、クエリは有効なまま保たれます。
+
+フィルターの選択内容は、式ではなく変数名をキーとして管理されるようになりました。異なるソースの `ServiceName` など、同じ式を使う 2 つのフィルターが選択内容を共有することはなくなりました。
+
+フィルターの編集中に Escape を押すと、Brandon の提案どおり、変更を破棄する前に確認が表示されるようになりました。これまではツールチップを閉じようとしただけで編集内容がすべて失われることがありました。
+
+ダッシュボード変数は今週、本番環境に投入されました。機能トグルは廃止され、[公開ドキュメント](https://clickhouse.com/docs/clickstack/features/dashboards/overview#dashboard-variables)で参照形式とマクロについて説明しています。
+
+**関連 PR:** [#2994](https://github.com/hyperdxio/hyperdx/pull/2994) PromQL チャートでの変数の展開、[#2995](https://github.com/hyperdxio/hyperdx/pull/2995) PromQL 変数の補完を追加、[#2997](https://github.com/hyperdxio/hyperdx/pull/2997) 不正な PromQL 変数の使用に対する警告表示、[#2998](https://github.com/hyperdxio/hyperdx/pull/2998) 生成された PromQL プレビューを追加、[#2987](https://github.com/hyperdxio/hyperdx/pull/2987) 完全一致の Lucene 変数参照の展開、[#3008](https://github.com/hyperdxio/hyperdx/pull/3008) ドリルダウンで Search ページへ遷移する前に変数を展開、[#2963](https://github.com/hyperdxio/hyperdx/pull/2963) 変数をキーとしたダッシュボードフィルター値の受け入れ、[#2964](https://github.com/hyperdxio/hyperdx/pull/2964) 変数をキーとしたフィルター状態の永続化と読み取り、[#3005](https://github.com/hyperdxio/hyperdx/pull/3005) フィルターエディターを閉じる際に未保存の変更を破棄する前に確認、[#3009](https://github.com/hyperdxio/hyperdx/pull/3009) ダッシュボード変数の機能トグルを削除
+
+## 双方向の span リンク {#span-links-in-both-directions}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tdK9JU6unoE" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+span リンクは以前から表示できていましたが、consumer 側からのみでした。各リンクは「Open trace」アクションとして表示されるだけで、producer の span を起点にそこへリンクしている span をたどる手段はありませんでした。あるユーザーから GitHub の issue でこの機能の要望が寄せられていました。
+
+Span Links セクションに、リンク先の span の名前、service、duration、timestamp が表示されるようになりました。これにより、リンクが複数ある場合でも一つずつ開かずに選べます。リンク先の span が見つからない場合は、従来どおり「Open trace」が fallback として使われます。
+
+新たに追加された「Linked from」セクションには、現在の span へリンクしている span が一覧表示されます。consumer のリンクをたどって producer に移動すれば、そこに元の consumer が一覧表示されます。
+
+パンくずリスト上の直前の span へのリンクをたどると、そのエントリに戻るため、リンクされた 2 つの span 間を行き来しても重複したエントリが増え続けることはありません。その間に別のエントリがある場合は、通常どおり新しいエントリが追加されます。
+
+逆方向のルックアップでは、span リンクに選択した span ID を含む行を検索し、trace ID が一致するかを確認します。trace ID のルックアップは、そのカラムに設定された bloom filter の索引の恩恵を受けますが、逆方向のルックアップは scan を伴うため、デモよりも大きな traces テーブルでは遅くなる可能性があります。問題になるようであれば、コードのコメントに示されているとおり、リンク先 span ID に索引を追加できます。
+
+**関連 PR:** [#3011](https://github.com/hyperdxio/hyperdx/pull/3011) 逆方向の span リンクを追加、span リンクの詳細を表示
+
+## すぐに使える LLM オブザーバビリティ {#llm-observability-out-of-the-box}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/m49DZ5cuI64" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+多くのチームはすでに LLM やコーディングエージェントのテレメトリーを ClickStack に送信していますが、これまで専用のサポートはなく、チャットの表示もトークンやコストの追跡も、モデルの分析もできませんでした。
+
+既存の ClickHouse、Kubernetes、services のプリセットに加え、LLM ダッシュボードが利用できるようになりました。トークン使用量、コスト、モデル呼び出し、ツール呼び出し、キャッシュヒット、応答時間を網羅し、ユーザー属性が存在する場合はユーザー別の内訳も表示します。
+
+固定のスキーマや専用テーブル、取り込み時の処理を必要とせず、既存の traces と logs をクエリ時に読み取ります。一般的な規約、OpenLLMetry、OpenInference を用いたテレメトリーに対応しており、OpenAI および Anthropic の SDK、Vercel AI SDK、LangChain、Claude Code、opencode からのデータも利用できます。すでに収集済みのテレメトリーに対しても機能します。
+
+レイテンシービューでは AI 関連の spans が上位に表示されるため、trace の残りを一つずつ追わなくても、遅いモデル呼び出しを見つけやすくなります。
+
+sessions ビューは spans を conversation 単位でグループ化します。セッションを開くとその spans が表示され、いずれかを選択すると、記録されていれば prompt を含む詳細を確認できます。エージェントの実行をデバッグする際に役立ち、同じセッションフィルターで logs を検索することもできます。
+
+対象範囲は、評価機能などまで備えた Langfuse のような専用の LLM オブザーバビリティツールに比べ、意図的に絞っています。ここでは、すでに ClickStack にあるテレメトリーを用いて、エラー率、コスト、トークン、レイテンシーといった一般的な監視ニーズをカバーします。
+
+**関連 PR:** [#2990](https://github.com/hyperdxio/hyperdx/pull/2990) LLM オブザーバビリティダッシュボード、span チャットビュー、sessions
+
+## チャートエディターでのメトリクスの閲覧 {#browsing-metrics-in-the-chart-editor}
+
+*Demo by [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/TkFa6Zzq23o" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでメトリクスを選ぶには、種類ごとに最大 3,000 件に及ぶ名前のフラットなリストを検索する必要がありました。探しているものがおおよそ分かっている場合はオートコンプリートが役立ちますが、一覧をたどって探せるようにしてほしいという要望はフィードバックで何度も挙がっていました。
+
+メトリクス選択欄の隣に「Browse metrics」コントロールが追加され、左側にカタログ、右側に選択中のメトリクスの詳細を表示するエクスプローラーが開きます。メトリクス名はドットとアンダースコアで分割され、ツリー状に整理されます。子が 1 つしかないセグメントはまとめて折りたたまれるため、余計なクリックが発生しません。`Metric`、`Type`、`Unit` の各カラムはどの階層でも揃って表示されます。カタログ全体を検索することも、フラットなリストに切り替えることもできます。
+
+以前は、単位・説明・タグはメトリクスを選択した後、系列の行の下にある折りたたみパネルでしか確認できませんでした。詳細ペインでは選択前にこれらを確認できるため、自分のデプロイメントがどのようなメトリクスを出力しているか、どのタグでグループ化できるかを事前に把握できます。「Use metric」をクリックすると、編集中の系列に選択内容が適用されます。
+
+現時点では、動作が安定するまで目立たない場所に配置しています。
+
+**関連 PR:** [#3000](https://github.com/hyperdxio/hyperdx/pull/3000) チャートエディターへの Metrics Explorer の追加、[#3025](https://github.com/hyperdxio/hyperdx/pull/3025) プライマリインデックスからのメトリクス名のストリーミング (オープン) 、[#3054](https://github.com/hyperdxio/hyperdx/pull/3054) メトリクスのドロップダウンの UX 改善
+
+## Grafana における生 SQL クエリのログボリューム {#log-volume-for-raw-sql-queries-in-grafana}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/uehh44q56yE" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+見た目上はささやかな変更ですが、想定以上の作業を要しました。
+
+Grafana では、クエリビルダーで組み立てたログクエリの場合、結果の上部にボリュームヒストグラムが表示されます。plugin がどのカラムを使えばよいかを把握しているためです。一方、同じクエリを SQL エディタで実行するとヒストグラムは表示されませんでした。どのカラムを選択したのかを plugin が判別できないためです。Explore では代わりに Grafana の行ベースのヒストグラムが表示されますが、これはクエリの `LIMIT` に制限され、選択した時間範囲にも追従しませんでした。
+
+plugin は末尾の `ORDER BY` と `LIMIT` を取り除き、記述した SQL を派生テーブルとしてラップしたうえで、時間範囲全体にわたって集計するようになりました。ここで `LIMIT` を取り除くことが重要です。残したままだと、元のクエリが返す行の範囲にカウントが制限されてしまうためです。
+
+ヒストグラムは SQL のフィルター条件を反映し、時間範囲を変更すると更新されます。自分で記述した SQL でも、クエリビルダーの「Edit as SQL」から開いたクエリでも同様に機能します。
+
+クエリの書き換えがうまく機能しないエッジケースは、まだ残っている可能性があります。
+
+**関連 PR:** [grafana/clickhouse-datasource#2141](https://github.com/grafana/clickhouse-datasource/pull/2141) SQL エディタのクエリでログボリュームを表示 (オープン)
+
+## アラートページの通知チャンネル {#notification-channels-on-the-alerts-pages}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Gr-QkVVWam8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+1 つのアラートは最大 10 個の webhook に通知できますが、アラート一覧と詳細ヘッダーには最初の 1 つしか表示されず、しかも名前ではなく「Webhook」と表示されていました。どちらもレガシーの単一チャンネル用フィールドを参照したままだったためです。
+
+複数ターゲットへのディスパッチ自体は動作していましたが、表示上は追加したチャンネルが保存されていないように見えていました。
+
+一覧と詳細ヘッダーに、設定済みのすべてのチャンネルが名前で表示されるようになりました。webhook や incident.io インテグレーションを含め、チャンネルの追加・削除も簡単になっています。通知時間はターゲットごとに記録されるため、処理の遅いインテグレーションを特定できます。
+
+設定済みのチャンネルには直接通知されるようになりました。以前は webhook メンションに変換され、メッセージボディに追記されていました。この方式では通知が失われることがありました。ボディ内にすでにアドホックなメンションが多数含まれ、イベントあたりの上限に達していると、アラートに設定されたチャンネルがスキップされていたためです。
+
+コントロールが増えたことで、ページが手狭になっていました。エクスポートや Terraform を含む行アクションは、1 つのメニューにまとめられています。
+
+**関連 PR:** [#3001](https://github.com/hyperdxio/hyperdx/pull/3001) アラートページですべての通知ターゲットを表示、[#2991](https://github.com/hyperdxio/hyperdx/pull/2991) サマリー行にすべての通知チャンネルを表示、[#2984](https://github.com/hyperdxio/hyperdx/pull/2984) メンション文字列経由ではなく設定済みチャンネルへ直接通知、[#2961](https://github.com/hyperdxio/hyperdx/pull/2961) 失敗したメンションが通知スロットを消費しないように修正、[#3003](https://github.com/hyperdxio/hyperdx/pull/3003) アラート通知時間をターゲットごとに記録、[#3002](https://github.com/hyperdxio/hyperdx/pull/3002) アラートページの全行に同一の末尾コントロールを付与、[#3016](https://github.com/hyperdxio/hyperdx/pull/3016) アラート詳細ヘッダーを共有の行メニューに統合
+
+## 数万件のアラートのレンダリング {#rendering-1000s-alerts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/P9BPD9yoElo" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+アラートの評価は16,000件の同時実行アラートでテスト済みで、問題なく動作します。一方で、その件数のアラートがある状態でアラートページを開くと、動作が停止してしまっていました。
+
+リストが仮想化され、16,000件のアラートをレンダリングできるようになりました。ただし、すべてのアラートを取得してクライアント側でフィルタリングしているため、読み込みは依然として遅いままです。この点はページネーションの実装で対応中です。
+
+この変更には、MongoDB上で大量のアラートを投入・クリーンアップするスクリプトも含まれており、この規模でのページのテストをローカルで手軽に行えるようになっています。
+
+**関連PR:** [#3012](https://github.com/hyperdxio/hyperdx/pull/3012) アラートページのリストの仮想化
+
+## API key を表示操作の背後に隠す {#hiding-api-keys-behind-a-reveal}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/MNXABmTVEkE" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで認証情報はアプリ全体で平文のまま表示されていました。Team Settings ではインジェスト API key が完全な形で表示され、MCP のインストール用スニペットにはコマンド内にパーソナルアクセスキーが含まれていました。いずれも画面共有中やスクリーンショットで容易に流出しかねない状態でした。
+
+現在、キーはデフォルトでマスクされ、必要なときだけ表示できるコントロールが用意されています。この処理は共有コンポーネントが担い、インジェストキー、パーソナルアクセスキー、そしてコミュニティ提供のものを含む MCP インストール用スニペットに適用されます。
+
+コピー操作では実際の値が取得できるため、コピーのためにキーを表示する必要はありません。同じ変更は ClickStack Cloud のオンボーディングにも適用される予定です。
+
+**関連 PR:** [#2988](https://github.com/hyperdxio/hyperdx/pull/2988) API key と MCP インストール用スニペット内の secret を共有の RevealSnippet でマスク
+
+## 製品内のリリースノート {#release-notes-in-the-product}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/4vrzXy8JwZY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ヘルプメニューの「What&#39;s new」パネルは、これまで PR 単位の変更セットから `feat:` プレフィックスの付いたエントリを抽出していました。そのため v2.36.0 では ダッシュボード変数 が 3 回も掲載される一方で、そのリリースの主な変更点であった数式や アラート 関連の対応が抜け落ちていました。
+
+現在はルートの `CHANGELOG.md` を読み込むようになりました。このファイルは release PR の一部として記述・レビューされます。また、リリースジェネレーターがパネルに表示する各リリースの見出しも生成します。その下には breaking changes、新機能、バグ修正、改善が並び、それぞれ changelog へのリンクが付きます。
+
+未読のリリースノートがあると、ヘルプボタンがきらめくようになりました。JavaScript を使わないアニメーション SVG で実現しています。
+
+未読状態の追跡にも修正が必要でした。従来はアプリの build バージョンを基準にしていたため、git のショート SHA や CI ビルド番号を含む deployments では、新しいリリースがなくてもデプロイのたびにきらめきがトリガーされていました。現在は changelog 内の最新リリースバージョンを基準にしています。
+
+リリースノートのフォーマットも変更を進めており、今後はさらに多くの内容がパネルに表示されるようになります。
+
+**関連 PR:** [#2993](https://github.com/hyperdxio/hyperdx/pull/2993) 生成されたリリースノートから「What&#39;s new」を構築、[#3042](https://github.com/hyperdxio/hyperdx/pull/3042) What&#39;s new のきらめきを build ではなくリリースに紐付け、[#3007](https://github.com/hyperdxio/hyperdx/pull/3007) リリースマーカーのクエリ失敗時に明確に警告

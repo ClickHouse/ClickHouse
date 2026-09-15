@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="ast_fuzzer_any_query">
-  ## ast_fuzzer_any_query
-</div>
+## ast_fuzzer_any_query {#ast_fuzzer_any_query}
 
 <ExperimentalBadge />
 
@@ -26,9 +24,17 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Lorsque la valeur est false (par défaut), l’AST fuzzer côté serveur (contrôlé par `ast_fuzzer_runs`) ne fait du fuzzing que sur les requêtes en lecture seule (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). Lorsque la valeur est true, tous les types de requêtes, y compris DDL et INSERT, font l’objet d’un fuzzing.
 
-<div id="ast_fuzzer_runs">
-  ## ast_fuzzer_runs
-</div>
+## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer les vérifications d'oracle de correction dans l'AST fuzzer côté serveur."}]}]} />
+
+Lorsque ce paramètre est activé conjointement avec `ast_fuzzer_runs`, une série de vérifications d&#39;oracle de correction est appliquée aux requêtes SELECT fuzzées exécutées avec succès : TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP (activation ou désactivation de paramètres individuels de l&#39;optimizer), Identity WHERE et Subquery wrap. Toute divergence déclenche une exception `AST_FUZZER_ORACLE_MISMATCH`.
+
+## ast_fuzzer_runs {#ast_fuzzer_runs}
 
 <ExperimentalBadge />
 

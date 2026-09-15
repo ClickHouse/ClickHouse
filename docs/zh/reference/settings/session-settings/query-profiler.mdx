@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="query_profiler_cpu_time_period_ns">
-  ## query_profiler_cpu_time_period_ns
-</div>
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -31,13 +29,13 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 * 0 表示关闭该定时器。
 
+在 MemorySanitizer 构建中默认为 0，此时采样 profiler 处于禁用状态。
+
 另请参阅：
 
 * 系统表 [trace&#95;log](/zh/reference/system-tables/trace_log)
 
-<div id="query_profiler_real_time_period_ns">
-  ## query_profiler_real_time_period_ns
-</div>
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -53,6 +51,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   * 对于集群级性能分析，1000000000 (每秒一次) 。
 
 * 0 表示关闭定时器。
+
+在 MemorySanitizer 构建中默认为 0，此时采样 profiler 处于禁用状态。
 
 另请参见：
 

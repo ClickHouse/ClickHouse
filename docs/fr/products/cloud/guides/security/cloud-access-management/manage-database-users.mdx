@@ -12,16 +12,14 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 Ce guide présente deux façons de gérer les utilisateurs de base de données : dans la console SQL et directement dans la base de données.
 
 <div id="sql-console-passwordless-authentication">
-  ### Authentification sans mot de passe de la console SQL
+  ### Authentification sans mot de passe de la console SQL {#sql-console-passwordless-authentication}
 </div>
 
 Les utilisateurs de la console SQL sont créés pour chaque session et authentifiés à l’aide de certificats X.509 renouvelés automatiquement. L’utilisateur est supprimé à la fin de la session. Lorsque vous générez des listes d’accès pour des audits, accédez à l’onglet Settings du service dans la console et tenez compte de l’accès à la console SQL en plus des utilisateurs de base de données existant dans la base de données. Si des rôles personnalisés sont configurés, l’accès de l’utilisateur figure dans le rôle dont le nom se termine par le nom d’utilisateur de cet utilisateur.
 
-<div id="sql-console-users-and-roles">
-  ## Utilisateurs et rôles de la console SQL
-</div>
+## Utilisateurs et rôles de la console SQL {#sql-console-users-and-roles}
 
-Les rôles de base de la console SQL peuvent être attribués aux utilisateurs disposant des permissions Service Read Only et Service Admin. Pour en savoir plus, consultez [Gérer les attributions de rôles de la console SQL](/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Ce guide montre comment créer un rôle personnalisé pour un utilisateur de la console SQL.
+Les rôles de base de la console SQL peuvent être attribués aux utilisateurs disposant des permissions Service Read Only et Service Admin. Pour en savoir plus, consultez [Gérer les utilisateurs cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). Ce guide montre comment créer un rôle personnalisé pour un utilisateur de la console SQL.
 
 <Tip>
   Préférez les [rôles de base de données gérés par ClickHouse Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (bêta) pour gérer l’accès aux bases de données depuis la console. Les rôles `sql-console-role:<email>` ne sont pas compatibles avec l’[authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
@@ -57,11 +55,11 @@ Pour créer un rôle personnalisé pour un utilisateur de la console SQL et lui 
 </Steps>
 
 <div id="database-authentication">
-  ## Authentification à la base de données
+  ## Authentification à la base de données {#database-authentication}
 </div>
 
 <div id="database-user-id--password">
-  ### ID et mot de passe de l’utilisateur de base de données
+  ### ID et mot de passe de l’utilisateur de base de données {#database-user-id--password}
 </div>
 
 Utilisez la méthode SHA256&#95;hash lors de la [création de comptes utilisateur](/fr/reference/statements/create/user) pour sécuriser les mots de passe. Les mots de passe des utilisateurs de base de données ClickHouse doivent contenir au minimum 12 caractères et respecter des exigences de complexité : majuscules, minuscules, chiffres et/ou caractères spéciaux.
@@ -78,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### Utilisateur de base de données avec authentification SSH
+  ### Utilisateur de base de données avec authentification SSH {#database-ssh}
 </div>
 
 Pour configurer l’authentification SSH pour un utilisateur de base de données ClickHouse Cloud.
@@ -91,7 +89,7 @@ Pour configurer l’authentification SSH pour un utilisateur de base de données
 Pour une présentation détaillée avec des exemples, consultez [Comment se connecter à ClickHouse Cloud à l’aide de clés SSH](/fr/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) dans notre base de connaissances.
 
 <div id="database-permissions">
-  ## Permissions de la base de données
+  ## Permissions de la base de données {#database-permissions}
 </div>
 
 Configurez les éléments suivants au sein des services et des bases de données à l’aide de l’instruction SQL [GRANT](/fr/reference/statements/grant).
@@ -110,7 +108,7 @@ L’illustration ci-dessous montre les différentes manières d’accorder des p
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="Une illustration montrant les différentes manières d’accorder des permissions à un utilisateur" size="md" background="black" />
 
 <div id="initial-settings">
-  ### Paramètres initiaux
+  ### Paramètres initiaux {#initial-settings}
 </div>
 
 Les bases de données incluent un compte nommé `default`, ajouté automatiquement et auquel `default&#95;role` est attribué lors de la création du service. L’utilisateur qui crée le service voit le mot de passe aléatoire généré automatiquement et attribué au compte `default` lors de la création du service. Ce mot de passe n’est plus affiché après la configuration initiale, mais il peut être modifié ultérieurement par tout utilisateur disposant des autorisations Service Admin dans la console. Ce compte, ou tout compte disposant des privilèges Service Admin dans la console, peut à tout moment configurer des utilisateurs et des rôles de base de données supplémentaires.
@@ -128,9 +126,7 @@ Nous vous recommandons de créer un nouveau compte utilisateur associé à une p
 
 Vous pouvez utiliser un générateur de hachage SHA256 ou une fonction telle que `hashlib` en Python pour convertir un mot de passe d’au moins 12 caractères, avec un niveau de complexité approprié, en chaîne SHA256, puis la fournir à l’administrateur système comme mot de passe. Cela garantit que l’administrateur ne voit pas les mots de passe en clair et ne les manipule pas.
 
-<div id="database-access-listings-with-sql-console-users">
-  ### Liste des accès à la base de données avec les utilisateurs de la console SQL
-</div>
+### Liste des accès à la base de données avec les utilisateurs de la console SQL {#database-access-listings-with-sql-console-users}
 
 Le processus suivant permet de générer une liste complète des accès dans la console SQL et les bases de données de votre organisation.
 
@@ -176,8 +172,6 @@ Le processus suivant permet de générer une liste complète des accès dans la 
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## Utilisateurs du Warehouse
-</div>
+## Utilisateurs du Warehouse {#warehouse-users}
 
 Les utilisateurs du Warehouse sont partagés entre les services d&#39;un même Warehouse. Pour plus d&#39;informations, consultez les [contrôles d&#39;accès du Warehouse](/fr/products/cloud/features/infrastructure/warehouses#access-controls).

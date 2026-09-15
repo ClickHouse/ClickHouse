@@ -6,101 +6,116 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import UploadCsvCLI from "/snippets/es/cloud/migration/_upload_csv_cli.mdx";
 
-ClickHouse Cloud ofrece una forma sencilla de importar tus archivos y admite los
-siguientes formatos:
+<Visibility for="agents">
+  <UploadCsvCLI />
+</Visibility>
 
-| Formato                         |
-| ------------------------------- |
-| `CSV`                           |
-| `CSVWithNamesAndTypes`          |
-| `CSVWithNames`                  |
-| `JSONEachRow`                   |
-| `TabSeparated`                  |
-| `TabSeparatedWithNames`         |
-| `TabSeparatedWithNamesAndTypes` |
+<Visibility for="humans">
+  <View title="Cloud UI">
+    ClickHouse Cloud ofrece una forma sencilla de importar tus archivos y admite los
+    siguientes formatos:
 
-<Steps>
-  <Step title="Subir un archivo" id="upload-file">
-    En la página principal de Cloud, selecciona tu servicio como se muestra a continuación:
+    | Formato                         |
+    | ------------------------------- |
+    | `CSV`                           |
+    | `CSVWithNamesAndTypes`          |
+    | `CSVWithNames`                  |
+    | `JSONEachRow`                   |
+    | `TabSeparated`                  |
+    | `TabSeparatedWithNames`         |
+    | `TabSeparatedWithNamesAndTypes` |
 
-    <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+    <Steps>
+      <Step title="Subir un archivo" id="upload-file">
+        En la página principal de Cloud, selecciona tu servicio como se muestra a continuación:
 
-    Si tu servicio está inactivo, tendrás que activarlo.
+        <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
 
-    Selecciona `Data sources` en la pestaña de la izquierda, como se muestra a continuación:
+        Si tu servicio está inactivo, tendrás que activarlo.
 
-    <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+        Selecciona `Data sources` en la pestaña de la izquierda, como se muestra a continuación:
 
-    A continuación, selecciona `Upload a file` en la parte derecha de la página de fuentes de datos:
+        <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
 
-    <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+        A continuación, selecciona `Upload a file` en la parte derecha de la página de fuentes de datos:
 
-    Se abrirá un cuadro de diálogo para que puedas seleccionar el archivo que deseas
-    usar para insertar datos en una tabla de tu servicio de Cloud.
+        <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
 
-    <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
-  </Step>
+        Se abrirá un cuadro de diálogo para que puedas seleccionar el archivo que deseas
+        usar para insertar datos en una tabla de tu servicio de Cloud.
 
-  <Step title="Configurar la tabla" id="configure-table">
-    Una vez cargado el archivo, podrás configurar la tabla en la que quieres
-    insertar los datos. Se muestra una vista previa de la tabla con las tres primeras filas.
+        <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
+      </Step>
 
-    <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+      <Step title="Configurar la tabla" id="configure-table">
+        Una vez cargado el archivo, podrás configurar la tabla en la que quieres
+        insertar los datos. Se muestra una vista previa de la tabla con las tres primeras filas.
 
-    Ahora puedes seleccionar una tabla de destino. Las opciones son:
+        <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
 
-    * una tabla nueva
-    * una tabla existente
+        Ahora puedes seleccionar una tabla de destino. Las opciones son:
 
-    <br />
+        * una tabla nueva
+        * una tabla existente
 
-    Puedes especificar en qué base de datos deseas cargar los datos y, en el caso de
-    una tabla nueva, el nombre de la tabla que se creará. También podrás seleccionar la clave de ordenación:
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+        Puedes especificar en qué base de datos deseas cargar los datos y, en el caso de
+        una tabla nueva, el nombre de la tabla que se creará. También podrás seleccionar la clave de ordenación:
 
-    Las columnas leídas del archivo se muestran como `Source field` y, para cada campo,
-    puedes cambiar:
+        <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
 
-    * el tipo inferido
-    * el valor predeterminado
-    * si la columna debe ser [Nullable](/es/reference/data-types/nullable) o no
+        Las columnas leídas del archivo se muestran como `Source field` y, para cada campo,
+        puedes cambiar:
 
-    <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+        * el tipo inferido
+        * el valor predeterminado
+        * si la columna debe ser [Nullable](/es/reference/data-types/nullable) o no
 
-    <Info>
-      **Excluir campos**
+        <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
 
-      También puedes quitar un campo si no deseas incluirlo en la importación
-    </Info>
+        <Info>
+          **Excluir campos**
 
-    Puedes especificar el tipo de motor de tabla que deseas usar:
+          También puedes quitar un campo si no deseas incluirlo en la importación
+        </Info>
 
-    * `MergeTree`
-    * `ReplacingMergeTree`
-    * `SummingMergeTree`
-    * `Null`
+        Puedes especificar el tipo de motor de tabla que deseas usar:
 
-    <br />
+        * `MergeTree`
+        * `ReplacingMergeTree`
+        * `SummingMergeTree`
+        * `Null`
 
-    Puedes especificar una expresión de clave de partición y una expresión
-    de clave primaria.
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+        Puedes especificar una expresión de clave de partición y una expresión
+        de clave primaria.
 
-    Haz clic en `Import to ClickHouse` (mostrado arriba) para importar los datos. La importación se pondrá en cola, como
-    indica la insignia de estado `queued` en la columna `Status`, como se muestra a continuación. También puedes hacer clic en
-    `Open as query` (mostrado arriba) para abrir la consulta de inserción en la consola SQL. La consulta insertará
-    el archivo que se cargó en un bucket de S3 mediante la table function `URL`.
+        <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
 
-    <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+        Haz clic en `Import to ClickHouse` (mostrado arriba) para importar los datos. La importación se pondrá en cola, como
+        indica la insignia de estado `queued` en la columna `Status`, como se muestra a continuación. También puedes hacer clic en
+        `Open as query` (mostrado arriba) para abrir la consulta de inserción en la consola SQL. La consulta insertará
+        el archivo que se cargó en un bucket de S3 mediante la table function `URL`.
 
-    Si el trabajo falla, verás una insignia de estado `failed` en la columna `Status` de
-    la pestaña `Data upload history`. Puedes hacer clic en `View Details` para obtener más información
-    sobre por qué falló la carga. Es posible que debas modificar la configuración de la tabla o depurar
-    los datos según el mensaje de error de la inserción fallida.
+        <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
 
-    <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
-  </Step>
-</Steps>
+        Si el trabajo falla, verás una insignia de estado `failed` en la columna `Status` de
+        la pestaña `Data upload history`. Puedes hacer clic en `View Details` para obtener más información
+        sobre por qué falló la carga. Es posible que debas modificar la configuración de la tabla o depurar
+        los datos según el mensaje de error de la inserción fallida.
+
+        <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
+      </Step>
+    </Steps>
+  </View>
+
+  <View title="CLI">
+    Puedes seguir esta ruta tú mismo, automatizarla con un script o dársela a un agente de IA. Cambia a la vista **Cloud UI** para ver la versión de la consola.
+
+    <UploadCsvCLI />
+  </View>
+</Visibility>

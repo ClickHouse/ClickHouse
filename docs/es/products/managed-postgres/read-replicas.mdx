@@ -22,9 +22,7 @@ Esto abre el cuadro de diálogo del warehouse, donde puede ver los servicios exi
 
 <Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Cuadro de diálogo para administrar réplicas de lectura" size="md" border />
 
-<div id="managing-read-replicas">
-  ## Gestionar las réplicas de lectura
-</div>
+## Gestionar las réplicas de lectura {#managing-read-replicas}
 
 La página **Réplicas de lectura** te ofrece dos vistas, entre las que puedes alternar con los controles **Flow** y **Table** en la esquina superior derecha.
 
@@ -39,43 +37,41 @@ La vista **Table** enumera cada réplica con su nombre de servicio, proveedor de
 Para crear una nueva réplica, haz clic en **Create read replica** en la esquina superior derecha de cualquiera de las dos vistas.
 
 <div id="why-use-read-replicas">
-  ## Por qué usar réplicas de lectura
+  ## Por qué usar réplicas de lectura {#why-use-read-replicas}
 </div>
 
 <div id="scalability">
-  ### Escalabilidad
+  ### Escalabilidad {#scalability}
 </div>
 
 Las réplicas de lectura le permiten escalar horizontalmente su base de datos al distribuir las cargas de trabajo intensivas en lectura entre varias instancias dedicadas. Esto resulta especialmente útil para consultas de informes, procesamiento analítico y paneles en tiempo real, que de otro modo competirían con el tráfico de producción por los recursos.
 
 <div id="isolation">
-  ### Aislamiento
+  ### Aislamiento {#isolation}
 </div>
 
 Al dirigir las consultas analíticas y de inteligencia empresarial a las réplicas de lectura, mantiene la instancia primaria enfocada y con capacidad de respuesta para las operaciones de escritura y las cargas de trabajo transaccionales críticas. Esta separación mejora el rendimiento general y la previsibilidad del sistema. Además, no necesita conceder acceso de escritura a las herramientas analíticas o de generación de informes: pueden funcionar de forma segura sobre una réplica, sin riesgo de modificar los datos accidentalmente.
 
 <div id="business-continuity">
-  ### Continuidad del negocio
+  ### Continuidad del negocio {#business-continuity}
 </div>
 
 Las réplicas de lectura pueden desempeñar un papel fundamental en la recuperación ante desastres. Si su base de datos primaria falla, una réplica de lectura puede promoverse a primaria, lo que minimiza el tiempo de inactividad y la pérdida de datos. Esto proporciona una capa adicional de resiliencia, más allá de sus instancias en espera de alta disponibilidad.
 
-<div id="how-read-replicas-work">
-  ## Cómo funcionan las réplicas de lectura
-</div>
+## Cómo funcionan las réplicas de lectura {#how-read-replicas-work}
 
 Las réplicas de lectura en ClickHouse Managed Postgres usan una arquitectura de WAL shipping en lugar de replicación por streaming. Esta decisión de diseño busca minimizar el impacto en tu base de datos primaria.
 
 <div id="wal-shipping-from-object-storage">
-  ### WAL shipping desde el almacenamiento de objetos
+  ### WAL shipping desde el almacenamiento de objetos {#wal-shipping-from-object-storage}
 </div>
 
-Cuando la base de datos primaria procesa transacciones, genera registros de Write-Ahead Log (WAL). Estos segmentos de WAL se archivan continuamente en almacenamiento de objetos (S3). Las réplicas de lectura recuperan y reproducen estos segmentos de WAL desde el almacenamiento de objetos para mantenerse sincronizadas con la primaria.
+Cuando la base de datos primaria procesa transacciones, genera registros de Write-Ahead Log (WAL). Estos segmentos de WAL se archivan continuamente en almacenamiento de objetos. Las réplicas de lectura recuperan y reproducen estos segmentos de WAL desde el almacenamiento de objetos para mantenerse sincronizadas con la primaria.
 
 Esta arquitectura difiere de los [standbys de alta disponibilidad](/es/products/managed-postgres/high-availability), que utilizan replicación por streaming con una conexión directa a la primaria.
 
 <div id="why-we-chose-this-approach">
-  ### Por qué elegimos este enfoque
+  ### Por qué elegimos este enfoque {#why-we-chose-this-approach}
 </div>
 
 Diseñamos deliberadamente las réplicas de lectura para que consuman WAL desde el almacenamiento de objetos en lugar de conectarse directamente al primario como standbys de streaming. Este enfoque proporciona un aislamiento completo entre las réplicas de lectura y tu base de datos primaria:
@@ -85,7 +81,7 @@ Diseñamos deliberadamente las réplicas de lectura para que consuman WAL desde 
 * **Aislamiento de red**: Las réplicas de lectura funcionan en su propio entorno de red, con endpoints de conexión separados.
 
 <div id="replication-lag-characteristics">
-  ### Características del retraso de replicación
+  ### Características del retraso de replicación {#replication-lag-characteristics}
 </div>
 
 La contrapartida de esta arquitectura es el retraso de replicación. Los segmentos de WAL se archivan desde el primario a intervalos regulares (normalmente, cada 60 segundos o cuando un segmento se llena, lo que ocurra primero). Esto significa que las réplicas de lectura pueden ir por detrás del primario hasta varias decenas de segundos en condiciones normales.

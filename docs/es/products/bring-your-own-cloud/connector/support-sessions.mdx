@@ -6,13 +6,14 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/es/components/Image.jsx";
+
+<PrivatePreviewBadge />
 
 Las sesiones de soporte permiten otorgar a ClickHouse acceso temporal con fines de diagnóstico mediante ClickHouse Connector. Esta página explica qué es una sesión, cómo activarla y desactivarla, qué pueden hacer los operadores de ClickHouse mientras está activa y cómo auditar todo lo ocurrido.
 
-<div id="what-a-support-session-is">
-  ## Qué es una sesión de soporte
-</div>
+## Qué es una sesión de soporte {#what-a-support-session-is}
 
 Una sesión de soporte es un periodo limitado durante el cual el solucionador de problemas acepta comandos de los ingenieros de soporte de ClickHouse. Cuando no hay ninguna sesión activa, el solucionador de problemas rechaza todos los comandos, incluso si su WebSocket saliente está conectado. No existe ninguna otra vía de ejecución: no se ejecuta nada sin una sesión y ClickHouse no puede abrir una por usted. El plano de control de ClickHouse nunca se conecta a su entorno; solo recibe lo que el solucionador de problemas envía a través de su canal saliente, y ese canal solo transporta comandos mientras el estado de la sesión lo permita.
 
@@ -27,9 +28,7 @@ El transporte del gateway depende del destino. Un gateway de VM ofrece TLS autof
 
 Elija la configuración de las sesiones, incluida la lista de permitidos de operadores, durante `clicklink clctl init`.
 
-<div id="enabling-and-disabling-sessions">
-  ## Activación y desactivación de sesiones
-</div>
+## Activación y desactivación de sesiones {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes">
@@ -80,24 +79,18 @@ Elija la configuración de las sesiones, incluida la lista de permitidos de oper
   </Tab>
 </Tabs>
 
-<div id="session-expiry">
-  ## Caducidad de la sesión
-</div>
+## Caducidad de la sesión {#session-expiry}
 
 Las sesiones caducan automáticamente. La duración predeterminada es de 4 horas; `session enable --duration` permite establecer una duración de hasta 24 horas. Cuando la sesión caduca o en cuanto ejecuta `session disable`, el solucionador de problemas deja de aceptar comandos. Deshabilitar la sesión es la vía de revocación inmediata: no requiere reiniciar ni coordinarse con ClickHouse.
 
-<div id="operator-allowlist">
-  ## Lista de permitidos de operadores
-</div>
+## Lista de permitidos de operadores {#operator-allowlist}
 
 Cada llamada al gateway se autoriza conforme a una lista de permitidos de correos electrónicos de operadores y se coteja con el correo electrónico acreditado por el token OIDC validado, nunca con lo que el client declare sobre sí mismo.
 
 * **Kubernetes:** configure `clctl.gateway.allowedOperators` en su superposición de values. La lista se procesa en un ConfigMap que el gateway vuelve a leer cada 30 segundos, por lo que un cambio en values junto con `helm upgrade` rota la lista de permitidos sin reiniciar el pod de Kubernetes.
 * **Linux VM:** la lista de permitidos se encuentra en `/etc/clicklink/allowed-operators.txt` y `clicklink clctl init` la escribe a partir de los correos electrónicos de operadores que proporcione.
 
-<div id="what-operators-can-do">
-  ## Lo que los operadores pueden hacer durante una sesión
-</div>
+## Lo que los operadores pueden hacer durante una sesión {#what-operators-can-do}
 
 Mientras una sesión está activa, los ingenieros de soporte de ClickHouse pueden ejecutar:
 
@@ -106,9 +99,7 @@ Mientras una sesión está activa, los ingenieros de soporte de ClickHouse puede
 
 El RBAC del solucionador de problemas no incluye permisos `exec`, `delete` ni `patch`, por lo que los operadores no pueden abrir una shell en sus pods ni modificar nada a través del conector. La enumeración completa de privilegios y RBAC se encuentra en la referencia del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-<div id="audit-log">
-  ## Registro de auditoría
-</div>
+## Registro de auditoría {#audit-log}
 
 Cada llamada al gateway y cada comando ejecutado durante una sesión se añade a `/var/log/clicklink/troubleshoot-audit.log` como un objeto JSON por línea (NDJSON). El campo `submitted_by` registra la identidad asociada a cada entrada, que depende de cómo se haya originado: las llamadas al gateway incluyen el correo electrónico acreditado por el token validado, nunca un valor proporcionado por el client; los cambios de sesión realizados localmente en una VM registran el usuario del host que los ejecuta; y los comandos ejecutados durante una sesión registran la identidad de la org incluida en el canal de comandos autenticado. Una entrada del gateway para habilitar una sesión tiene este aspecto:
 
@@ -139,15 +130,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 El registro es un archivo sin formato dentro de su entorno; envíelo a su propio SIEM como cualquier otro registro de host o contenedor.
 
-<div id="redaction">
-  ## Redacción
-</div>
+## Redacción {#redaction}
 
 Todo lo que devuelve el solucionador de problemas se censura antes de salir de su entorno. Los patrones integrados cubren direcciones IPv4 e IPv6, tokens Bearer, claves de acceso de AWS, direcciones de correo electrónico, JWT, claves privadas SSH y credenciales incluidas en cadenas de conexión. Puede ampliarlos o sobrescribirlos en `/etc/clicklink/redaction-patterns.yaml`; una entrada con el mismo nombre que un patrón integrado lo reemplaza. El daemon no se inicia si el archivo de patrones no es válido, y `clicklink clctl preflight` lo valida, de modo que una configuración de redacción incorrecta falla de forma explícita en lugar de dejar pasar datos silenciosamente.
 
-<div id="related-pages">
-  ## Páginas relacionadas
-</div>
+## Páginas relacionadas {#related-pages}
 
 * [Arquitectura](/es/products/bring-your-own-cloud/connector/architecture): todas las conexiones que realiza el conector y el flujo de datos en las sesiones.
 * [Configuración](/es/products/bring-your-own-cloud/connector/configuration): configuración de gateway, allowlist y redacción.

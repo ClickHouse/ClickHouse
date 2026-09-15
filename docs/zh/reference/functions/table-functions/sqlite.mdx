@@ -10,30 +10,22 @@ doc_type: 'reference'
 
 可对存储在 [SQLite](/zh/reference/engines/database-engines/sqlite) 数据库中的数据进行查询。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 sqlite('db_path', 'table_name')
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
 * `db_path` — SQLite 数据库文件的路径。[String](/zh/reference/data-types/string)。
 * `table_name` — SQLite 数据库中的表名，或按原样传递给 SQLite 的查询 (参见[传递查询而不是表名](#passing-a-query)) 。[String](/zh/reference/data-types/string)。
 
-<div id="returned-value">
-  ## 返回值
-</div>
+## 返回值 {#returned-value}
 
 * 一个表对象，其列与原始 `SQLite` 表的列相同。
 
-<div id="passing-a-query">
-  ## 传递查询而非表名
-</div>
+## 传递查询而非表名 {#passing-a-query}
 
 第二个参数不一定非得是表名，也可以是一个原样传递给 SQLite 的 `SELECT` 查询。结果表的结构会根据查询结果自动推断。该查询既可以写成子查询，也可以封装在 `query` 函数中：
 
@@ -47,12 +39,10 @@ SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col
 <Note>
   子查询形式 `(SELECT ...)` 会由 ClickHouse 解析，并在发送到 SQLite 之前重新序列化。因此，它必须是有效的 ClickHouse SQL。若要传递 ClickHouse 无法解析的 SQLite 特有语法，请使用 `query('...')` 形式，其文本会原样发送给 SQLite。
 
-  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是在拉取完整查询结果后由 ClickHouse 再应用。要限制从 SQLite 读取的数据，请将过滤器放在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤器会直接以异常拒绝，而不是在本地应用。
+  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是在拉取完整查询结果后由 ClickHouse 再应用。要限制从 SQLite 读取的数据，请将过滤器放在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤器会直接以异常拒绝，而不是在本地应用。该设置会拒绝表函数列上的外层过滤器，因为此类过滤器无法下推到传入的查询中。检查范围包括顶层 `WHERE` 谓词及顶层 `AND` 的每个合取项。对此表列使用 `PREWHERE` 不属于该设置的适用情形：此表引擎不支持 `PREWHERE`，无论该设置为何值，此类查询都会因 `ILLEGAL_PREWHERE` 被拒绝。使用 analyzer (默认设置) 时，仅在过滤器可能下推的场景下才会执行检查：此表是查询中唯一的表、位于 `INNER JOIN` 的任一侧，或位于外连接的保留侧 (`LEFT JOIN` 的左侧、`RIGHT JOIN` 的右侧) 。在 `LEFT`/`RIGHT JOIN` 的非保留侧及 `FULL JOIN` 的任一侧，既不会下推任何内容，也不会执行检查。因此，即使在严格模式下，此表列上的过滤器也会在连接后于本地应用。在执行检查的场景中，引用周围查询内其他已连接表的谓词不会被下推，也不纳入检查；无论该谓词仅引用连接侧，还是在单个非 `AND` 表达式中同时引用连接侧和此表 (例如 `OR`) 。此类谓词会保留其通常的 ClickHouse 求值位置 (连接后的 `WHERE`、连接前的 `PREWHERE`) ，不会被拒绝。使用旧 analyzer (`enable_analyzer = 0`) 时，不适用此范围限定：当此表是连接树中的第一个表时，会检查整个外层过滤器，包括连接侧上的谓词；而作为连接右侧的表不会被检查。
 </Note>
 
-<div id="example">
-  ## 示例
-</div>
+## 示例 {#example}
 
 ```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
@@ -66,9 +56,7 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 └───────┴──────┘
 ```
 
-<div id="related">
-  ## 相关
-</div>
+## 相关 {#related}
 
 * [SQLite](/zh/reference/engines/table-engines/integrations/sqlite) 表引擎
 * [SQLite 数据库引擎](/zh/reference/engines/database-engines/sqlite) — 数据类型支持部分

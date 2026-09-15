@@ -11,7 +11,7 @@ keywords: ['الفهرس الأساسي', 'الفهرسة', 'الأداء', 'ت�
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <div id="introduction">
-  ## مقدمة
+  ## مقدمة {#introduction}
 </div>
 
 في هذا الدليل، سنتناول فهرسة ClickHouse بعمق. وسنوضح ونناقش بالتفصيل:
@@ -30,7 +30,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="data-set">
-  ### مجموعة البيانات
+  ### مجموعة البيانات {#data-set}
 </div>
 
 سنستخدم في هذا الدليل مجموعة بيانات نموذجية مجهولة الهوية لحركة مرور الويب.
@@ -46,13 +46,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * &quot;ما أكثر الأوقات شيوعًا (مثل أيام الأسبوع) التي ينقر فيها المستخدم على عنوان URL محدد؟&quot;
 
 <div id="test-machine">
-  ### جهاز الاختبار
+  ### جهاز الاختبار {#test-machine}
 </div>
 
 جميع الأرقام المتعلقة بزمن التشغيل الواردة في هذا المستند تستند إلى تشغيل ClickHouse 22.2.1 محليًا على جهاز MacBook Pro مزوّد بشريحة Apple M1 Pro وذاكرة RAM بسعة 16 جيجابايت.
 
 <div id="a-full-table-scan">
-  ### مسح كامل للجدول
+  ### مسح كامل للجدول {#a-full-table-scan}
 </div>
 
 لكي نرى كيف يُنفَّذ استعلام على مجموعة البيانات لدينا في غياب مفتاح أساسي، ننشئ جدولًا (باستخدام محرك جدول MergeTree) بتنفيذ عبارة SQL DDL التالية:
@@ -138,11 +138,11 @@ Processed 8.87 million rows,
 ولجعل ذلك أكثر كفاءة (بفارق كبير) وأسرع (بكثير)، نحتاج إلى استخدام جدول يحتوي على مفتاح أساسي مناسب. سيتيح هذا لـ ClickHouse إنشاء فهرس أساسي متناثر تلقائيًا (استنادًا إلى الأعمدة الخاصة بالمفتاح الأساسي)، ويمكن بعد ذلك استخدامه لتسريع تنفيذ استعلامنا المثال بشكل كبير.
 
 <div id="clickhouse-index-design">
-  ## تصميم الفهارس في ClickHouse
+  ## تصميم الفهارس في ClickHouse {#clickhouse-index-design}
 </div>
 
 <div id="an-index-design-for-massive-data-scales">
-  ### تصميم فهرس لنطاقات بيانات هائلة
+  ### تصميم فهرس لنطاقات بيانات هائلة {#an-index-design-for-massive-data-scales}
 </div>
 
 في أنظمة إدارة قواعد البيانات العلائقية التقليدية، يحتوي الفهرس الأساسي على إدخال فهرس واحد لكل صف في الجدول. وهذا يعني أن الفهرس الأساسي سيحتوي، بالنسبة إلى مجموعة البيانات لدينا، على 8.87 مليون إدخال فهرس. ويتيح هذا النوع من الفهارس تحديد الصفوف المطلوبة بسرعة، ما يجعله عالي الكفاءة في استعلامات البحث والتحديثات النقطية. ويبلغ متوسط التعقيد الزمني للبحث عن إدخال فهرس في بنية البيانات `B(+)-Tree` مقدار `O(log n)`؛ وبصورة أدق، `log_b n = log_2 n / log_2 b`، حيث إن `b` هو عامل التفريع في `B(+)-Tree` و`n` هو عدد الصفوف المفهرسة. ونظرًا إلى أن `b` يكون عادةً بين عدة مئات وعدة آلاف، فإن أشجار `B(+)-Tree` تكون ضحلة جدًا، ولا يتطلب تحديد السجلات سوى عدد قليل من عمليات seek على القرص. ومع وجود 8.87 مليون صف وعامل تفريع مقداره 1000، يلزم في المتوسط 2.3 عملية seek على القرص. لكن هذه الإمكانية لها تكلفة: أعباء إضافية على القرص والذاكرة، وارتفاع تكلفة الإدراج عند إضافة صفوف جديدة إلى الجدول وإدخالات فهرس جديدة إلى الفهرس، وأحيانًا إعادة موازنة شجرة B-Tree.
@@ -154,7 +154,7 @@ Processed 8.87 million rows,
 يوضح ما يلي بالتفصيل كيف يبني ClickHouse فهرسه الأساسي المتناثر ويستخدمه. وفي موضع لاحق من المقالة، سنناقش بعض أفضل الممارسات لاختيار أعمدة الجدول المستخدمة في بناء الفهرس (أعمدة المفتاح الأساسي) وإزالتها وترتيبها.
 
 <div id="a-table-with-a-primary-key">
-  ### جدول ذو مفتاح أساسي
+  ### جدول ذو مفتاح أساسي {#a-table-with-a-primary-key}
 </div>
 
 أنشئ جدولًا بمفتاح أساسي مركب يتكوّن من عمودي المفتاح UserID و URL:
@@ -286,9 +286,7 @@ bytes_on_disk:               207.07 MiB
 * يحتوي الجدول على فهرس أساسي يضم 1083 إدخالًا (تُسمى &#39;علامات&#39;)، ويبلغ حجم هذا الفهرس 96.93 KB.
 * إجمالًا، تشغل بيانات الجدول وملفات العلامات وملف الفهرس الأساسي معًا مساحة 207.07 MB على القرص.
 
-<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
-  ### تُخزَّن البيانات على القرص مرتبةً بحسب أعمدة المفتاح الأساسي
-</div>
+### تُخزَّن البيانات على القرص مرتبةً بحسب أعمدة المفتاح الأساسي {#data-is-stored-on-disk-ordered-by-primary-key-columns}
 
 يحتوي الجدول الذي أنشأناه أعلاه على:
 
@@ -329,9 +327,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
   * نرقّم الصفوف بدءًا من 0 ليتوافق ذلك مع مخطط ترقيم الصفوف الداخلي في ClickHouse، والذي يُستخدم أيضًا في رسائل التسجيل.
 </Note>
 
-<div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### تُنظَّم البيانات في حبيبات لمعالجتها بالتوازي
-</div>
+### تُنظَّم البيانات في حبيبات لمعالجتها بالتوازي {#data-is-organized-into-granules-for-parallel-data-processing}
 
 لأغراض معالجة البيانات، تُقسَّم قيم أعمدة الجدول منطقيًا إلى حبيبات.
 والحبيبة هي أصغر مجموعة بيانات غير قابلة للتجزئة تُمرَّر إلى ClickHouse لمعالجة البيانات.
@@ -364,9 +360,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
   * نرقّم الحبيبات بدءًا من 0 ليتوافق ذلك مع مخطط الترقيم الداخلي في ClickHouse، والذي يُستخدم أيضًا في رسائل التسجيل.
 </Note>
 
-<div id="the-primary-index-has-one-entry-per-granule">
-  ### يحتوي الفهرس الأساسي على إدخال واحد لكل حبيبة
-</div>
+### يحتوي الفهرس الأساسي على إدخال واحد لكل حبيبة {#the-primary-index-has-one-entry-per-granule}
 
 يُنشأ الفهرس الأساسي استنادًا إلى الحبيبات الموضحة في المخطط أعلاه. وهذا الفهرس هو ملف مصفوفة مسطّحة غير مضغوط (`primary.idx`) يحتوي على ما يُعرف بعلامات الفهرس الرقمية، بدءًا من 0.
 
@@ -475,9 +469,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 
   سنناقش لاحقًا بمزيد من التفصيل ما يترتب على ذلك من حيث أداء تنفيذ الاستعلام.
 
-<div id="the-primary-index-is-used-for-selecting-granules">
-  ### يُستخدم الفهرس الأساسي لاختيار الحبيبات
-</div>
+### يُستخدم الفهرس الأساسي لاختيار الحبيبات {#the-primary-index-is-used-for-selecting-granules}
 
 يمكننا الآن تنفيذ استعلاماتنا بدعم من الفهرس الأساسي.
 
@@ -515,7 +507,7 @@ Processed 8.19 thousand rows,
 
 يُظهر خرج عميل ClickHouse الآن أنه بدلًا من إجراء فحص كامل للجدول، لم يتم تمرير سوى 8.19 ألف صف إلى ClickHouse.
 
-إذا كان <a href="/ar/reference/settings/server-settings/settings/other#logger" target="_blank">تسجيل التتبّع</a> مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse كان يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">بحثًا ثنائيًا</a> عبر 1083 من علامات فهرس UserID، لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة العمود UserID هي `749927693`. ويتطلّب ذلك 19 خطوة بمتوسط تعقيد زمني قدره `O(log2 n)`:
+إذا كان <a href="/ar/reference/settings/server-settings/settings/other#logger" target="_blank">تسجيل التتبّع</a> مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse كان يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">خوارزمية البحث الثنائي</a> عبر 1083 من علامات فهرس UserID، لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة العمود UserID هي `749927693`. ويتطلّب ذلك 19 خطوة بمتوسط تعقيد زمني قدره `O(log2 n)`:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -528,15 +520,15 @@ Processed 8.19 thousand rows,
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
-:::note
-في الإصدارات الحديثة من ClickHouse، تُسجَّل رسائل `Running binary search on index range` و`Found (LEFT) boundary mark` و`Found (RIGHT) boundary mark` عند مستوى `test` (أعلى مستوى من الإسهاب) بدلًا من `trace`. لرؤيتها، ارفع مستوى إسهاب السجل إلى `test` (على سبيل المثال، `SET send_logs_level = 'test'` في العميل، أو `<logger><level>test</level></logger>` في تهيئة الخادم). لا تزال الأسطر المتبقية المعروضة أعلاه تُسجَّل عند مستوى `trace`. ينطبق هذا على كل مثال لسجل البحث الثنائي في هذا الدليل.
-:::
+<Note>
+  في الإصدارات الحديثة من ClickHouse، تُسجَّل رسائل `Running binary search on index range` و`Found (LEFT) boundary mark` و`Found (RIGHT) boundary mark` عند مستوى `test` (أعلى مستوى من الإسهاب) بدلًا من `trace`. لرؤيتها، ارفع مستوى إسهاب السجل إلى `test` (على سبيل المثال، `SET send_logs_level = 'test'` في العميل، أو `<logger><level>test</level></logger>` في تهيئة الخادم). لا تزال الأسطر المتبقية المعروضة أعلاه تُسجَّل عند مستوى `trace`. ينطبق هذا على كل مثال لسجل خوارزمية البحث الثنائي في هذا الدليل.
+</Note>
 
 يمكننا أن نرى في سجل التتبّع أعلاه أن علامة واحدة فقط من بين 1083 علامة موجودة طابقت الاستعلام.
 
 <Accordion title="تفاصيل سجل التتبّع">
   <p>
-    جرى تحديد العلامة 176 (إذ إن &#39;علامة الحد الأيسر التي عُثر عليها&#39; شاملة، بينما &#39;علامة الحد الأيمن التي عُثر عليها&#39; غير شاملة)، ولذلك تُمرَّر بعد ذلك جميع الصفوف الـ8192 من الحبيبة 176 (التي تبدأ عند الصف 1.441.792 — وسنرى ذلك لاحقًا في هذا الدليل) إلى ClickHouse من أجل العثور على الصفوف الفعلية التي تكون فيها قيمة العمود `UserID` هي `749927693`.
+    جرى تحديد العلامة 176 (إذ إن &#39;علامة الحد الأيسر التي عُثر عليها&#39; شاملة، بينما &#39;علامة الحد الأيمن التي عُثر عليها&#39; غير شاملة)، ولذلك تُمرَّر بعد ذلك جميع الصفوف الـ8192 من الحبيبة 176 (التي تبدأ عند الصف 1.441.792 — وسنرى ذلك لاحقًا في هذا الدليل) إلى ClickHouse من أجل العثور على الصفوف الفعلية التي تكون فيها قيمة العمود UserID هي `749927693`.
   </p>
 </Accordion>
 
@@ -595,9 +587,7 @@ LIMIT 10;
 
 نناقش هذه المرحلة الثانية بمزيد من التفصيل في القسم التالي.
 
-<div id="mark-files-are-used-for-locating-granules">
-  ### تُستخدم ملفات العلامات لتحديد مواقع الحبيبات
-</div>
+### تُستخدم ملفات العلامات لتحديد مواقع الحبيبات {#mark-files-are-used-for-locating-granules}
 
 يوضح المخطط التالي جزءًا من ملف الفهرس الأساسي لجدولنا.
 
@@ -684,14 +674,12 @@ LIMIT 10;
 وبالتوازي، يفعل ClickHouse الشيء نفسه للحبيبة 176 في ملف البيانات URL.bin. وتكون الحبيبتان المعنيتان مصطفّتَين، ثم تُمرَّران إلى ClickHouse engine لمزيد من المعالجة، أي تجميع قيم URL وعدّها لكل مجموعة لجميع الصفوف التي يكون فيها UserID هو 749.927.693، قبل إخراج أكبر 10 مجموعات URL أخيرًا بترتيب تنازلي حسب العدد.
 
 <div id="using-multiple-primary-indexes">
-  ## استخدام فهارس أولية متعددة
+  ## استخدام فهارس أولية متعددة {#using-multiple-primary-indexes}
 </div>
 
 <a name="filtering-on-key-columns-after-the-first" />
 
-<div id="secondary-key-columns-can-not-be-inefficient">
-  ### قد تكون أعمدة المفتاح الثانوية غير فعّالة (أو لا)
-</div>
+### قد تكون أعمدة المفتاح الثانوية غير فعّالة (أو لا) {#secondary-key-columns-can-not-be-inefficient}
 
 عندما يطبّق الاستعلام عامل تصفية على عمودٍ يشكّل جزءًا من مفتاح مركّب ويكون عمود المفتاح الأول، [فإن ClickHouse يشغّل خوارزمية البحث الثنائي على علامات الفهرس لعمود المفتاح](#the-primary-index-is-used-for-selecting-granules).
 
@@ -769,9 +757,7 @@ Processed 8.81 million rows,
 
 <a name="generic-exclusion-search-algorithm" />
 
-<div id="generic-exclusion-search-algorithm">
-  ### خوارزمية البحث بالاستبعاد العامة
-</div>
+### خوارزمية البحث بالاستبعاد العامة {#generic-exclusion-search-algorithm}
 
 يوضح ما يلي كيفية عمل <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">خوارزمية البحث بالاستبعاد العامة في ClickHouse</a> عند تحديد الحبيبات عبر عمود ثانوي، حين تكون الكاردينالية لعمود المفتاح السابق منخفضة أو مرتفعة.
 
@@ -822,9 +808,7 @@ Processed 8.81 million rows,
 
 في مجموعة البيانات النموذجية لدينا، يتمتع كلا عمودي المفتاح (UserID, URL) بكاردينالية مرتفعة ومتقاربة، وكما أوضحنا، فإن خوارزمية البحث بالاستبعاد العامة لا تكون فعّالة جدًا عندما تكون كاردينالية عمود المفتاح السابق للعمود URL مرتفعة أو متقاربة معها.
 
-<div id="note-about-data-skipping-index">
-  ### ملاحظة حول فهرس تخطي البيانات
-</div>
+### ملاحظة حول فهرس تخطي البيانات {#note-about-data-skipping-index}
 
 نظرًا إلى الارتفاع المتقارب في الكاردينالية لكلٍّ من UserID وURL، فإن [الاستعلام الذي يصفّي حسب URL](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) لن يستفيد كثيرًا أيضًا من إنشاء [فهرس تخطي بيانات ثانوي](/ar/concepts/features/performance/skip-indexes/skipping-indexes) على عمود URL
 في [جدولنا ذي المفتاح الأساسي المركب (UserID, URL)](#a-table-with-a-primary-key).
@@ -851,7 +835,7 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 ومن المرجّح جدًا أن تكون قيمة URL المحددة التي يبحث عنها الاستعلام (أي `http://public&#95;search`) واقعة بين الحد الأدنى والحد الأقصى اللذين يخزنهما الفهرس لكل مجموعة من الحبيبات، مما يضطر ClickHouse إلى اختيار مجموعة الحبيبات (لأنها قد تحتوي على صفوف تطابق الاستعلام).
 
 <div id="a-need-to-use-multiple-primary-indexes">
-  ### الحاجة إلى استخدام عدة فهارس أساسية
+  ### الحاجة إلى استخدام عدة فهارس أساسية {#a-need-to-use-multiple-primary-indexes}
 </div>
 
 ونتيجةً لذلك، إذا أردنا تسريع استعلام العينة الذي يصفّي الصفوف بحسب URL محدد بشكل ملحوظ، فعلينا استخدام فهرس أساسي مُحسَّن لهذا الاستعلام.
@@ -862,9 +846,7 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 
 <a name="multiple-primary-indexes" />
 
-<div id="options-for-creating-additional-primary-indexes">
-  ### خيارات إنشاء فهارس أساسية إضافية
-</div>
+### خيارات إنشاء فهارس أساسية إضافية {#options-for-creating-additional-primary-indexes}
 
 إذا أردنا تسريع استعلامَي العينة بشكل كبير — الاستعلام الذي يصفّي الصفوف ذات `UserID` معيّن، والاستعلام الذي يصفّي الصفوف ذات `URL` معيّن — فعلينا استخدام عدة فهارس أساسية عبر أحد هذه الخيارات الثلاثة:
 
@@ -892,9 +874,7 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 
 <a name="multiple-primary-indexes-via-secondary-tables" />
 
-<div id="option-1-secondary-tables">
-  ### الخيار 1: الجداول الثانوية
-</div>
+### الخيار 1: الجداول الثانوية {#option-1-secondary-tables}
 
 <a name="secondary-table" />
 
@@ -1049,9 +1029,7 @@ Processed 319.49 thousand rows,
 
 لدينا الآن جدولان: أحدهما مُحسَّن لتسريع الاستعلامات التي تطبّق تصفية على `UserIDs`، والآخر لتسريع الاستعلامات التي تطبّق تصفية على عناوين URL:
 
-<div id="option-2-materialized-views">
-  ### الخيار 2: العروض المادية
-</div>
+### الخيار 2: العروض المادية {#option-2-materialized-views}
 
 أنشئ [عرضًا ماديًا](/ar/reference/statements/create/view) على الجدول الحالي.
 
@@ -1134,9 +1112,7 @@ Processed 335.87 thousand rows,
 ...Executor): Reading approx. 335872 rows with 4 streams
 ```
 
-<div id="option-3-projections">
-  ### الخيار 3: الإسقاطات
-</div>
+### الخيار 3: الإسقاطات {#option-3-projections}
 
 أنشئ إسقاطًا على جدولنا الحالي:
 
@@ -1221,7 +1197,7 @@ Processed 319.49 thousand rows, 1
 ```
 
 <div id="summary">
-  ### الملخص
+  ### الملخص {#summary}
 </div>
 
 كان الفهرس الأساسي في [الجدول ذي المفتاح الأساسي المركب (UserID, URL)](#a-table-with-a-primary-key) مفيدًا جدًا في تسريع [استعلام يطبّق عامل تصفية على UserID](#the-primary-index-is-used-for-selecting-granules). لكن هذا الفهرس لا يساهم كثيرًا في تسريع [استعلام يطبّق عامل تصفية على URL](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)، رغم أن عمود URL جزء من المفتاح الأساسي المركب.
@@ -1238,7 +1214,7 @@ Processed 319.49 thousand rows, 1
 وكلما زاد الفرق في الكاردينالية بين أعمدة المفتاح، زادت أهمية ترتيب هذه الأعمدة داخل المفتاح. وسنوضّح ذلك في القسم التالي.
 
 <div id="ordering-key-columns-efficiently">
-  ## ترتيب أعمدة المفتاح بكفاءة
+  ## ترتيب أعمدة المفتاح بكفاءة {#ordering-key-columns-efficiently}
 </div>
 
 <a name="test" />
@@ -1352,7 +1328,7 @@ WHERE URL != '';
 ```
 
 <div id="efficient-filtering-on-secondary-key-columns">
-  ### التصفية بكفاءة على أعمدة المفاتيح الثانوية
+  ### التصفية بكفاءة على أعمدة المفاتيح الثانوية {#efficient-filtering-on-secondary-key-columns}
 </div>
 
 عندما تتضمن query تصفيةً على عمود واحد على الأقل يكون جزءًا من مفتاح أساسي مركب، ويكون هو عمود المفتاح الأول، [فإن ClickHouse يشغّل خوارزمية binary search على index marks الخاصة بعمود المفتاح](#the-primary-index-is-used-for-selecting-granules).
@@ -1405,9 +1381,7 @@ Processed 20.32 thousand rows,
 
 ويرجع ذلك إلى أن [خوارزمية البحث بالاستبعاد العامة](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444) تكون أكثر فعالية عندما يتم اختيار [الحبيبات](#the-primary-index-is-used-for-selecting-granules) عبر عمود مفتاح ثانوي يكون عمود المفتاح السابق له أقل من حيث عدد القيم المميزة. وقد أوضحنا ذلك بالتفصيل في [قسم سابق](#generic-exclusion-search-algorithm) من هذا الدليل.
 
-<div id="optimal-compression-ratio-of-data-files">
-  ### أفضل نسبة ضغط لملفات البيانات
-</div>
+### أفضل نسبة ضغط لملفات البيانات {#optimal-compression-ratio-of-data-files}
 
 يقارن هذا الاستعلام نسبة ضغط العمود `UserID` بين الجدولين اللذين أنشأناهما أعلاه:
 
@@ -1467,13 +1441,13 @@ ORDER BY Ratio ASC
 لذلك، فعلى الأرجح أن تكون قيم `cl` بترتيب عشوائي، وبالتالي تكون خاصية التجاور الموضعي لديها ونسبة الضغط ضعيفتين.
 
 <div id="summary">
-  ### الملخص
+  ### الملخص {#summary-1}
 </div>
 
 لتحسين كلٍّ من كفاءة التصفية على أعمدة المفتاح الثانوية في الاستعلامات ونسبة الضغط لملفات بيانات أعمدة الجدول، يُستحسن ترتيب أعمدة المفتاح الأساسي وفقًا للكاردينالية الخاصة بها ترتيبًا تصاعديًا.
 
 <div id="identifying-single-rows-efficiently">
-  ## تحديد الصفوف الفردية بكفاءة
+  ## تحديد الصفوف الفردية بكفاءة {#identifying-single-rows-efficiently}
 </div>
 
 مع أن هذا [ليس](/ar/resources/support-center/knowledge-base/general-faqs/key-value) عمومًا أفضل حالات استخدام ClickHouse،
@@ -1487,9 +1461,7 @@ ORDER BY Ratio ASC
 
 ومن الحلول الوسط بين أسرع استرجاع ممكن والضغط الأمثل للبيانات استخدام مفتاح أساسي مركب يكون فيه معرّف UUID آخر عمود مفتاح، بعد أعمدة مفتاح أقل كاردينالية وتُستخدم لضمان نسبة ضغط جيدة لبعض أعمدة الجدول.
 
-<div id="a-concrete-example">
-  ### مثال ملموس
-</div>
+### مثال ملموس {#a-concrete-example}
 
 أحد الأمثلة الملموسة هو خدمة لصق النصوص غير المشفرة [https://pastila.nl](https://pastila.nl) التي طوّرها Alexey Milovidov و[كتب عنها في مدونته](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/).
 

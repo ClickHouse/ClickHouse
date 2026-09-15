@@ -14,9 +14,7 @@ Tuple هو مجموعة من العناصر، لكل عنصر فيها [نوع](
 
 يمكن أن تكون Tuples ناتج استعلام. في هذه الحالة، في التنسيقات النصية بخلاف JSON، تُفصل القيم بفواصل داخل `()`. أما في تنسيقات JSON، فتُخرَج Tuples على هيئة مصفوفات (داخل `[]`).
 
-<div id="creating-tuples">
-  ## إنشاء Tuples
-</div>
+## إنشاء Tuples {#creating-tuples}
 
 يمكنك استخدام دالة لإنشاء tuple:
 
@@ -64,9 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-<div id="data-type-detection">
-  ## اكتشاف نوع البيانات
-</div>
+## اكتشاف نوع البيانات {#data-type-detection}
 
 عند إنشاء قيم Tuple أثناء التنفيذ، يستنتج ClickHouse أنواع وسائط Tuple على أنها أصغر أنواع يمكنها احتواء قيمة الوسيطة المقدَّمة. إذا كانت القيمة هي [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default)، فسيكون النوع المستنتَج هو [Nullable](/ar/reference/data-types/nullable).
 
@@ -82,9 +78,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-<div id="referring-to-tuple-elements">
-  ## الإشارة إلى عناصر Tuple
-</div>
+## الإشارة إلى عناصر Tuple {#referring-to-tuple-elements}
 
 يمكن الإشارة إلى عناصر Tuple بالاسم أو برقم الفهرس:
 
@@ -108,9 +102,7 @@ SELECT a.2 FROM named_tuples; -- by index
 └────────────────────┘
 ```
 
-<div id="comparison-operations-with-tuple">
-  ## عمليات المقارنة مع Tuple
-</div>
+## عمليات المقارنة مع Tuple {#comparison-operations-with-tuple}
 
 تُقارَن قيمتا Tuple بمقارنة عناصرهما بالتتابع من اليسار إلى اليمين. فإذا كان العنصر الأول في Tuple الأولى أكبر (أصغر) من العنصر المناظر له في Tuple الثانية، عُدَّت Tuple الأولى أكبر (أصغر) من الثانية. وإلا، إذا كان العنصران متساويين، فتُقارَن القيمة التالية.
 
@@ -188,16 +180,12 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-<div id="nullable-tuple">
-  ## Nullable(Tuple(T1, T2, ...))
-</div>
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-  **ميزة تجريبية**
-
+<Note title="ميزة تجريبية">
   يتطلب `SET enable_nullable_tuple_type = 1`
   هذه ميزة تجريبية.
-</Info>
+</Note>
 
 يسمح بأن تكون الـ Tuple بأكملها `NULL`، بخلاف `Tuple(Nullable(T1), Nullable(T2), ...)` حيث يمكن فقط للعناصر الفردية أن تكون `NULL`.
 

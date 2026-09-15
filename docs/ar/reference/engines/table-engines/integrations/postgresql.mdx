@@ -19,9 +19,7 @@ doc_type: 'guide'
   اطّلع على خدمة [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) الخاصة بنا. فهي تعتمد على تخزين NVMe موجود فعليًا إلى جانب موارد الحوسبة، ما يوفّر أداءً أسرع حتى 10 مرات لأحمال العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم تخزينًا متصلًا بالشبكة مثل EBS، كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
 </Tip>
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -77,9 +75,7 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-<div id="tls-ssl">
-  ### TLS/SSL
-</div>
+### TLS/SSL {#tls-ssl}
 
 تُمرَّر معلمات TLS/SSL إلى `libpq`، ويمكن ضبطها كمفاتيح في مجموعة مُسمّاة أو كوسيطات مفتاح-قيمة لاحقة: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`)، بالإضافة إلى الشهادات والمفتاح، بإحدى صيغتين. عند عدم تعيينها، تُستخدم القيم الافتراضية لـ `libpq` (`sslmode=prefer`).
 
@@ -111,47 +107,35 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
 يمكن تهيئة مجمّع الاتصالات الذي يستخدمه محرك الجدول `PostgreSQL` (ودالة الجدول [`postgresql`](/ar/reference/functions/table-functions/postgresql)) لكل جدول على حدة باستخدام عبارة `SETTINGS`. وعند عدم تحديد إعداد معيّن، تُستخدم تلقائيًا قيمة إعداد `postgresql_*` المقابل على مستوى الاستعلام.
 
-<div id="postgresql-connection-pool-size">
-  ### `postgresql_connection_pool_size`
-</div>
+### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
 حجم مجمّع الاتصالات (إذا كانت جميع الاتصالات قيد الاستخدام، ينتظر الاستعلام حتى يصبح أحد الاتصالات متاحًا). يجب أن تكون القيمة غير صفرية.
 
 القيمة الافتراضية: `16`.
 
-<div id="postgresql-connection-pool-wait-timeout">
-  ### `postgresql_connection_pool_wait_timeout`
-</div>
+### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
 
 مهلة انتظار push/pop لمجمع الاتصالات، بالمللي ثانية، عندما يكون المجمع فارغًا. تعني القيمة `0` أنه يتم الحظر عند فراغ المجمع.
 
 القيمة الافتراضية: `5000`.
 
-<div id="postgresql-connection-pool-retries">
-  ### `postgresql_connection_pool_retries`
-</div>
+### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
 
 عدد مرات إعادة المحاولة لعمليتَي push/pop في مجمع الاتصالات.
 
 القيمة الافتراضية: `2`.
 
-<div id="postgresql-connection-pool-auto-close-connection">
-  ### `postgresql_connection_pool_auto_close_connection`
-</div>
+### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
 
 أغلق الاتصال قبل إعادته إلى مجمّع الاتصالات.
 
 القيمة الافتراضية: `false`.
 
-<div id="postgresql-connection-attempt-timeout">
-  ### `postgresql_connection_attempt_timeout`
-</div>
+### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
 
 مهلة الاتصال، بالثواني، لمحاولة واحدة للاتصال بنقطة نهاية PostgreSQL. تُمرَّر القيمة كمعلمة `connect_timeout` في عنوان URL الخاص بالاتصال.
 
@@ -170,9 +154,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
-<div id="implementation-details">
-  ## تفاصيل التنفيذ
-</div>
+## تفاصيل التنفيذ {#implementation-details}
 
 تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع تنفيذ `commit` بعد كل استعلام `SELECT`.
 
@@ -180,11 +162,9 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 
 تُنفَّذ جميع عمليات `JOIN`، وعمليات التجميع، والفرز، وشروط `IN [ array ]`، وقيد أخذ العينات الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام إلى PostgreSQL.
 
-<div id="passing-a-query">
-  ## تمرير استعلام بدلًا من اسم جدول
-</div>
+## تمرير استعلام بدلًا من اسم جدول {#passing-a-query}
 
-بدلًا من اسم جدول، يمكن أن تكون الوسيطة `table` استعلام `SELECT` يُمرَّر إلى PostgreSQL كما هو. ويُستدل على بنية الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي، أو تغليفه داخل الدالة `query`:
+بدلًا من اسم جدول، يمكن أن تكون الوسيطة `table` استعلام `SELECT` يُمرَّر إلى PostgreSQL كما هو. ويُستدل على بنية الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي، أو تغليفه داخل الدالة `query`:
 
 ```sql
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
@@ -196,7 +176,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   تُحلَّل صيغة الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse، ثم يُعاد تسلسلها وفق لهجة PostgreSQL ‏(وضع علامات الاقتباس لمعرّفات PostgreSQL وإفلات القيم الحرفية النصية) قبل إرسالها إلى الخادم. لذلك يجب أن تكون صالحة في ClickHouse SQL. ولتمرير صياغة خاصة بـ PostgreSQL لا يحللها ClickHouse، استخدم صيغة `query('...')`، حيث يُرسل نصها إلى PostgreSQL كما هو.
 
-  لا يتم دفع أي `WHERE` أو `LIMIT` خارجي أو aggregation أو غير ذلك من استعلام ClickHouse المحيط إلى الاستعلام المُمرَّر — بل يُطبَّق ذلك في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من PostgreSQL، ضع شرط التصفية داخل الاستعلام المُمرَّر. عند استخدام [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي شرط تصفية خارجي لا يمكن دفعه مع Exception بدلًا من تطبيقه محليًا.
+  لا يتم دفع أي `WHERE` أو `LIMIT` خارجي أو تجميع أو غير ذلك من استعلام ClickHouse المحيط إلى الاستعلام المُمرَّر — بل يُطبَّق ذلك في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من PostgreSQL، ضع شرط التصفية داخل الاستعلام المُمرَّر. عند استخدام [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض شرط تصفية خارجي على أعمدة الجدول مع Exception بدلًا من تطبيقه محليًا، لأنه لا يمكن دفعه إلى الاستعلام المُمرَّر. يغطي التحقق مسند `WHERE` ذي المستوى الأعلى وكل اقتران في `AND` ذي المستوى الأعلى. لا تُعد `PREWHERE` على أعمدة هذا الجدول حالةً لهذا الإعداد: إذ لا يدعم محرك الجدول هذا `PREWHERE`، ويُرفَض مثل هذا الاستعلام باستخدام `ILLEGAL_PREWHERE` بغض النظر عن الإعداد. باستخدام المحلل (الافتراضي)، لا يُجرى التحقق إلا حيث يمكن دفع عامل تصفية من الأساس: عندما يكون هذا الجدول هو الجدول الوحيد في الاستعلام، أو على أي من جانبي `INNER JOIN`، أو على الجانب الحافظ في عملية ربط خارجية (الجانب الأيسر من `LEFT JOIN`، والجانب الأيمن من `RIGHT JOIN`). لا يُدفع أي شيء ولا يُتحقق من أي شيء على الجانب غير الحافظ من `LEFT`/`RIGHT JOIN` أو على أي من جانبي `FULL JOIN`، لذا يُطبَّق عامل تصفية على أعمدة هذا الجدول محليًا بعد عملية الربط حتى في الوضع الصارم. حيث يُجرى التحقق، لا يُدفع المسند الذي يشير إلى جداول أخرى مرتبطة في الاستعلام المحيط ويُستثنى من التحقق، سواء أكان يشير إلى الجانب المرتبط فقط أم يخلطه مع هذا الجدول داخل تعبير واحد غير `AND` (مثلًا `OR`)؛ يحتفظ مثل هذا المسند بنقطة تقييمه المعتادة في ClickHouse (`WHERE` بعد عملية الربط، و`PREWHERE` قبلها) ولا يُرفَض. باستخدام المحلل القديم (`enable_analyzer = 0`) لا ينطبق هذا النطاق: يُتحقق من عامل التصفية الخارجي بالكامل عندما يكون هذا الجدول هو الجدول الأول في شجرة الربط، بما في ذلك مسند على الجانب المرتبط، ولا يُتحقق من جدول أيمن مرتبط.
 </Note>
 
 تُنفَّذ استعلامات `INSERT` على جانب PostgreSQL بصيغة `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` داخل معاملة PostgreSQL مع `auto-commit` بعد كل تعليمة `INSERT`.
@@ -235,16 +215,11 @@ CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgre
     <where>id=10</where>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </postgresql>
-</source>
 ```
 
-<div id="usage-example">
-  ## مثال استخدام
-</div>
+## مثال استخدام {#usage-example}
 
-<div id="table-in-postgresql">
-  ### جدول في PostgreSQL
-</div>
+### جدول في PostgreSQL {#table-in-postgresql}
 
 ```text
 postgres=# CREATE TABLE "public"."test" (
@@ -267,9 +242,7 @@ int_id | int_nullable | float | str  | float_nullable
 (1 row)
 ```
 
-<div id="creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above">
-  ### إنشاء جدول في ClickHouse والاتصال بجدول PostgreSQL المُنشأ أعلاه
-</div>
+### إنشاء جدول في ClickHouse والاتصال بجدول PostgreSQL المُنشأ أعلاه {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
 
 يستخدم هذا المثال [محرك جدول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql) لربط جدول ClickHouse بجدول PostgreSQL واستخدام عبارتي SELECT وINSERT على قاعدة بيانات PostgreSQL:
 
@@ -283,9 +256,7 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query">
-  ### إدراج البيانات الأولية من جدول PostgreSQL إلى جدول ClickHouse باستخدام استعلام SELECT
-</div>
+### إدراج البيانات الأولية من جدول PostgreSQL إلى جدول ClickHouse باستخدام استعلام SELECT {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
 تقوم [دالة الجدول postgresql](/ar/reference/functions/table-functions/postgresql) بنسخ البيانات من PostgreSQL إلى ClickHouse، ويُستخدم ذلك غالبًا لتحسين أداء الاستعلامات على هذه البيانات عبر الاستعلام عنها أو إجراء التحليلات في ClickHouse بدلًا من PostgreSQL، كما يمكن استخدامه أيضًا لترحيل البيانات من PostgreSQL إلى ClickHouse. وبما أننا سننسخ البيانات من PostgreSQL إلى ClickHouse، فسنستخدم محرك جدول MergeTree في ClickHouse ونسميه postgresql&#95;copy:
 
@@ -305,9 +276,7 @@ INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-incremental-data-from-postgresql-table-into-clickhouse-table">
-  ### إدراج البيانات التزايدية من جدول PostgreSQL إلى جدول ClickHouse
-</div>
+### إدراج البيانات التزايدية من جدول PostgreSQL إلى جدول ClickHouse {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
 
 إذا كنت ستُجري بعد الإدراج الأولي مزامنةً مستمرة بين جدول PostgreSQL وجدول ClickHouse، فيمكنك استخدام عبارة WHERE في ClickHouse لإدراج البيانات التي أُضيفت إلى PostgreSQL فقط استنادًا إلى طابع زمني أو معرّف تسلسلي فريد.
 
@@ -325,9 +294,7 @@ SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'p
 WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
-<div id="selecting-data-from-the-resulting-clickhouse-table">
-  ### استعلام البيانات من جدول ClickHouse الناتج
-</div>
+### استعلام البيانات من جدول ClickHouse الناتج {#selecting-data-from-the-resulting-clickhouse-table}
 
 ```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
@@ -339,9 +306,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-<div id="using-non-default-schema">
-  ### استخدام مخطط غير افتراضي
-</div>
+### استخدام مخطط غير افتراضي {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -361,9 +326,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 * [دالة الجدول `postgresql`](/ar/reference/functions/table-functions/postgresql)
 * [استخدام PostgreSQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/postgresql)
 
-<div id="related-content">
-  ## محتوى مرتبط
-</div>
+## محتوى مرتبط {#related-content}
 
 * مدونة: [ClickHouse و PostgreSQL - ثنائي مثالي في عالم البيانات - الجزء 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * مدونة: [ClickHouse و PostgreSQL - ثنائي مثالي في عالم البيانات - الجزء 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
     如果对性能或直接访问有较高要求，我们建议直接使用最新的 Java 客户端。
   </Note>
 
-  ## 环境要求
+  ## 环境要求 {#environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) 版本 &gt;= 8
 
-  ### 设置
+  ### 设置 {#setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -59,7 +59,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
     * 使用限定符 `all` 可获取包含所有已打包依赖项的 jar。
   * 或从官方仓库[这里](https://github.com/ClickHouse/clickhouse-java/releases)下载
 
-  ## 配置
+  ## 配置 {#configuration}
 
   **驱动类**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -87,22 +87,24 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * 驱动程序不会根据端口来猜测协议，你需要明确指定协议
   * 指定了 protocol 时，不需要 `ssl` 参数。
 
-  ### 连接属性
+  <div id="connection-properties">
+    ### 连接属性
+  </div>
 
-  主要配置参数在 [Java client](/zh/integrations/language-clients/java/client#client-configuration) 中定义，应原样传递给 driver。Driver 还有一些自有属性，不属于客户端配置的范畴，详见下文。
+  主要配置参数在 [Java client](/zh/integrations/language-clients/java/client#client-configuration) 中定义，应原样传递给驱动程序。驱动程序还有一些自身属性，不属于客户端配置，列举如下。
 
   **驱动属性**：
 
   | 属性                                  | 默认值      | 描述                                                                             |
   | ----------------------------------- | -------- | ------------------------------------------------------------------------------ |
   | `disable_frameworks_detection`      | `true`   | 禁用对 User-Agent 的框架识别                                                           |
-  | `jdbc_ignore_unsupported_values`    | `false`  | 在不影响驱动程序运行的情况下抑制 `SQLFeatureNotSupportedException`                             |
+  | `jdbc_ignore_unsupported_values`    | `false`  | 在不影响驱动程序工作的情况下抑制 `SQLFeatureNotSupportedException`                             |
   | `clickhouse.jdbc.v1`                | `false`  | 使用旧版 JDBC 实现，而不是新版 JDBC                                                        |
   | `default_query_settings`            | `null`   | 允许在执行查询操作时传递默认查询设置                                                             |
-  | `jdbc_resultset_auto_close`         | `true`   | `Statement` 关闭时会自动关闭 `ResultSet`                                               |
-  | `beta.row_binary_for_simple_insert` | `false`  | 使用基于 `RowBinary` 写入器的 `PreparedStatement` 实现。仅适用于 `INSERT INTO ... VALUES` 语句。 |
   | `jdbc_resultset_auto_close`         | `true`   | 关闭 `Statement` 时自动关闭 `ResultSet`                                               |
-  | `jdbc_use_max_result_rows`          | `false`  | 启用后，可使用服务器属性 `max_result_rows` 来限制查询返回的行数。启用时，会覆盖用户设置的溢出模式。详见 JavaDoc。         |
+  | `beta.row_binary_for_simple_insert` | `false`  | 使用基于 `RowBinary` 写入器的 `PreparedStatement` 实现。仅适用于 `INSERT INTO ... VALUES` 语句。 |
+  | `jdbc_resultset_auto_close`         | `true`   | `Statement` 关闭时会自动关闭 `ResultSet`                                               |
+  | `jdbc_use_max_result_rows`          | `false`  | 启用后，可使用服务器属性 `max_result_rows` 限制查询返回的行数，并覆盖用户设置的溢出模式。详见 JavaDoc。              |
   | `jdbc_sql_parser`                   | `JAVACC` | 配置要使用的 SQL 解析器。可选值：`ANTLR4`、`ANTLR4_PARAMS_PARSER`、`JAVACC`。                   |
   | `remember_last_set_roles`           | `true`   | 记住该连接上次设置的角色。                                                                  |
 
@@ -143,15 +145,15 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   注意：无需对 JDBC URL 或属性进行 URL 编码，系统会自动完成编码。
 
-  **只读 profile**
+  **只读 配置文件**
 
   我们有意避免在连接属性中添加默认设置，以防止与只读 profile 产生冲突。
   但某些用户需要传递格式设置 (例如将 JSON 读取为 String) ，对此我们建议使用 `readonly=2` profile。
   有关只读 profile 的更多信息，请参阅[此处](/zh/concepts/features/configuration/settings/constraints-on-settings#read-only)。
 
-  ### 客户端标识
+  ### 客户端标识 {#client-identification}
 
-  有两种方式可以标识发起请求的应用程序：通过连接属性设置 `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME`，或使用 `java.sql.Connection#setClientInfo(String name, String value)` 方法。
+  有两种方法可以标识发起请求的应用程序：通过连接属性设置 `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME`，或使用 `java.sql.Connection#setClientInfo(String name, String value)` 方法。
 
   ```java showLineNumbers
   Properties properties = new Properties();
@@ -171,29 +173,29 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   **注意：** 建议将 `client_name` 属性设置为 `app_name/version` 格式，以便在查询日志中识别应用程序。
 
-  ### 操作标识
+  ### 操作标识 {#operation-identification}
 
-  JDBC 驱动为每个操作生成 `query_id` (目前该信息包含在服务器异常中) 。
+  JDBC 驱动会为每个操作生成 `query_id` (目前该信息包含在服务器异常中) 。
 
-  要为某个操作设置 `log_comment`，请使用 `com.clickhouse.jdbc.StatementImpl#getLocalSettings` 方法。这需要先将 `Statement` 或 `PreparedStatement` 转型为 `com.clickhouse.jdbc.StatementImpl`。
+  要为某个操作设置 `log_comment`，请使用 `com.clickhouse.jdbc.StatementImpl#getLocalSettings` 方法。为此，需要先将 `Statement` 或 `PreparedStatement` 转型为 `com.clickhouse.jdbc.StatementImpl`。
 
   ```java showLineNumbers
   StatementImpl stmt = (StatementImpl) conn.createStatement();
   stmt.getLocalSettings().logComment("some-comment");
   ```
 
-  **注意：** 此方法仅适用于单线程执行语句的场景，因为 `localSettings` 在多个线程之间是共享的。
+  **注意：** 此方法仅适用于单线程使用 statement 的场景，因为 `localSettings` 在线程之间是共享的。
 
-  ## 支持的数据类型
+  ## 支持的数据类型 {#supported-data-types}
 
   JDBC 驱动支持与底层 [java client](/zh/integrations/language-clients/java/index#supported-data-types) 相同的数据格式。
 
-  ### JDBC 类型映射
+  ### JDBC 类型映射 {#jdbc-type-mapping}
 
   以下映射适用于：
 
-  * `ResultSet#getObject(columnIndex)` - 此方法会返回对应 Java 类的对象。 (`Int8` -&gt; `java.lang.Byte`，`Int16` -&gt; `java.lang.Short`，等等。)
-  * `ResultSetMetaData#getColumnType(columnIndex)` - 该方法会返回对应的 JDBC 类型。 (`Int8` -&gt; `java.lang.Byte`，`Int16` -&gt; `java.lang.Short`，等等。)
+  * `ResultSet#getObject(columnIndex)` - 此方法会返回对应 Java 类的对象。 (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short`，等等。)
+  * `ResultSetMetaData#getColumnType(columnIndex)` - 该方法会返回对应的 JDBC 类型。 (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short`，等等。)
 
   有几种方法可以更改映射关系：
 
@@ -297,17 +299,17 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   数组的通用映射规则如下：
 
-  | ClickHouse 类型                              | `getBaseTypeName()`                 | `getBaseType()`       |
-  | ------------------------------------------ | ----------------------------------- | --------------------- |
-  | `Array(<基本类型>)`                            | `<基本类型>`                            | `<JDBC 基本类型>`         |
-  | `Array(<Parameterized Type>(<N>))`         | `<参数化类型>(<N>)`                      | `<基本类型对应的 JDBC 类型>`   |
-  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                  | `<内部 Type 的 JDBC 类型>` |
-  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`            | `<内部 Type 的 JDBC 类型>` |
-  | `Array(Array(...(<Type>)))`                | `<Type>` (最内层的元素)                   | `<最内层元素的 JDBC 类型>`    |
-  | `Array(Tuple(...))`                        | `Tuple(...)` (完整定义)                 | `OTHER`               |
-  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (完整定义) | `VARCHAR`             |
+  | ClickHouse 类型                              | `getBaseTypeName()`                 | `getBaseType()`         |
+  | ------------------------------------------ | ----------------------------------- | ----------------------- |
+  | `Array(<基本类型>)`                            | `<基本类型>`                            | `<JDBC 基本类型>`           |
+  | `Array(<Parameterized Type>(<N>))`         | `<参数化类型>(<N>)`                      | `<基本类型对应的 JDBC 类型>`     |
+  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                  | `<内部 Type 对应的 JDBC 类型>` |
+  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`            | `<内部 Type 的 JDBC 类型>`   |
+  | `Array(Array(...(<Type>)))`                | `<Type>` (最内层元素)                    | `<最内层元素的 JDBC 类型>`      |
+  | `Array(Tuple(...))`                        | `Tuple(...)` (完整定义)                 | `OTHER`                 |
+  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (完整定义) | `VARCHAR`               |
 
-  以上规则的注意事项：
+  以上规则说明：
 
   * 包装类型 (`Nullable`, `LowCardinality`) 会在 `getBaseTypeName()` 中保留，但 `getBaseType()` 解析得到的是内部类型的 JDBC 代码。
   * 元数据中的嵌套数组会被展平：`getBaseTypeName()` 返回最内层的非数组元素类型，而不是直接子类型。
@@ -347,10 +349,10 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * `UUID` 数组在 V2 中使用 `OTHER (1111)`，与标量 `UUID` 的映射一致。
   * `Enum` 值会映射为 `VARCHAR` —— 枚举成员始终通过字符串名称标识，与其底层数值编码无关。
 
-  **写入 Array**
+  **写入 数组**
 
   使用 `java.sql.Connection#createArrayOf` 实例化 `java.sql.Array` 对象。该对象旨在统一不同数据库间的数组处理方式。
-  创建 Array 时需要通过连接将配置传递给其工厂方法。
+  需要通过 Connection 将配置传递给 Array 的工厂方法。
 
   该方法接受两个参数：
 
@@ -371,10 +373,11 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **读取 Arrays**
+  **读取数组**
 
   使用 `ResultSet#getArray(columnIndex)` 读取 `Array` 对象。该对象可用于访问任意嵌套深度的数组。
-  `Array#getResultSet()` 方法可以以更统一的方式将数组元素作为 `java.sql.ResultSet` 进行读取，适用于数组元素的确切类型未知的场景。
+  `Array#getResultSet()` 方法可以以更统一的方式将数组元素作为 `java.sql.ResultSet` 进行读取。当数组元素的确切类型
+  未知时，该方法非常有用。
 
   **示例**
 
@@ -400,10 +403,10 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **写入 Tuples**
+  **写入 元组**
 
-  Tuples 会映射到 `com.clickhouse.data.Tuple` 对象，应通过调用 `setObject(columnIndex, tuple)` 方法将其写入该对象。
-  也可以使用 `java.sql.Struct` 对象来写入 Tuples，以提高可移植性。
+  Tuples 会映射到 `com.clickhouse.data.Tuple` 对象，应通过调用 `setObject(columnIndex, tuple)` 方法将其写入。
+  也可以使用 `java.sql.Struct` 对象来写入 tuples，以提高可移植性。
 
   **示例**
 
@@ -448,7 +451,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ```
 
-  **写入 Map**
+  **写入 Maps**
 
   Map 只能以 `java.collections.Map` 对象的形式写入，因为该类型需要键值对 (`java.sql.Struct` 不支持键值对) 。
 
@@ -466,9 +469,9 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **读取 Map**
+  **读取地图**
 
-  可以使用 `getObject(columnIndex, Map.class)` 方法将 Map 作为 `java.collections.Map` 对象读取。
+  可以通过 `getObject(columnIndex, Map.class)` 方法将 Map 读取为 `java.collections.Map` 对象。
 
   **示例**
 
@@ -488,8 +491,8 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   **写入嵌套数据**
 
-  使用 `java.sql.Connection#createStruct` 实例化 `java.sql.Struct` 对象。该对象旨在统一不同数据库中的嵌套处理方式。
-  向 Struct 工厂方法传递配置时，需要提供 Connection 对象。
+  使用 `java.sql.Connection#createStruct` 实例化 `java.sql.Struct` 对象。该对象旨在统一不同数据库中的嵌套处理。
+  需要 Connection 来向 Struct 工厂方法传递配置。
 
   该方法接受两个参数：
 
@@ -508,7 +511,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  **读取嵌套数据**
+  **读取嵌套**
 
   使用 `ResultSet#getStruct(columnIndex, StructDescriptor)` 读取 `Nested` 对象。该对象可用于访问任意嵌套深度的嵌套内容。
   `Struct#getResultSet()` 方法可用于以更统一的方式将嵌套元素作为 `java.sql.ResultSet` 读取。当嵌套元素的确切类型未知时，此方法非常有用。
@@ -594,8 +597,8 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }});
   ```
 
-  还有一种更便捷的方式，可通过将服务器设置 `jdbc_read_json_as_string=true` 传入连接属性，以 String 形式读取 JSON。
-  这样驱动程序会将 JSON 值作为 String 返回，可使用任意 JSON 库进行解析。
+  还有一种更便捷的方式：将服务器设置 `output_format_binary_write_json_as_string=1` 传入连接属性，即可将 JSON 读取为字符串。
+  这样驱动程序会将 JSON 值以字符串形式返回，并可使用任意 JSON 库进行解析。
 
   ```java
   Properties properties = new Properties();
@@ -621,11 +624,11 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### 处理日期、时间与时区
+  ### 处理日期、时间与时区 {#handling-dates-times-and-timezones}
 
   请阅读 [Date/Time Guide](/zh/integrations/language-clients/java/date-time-guide)，其中说明了驱动程序在处理 Date/Time 和时间戳时的常见陷阱及处理逻辑。
 
-  ## 创建连接
+  ## 创建连接 {#creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -636,7 +639,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## 提供凭据与配置项
+  ## 提供凭据与配置项 {#supplying-credentials-and-settings}
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -658,7 +661,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 简单语句
+  ## 简单语句 {#simple-statement}
 
   ```java showLineNumbers
 
@@ -671,7 +674,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 插入
+  ## 插入 {#insert}
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -683,7 +686,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP`
+  ## `HikariCP` {#hikaricp}
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -706,17 +709,17 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 更多信息
+  ## 更多信息 {#more-information}
 
   如需了解更多信息，请参阅我们的 [GitHub 代码仓库](https://github.com/ClickHouse/clickhouse-java) 和 [Java Client 文档](/zh/integrations/language-clients/java/client)。
 
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 
-  ### 日志
+  ### 日志 {#logging}
 
   驱动程序使用 [slf4j](https://www.slf4j.org/) 进行日志记录，并会使用 `classpath` 中第一个可用的实现。
 
-  ### 解决大批量插入时的 JDBC 超时问题
+  ### 解决大批量插入时的 JDBC 超时问题 {#resolving-jdbc-timeout-on-large-inserts}
 
   在 ClickHouse 中执行耗时较长的大批量插入操作时，您可能会遇到如下 JDBC 超时错误：
 
@@ -726,7 +729,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   这些错误可能会中断数据插入过程并影响系统稳定性。要解决此问题，您可能需要调整客户端操作系统中的若干超时设置。
 
-  #### Mac OS
+  #### Mac OS {#mac-os}
 
   在 Mac OS 上，可以通过调整以下设置来解决该问题：
 
@@ -736,7 +739,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux
+  #### Linux {#linux}
 
   在 Linux 上，仅靠等效设置可能无法解决该问题。由于 Linux 处理套接字保活设置的方式有所不同，还需执行额外步骤。请按以下步骤操作：
 
@@ -763,9 +766,9 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## 迁移指南
+  ## 迁移指南 {#migration-guide}
 
-  ### 主要变更
+  ### 主要变更 {#key-changes}
 
   | 功能                            | V1 (旧版) | V2 (新版)           |
   | ----------------------------- | ------- | ----------------- |
@@ -780,12 +783,12 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * JDBC V2 需要显式配置。不默认启用故障转移。
     * 应在 URL 中指定协议。不支持根据端口号隐式检测协议。
 
-  ### 配置变更
+  ### 配置变更 {#configuration-changes}
 
   只有两个枚举：
 
   * `com.clickhouse.jdbc.DriverProperties` - 驱动自身的配置属性。
-  * `com.clickhouse.client.api.ClientConfigProperties` - 客户端配置属性。有关客户端配置的更改，请参见 [Java Client 文档](/zh/integrations/language-clients/java/client#migration_from_v1_config)。
+  * `com.clickhouse.client.api.ClientConfigProperties` - 客户端配置属性。有关客户端配置变更，请参见 [Java Client 文档](/zh/integrations/language-clients/java/client#migration_from_v1_config)。
 
   连接属性的解析方式如下：
 
@@ -809,7 +812,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### 数据类型变更
+  ### 数据类型变更 {#data-types-changes}
 
   **数值类型**
 
@@ -923,7 +926,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * IPv4 和 IPv6 的值可以通过 `getBytes(columnIndex)` 方法读取为 `byte[]`。不过，建议针对这些类型使用专门的类。
   * V2 不支持将 IP 地址作为数值读取，因为这类转换更适合在 InetAddress 类中实现。
 
-  ### 数据库元数据变更
+  ### 数据库元数据变更 {#database-metadata-changes}
 
   * V2 仅使用 `Schema` 这一术语来表示数据库。`Catalog` 一词保留供将来使用。
   * V2 对 `DatabaseMetaData.supportsTransactions()` 和 `DatabaseMetaData.supportsSavepoints()` 返回 `false`。后续开发中将对此进行调整。
@@ -940,11 +943,11 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   `clickhouse-jdbc` API 是同步的，通常会带来更多开销 (例如 SQL 解析、类型映射/转换等) 。如果对性能有较高要求，或希望以更直接的方式访问 ClickHouse，请考虑使用 [clickhouse-client](/zh/integrations/connectors/sql-clients/sql-console)。
 
-  ## 环境要求
+  ## 环境要求 {#v07-environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) 版本 &gt;= 8
 
-  ### Setup
+  ### Setup {#v07-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1006,7 +1009,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## 配置
+  ## 配置 {#v07-configuration}
 
   **驱动类**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1031,7 +1034,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   注意：如需了解更多信息，请参阅 [JDBC 专项配置](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java)。
 
-  ## 支持的数据类型
+  ## 支持的数据类型 {#v07-supported-data-types}
 
   JDBC 驱动支持与客户端库相同的数据格式。
 
@@ -1042,7 +1045,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
     * UInt64 - 映射为 `long` (在 client-v1 中)
   </Note>
 
-  ## 创建连接
+  ## 创建连接 {#v07-creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1055,7 +1058,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 简单语句
+  ## 简单语句 {#v07-simple-statement}
 
   ```java showLineNumbers
 
@@ -1068,7 +1071,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 插入
+  ## 插入 {#v07-insert}
 
   <Note>
     * 使用 `PreparedStatement` 代替 `Statement`
@@ -1086,7 +1089,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### 使用 input 表函数
+  ### 使用 input 表函数 {#with-input-table-function}
 
   一个性能表现出色的选项：
 
@@ -1105,7 +1108,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   * 尽量使用[input 函数文档](/zh/reference/functions/table-functions/input)
 
-  ### 使用占位符插入
+  ### 使用占位符插入 {#insert-with-placeholders}
 
   此选项仅建议用于小批量插入，因为它需要一个较长的 SQL 表达式 (该表达式将在客户端解析，并会消耗 CPU 和内存) ：
 
@@ -1120,7 +1123,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 处理 DateTime 与时区
+  ## 处理 DateTime 与时区 {#handling-datetime-and-time-zones}
 
   请使用 `java.time.LocalDateTime` 或 `java.time.OffsetDateTime` 代替 `java.sql.Timestamp`，以及使用 `java.time.LocalDate` 代替 `java.sql.Date`。
 
@@ -1135,7 +1138,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 处理 `AggregateFunction`
+  ## 处理 `AggregateFunction` {#handling-aggregatefunction}
 
   <Note>
     仅支持直接读取 `AggregateFunction` 的二进制状态的情况是 `groupBitmap`。对于其他聚合函数 (`min`、`max`、`avg` 等) ，请在查询中使用 `-Merge` 组合器 (例如 `SELECT minMerge(min_state) FROM ...`) ，以便在服务端解析聚合状态并返回普通值。
@@ -1183,7 +1186,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## 配置 HTTP 库
+  ## 配置 HTTP 库 {#v07-configuring-http-library}
 
   ClickHouse JDBC connector 支持三种 HTTP 库：[`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html)、[`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html) 和 [Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/)。
 
@@ -1207,11 +1210,11 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## 通过 SSL 连接到 ClickHouse
+  ## 通过 SSL 连接到 ClickHouse {#connect-to-clickhouse-with-ssl}
 
   要通过 SSL 建立与 ClickHouse 的安全 JDBC 连接，需要在 JDBC 属性中配置相应的 SSL 参数。通常需要在 JDBC URL 或 Properties 对象中指定 SSL 属性，例如 `sslmode` 和 `sslrootcert`。
 
-  ## SSL 属性
+  ## SSL 属性 {#ssl-properties}
 
   | 名称                   | 默认值    | 可选值          | 说明                                      |
   | -------------------- | ------ | ------------ | --------------------------------------- |
@@ -1244,7 +1247,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## 解决大批量插入时的 JDBC 超时问题
+  ## 解决大批量插入时的 JDBC 超时问题 {#v07-resolving-jdbc-timeout-on-large-inserts}
 
   在 ClickHouse 中执行耗时较长的大批量插入操作时，您可能会遇到如下 JDBC 超时错误：
 
@@ -1254,7 +1257,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   这些错误可能会中断数据插入过程并影响系统稳定性。要解决此问题，需要在客户端操作系统中调整若干超时设置。
 
-  ### Mac OS
+  ### Mac OS {#v07-mac-os}
 
   在 Mac OS 上，可以通过调整以下设置来解决该问题：
 
@@ -1264,7 +1267,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux
+  ### Linux {#v07-linux}
 
   在 Linux 上，仅靠等效设置可能无法解决该问题。由于 Linux 处理套接字保活设置的方式有所不同，还需执行额外步骤。请按以下步骤操作：
 

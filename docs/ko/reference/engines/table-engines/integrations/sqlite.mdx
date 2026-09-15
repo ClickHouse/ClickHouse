@@ -14,9 +14,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 
 이 엔진은 SQLite로 데이터를 가져오고 내보낼 수 있으며, ClickHouse에서 SQLite 테이블에 직접 쿼리할 수도 있습니다.
 
-<div id="creating-a-table">
-  ## 테이블 생성
-</div>
+## 테이블 생성 {#creating-a-table}
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -31,9 +29,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 * `db_path` — 데이터베이스가 저장된 SQLite 파일의 경로입니다.
 * `table` — SQLite 데이터베이스 내 테이블 이름이거나, SQLite에 그대로 전달되는 쿼리입니다([테이블 이름 대신 쿌리 전달](#passing-a-query) 참조).
 
-<div id="passing-a-query">
-  ## 테이블 이름 대신 쿼리 전달하기
-</div>
+## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
 
 테이블 이름 대신 `table` 인수에 SQLite로 그대로 전달되는 `SELECT` 쿼리를 지정할 수 있습니다. 테이블의 구조는 쿼리 결과를 바탕으로 자동 추론됩니다. 쿼리는 하위 쿼리로 작성하거나 `query` 함수로 감쌀 수 있습니다.
 
@@ -47,12 +43,10 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 <Note>
   하위 쿼리 형식인 `(SELECT ...)`는 ClickHouse에서 파싱된 뒤 다시 직렬화되어 SQLite로 전송됩니다. 따라서 유효한 ClickHouse SQL이어야 합니다. ClickHouse가 파싱하지 못하는 SQLite 전용 구문을 전달하려면 `query('...')` 형식을 사용하십시오. 이 형식의 텍스트는 그대로 SQLite로 전송됩니다.
 
-  상위 ClickHouse 쿼리의 `WHERE`, `LIMIT`, 집계 등은 전달된 쿼리로 **푸시다운되지** 않으며, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. SQLite에서 읽을 데이터를 제한하려면 전달된 쿼리 안에 filter를 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 푸시다운할 수 없는 상위 filter는 로컬에서 적용되는 대신 예외와 함께 거부됩니다.
+  상위 ClickHouse 쿼리의 `WHERE`, `LIMIT`, 집계 등은 전달된 쿼리로 **푸시다운되지** 않으며, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. SQLite에서 읽을 데이터를 제한하려면 전달된 쿼리 안에 filter를 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 전달된 쿼리로 푸시다운할 수 없는 이 테이블의 컬럼에 대한 상위 filter는 로컬에서 적용되는 대신 예외와 함께 거부됩니다. 검사는 최상위 `WHERE` 프레디케이트와 최상위 `AND`의 각 결합항을 대상으로 합니다. 이 테이블의 컬럼에 대한 `PREWHERE`는 이 설정의 대상이 아닙니다. 이 테이블 엔진은 `PREWHERE`를 지원하지 않으므로, 이러한 쿼리는 설정과 관계없이 `ILLEGAL_PREWHERE`와 함께 거부됩니다. 분석기(기본값)를 사용하면 filter를 푸시다운할 수 있는 경우에만 검사가 실행됩니다. 즉, 이 테이블이 쿼리의 유일한 테이블인 경우, `INNER JOIN`의 양쪽, 또는 외부 조인의 보존 측(`LEFT JOIN`의 왼쪽, `RIGHT JOIN`의 오른쪽)에서만 실행됩니다. `LEFT`/`RIGHT JOIN`의 비보존 측과 `FULL JOIN`의 양쪽에서는 아무것도 푸시다운되거나 검사되지 않으므로, 엄격 모드에서도 이 테이블의 컬럼에 대한 filter는 조인 후 로컬에서 적용됩니다. 검사가 실행되는 위치에서 주변 쿼리에 조인된 다른 테이블을 참조하는 프레디케이트는 조인된 측만 참조하든, 하나의 `AND`가 아닌 표현식(예: `OR`) 내부에서 이 테이블과 함께 참조하든 푸시다운되지 않으며 검사에서 제외됩니다. 이러한 프레디케이트는 일반적인 ClickHouse 평가 시점(`WHERE`는 조인 후, `PREWHERE`는 조인 전)을 유지하며 거부되지 않습니다. 이전 분석기(`enable_analyzer = 0`)에서는 이 범위 지정이 적용되지 않습니다. 이 테이블이 조인 트리의 첫 번째 테이블이면 조인된 측의 프레디케이트를 포함해 전체 상위 filter가 검사되며, 조인된 오른쪽 테이블은 검사되지 않습니다.
 </Note>
 
-<div id="data-types-support">
-  ## 데이터 타입 지원
-</div>
+## 데이터 타입 지원 {#data-types-support}
 
 테이블 정의에서 ClickHouse 컬럼 타입을 명시적으로 지정하면, SQLite TEXT 컬럼에서 다음 ClickHouse 타입으로 파싱할 수 있습니다:
 
@@ -67,9 +61,7 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 
 기본 타입 매핑은 [SQLite 데이터베이스 엔진](/ko/reference/engines/database-engines/sqlite#data_types-support) 문서를 참조하십시오.
 
-<div id="usage-example">
-  ## 사용 예시
-</div>
+## 사용 예시 {#usage-example}
 
 다음은 SQLite 테이블을 생성하는 쿼리입니다:
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="s3_base">
-  ## s3_base
-</div>
+## s3_base {#s3_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لتحديد عنوان URL الأساسي لحل عناوين URL النسبية في دالة جدول s3 ومحرك جدول S3."}]}]} />
 
@@ -27,17 +25,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يمكن أن يستخدم عنوان URL الأساسي أي صيغة تقبلها دالة الجدول `s3`، مثل `s3://bucket/` أو `https://bucket.s3.amazonaws.com/` أو `https://endpoint/bucket/`.
 
-<div id="s3_check_objects_after_upload">
-  ## s3_check_objects_after_upload
-</div>
+## s3_check_objects_after_upload {#s3_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 تحقّق من كل كائن تم رفعه إلى S3 باستخدام طلب head للتأكد من نجاح عملية الرفع
 
-<div id="s3_connect_timeout_ms">
-  ## s3_connect_timeout_ms
-</div>
+## s3_connect_timeout_ms {#s3_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -45,9 +39,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 مهلة الاتصال بالمضيف لأقراص S3.
 
-<div id="s3_create_new_file_on_insert">
-  ## s3_create_new_file_on_insert
-</div>
+## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,17 +54,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 اطّلع على مزيد من التفاصيل [هنا](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="s3_disable_checksum">
-  ## s3_disable_checksum
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-لا تحسب checksum عند إرسال ملف إلى S3. يسرّع ذلك عمليات الكتابة من خلال تجنّب تمريرات المعالجة المفرطة على الملف. ويُعد هذا آمنًا في معظم الحالات، لأن بيانات جداول MergeTree تتحقق سلامتها باستخدام checksum من قِبل ClickHouse على أي حال، وعند الوصول إلى S3 عبر HTTPS، توفّر طبقة TLS بالفعل سلامة البيانات أثناء نقلها عبر الشبكة. ومع ذلك، فإن استخدام checksums إضافية على S3 يوفّر حماية متعددة الطبقات.
-
-<div id="s3_ignore_file_doesnt_exist">
-  ## s3_ignore_file_doesnt_exist
-</div>
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -85,25 +67,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 1 — يعيد `SELECT` نتيجة فارغة.
 * 0 — يطلق `SELECT` استثناءً.
 
-<div id="s3_list_object_keys_size">
-  ## s3_list_object_keys_size
-</div>
+## s3_list_object_keys_size {#s3_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 الحد الأقصى لعدد الملفات التي يمكن إرجاعها في دفعة واحدة عبر طلب ListObject
 
-<div id="s3_min_upload_part_size">
-  ## s3_min_upload_part_size
-</div>
+## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 الحد الأدنى لحجم الجزء المطلوب رفعه أثناء الرفع متعدد الأجزاء إلى S3.
 
-<div id="s3_path_filter_limit">
-  ## s3_path_filter_limit
-</div>
+## s3_path_filter_limit {#s3_path_filter_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -112,17 +88,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 الحد الأقصى لعدد قيم `_path` التي يمكن استخراجها من عوامل تصفية الاستعلام لاستخدامها في اجتياز الملفات
 بدلاً من إدراجها باستخدام `glob`. وتعني القيمة 0 أنه معطّل.
 
-<div id="s3_request_timeout_ms">
-  ## s3_request_timeout_ms
-</div>
+## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
 مهلة خمول لإرسال البيانات واستقبالها من/إلى S3. تفشل العملية إذا ظل استدعاء واحد للقراءة أو الكتابة عبر TCP محجوبًا لهذه المدة.
 
-<div id="s3_skip_empty_files">
-  ## s3_skip_empty_files
-</div>
+## s3_skip_empty_files {#s3_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,9 +107,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — يُطلق `SELECT` استثناءً إذا لم يكن الملف الفارغ متوافقًا مع التنسيق المطلوب.
 * 1 — يعيد `SELECT` نتيجة فارغة للملف الفارغ.
 
-<div id="s3_slow_all_threads_after_network_error">
-  ## s3_slow_all_threads_after_network_error
-</div>
+## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -147,25 +117,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 بعد أن يواجه أي طلب S3 واحد خطأ شبكة قابلاً لإعادة المحاولة، مثل مهلة socket.
 وعند ضبطه على `false`، تتعامل كل سلسلة تنفيذ مع backoff لطلب S3 بشكل مستقل عن سلاسل التنفيذ الأخرى.
 
-<div id="s3_strict_upload_part_size">
-  ## s3_strict_upload_part_size
-</div>
+## s3_strict_upload_part_size {#s3_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحجم المحدد بدقة للجزء المطلوب رفعه أثناء الرفع متعدد الأجزاء إلى S3 (بعض التطبيقات لا تدعم الأجزاء ذات الأحجام المتغيرة).
 
-<div id="s3_throw_on_zero_files_match">
-  ## s3_throw_on_zero_files_match
-</div>
+## s3_throw_on_zero_files_match {#s3_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 إرجاع خطأ عندما لا يتمكن طلب ListObjects من مطابقة أي ملفات
 
-<div id="s3_truncate_on_insert">
-  ## s3_truncate_on_insert
-</div>
+## s3_truncate_on_insert {#s3_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -178,9 +142,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 اطّلع على مزيد من التفاصيل [هنا](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="s3_uri_style">
-  ## s3_uri_style
-</div>
+## s3_uri_style {#s3_uri_style}
 
 <SettingsInfoBlock type="S3UriStyle" default_value="auto" />
 
@@ -188,9 +150,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يفرض نمط نقطة نهاية S3. القيم الممكنة: auto, virtual&#95;hosted, path.
 
-<div id="s3_use_adaptive_timeouts">
-  ## s3_use_adaptive_timeouts
-</div>
+## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

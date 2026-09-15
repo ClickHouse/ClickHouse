@@ -9,67 +9,107 @@ doc_type: 'reference'
 ClickHouse 中的查询可分为以下几类：
 
 1. 读取数据查询：`SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`。
-2. 写入数据查询：`INSERT`, `OPTIMIZE`。
+2. 写入数据查询：`INSERT`, `OPTIMIZE`, [`DELETE`](/zh/reference/statements/delete), [`UPDATE`](/zh/reference/statements/update), `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`。
 3. 修改设置查询：`SET`, `USE`。
-4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询：`CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`。
-5. `KILL QUERY`。
+4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询：`CREATE`, `ALTER`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`, `TRUNCATE`。
+5. 访问管理查询：[`GRANT`](/zh/reference/statements/grant)、[`REVOKE`](/zh/reference/statements/revoke)，以及针对用户、角色、行策略、脱敏策略、配额 和 profile 的 `CREATE`、`ALTER` 和 `DROP`。参见[访问控制与账户管理](/zh/concepts/features/security/access-rights)。
+6. `KILL QUERY`。
+
+`ALTER TABLE ... DELETE` 和 `ALTER TABLE ... UPDATE` 修改的是数据而非表元数据，因此上面将它们列为写入数据查询。它们需要 `ALTER DELETE` 和 `ALTER UPDATE` 特权，独立的 `DELETE` 和 `UPDATE` 语句同样需要这些特权。这些特权属于 `ALTER TABLE` 特权组，因此 `allow_ddl = 0` 会拒绝对持久化表执行上述全部四种语句。
 
 以下设置按查询类型控制用户权限：
 
-<div id="readonly">
-  ## readonly
-</div>
+## readonly {#readonly}
 
-限制读取数据、写入数据和修改设置查询的权限。
+限制一个 session 可以运行哪些查询。该设置的取值、默认值，以及每个取值允许你更改哪些设置，详见
+[settings reference](/zh/reference/settings/session-settings/other#readonly)；本节说明每个取值允许哪些
+类别的查询。
 
-设置为 1 时，允许：
+设置为 1 时，允许如下查询：
 
-* 所有类型的读取查询 (如 SELECT 及其等效查询) 。
-* 仅修改会话上下文的查询 (如 USE) 。
+* 读取查询 (如 `SELECT` 及与之等价的查询) 。
+* 仅修改 session 上下文的查询 (如 `USE`) 。
 
-设置为 2 时，除上述之外，还允许：
+设置为 2 时，在上述基础上还允许 `SET`、`CREATE TEMPORARY TABLE` 和 `RESTORE`。由于 `RESTORE` 可以
+创建表并向其中加载数据，因此 `readonly = 2` 本身并不能阻止 session 进行写入；而 `readonly = 1`
+会拒绝该操作。
 
-* SET 和 CREATE TEMPORARY TABLE
+无论取何值，`BACKUP` 都不受 `readonly` 限制：只要 session 拥有备份某张表的 特权，即使在
+`readonly = 1` 下也可以写入 backup。请勿依赖 `readonly` 来阻止备份。
 
-<Tip>
-  EXISTS、DESCRIBE、EXPLAIN、SHOW PROCESSLIST 等查询等同于 SELECT，因为它们只是从系统表中执行 select。
-</Tip>
+大多数 table functions 需要 `CREATE TEMPORARY TABLE` 特权，因此读取此类表函数的 `SELECT` 在
+`readonly = 1` 下会被拒绝，而在 `readonly = 2` 下不会。某些 table function，例如 `numbers`，在
+read-only 模式下是允许的。
 
-可能的值：
+当取值大于 0 时，对 持久化表 不允许执行以下任何操作：写入数据查询
+(`INSERT`、`OPTIMIZE`、`DELETE`、`UPDATE`、`ALTER TABLE ... DELETE`、`ALTER TABLE ... UPDATE`) 或 DDL
+查询 (`CREATE`、`ALTER TABLE`、`ALTER VIEW`、`RENAME`、`EXCHANGE`、`ATTACH`、`DETACH`、`DROP`、
+`TRUNCATE TABLE`) 。需要 `SYSTEM` 组 特权 的 `SYSTEM` 语句，以及对 users、角色、行策略、脱敏策略、
+配额 和 profile 的 `CREATE`、`ALTER` 和 `DROP` 同样不被允许。named collection 管理是个例外：
+`readonly` 不限制 `CREATE NAMED COLLECTION`、`ALTER NAMED COLLECTION` 或 `DROP NAMED COLLECTION`。
 
-* 0 — 允许读取、写入和修改设置查询。
-* 1 — 仅允许读取数据查询。
-* 2 — 允许读取数据和修改设置查询。
+使用 `GRANT` 授予 特权 同样会被拒绝，但并非所有 访问管理 语句都如此：本地的
+`REVOKE` 和 `GRANT CURRENT GRANTS` 不受 `readonly` 限制，因此 read-only session 仍可以 revoke 其持有的、
+带 grant option 的 特权，并将自身的 grants 传播给另一个 USER。
+而以 `ON CLUSTER` 方式 revoke 特权 会被拒绝。
 
-默认值：0
+temporary tables 不受这两项设置的约束：能够创建 temporary table 的 session 也可以对其执行 `ALTER`、
+insert 和 drop。
 
 <Note>
-  设置 `readonly = 1` 后，用户无法在当前会话中更改 `readonly` 和 `allow_ddl` 设置。
+  通过 [HTTP interface](/zh/concepts/features/interfaces/http) 发起请求时，若请求 method 不是 `POST`，
+  且其有效值原本为 0，则该请求会以 `readonly = 2` 运行。若用户 settings 或 profile 已设置了更严格的值，则保留该值。
+  当 `PUT` 和 `DELETE` 到达接受它们的 SQL-defined [handler](/zh/reference/statements/create/handler) 时不受此限制，
+  因此在有效 `readonly` 为 0 时这类请求可以修改数据；否则请使用 `POST` method 修改数据。
 
-  在 [HTTP interface](/zh/concepts/features/interfaces/http) 中使用 `GET` method 时，会自动将 `readonly` 设为 1。若要修改数据，请使用 `POST` method。
+  对于以这种方式提升限制的请求，query string 中的 `readonly` 参数会被拒绝并报
+  `Cannot modify 'readonly' setting in readonly mode`，除非其指定的值与请求当前的值相同。
 
-  设置 `readonly = 1` 会禁止用户更改设置。你也可以仅禁止用户更改特定设置，或者在 `readonly = 1` 的限制下只允许更改特定设置。详情请参见[设置约束](/zh/concepts/features/configuration/settings/constraints-on-settings)。
+  可以只禁止 USER 修改特定 settings，也可以在 `readonly = 1` 的限制下只允许修改
+  特定 settings。详见
+  [constraints on settings](/zh/concepts/features/configuration/settings/constraints-on-settings)。
 </Note>
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_ddl {#allow_ddl}
 
-允许或禁止 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询。
+允许或禁止对数据库、表、视图、字典、用户自定义函数、工作负载、资源以及 SQL 定义的 handler 执行 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询。
 
 可能的值：
 
-* 0 — 不允许执行 DDL 查询。
-* 1 — 允许执行 DDL 查询。
+* 0 — 对持久化对象执行需要以下任一特权的查询会被阻止：`CREATE DATABASE`、`DROP DATABASE`、`CREATE TABLE`、`CREATE VIEW`、`ALTER TABLE`、
+  `ALTER VIEW`、`DROP TABLE`、`DROP VIEW`、`TRUNCATE`、`CREATE DICTIONARY`、`DROP DICTIONARY`、
+  `CREATE FUNCTION`、`DROP FUNCTION`、`CREATE WORKLOAD`、`DROP WORKLOAD`、`CREATE RESOURCE`、
+  `DROP RESOURCE`、`CREATE HANDLER`、`ALTER HANDLER`、`DROP HANDLER`。`RENAME`、`EXCHANGE`、
+  `ATTACH` 和 `DETACH` 同样需要这些特权，因此也会被阻止；但 `ALTER TABLE ... ATTACH PARTITION` 和
+  `ATTACH PART` 只需要 `INSERT`，不受该设置阻止，不过 `readonly` 仍会在持久化表上阻止它们。
+  `ATTACH PARTITION ... FROM` 还需要 `ALTER DELETE`，因此会被阻止。授予和撤销这些特权则不受阻止。
+* 1 — 该设置不阻止任何操作。
 
 默认值：1
 
 <Note>
-  如果当前会话的 `allow_ddl = 0`，则无法运行 `SET allow_ddl = 1`。
+  如果当前 session 的 `allow_ddl = 0`，则无法执行 `SET allow_ddl = 1`。
+
+  `allow_ddl` 不会限制访问管理类查询：`GRANT`、`REVOKE` 以及对用户、role、行策略、脱敏策略、配额和 profile 的 `CREATE`、`ALTER` 和
+  `DROP` 均不受其影响。`CREATE TEMPORARY TABLE` 和 named collection 管理同样不受影响，
+  `ALTER DATABASE ... MODIFY SETTING`、`ALTER DATABASE ... MODIFY COMMENT` 和 `UNDROP TABLE` 也是如此，`readonly` 同样不会限制这些操作。在对用户、role 或 profile 执行 `CREATE` 或 `ALTER` 时，
+  只要当前 session 的 `allow_ddl = 0`，其中的 `SETTINGS allow_ddl = 1` 子句就会被拒绝，
+  而 `SETTINGS allow_ddl = 0` 子句会被接受。内嵌的设置会依据 session 自身的 settings 约束进行检查，这也正是 `SET allow_ddl = 1` 被拒绝的原因。
 </Note>
 
 <Info>
   **KILL QUERY**
 
-  无论 readonly 和 allow&#95;ddl 的设置如何组合，都可以执行 `KILL QUERY`。
+  终止自己的查询不需要 `KILL QUERY` 特权，因此在 `readonly` 和 `allow_ddl` 的任意组合下都可以执行，但需要对 `system.processes` 拥有 `SELECT` 权限。终止其他用户的查询，以及任何 `KILL QUERY ... ON CLUSTER`，都需要 `KILL QUERY` 特权，而 `readonly = 1` 和 `readonly = 2` 会拒绝该特权。
 </Info>
+
+## 其他相关设置 {#other-relevant-settings}
+
+* [`allow_introspection_functions`](/zh/reference/settings/session-settings/allow#allow_introspection_functions)
+  是与 `readonly` 和 `allow_ddl` 一同参与权限判定的第三个设置。当它被禁用时,执行内部信息函数会被阻止,但授予
+  `INTROSPECTION` 权限不受影响。
+* [`allow_non_metadata_alters`](/zh/reference/settings/session-settings/allow#allow_non_metadata_alters)
+  并不是权限设置,但它对 `ALTER TABLE` 施加了进一步的限制:当它被禁用时,对于 `MergeTree` 家族的表,如果某条修改
+  表定义的命令在执行时会重写磁盘上的数据(`DROP COLUMN`、`RENAME COLUMN`、`MODIFY COLUMN` 类型变更、`MODIFY TTL`),
+  该命令将被拒绝。`CLEAR COLUMN`、`CLEAR INDEX` 和 `CLEAR PROJECTION` 虽然不会改变表定义,但同样会被拒绝。
+  本身即为变更操作的语句,例如 `ALTER TABLE ... DELETE`、`ALTER TABLE ... UPDATE` 和 `ALTER TABLE ... MATERIALIZE INDEX`,则不受影响。

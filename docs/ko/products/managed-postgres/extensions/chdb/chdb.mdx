@@ -1,0 +1,177 @@
+---
+sidebarTitle: 'chdb'
+description: 'Postgres chdb 확장 기능에 대한 전체 참고 문서'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb'
+title: 'chdb 확장 기능 참고 문서'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
+---
+
+## 개요 {#synopsis}
+
+```psql
+# CREATE EXTENSION chdb;
+CREATE EXTENSION
+
+# SELECT * FROM chdb_query('version()') AS (version text);
+ version
+----------
+ 26.7.2.1
+(1 row)
+```
+
+## 설명 {#description}
+
+`chdb` 확장 기능은 헬퍼 프로세스에서 [chDB] 쿼리를 실행합니다.
+
+## 함수 {#functions}
+
+<div id="pgchdb_version">
+  ### `pgchdb_version`
+</div>
+
+```sql
+SELECT pgchdb_version();
+```
+
+chdb 확장 기능 라이브러리의 현재 [시맨틱 버전][semver]을 반환합니다. chdb 확장 기능 버전은 `x.y` 부분만 사용하지만, 라이브러리는 전체 `x.y.z` [시맨틱 버전][semver]을 제공합니다. 이 값은 Postgres 18 이상의 [`pg_get_loaded_modules()`] 함수가 반환하는 값과 동일합니다:
+
+```sql
+SELECT version
+  FROM pg_get_loaded_modules()
+ WHERE module_name = 'chdb';
+```
+
+### `chdb_query` {#chdb_query}
+
+```sql
+SELECT * FROM chdb_query('SELECT version()') AS (version text);
+```
+
+[chDB] 쿼리를 실행하고 그 결과 행을 릴레이션으로 반환합니다. 호출할 때마다 디스크에 임시 chDB 데이터베이스를 생성하고, 쿼리가 완료되면 이를 삭제합니다. 따라서 이전 `chdb_query()` 호출에서 생성된 DDL 등의 객체는 이후 호출까지 유지되지 않습니다.
+
+컬럼 정의 목록(`AS (col type, ...)`)은 반드시 지정해야 합니다. PostgreSQL은 행을 가져오기 전에 행 구조 정의를 요구하며, 이 구조는 쿼리가 반환하는 컬럼과 일치해야 합니다. 값은 chDB에서 선언된 타입으로 변환됩니다.
+
+기본적으로 `EXECUTE` 액세스 권한을 가진 role은 없습니다. 해당 함수를 사용할 수 있도록 role에 `GRANT`로 권한을 부여하십시오.
+
+```sql
+GRANT EXECUTE ON FUNCTION chdb_query(text) TO chdb_admin;
+```
+
+**예시:**
+
+```sql
+SELECT * FROM chdb_query(
+    'SELECT number AS n, number * number FROM numbers(5) ORDER BY n'
+) AS (n int2, p int);
+```
+
+Output:
+
+```
+ n | p
+---+----
+ 0 |  0
+ 1 |  1
+ 2 |  4
+ 3 |  9
+ 4 | 16
+(5 rows)
+```
+
+## Text Encoding {#text-encoding}
+
+chDB의 byte string이 Postgres의 `text`, `bytea` 등의 타입에 어떻게 매핑되는지는 [`chdb_hook` 문서의 Text Encoding][text encoding] 섹션을 참조하십시오.
+
+## 설정 {#settings}
+
+### `chdb.max_memory` {#chdbmax_memory}
+
+```sql
+SET chdb.max_memory = '1 GB';
+```
+
+chDB 쿼리에 사용할 최대 메모리 양으로, chDB
+[`max_memory_usage`] 설정을 지정하는 데 사용됩니다. 슈퍼유저 권한이 필요합니다. 메가바이트 단위의 값을
+정수로 지정하거나 다음 메모리 단위 중 하나를 사용하십시오:
+
+* `B` (바이트)
+* `kB` (킬로바이트)
+* `MB` (메가바이트)
+* `GB` (기가바이트)
+* `TB` (테라바이트)
+
+기본값은 `0`이며, 이 경우 메모리를 제한하지 않습니다.
+
+### `chdb.max_threads` {#chdmax_threads}
+
+```sql
+SET chdb.max_threads = 4;
+```
+
+chDB 쿼리에 사용할 최대 쿼리 처리 스레드 수이며, chDB [`max_threads`] 설정에
+적용됩니다. 슈퍼유저 권한이 필요합니다. 기본값은 `0`으로, 이 경우 chDB가 값을
+직접 결정합니다.
+
+대규모 쿼리를 실행하기 전에 `chdb.max_threads`를 설정하여, chDB가 PostgreSQL의
+자원을 잠식하면서 CPU 사용량을 모두 점유하는 상황을 방지하는 것을 강력히 권장합니다.
+
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+
+```sql
+SET chdb.max_parsing_threads = 2;
+```
+
+chDB가 병렬 파싱을 지원하는 입력 형식의 데이터를 파싱할 때 사용할 수 있는 최대 스레드 수로, chDB의 [`max_parsing_threads`] 설정을 지정하는 데 사용됩니다. 슈퍼유저 권한이 필요합니다. 기본값은 `0`이며, 이 경우 chDB가 값을 직접 결정합니다.
+
+[테이블 함수]에서 데이터를 불러오는 경우처럼 대량의 데이터를 파싱하는 쿼리를 실행하기 전에는 `chdb.max_parsing_threads`를 설정하는 것을 권장합니다. 이렇게 하면 chDB가 PostgreSQL의 자원을 희생시키면서 CPU 사용량을 모두 점유하는 것을 방지할 수 있습니다.
+
+## 버전 관리 정책 {#versioning-policy}
+
+chdb 확장 기능은 공개 릴리스에 [Semantic Versioning][semver]을 따릅니다.
+
+* 메이저 버전은 API 변경 시 증가합니다
+* 마이너 버전은 하위 호환되는 SQL 변경 시 증가합니다
+* 패치 버전은 바이너리 전용 변경 시 증가합니다
+
+설치가 완료되면 PostgreSQL은 두 가지 형태의 버전을 추적합니다:
+
+* 라이브러리 버전(PostgreSQL 18 이상에서 `PG_MODULE_MAGIC`으로 정의됨)은 전체
+  시맨틱 버전을 포함하며, `pgchdb_version()` 함수 또는 Postgres
+  [`pg_get_loaded_modules()`] 함수의 출력에서 확인할 수 있습니다.
+* 확장 기능 버전(컨트롤 파일에 정의됨)은 메이저 및 마이너 버전만 포함하며,
+  `pg_catalog.pg_extension` 테이블, `pg_available_extension_versions()` 함수의
+  출력, 그리고 `\dx chdb`에서 확인할 수 있습니다.
+
+즉, 패치 버전만 증가하는 릴리스(예: `v0.1.0` → `v0.1.1`)는 `v0.1`을 로드한 모든
+데이터베이스에 그대로 적용되며, 업그레이드 효과를 얻기 위해 `ALTER EXTENSION`을
+실행할 필요가 없습니다.
+
+반면 마이너 또는 메이저 버전이 증가하는 릴리스에는 SQL 업그레이드 스크립트가
+함께 제공되므로, 해당 확장 기능이 설치된 모든 기존 데이터베이스에서
+`ALTER EXTENSION chdb UPDATE`를 실행해야 업그레이드 효과를 얻을 수 있습니다.
+
+## 작성자 {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## 저작권 {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB - 빠르고 안정적이며 확장 가능한 in-process 데이터베이스"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* 세션 설정"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* 세션 설정"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: max_parsing_threads 세션 설정"
+
+[table functions]: https://clickhouse.com/docs/reference/functions/table-functions "ClickHouse Docs: 테이블 함수"
+
+[text encoding]: /products/managed-postgres/extensions/chdb/chdb_hook#text-encoding "chdb_hook Docs: 텍스트 인코딩"
+
+[semver]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"
