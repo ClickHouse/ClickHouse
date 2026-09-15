@@ -1,7 +1,7 @@
 udf scalar	[1]
 udf scalar forwarded	0
-udf in	[1]
-udf in forwarded	0
+udf with argument	[1]
+udf with argument forwarded	0
 apply udf	[1]
 apply udf forwarded	0
 apply lambda	[1]
