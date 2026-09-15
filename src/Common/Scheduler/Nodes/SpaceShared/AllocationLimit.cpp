@@ -12,9 +12,11 @@ namespace ErrorCodes
     extern const int RESOURCE_LIMIT_EXCEEDED;
 }
 
-AllocationLimit::AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_)
+AllocationLimit::AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_,
+    ResourceCost soft_limit_)
     : ISpaceSharedNode(event_queue_, info_)
     , max_allocated(max_allocated_)
+    , soft_limit(soft_limit_)
 {}
 
 AllocationLimit::~AllocationLimit()
@@ -40,6 +42,19 @@ void AllocationLimit::updateLimit(UInt64 new_max_allocated)
 ResourceCost AllocationLimit::getLimit() const
 {
     return max_allocated;
+}
+
+void AllocationLimit::updateSoftLimit(ResourceCost new_soft_limit)
+{
+    soft_limit = new_soft_limit;
+    // Lowering the soft limit below the current usage should take effect promptly, and raising it may end
+    // an active spill episode. Re-evaluate now (we are on the scheduler thread, no queue mutex held).
+    checkSoftLimit();
+}
+
+ResourceCost AllocationLimit::getSoftLimit() const
+{
+    return soft_limit;
 }
 
 std::string_view AllocationLimit::getTypeName() const { return "allocation_limit"; }
@@ -82,6 +97,43 @@ ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & k
     return child->selectAllocationToKill(killer, limit, details);
 }
 
+ResourceAllocation * AllocationLimit::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    if (!child)
+        return nullptr;
+    return child->selectAllocationToSpill(at_least, details);
+}
+
+void AllocationLimit::checkSoftLimit()
+{
+    // Disabled or under the threshold: no episode in progress.
+    if (allocated <= soft_limit)
+    {
+        spill_requested = false;
+        return;
+    }
+    if (spill_requested)
+        return; // A spill request is already outstanding; wait for the victim's reply.
+    if (decrease != nullptr)
+        return; // A release is in flight below: `allocated` still contains memory that is about to be
+                // freed, so evaluating now could signal with a stale, too-large excess. Every pending
+                // decrease ends in an `approveDecrease` at this node, whose trailing call re-evaluates
+                // with the updated `allocated`.
+    if (reclaimable == 0)
+        return; // Nothing reclaimable under this limit — fail-close; the hard limit governs.
+
+    String details;
+    ResourceCost need = allocated - soft_limit;
+    if (ResourceAllocation * victim = selectAllocationToSpill(need, details))
+    {
+        SCHED_DBG("{} -- spilling(allocated={}, soft={}, need={}, reclaimable={}, victim={})",
+            getPath(), allocated, soft_limit, need, reclaimable, victim->id);
+        victim->spillAllocation(need);
+        spill_requested = true;
+        ++spills;
+    }
+}
+
 void AllocationLimit::approveIncrease()
 {
     SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
@@ -90,6 +142,10 @@ void AllocationLimit::approveIncrease()
     increase = nullptr;
     child->approveIncrease();
     setIncrease(child->increase, false);
+
+    // `allocated` grew — a soft-limit breach may now warrant a spill. Safe: the child's `approveIncrease`
+    // has returned, so no AllocationQueue mutex is held.
+    checkSoftLimit();
 }
 
 void AllocationLimit::approveDecrease()
@@ -112,6 +168,10 @@ void AllocationLimit::approveDecrease()
     // NOTE: if increase was changed, it is already propagated in approveDecrease()
     if (old_increase == increase && setIncrease(child->increase, true))
         propagate(Update().setIncrease(increase));
+
+    // Re-evaluate the soft limit after the release. Safe: the child's `approveDecrease` has returned, so no
+    // AllocationQueue mutex is held.
+    checkSoftLimit();
 }
 
 void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
@@ -119,11 +179,28 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
     apply(update);
+    // Reported `reclaimable` changes, spill replies, and subtree attach/detach are the updates that can
+    // change the soft-limit picture without an approve, so they trigger `checkSoftLimit` at the end of
+    // this function. They are also exactly the updates for which that is deadlock-safe: `checkSoftLimit`
+    // descends into `selectAllocationToSpill`, which locks the `AllocationQueue` mutex, so it must never
+    // run on a propagation made while that mutex is held. A non-zero `reclaimable_delta` or `spilled`
+    // originates exclusively in `AllocationQueue::processActivation`, which propagates OUTSIDE the queue
+    // lock; `attached`/`detached` originate exclusively in `attachChild`/`removeChild` tree-restructure
+    // code on the scheduler thread (the queue is a leaf and never attaches/detaches under its own lock).
+    // The mutex-held propagations are the pure `increase` relays from `updateMinMaxAllocated`,
+    // `updateQueueLimit` and the in-lock part of `AllocationQueue::approveDecrease` — those carry none of
+    // these fields and are covered by `checkSoftLimit` in `approveIncrease`/`approveDecrease` instead.
+    // Capture the fields now, before `update` may be consumed by `propagate` below.
+    const bool reclaimable_changed = update.reclaimable_delta != 0;
+    const bool spilled = update.spilled;
+    const bool structure_changed = update.attached || update.detached;
     bool reapply_constraint = false;
     if (update.attached)
         reapply_constraint = true;
     if (update.detached)
     {
+        // The reclaimable subtree may be (partly) gone; drop any outstanding spill request.
+        spill_requested = false;
         // The victim referenced by `allocation_to_kill` might be anywhere inside the detached
         // subtree, and `purgeQueue` will fail its owner via `fail_reason` without driving a
         // `removing_allocation=true` decrease back up to clear this pointer through
@@ -160,6 +237,24 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     }
     if (parent && update)
         propagate(std::move(update));
+
+    // Only reclaimable reports, spill replies and attach/detach can reach this point without a queue
+    // mutex held (see the note above); all of them can change the soft-limit picture without an approve.
+    //
+    // A spill reply means the victim finished handling the outstanding spill request (spilled what it
+    // could, declined, or left the queue): reopen the gate so the next victim can be signaled. A
+    // re-evaluation is also needed here because a structure change can newly put this node over the soft
+    // limit with reclaimable memory below (attaching the branch under a freshly inserted
+    // `AllocationLimit` when `CREATE OR REPLACE WORKLOAD` first sets a soft limit, or attaching a
+    // reclaimable subtree under an existing one), and a reported reclaimable change can start an episode
+    // (new reclaimable memory appearing while over the soft limit). Staleness is handled inside
+    // `checkSoftLimit` itself: it does not evaluate while a decrease is pending below (the victim issues
+    // its decreases before `finishSpill`), leaving the re-evaluation to the trailing call of the coming
+    // `approveDecrease`, which sees the updated `allocated`.
+    if (spilled)
+        spill_requested = false;
+    if (spilled || reclaimable_changed || structure_changed)
+        checkSoftLimit();
 }
 
 bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_constraint)
