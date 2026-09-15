@@ -47,6 +47,8 @@ SELECT 'Testing complex tuple expressions with indexes:';
 CREATE TABLE tab (c1 Tuple(int, int));
 INSERT INTO tab VALUES (tuple(1,1));
 SELECT (tab.*).2 FROM tab;
+SELECT ((1,2) AS t).(1 AS a);
+SELECT (tab.*).(2 AS a) FROM tab;
 DROP TABLE tab;
 
 WITH (((1,1),1),1) AS t1 SELECT t1.1.1.1;
