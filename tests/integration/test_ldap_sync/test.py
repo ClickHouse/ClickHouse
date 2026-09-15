@@ -16,7 +16,8 @@ Nodes:
     `replicated` and excludes `johndoe`.
   - `node_dry`: same search with `dry_run`; nothing may change.
   - `node_bad`: wrong `lookup_password`, `interval` 0 (startup run + `SYSTEM RELOAD USERS`); also
-    restarted with invalid configurations for the startup validation.
+    restarted with invalid configurations for the startup validation and with a lazy `ldap`
+    directory declared before the synchronised one, a layout every run refuses.
   - `node_stale`: the `ldap` directory FIRST (`interval` 1, `max_staleness` 3), then `users_xml`
     with the local user `local_after`: the gate order must keep local users reachable while the
     directory is stale.
@@ -759,7 +760,6 @@ def test_duplicate_user_name_guard(janedoe_in_role_a):
     admin(node_manual, "SYSTEM RELOAD USERS")
 
 
-def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
 def test_entry_with_several_user_names_fails_the_run(janedoe_in_role_a):
     """`uid` is multi-valued in `inetOrgPerson`. An entry that matches the search but does not yield
     exactly one user name fails the run instead of being skipped: skipped, it would be a user missing
@@ -799,6 +799,7 @@ def test_entry_with_several_user_names_fails_the_run(janedoe_in_role_a):
     assert sync_node_manual() == base_users
 
 
+def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
     """1200 users in `clickhouse-role_b` need 13 pages of 100 and exceed the default OpenLDAP
     size limit of 500, which the fixture lifts for the service account. Deleting the group would
     remove them all at once: `max_removed_fraction` refuses the run.
@@ -940,7 +941,6 @@ def test_ephemeral_roles_storage_is_refused():
     assert admin(node_mem, ldap_users_query()) == "0\n"
 
 
-def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
 def test_execute_as_resolves_synced_users_only(janedoe_in_role_a):
     """`EXECUTE AS` resolves its target through the forced lookup of the directory, which applies the
     login gates: a synchronised user is impersonated with the roles of the last run; a name outside
@@ -968,6 +968,7 @@ def test_execute_as_resolves_synced_users_only(janedoe_in_role_a):
         ldap_delete(user_dn("lazyonly"), ignore_missing=True)
 
 
+def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
     """`node_stale`: `ldap` (interval 1, max_staleness 3) is declared before `users_xml`. While
     the directory cannot be synchronised, janedoe is refused with the staleness error, for a login
     and for `EXECUTE AS` alike, but the local user that follows and unknown names get the ordinary
@@ -1004,13 +1005,13 @@ def test_execute_as_resolves_synced_users_only(janedoe_in_role_a):
         login_error(node_stale, "janedoe")
         assert node_stale.contains_in_log("refusing to authenticate user 'janedoe'")
 
-        # Gate order: the local user behind the directory and an unknown name are unaffected.
         # `EXECUTE AS` goes through the same gate; the lookup is not hidden behind the generic
         # authentication error, so the reason reaches the client.
         error = admin_error(node_stale, "EXECUTE AS janedoe SELECT currentUser()")
         assert "LDAP_ERROR" in error and "has not been synchronised for" in error, error
         assert "refusing to resolve user 'janedoe'" in error, error
 
+        # Gate order: the local user behind the directory and an unknown name are unaffected.
         assert login(node_stale, "local_after", "local") == TSV([["local_after"]])
         login_error(node_stale, "nosuchuser")
         assert not node_stale.contains_in_log(
@@ -1080,6 +1081,61 @@ def test_nonexistent_roles_storage_fails_the_first_run(janedoe_in_role_a):
         assert "Access storage with name nonexistent is not found" in error, error
         assert admin(node_bad, ldap_users_query()) == "0\n"
         assert admin(node_bad, "SELECT count() FROM system.roles") == "0\n"
+    finally:
+        restore_node_bad()
+
+
+def lazy_before_synced_config():
+    """`directories_bad.xml` with a lazy `ldap` directory (no `<sync>` section), named `ldap_lazy`
+    and backed by the same server, declared right before the synchronised one."""
+    original = read_config("directories_bad.xml")
+    synced = "        <ldap>\n            <server>openldap_strict</server>\n"
+    assert original.count(synced) == 1
+    lazy = (
+        "        <ldap>\n"
+        "            <name>ldap_lazy</name>\n"
+        "            <server>openldap_strict</server>\n"
+        "        </ldap>\n"
+    )
+    return original.replace(synced, lazy + synced)
+
+
+def test_lazy_ldap_directory_declared_before_the_synced_one_fails_the_run():
+    """The shadow rule of the planner asks the preceding storages whether they define a name. A lazy
+    `ldap` directory knows only the users who already logged in through it and would still win the
+    next login of a synchronised name, so every run is refused before the directory is contacted:
+    nothing is materialised, at startup and on `SYSTEM RELOAD USERS` alike, and the lazy directory
+    keeps working."""
+    message = (
+        "LDAP synchronisation of directory `ldap` cannot run: user directory `ldap_lazy` is an 'ldap'"
+        " directory without a 'sync' section and is declared before it"
+    )
+    try:
+        restart_node_bad_with(
+            lazy_before_synced_config(), server_config=read_config("ldap_server.xml")
+        )
+        # The startup run (`interval` 0) fails on the layout, whatever the directory would return.
+        assert_logs_contain_with_retry(node_bad, message.replace("`", "."))
+        error = admin_error(node_bad, "SYSTEM RELOAD USERS")
+        assert message in error, error
+        assert (
+            "Declare directory `ldap` before `ldap_lazy`, or add a 'sync' section to `ldap_lazy`"
+            in error
+        ), error
+        assert event_value(node_bad, "LDAPSyncFailures") >= 2
+        assert event_value(node_bad, "LDAPSyncUsersAdded") == 0
+        assert (
+            admin(
+                node_bad, "SELECT count() FROM system.users WHERE storage LIKE 'ldap%'"
+            )
+            == "0\n"
+        )
+
+        # The lazy directory is unaffected: janedoe logs in through it and is materialised there only.
+        assert login(node_bad, "janedoe") == TSV([["janedoe"]])
+        assert admin(
+            node_bad, "SELECT storage FROM system.users WHERE name = 'janedoe'"
+        ) == TSV([["ldap_lazy"]])
     finally:
         restore_node_bad()
 

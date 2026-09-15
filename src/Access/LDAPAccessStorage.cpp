@@ -15,6 +15,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/Object.h>
@@ -24,8 +25,8 @@
 #include <cmath>
 #include <random>
 #include <sstream>
-
 #include <string_view>
+
 
 namespace ProfileEvents
 {
@@ -807,7 +808,6 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
         {
             checkNotStale(name, "resolve");
             return id;
-
         }
 
         if (sync_params->only_synced_users)
@@ -815,6 +815,7 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
             LOG_DEBUG(getLogger(), "User {} is not in the synchronised snapshot of directory {}", name, backQuote(getStorageName()));
             return {};
         }
+
         if (!access_control.getExternalAuthenticators().findLDAPUser(ldap_server_name, name, nullptr, nullptr))
             return {};
 
@@ -1110,6 +1111,9 @@ void LDAPAccessStorage::sync()
     LOG_DEBUG(getLogger(), "Starting LDAP synchronisation of directory {} from server '{}'{}",
         backQuote(getStorageName()), ldap_server_name, params.dry_run ? " (dry run)" : "");
 
+    /// Phase 0: the layout of the storages must let the shadow rule of `planSync` be authoritative.
+    checkNoLazyLDAPDirectoryBefore();
+
     /// Phase 1: enumerate the directory under the lookup identity. No storage lock is held meanwhile.
     auto entries = access_control.getExternalAuthenticators().enumerateLDAPUsers(ldap_server_name, params.enumeration, role_search_params);
 
@@ -1178,6 +1182,34 @@ void LDAPAccessStorage::sync()
 }
 
 
+void LDAPAccessStorage::checkNoLazyLDAPDirectoryBefore() const
+{
+    /// `planSync` asks every storage declared before this one whether it has a name, and does not
+    /// materialise the names it finds there because the preceding storage wins the login anyway. An `ldap`
+    /// directory without a `<sync>` section can only answer for the users who have already logged in
+    /// through it: it would still win the next password login of any other name and materialise that user
+    /// under a new id, so a user synchronised here would flip to the lazy directory, with whatever roles it
+    /// maps, at their next login. No run can make such an answer authoritative, so the layout is refused
+    /// (before the directory is contacted, once per run). A preceding synced directory is fine: its
+    /// snapshot is complete. Storages declared after this one lose the login anyway and need no check.
+    for (const auto & storage : access_control.getStorages())
+    {
+        if (storage.get() == this)
+            return;
+
+        const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get());
+        if (ldap_storage && !ldap_storage->sync_params)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "LDAP synchronisation of directory {} cannot run: user directory {} is an 'ldap' directory without a 'sync' section "
+                "and is declared before it. Such a directory materialises users at their first login and would win the next login "
+                "of a name synchronised here, so the user would flip between the two directories. Declare directory {} before {}, "
+                "or add a 'sync' section to {}",
+                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()),
+                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()), backQuote(ldap_storage->getStorageName()));
+    }
+}
+
+
 LDAPAccessStorage::SyncPlan LDAPAccessStorage::planSync(std::vector<LDAPSyncClient::UserEntry> entries) const
 {
     const auto & params = *sync_params;
@@ -1197,7 +1229,8 @@ LDAPAccessStorage::SyncPlan LDAPAccessStorage::planSync(std::vector<LDAPSyncClie
     }
 
     /// A storage declared before this one wins for a name it defines (the user is never materialised here);
-    /// a storage declared after it is overridden by the LDAP entry, exactly as at login time.
+    /// a storage declared after it is overridden by the LDAP entry, exactly as at login time. The answer of a
+    /// preceding storage is complete for every kind of storage `checkNoLazyLDAPDirectoryBefore` lets through.
     const auto storages = access_control.getStorages();
 
     for (auto & entry : entries)

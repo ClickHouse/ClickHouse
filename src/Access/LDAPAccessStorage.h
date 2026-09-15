@@ -155,6 +155,9 @@ private: // IAccessStorage implementations.
 
     void runSyncThread();
     void sync();
+    /// Throws `BAD_ARGUMENTS` when an `ldap` directory without a `<sync>` section is declared before this one:
+    /// the shadow rule of `planSync` cannot be authoritative against a storage that materialises users at login.
+    void checkNoLazyLDAPDirectoryBefore() const;
     SyncPlan planSync(std::vector<LDAPSyncClient::UserEntry> entries) const;
     SyncDiff computeSyncDiffNoLock(const SyncPlan & plan) const;
     void checkRemovalGuard(const SyncDiff & diff) const;
