@@ -197,9 +197,37 @@ The current frequency of every CPU core, in MHz, keyed by the CPU core number. M
 
 Estimated number of blobs enqueued for removal from the disk object storage (the blob manager dead queue), keyed by the disk name. Disks without blob replication report 0.
 
+### DictionaryFailedCount {#dictionaryfailedcount}
+
+Number of dictionaries currently in a failed state (includes the FAILED_AND_RELOADING transient state).
+
+### DictionaryLoadedCount {#dictionaryloadedcount}
+
+Number of dictionaries currently in a loaded state (includes the LOADED_AND_RELOADING transient state).
+
+### DictionaryLoadingCount {#dictionaryloadingcount}
+
+Number of dictionaries currently being loaded for the first time (excludes reloads of already-loaded or failed dictionaries).
+
+### DictionaryMaxQueryCount {#dictionarymaxquerycount}
+
+Maximum query count among loaded dictionaries, counted since each dictionary's last load.
+
 ### DictionaryMaxUpdateDelay {#dictionarymaxupdatedelay}
 
 The maximum delay (in seconds) of dictionary update
+
+### DictionaryTotalBytesAllocated {#dictionarytotalbytesallocated}
+
+Total bytes allocated by all currently loaded dictionaries (sum of `getBytesAllocated` over each dictionary instance).
+
+### DictionaryTotalCount {#dictionarytotalcount}
+
+Total number of dictionaries known to the server (regardless of load status).
+
+### DictionaryTotalElementCount {#dictionarytotalelementcount}
+
+Total number of keys stored across all currently loaded dictionaries.
 
 ### DictionaryTotalFailedUpdates {#dictionarytotalfailedupdates}
 
