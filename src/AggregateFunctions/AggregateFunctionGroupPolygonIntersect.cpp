@@ -90,7 +90,7 @@ struct GroupPolygonIntersectData
         }
 
         size_t added_points = 0;
-        std::vector<Box, AllocatorWithMemoryTracking<Box>> boxes;
+        std::vector<Box, AllocatorWithMemoryTracking<Box>> boxes; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         boxes.reserve(next.inners().size());
         for (const auto & ring : next.inners())
         {
