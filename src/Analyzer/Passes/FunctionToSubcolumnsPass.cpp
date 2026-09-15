@@ -2,11 +2,11 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
@@ -235,7 +235,7 @@ bool canOptimizeToExpectedSubcolumn(
     const ColumnContext & ctx,
     const String & subcolumn_name,
     const SubcolumnPredicate & is_expected_subcolumn,
-    const DataTypePtr & expected_type = nullptr)
+    const DataTypePtr & expected_type)
 {
     auto storage_snapshot = getStorageSnapshotForColumnSource(ctx.column_source);
     if (!storage_snapshot)
@@ -245,7 +245,7 @@ bool canOptimizeToExpectedSubcolumn(
     if (!resolved || !resolved->isSubcolumn())
         return false;
 
-    if (expected_type && !resolved->type->equals(*expected_type))
+    if (!resolved->type->equals(*expected_type))
         return false;
 
     auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
@@ -381,10 +381,9 @@ void optimizeFunctionArrayElementForJSON(QueryTreeNodePtr & node, FunctionNode &
     optimizeJSONArrayElementChain(node, function_node, ctx, empty);
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
+std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeTuple & data_type_tuple)
 {
     const auto & names = data_type_tuple.getElementNames();
-    const auto & types = data_type_tuple.getElements();
 
     if (value.getType() == Field::Types::String)
     {
@@ -394,38 +393,38 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         if (!pos)
             return {};
 
-        return NameAndTypePair{name, types[*pos]};
+        return name;
     }
 
     if (value.getType() == Field::Types::UInt64)
     {
         size_t index = value.safeGet<UInt64>();
 
-        if (index == 0 || index > types.size())
+        if (index == 0 || index > names.size())
             return {};
 
-        return NameAndTypePair{names[index - 1], types[index - 1]};
+        return names[index - 1];
     }
 
-    /// Maybe negative index
+    /// Signed indices can address elements from the end of the tuple.
     if (value.getType() == Field::Types::Int64)
     {
         ssize_t index = value.safeGet<Int64>();
-        ssize_t size = types.size();
+        ssize_t size = names.size();
 
-        if (index == 0 || std::abs(index) > size)
+        if (index == 0 || index < -size || index > size)
             return {};
 
         if (index > 0)
-            return NameAndTypePair{names[index - 1], types[index - 1]};
+            return names[index - 1];
         else
-            return NameAndTypePair{names[size + index], types[size + index]};
+            return names[size + index];
     }
 
     return {};
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeVariant & data_type_variant)
+std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeVariant & data_type_variant)
 {
     if (value.getType() != Field::Types::String)
         return {};
@@ -436,10 +435,10 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (!discr)
         return {};
 
-    return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
+    return name;
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeQBit & data_type_qbit)
+std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeQBit & data_type_qbit)
 {
     size_t index = 0;
 
@@ -451,8 +450,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (index == 0 || index > data_type_qbit.getElementSize() * data_type_qbit.getNumStrides())
         return {};
 
-    /// Each subcolumn is one stride group's bit plane: a FixedString of ceil(stride / 8) bytes.
-    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getStride() + 7) / 8)};
+    return toString(index);
 }
 
 /// True when `element_name` and some nested path of `tuple` flatten to the same dotted name, so
@@ -489,10 +487,9 @@ bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const
 }
 
 template <typename DataType>
-void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
-    /// Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)` with `tuple_argument.column_name`.
-    /// Replace `variantElement(variant_argument, string_literal)` with `variant_argument.column_name`.
+    /// Replace `tupleElement` and `variantElement` with reads of their element subcolumns.
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
     if (function_arguments_nodes.size() != 2)
@@ -502,16 +499,22 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     if (!second_argument_constant_node)
         return;
 
-    const auto & data_type_concrete = assert_cast<const DataType &>(*ctx.column.type);
-    auto subcolumn = getSubcolumnForElement(second_argument_constant_node->getValue(), data_type_concrete);
-
-    if (!subcolumn)
+    const auto & result_type = function_node.getResultType();
+    /// `tupleElement` fills defaults for outer NULLs when the element cannot represent NULL,
+    /// whereas the corresponding storage subcolumn retains the values beneath the parent null map.
+    if (ctx.column.type->isNullable() && !canContainNull(*result_type))
         return;
 
-    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
+    const auto & data_type_concrete = assert_cast<const DataType &>(*removeNullable(ctx.column.type));
+    auto subcolumn_name = getElementSubcolumnName(second_argument_constant_node->getValue(), data_type_concrete);
+
+    if (!subcolumn_name)
+        return;
+
+    NameAndTypePair column{ctx.column.name + "." + *subcolumn_name, result_type};
 
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
-        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
+        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, *subcolumn_name)
             || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
             || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
             return;
@@ -519,12 +522,12 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     /// ``Tuple(`t.a` UInt64, t Tuple(a UInt64))`` resolves `c.t.a` to the sibling, not to `t`.`a`.
     SubcolumnPredicate is_expected_subcolumn;
     if constexpr (std::is_same_v<DataType, DataTypeVariant>)
-        is_expected_subcolumn = [&](const auto & path) { return SerializationVariant::isElementSubcolumn(path, subcolumn->name); };
+        is_expected_subcolumn = [&](const auto & path) { return SerializationVariant::isElementSubcolumn(path, *subcolumn_name); };
     else
-        is_expected_subcolumn = [&](const auto & path) { return SerializationTuple::isElementSubcolumn(path, subcolumn->name); };
+        is_expected_subcolumn = [&](const auto & path) { return SerializationTuple::isElementSubcolumn(path, *subcolumn_name); };
 
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, function_node.getResultType()))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, column.type))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -705,13 +708,20 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Tuple, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeTuple>,
+        {TypeIndex::Tuple, "tupleElement"}, optimizeElementToSubcolumn<DataTypeTuple>,
     },
     {
-        {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
+        {TypeIndex::Nullable, "tupleElement"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isTuple(removeNullable(ctx.column.type)))
+                optimizeElementToSubcolumn<DataTypeTuple>(node, function_node, ctx);
+        },
     },
     {
-        {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
+        {TypeIndex::Variant, "variantElement"}, optimizeElementToSubcolumn<DataTypeVariant>,
+    },
+    {
+        {TypeIndex::QBit, "tupleElement"}, optimizeElementToSubcolumn<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
     {
         {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
@@ -756,6 +766,7 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Map, "mapKeys"},
     {TypeIndex::Map, "mapValues"},
     {TypeIndex::Tuple, "tupleElement"},
+    {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
 };
@@ -1013,11 +1024,12 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// A storage may permit only tuple element rewrites while still refusing every other transformer
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
-bool storageAllowsTransformer(const IStorage & storage, TypeIndex type_id, const String & function_name)
+bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, const String & function_name)
 {
     if (storage.supportsOptimizationToSubcolumns())
         return true;
-    return storage.supportsOptimizationToTupleElementSubcolumns() && type_id == TypeIndex::Tuple && function_name == "tupleElement";
+    /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
+    return storage.supportsOptimizationToTupleElementSubcolumns() && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
 }
 
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
@@ -1057,7 +1069,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1119,7 +1131,7 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 

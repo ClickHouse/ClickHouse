@@ -33,6 +33,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
@@ -119,6 +124,23 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     /// Skip if the column statistics has outdated data type.
     /// It can happen after ALTER MODIFY COLUMN until mutations is not materialized in the data part.
     return column->type->equals(*stats->getDataType());
+}
+
+/// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
+/// describe the whole relation regardless of the filter.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+{
+    ColumnStats result;
+    result.num_distinct_values = num_distinct_values;
+    if (!stats)
+        return result;
+
+    auto estimate = stats->getEstimate();
+    result.min_value = std::move(estimate.estimated_min);
+    result.max_value = std::move(estimate.estimated_max);
+    if (estimate.estimated_null_count && estimate.rows_count)
+        result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    return result;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
@@ -217,7 +239,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             continue;
 
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, cardinality);
+        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
     }
     return result;
 }
@@ -228,7 +250,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
 }
@@ -474,16 +496,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     catch (const Exception & e)
                     {
-                        if (!isParseError(e.code()))
+                        if (!isParseError(e.code()) && e.code() != ErrorCodes::TYPE_MISMATCH)
                             throw;
 
-                        /// The string value is not valid for the column type (e.g. unknown enum element).
-                        /// For equality, the condition can never match, so selectivity is 0.
-                        /// For other operators, fall back to default unknown selectivity.
                         LOG_DEBUG(getLogger("ConditionSelectivityEstimator"),
                             "Cannot convert value to column type, skipping statistics estimation. The exception is : {}",
                             getCurrentExceptionMessage(false));
-                        if (func_name == "equals")
+
+                        if (func_name == "equals" && e.code() != ErrorCodes::TYPE_MISMATCH)
                         {
                             out.function = RPNElement::ALWAYS_FALSE;
                             return true;
