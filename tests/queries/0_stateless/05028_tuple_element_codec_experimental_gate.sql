@@ -1,5 +1,10 @@
+-- Tags: no-replicated-database
+
 DROP TABLE IF EXISTS tuple_element_codec_gate;
 DROP TABLE IF EXISTS tuple_element_codec_root_only;
+DROP TABLE IF EXISTS tuple_element_codec_full_attach;
+DROP TABLE IF EXISTS tuple_element_codec_as_source;
+DROP TABLE IF EXISTS tuple_element_codec_clone_source;
 
 -- Root-only codecs are outside the experimental gate.
 CREATE TABLE tuple_element_codec_root_only
@@ -34,6 +39,18 @@ INSERT INTO tuple_element_codec_gate VALUES (1, (1, 2, 'one'));
 DETACH TABLE tuple_element_codec_gate;
 ATTACH TABLE tuple_element_codec_gate;
 SELECT value.number FROM tuple_element_codec_gate FORMAT Null;
+
+-- A full ATTACH definition is fresh user-supplied metadata, unlike the short ATTACH above.
+ATTACH TABLE tuple_element_codec_full_attach UUID '50280000-0000-0000-0000-000000000001'
+(
+    value Tuple(number UInt64 CODEC(ZSTD), text String)
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- CREATE AS and CLONE AS copy the complete codec policy from their source. They must
+-- not bypass the gate merely because their columns were not written in this query.
+CREATE TABLE tuple_element_codec_as_source AS tuple_element_codec_gate; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tuple_element_codec_clone_source CLONE AS tuple_element_codec_gate; -- { serverError BAD_ARGUMENTS }
 
 -- Restating Delta, which is stored as Delta(8) for UInt64, is semantically unchanged
 -- and remains allowed without either admission gate.

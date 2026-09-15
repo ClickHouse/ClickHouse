@@ -8843,8 +8843,8 @@ This setting does not control whether extracted tuple subcolumns can be `Nullabl
 Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
 )", BETA, allow_experimental_nullable_tuple_type) \
     DECLARE(Bool, enable_tuple_element_codecs, false, R"(
-Allows adding or changing [`CODEC`](/reference/statements/create/table/codec#tuple-element-codecs) declarations on stored [`Tuple`](/reference/data-types/tuple) elements.
-Existing Tuple element codec metadata can still be attached, restored, read, preserved, or have declarations removed when this setting is disabled.
+Allows creating, copying, adding, or changing [`CODEC`](/reference/statements/create/table/codec#tuple-element-codecs) declarations on stored [`Tuple`](/reference/data-types/tuple) elements.
+Existing Tuple element codec metadata can still be replayed by short `ATTACH`, startup, replication, or restore, and can be read, preserved, or have declarations removed when this setting is disabled.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \

@@ -791,12 +791,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             ? DataTypeFactory::instance().get(col_decl.getType())
             : column.type;
         column.codec = codecDescriptionFromAST(col_decl, declared_type, column.type, codec_validation_settings);
-        /// The setting controls new metadata only. Existing metadata must load without the setting.
-        if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && column.codec.hasSubcolumns()
-            && !context_->getSettingsRef()[Setting::enable_tuple_element_codecs])
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
         if (!column.codec.empty())
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
@@ -1219,6 +1213,21 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
+
+    /// The setting controls every user-supplied definition which creates new metadata. Replaying
+    /// stored metadata, internal secondary CREATE queries, and backup restore must remain loadable.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax)
+        && !is_restore_from_backup
+        && !getContext()->getSettingsRef()[Setting::enable_tuple_element_codecs])
+    {
+        for (const auto & column : properties.columns)
+        {
+            if (column.codec.hasSubcolumns())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
+        }
+    }
 
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
     /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
