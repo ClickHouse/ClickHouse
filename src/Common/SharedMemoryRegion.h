@@ -116,6 +116,11 @@ public:
     /// figure, not by `size`.
     size_t backingSize() const { return backing_size; }
 
+    /// The footprint as last seen (see `refreshFootprint`): never less than `backingSize`, and
+    /// never less than a page - a file holds whole pages, whatever its length. This is what the
+    /// region costs, so memory accounting goes by this figure and by its changes.
+    size_t footprint() const { return footprint_size; }
+
     /** Re-reads the length of the file and returns it, updating `backingSize`.
       *
       * The seals stop the command from shrinking the file; nothing stops it from extending it,
@@ -142,6 +147,22 @@ public:
       */
     size_t refreshFootprint();
 
+    /// Rounds a size up to whole pages: what a file of that length actually holds. The unit in
+    /// which footprints are compared with caps and with each other, so that a region of 16 bytes
+    /// is not over a cap of 16 bytes for holding the page it cannot help holding.
+    static size_t roundUpToPages(size_t size);
+
+    /// Whether the region, as last read (`refreshFootprint`), is over a cap of `max_size` bytes.
+    /// Two comparisons, one per unit. The length of the file in bytes against the cap in bytes:
+    /// the length is exact, and the command's to change, so it is held to the exact figure - a
+    /// 24-byte file stretched to a page is a file stretched past a cap of 24 bytes, whatever the
+    /// page count says. And the footprint against the cap rounded up to pages, because a file
+    /// holds whole pages: a 24-byte region holds one, and is not over its cap for it.
+    bool isOverTheCap(size_t max_size) const
+    {
+        return backing_size > max_size || footprint_size > roundUpToPages(max_size);
+    }
+
     /// The descriptor, for handing to the command's process at `exec`. Close-on-exec in this
     /// process; the hand-over `dup2`s it into the child, which clears the flag on the copy.
     int fd() const { return region_fd; }
@@ -154,6 +175,7 @@ private:
     char * region_data = nullptr;
     size_t region_size = 0;
     size_t backing_size = 0;
+    size_t footprint_size = 0;
 };
 
 using SharedMemoryRegionPtr = std::shared_ptr<SharedMemoryRegion>;

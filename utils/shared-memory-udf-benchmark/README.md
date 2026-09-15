@@ -66,7 +66,8 @@ the control messages. Writing through a mapping of a file the command holds open
 safe only because the file is sealed with `F_SEAL_SHRINK` - the command cannot make the file
 shorter than the server's mapping, which is the one thing that would turn an access into a
 `SIGBUS`; what the seal does not prevent (extending the file, freeing pages inside it) cannot
-crash the server and is bounded by `shared_memory_max_size` (see `SharedMemoryRegion`). What is saved against a pipe is two copies per
+crash the server, and a region pushed past `shared_memory_max_size` that way costs the command its
+pooled process at the next hand-over (see `SharedMemoryRegion`). What is saved against a pipe is two copies per
 direction plus the per-pipeful syscalls; how much of that shows up as wall-clock time depends on how
 large a share of the query the transport is at all - measure it with the runner instead of assuming.
 

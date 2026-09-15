@@ -12,6 +12,7 @@
 
 #include <sys/resource.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -267,51 +268,87 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             fds->tryIncreaseSize(pipe_capacity);
     }
 
-    /// The inherited descriptors are handed over in two steps, and the first one happens here,
-    /// before `vfork`, where it is allowed to fail with an exception. A plain `dup2(parent_fd,
-    /// child_fd)` in the child is wrong in two ways that a caller cannot rule out: when
-    /// `parent_fd == child_fd` (the region's `memfd` happened to be created as 3) `dup2` is a
-    /// no-op and the descriptor keeps its close-on-exec flag, so `exec` closes it; and when one
-    /// pair's target is another pair's source (`{3 <- 4}, {4 <- 3}`) the first `dup2` overwrites
-    /// what the second was going to copy. So every source is first duplicated to a number above
-    /// every target - any target, including the ones `read_fds`/`write_fds` claim - and the child
-    /// `dup2`s from those copies, which can neither be a target nor be clobbered by one. The copies
-    /// are close-on-exec: they must not outlive this `exec` in any child, and they are closed in
-    /// the parent once the child has run.
-    std::vector<int> staged_inherited_fds;
-    staged_inherited_fds.reserve(config.inherited_fds.size());
-    SCOPE_EXIT({
-        for (int fd : staged_inherited_fds)
-            if (0 != ::close(fd))
-                LOG_WARNING(getLogger(), "Cannot close a staged inherited descriptor: {}", errnoToString());
-    });
+    /// Every descriptor the child installs - the ends of the standard-stream pipes, of the
+    /// `read_fds`/`write_fds` pipes, and the inherited descriptors - is handed over in two steps,
+    /// and the first one happens here, before `vfork`, where it is allowed to fail with an
+    /// exception. A plain `dup2(parent_fd, child_fd)` in the child is wrong in two ways that
+    /// nobody can rule out, because the parent's numbers are whatever `pipe` and the caller got:
+    /// when `parent_fd == child_fd` (the region's `memfd` happened to be created as 3, or the
+    /// pipe end for `read_fds` `{7}` got 7) `dup2` is a no-op and the descriptor keeps its
+    /// close-on-exec flag, so `exec` closes it; and when one hand-over's target is another's
+    /// source (`{3 <- 4}, {4 <- 3}`, or a pipe target that is the number of the next pipe's end)
+    /// the first `dup2` overwrites what the second was going to copy. So every source is first
+    /// duplicated to a number above every target, and the child `dup2`s from those copies, which
+    /// can neither be a target nor be clobbered by one. The copies are close-on-exec: they must
+    /// not outlive this `exec` in any child, and they are closed in the parent once the child
+    /// has run.
+    struct Handover
+    {
+        int child_fd;
+        int parent_fd;
+        ChildSetupStep step;
+    };
+    std::vector<Handover> handovers;
+    handovers.reserve(3 + config.read_fds.size() + config.write_fds.size() + config.inherited_fds.size());
+
+    /// Every number the child is going to install something under, each claimed once. The
+    /// standard streams are the child's own; three lists claim the rest - `read_fds`, `write_fds`
+    /// and the targets of `inherited_fds` - and a number in two of them (or twice in one) would be
+    /// installed twice in the child, the later `dup2` silently replacing the earlier: a pipe the
+    /// parent goes on reading from, say, with the region's descriptor sitting where the child
+    /// was told to write into it. Refused here, where it is a configuration error with a
+    /// message, rather than found in the child.
+    handovers.push_back({STDIN_FILENO, pipe_stdin.fds_rw[0], ChildSetupStep::DUP_STDIN});
+    if (!config.pipe_stdin_only)
+    {
+        handovers.push_back({STDOUT_FILENO, pipe_stdout.fds_rw[1], ChildSetupStep::DUP_STDOUT});
+        handovers.push_back({STDERR_FILENO, pipe_stderr.fds_rw[1], ChildSetupStep::DUP_STDERR});
+    }
+    for (size_t i = 0; i < config.read_fds.size(); ++i)
+        handovers.push_back({config.read_fds[i], read_pipe_fds[i]->fds_rw[1], ChildSetupStep::DUP_READ_DESCRIPTOR});
+    for (size_t i = 0; i < config.write_fds.size(); ++i)
+        handovers.push_back({config.write_fds[i], write_pipe_fds[i]->fds_rw[0], ChildSetupStep::DUP_WRITE_DESCRIPTOR});
+    for (const auto & [child_fd, parent_fd] : config.inherited_fds)
+        handovers.push_back({child_fd, parent_fd, ChildSetupStep::DUP_INHERITED_DESCRIPTOR});
+
+    std::vector<int> child_targets;
+    child_targets.reserve(handovers.size());
+    for (const auto & handover : handovers)
+    {
+        if (handover.step != ChildSetupStep::DUP_STDIN && handover.step != ChildSetupStep::DUP_STDOUT
+            && handover.step != ChildSetupStep::DUP_STDERR && handover.child_fd <= STDERR_FILENO)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot install descriptor {} in a child as {}: 0, 1 and 2 are the child's standard streams",
+                handover.parent_fd, handover.child_fd);
+        child_targets.push_back(handover.child_fd);
+    }
+    std::sort(child_targets.begin(), child_targets.end());
+    if (auto duplicate = std::adjacent_find(child_targets.begin(), child_targets.end()); duplicate != child_targets.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Descriptor {} is claimed more than once in the child (by read_fds, write_fds or inherited_fds)", *duplicate);
 
     /// The first number above every descriptor the child is going to install something under.
-    int first_free_fd = STDERR_FILENO + 1;
-    for (const auto & [child_fd, parent_fd] : config.inherited_fds)
-    {
-        if (child_fd <= STDERR_FILENO)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot hand descriptor {} to a child as {}: 0, 1 and 2 are the child's standard streams", parent_fd, child_fd);
-        first_free_fd = std::max(first_free_fd, child_fd + 1);
-    }
-    for (int fd : config.read_fds)
-        first_free_fd = std::max(first_free_fd, fd + 1);
-    for (int fd : config.write_fds)
-        first_free_fd = std::max(first_free_fd, fd + 1);
+    const int first_free_fd = child_targets.back() + 1;
 
-    for (const auto & [child_fd, parent_fd] : config.inherited_fds)
+    std::vector<int> staged_fds;
+    staged_fds.reserve(handovers.size() + 1);
+    SCOPE_EXIT({
+        for (int fd : staged_fds)
+            if (0 != ::close(fd))
+                LOG_WARNING(getLogger(), "Cannot close a staged descriptor: {}", errnoToString());
+    });
+    for (const auto & handover : handovers)
     {
-        int staged = ::fcntl(parent_fd, F_DUPFD_CLOEXEC, first_free_fd);
+        int staged = ::fcntl(handover.parent_fd, F_DUPFD_CLOEXEC, first_free_fd);
         if (staged == -1)
-            throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate descriptor {} to hand it to a child as {}", parent_fd, child_fd);
-        staged_inherited_fds.push_back(staged);
+            throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate descriptor {} to hand it to a child as {}", handover.parent_fd, handover.child_fd);
+        staged_fds.push_back(staged);
     }
 
     /// How the child reports a failure of any step below: a close-on-exec pipe. A successful
     /// `exec` closes the child's end and the parent reads EOF; a failure writes the step and the
     /// `errno` and the parent reads those. The child's copy of the write end is staged above every
-    /// target like the inherited descriptors are, so that no `dup2` below lands on it - it would
+    /// target like the descriptors above are, so that no `dup2` below lands on it - it would
     /// otherwise be silently replaced by whatever was installed under that number, and a later
     /// failure would write its report into a pipe or a region instead. (The pipe itself is opened
     /// with `O_CLOEXEC`, and `F_DUPFD_CLOEXEC` keeps the copy so.) Both of the parent's write ends
@@ -320,7 +357,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     const int child_error_fd = ::fcntl(pipe_child_error.fds_rw[1], F_DUPFD_CLOEXEC, first_free_fd);
     if (child_error_fd == -1)
         throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate the child error pipe");
-    staged_inherited_fds.push_back(child_error_fd);
+    staged_fds.push_back(child_error_fd);
 
     /// `vfork` must be called directly, not through a pointer obtained with `dlsym`: the compiler
     /// knows `vfork` as a function that returns twice, and only a call it can see as such makes
@@ -353,47 +390,13 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         /// Why `_exit` and not `exit`? Because `exit` calls `atexit` and destructors of thread local storage.
         /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
 
-        /// Replace the file descriptors with the ends of our pipes.
-        if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
-            reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_STDIN);
-
-        if (!config.pipe_stdin_only)
-        {
-            if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
-                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_STDOUT);
-
-            if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
-                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_STDERR);
-        }
-
-        for (size_t i = 0; i < config.read_fds.size(); ++i)
-        {
-            auto & fds = *read_pipe_fds[i];
-            auto fd = config.read_fds[i];
-
-            if (fd != dup2(fds.fds_rw[1], fd))
-                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_READ_DESCRIPTOR);
-        }
-
-        for (size_t i = 0; i < config.write_fds.size(); ++i)
-        {
-            auto & fds = *write_pipe_fds[i];
-            auto fd = config.write_fds[i];
-
-            if (fd != dup2(fds.fds_rw[0], fd))
-                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_WRITE_DESCRIPTOR);
-        }
-
-        for (size_t i = 0; i < config.inherited_fds.size(); ++i)
-        {
-            /// `dup2` from the staged copy (see above) onto the number the child expects. The
-            /// staged copy is above every target, so this is never a no-op and never destroys a
-            /// source. The result has no close-on-exec flag, so it survives the `exec` below; the
-            /// staged copy does not.
-            const int child_fd = config.inherited_fds[i].first;
-            if (child_fd != dup2(staged_inherited_fds[i], child_fd))
-                reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::DUP_INHERITED_DESCRIPTOR);
-        }
+        /// Install every descriptor under the number the child expects, `dup2`ing from the staged
+        /// copy (see above). The staged copy is above every target, so this is never a no-op and
+        /// never destroys a source. The result has no close-on-exec flag, so it survives the `exec`
+        /// below; the staged copy does not, and neither do the pipe ends themselves.
+        for (size_t i = 0; i < handovers.size(); ++i)
+            if (handovers[i].child_fd != dup2(staged_fds[i], handovers[i].child_fd))
+                reportChildSetupFailureAndExit(child_error_fd, handovers[i].step);
 
         /// The originals must not reach the child either, under their own numbers: the contract
         /// is "this descriptor, under the number it is told", and an original that is not
@@ -442,7 +445,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     {
         if (0 != ::close(child_error_fd))
             LOG_WARNING(getLogger(), "Cannot close the child error pipe: {}", errnoToString());
-        staged_inherited_fds.pop_back();
+        staged_fds.pop_back();
         if (0 != ::close(pipe_child_error.fds_rw[1]))
             LOG_WARNING(getLogger(), "Cannot close the child error pipe: {}", errnoToString());
         pipe_child_error.fds_rw[1] = -1;
@@ -722,6 +725,41 @@ bool ShellCommand::tryWaitWithoutStatusCheck()
 }
 
 
+void ShellCommand::readBufferedOutput(int (&drain_fds)[2], const StderrSink & stderr_sink) const
+{
+    char buffer[4096];
+    for (size_t i = 0; i < 2; ++i)
+    {
+        if (drain_fds[i] < 0)
+            continue;
+
+        int available = 0;
+        if (0 != ::ioctl(drain_fds[i], FIONREAD, &available))
+        {
+            LOG_WARNING(getLogger(), "Cannot query the pipe of shell command pid {} for buffered bytes, error: '{}'", pid, errnoToString());
+            continue;
+        }
+
+        while (available > 0)
+        {
+            const ssize_t res = ::read(drain_fds[i], buffer, std::min(sizeof(buffer), static_cast<size_t>(available)));
+            if (res > 0)
+            {
+                if (i == 1 && stderr_sink)
+                    stderr_sink(std::string_view(buffer, static_cast<size_t>(res)));
+                available -= static_cast<int>(res);
+                continue;
+            }
+            if (res < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+                continue;
+            if (res < 0)
+                LOG_WARNING(getLogger(), "Cannot read a pipe of shell command pid {}, error: '{}'", pid, errnoToString());
+            drain_fds[i] = -1;
+            break;
+        }
+    }
+}
+
 void ShellCommand::drainOutputPipes(
     int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms, bool budget_is_quiet_time, UInt64 max_total_ms) const
 {
@@ -848,17 +886,17 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
         auto proc_status = tryWaitImpl(/*blocking=*/ false, /*check_exit_status=*/ false, /*close_streams=*/ false);
         if (proc_status.is_process_terminated)
         {
-            /// Given a budget of its own rather than what is left of `command_termination_timeout`.
-            /// That budget is about how long the command is allowed to take to *exit*, and it has
-            /// already exited - it is routinely zero by this point, and zero here would mean the
-            /// bytes are read only when the command happened to be slow. And it is a budget of
-            /// quiet time, not of wall time: what the pipes hold is read whole - a pipe of a
-            /// megabyte, a sink that takes its time, a thread that is not scheduled for a while,
-            /// none of that may cost the command its last words under `stderr_reaction` `throw`.
-            /// Only the wait for bytes that do not come is bounded, for the case where a
-            /// grandchild inherited the write end and the end never comes; and a grandchild that
-            /// keeps the pipe fed instead runs into the hard cap, because what it writes ten
-            /// seconds after the command exited is not the command's.
+            /// What the pipes hold at this moment is the command's last words, and it is read
+            /// whole, first, with no deadline of any kind: the bytes are counted (`FIONREAD`) and
+            /// read exactly - a pipe of a megabyte, a sink that takes its time, a thread that is
+            /// not scheduled for a while, none of that may cost a command its `boom` under
+            /// `stderr_reaction` `throw`. Only what may arrive after that is on a budget - a
+            /// grandchild that inherited the write end: a quiet-time budget for the end that never
+            /// comes, and a hard cap for a grandchild that keeps the pipe fed, because what it
+            /// writes ten seconds after the command exited is not the command's. The budget is the
+            /// wait's own rather than what is left of `command_termination_timeout`: that one is
+            /// about how long the command may take to exit, and it has exited.
+            readBufferedOutput(drain_fds, stderr_sink);
             static constexpr UInt64 post_reap_quiet_ms = 100;
             static constexpr UInt64 post_reap_max_total_ms = 10000;
             drainOutputPipes(drain_fds, stderr_sink, post_reap_quiet_ms, /*budget_is_quiet_time=*/ true, post_reap_max_total_ms);

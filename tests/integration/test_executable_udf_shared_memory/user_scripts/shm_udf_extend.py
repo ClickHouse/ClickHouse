@@ -110,7 +110,11 @@ def main():
                 # The misbehaviour under test: extend the file to twice its size before answering.
                 # Shrinking is sealed and would fail; extending is not, and the pages it adds are
                 # what the server has to notice at the next hand-over.
-                os.ftruncate(fd, os.fstat(fd).st_size * 2)
+                # With `page` as the argument, to one page instead: a file shorter than a page
+                # holds one either way, and the point is whether the cap is on the pages or on
+                # the length.
+                new_length = mmap.PAGESIZE if "page" in sys.argv else os.fstat(fd).st_size * 2
+                os.ftruncate(fd, new_length)
                 region = mmap.mmap(fd, 0)
             finally:
                 os.close(fd)

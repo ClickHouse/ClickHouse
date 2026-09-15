@@ -251,6 +251,10 @@ private:
 
     /// Reads both output pipes until they end or `budget_ms` runs out, handing what comes off
     /// stderr to `stderr_sink`. Does not reap and does not touch the termination deadline.
+    /// Reads exactly the bytes the pipes hold at this moment (`FIONREAD`), with no deadline: they
+    /// are there, so the reads cannot block, and nothing may cost them - see `waitDrainingOutput`.
+    void readBufferedOutput(int (&drain_fds)[2], const StderrSink & stderr_sink) const;
+
     /// Reads what the pipes hold, for at most `budget_ms`. With `budget_is_quiet_time` the budget
     /// is spent only while nothing arrives: every read pushes the deadline forward, so what is
     /// already in the pipes is read whole however long that takes, and only the wait for more is

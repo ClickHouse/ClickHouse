@@ -270,6 +270,18 @@
         <shared_memory_pipeline>1</shared_memory_pipeline>
         <command>shm_udf.py</command>
     </function>
+    <function>
+        <type>executable</type>
+        <name>test_function_shm_int64_max_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>9223372036854775807</shared_memory_size>
+        <command>shm_udf.py</command>
+    </function>
 
     <function>
         <type>executable_pool</type>
@@ -816,6 +828,19 @@
     </function>
     <function>
         <type>executable_pool</type>
+        <name>test_function_shm_extend_tiny_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>28</shared_memory_size>
+        <command>shm_udf_extend.py page</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
         <name>test_function_shm_punch_hole_pool_python</name>
         <return_type>String</return_type>
         <argument>
@@ -839,6 +864,61 @@
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>1572864</shared_memory_size>
         <command>shm_udf_alloc_beyond_eof.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_alloc_beyond_eof_within_cap_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>40</shared_memory_size>
+        <shared_memory_max_size>1835008</shared_memory_max_size>
+        <command>shm_udf_alloc_beyond_eof.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_alloc_far_beyond_eof_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>56</shared_memory_size>
+        <shared_memory_max_size>1835008</shared_memory_max_size>
+        <command>shm_udf_alloc_beyond_eof.py 1048576</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_alloc_far_beyond_eof_filling_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>72</shared_memory_size>
+        <shared_memory_max_size>1835008</shared_memory_max_size>
+        <command>shm_udf_alloc_beyond_eof.py 1572864 64</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_tiny_region_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>24</shared_memory_size>
+        <command>shm_udf.py</command>
     </function>
     <function>
         <type>executable_pool</type>

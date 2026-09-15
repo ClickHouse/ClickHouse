@@ -460,12 +460,33 @@ TEST(SharedMemoryRegion, PagesCommittedPastTheEndOfTheFileShowInTheFootprintButN
     EXPECT_EQ(region.refreshBackingSize(), size);
     EXPECT_EQ(region.size(), size);
     EXPECT_GE(region.refreshFootprint(), 3 * size);
+    EXPECT_EQ(region.footprint(), region.refreshFootprint());
 
     /// And the other way round: a sparse tail is length without pages, and the footprint is the
     /// length then.
     ASSERT_EQ(::ftruncate(region.fd(), 8 * size), 0);
     EXPECT_EQ(region.refreshBackingSize(), 8 * size);
     EXPECT_EQ(region.refreshFootprint(), 8 * size);
+
+    /// A growth into pages that are already there adds nothing to the footprint.
+    region.grow(4 * size);
+    EXPECT_EQ(region.footprint(), 8 * size);
+}
+
+/// A file holds whole pages, so a region of a few bytes has the footprint of a page - and that is
+/// what it is compared with, so that its own size, rounded the same way, is not a cap it is over.
+TEST(SharedMemoryRegion, FootprintIsInWholePages)
+{
+    SharedMemoryRegion region(16);
+    const size_t page = SharedMemoryRegion::roundUpToPages(1);
+    EXPECT_GE(page, 4096u);
+    EXPECT_EQ(region.footprint(), page);
+    EXPECT_EQ(region.refreshFootprint(), page);
+    EXPECT_EQ(region.refreshBackingSize(), 16u);
+    EXPECT_EQ(SharedMemoryRegion::roundUpToPages(16), page);
+    EXPECT_EQ(SharedMemoryRegion::roundUpToPages(page), page);
+    EXPECT_EQ(SharedMemoryRegion::roundUpToPages(page + 1), 2 * page);
+    EXPECT_EQ(SharedMemoryRegion::roundUpToPages(0), 0u);
 }
 
 TEST(SharedMemoryRegion, SynchronizedHandoff)

@@ -266,6 +266,105 @@ TEST(ShellCommand, InheritsOneDescriptorUnderTwoNumbers)
 namespace
 {
 
+/// The lowest free descriptor number: what the next `pipe` (or `dup`) will get. `executeImpl`
+/// opens its pipes in a fixed order - stdin, stdout, stderr, then one per `read_fds` entry, then
+/// one per `write_fds` entry, each taking the next two numbers - so the number of any of their
+/// ends can be predicted from here, which is how the tests below aim a target at one.
+int lowestFreeFd()
+{
+    int probe = ::dup(STDOUT_FILENO);
+    if (probe == -1)
+        return -1;
+    ::close(probe);
+    return probe;
+}
+
+}
+
+/// The pipe ends have whatever numbers `pipe` got, and a caller's target can be one of them - here
+/// the very number of the pipe's own end in the parent. A plain `dup2(fd, fd)` would be a no-op
+/// that keeps the close-on-exec flag on, and the child would find the pipe closed by `exec`.
+TEST(ShellCommand, KeepsAPipeWhoseEndHasTheNumberOfItsTarget)
+{
+    const int lowest = lowestFreeFd();
+    ASSERT_NE(lowest, -1);
+    /// Three standard-stream pipes take six numbers; the `read_fds` pipe's write end - the child's
+    /// side - is the eighth.
+    const int target = lowest + 7;
+
+    ShellCommand::Config config("/bin/sh");
+    config.arguments = {"-c", "echo via the pipe >/dev/fd/" + std::to_string(target)};
+    config.read_fds = {target};
+    auto command = ShellCommand::executeDirect(config);
+
+    std::string from_pipe;
+    readStringUntilEOF(from_pipe, command->read_fds.at(target));
+    command->wait();
+
+    EXPECT_EQ(from_pipe, "via the pipe\n");
+}
+
+/// A target can also be the number of a pipe that is installed later: `dup2` onto it would destroy
+/// that pipe's end before it was copied, and the second target would end up on the first pipe.
+TEST(ShellCommand, KeepsAPipeWhoseEndHasTheNumberOfAnEarlierTarget)
+{
+    const int lowest = lowestFreeFd();
+    ASSERT_NE(lowest, -1);
+    /// The first `read_fds` pipe takes the seventh and eighth numbers, the second the ninth and
+    /// tenth; the first pipe's target is the second pipe's write end.
+    const int first_target = lowest + 9;
+    const int second_target = lowest + 20;
+
+    ShellCommand::Config config("/bin/sh");
+    config.arguments = {"-c", "echo one >/dev/fd/" + std::to_string(first_target) + "; echo two >/dev/fd/" + std::to_string(second_target)};
+    config.read_fds = {first_target, second_target};
+    auto command = ShellCommand::executeDirect(config);
+
+    std::string from_first;
+    readStringUntilEOF(from_first, command->read_fds.at(first_target));
+    std::string from_second;
+    readStringUntilEOF(from_second, command->read_fds.at(second_target));
+    command->wait();
+
+    EXPECT_EQ(from_first, "one\n");
+    EXPECT_EQ(from_second, "two\n");
+}
+
+/// A number the child would have two things installed under - a pipe and an inherited descriptor,
+/// or one descriptor twice - is refused before the child exists: the later `dup2` would silently
+/// replace the earlier, and the parent would go on reading a pipe nobody writes into. So is a
+/// standard stream: the child's 0, 1 and 2 are the pipes the parent talks to it through.
+TEST(ShellCommand, RefusesADescriptorNumberClaimedTwice)
+{
+    const int source = makeInheritableSource("twice");
+    ASSERT_NE(source, -1);
+    const int target = source + 1;
+
+    ShellCommand::Config pipe_and_inherited("cat");
+    pipe_and_inherited.read_fds = {target};
+    pipe_and_inherited.inherited_fds = {{target, source}};
+    EXPECT_THROW(ShellCommand::execute(pipe_and_inherited), DB::Exception);
+
+    ShellCommand::Config inherited_twice("cat");
+    inherited_twice.inherited_fds = {{target, source}, {target, source}};
+    EXPECT_THROW(ShellCommand::execute(inherited_twice), DB::Exception);
+
+    ShellCommand::Config both_pipes("cat");
+    both_pipes.read_fds = {target};
+    both_pipes.write_fds = {target};
+    EXPECT_THROW(ShellCommand::execute(both_pipes), DB::Exception);
+
+    /// And the standard streams are nobody's to claim, whichever list does it.
+    ShellCommand::Config pipe_on_stdout("cat");
+    pipe_on_stdout.read_fds = {STDOUT_FILENO};
+    EXPECT_THROW(ShellCommand::execute(pipe_on_stdout), DB::Exception);
+
+    ::close(source);
+}
+
+namespace
+{
+
 /// Blocks until the child has actually exited, without reaping it.
 ///
 /// Not a fixed pause: what these tests need is the state where the very first `waitpid` succeeds,

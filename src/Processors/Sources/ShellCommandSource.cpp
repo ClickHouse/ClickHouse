@@ -928,15 +928,28 @@ public:
         returned_command = std::move(command);
     }
 
-    /// Who borrowed this worker last.
+    /// Who borrowed this worker last: the user, and the roles the query ran with.
     ///
     /// A pooled region is not cleared between borrows, and a pool serves the queries of every
     /// user: what one query left in the region, the command can read while serving the next.
-    /// Over the pipes a command only ever saw what it was sent. The user is what tells "the next
-    /// query" from "a query of somebody else": a borrow by a different user scrubs the regions
-    /// (`scrubRegionsForBorrower`), a borrow by the same user does not pay for it.
-    const String & lastBorrowerUser() const { return last_borrower_user; }
-    void recordBorrower(const String & user) { last_borrower_user = user; }
+    /// Over the pipes a command only ever saw what it was sent. The borrower's identity is what
+    /// tells "the next query" from "a query of somebody else": a borrow by a different one scrubs
+    /// the regions (`scrubRegionsForBorrower`), a borrow by the same one does not pay for it. The
+    /// identity is the user's id and the current roles, not the user's name, for the reasons the
+    /// query result cache keys its entries by the same pair (`QueryResultCache::Key`): a user
+    /// created under the name of a dropped one is not the dropped one, and the roles of one user
+    /// can be tied to different row policies, so what a query saw under one set of roles must not
+    /// be readable by the command under another.
+    struct BorrowerIdentity
+    {
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_roles;
+
+        bool operator==(const BorrowerIdentity &) const = default;
+    };
+
+    const std::optional<BorrowerIdentity> & lastBorrower() const { return last_borrower; }
+    void recordBorrower(BorrowerIdentity borrower) { last_borrower = std::move(borrower); }
 
     /// The id for the next request to this process. It lives on the holder rather than on the
     /// borrower because what it is for is telling this request's response apart from anything the
@@ -985,15 +998,19 @@ public:
         shared_memory[index].reset();
     }
 
-    /// The largest region footprint, re-read now; zero without regions. What a borrow checks
-    /// against `shared_memory_max_size` before it builds anything on the worker.
-    size_t largestSharedMemoryFootprint() const
+    /// A region over the cap - re-read now (`SharedMemoryRegion::isOverTheCap`) - or null if
+    /// there is none. What a borrow checks before it builds anything on the worker.
+    SharedMemoryRegion * sharedMemoryRegionOverTheCap(size_t max_size) const
     {
-        size_t largest = 0;
         for (const auto & region : shared_memory)
-            if (region)
-                largest = std::max(largest, region->refreshFootprint());
-        return largest;
+        {
+            if (!region)
+                continue;
+            region->refreshFootprint();
+            if (region->isOverTheCap(max_size))
+                return region.get();
+        }
+        return nullptr;
     }
 
     /// Drops the returned process and its regions together, so that the next `buildCommand` starts
@@ -1103,7 +1120,7 @@ private:
     std::unique_ptr<ShellCommand> returned_command;
     ShellCommandBuilderFunc func;
     std::array<SharedMemoryRegionPtr, 2> shared_memory;
-    String last_borrower_user;
+    std::optional<BorrowerIdentity> last_borrower;
     size_t persistent_memory_charge = 0;
 };
 
@@ -1974,6 +1991,7 @@ namespace
             , configuration(configuration_)
             , is_pooled(is_pooled_)
             , shared_memory_max_size(shared_memory_max_size_)
+            , shared_memory_max_footprint(SharedMemoryRegion::roundUpToPages(shared_memory_max_size_))
             , pipeline_mode(pipeline_mode_)
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
@@ -2017,9 +2035,9 @@ namespace
                 /// command that extends the file inside that window costs its worker the borrow.
                 if (command_holder)
                 {
-                    const size_t largest = command_holder->largestSharedMemoryFootprint();
-                    if (largest > shared_memory_max_size)
+                    if (const auto * over = command_holder->sharedMemoryRegionOverTheCap(shared_memory_max_size))
                     {
+                        const size_t largest = std::max(over->backingSize(), over->footprint());
                         LOG_WARNING(
                             getLogger("ShellCommandSharedMemorySource"),
                             "The process of an executable UDF has grown its shared-memory region to {} bytes "
@@ -2043,9 +2061,10 @@ namespace
                         /// previous borrow may have grown, so charge what it actually holds - its
                         /// committed size; a missing one is created at exactly shared_memory_size_.
                         size_t existing_size = command_holder->getSharedMemorySize(i);
-                        if (existing_size > shared_memory_max_size)
+                        if (existing_size > shared_memory_max_footprint)
                             failBorrowOnRegionOverTheCap(existing_size);
-                        chargeQueryMemory(existing_size ? existing_size : shared_memory_size_);
+                        /// Whole pages: what a fresh region of `shared_memory_size_` bytes holds.
+                        chargeQueryMemory(existing_size ? existing_size : SharedMemoryRegion::roundUpToPages(shared_memory_size_));
                         regions[i] = command_holder->getOrCreateSharedMemory(shared_memory_size_, i, region_created);
                         regions_created_by_this_borrow[i] = region_created;
 
@@ -2054,7 +2073,7 @@ namespace
                     }
                     else
                     {
-                        chargeQueryMemory(shared_memory_size_);
+                        chargeQueryMemory(SharedMemoryRegion::roundUpToPages(shared_memory_size_));
                         regions[i] = std::make_shared<SharedMemoryRegion>(shared_memory_size_);
                         region_created = true;
                         regions_created_by_this_borrow[i] = region_created;
@@ -2427,18 +2446,16 @@ namespace
             }
         }
 
-        /// Stops the background producer and joins it. The order is what makes the join safe: the
-        /// request first, so that a callback between blocks returns at once; then the input
-        /// pipeline is cancelled, so that a callback inside `pull` - a source that is waiting for
-        /// data - comes out of it (`cancel` makes `pull` return false, not throw, so the callback
-        /// reports exhaustion and leaves no error behind for `prepare` to rethrow); and only then
-        /// the join. Today's single-block input never blocks in `pull`, so the middle step is
-        /// there for the caller that will feed more than one block. Idempotent.
+        /// Stops the background producer and joins it. The callback gives up between blocks once
+        /// the stop is requested; a callback that is inside `pull` is waited for. That wait is
+        /// bounded by the input: today's single-block input never blocks in `pull`, and a source
+        /// that can - one waiting for data that is not coming - is unblocked by the query's own
+        /// cancellation, which `pull` honours through the process list element. It is not
+        /// cancelled from here: `PullingPipelineExecutor` creates its executor on the first `pull`
+        /// and `cancel` reads that pointer, so a `cancel` from this thread racing the producer's
+        /// first `pull` would be a data race, not an interruption. Idempotent.
         void stopProducer() noexcept
         {
-            producer.requestStop();
-            if (pipeline_mode && input_executor)
-                input_executor->cancel();
             producer.stop();
         }
 
@@ -2745,19 +2762,61 @@ namespace
             if (LockMemoryExceptionInThread::isBlocked(VariableContext::Process, /*fault_injection=*/ false))
                 new_size = std::max(required, std::min(region.size() + UNENFORCED_GROWTH_STEP, shared_memory_max_size));
 
-            /// What this growth will commit. Measured against the committed size, not the mapped
-            /// one: an earlier growth may have committed its pages and then failed to map them, in
-            /// which case the query is already charged for them and this growth only maps.
-            const size_t backing_before = region.backingSize();
-            const size_t added = new_size > backing_before ? new_size - backing_before : 0;
+            /// What this growth commits, at most: the pages between the end of the file and
+            /// `new_size`. `posix_fallocate` commits every page of the file that is not committed,
+            /// and the footprint says how many pages the file holds but not where: pages the
+            /// command committed past the end of the file (`refreshFootprint`) may lie inside
+            /// that range - then this growth commits less than this, and those pages are already
+            /// charged - or far beyond it, at an offset the growth never reaches - then it commits
+            /// all of this on top of them. Telling the two apart beforehand would take a
+            /// page-by-page walk the file does not offer (`mincore` and `SEEK_HOLE` do not see
+            /// reserved pages), and the growth cannot be charged after it has committed its pages:
+            /// a query at its memory limit has to be refused before, not told afterwards. So the
+            /// most it can commit is charged and checked first, the footprint is re-read after,
+            /// and what the growth turned out not to need is given back - a moment of double
+            /// counting for the pages the command committed just past the end, and only those.
+            /// The end of the file rather than the mapped size: a growth that committed its pages
+            /// and could not map them has left the file longer than the mapping, and those pages
+            /// are committed and charged. Whole pages, like the footprint.
+            ///
+            /// The one thing this bound does not cover is a page the command freed inside the file
+            /// (`FALLOC_FL_PUNCH_HOLE`): the growth commits it again, and the re-read finds the
+            /// footprint higher than it charged for. That is charged then, after the fact - the
+            /// command that punched the hole is the command that pays for it, and it pays with its
+            /// own query's limit.
+            const size_t footprint_before = region.footprint();
+            const size_t backing_before = SharedMemoryRegion::roundUpToPages(region.backingSize());
+            const size_t new_footprint = SharedMemoryRegion::roundUpToPages(new_size);
+            const size_t expected = new_footprint > backing_before ? new_footprint - backing_before : 0;
+
+            /// Never past the cap, in pages like the footprint: the server's own growth is what
+            /// the cap is a promise about (the command's own commits are checked where the worker
+            /// changes hands - see `regionsAreWithinTheCap`). A region the command has filled with
+            /// pages far past the end has no room left for the growth, and a worker in that state
+            /// is not one to keep: the next chunk would fail the same way.
+            if (footprint_before + expected > shared_memory_max_footprint)
+            {
+                command_is_invalid = true;
+                throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER,
+                    "{} ({}{} bytes) does not fit into the shared-memory region: growing the region to {} bytes "
+                    "would take its footprint from {} to {} bytes, past shared_memory_max_size ({} bytes); "
+                    "the process of the executable UDF has committed pages of its own into the region "
+                    "(past the end of its file) and is discarded",
+                    what, required_is_lower_bound ? "at least " : "", required, new_size,
+                    footprint_before, footprint_before + expected, shared_memory_max_size);
+            }
 
             /// Charge first (may throw MEMORY_LIMIT_EXCEEDED), then grow. If the growth fails, roll
             /// back exactly the part that was not committed: `posix_fallocate` undoes itself, but
             /// a remap that fails after it leaves the pages committed and the file - sealed against
             /// shrinking - permanently larger. Those pages stay charged, here and on every later
-            /// borrow, because they are what the region costs from now on.
-            chargeQueryMemory(added);
+            /// borrow, because they are what the region costs from now on. Re-read rather than
+            /// taken from the cached figure, on both paths: the cached one is raised to the length
+            /// of the file, and the pages of the command's own that this growth committed on top
+            /// (see above) show only in `st_blocks`.
+            chargeQueryMemory(expected);
 
+            size_t added = 0;
             try
             {
                 if (command_holder)
@@ -2767,13 +2826,27 @@ namespace
             }
             catch (...)
             {
-                const size_t committed = region.backingSize() - backing_before;
-                if (added > committed)
-                    unchargeQueryMemory(added - committed);
-                if (committed)
-                    ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, committed);
+                try
+                {
+                    added = region.refreshFootprint() - footprint_before;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot re-read the size of a shared-memory region after a failed growth; charging the size last seen");
+                    added = region.footprint() - footprint_before;
+                }
+                if (expected > added)
+                    unchargeQueryMemory(expected - added);
+                if (added)
+                    ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, added);
                 throw;
             }
+
+            added = region.refreshFootprint() - footprint_before;
+            if (added < expected)
+                unchargeQueryMemory(expected - added);
+            else if (added > expected)
+                chargeQueryMemory(added - expected);
 
             ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryRegionGrowths);
             ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, added);
@@ -2816,9 +2889,9 @@ namespace
             /// unchecked length would let a command that races the borrow have the server commit
             /// whatever it made the file - which is exactly what the cap exists to prevent.
             const size_t footprint = region.refreshFootprint();
-            if (footprint > shared_memory_max_size)
-                failBorrowOnRegionOverTheCap(footprint);
             const size_t backing = region.backingSize();
+            if (region.isOverTheCap(shared_memory_max_size))
+                failBorrowOnRegionOverTheCap(std::max(backing, footprint));
 
             /// The query was charged for the footprint read a moment earlier; a region that grew
             /// in between - within the cap - is charged for the rest before it is mapped, so that
@@ -2869,19 +2942,20 @@ namespace
                 backing, shared_memory_max_size);
         }
 
-        /// Clears the regions when this borrow belongs to a different user than the previous
-        /// one. What a query wrote into a pooled region stays there until overwritten, and the
-        /// command serving the next query can read it - over the pipes it only ever saw what it
-        /// was sent. The user boundary is where that matters, and the cost is paid only there: a
-        /// `memset` of the region, nothing when the user is the same. The whole region and not just
+        /// Clears the regions when this borrow belongs to a different user, or to the same user
+        /// under different roles, than the previous one (`ShellCommandHolder::BorrowerIdentity`).
+        /// What a query wrote into a pooled region stays there until overwritten, and the command
+        /// serving the next query can read it - over the pipes it only ever saw what it was sent.
+        /// That boundary is where it matters, and the cost is paid only there: a `memset` of the
+        /// region, nothing when the borrower is the same. The whole region and not just
         /// what the server knows it used: the command may have written anywhere in it, and only
         /// zeroing everything says anything about all of it - and by now the whole file is mapped
         /// (`takeOverReusedRegion`), so the region is the file. Zeroed rather than freed: a freed
         /// page would come back on the next write, at the cost of an allocation on the hot path.
         void scrubRegionsForBorrower()
         {
-            const String & user = context->getUserName();
-            if (!command_holder->lastBorrowerUser().empty() && command_holder->lastBorrowerUser() != user)
+            ShellCommandHolder::BorrowerIdentity borrower{context->getUserID(), context->getCurrentRoles()};
+            if (command_holder->lastBorrower() && *command_holder->lastBorrower() != borrower)
             {
                 for (const auto & region : regions)
                 {
@@ -2892,7 +2966,7 @@ namespace
                     ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryScrubbedBytes, region->size());
                 }
             }
-            command_holder->recordBorrower(user);
+            command_holder->recordBorrower(std::move(borrower));
         }
 
         /// Whether every region's file is still within `shared_memory_max_size` - the one property
@@ -2919,14 +2993,14 @@ namespace
                     return false;
                 }
 
-                if (footprint > shared_memory_max_size)
+                if (region->isOverTheCap(shared_memory_max_size))
                 {
                     LOG_WARNING(
                         getLogger("ShellCommandSharedMemorySource"),
                         "The process of an executable UDF has grown its shared-memory region to {} bytes "
                         "(its length, or the pages it committed), past shared_memory_max_size ({} bytes); the "
                         "process will not be reused",
-                        footprint, shared_memory_max_size);
+                        std::max(region->backingSize(), footprint), shared_memory_max_size);
                     return false;
                 }
             }
@@ -3368,7 +3442,7 @@ namespace
             }
 
             if (command_holder)
-                command_holder->acquireChargeFromBorrower(shared_memory_max_size);
+                command_holder->acquireChargeFromBorrower(shared_memory_max_footprint);
 
             if (command_holder && process_pool)
             {
@@ -3411,6 +3485,9 @@ namespace
 
         bool is_pooled;
         size_t shared_memory_max_size;
+        /// The cap in the unit footprints come in - whole pages: a region of 16 bytes holds a page,
+        /// and a cap of 16 bytes has to mean that page, not fail it on every borrow.
+        size_t shared_memory_max_footprint;
         bool pipeline_mode;
         std::atomic<size_t> query_memory_charge = 0;
 

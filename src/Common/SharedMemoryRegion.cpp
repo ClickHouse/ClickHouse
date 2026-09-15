@@ -264,6 +264,7 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
     region_fd = fd;
     region_size = size;
     backing_size = size;
+    footprint_size = roundUpToPages(size);
 }
 
 void SharedMemoryRegion::grow(size_t new_size)
@@ -285,6 +286,7 @@ void SharedMemoryRegion::grow(size_t new_size)
     /// `posix_fallocate` over committed pages costs a walk, not a copy.
     reserveBackingStorage(region_fd, new_size, "grow");
     backing_size = std::max(backing_size, new_size);
+    footprint_size = std::max(footprint_size, roundUpToPages(new_size));
 
     /// Map the enlarged file into a fresh mapping first; only on success is the old one dropped, so
     /// a failed remap leaves the region fully usable at its previous size. The file is then longer
@@ -331,8 +333,19 @@ size_t SharedMemoryRegion::refreshFootprint()
 
     backing_size = std::max(backing_size, static_cast<size_t>(st.st_size));
     /// `st_blocks` is in 512-byte units whatever the page size, and for a `memfd` it is exactly
-    /// the pages the file holds - inside its length or past it.
-    return std::max(backing_size, static_cast<size_t>(st.st_blocks) * 512);
+    /// the pages the file holds - inside its length or past it. Whole pages on both sides of the
+    /// comparison: a length is rounded up to the page it ends in, which the file holds either way.
+    /// Never less than what was seen before: pages come and go (a hole the command punched), but
+    /// a charge that went down with them would have to be taken again when they come back, on the
+    /// hot path, uncounted; the footprint is a high-water mark, like the length.
+    footprint_size = std::max({footprint_size, roundUpToPages(backing_size), static_cast<size_t>(st.st_blocks) * 512});
+    return footprint_size;
+}
+
+size_t SharedMemoryRegion::roundUpToPages(size_t size)
+{
+    static const size_t page_size = static_cast<size_t>(::sysconf(_SC_PAGESIZE));
+    return (size + page_size - 1) / page_size * page_size;
 }
 
 SharedMemoryRegion::~SharedMemoryRegion()
@@ -379,6 +392,11 @@ size_t SharedMemoryRegion::refreshFootprint()
 {
     checkSupported();
     return 0;
+}
+
+size_t SharedMemoryRegion::roundUpToPages(size_t size)
+{
+    return size;
 }
 
 SharedMemoryRegion::~SharedMemoryRegion() = default;

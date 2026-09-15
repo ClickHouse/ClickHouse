@@ -150,10 +150,10 @@ public:
     /// so a callback that has already started is waited for, however long it takes.
     bool isStopRequested() const { return stop_requested.load(std::memory_order_relaxed); }
 
-    /// Asks the producer to stop without waiting for it: the loop ends between callbacks, and a
-    /// consumer blocked in `next` is woken. For a caller that has to unblock a callback of its own
-    /// (a `pull` on a pipeline that is waiting for data) before it can afford to join - see `stop`.
-    void requestStop() noexcept
+    /// Requests the producer to stop and joins it. Idempotent; also called by the destructor. Waits
+    /// for a callback that is already running - see `isStopRequested`: a callback that can block
+    /// indefinitely is the caller's to make interruptible.
+    void stop() noexcept
     {
         {
             std::lock_guard lock(mutex);
@@ -161,14 +161,6 @@ public:
         }
         producer_cv.notify_all();
         consumer_cv.notify_all();
-    }
-
-    /// Requests the producer to stop and joins it. Idempotent; also called by the destructor. Waits
-    /// for a callback that is already running - see `isStopRequested`: a callback that can block
-    /// indefinitely has to be interrupted by the caller between `requestStop` and this.
-    void stop() noexcept
-    {
-        requestStop();
         if (thread.joinable())
             thread.join();
     }

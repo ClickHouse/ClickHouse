@@ -271,11 +271,16 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
                 "Executable user defined function {}: `shared_memory_max_size` ({}) must not exceed {}",
                 name, shared_memory_max_size, max_shared_memory_size);
 
+        /// What gets charged is the footprint, which is measured in whole pages: a cap of
+        /// `INT64_MAX` bytes passes the checks above and rounds up to a figure the tracker cannot
+        /// represent. So the rounded figure is the one that has to fit, with all regions summed.
         UInt64 shared_memory_region_count = shared_memory_pipeline ? 2 : 1;
-        if (shared_memory_max_size > max_shared_memory_size / shared_memory_region_count)
+        UInt64 shared_memory_max_footprint = SharedMemoryRegion::roundUpToPages(shared_memory_max_size);
+        if (shared_memory_max_footprint > max_shared_memory_size / shared_memory_region_count)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Executable user defined function {}: total shared-memory charge ({} regions of up to {} bytes) must not exceed {}",
-                name, shared_memory_region_count, shared_memory_max_size, max_shared_memory_size);
+                "Executable user defined function {}: total shared-memory charge ({} regions of up to {} bytes, "
+                "rounded up to whole pages) must not exceed {}",
+                name, shared_memory_region_count, shared_memory_max_footprint, max_shared_memory_size);
 
         /// Validate platform support (`memfd_create` with sealing) while loading the function, so
         /// an unusable platform is rejected once instead of failing every invocation.
