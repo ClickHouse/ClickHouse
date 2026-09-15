@@ -102,8 +102,8 @@ private:
 };
 
 
-/// Taking a set table's contents for the right-hand side of `IN` reads all of its columns, exactly like
-/// the `IN (SELECT * FROM table)` spelling this is shorthand for, so it requires the same privilege.
+/// A set table keys its set on every physical column it declares, so taking its contents for the
+/// right-hand side of `IN` reads all of them and requires `SELECT` on all of them.
 void checkAccessForSetTableOnRightOfIn(const ContextPtr & context, const IStorage & table, const StorageID & table_id);
 
 }
