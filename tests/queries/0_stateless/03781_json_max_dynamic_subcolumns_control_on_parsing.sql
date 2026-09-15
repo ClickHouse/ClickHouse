@@ -1,7 +1,4 @@
--- Tags: no-msan, no-tsan, no-async-insert
--- no-async-insert:
---   the `INSERT ... SELECT` becomes async compatible in https://github.com/ClickHouse/ClickHouse/pull/111663,
---   but it triggers the bug, see https://github.com/ClickHouse/ClickHouse/issues/115319
+-- Tags: no-msan, no-tsan
 
 drop table if exists test;
 create table test (json JSON) engine=MergeTree order by tuple();

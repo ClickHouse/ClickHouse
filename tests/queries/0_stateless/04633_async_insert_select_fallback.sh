@@ -190,3 +190,20 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_dist"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_dist_local"
+
+# Case 8: an empty SELECT result still runs the destination sink's onStart, so its guards fire
+# just like a plain synchronous INSERT ... SELECT. With a pre-existing part and
+# parts_to_throw_insert=1, onStart must rethrow TOO_MANY_PARTS; skipping the destination would
+# let the empty insert succeed silently.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_empty_onstart"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_empty_onstart (id UInt32)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS parts_to_throw_insert = 1
+"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO test_async_sel_empty_onstart VALUES (1)"
+Q=$(urlencode "INSERT INTO test_async_sel_empty_onstart SELECT number::UInt32 AS id FROM numbers(0)")
+${CLICKHOUSE_CURL} -sS -X POST \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=${Q}" -d "" 2>&1 \
+    | grep -q "TOO_MANY_PARTS" && echo "onStart_ran" || echo "onStart_SKIPPED"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_empty_onstart"
