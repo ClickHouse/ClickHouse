@@ -152,3 +152,12 @@ upper: NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) (engine pre
 1
 upper: NOT (toDate(d) = '2026-01-01' AND d > toDate32('1900-01-01')) (engine predicate 1, throw)
 1
+t: toDate(d, 'UTC') = '2026-01-01'
+['2026-01-01','2205-06-08']
+2
+t: toDate32(d, 'UTC') = '2026-01-01'
+['2026-01-01']
+1
+t: toDate32(d, 'UTC') != '2026-01-01'
+['2026-01-02','2205-06-08']
+2
