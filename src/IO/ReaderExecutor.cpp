@@ -1,5 +1,6 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/IntervalSet.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -27,6 +28,9 @@ namespace ProfileEvents
     extern const Event ReaderExecutorLongConnectionHits;
     extern const Event ReaderExecutorLongConnectionFallbacks;
     extern const Event ReaderExecutorLongConnectionBytes;
+    extern const Event ReaderExecutorConcurrentDownloadWaits;
+    extern const Event ReaderExecutorConcurrentDownloadWaitTimeouts;
+    extern const Event ReaderExecutorConcurrentDownloadWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -131,6 +135,15 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case LongConnectionBytes:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionBytes, value);
             break;
+        case ConcurrentDownloadWaits:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorConcurrentDownloadWaits, value);
+            break;
+        case ConcurrentDownloadWaitTimeouts:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorConcurrentDownloadWaitTimeouts, value);
+            break;
+        case ConcurrentDownloadWaitMicroseconds:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorConcurrentDownloadWaitMicroseconds, value);
+            break;
         case NumCounters:
             break;
     }
@@ -149,6 +162,7 @@ ReaderExecutor::ReaderExecutor(
     , cache_chain(std::move(options.cache_chain))
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , max_tail_for_drain(options.max_tail_for_drain)
+    , plan_look_ahead(options.plan_look_ahead)   /// `getReadSettings` enforces `>= block_size`
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     offset_map.build(objects);
@@ -392,125 +406,160 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, Block
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve, BlockAndWindowSizes sizes)
+void ReaderExecutor::ensureResolved(size_t pos)
+{
+    /// Re-anchor on a discontinuity (first read, seek, backward jump, or past the resolved end),
+    /// else drop the consumed prefix. A forward seek inside the span keeps the resolved cells.
+    if (read_plan.empty() || pos < read_plan.spanStart() || pos >= read_plan.resolvedEnd())
+        read_plan.reset(pos);
+    else
+        read_plan.retireBefore(pos);
+
+    /// Refill lazily: grow only once less than half the look-ahead remains ahead of the cursor, and
+    /// then resolve up to the full length. Batches the per-window top-ups into fewer, larger resolves.
+    if (read_plan.resolvedEnd() - pos > plan_look_ahead / 2)
+        return;
+
+    size_t target = pos + plan_look_ahead;
+    if (!offset_map.hasUnknownSize())
+        target = std::min(target, offset_map.totalSize());
+
+    /// Grow forward one object-piece per step: `resolve` is per-object, so cap each call at the object
+    /// boundary. Cheap residency probes, not reads.
+    while (read_plan.resolvedEnd() < target)
+    {
+        const size_t lo = read_plan.resolvedEnd();
+        const auto pieces = offset_map.map(ByteRange{lo, target - lo});
+        if (pieces.empty())
+            break;
+        const auto & piece = pieces.front();
+        const size_t hi = lo + piece.size;
+
+        /// The plan resolves every layer itself (all tiers asked, matched by CacheTier).
+        stats.add(Stats::CacheGetRequests, cache_chain.size());
+        read_plan.extend(hi, cache_chain, piece.object, piece.object_offset, ByteRange{lo, piece.size});
+    }
+}
+
+ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, BlockAndWindowSizes sizes)
 {
     chassert(!cache_chain.empty());
-    /// Resolve the whole window across tiers (front = fastest) and act on the run covering the head:
-    /// a hit serves one block from cache, an all-miss fetches the covering range(s) and populates.
-    /// Coarse fetch, fine serve.
-    const auto start_piece = offset_map.map(ByteRange{window_offset, 1});
-    chassert(!start_piece.empty());
-    const StoredObject & object = start_piece.front().object;
-    const size_t object_offset = start_piece.front().object_offset;
 
-    /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
-    auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - window_offset}); };
+    /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
+    auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - pos}); };
 
-    /// A miss to be populated carries its own open writer; any other miss is writer-less. `role` is
-    /// filled by the role loop below (empty for a writer-less miss, or a tail another reader leads).
-    struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::FillRole role; };
-    VectorWithMemoryTracking<MissTier> miss_tiers;
-    size_t next_resident = window_offset + max_serve;  /// nearest block any tier already has, ahead of the head
-    for (auto & cache : cache_chain)
+    /// Catch the plan up to `pos` and grow the look-ahead; then it decides the run.
+    ensureResolved(pos);
+
+    const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
+    ChainedBuffers out;
+    if (const auto * m = std::get_if<ReadPlan::ServeFromMemory>(&run))
+        out = m->memory->slice(ByteRange{pos, serve_len(m->range.end())});
+    else if (const auto * rd = std::get_if<ReadPlan::ServeFromReader>(&run))
+        out = rd->reader->read(ByteRange{pos, serve_len(rd->range.end())});
+    else if (const auto * wr = std::get_if<ReadPlan::ServeFromWriter>(&run))
+        out = wr->writer->read(ByteRange{pos, serve_len(wr->range.end())});
+    else if (const auto * f = std::get_if<ReadPlan::Fetch>(&run))
+        out = fetchFillServe(pos, f->range, max_serve, sizes);
+    /// std::monostate: offset outside the resolved span -> serve nothing.
+
+    /// Eagerly retire what we served, freeing its pins and memory hold now (`out` owns its bytes).
+    if (!out.empty())
+        read_plan.retireBefore(pos + out.totalBytes());
+    return out;
+}
+
+ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes)
+{
+    auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - pos}); };
+
+    /// `fetch_range` is the whole source-read extent `runAt` decided; read it once, fill the tiers it
+    /// spans, serve one block from `pos`.
+    if (fetch_range.size == 0)
+        return {};
+
+    const auto writers = read_plan.writersFor(fetch_range);
+
+    /// All bypass (no populating tier): read the extent whole from source and serve it.
+    if (writers.empty())
+        return readSource(fetch_range.offset, fetch_range.size, sizes);
+
+    /// One pass over the writers (fastest-first) resolving the head inline: serve `pos` from a committed
+    /// prefix; else if a concurrent downloader leads it, wait once and serve from cache if it lands; else
+    /// take the download role to fill below. A missed wait just falls through to the source read.
+    struct Claimed { CacheWriter * writer; CacheWriter::FillRole role; };
+    VectorWithMemoryTracking<Claimed> claimed;
+    for (auto * writer : writers)
     {
-        stats.add(Stats::CacheGetRequests);
-        /// `resolve` returns the window's residency in offset order, coverage contiguous from the ask
-        /// start. The run covering `window_offset` decides the tier: a hit there serves the block from
-        /// cache. A miss is recorded, and we keep gathering the contiguous miss run behind it so the
-        /// fetch below reads the whole uncached extent in one source request; a later hit ends the run.
-        auto resolutions = cache->resolve(object, object_offset, ByteRange{window_offset, max_serve});
-        for (auto & resolution : resolutions)
+        const bool covers_head = writer->range().offset <= pos && pos < writer->range().end();
+        CacheWriter::FillRole role = writer->takeFillRole();
+        if (covers_head && pos < writer->committed())   /// committed prefix `[range.offset, committed)` covers `pos`
+            return writer->read(ByteRange{pos, serve_len(writer->committed())});
+        if (covers_head && !role)
         {
-            if (resolution.range.end() <= window_offset)
-                continue;
-            if (resolution.kind == ICacheProvider::CacheResolution::Kind::Hit)
+            const ByteRange want{pos, serve_len(fetch_range.end())};
+            stats.add(Stats::ConcurrentDownloadWaits);
+            ChainedBuffers waited;
             {
-                if (resolution.range.offset <= window_offset && resolution.reader)
-                    return resolution.reader->read(ByteRange{window_offset, serve_len(resolution.range.end())});
-                next_resident = std::min(next_resident, resolution.range.offset);  /// a resident block ahead
-                break;
+                StatTimer wait_timer(stats, Stats::ConcurrentDownloadWaitMicroseconds);
+                waited = writer->waitAndRead(want);
             }
-            miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}});
+            /// Short of the request clamped to this writer's segment means the wait timed out - the
+            /// request itself may legitimately reach past the segment end.
+            const size_t want_here = std::min(want.end(), writer->range().end()) - want.offset;
+            if (waited.totalBytes() < want_here)
+                stats.add(Stats::ConcurrentDownloadWaitTimeouts);
+            if (!waited.empty())
+                return waited;
         }
+        claimed.push_back({writer, std::move(role)});
     }
 
-    /// Every tier missed: role each writing tier's lead role before the fetch (a held role dedups the
-    /// download). If `takeFillRole` reports a prefix cached since `resolve` covering the head, serve it
-    /// from that tier - no source read; otherwise keep the role for the fetch.
-    bool any_writer = false;
-    for (auto & miss_tier : miss_tiers)
+    /// One source read of the whole extent. (With two populating layers a slower tier may already hold
+    /// part of a widened whole-segment cell; we re-read it rather than splice - correctness over fewest
+    /// source bytes on that non-production path.)
+    ChainedBuffers fetched = readSource(fetch_range.offset, fetch_range.size, sizes);
+    const size_t fetched_end = fetched.empty() ? fetch_range.offset : fetched.range().end();
+
+    /// Fill the tiers we hold, and record what each cache ACCEPTED via `committed()` - `write` can reject
+    /// bytes (no disk space, reservation failure, a whole-segment cell not fully covered), so the rest is
+    /// what we must keep in memory.
+    IntervalSet cached;
+    for (auto & c : claimed)
     {
-        if (!miss_tier.writer)
-            continue;  /// nothing will be populated here
-        any_writer = true;
-        CacheWriter::FillRole role = miss_tier.writer->takeFillRole();
-        /// A prefix cached since `resolve` (`committed()`) covering the head is served from that tier - no
-        /// source read; otherwise keep the role for the fetch.
-        const size_t avail_end = miss_tier.writer->committed();
-        if (miss_tier.writer->range().offset <= window_offset && window_offset < avail_end)
-            return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail_end, miss_tier.range.end()))});
-        miss_tier.role = std::move(role);
-    }
-
-    /// A range another thread is already downloading is fetched through below (its `write` lands 0).
-
-    /// No writing tier (all bypass): the miss range is the exact uncached extent, so read it whole from
-    /// source and serve all of it - nothing is cached inside it, and we store nothing, so there is no
-    /// waste. Cap at the nearest tier boundary (`miss_end`) so the next window re-probes there and picks
-    /// up a cell a tier has cached.
-    if (!any_writer)
-    {
-        size_t miss_end = window_offset + max_serve;
-        for (const auto & miss_tier : miss_tiers)
-            miss_end = std::min(miss_end, miss_tier.range.end());
-        return readSource(window_offset, miss_end - window_offset, sizes);
-    }
-
-    /// Fetch the writer ranges in one source read (across the objects they span) and populate each.
-    /// Capped at `next_resident` - the nearest block a slower tier already holds - so a gathered miss run
-    /// never re-reads a suffix the filesystem cache already has; that suffix is served from the slower
-    /// tier on the next window.
-    size_t fetch_lo = window_offset;
-    size_t fetch_hi = window_offset;
-    for (const auto & miss_tier : miss_tiers)
-    {
-        if (!miss_tier.writer)
-            continue;
-        fetch_lo = std::min(fetch_lo, miss_tier.range.offset);
-        fetch_hi = std::max(fetch_hi, miss_tier.range.end());
-    }
-    fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
-    fetch_hi = std::min(fetch_hi, next_resident);  /// do not re-read a block a slower tier already has
-
-    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo, sizes);
-    const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
-
-    for (auto & miss_tier : miss_tiers)
-    {
-        /// Only a held role authorizes a write; a tier led by a concurrent downloader is filled by
-        /// that thread, not here.
-        if (miss_tier.role)
+        /// Only a held role authorizes a write; a tier led by a concurrent downloader is filled there.
+        if (c.role)
         {
-            const size_t lo = std::max(miss_tier.range.offset, fetch_lo);
-            const size_t hi = std::min(miss_tier.range.end(), fetched_end);
-            /// From the whole file-level fetch, so a block straddling objects is covered.
+            const size_t lo = std::max(c.writer->range().offset, fetch_range.offset);
+            const size_t hi = std::min(c.writer->range().end(), fetched_end);
             if (lo < hi)
             {
                 const ByteRange write_range{lo, hi - lo};
                 if (fetched.covers(write_range))
                 {
                     stats.add(Stats::CachePopulateRequests);
-                    miss_tier.writer->write(fetched.slice(write_range), miss_tier.role);
+                    c.writer->write(fetched.slice(write_range), c.role);
                 }
             }
         }
-        /// Free the downloader role as soon as this tier is done, not at window end: reset the role
-        /// (it completes+resets the role while we still hold it). The writer is finalized when
-        /// `miss_tiers` is destroyed.
-        miss_tier.role.reset();
+        /// Committed now (by our write, or by a concurrent downloader): servable from the tier, not held.
+        const size_t committed = c.writer->committed();
+        if (committed > c.writer->range().offset)
+            cached.add(ByteRange{c.writer->range().offset, committed - c.writer->range().offset});
+        c.role.reset();
     }
 
-    return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});
+    /// Serve one block; hand the un-served bytes no tier accepted to the memory hold. A cold read whose
+    /// writes all land holds nothing.
+    const size_t serve_bytes = serve_len(fetched_end);
+    const ByteRange unserved{pos + serve_bytes, fetched_end - pos - serve_bytes};
+    ChainedBuffers rejected;
+    for (const auto & r : cached.subtract(unserved))   /// the un-served bytes minus what a tier accepted
+        rejected.append(fetched.slice(r));
+    if (!rejected.empty())
+        read_plan.hold(std::move(rejected));
+
+    return fetched.slice(ByteRange{pos, serve_bytes});
 }
 
 ReaderExecutor::BlockAndWindowSizes ReaderExecutor::sampleWindowSizes() const
@@ -731,6 +780,8 @@ void ReaderExecutor::seek(size_t new_position)
     fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
     reached_eof = false;
+    /// The plan's memory hold is offset-keyed, so it stays correct; `ensureResolved` on the next read
+    /// frees or resets it (a discontinuity `reset`s the plan, a forward move `retireBefore`s it).
 }
 
 }
