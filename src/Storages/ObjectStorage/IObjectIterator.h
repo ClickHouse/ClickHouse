@@ -50,10 +50,28 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    /// The storage this object is read from. Ordinarily the one the reader was handed, but a data
+    /// lake may place a file on a storage of its own, and then only that one can serve it.
+    virtual ObjectStoragePtr getResolvedStorage(const ObjectStoragePtr & default_storage) const { return default_storage; }
+
+    /// The path a data lake's metadata spells for this object, when that differs from the key it is
+    /// read by. It is what `_path` reports and what identifies the object across storages, where the
+    /// key alone is ambiguous: the same key in two buckets names two different files.
+    virtual std::optional<String> getPathInDataLakeMetadata() const { return std::nullopt; }
+
+    /// The path of a file this object needs -- its own, or one of the delete files attached to it --
+    /// that lives on the local filesystem outside the table location, if there is one. Only the node
+    /// that resolved such a file can read it, so a task carrying one cannot be handed to a replica.
+    virtual std::optional<String> getExternalLocalPath() const { return std::nullopt; }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
+
+    /// Polymorphic copy: preserves the dynamic type (e.g. `IcebergDataObjectInfo` with its
+    /// resolved storage and metadata path) where a plain copy construction would slice it.
+    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
 
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
@@ -81,6 +99,15 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
+
+    /// When true, the objects this iterator produces are handed to other replicas instead of being
+    /// read here, so an implementation must also fill in whatever only the cluster protocol needs.
+    /// A local read never asks for that and does not pay for computing it.
+    bool tasks_go_to_other_replicas = false;
+
+    /// Set `tasks_go_to_other_replicas` flag, propagating to nested iterators if any. Must be called
+    /// before the first `next`.
+    virtual void setTasksGoToOtherReplicas(bool value) { tasks_go_to_other_replicas = value; }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -107,6 +134,12 @@ public:
         iterator->setEmitProfileEvents(value);
     }
 
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
+    }
+
 private:
     const ObjectIterator iterator;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -131,6 +164,12 @@ public:
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
+    }
 
 private:
     const ObjectIterator iterator;

@@ -21,4 +21,14 @@ namespace DB
 /// If the URI has no query string, the original string is returned unchanged.
 std::string maskSensitiveQueryParametersInURI(const std::string & uri);
 
+/// Mask every credential a URI can carry in its own text: the password of a
+/// `scheme://user:password@host` authority and the values of the sensitive query parameters above
+/// (a presigned S3/GCS signature, an Azure SAS `sig`, ...). A URI that carries none -- an ordinary
+/// object path -- comes back unchanged.
+///
+/// For a string that merely contains a URI rather than being one: the password scan finds it
+/// anywhere, and the query-string scan runs from the first '?' to the end, so a trailing suffix is
+/// treated as part of the query string.
+std::string maskCredentialsInURI(const std::string & uri);
+
 }

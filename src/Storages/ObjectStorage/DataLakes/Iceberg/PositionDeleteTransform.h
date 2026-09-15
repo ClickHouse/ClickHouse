@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Poco/JSON/Array.h>
 #include "config.h"
 
@@ -8,6 +9,7 @@
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 namespace DB::Iceberg
 {
@@ -28,7 +30,9 @@ public:
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        ContextPtr context_)
+        ContextPtr context_,
+        const IcebergPathResolver & path_resolver_,
+        std::shared_ptr<ExternalStorageCache> external_storages_)
         : ISimpleTransform(header_, header_, false)
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
@@ -36,6 +40,8 @@ public:
         , format_settings(format_settings_)
         , context(context_)
         , parser_shared_resources(parser_shared_resources_)
+        , path_resolver(path_resolver_)
+        , external_storages(std::move(external_storages_))
     {
         initializeDeleteSources();
     }
@@ -62,6 +68,9 @@ protected:
     ContextPtr context;
     FormatParserSharedResourcesPtr parser_shared_resources;
 
+    const IcebergPathResolver path_resolver;
+    std::shared_ptr<ExternalStorageCache> external_storages;
+
     /// We need to keep the read buffers alive since the delete_sources depends on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
     std::vector<std::shared_ptr<IInputFormat>> delete_sources;
@@ -78,8 +87,10 @@ public:
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        ContextPtr context_,
+        const IcebergPathResolver & path_resolver_,
+        std::shared_ptr<ExternalStorageCache> external_storages_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, path_resolver_, std::move(external_storages_))
     {
         initialize();
     }
@@ -104,8 +115,10 @@ public:
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        ContextPtr context_,
+        const IcebergPathResolver & path_resolver_,
+        std::shared_ptr<ExternalStorageCache> external_storages_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, path_resolver_, std::move(external_storages_))
     {
         initialize();
     }
