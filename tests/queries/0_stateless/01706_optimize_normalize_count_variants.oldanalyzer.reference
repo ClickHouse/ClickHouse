@@ -1,2 +1,0 @@
-SELECT\n    count(),\n    count(),\n    count(),\n    count(),\n    count(NULL)
-SELECT sumOrNull(1)\nFROM numbers(10)\nWHERE 0

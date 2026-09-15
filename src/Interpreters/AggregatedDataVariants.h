@@ -452,6 +452,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     #undef M
     };
     Type type = Type::EMPTY;
+    bool top_k_heap_ever_rejected = false;
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
@@ -490,6 +491,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     void convertToTwoLevel();
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
+    bool topKHeapEverRejected() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);

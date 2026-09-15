@@ -142,7 +142,7 @@ SYSTEM RESTART REPLICA [db.]table_name;
 SYSTEM RESTORE REPLICA [db.]table_name;
 ```
 
-3. للاسترداد على مستوى قاعدة البيانات (إذا كنت تستخدم محرك قاعدة البيانات Replicated):
+3. للتعافي على مستوى قاعدة البيانات (إذا كنت تستخدم محرك قاعدة البيانات Replicated):
 
 ```sql
 SYSTEM RESTORE DATABASE REPLICA db_name;
@@ -154,7 +154,7 @@ SYSTEM RESTORE DATABASE REPLICA db_name;
 SYSTEM SYNC REPLICA [db.]table_name;
 ```
 
-5. تحقّق من نجاح الاستعادة عبر فحص `system.replicas` للتأكد من أن `is_readonly = 0`، ومراقبة `system.detached_parts`
+5. تحقّق من نجاح التعافي عبر فحص `system.replicas` للتأكد من أن `is_readonly = 0`، ومراقبة `system.detached_parts`
 
 <Info>
   **كيف يعمل**

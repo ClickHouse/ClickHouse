@@ -52,7 +52,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — [Формат](/ru/reference/formats/index#formats-overview) файла.
 * `aws_access_key_id`, `aws_secret_access_key` - Долговременные учётные данные пользователя аккаунта [AWS](https://aws.amazon.com/). Их можно использовать для аутентификации запросов. Параметр необязателен. Если учётные данные не указаны, они берутся из файла конфигурации. Подробнее см. [Использование S3 для хранения данных](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 * `compression` — Тип сжатия. Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Параметр необязателен. По умолчанию тип сжатия определяется автоматически по расширению файла.
-* `partition_strategy` – Варианты: `wildcard` или `hive`. Для `wildcard` в пути должен присутствовать `{_partition_id}`, который заменяется ключом партиционирования. `hive` не поддерживает подстановочные шаблоны, предполагает, что путь указывает на корень таблицы, и генерирует каталоги партиций в стиле Hive, где в качестве имён файлов используются Snowflake ID, а расширением служит формат файла. Если путь содержит заполнитель `{_partition_id}`, по умолчанию используется `wildcard` — единственная стратегия, совместимая с таким путём. В противном случае по умолчанию используется настройка `file_like_engine_default_partition_strategy` (`wildcard` при настройках `compatibility` старше `26.6`, в противном случае `hive`).
+* `partition_strategy` – Варианты: `wildcard` или `hive`. Для `wildcard` в пути должен присутствовать `{_partition_id}`, который заменяется ключом партиционирования. `hive` не поддерживает подстановочные шаблоны, предполагает, что путь указывает на корень таблицы, и генерирует каталоги партиций в стиле Hive, где в качестве имён файлов используются Snowflake ID, а расширением служит формат файла. Без явного указания стратегии путь с `{_partition_id}` использует `wildcard`. Путь с другим глоб-шаблоном не использует стратегию партиционирования и игнорирует `PARTITION BY`. Путь без глоб-шаблона использует `hive`, если `file_like_engine_default_partition_strategy` имеет значение `hive`; в противном случае стратегия партиционирования не используется.
 * `partition_columns_in_data_file` - Используется только со стратегией партиционирования `hive`. Указывает, должен ли ClickHouse ожидать, что столбцы партиции будут записаны в файл данных. По умолчанию — `false`.
 * `storage_class_name` - Варианты: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Поддерживаются только классы хранилища S3, допускающие немедленное извлечение данных (архивные классы, такие как `GLACIER` и `DEEP_ARCHIVE`, не поддерживаются). Позволяет указать [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 * `extra_credentials` - Необязательный параметр. Используется для передачи `role_arn` для ролевого доступа в ClickHouse Cloud. Инструкции по настройке см. в [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
@@ -102,7 +102,9 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
   #### Стратегия партиционирования
 </div>
 
-`wildcard`: Заменяет подстановочный знак `{_partition_id}` в пути к файлу фактическим ключом партиционирования. Чтение не поддерживается. По умолчанию выбирается, когда путь содержит заполнитель `{_partition_id}` (единственная стратегия, совместимая с таким путём), либо при значении настройки `compatibility` ниже `26.6`; в остальных случаях по умолчанию используется `hive` (см. настройку `file_like_engine_default_partition_strategy`).
+`wildcard`: Заменяет подстановочный знак `{_partition_id}` в пути к файлу фактическим ключом партиционирования. Чтение не поддерживается. По умолчанию выбирается, когда путь содержит `{_partition_id}`.
+
+Если `partition_strategy` не задана, путь с другим glob-шаблоном не использует стратегию партиционирования и игнорирует `PARTITION BY`. Для пути без glob-шаблона используется `hive`, если `file_like_engine_default_partition_strategy` имеет значение `hive`; в противном случае стратегия партиционирования не используется.
 
 `hive` реализует секционирование в стиле Hive для чтения &amp; записи. Чтение реализовано с помощью рекурсивного glob-шаблона; это эквивалентно `SELECT * FROM s3('table_root/**.parquet')`.
 При записи файлы создаются в следующем формате: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
@@ -458,7 +460,8 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 

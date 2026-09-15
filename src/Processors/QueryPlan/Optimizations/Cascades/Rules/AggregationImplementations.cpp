@@ -283,13 +283,15 @@ bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expressi
     return agg_step != nullptr &&
         expression->strategy == nullptr &&
         agg_step->getFinal() &&
-        !agg_step->isGroupingSets() &&           /// distributed merging of grouping-set states is not supported
         !agg_step->getParams().overflow_row &&
         agg_step->getParams().max_rows_to_group_by == 0 &&  /// global row limit must be enforced by one aggregator
         !agg_step->getParams().only_merge &&     /// don't split a merge step that's already from a prior split
         /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split
-        /// whenever the shuffle strategy is available (the aggregation has group keys).
-        !(memo.getContext().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
+        /// whenever the shuffle strategy is available (the aggregation has group keys). A
+        /// grouping-set aggregation has no shuffle strategy (see `isShuffleApplicable`), so the
+        /// setting does not apply to it.
+        !(memo.getContext().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty()
+            && !agg_step->isGroupingSets());
 }
 
 std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
@@ -311,8 +313,11 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     /// The memory-efficient merge below expects every input to deliver two-level buckets in
     /// ascending order. Force the partial step to emit them that way; otherwise a parallel
     /// flush unites several bucket sequences into one exchange stream out of order and the
-    /// merge emits some groups twice.
-    if (memo.getContext().distributed_aggregation_memory_efficient)
+    /// merge emits some groups twice. The memory-efficient merge does not support the per-set
+    /// states of grouping sets, so for them it stays off, the same as in the rule-based planner.
+    const bool memory_efficient_merge
+        = memo.getContext().distributed_aggregation_memory_efficient && !agg_step->isGroupingSets();
+    if (memory_efficient_merge)
         partial_step->setShouldProduceResultsInBucketOrder(true);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 
@@ -322,14 +327,12 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     /// requestOnlyMergeForAggregateProjection which adapts them to finalized types.
     auto merge_params = agg_step->getParams();
     merge_params.only_merge = true;
-    /// Grouping sets never reach this rule (see checkPattern), so the memory-efficient
-    /// mode needs no grouping-sets guard here, unlike the rule-based planner.
     auto merge_step_ptr = std::make_unique<MergingAggregatedStep>(
         partial_step->getOutputHeader(),
         std::move(merge_params),
         agg_step->getGroupingSetsParamsList(),
         /*final_=*/true,
-        memo.getContext().distributed_aggregation_memory_efficient,
+        memory_efficient_merge,
         agg_step->getTemporaryDataMergeThreads(),
         agg_step->shouldProduceResultsInBucketOrder(),
         agg_step->getMaxBlockSize(),

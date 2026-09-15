@@ -21,7 +21,7 @@ doc_type: 'مرجع'
 
 * `name` ([String](/ar/reference/data-types/string)) — اسم تخطيط القاموس، كما هو محدد في بند `LAYOUT`.
 * `is_complex` ([UInt8](/ar/reference/data-types/int-uint)) — ما إذا كان التخطيط يتطلب مفتاحًا مركبًا (مفتاحًا يتكون من عدة سمات أو من نوع غير صحيح).
-* `description` ([String](/ar/reference/data-types/string)) — وصف موجز لوظيفة تخطيط القاموس.
+* `description` ([String](/ar/reference/data-types/string)) — وصف لوظيفة تخطيط القاموس. بالنسبة إلى التخطيطات التي لها صفحة توثيق مخصصة، يحتوي هذا الحقل على كامل نص Markdown لتلك الصفحة؛ أما التخطيطات المتبقية، فيحتوي على ملخص موجز.
 * `syntax` ([String](/ar/reference/data-types/string)) — كيفية تحديد التخطيط في بند `LAYOUT` ضمن استعلام CREATE DICTIONARY.
 * `examples` ([String](/ar/reference/data-types/string)) — أمثلة على الاستخدام.
 * `introduced_in` ([String](/ar/reference/data-types/string)) — إصدار ClickHouse الذي قُدِّم فيه التخطيط لأول مرة، بصيغة major.minor.

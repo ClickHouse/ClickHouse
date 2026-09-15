@@ -42,9 +42,8 @@ protected:
 
     void readData(
         size_t column_idx,
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_to_read,
-        size_t rows_offset,
         size_t from_mark,
         size_t column_size_before_reading,
         MergeTreeReaderStream & stream,
@@ -59,21 +58,8 @@ protected:
     void readSubcolumnsPrefixes(size_t from_mark);
     void initSubcolumnsDeserializationOrder();
 
-    void createColumnsForReading(Columns & res_columns) const;
+    void createColumnsForReading(MutableColumns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
-
-    /// Before dropping the substream/deserialize-state caches at the end of a granule, verify the
-    /// reference counts of the columns shared with the result columns; see `ColumnsOwnershipValidator`
-    /// and https://github.com/ClickHouse/ClickHouse/issues/105626. Shared by both compact readers
-    /// (single- and multi-buffer) so their granule loops stay instrumented identically. Every argument
-    /// except `res_columns` is optional (pass `nullptr` when a reader does not keep that cache alive at
-    /// the check point); the per-reader deserialize-state maps are always included. A no-op in release.
-    void validateColumnsOwnership(
-        const Columns & res_columns,
-        const std::unordered_map<String, ColumnPtr> * columns_cache,
-        const std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
-        const ISerialization::SubstreamsCache * substreams_cache,
-        const std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> * deserialize_states_caches) const;
 
     const ColumnsSubstreams & columns_substreams;
 

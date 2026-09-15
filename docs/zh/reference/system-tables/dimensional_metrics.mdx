@@ -96,6 +96,30 @@ MergeTree 数据分区片段的数量，按分区片段状态、分区片段类�
 
 从文件系统缓存中淘汰的 File 段总字节数，按缓存名称和用户 ID 进行标记。默认禁用；可通过 `expose_prometheus_eviction_metrics` 和 `expose_prometheus_eviction_metrics_per_user` 启用。
 
+<div id="object-storage-queue-failures-total">
+  ### `object_storage_queue_failures_total`
+</div>
+
+按数据库、表、处理阶段 (`read`、`set_processing`、`insert`、`commit`) 和错误代码标记的 `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) 失败次数。
+
+<div id="object-storage-queue-permanently-failed-files-total">
+  ### `object_storage_queue_permanently_failed_files_total`
+</div>
+
+`ObjectStorageQueue` (`S3Queue`/`AzureQueue`) 在耗尽重试次数后 (或禁用重试时) 永久放弃处理的文件数量，按数据库和表标记。每个此类文件的数据都将永远不会被处理。
+
+<div id="object-storage-queue-newest-seen-object-timestamp-seconds">
+  ### `object_storage_queue_newest_seen_object_timestamp_seconds`
+</div>
+
+`ObjectStorageQueue` (`S3Queue`/`AzureQueue`) 表截至目前已发现的最新对象的最后修改时间的 Unix 时间戳，按数据库和表标记。
+
+<div id="object-storage-queue-newest-committed-object-timestamp-seconds">
+  ### `object_storage_queue_newest_committed_object_timestamp_seconds`
+</div>
+
+截至目前由 `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) 表完全处理的最新对象的最后修改时间的 Unix 时间戳，按数据库和表标记。
+
 <div id="see-also">
   ## 另请参阅
 </div>

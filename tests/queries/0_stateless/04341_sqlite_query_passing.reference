@@ -23,6 +23,30 @@ val	Nullable(Float64)
 -- external_table_strict_query: an outer filter that cannot be pushed down is rejected
 -- external_table_strict_query: no outer filter is allowed
 4
+-- external_table_strict_query: a predicate on the joined local side is not a filter on the source
+1
+1
+2
+1
+-- external_table_strict_query: a source predicate at the top level or as a conjunct is rejected
+-- external_table_strict_query: a disjunction mixing the source and the local side is not rejected
+1
+1
+-- external_table_strict_query: a source predicate on the non-preserving side of an outer join is not checked
+2
+1
+1
+1
+1
+1
+-- external_table_strict_query: the same source predicate on the preserving side or in an inner join is rejected
+-- external_table_strict_query: a PREWHERE on the joined local side is not a filter on the source
+4
+1
+1
+4
+1
+-- external_table_strict_query: a PREWHERE on the SQLite table itself is rejected by the engine, not by the setting
 -- INSERT into a query-backed table function is rejected before schema inference
 -- projection-count mismatch: an explicit structure with more columns than the query pads with defaults
 1	a	0
