@@ -1,5 +1,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <cstring>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
@@ -243,6 +245,44 @@ void FilterTransform::transform(Chunk & chunk)
 namespace
 {
 
+std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
+{
+    if (const auto * sparse_filter_description = typeid_cast<const SparseFilterDescription *>(&filter_description))
+    {
+        if (expected_size == 0)
+            return {};
+
+        const size_t num_set_rows = sparse_filter_description->countBytesInFilter();
+        if (num_set_rows == 0)
+            return false;
+        if (num_set_rows == expected_size)
+            return true;
+        return {};
+    }
+
+    const auto * dense_filter_description = typeid_cast<const FilterDescription *>(&filter_description);
+    if (!dense_filter_description || !dense_filter_description->data
+        || dense_filter_description->data->size() != expected_size || expected_size == 0)
+        return {};
+
+    const auto & filter = *dense_filter_description->data;
+    const bool first_value = filter[0] != 0;
+    if ((filter.back() != 0) != first_value)
+        return {};
+
+    if (filter[0] == 0)
+    {
+        if (memoryIsZero(filter.data(), 0, filter.size()))
+            return false;
+    }
+    else if (std::memchr(filter.data() + 1, 0, filter.size() - 1) == nullptr)
+    {
+        return true;
+    }
+
+    return {};
+}
+
 /// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's
 /// `ChunkInfoRowNumbers.applied_filter`, mirroring `DeletionVectorTransform`, so physical row
 /// numbers survive filtering. No-op when the chunk carries no such info.
@@ -367,6 +407,25 @@ void FilterTransform::doTransform(Chunk & chunk)
         }
     }
     (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
+
+    std::optional<bool> uniform_filter_value;
+    if (first_non_constant_column != num_columns)
+        uniform_filter_value = tryGetUniformFilterValue(*filter_description, num_rows_before_filtration);
+
+    if (uniform_filter_value)
+    {
+        if (!*uniform_filter_value)
+        {
+            writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
+            incrementProfileEvents(0, {});
+            return;
+        }
+
+        incrementProfileEvents(num_rows_before_filtration, columns);
+        removeFilterIfNeed(columns);
+        chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        return;
+    }
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
