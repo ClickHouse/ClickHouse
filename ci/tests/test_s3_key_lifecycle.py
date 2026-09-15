@@ -246,6 +246,41 @@ def test_matches_with_no_extractable_key_say_so_instead_of_printing_nothing(tmp_
     assert report[0].startswith("--- no S3 key found in the 1 match line(s) above"), report
 
 
+def test_a_key_holding_a_space_or_a_comma_gets_its_lifecycle(tmp_path):
+    # `s3()` takes its key from the percent-decoded URL path, so "%20" reaches ReadBufferFromS3
+    # as a space, and nothing rejects a comma either. Next to a key that parses, such a key gets
+    # no header at all, so the report reads as complete while omitting a failing read.
+    key = "dir with space,comma/file.txt"
+    matches = _logs(tmp_path, key=key)
+    matches.write_text(
+        f"{_MATCH.replace(_KEY, key)}\n{_MATCH.replace(_KEY, _OTHER)}\n", encoding="utf-8"
+    )
+
+    report = report_for(matches, tmp_path)
+    body = _group(report, key)
+
+    assert [line for line in report if line.startswith("--- key: ")] == [
+        f"--- key: {key}",
+        f"--- key: {_OTHER}",
+    ], report
+    assert any("Writing blob for path all_1_1_0/data.bin" in line for line in body), body
+    assert any("were removed from S3" in line for line in body), body
+
+
+def test_a_key_spelling_the_delimiter_itself_keeps_its_lifecycle(tmp_path):
+    # The suffix is the only delimiter the emitter writes, so a key spelling it too is cut at its
+    # first occurrence and reported under that prefix. What may not degrade is the history: the
+    # prefix is still delimited in the emitter's own lines, so the object's events stay attributed.
+    key = "weird, from bucket: x/file.txt"
+    matches = _logs(tmp_path, key=key)
+    matches.write_text(f"{_MATCH.replace(_KEY, key)}\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), "weird")
+
+    assert any("Writing blob for path all_1_1_0/data.bin" in line for line in body), body
+    assert any("were removed from S3" in line for line in body), body
+
+
 def test_a_key_named_without_a_delimiter_is_reported_as_a_substring_match(tmp_path):
     # The delimited-occurrence test must not be able to empty a group on its own: a message
     # that qualifies the key (here with the bucket) still carries the object's lifecycle, so

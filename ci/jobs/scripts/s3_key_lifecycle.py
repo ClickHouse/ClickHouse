@@ -26,9 +26,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-# The whole suffix ReadBufferFromS3 appends, not just its first field: the failing query's
-# text is on this line too, unescaped, and may name keys this read never touched.
-KEY_PATTERN = re.compile(r"while reading key: ([^\s,]+), from bucket:")
+# An S3 key may hold a space or a comma, so it runs to the emitter's own ", from bucket:"; the
+# first one on the line is the emitter's, because the client-controlled query text follows it.
+KEY_PATTERN = re.compile(r"while reading key: (.+?), from bucket:")
 
 # The formatter closes the client's unescaped query id with "} " before the level, so the first
 # "} <level> " is the line's own slot unless the id holds one as well: the cut can land early,
