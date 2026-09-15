@@ -265,8 +265,8 @@ TEST_F(UniqueKeyProbeTest, ProbeBatchMixedOutcomes)
     EXPECT_EQ(batch[2].outcome, ProbeOutcome::NOT_FOUND);
 }
 
-/// The driver sorts the encoded batch once for all targets; results must map
-/// back to the input row order.
+/// The driver sorts the encoded batch once for all targets; results must
+/// map back to the input row order.
 TEST_F(UniqueKeyProbeTest, ProbeBatchMapsUnsortedRowsBack)
 {
     auto t = makeTarget({{1, 10}, {2, 20}, {50, 30}});

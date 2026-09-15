@@ -259,8 +259,8 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
             "Failed to open UNIQUE KEY SST `{}`: {}", sst_file_name, status.ToString());
     index_reader = std::move(reader);
 
-    /// Capture the min/max key once at open, so probes can skip out-of-range
-    /// keys. A read error leaves an endpoint empty, disabling that side only.
+    /// Capture the min/max key once at open, so probes can skip out-of-range keys.
+    /// A read error leaves an endpoint empty, disabling that side only.
     rocksdb::ReadOptions read_opts;
     std::unique_ptr<rocksdb::Iterator> it(index_reader->NewIterator(read_opts));
     it->SeekToFirst();
