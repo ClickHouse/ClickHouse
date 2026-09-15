@@ -32,6 +32,21 @@ class TransientReadFailure(Exception):
     """Every attempt of a read failed with a server error or a timeout."""
 
 
+@dataclass(frozen=True)
+class Readiness:
+    """Whether the cluster answered `SELECT 1`, and whether a failure was the
+    cluster's own (a server error or a timeout) rather than a refusal.
+
+    Falsy when the probe failed, so `if not is_ready()` keeps its meaning.
+    """
+
+    ready: bool
+    transient: bool = False
+
+    def __bool__(self):
+        return self.ready
+
+
 class LogCluster:
     URL_SECRET = "clickhouse_ci_logs_host"
     PASSWD_SECRET = "clickhouse_ci_logs_password"
@@ -186,7 +201,7 @@ class LogCluster:
             self.url = "https://" + url.removeprefix("https://")
         if not self.url:
             print("ERROR: failed to retrive url for LogCluster")
-            return False
+            return Readiness(False)
         if self._auth is None:
             passwd = Secret.Config(
                 name=self.PASSWD_SECRET,
@@ -194,7 +209,7 @@ class LogCluster:
             ).get_value()
             if not passwd:
                 print("ERROR: failed to retrive password for LogCluster")
-                return False
+                return Readiness(False)
             self._auth = {
                 "X-ClickHouse-User": self.user,
                 "X-ClickHouse-Key": passwd,
@@ -211,15 +226,20 @@ class LogCluster:
                 timeout=3,
             )
             if not response.ok:
-                print("ERROR: No connection to LogCluster")
-                return False
+                print(
+                    "ERROR: LogCluster readiness probe failed with code "
+                    f"{response.status_code}: [{response.text[:500]}]"
+                )
+                return Readiness(False, transient=response.status_code >= 500)
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
-                return False
+                return Readiness(False)
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
-            return False
-        return True
+            return Readiness(
+                False, transient=isinstance(ex, requests.exceptions.Timeout)
+            )
+        return Readiness(True)
 
     def do_query(self, query, data, db_name="", retries=1, timeout=5):
         # The INSERT transport: the read-only endpoint cannot serve it, and
@@ -334,10 +354,12 @@ class LogCluster:
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
             # spikes as the query itself, so it is retried on the same schedule.
-            if not self.is_ready():
-                # False here also answers a refused `SELECT 1`, so a readiness
-                # failure cannot be attributed to pressure.
-                non_transient = True
+            readiness = self.is_ready()
+            if not readiness:
+                if readiness.transient:
+                    transient = True
+                else:
+                    non_transient = True
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
