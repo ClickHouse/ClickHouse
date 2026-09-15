@@ -1196,12 +1196,13 @@ try
     EXPECT_GT(errors, 0u);
     EXPECT_LT(rounds, 8u);
 
-    fs::remove_all(blob_path);
-    {
-        DB::WriteBufferFromFile wb(blob_path);
-        wb.finalize();
-    }
-    waitBlobsCount(disk, 0);
+    auto metadata_storage = disk->getMetadataStorage();
+    EXPECT_GT(metadata_storage->getDeadBlobsQueueEstimate(), 0);
+
+    fs::remove(blob_path);
+    for (size_t i = 0; i < 100 && metadata_storage->getDeadBlobsQueueEstimate() > 0; ++i)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_EQ(metadata_storage->getDeadBlobsQueueEstimate(), 0);
 }
 catch (...)
 {
