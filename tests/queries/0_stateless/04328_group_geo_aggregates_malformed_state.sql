@@ -1,17 +1,17 @@
 -- Malformed binary state rejection for geo aggregate functions.
 
--- 1. groupConvexHull: reject unknown version (3 instead of 2)
+-- 1. `groupConvexHull`: reject an unknown version.
 SELECT 'convex_hull_bad_version';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '03',
+        'FF',
         substring(hex(groupConvexHullState(pt)), 3)
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
     FROM (SELECT readWKTPoint('POINT (1 2)') AS pt)
 ); -- { serverError INCORRECT_DATA }
 
 -- 2. `groupPolygonUnion`: reject a grossly oversized chunk count (varint 100000).
---    The writer reduces immediately above 16 chunks, so 16 is also the reader limit.
+--    The version-1 reader retains the legacy limit of 16 chunks.
 SELECT 'union_oversized_chunks';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
