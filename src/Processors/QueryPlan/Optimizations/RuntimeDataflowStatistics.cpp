@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
