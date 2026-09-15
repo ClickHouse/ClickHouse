@@ -1648,15 +1648,15 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
-bool wouldReadInOrderBeUseful(
+InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     const SortingStep & sorting,
     const KeyDescription & sorting_key,
     const QueryPlan::Node & subtree_above_reading)
 {
     if (sorting.getType() != SortingStep::Type::Full)
-        return false;
+        return nullptr;
     if (sorting_key.column_names.empty())
-        return false;
+        return nullptr;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1674,7 +1674,7 @@ bool wouldReadInOrderBeUseful(
         sorting_key.column_names,
         limit);
 
-    return order_info.input_order != nullptr;
+    return order_info.input_order;
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)

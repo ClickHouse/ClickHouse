@@ -1,13 +1,16 @@
 -- Verify that `topKThroughJoin`'s deferral to `optimizeReadInOrder` does not
 -- silently disable itself for `FINAL` + descending order.
 --
--- `wouldReadInOrderBeUseful` matches the storage's sorting key against the
+-- `getInputOrderIfReadInOrderIsUseful` matches the storage's sorting key against the
 -- requested sort description but is unaware of FINAL-time gating in
--- `ReadFromMergeTree::requestReadingInOrder`, which rejects
--- `direction != 1 && query_info.isFinal()`. Without the FINAL+descending gate
--- in `topKThroughJoin`, the deferral would fire, the second pass would still
--- reject the read, and both optimizations would be lost. This test pins the
--- relevant settings on and checks that an inner `Sort + Limit` is injected.
+-- `ReadFromMergeTree::requestReadingInOrder`, which rejects a reverse direction
+-- with FINAL unless the engine can read in reverse order with it. Without the
+-- FINAL+descending gate in `topKThroughJoin`, the deferral would fire, the second
+-- pass would still reject the read, and both optimizations would be lost. This test
+-- pins the relevant settings on and checks that an inner `Sort + Limit` is injected.
+-- `optimize_read_in_reverse_order_final = 0` keeps the rejection in place, because
+-- `ReplacingMergeTree` can read in reverse order with FINAL when it is enabled
+-- (see 05077_top_k_through_join_final_reverse_order).
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
@@ -28,7 +31,7 @@ SELECT 'final_desc' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, c
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS optimize_read_in_order = 1,
+    SETTINGS optimize_read_in_order = 1, optimize_read_in_reverse_order_final = 0,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
