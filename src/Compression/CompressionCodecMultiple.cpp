@@ -33,7 +33,7 @@ UInt32 getCheckedReserveSize(const CompressionCodecPtr & codec, UInt32 size, siz
         throw Exception(ErrorCodes::CANNOT_COMPRESS,
             "Too many codecs in the codec chain: the size reserved for compressing {} bytes overflows 4 GiB "
             "at codec {} of {} ({}). Use fewer codecs.",
-            size, codec_index + 1, codecs_count, codec->getCodecDesc()->formatForErrorMessage());
+            size, codec_index + 1, codecs_count, codec->getCodecDescription()->formatForErrorMessage());
     return reserve_size;
 }
 
@@ -47,25 +47,25 @@ CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Codec description is not prepared");
 }
 
-ASTPtr CompressionCodecMultiple::getCodecDesc() const
+ASTPtr CompressionCodecMultiple::getCodecDescription() const
 {
     if (!codecs)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Codec description is not prepared");
 
     /// Describe a single-codec chain as that codec, without an extra expression list.
     if (codecs->size() == 1)
-        return codecs->front()->getCodecDesc();
+        return codecs->front()->getCodecDescription();
 
     auto result = make_intrusive<ASTExpressionList>();
     result->children.reserve(codecs->size());
     for (const auto & codec : *codecs)
-        result->children.push_back(codec->getCodecDesc());
+        result->children.push_back(codec->getCodecDescription());
     return result;
 }
 
-ASTPtr CompressionCodecMultiple::getFullCodecDesc() const
+ASTPtr CompressionCodecMultiple::getFullCodecDescription() const
 {
-    auto description = getCodecDesc();
+    auto description = getCodecDescription();
     /// A single nested `Multiple` still contributes one argument to `CODEC`.
     if (codecs->size() == 1)
         return makeASTFunction("CODEC", description);
