@@ -44,10 +44,19 @@ struct SumKahan
     using Function = AggregateFunctionSum<T, ResultType, AggregateDataType, AggregateFunctionTypeSumKahan>;
 };
 
+template <typename T>
+struct SumPrometheus
+{
+    using ResultType = Float64;
+    using AggregateDataType = AggregateFunctionSumPrometheusData<ResultType>;
+    using Function = AggregateFunctionSum<T, ResultType, AggregateDataType, AggregateFunctionTypeSumPrometheus>;
+};
+
 template <typename T> using AggregateFunctionSumSimple = typename SumSimple<T>::Function;
 template <typename T> using AggregateFunctionSumWithOverflow = typename SumSameType<T>::Function;
 template <typename T> using AggregateFunctionSumKahan =
     std::conditional_t<is_decimal<T>, typename SumSimple<T>::Function, typename SumKahan<T>::Function>;
+template <typename T> using AggregateFunctionSumPrometheus = typename SumPrometheus<T>::Function;
 
 
 template <template <typename> class Function>
@@ -66,6 +75,23 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     if (!res)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
                         argument_types[0]->getName(), name, getNumericVariantSupertypeHint(argument_types[0]));
+    return res;
+}
+
+AggregateFunctionPtr createAggregateFunctionSumPrometheus(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionSumPrometheus>(*argument_types[0], argument_types));
+    if (!res)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument for aggregate function {}{}",
+            argument_types[0]->getName(),
+            name,
+            getNumericVariantSupertypeHint(argument_types[0]));
     return res;
 }
 
@@ -206,6 +232,42 @@ SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
     FunctionDocumentation documentation_kahan = {description_kahan, syntax_kahan, arguments_kahan, {}, returned_value_kahan, examples_kahan, introduced_in_kahan, category_kahan};
 
     factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan});
+
+    FunctionDocumentation::Description description_prometheus = R"(
+Calculates the sum using the compensated summation algorithm used by Prometheus.
+This function is intended for implementing PromQL aggregation.
+    )";
+    FunctionDocumentation::Syntax syntax_prometheus = R"(
+sumPrometheus(x)
+    )";
+    FunctionDocumentation::Arguments arguments_prometheus = {{"x", "Input value.", {"(U)Int*", "Float*"}}};
+    FunctionDocumentation::ReturnedValue returned_value_prometheus = {"Returns the sum of the values.", {"Float64"}};
+    FunctionDocumentation::Examples examples_prometheus = {
+    {
+        "Compensated summation",
+        R"(
+SELECT sumPrometheus(0.1) FROM numbers(10);
+        )",
+        R"(
+┌─sumPrometheus(0.1)─┐
+│                  1 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_prometheus = {26, 8};
+    FunctionDocumentation::Category category_prometheus = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_prometheus = {
+        description_prometheus,
+        syntax_prometheus,
+        arguments_prometheus,
+        {},
+        returned_value_prometheus,
+        examples_prometheus,
+        introduced_in_prometheus,
+        category_prometheus};
+
+    factory.registerFunction("sumPrometheus", {createAggregateFunctionSumPrometheus, documentation_prometheus});
 }
 
 }
