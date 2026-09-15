@@ -1,9 +1,8 @@
 <test>
-    <!-- Benchmarks Map subcolumn reads with optimize_functions_to_subcolumns enabled.
-         When multiple Map subcolumn conditions appear in PREWHERE, they should be grouped
-         into a single read step to avoid redundant deserialization of the same Map data.
-         Tests SELECT of multiple keys, count() with WHERE, and count() with PREWHERE
-         for both Wide and Compact part formats. -->
+    <!-- Benchmarks many single-key lookups of one Map column: SELECT of multiple keys, count()
+         with WHERE, and count() with PREWHERE, for both Wide and Compact part formats.
+         These tables use the default (non-bucketed) Map serialization, so `tags['kN']` is not
+         rewritten to a key subcolumn and every condition reads the whole `Map` once per step. -->
 
     <settings>
         <max_insert_threads>4</max_insert_threads>
@@ -106,9 +105,9 @@
         SETTINGS optimize_functions_to_subcolumns=1
     </query>
 
-    <!-- Table with an extra column to test WHERE optimizer grouping.
-         When Map subcolumn conditions are interleaved with another column in WHERE,
-         the optimizer should group Map conditions together to avoid redundant reads. -->
+    <!-- Table with an extra column to test WHERE optimizer grouping: conditions on the same
+         column set are grouped into one read step even when a condition on another column
+         is interleaved between them. -->
     <create_query>
         CREATE TABLE map_subcol_pw_mixed (id UInt64, tags Map(String, String), value UInt32)
         ENGINE = MergeTree ORDER BY id
@@ -126,9 +125,7 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE map_subcol_pw_mixed FINAL SETTINGS mutations_sync=1</fill_query>
 
-    <!-- WHERE with interleaved Map subcolumns and another column.
-         The optimizer should group all Map conditions together even though
-         the 'value' condition appears between them in the original WHERE. -->
+    <!-- WHERE with the `value` condition interleaved between the Map lookups. -->
     <query>
         SELECT count() FROM map_subcol_pw_mixed
         WHERE tags['k0'] != '' AND tags['k1'] != '' AND tags['k2'] != '' AND tags['k3'] != ''
