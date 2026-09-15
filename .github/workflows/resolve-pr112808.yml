@@ -1,0 +1,148 @@
+name: RMV PR Head Compatibility
+
+on:
+  push:
+    branches:
+      - agent/refreshable-mv-workload
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-head:
+    if: github.repository == 'vanchaklar/ClickHouse'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/workflows/resolve-pr112808.yml
+            .github/scripts/resolve-pr112808.py
+            docs/reference/system-tables/view_refreshes.mdx
+            src/Core/ServerSettings.cpp
+            src/Core/Settings.cpp
+            src/Core/SettingsChangesHistory.cpp
+            src/Interpreters/ProcessList.cpp
+            src/Interpreters/ProcessList.h
+            src/Interpreters/QuerySlot.cpp
+            src/Interpreters/QuerySlot.h
+            src/Parsers/ParserCreateQuery.cpp
+            src/Storages/MaterializedView/RefreshTask.cpp
+            src/Storages/MaterializedView/RefreshTask.h
+            src/Storages/StorageMaterializedView.cpp
+            src/Storages/StorageMaterializedView.h
+            tests/integration/test_refreshable_mv_query_slot_starvation/__init__.py
+            tests/integration/test_refreshable_mv_query_slot_starvation/configs/small_pool.xml
+            tests/integration/test_refreshable_mv_query_slot_starvation/test.py
+            tests/integration/test_refreshable_mv_query_slots/__init__.py
+            tests/integration/test_refreshable_mv_query_slots/configs/query_slots.xml
+            tests/integration/test_refreshable_mv_query_slots/test.py
+      - name: Apply current master compatibility to PR files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name clickhouse-gh
+          git config user.email clickhouse-gh@users.noreply.github.com
+          git remote add upstream https://github.com/ClickHouse/ClickHouse.git || true
+
+          head=$(git rev-parse HEAD)
+          git fetch --no-tags --filter=blob:none --depth=1 upstream master
+          master=$(git rev-parse FETCH_HEAD)
+          merge_base=79305ee77d5b450e827ac16ea1126701c3b076f2
+          git fetch --no-tags --filter=blob:none --depth=1 upstream "$merge_base"
+
+          head_tree=$(git rev-parse "$head^{tree}")
+          master_tree=$(git rev-parse "$master^{tree}")
+          synthetic_head=$(printf 'synthetic branch ancestry\n' | git commit-tree "$head_tree" -p "$merge_base")
+          synthetic_master=$(printf 'synthetic master ancestry\n' | git commit-tree "$master_tree" -p "$merge_base")
+          git replace "$head" "$synthetic_head"
+          git replace "$master" "$synthetic_master"
+          if [[ -f .git/shallow ]]; then
+            grep -v -e "^${head}$" -e "^${master}$" .git/shallow > .git/shallow.next || true
+            mv .git/shallow.next .git/shallow
+          fi
+          test "$(git merge-base "$head" "$master")" = "$merge_base"
+
+          set +e
+          git merge --no-commit --no-ff "$master"
+          merge_rc=$?
+          set -e
+
+          conflict_files=(
+            src/Core/Settings.cpp
+            src/Core/SettingsChangesHistory.cpp
+            src/Storages/MaterializedView/RefreshTask.cpp
+            src/Storages/MaterializedView/RefreshTask.h
+            src/Storages/StorageMaterializedView.cpp
+            src/Storages/StorageMaterializedView.h
+          )
+
+          if (( merge_rc != 0 )); then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            for path in "${conflicts[@]}"; do
+              case " ${conflict_files[*]} " in
+                *" $path "*) ;;
+                *) echo "Unexpected conflict: $path" >&2; exit 1 ;;
+              esac
+            done
+            git checkout "$master" -- "${conflict_files[@]}"
+            python3 .github/scripts/resolve-pr112808.py
+            git add "${conflict_files[@]}"
+          fi
+
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+          git diff --check
+
+          pr_files=(
+            docs/reference/system-tables/view_refreshes.mdx
+            src/Core/ServerSettings.cpp
+            src/Core/Settings.cpp
+            src/Core/SettingsChangesHistory.cpp
+            src/Interpreters/ProcessList.cpp
+            src/Interpreters/ProcessList.h
+            src/Interpreters/QuerySlot.cpp
+            src/Interpreters/QuerySlot.h
+            src/Parsers/ParserCreateQuery.cpp
+            src/Storages/MaterializedView/RefreshTask.cpp
+            src/Storages/MaterializedView/RefreshTask.h
+            src/Storages/StorageMaterializedView.cpp
+            src/Storages/StorageMaterializedView.h
+            tests/integration/test_refreshable_mv_query_slot_starvation/__init__.py
+            tests/integration/test_refreshable_mv_query_slot_starvation/configs/small_pool.xml
+            tests/integration/test_refreshable_mv_query_slot_starvation/test.py
+            tests/integration/test_refreshable_mv_query_slots/__init__.py
+            tests/integration/test_refreshable_mv_query_slots/configs/query_slots.xml
+            tests/integration/test_refreshable_mv_query_slots/test.py
+          )
+
+          tar -cf /tmp/rmv-merged.tar "${pr_files[@]}"
+          git merge --abort
+          if [[ -f .git/shallow ]]; then
+            printf '%s\n' "$head" >> .git/shallow
+            sort -u -o .git/shallow .git/shallow
+          fi
+          git replace -d "$head" "$master"
+          tar -xf /tmp/rmv-merged.tar
+          git add "${pr_files[@]}"
+
+          mapfile -t changed < <(git diff --cached --name-only)
+          for path in "${changed[@]}"; do
+            case " ${pr_files[*]} " in
+              *" $path "*) ;;
+              *) echo "Unexpected staged path: $path" >&2; exit 1 ;;
+            esac
+          done
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'PR files already match the current-master merge result.'
+            exit 0
+          fi
+
+          git commit -m 'Apply current master compatibility to RMV workload PR'
+          git push origin HEAD:agent/refreshable-mv-workload
