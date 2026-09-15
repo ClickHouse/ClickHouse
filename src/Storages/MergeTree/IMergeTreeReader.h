@@ -229,9 +229,13 @@ MergeTreeReaderPtr createMergeTreeReader(
 
 struct MergeTreeIndexWithCondition;
 
+struct BM25State;
+using BM25StatePtr = std::shared_ptr<const BM25State>;
+
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    const IndexGranulesMap & index_granules);
+    const IndexGranulesMap & index_granules,
+    BM25StatePtr bm25_score_state);
 }

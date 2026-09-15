@@ -1,0 +1,10 @@
+-- plain filtering on the old part still works
+4
+-- before the merge, the old part has no scoring data
+-- scores over the merged part match a scoring index built from scratch
+1	OK
+2	OK
+3	OK
+4	OK
+5	OK
+6	OK

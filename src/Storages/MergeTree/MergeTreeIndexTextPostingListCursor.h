@@ -6,7 +6,10 @@
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/PostingListSegment.h>
+#include <Storages/MergeTree/BM25Kernel.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace DB
@@ -16,6 +19,9 @@ struct TokenPostingsInfo;
 class TextIndexPostingsCache;
 class IColumn;
 class MergeTreeReaderStream;
+class MergeTreeIndexGranularity;
+struct ScoringStats;
+struct ScoringPostings;
 
 /// Operation type for padding the column with the posting list.
 enum class PadOp { Or, And };
@@ -49,10 +55,11 @@ public:
 
     /// Fully-materialized posting list over a pre-flattened, shared, immutable sorted array (analyzer-folded
     /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
-    explicit PostingListCursor(FlatPostingsPtr shared_values_);
+    explicit PostingListCursor(PaddedPODArrayPtr shared_values_);
 
     /// Flushes batched ProfileEvents counters to the global counters.
-    ~PostingListCursor();
+    /// Virtual so `PostingListScoringCursor` can extend the cursor polymorphically.
+    virtual ~PostingListCursor();
 
     /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     void linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
@@ -80,7 +87,12 @@ public:
     /// Used to sort cursors by selectivity for leapfrog intersection.
     UInt32 cardinality() const;
 
-private:
+protected:
+    /// Decodes the packed block. The base implementation decodes the doc-id deltas only and
+    /// requires them to consume the whole Index Section span, unless the token carries term
+    /// frequencies (then a sub-payload the base cursor does not read follows the deltas).
+    virtual void decodeBlock(size_t block_idx);
+
     /// Point `current_segment` at the `segment_idx`-th segment (from the cache or `buildPostingSegment`)
     /// without decoding block data yet. No-op for shared-array cursors, which already hold the array.
     void prepareSegment(size_t segment_idx);
@@ -89,13 +101,14 @@ private:
     /// Invoked on a cache miss (or directly when no posting cache is available).
     PostingListSegment buildPostingSegment(size_t segment_idx);
 
+    /// Decodes postings from the packed block into `decoded_values`.
+    /// Returns the number of consumed bytes.
+    size_t decodeBlockPostings(size_t block_idx);
+
     /// Advance to the first doc_id >= target within the current segment.
     /// Uses binary search on `block_last_row_ids` for O(log N) access.
     /// Returns false if target exceeds this segment's range.
     bool advanceImpl(uint32_t target);
-
-    /// Decode the packed block at `block_idx` into `decoded_values`.
-    void decodeBlock(size_t block_idx);
 
     /// Linear scan over an embedded (fully materialized) posting list.
     template <PadOp op>
@@ -119,7 +132,7 @@ private:
     double density_val = 0;
 
     /// Set for the shared-array cursor: the postings are read from this shared, immutable, sorted array.
-    FlatPostingsPtr shared_values;
+    PaddedPODArrayPtr shared_values;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
@@ -164,8 +177,117 @@ private:
     EventsCounters counters;
 };
 
+/// Document lengths (`SmallFloat` bytes, one per row) of a part for BM25 scoring.
+///
+/// The `.dl` substream is read like a plain UInt8 column: it has one mark per granule of the part,
+/// and `readRows` loads exactly the rows of the current read step, from which `getByte` serves the
+/// scoring cursors. Nothing is cached across steps or queries: the reads are exact, and the page
+/// cache (or the filesystem cache) serves repeated queries as for any column.
+class DocLengthsReader
+{
+public:
+    /// Reads the `.dl` substream of a part.
+    DocLengthsReader(std::unique_ptr<MergeTreeReaderStream> stream_, const MergeTreeIndexGranularity & index_granularity_, size_t num_docs_);
+
+    /// Holds the doc lengths of a whole part in memory (index build and tests).
+    explicit DocLengthsReader(PaddedPODArray<UInt8> bytes_);
+    ~DocLengthsReader();
+
+    UInt32 numDocs() const { return num_docs; }
+
+    /// Loads the doc lengths of rows [row_offset, row_offset + num_rows), which start in granule `from_mark`.
+    /// Consecutive calls read the stream sequentially; a gap seeks to the granule of `from_mark`.
+    void readRows(size_t from_mark, size_t row_offset, size_t num_rows);
+
+    /// Returns the `SmallFloat` doc-length byte of a row loaded by the last `readRows`.
+    UInt8 getByte(UInt32 doc_id) const
+    {
+        chassert(doc_id >= rows_begin && doc_id < rows_end);
+        return bytes[doc_id - rows_begin];
+    }
+
+private:
+    std::unique_ptr<MergeTreeReaderStream> stream;
+    const MergeTreeIndexGranularity * index_granularity = nullptr;
+    UInt32 num_docs;
+
+    /// Rows loaded by the last `readRows` (all rows of the part for the in-memory variant).
+    PaddedPODArray<UInt8> bytes;
+    size_t rows_begin = 0;
+    size_t rows_end = 0;
+    /// False until the first read positions the stream.
+    bool is_positioned = false;
+};
+
+using DocLengthsReaderPtr = std::shared_ptr<DocLengthsReader>;
+
+/// Scoring extension of `PostingListCursor`: also decodes per-block term frequencies and exposes
+/// the per-block / per-segment block-max upper-bound (UB) inputs for BM25 pruning (WAND / MaxScore).
+class PostingListScoringCursor : public PostingListCursor
+{
+public:
+    /// Streaming cursor for compressed multi-block tokens.
+    PostingListScoringCursor(
+        MergeTreeReaderStream & stream_,
+        const TokenPostingsInfo & info_,
+        const DocLengthsReader * doc_lengths_,
+        TextIndexPostingsCache * postings_cache_ = nullptr,
+        const String & index_id_for_cache_ = {});
+
+    /// Embedded cursor over already-decoded flat postings.
+    PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const DocLengthsReader * doc_lengths_);
+
+    /// Exact term frequency of the current row.
+    UInt32 termFrequency() const;
+
+    /// `SmallFloat` doc-length byte of the current row.
+    UInt8 documentLengthByte() const;
+
+    /// Index of the current packed block (always 0 for the embedded cursor).
+    size_t currentBlockIndex() const { return is_embedded ? 0 : current_block; }
+
+    /// Point `current_block` at the block containing `doc_id` without decoding its body.
+    void seekBlock(uint32_t doc_id);
+
+    /// Per-block block-max UB inputs of the current segment.
+    UInt8 minDocumentLengthByte(size_t block_idx) const;
+    UInt8 maxTermFrequencyMinusOne(size_t block_idx) const;
+
+    /// Per-segment block-max UB inputs of the current segment.
+    UInt8 segmentMinDocumentLengthByte() const;
+    UInt8 segmentMaxTermFrequencyMinusOne() const;
+
+    /// Block-max score upper bound of the current block under weight `w`.
+    Float32 blockMaxScore(const BM25Weight & w) const;
+
+    /// Block-max score upper bound over the whole current segment under weight `w`.
+    Float32 segmentMaxScore(const BM25Weight & w) const;
+
+protected:
+    /// Decodes postings from the packed block into `decoded_values` and term frequencies into `decoded_tfs`.
+    void decodeBlock(size_t block_idx) override;
+
+private:
+    /// Per-granule `SmallFloat` doc-length cursor, queried by the granule-local row id.
+    const DocLengthsReader * doc_lengths = nullptr;
+
+    /// Term frequencies of the current packed block, parallel to `decoded_values`.
+    alignas(16) UInt32 decoded_tfs[BLOCK_SIZE]{};
+
+    /// Embedded-only: the flat postings (sorted row ids with their term frequencies) the cursor iterates.
+    std::shared_ptr<const ScoringPostings> embedded_scoring_postings;
+};
+
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCursorPtr>;
+
+/// A scoring cursor of one scoring token with its BM25 weight and cardinality.
+struct ScoreCursor
+{
+    std::shared_ptr<PostingListScoringCursor> cursor;
+    const BM25Weight * weight = nullptr;
+    UInt32 cardinality = 0;
+};
 
 /// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately occur.
 /// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
@@ -199,5 +321,23 @@ void lazyIntersectPostingLists(
     size_t row_offset,
     size_t num_rows,
     float density_threshold);
+
+/// Union scorer: per-token union walk over `cursors`, adds each token's BM25 contribution
+/// at its hit rows of the window [row_offset, row_offset + num_rows) into `data`.
+/// Correct under arbitrary predicate composition (rows may match any subset of the tokens).
+void scoreCursorsUnion(
+    Float32 * data,
+    std::vector<ScoreCursor> & cursors,
+    size_t row_offset,
+    size_t num_rows);
+
+/// Intersection scorer: joint leapfrog over all `cursors`, sums every token's BM25 contribution
+/// at each intersection row of the window [row_offset, row_offset + num_rows) into `data`.
+/// Valid only under the global `All` search mode.
+void scoreCursorsIntersection(
+    Float32 * data,
+    std::vector<ScoreCursor> & cursors,
+    size_t row_offset,
+    size_t num_rows);
 
 }

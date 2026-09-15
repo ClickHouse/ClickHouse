@@ -191,6 +191,7 @@ protected:
             filter_dag ? &filter_dag.value() : nullptr,
             *merge_tree_data,
             parts_ranges,
+            /*columns_to_read=*/ {},
             vector_search_parameters,
             /*top_k_filter_info=*/ std::nullopt,
             context,
