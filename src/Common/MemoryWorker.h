@@ -267,6 +267,7 @@ private:
 
     Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
     Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
+    Jemalloc::MibCache<size_t> allocated_mib{"stats.allocated"};
     Jemalloc::MibCache<size_t> pagesize_mib{"arenas.page"};
     Jemalloc::MibCache<size_t> dirty_decay_ms_mib{"arenas.dirty_decay_ms"};
 
