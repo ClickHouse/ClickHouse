@@ -11,6 +11,7 @@ $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS set_table;
 DROP TABLE IF EXISTS set_pair;
 DROP TABLE IF EXISTS set_pair_b;
+DROP TABLE IF EXISTS set_mat;
 DROP TABLE IF EXISTS mt_table;
 DROP TABLE IF EXISTS ttl_table;
 DROP TABLE IF EXISTS proj_table;
@@ -20,6 +21,8 @@ CREATE TABLE set_pair (a UInt64, b UInt64) ENGINE = Set;
 INSERT INTO set_pair VALUES (4242, 1), (31337, 1);
 CREATE TABLE set_pair_b (a UInt64, b UInt64) ENGINE = Set;
 INSERT INTO set_pair_b VALUES (4242, 1), (31337, 1);
+CREATE TABLE set_mat (a UInt64, m UInt64 MATERIALIZED a + 1) ENGINE = Set;
+INSERT INTO set_mat VALUES (4242);
 CREATE TABLE mt_table (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO mt_table VALUES (4242), (31337);
 
@@ -73,6 +76,15 @@ $CLICKHOUSE_CLIENT -m -q "GRANT SELECT(a, b) ON $db.set_pair TO $user"
 $CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE (number, 1) IN set_pair ORDER BY number"
 $CLICKHOUSE_CLIENT -m -q "GRANT SELECT(a, b) ON $db.set_pair_b TO $user"
 $CLICKHOUSE_CLIENT --user "$user" -m -q "SELECT number FROM numbers(100000) WHERE (number, 1) IN set_pair_b ORDER BY number"
+
+# A MATERIALIZED column belongs to a set table's stored tuple, since the set is keyed on the sample
+# block of the metadata, so its values are readable through IN and the grant has to cover it too.
+# Only the old analysis path reaches this shape: the query tree derives the right-hand arity from the
+# ordinary columns alone, so it rejects the pair before any set is built.
+$CLICKHOUSE_CLIENT -m -q "GRANT SELECT(a) ON $db.set_mat TO $user"
+$CLICKHOUSE_CLIENT --user "$user" --query_kind secondary_query --enable_analyzer 0 -m -q "SELECT number FROM numbers(100000) WHERE (4242, number) IN set_mat ORDER BY number; -- { serverError ACCESS_DENIED }"
+$CLICKHOUSE_CLIENT -m -q "GRANT SELECT(a, m) ON $db.set_mat TO $user"
+$CLICKHOUSE_CLIENT --user "$user" --query_kind secondary_query --enable_analyzer 0 -m -q "SELECT number FROM numbers(100000) WHERE (4242, number) IN set_mat ORDER BY number"
 
 $CLICKHOUSE_CLIENT -m -q "GRANT SELECT ON $db.set_table TO $user"
 
