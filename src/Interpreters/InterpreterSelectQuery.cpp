@@ -1204,6 +1204,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     result_header = std::make_shared<const Block>(std::move(header));
 }
 
+/// `arrayJoin` (function or `ARRAY JOIN` clause) may need many more source rows than the LIMIT asks for.
+static bool selectHasArrayJoin(const ASTSelectQuery & query)
+{
+    return expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first;
+}
+
 bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
 {
     const Settings & settings = context->getSettingsRef();
@@ -1232,7 +1238,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     /// There is a couple of instances where there might be a lower limit on the rows to be read
     /// * The max_rows_to_read setting
     /// * A LIMIT in a simple query (see maxBlockSizeByLimit())
-    UInt64 max_rows = maxBlockSizeByLimit();
+    UInt64 max_rows = selectHasArrayJoin(getSelectQuery()) ? 0 : maxBlockSizeByLimit();
     if (settings[Setting::max_rows_to_read])
         max_rows = max_rows ? std::min(max_rows, settings[Setting::max_rows_to_read].value) : settings[Setting::max_rows_to_read];
     query_info_copy.trivial_limit = max_rows;
@@ -2898,15 +2904,16 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
     if (UInt64 max_block_limited = maxBlockSizeByLimit())
     {
-        if (max_block_limited < max_block_size)
-        {
+        const bool shrink_block = max_block_limited < max_block_size;
+        if (shrink_block)
             max_block_size = std::max<UInt64>(1, max_block_limited);
-            max_threads_execute_query = max_streams = 1;
-        }
 
-        /// Some sources stop at `trivial_limit`, and `arrayJoin` may not fill the LIMIT from that many rows (#82279).
-        if (!(expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first))
+        /// With `arrayJoin` the LIMIT does not bound the source rows, so only the block size shrinks (#82279).
+        if (!selectHasArrayJoin(query))
         {
+            if (shrink_block)
+                max_threads_execute_query = max_streams = 1;
+
             if (local_limits.local_limits.size_limits.max_rows != 0)
             {
                 if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
