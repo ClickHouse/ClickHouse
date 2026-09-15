@@ -11,7 +11,8 @@ namespace DB
 {
 
 /// Describes the column representations used by external `DISTINCT`. Temporary runs omit constant input
-/// columns, serialize non-comparable keys, and carry an already-emitted flag and optional arrival numbers.
+/// columns, serialize keys requiring bytewise comparison, and carry an already-emitted flag and optional
+/// arrival numbers.
 /// The layout owns these conversions and their metadata; its caller sorts and schedules the runs.
 class DistinctSpillLayout
 {

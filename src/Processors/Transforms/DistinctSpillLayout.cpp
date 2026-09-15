@@ -66,14 +66,23 @@ ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, con
     return spill_positions;
 }
 
-/// Selects non-comparable keys for serialization, allowing their values to be sorted as bytes.
+/// Selects keys for bytewise sorting when their types cannot guarantee comparison of all values.
+/// A `Variant` can contain non-comparable types despite reporting comparability. Types with dynamic
+/// structure can acquire non-comparable values in later chunks and therefore always use serialization.
 ColumnNumbers calculateSerializedKeyColumnsPositions(
     const Block & header, const ColumnNumbers & key_columns_pos, const ColumnNumbers & spill_key_columns_pos)
 {
     ColumnNumbers positions;
     for (size_t i = 0; i < key_columns_pos.size(); ++i)
     {
-        if (!header.getByPosition(key_columns_pos[i]).type->isComparable())
+        const auto & type = *header.getByPosition(key_columns_pos[i]).type;
+        bool requires_serialization = type.hasDynamicStructure() || !type.isComparable();
+        type.forEachChild([&](const IDataType & nested_type)
+        {
+            requires_serialization |= !nested_type.isComparable();
+        });
+
+        if (requires_serialization)
             positions.push_back(spill_key_columns_pos[i]);
     }
     return positions;
