@@ -481,7 +481,10 @@ void StorageMergeTree::alter(
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
 
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
-    /// so that the `table_readonly` flag can be toggled back.
+    /// so that the `table_readonly` flag can be toggled back. Everything else is rejected for a
+    /// read-only table, including a settings change mixed with other commands in one `ALTER`
+    /// (`MODIFY SETTING table_readonly = 0, MODIFY COMMENT ...`): the 1 -> 0 toggle can only go
+    /// through the settings-only branch below, which restarts the background workers.
     bool only_setting_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
     {
         return c.type == AlterCommand::MODIFY_SETTING || c.type == AlterCommand::RESET_SETTING;
@@ -911,6 +914,8 @@ void StorageMergeTree::alter(
             background_operations_assignee.trigger();
             background_moves_assignee.trigger();
             cleanup_thread.wakeup();
+            /// The loaders returned without loading while disabled; they re-arm themselves, this is faster.
+            startOutdatedAndUnexpectedDataPartsLoadingTask();
 
             /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work.
             if (!cleanup_thread.isCleanupCancelled())

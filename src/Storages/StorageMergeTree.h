@@ -346,6 +346,7 @@ private:
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
+    bool areBackgroundWorkersEnabled() const override { return background_workers_enabled; }
 
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
@@ -372,11 +373,12 @@ private:
     void enableBackgroundWorkers() noexcept;
 
     /// Whether the started background workers may do work. Every worker entry point
-    /// (`scheduleDataProcessingJob`, `scheduleDataMovingJob`, the cleanup iteration) checks it in
-    /// addition to `isTableReadonly`, so a worker that wakes up while a settings `ALTER` has made the
-    /// table writable in memory but not yet durably cannot queue a merge, mutation, move, or disk
-    /// cleanup that would survive a rolled-back commit. `startBackgroundMovesIfNeeded` starts nothing
-    /// while it is unset: the toggle starts the move assignee itself.
+    /// (`scheduleDataProcessingJob`, `scheduleDataMovingJob`, the cleanup iteration, the outdated and
+    /// unexpected part loaders) checks it in addition to `isTableReadonly`, so a worker that wakes up
+    /// while a settings `ALTER` has made the table writable in memory but not yet durably cannot queue
+    /// a merge, mutation, move, disk cleanup, or part detach/removal that would survive a rolled-back
+    /// commit. `startBackgroundMovesIfNeeded` starts nothing while it is unset: the toggle starts the
+    /// move assignee itself.
     std::atomic<bool> background_workers_enabled {false};
 
     friend class MergeTreeSink;
