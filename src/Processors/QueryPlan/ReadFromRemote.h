@@ -70,19 +70,26 @@ private:
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
+    /// `tracker` is null for the EXPLAIN paths: they run their own extra executors over the same
+    /// shards, and a skip those report is not a skip the query suffered.
+    Pipes addPipes(
+        const ClusterProxy::SelectStreamFactory::Shards & used_shards,
+        const SharedHeader & out_header,
+        const UnavailableShardTrackerPtr & tracker);
 
     void addLazyPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads);
+        size_t parallel_marshalling_threads,
+        const UnavailableShardTrackerPtr & tracker);
 
     void addPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads);
+        size_t parallel_marshalling_threads,
+        const UnavailableShardTrackerPtr & tracker);
 };
 
 

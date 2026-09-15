@@ -560,7 +560,11 @@ static void addFilters(
 }
 
 void ReadFromRemote::addLazyPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    const UnavailableShardTrackerPtr & tracker)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -614,7 +618,7 @@ void ReadFromRemote::addLazyPipe(
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
-            my_unavailable_shard_tracker = unavailable_shard_tracker,
+            my_unavailable_shard_tracker = tracker,
             query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
@@ -748,7 +752,11 @@ void ReadFromRemote::addLazyPipe(
 }
 
 void ReadFromRemote::addPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    const UnavailableShardTrackerPtr & tracker)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -828,7 +836,7 @@ void ReadFromRemote::addPipe(
             remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
-            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
+            remote_query_executor->setUnavailableShardTracker(tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -859,7 +867,7 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setLogger(log);
         remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
-        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
+        remote_query_executor->setUnavailableShardTracker(tracker);
 
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
@@ -887,7 +895,10 @@ void ReadFromRemote::addPipe(
     }
 }
 
-Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header)
+Pipes ReadFromRemote::addPipes(
+    const ClusterProxy::SelectStreamFactory::Shards & used_shards,
+    const SharedHeader & out_header,
+    const UnavailableShardTrackerPtr & tracker)
 {
     Pipes pipes;
 
@@ -896,9 +907,9 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
         const size_t parallel_marshalling_threads
             = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
         if (shard.lazy)
-            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads);
+            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
         else
-            addPipe(pipes, shard, out_header, parallel_marshalling_threads);
+            addPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
     }
 
     return pipes;
@@ -906,7 +917,16 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipes pipes = addPipes(shards, output_header);
+    Pipes pipes = addPipes(shards, output_header, unavailable_shard_tracker);
+
+    /// One pipe per executor, so the built pipes are the unit count. Every unit of this query exists
+    /// by this point, and the query is about to run: that is what a sealed tracker asserts.
+    if (unavailable_shard_tracker)
+    {
+        if (pipes.size() > shards.size())
+            unavailable_shard_tracker->registerExtraUnits(pipes.size() - shards.size());
+        unavailable_shard_tracker->seal();
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -987,7 +1007,7 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
         }
     }
 
-    formatExplain(settings, addPipes(used_shards, header));
+    formatExplain(settings, addPipes(used_shards, header, /*tracker=*/nullptr));
 }
 
 void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool distributed)
@@ -1012,7 +1032,7 @@ void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool
             shard.query);
     }
 
-    formatExplain(settings, addPipes(used_shards, header));
+    formatExplain(settings, addPipes(used_shards, header, /*tracker=*/nullptr));
 }
 
 bool ReadFromRemote::hasSerializedPlan() const
