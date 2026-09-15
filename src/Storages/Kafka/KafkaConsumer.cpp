@@ -456,7 +456,7 @@ void KafkaConsumer::doPoll()
                         : poll_timeout;
 
         /// Don't drop old messages immediately, since we may need them for virtual columns.
-        auto new_messages = consumer->poll_batch(batch_size,
+        auto new_messages = consumer->poll_batch(poll_batch_size_override ? poll_batch_size_override : batch_size,
                             std::chrono::milliseconds(actual_poll_timeout_ms));
         last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
