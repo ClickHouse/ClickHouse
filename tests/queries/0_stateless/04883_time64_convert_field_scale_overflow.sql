@@ -24,8 +24,8 @@ select * from format(Values, 'x Time64(0)', '(-253402207200000::Decimal64(3))');
 select * from format(Values, 'x Time64(6)', '(1::Decimal64(6))');
 
 -- The DateTime64 sibling branch excludes the impossible constant the same way.
-select 1 where toDateTime64('1970-01-01 00:00:01', 6) in (253402207200000::Decimal64(0));
-select 1 where toDateTime64('1970-01-01 00:00:01', 6) in (1::Decimal64(0), 253402207200000::Decimal64(0));
+select 1 where toDateTime64('1970-01-01 00:00:01', 6, 'UTC') in (253402207200000::Decimal64(0));
+select 1 where toDateTime64('1970-01-01 00:00:01', 6, 'UTC') in (1::Decimal64(0), 253402207200000::Decimal64(0));
 
 -- A wrapped value must not be persisted: the row that lands in the table is the saturated maximum, not the
 -- `-999:59:59.722624` that the unguarded rescale produced. The conversion is asserted through `format` so that
