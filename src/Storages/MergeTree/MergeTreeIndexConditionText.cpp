@@ -299,9 +299,13 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
     /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
-    /// the matching rows. Nothing else is supported yet.
+    /// the matching rows, and `mapContainsKeyValue(m, 'key', 'value')` is the union of the two lists that
+    /// hold the pair as a first and as a repeated occurrence. Nothing else is supported yet.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-        return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    {
+        const bool is_exact = function_name == "equals" || function_name == "mapContainsKeyValue";
+        return is_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    }
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
@@ -368,8 +372,9 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
         return true;
 
     const auto function_name = node.function_base->getName();
-    /// The third argument of `like` and `ilike` is an ESCAPE character, not a tokenizer.
-    if (function_name == "like" || function_name == "ilike")
+    /// The third argument of `like` and `ilike` is an ESCAPE character, and that of
+    /// `mapContainsKeyValue` is the searched value, not a tokenizer.
+    if (function_name == "like" || function_name == "ilike" || function_name == "mapContainsKeyValue")
         return true;
 
     RPNBuilderTreeContext rpn_tree_context(getContext());
@@ -731,6 +736,10 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         if (function_arguments_size == 3)
         {
+            /// Both needles are arguments of the call, so the (column, constant) shape below cannot express it.
+            if (function_name == "mapContainsKeyValue")
+                return traverseMapContainsKeyValueNode(function, out);
+
             /// The index path tokenizes needles with the index tokenizer, so it can answer the
             /// predicate only when the tokenizer argument denotes that same tokenizer.
             if (!tokenizerArgumentMatchesIndex(function_name, function.getArgumentAt(2)))
@@ -1935,6 +1944,48 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(
         std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+    return true;
+}
+
+bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
+    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    if (tokenizer->getType() != ITokenizer::Type::KeyValuePairs)
+        return false;
+
+    if (!hasIndexForColumn(function_node.getArgumentAt(0).getColumnName()))
+        return false;
+
+    /// A FixedString Field carries its zero padding, which the index does not store, while the function
+    /// compares through the String supertype and ignores it: the token would never be found and exact
+    /// direct read would drop matching rows. Scan instead, as `equals` does.
+    auto get_string_constant = [](const RPNBuilderTreeNode & node) -> std::optional<String>
+    {
+        Field field;
+        DataTypePtr type;
+        if (!node.tryGetConstant(field, type) || !WhichDataType(type).isString())
+            return std::nullopt;
+        return field.safeGet<String>();
+    };
+
+    auto key = get_string_constant(function_node.getArgumentAt(1));
+    if (!key)
+        return false;
+
+    auto value = get_string_constant(function_node.getArgumentAt(2));
+    if (!value)
+        return false;
+
+    /// An entry holding the pair is either the key's first occurrence in its row or a repetition, and
+    /// every entry has a token, so no needle is excluded here - not even an empty one, unlike `equals`.
+    VectorWithMemoryTracking<String> tokens;
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_rest=*/ false));
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_rest=*/ true));
+
+    const auto function_name = function_node.getFunctionName();
+    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        function_name, TextSearchMode::Any, getDirectReadMode(function_name), std::move(tokens)));
     return true;
 }
 
