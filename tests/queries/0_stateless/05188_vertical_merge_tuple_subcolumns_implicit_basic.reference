@@ -1,0 +1,12 @@
+=== implicit basic(auto) on Tuple still activates Vertical ===
+t	basic(auto)
+2
+1
+merge_algorithm
+Vertical
+
+=== explicit STATISTICS on Tuple pins flatten ===
+2
+1
+merge_algorithm
+Horizontal
