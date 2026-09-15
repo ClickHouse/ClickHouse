@@ -1296,7 +1296,7 @@ It defines how many CPU nanoseconds a thread is allowed to consume after acquire
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Bool, cpu_slot_parking, true, R"(
-Defines whether a worker thread releases (parks) its CPU slot while it is blocked on a non-CPU wait, such as some I/O operations or idling with no task available. A parked thread does not count against the CPU concurrency limit, so another thread can use the otherwise-idle CPU; the slot is re-acquired when the wait ends. Applies only when `cpu_slot_preemption` is enabled and a single CPU resource defines both MASTER THREAD and WORKER THREAD; in other configurations it has no effect. Can be changed without a server restart.
+Defines whether a query thread releases (parks) its CPU slot while it is blocked on a non-CPU wait, such as some I/O operations or idling with no task available. A parked thread does not count against the CPU concurrency limit, so another thread can use the otherwise-idle CPU; the slot is re-acquired when the wait ends. Applies only when `cpu_slot_preemption` is enabled and a single CPU resource defines both MASTER THREAD and WORKER THREAD; in other configurations it has no effect. Can be changed without a server restart.
 
 **Example**
 
