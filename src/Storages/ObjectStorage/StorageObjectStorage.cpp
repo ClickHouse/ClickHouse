@@ -34,6 +34,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -465,6 +467,27 @@ std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(Con
 configuration->update(object_storage, query_context);
 
     return configuration->getExternalMetadata();
+}
+
+bool StorageObjectStorage::isTransactionalRefreshTarget()
+{
+    /// Only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
+    if (!isIcebergStorage())
+        return false;
+    if (catalog && !catalog->isTransactional())
+        return false;
+    return true;
+}
+
+CursorTreeNodePtr StorageObjectStorage::loadRefreshCursor(ContextPtr query_context)
+{
+    auto metadata = getExternalMetadata(query_context);
+    if (!metadata)
+        return nullptr;
+    auto stored = metadata->getRefreshCursor(query_context);
+    if (!stored || stored->empty())
+        return nullptr;
+    return refreshCursorFromStorage(*stored);
 }
 
 void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)
@@ -1100,7 +1123,7 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
 }
 
-void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
