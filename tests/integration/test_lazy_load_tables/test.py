@@ -695,7 +695,7 @@ def test_replica_commands_on_deferred_table(engine):
     )
     assert loaded("t") == "0"
     # A replica that was never loaded cannot report its delay, so the probe has to load it.
-    assert "Ok" in node.http_request("replicas_status", method="GET").text
+    assert b"Ok" in node.http_request("replicas_status", method="GET").content
     assert loaded("t") == "1"
     node.query(f"SYSTEM SYNC REPLICA {DB}.t")
 

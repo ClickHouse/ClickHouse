@@ -110,9 +110,13 @@ public:
     void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
 
     void drop() override { getNested()->drop(); }
-    /// `DROP` of a table that owns inner tables drops them through these, so they must reach the storage.
-    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override { getNested()->dropInnerTableIfAny(sync, local_context); }
-    std::vector<StorageID> getInnerStorageIDs() const override { return getNested()->getInnerStorageIDs(); }
+    /// A table function never yields a storage that owns inner tables, so a `DROP` must not resolve one for these.
+    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override
+    {
+        if (auto nested = tryGetNested())
+            nested->dropInnerTableIfAny(sync, local_context);
+    }
+    std::vector<StorageID> getInnerStorageIDs() const override { return askIfNested([](const IStorage & nested) { return nested.getInnerStorageIDs(); }); }
 
     void truncate(
         const ASTPtr & query,

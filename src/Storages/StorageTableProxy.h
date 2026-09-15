@@ -79,7 +79,8 @@ public:
 
         LOG_TRACE(log, "Loading lazy table on first access");
 
-        auto nested_storage = get_nested();
+        /// A storage built for a `DROP` that did not go through is started and used from here on.
+        auto nested_storage = built_for_drop ? std::exchange(built_for_drop, nullptr) : get_nested();
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
@@ -161,6 +162,14 @@ public:
             nested->flushAndPrepareForShutdown();
     }
 
+    /// `DROP` drops the inner tables a storage owns through this, before the storage itself.
+    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (auto storage = tryGetNestedForDrop())
+            storage->dropInnerTableIfAny(sync, local_context);
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};
@@ -171,24 +180,20 @@ public:
             return;
         }
 
+        auto storage = tryGetNestedForDrop();
+        if (!storage)
+        {
+            LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
+            return;
+        }
+
         try
         {
-            LOG_TRACE(log, "Loading table for drop without startup");
-
-            if (!get_nested)
-            {
-                LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
-                return;
-            }
-
-            auto nested_storage = get_nested();
-            nested_storage->drop();
-            get_nested = {};
+            storage->drop();
         }
         catch (...)
         {
-            LOG_WARNING(log, "Failed to load table for drop: {}. "
-                             "Data cleanup will be handled by the database engine.",
+            LOG_WARNING(log, "Failed to drop table: {}. Data cleanup will be handled by the database engine.",
                         getCurrentExceptionMessage(false));
         }
     }
@@ -301,11 +306,36 @@ private:
         return features && features->stores_data_on_disk;
     }
 
+    /// The storage of a table that was never loaded, built without startup for `DROP` and kept so that
+    /// `dropInnerTableIfAny` and `drop` work on the same one. Null when it cannot be built.
+    StoragePtr tryGetNestedForDrop()
+    {
+        if (nested)
+            return nested;
+
+        if (!built_for_drop && get_nested)
+        {
+            try
+            {
+                LOG_TRACE(log, "Loading table for drop without startup");
+                built_for_drop = get_nested();
+                get_nested = {};
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed to load table for drop: {}. Data cleanup will be handled by the database engine.",
+                            getCurrentExceptionMessage(false));
+            }
+        }
+        return built_for_drop;
+    }
+
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
     const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    StoragePtr built_for_drop; /// Built without startup for `DROP`, see `tryGetNestedForDrop`.
     LoggerPtr log;
 };
 
