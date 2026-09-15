@@ -1455,8 +1455,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             const size_t page_size = jemalloc_page_size_mib.getValue();
             new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
                 "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
-                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived MergeTree heap "
-                "state: per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
+                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived table state, for every engine "
+                "and not only MergeTree: the storage object and its metadata as built by `StorageFactory::get`, "
+                "and for MergeTree also per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
                 "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "

@@ -14,6 +14,8 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -150,7 +152,12 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, true);
+    {
+        /// What the shrink gives back was settled into the server total when the query that inserted it ended,
+        /// so releasing it must not be credited to this one, as in `truncate` and `mutate`.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join->shrinkStoredBlocksToFit(dummy, true);
+    }
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -171,7 +178,12 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    {
+        /// The data being dropped here was settled into the server total when the query that inserted it ended,
+        /// so releasing it must not be credited to this one.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    }
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -217,7 +229,13 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    join = std::move(new_data);
+    {
+        /// The data being replaced was already settled into the server total, so releasing it must not credit
+        /// this mutation. The new data it builds stays charged to it instead, settled the same way when it ends.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(new_data);
+    }
+    setCurrentQueryMemoryDriftExpected();
     increment = 1;
 
     if (persistent)

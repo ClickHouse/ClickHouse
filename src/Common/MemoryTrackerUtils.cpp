@@ -64,6 +64,60 @@ Int64 getCurrentQueryMemoryUsage()
 }
 
 
+void setCurrentQueryMemoryDriftExpected()
+{
+    /// Every task tracker up to the user, since work nested in a query - a merge started by `OPTIMIZE`, a view -
+    /// leaves the memory behind on its own tracker and on the query's.
+    for (auto * tracker = DB::CurrentThread::getMemoryTracker(); tracker; tracker = tracker->getParent())
+    {
+        if (tracker->level == VariableContext::Process)
+            tracker->setDriftExpected();
+    }
+}
+
+
+std::unique_ptr<MemoryTracker> createTrackerForDataTheQueryMayHandOver()
+{
+    auto * query_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    while (query_memory_tracker && query_memory_tracker->level == VariableContext::Thread)
+        query_memory_tracker = query_memory_tracker->getParent();
+
+    if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
+        return nullptr;
+
+    auto tracker = std::make_unique<MemoryTracker>(
+        query_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false);
+
+    /// Settling against the query on destruction is the point of this tracker, not a leak to report.
+    tracker->setDriftExpected();
+
+    return tracker;
+}
+
+void handOverMemoryToTheUser(MemoryTracker & tracker)
+{
+    auto * query_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    while (query_memory_tracker && query_memory_tracker->level == VariableContext::Thread)
+        query_memory_tracker = query_memory_tracker->getParent();
+
+    if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
+        return;
+
+    auto * user_memory_tracker = query_memory_tracker->getParent();
+    while (user_memory_tracker && user_memory_tracker->level != VariableContext::User)
+        user_memory_tracker = user_memory_tracker->getParent();
+
+    if (!user_memory_tracker)
+        return;
+
+    Int64 size = tracker.get();
+    tracker.setParent(user_memory_tracker);
+    /// The user keeps the charge it always had; only the query is relieved of it from here on.
+    if (size > 0)
+        query_memory_tracker->transferUpTo(VariableContext::User, size);
+}
+
+
 std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery()
 {
     auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();
