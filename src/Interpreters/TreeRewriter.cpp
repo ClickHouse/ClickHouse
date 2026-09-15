@@ -34,6 +34,7 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/replaceMissedSubcolumnsInQuery.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -1458,6 +1459,17 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+
+    /// Subcolumns of expressions produced by a subquery are not physical columns. Rewrite them
+    /// before collecting source columns so the expression is evaluated before the subcolumn is extracted.
+    NamesAndTypesList subquery_columns;
+    const auto table_expressions = getTableExpressions(*select_query);
+    for (size_t i = 0; i < tables_with_columns.size(); ++i)
+    {
+        if (i < table_expressions.size() && table_expressions[i]->subquery)
+            subquery_columns.insert(subquery_columns.end(), tables_with_columns[i].columns.begin(), tables_with_columns[i].columns.end());
+    }
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, subquery_columns);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, tables_with_columns, settings[Setting::optimize_min_equality_disjunction_chain_length].value)
