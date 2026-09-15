@@ -998,7 +998,7 @@ bool ColumnTuple::hasStatistics() const
     return false;
 }
 
-void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     for (size_t i = 0; i != columns.size(); ++i)
     {
@@ -1019,7 +1019,7 @@ void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
         if (!columns[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
 
-        columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
+        columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns, check_cancellation);
     }
 }
 

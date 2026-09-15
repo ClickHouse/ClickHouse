@@ -66,7 +66,7 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         /// merged from all source columns before the merge starts.
         /// Must be called after `chooseDynamicStructureForMerge` for columns that have both.
         if (columns[i]->hasStatistics())
-            columns[i]->takeOrCalculateStatisticsFrom(source_columns[i]);
+            columns[i]->takeOrCalculateStatisticsFrom(source_columns[i], {});
     }
 }
 
@@ -159,7 +159,7 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
             if (columns[i]->getPtr()->isReplicated() && !chunk_columns[i]->isReplicated())
                 chunk_columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
 
-            chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()});
+            chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()}, {});
             columns[i] = std::move(chunk_columns[i]);
         }
         else if (columns[i]->isReplicated())
