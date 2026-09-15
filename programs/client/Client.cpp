@@ -360,6 +360,9 @@ void Client::initialize(Poco::Util::Application & self)
     for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
     {
         String name{setting};
+        /// The `sync_request_timeout` config key controls only synchronous requests made by `clickhouse-client`.
+        if (name == "sync_request_timeout")
+            continue;
         /// The `format` config key is owned by the client-side `--format` option, which in
         /// `clickhouse-client` is output-only: it is mirrored into the `output_format` setting by
         /// `setDefaultFormatsAndCompressionFromConfiguration` (see `mappedFormatOptionSetting`).
