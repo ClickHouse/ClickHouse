@@ -601,6 +601,83 @@ def _wait_batch_log_max_t(at_least, timeout=120):
     )
 
 
+def test_wait_view_reports_failed_refresh_on_stopped_replica(fn3_setup_tables):
+    # `SYSTEM WAIT VIEW` must report a failed `SYSTEM REFRESH VIEW` on a stopped view from any
+    # replica, not just the one that executed the refresh.
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 1 HOUR",
+        to_clause="tgt1",
+        select_query="SELECT throwIf(1, 'boom') a",
+        with_append=False,
+        on_cluster="default",
+        empty=True,
+        settings={"refresh_retries": "0"},
+    )
+    node.query(create_sql)
+
+    # Only `node` may run it, so the failing attempt is recorded by a known replica.
+    node2.query("SYSTEM STOP VIEW test_rmv")
+
+    with pytest.raises(helpers.client.QueryRuntimeException) as exc:
+        node.query("SYSTEM REFRESH VIEW test_rmv; SYSTEM WAIT VIEW test_rmv")
+    assert "boom" in str(exc.value)
+
+    # node2 never ran the refresh and is stopped, but Keeper tells it the last attempt was a
+    # failed out-of-schedule refresh, so its WAIT VIEW must report the same failure.
+    get_rmv_info(node2, "test_rmv", wait_status="Disabled")
+    with pytest.raises(helpers.client.QueryRuntimeException) as exc:
+        node2.query("SYSTEM WAIT VIEW test_rmv")
+    assert "boom" in str(exc.value)
+
+
+def test_wait_view_reports_manual_refresh_lost_with_its_replica(fn3_setup_tables):
+    # When the replica running a `SYSTEM REFRESH VIEW` dies before the completion write, the
+    # surviving replica finalizes the attempt from the znode written when it started, so that
+    # znode has to already say the attempt was out-of-schedule.
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 1 HOUR",
+        to_clause="tgt1",
+        # Slow enough to still be running when the replica is killed.
+        select_query="SELECT now() + sleepEachRow(1) a FROM numbers(20) SETTINGS max_block_size = 1",
+        with_append=False,
+        on_cluster="default",
+        empty=True,
+        settings={"refresh_retries": "0"},
+    )
+    node.query(create_sql)
+
+    # node2 stays stopped: it is the replica that reconciles the lost attempt and answers WAIT VIEW.
+    node2.query("SYSTEM STOP VIEW test_rmv")
+
+    killed = False
+    try:
+        node.query("SYSTEM REFRESH VIEW test_rmv")
+        get_rmv_info(node, "test_rmv", wait_status="Running")
+        # Wait until node2 sees the refresh in flight, otherwise its WAIT VIEW could return before
+        # noticing the attempt at all.
+        get_rmv_info(node2, "test_rmv", wait_status="RunningOnAnotherReplica")
+
+        node.stop_clickhouse(kill=True)
+        killed = True
+
+        # node2 waits out the Keeper session and the crash grace period, then finalizes the attempt
+        # with an empty error, and must report it: the refresh that was lost was hand-requested.
+        with pytest.raises(helpers.client.QueryRuntimeException) as exc:
+            node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+        assert "Replica went away" in str(exc.value)
+    finally:
+        if killed:
+            node.start_clickhouse()
+
+
 def test_circular_dependencies_survive_restart(module_setup_tables):
     """3-view circular refresh chain (current_batch → batch_log, stats → current_batch).
 
