@@ -73,6 +73,11 @@ TTLCalcTransform::TTLCalcTransform(
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
             getExpressions(recompression_ttl, subqueries_for_sets, context), recompression_ttl,
             TTLUpdateField::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
+
+    for (const auto & index_clear_ttl : metadata_snapshot_->getIndexClearTTLs())
+        algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
+            getExpressions(index_clear_ttl, subqueries_for_sets, context), index_clear_ttl,
+            TTLUpdateField::INDEX_CLEAR_TTL, index_clear_ttl.result_column, old_ttl_infos.index_clear_ttl[index_clear_ttl.result_column], current_time_, force_));
 }
 
 void TTLCalcTransform::consume(Chunk chunk)

@@ -138,8 +138,20 @@ struct TTLDescription
     /// Codec name which will be used to recompress data
     ASTPtr recompression_codec;
 
+    /// Index name whose physical files should be cleared from fully expired parts.
+    String index_name;
+
     /// Parse TTL structure from definition. Able to parse both column and table TTLs.
     static TTLDescription getTTLFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        ContextPtr context,
+        const KeyDescription & primary_key,
+        TTLValidationMode validation_mode);
+
+    /// Same as `getTTLFromAST`, for column TTLs: additionally rejects TTL actions that are only
+    /// valid in a table TTL (`CLEAR INDEX`).
+    static TTLDescription getTTLForColumnFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         ContextPtr context,
@@ -175,6 +187,8 @@ struct TTLTableDescription
     TTLDescriptions recompression_ttl;
 
     TTLDescriptions group_by_ttl;
+
+    TTLDescriptions index_clear_ttl;
 
     TTLTableDescription() = default;
     TTLTableDescription(const TTLTableDescription & other);
