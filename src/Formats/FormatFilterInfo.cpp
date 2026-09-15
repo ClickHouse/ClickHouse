@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <boost/functional/hash.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -76,7 +78,8 @@ FormatFilterInfo::FormatFilterInfo(
         if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
         {
             const auto * condition_node = outputs[0];
-            condition_hash = condition_node->getHash(true /* skip_aliases */);
+            condition_hash = queryConditionCacheHash(
+                condition_node->getHash(true /* skip_aliases */), queryConditionCacheSettingsSalt(context_->getSettingsRef()));
         }
     }
 }

@@ -70,8 +70,10 @@ struct MergeTreeReaderSettings
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     /// Holds the `PREWHERE` query condition cache condition string and hash value
-    /// already salted with TopK plan hash if necessary.
+    /// already salted with TopK plan hash and settings hash if necessary.
     std::optional<QueryConditionCachePrewhereCondition> query_condition_cache_prewhere_condition;
+    /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
+    UInt64 query_condition_cache_settings_salt = 0;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
