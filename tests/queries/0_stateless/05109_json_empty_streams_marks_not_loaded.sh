@@ -20,7 +20,8 @@ do
         CREATE TABLE t_json_empty_streams_${suffix} (t UInt32, json JSON)
         ENGINE = MergeTree ORDER BY t
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-            ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 1, prewarm_mark_cache = 0;
+            ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 1, prewarm_mark_cache = 0,
+            add_minmax_index_for_numeric_columns = 0; -- the implicit min-max index on t would add a marks file of its own to the count below
 
         SYSTEM STOP MERGES t_json_empty_streams_${suffix};
 

@@ -5,8 +5,11 @@
 
 DROP TABLE IF EXISTS t;
 
+-- The implicit min-max index on `f` hits the pre-existing NaN defect of the minmax skip index
+-- (https://github.com/ClickHouse/ClickHouse/issues/106948): it would prune the NaN granules for the
+-- negated predicates below regardless of the statistics-based part pruning under test, so opt out.
 -- `basic` statistics hold the column min/max the pruner reads; pin it because `auto_statistics_types` is randomized by clickhouse-test.
-CREATE TABLE t (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic';
+CREATE TABLE t (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'basic';
 INSERT INTO t SELECT number, if(number < 13, nan, 1.5) FROM numbers(100000);
 OPTIMIZE TABLE t FINAL; -- builds the column statistics for the merged part
 

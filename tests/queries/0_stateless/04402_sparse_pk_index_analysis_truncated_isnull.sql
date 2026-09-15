@@ -24,13 +24,13 @@ DROP TABLE IF EXISTS t_full_pk_isnull;
 CREATE TABLE t_sparse_pk_trunc_isnull (a UInt64, b Nullable(UInt64))
 ENGINE = MergeTree
 ORDER BY (a, b)
-SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.9, primary_key_lazy_load = 0, allow_nullable_key = 1, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.9, primary_key_lazy_load = 0, allow_nullable_key = 1, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 -- Control: identical data with suffix truncation disabled (ratio = 0), so `b` stays in the index.
 CREATE TABLE t_full_pk_isnull (a UInt64, b Nullable(UInt64))
 ENGINE = MergeTree
 ORDER BY (a, b)
-SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.0, primary_key_lazy_load = 0, allow_nullable_key = 1, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.0, primary_key_lazy_load = 0, allow_nullable_key = 1, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_sparse_pk_trunc_isnull SELECT number, if(number % 7 = 0, NULL, number) FROM numbers(100);
 INSERT INTO t_full_pk_isnull SELECT number, if(number % 7 = 0, NULL, number) FROM numbers(100);

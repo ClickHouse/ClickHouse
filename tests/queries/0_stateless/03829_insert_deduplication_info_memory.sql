@@ -5,7 +5,11 @@
 SET allow_suspicious_fixed_string_types = 1;
 
 DROP TABLE IF EXISTS t_dedup_memory;
-CREATE TABLE t_dedup_memory (x UInt32, fat FixedString(10000)) ENGINE = MergeTree ORDER BY x;
+-- The implicit min-max index on `x` is irrelevant to what is being measured here, but its writer
+-- takes another compressed-buffer allocation of about a megabyte, and the memory limit below is set
+-- less than a megabyte above the peak of the correct behavior, so opt out to keep the budget exact.
+CREATE TABLE t_dedup_memory (x UInt32, fat FixedString(10000)) ENGINE = MergeTree ORDER BY x
+    SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 -- 10 000 rows * 10 000 bytes FixedString ≈ 100 MB of column data.
 -- With the bug, original_block doubles this to ~200 MB, exceeding the limit.

@@ -21,7 +21,9 @@ INSERT INTO t_gate SELECT number + 1 FROM numbers(3);
 CREATE TABLE dist_gate AS t_gate ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_gate);
 
 -- index_granularity is pinned so the plan below keeps several granules to prune.
-CREATE TABLE t_idx (c Int32) ENGINE = MergeTree ORDER BY c SETTINGS index_granularity = 4;
+-- The test counts the plan lines that strictly prune granules and expects only the primary key's;
+-- an implicit min-max index on the numeric column `c` would add a second strictly-pruning line.
+CREATE TABLE t_idx (c Int32) ENGINE = MergeTree ORDER BY c SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_idx SELECT number FROM numbers(64);
 
 CREATE TABLE dist_idx AS t_idx ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_idx);

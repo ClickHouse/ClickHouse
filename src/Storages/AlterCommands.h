@@ -13,6 +13,7 @@ namespace DB
 
 class ASTAlterCommand;
 class IDatabase;
+struct MergeTreeSettings;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
 /// Describes whether an ALTER requires rewriting existing parts.
@@ -188,11 +189,15 @@ struct AlterCommand
     /// `columns_before_alter` are the columns of the table before the whole ALTER (of which this command
     /// is a part) is applied; they let `MODIFY ORDER BY` suggest only the columns added by the ALTER for
     /// a typo, because an expression added to the sorting key may use nothing else.
+    /// `default_merge_tree_settings` are the settings a MergeTree table inherits when it states nothing
+    /// itself (server config and `compatibility`); a settings-only ALTER recomputes the implicit skip
+    /// index policy on top of them. When absent, the non-replicated server defaults of `context` are used.
     void apply(
         StorageInMemoryMetadata & metadata,
         ContextPtr context,
         bool share_nested_offsets = true,
-        const ColumnsDescription * columns_before_alter = nullptr) const;
+        const ColumnsDescription * columns_before_alter = nullptr,
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 
     /// Determines whether this command requires a mutation and identifies every setting
     /// that enables a matching lazy metadata conversion.
@@ -244,7 +249,12 @@ public:
     /// Commands have to be prepared before apply.
     /// share_nested_offsets is threaded to AlterCommand::apply so IF NOT EXISTS existence checks
     /// stay consistent with prepare()/validate() for nested columns (see AlterCommand::apply).
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    /// `default_merge_tree_settings`: see `AlterCommand::apply`.
+    void apply(
+        StorageInMemoryMetadata & metadata,
+        ContextPtr context,
+        bool share_nested_offsets = true,
+        const MergeTreeSettings * default_merge_tree_settings = nullptr) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;
