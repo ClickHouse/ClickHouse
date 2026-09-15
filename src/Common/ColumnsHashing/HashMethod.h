@@ -90,7 +90,7 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {}) : Base(key_columns[0])
     {
         if constexpr (nullable)
         {
@@ -225,7 +225,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {}) : Base(key_columns[0])
     {
         const IColumn * column = nullptr;
         if constexpr (nullable)
@@ -282,7 +282,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
         : Base(key_columns[0])
     {
         const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
@@ -388,7 +388,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     size_t n;
     const ColumnFixedString::Chars * chars;
 
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {}) : Base(key_columns[0])
     {
         const IColumn * column = nullptr;
         if constexpr (nullable)
@@ -483,7 +483,7 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, RowRange rows = {})
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
@@ -506,7 +506,13 @@ struct HashMethodKeysFixed
 
         if (usePreparedKeys(key_sizes))
         {
-            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            /// The state must cover exactly the rows it will be asked about. Only `end` is clamped:
+            /// it defaults to "the whole block", while `begin` is always a row of the block.
+            chassert(!key_columns.empty());
+            const size_t block_rows = key_columns[0]->size();
+            chassert(rows.begin <= block_rows);
+            packFixedBatch(
+                keys_size, Base::getActualColumns(), key_sizes, prepared_keys, rows.begin, std::min(rows.end, block_rows));
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -707,7 +713,7 @@ struct HashMethodHashed
     static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
     size_t last_row = no_last_row;
 
-    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
+    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, RowRange /*rows*/ = {})
         : key_columns(std::move(key_columns_))
     {
         if constexpr (use_cache)

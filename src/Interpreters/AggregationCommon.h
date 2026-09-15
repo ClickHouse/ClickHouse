@@ -55,37 +55,44 @@ void fillFixedBatch(size_t num_rows, const T * source, T * dest)
 /// out[1] : [--------****----]
 /// ...
 template<typename T, typename Key>
-void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<Key> & out, size_t & offset)
+void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<Key> & out, size_t & offset, size_t row_begin, size_t row_end)
 {
     for (size_t i = 0; i < keys_size; ++i)
     {
         if (key_sizes[i] == sizeof(T))
         {
             const auto * column = key_columns[i];
-            size_t num_rows = column->size();
-            out.resize_fill(num_rows);
 
             /// Note: here we violate strict aliasing.
             /// It should be ok as long as we do not refer to any value from `out` before filling.
             const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
-            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
-            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data() + row_begin) + offset);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(row_end - row_begin, reinterpret_cast<const T *>(source) + row_begin, dest);
             offset += sizeof(T);
         }
     }
 }
 
-/// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
-/// binary blob. Keys are placed starting from the longest one.
+/// Pack into a binary blob of type T the keys of rows [row_begin, row_end). Granted that all the keys
+/// fit into the binary blob. Keys are placed starting from the longest one, and `out[i]` holds the
+/// packed key of row `i`.
 template <typename T>
-void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out)
+void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out, size_t row_begin, size_t row_end)
 {
+    chassert(row_begin <= row_end);
+
+    /// `out` is indexed by absolute row number but only [row_begin, row_end) is written, so the work is
+    /// proportional to the range. The zero fill is load-bearing: bytes of T no key covers must be equal,
+    /// and it happens once, before any pass, because a per-pass fill would erase the previous pass.
+    out.resize(row_end);
+    memset(reinterpret_cast<char *>(out.data()) + row_begin * sizeof(T), 0, (row_end - row_begin) * sizeof(T));
+
     size_t offset = 0;
-    fillFixedBatch<UInt128>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt64>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt128>(keys_size, key_columns, key_sizes, out, offset, row_begin, row_end);
+    fillFixedBatch<UInt64>(keys_size, key_columns, key_sizes, out, offset, row_begin, row_end);
+    fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset, row_begin, row_end);
+    fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset, row_begin, row_end);
+    fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset, row_begin, row_end);
 }
 
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the

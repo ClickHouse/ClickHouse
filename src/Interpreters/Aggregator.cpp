@@ -1103,15 +1103,19 @@ void NO_INLINE Aggregator::executeImpl(
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
+    /// Const key columns hold one row, addressed as row 0 rather than through the block's range.
+    const ColumnsHashing::RowRange rows
+        = all_keys_are_const ? ColumnsHashing::RowRange{} : ColumnsHashing::RowRange{row_begin, row_end};
+
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, rows);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, rows);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -1321,10 +1325,10 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         /// or packing), which must not be repeated per slice.
         if (use_cache)
         {
-            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+            typename Method::State state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
             return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
         }
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
         return run_slices(state, [](size_t) {});
     };
 
@@ -4944,7 +4948,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
@@ -4972,7 +4976,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
