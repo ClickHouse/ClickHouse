@@ -311,14 +311,22 @@ def sendBlockWithUnknownTypeName(s, trailing=b""):
     s.sendall(ba)
 
 
-def startInsert(s):
+# Makes a rejected row fail the insert while the client is still sending, which is what leaves the
+# server draining the rest of the row stream. `max_threads = 1` keeps the insert pipeline
+# single-threaded, so the error surfaces from the `push` of the offending block instead of at the end
+# through `PushingAsyncPipelineExecutor`; `max_block_size = 1` is what sets the squashing threshold
+# for a table that does not prefer large blocks, as `Memory` does not.
+FAIL_WHILE_SENDING = ", max_threads = 1, max_block_size = 1"
+
+
+def startInsert(s, settings=""):
     # input_format_defaults_for_omitted_fields=0 suppresses the TableColumns packet
     # (mirrors 02010_lc_native); async_insert=0 forces the synchronous insert path.
     sendQuery(
         s,
         "INSERT INTO {}.tab "
-        "SETTINGS input_format_defaults_for_omitted_fields = 0, async_insert = 0, send_profile_events = 0 "
-        "FORMAT Native".format(CLICKHOUSE_DATABASE),
+        "SETTINGS input_format_defaults_for_omitted_fields = 0, async_insert = 0, send_profile_events = 0{} "
+        "FORMAT Native".format(CLICKHOUSE_DATABASE, settings),
     )
     sendEmptyBlock(s)  # end of the external tables
     readHeader(s)
@@ -381,7 +389,7 @@ def queryPlanDuringDrainScenario():
     # payload would hold the connection until `receive_timeout`.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         connectAndHandshake(s)
-        startInsert(s)
+        startInsert(s, FAIL_WHILE_SENDING)
 
         # Violates the `CHECK` constraint, so the insert fails while the client is still sending and
         # the server starts draining the rest of the row stream.
@@ -424,19 +432,22 @@ def undecodableDataScenario():
 
 def dataAfterFailedInsertScenario():
     # The one place where a data packet of a doomed query is still deserialized: a client that keeps
-    # streaming data for an insert that has already failed. The blocks are read only to find where
-    # they end, so that the connection survives and can serve the next query.
+    # streaming rows for an insert that has already failed. Those blocks are read only to find where
+    # they end, so that the connection survives and can serve the next query. This is the
+    # counterweight to the two scenarios above - rejecting a packet must not turn into discarding
+    # every connection whose query failed.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         connectAndHandshake(s)
-        startInsert(s)
+        startInsert(s, FAIL_WHILE_SENDING)
 
-        # `tab` has a CHECK constraint that every one of these rows violates, so the insert fails
-        # while the client is still sending.
-        for _ in range(4):
-            sendUInt64Block(s, [100])
-        sendEmptyBlock(s)  # end of the data
-
+        # `tab` has a CHECK constraint this row violates, so the insert fails here and the server
+        # starts draining, with the client still free to finish its row stream.
+        sendUInt64Block(s, [100])
         readExceptionPacket(s, VIOLATED_CONSTRAINT)
+
+        for _ in range(3):
+            sendUInt64Block(s, [1])
+        sendEmptyBlock(s)  # end of the data
 
         # The leftover blocks have been discarded, so the connection is still framed correctly.
         sendPacketTypeOnly(s, 4)  # Ping
