@@ -113,6 +113,11 @@ static struct InitFiu
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
+    PAUSEABLE(set_or_join_sink_pause_before_publish) \
+    PAUSEABLE(set_or_join_sink_pause_before_replay) \
+    PAUSEABLE(storage_set_pause_during_backup_replay) \
+    REGULAR(storage_set_fail_during_backup_replay) \
+    ONCE(storage_join_mutate_fail_after_promoting_consolidated_backup) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \

@@ -1,0 +1,15 @@
+FAULT_INJECTED
+rows after the failed mutation:
+1	one
+2	two
+3	three
+rows after reattach:
+1	one
+2	two
+3	three
+rows after the repeated mutation:
+1	one
+2	two
+rows after reattach:
+1	one
+2	two

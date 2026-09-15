@@ -72,6 +72,12 @@ public:
 
     const std::string & getPath() const override;
 
+    /// The directory tree is kept as real directories on `disk`, at the very paths this
+    /// metadata storage names, so raw `std::filesystem` and `IDisk` operations agree.
+    bool hasLocalFilesystemDirectoryNamespace() const override { return disk->hasLocalFilesystemDirectoryNamespace(); }
+
+    bool keepsMetadataAcrossRestarts() const override { return disk->keepsMetadataAcrossRestarts(); }
+
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
