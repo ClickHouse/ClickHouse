@@ -93,11 +93,6 @@ public:
     /// Get the last committed snapshot ID from Keeper (for incremental read)
     std::optional<Int64> getCommittedSnapshotId() const;
 
-    /// Commit snapshot after successful processing (for incremental read)
-    /// Note: in normal incremental mode, committed_snapshot is already advanced
-    /// inside iterate(). This method exists for manual overrides only.
-    void commitSnapshot(Int64 snapshot_id);
-
 private:
     enum class ManifestKind : UInt8
     {
