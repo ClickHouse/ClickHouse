@@ -466,7 +466,6 @@ Configuración:
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -492,14 +491,14 @@ Parámetros de autenticación (el disco intentará usar todos los métodos dispo
 
 #### Parámetros de límite {#azure-blob-storage-limit-parameters}
 
-| Parámetro                            | Descripción                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------ |
-| `s3_max_single_part_upload_size`     | Tamaño máximo de una sola carga de bloque en Blob Storage.                     |
-| `min_bytes_for_seek`                 | Tamaño mínimo de una región en la que se puede cambiar la posición de lectura. |
-| `max_single_read_retries`            | Número máximo de intentos para leer un fragmento de datos desde Blob Storage.  |
-| `max_single_download_retries`        | Número máximo de intentos para descargar un búfer legible desde Blob Storage.  |
-| `thread_pool_size`                   | Número máximo de hilos para la creación de instancias de `IDiskRemote`.        |
-| `s3_max_inflight_parts_for_one_file` | Número máximo de solicitudes PUT simultáneas para un solo objeto.              |
+| Parámetro                         | Descripción                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| `max_single_part_upload_size`     | Tamaño máximo de una sola carga de bloque en Blob Storage.                     |
+| `min_bytes_for_seek`              | Tamaño mínimo de una región en la que se puede cambiar la posición de lectura. |
+| `max_single_read_retries`         | Número máximo de intentos para leer un fragmento de datos desde Blob Storage.  |
+| `max_single_download_retries`     | Número máximo de intentos para descargar un búfer legible desde Blob Storage.  |
+| `thread_pool_size`                | Número máximo de hilos para la creación de instancias de `IDiskRemote`.        |
+| `max_inflight_parts_for_one_file` | Número máximo de solicitudes PUT simultáneas para un solo objeto.              |
 
 #### Otros parámetros {#azure-blob-storage-other-parameters}
 
@@ -697,8 +696,7 @@ Estos ajustes deben definirse en la sección de configuración del disco.
 | `max_size`                            | Size    | -          | **Obligatorio**. Tamaño máximo de la caché en bytes o en un formato legible (p. ej., `10Gi`). Los archivos se expulsan según la política LRU cuando se alcanza el límite. Admite formatos `ki`, `Mi`, `Gi` (desde la v22.10). |
 | `cache_on_write_operations`           | Boolean | `false`    | Habilita la caché write-through para las consultas `INSERT` y las fusiones en segundo plano. Se puede anular para cada consulta con `enable_filesystem_cache_on_write_operations`.                                            |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | Habilita límites de tamaño de caché por consulta basados en `max_query_cache_size`.                                                                                                                                           |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | Cuando está habilitado, los datos solo se almacenan en caché después de leerse varias veces.                                                                                                                                  |
-| `cache_hits_threshold`                | Integer | `0`        | Número de lecturas necesarias antes de que los datos se almacenen en caché (requiere `enable_cache_hits_threshold`).                                                                                                          |
+| `cache_hits_threshold`                | Integer | `0`        | Obsoleto; no tiene efecto.                                                                                                                                                                                                    |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Omite la caché para rangos de lectura grandes.                                                                                                                                                                                |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | Tamaño del rango de lectura que activa la omisión de la caché (requiere `enable_bypass_cache_with_threshold`).                                                                                                                |
 | `max_file_segment_size`               | Size    | `8Mi`      | Tamaño máximo de un único archivo de caché en bytes o en un formato legible.                                                                                                                                                  |
@@ -1051,11 +1049,7 @@ SETTINGS storage_policy='web';
 
 #### Parámetros opcionales {#optional-parameters-web}
 
-| Parámetro                           | Descripción                                                                                 | Valor predeterminado |
-| ----------------------------------- | ------------------------------------------------------------------------------------------- | -------------------- |
-| `min_bytes_for_seek`                | El número mínimo de bytes para usar la operación de seek en lugar de una lectura secuencial | `1` MB               |
-| `remote_fs_read_backoff_threashold` | El tiempo máximo de espera al intentar leer datos desde el disco remoto                     | `10000` segundos     |
-| `remote_fs_read_backoff_max_tries`  | El número máximo de intentos de lectura con backoff                                         | `5`                  |
+El storage backend de objetos `web` solo lee el parámetro `endpoint`. No hay parámetros opcionales adicionales específicos de web; las opciones genéricas de disco siguen siendo aplicables.
 
 Si una consulta falla con la excepción `DB:Exception Unreachable URL`, puedes intentar ajustar esta configuración: [http&#95;connection&#95;timeout](/es/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/es/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/es/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
@@ -1066,7 +1060,7 @@ Al cargar archivos mediante `endpoint`, deben cargarse en la ruta `<endpoint>/st
 
 Si la URL no es accesible al cargar el disco mientras el servidor inicia las tablas, se capturan todos los errores. Si en este caso hubo errores, las tablas pueden volver a cargarse (hacerse visibles) mediante `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. Si los metadatos se cargaron correctamente durante el inicio del servidor, las tablas están disponibles de inmediato.
 
-Usa la configuración [http&#95;max&#95;single&#95;read&#95;retries](/es/concepts/features/configuration/server-config/storing-data#web-storage) para limitar el número máximo de reintentos durante una sola lectura HTTP.
+Usa [`http_max_tries`](/es/reference/settings/session-settings/http-max#http_max_tries) para limitar el número de intentos de lectura HTTP, incluido el intento inicial. Usa [`http_retry_initial_backoff_ms`](/es/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) y [`http_retry_max_backoff_ms`](/es/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) para configurar los retardos inicial y máximo entre reintentos.
 
 ### Replicación zero-copy (no lista para producción) {#zero-copy}
 

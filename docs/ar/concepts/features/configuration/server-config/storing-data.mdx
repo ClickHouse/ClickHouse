@@ -464,7 +464,6 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -490,14 +489,14 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 #### معلمات الحد {#azure-blob-storage-limit-parameters}
 
-| المعلمة                              | الوصف                                                                  |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| `s3_max_single_part_upload_size`     | الحد الأقصى لحجم رفع كتلة واحدة إلى Blob Storage.                      |
-| `min_bytes_for_seek`                 | الحد الأدنى لحجم نطاق يمكن إجراء seek داخله.                           |
-| `max_single_read_retries`            | الحد الأقصى لعدد محاولات قراءة جزء من البيانات من Blob Storage.        |
-| `max_single_download_retries`        | الحد الأقصى لعدد محاولات تنزيل مخزن مؤقت قابل للقراءة من Blob Storage. |
-| `thread_pool_size`                   | الحد الأقصى لعدد سلاسل التنفيذ اللازمة لإنشاء مثيلات `IDiskRemote`.    |
-| `s3_max_inflight_parts_for_one_file` | الحد الأقصى لعدد طلبات PUT المتزامنة لكائن واحد.                       |
+| المعلمة                           | الوصف                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| `max_single_part_upload_size`     | الحد الأقصى لحجم رفع كتلة واحدة إلى Blob Storage.                      |
+| `min_bytes_for_seek`              | الحد الأدنى لحجم نطاق يمكن إجراء seek داخله.                           |
+| `max_single_read_retries`         | الحد الأقصى لعدد محاولات قراءة جزء من البيانات من Blob Storage.        |
+| `max_single_download_retries`     | الحد الأقصى لعدد محاولات تنزيل مخزن مؤقت قابل للقراءة من Blob Storage. |
+| `thread_pool_size`                | الحد الأقصى لعدد سلاسل التنفيذ اللازمة لإنشاء مثيلات `IDiskRemote`.    |
+| `max_inflight_parts_for_one_file` | الحد الأقصى لعدد طلبات PUT المتزامنة لكائن واحد.                       |
 
 #### معلمات أخرى {#azure-blob-storage-other-parameters}
 
@@ -627,7 +626,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 بالنسبة إلى الإصدارات &gt;= 23.5، لا تكون ذاكرة التخزين المؤقت مدعومة إلا لأنواع الأقراص البعيدة: S3 وAzure وHDFS (غير مدعوم).
 تستخدم ذاكرة التخزين المؤقت سياسة `LRU`.
 
-مثال على الإعداد للإصدارات الأحدث من 22.8 أو المساوية له:
+مثال على التهيئة للإصدارات الأحدث من 22.8 أو المساوية له:
 
 ```xml
 <clickhouse>
@@ -658,7 +657,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-مثال على إعدادات الإصدارات الأقدم من 22.8:
+مثال على تهيئة الإصدارات الأقدم من 22.8:
 
 ```xml
 <clickhouse>
@@ -685,7 +684,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-إعدادات **تهيئة القرص** لـ File ذاكرة التخزين المؤقت:
+إعدادات **تهيئة القرص** لـ File Cache:
 
 يجب تعريف هذه الإعدادات في قسم تهيئة القرص.
 
@@ -693,10 +692,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | ------------------------------------- | ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `path`                                | String  | -                 | **مطلوب**. المسار إلى الدليل الذي سيُخزَّن فيه التخزين المؤقت.                                                                                                                 |
 | `max_size`                            | Size    | -                 | **مطلوب**. الحجم الأقصى للتخزين المؤقت بالبايت أو بصيغة مقروءة (مثل `10Gi`). تُزال الملفات وفق سياسة LRU عند بلوغ الحد الأقصى. ويدعم التنسيقات `ki` و`Mi` و`Gi` (منذ v22.10).  |
-| `cache_on_write_operations`           | Boolean | `false`           | يفعّل التخزين المؤقت بالكتابة المباشرة لاستعلامات `INSERT` وعمليات الدمج في الخلفية. ويمكن تجاوز هذا الإعداد لكل query باستخدام `enable_filesystem_cache_on_write_operations`. |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`           | يفعّل حدود حجم التخزين المؤقت لكل query استنادًا إلى `max_query_cache_size`.                                                                                                   |
-| `enable_cache_hits_threshold`         | Boolean | `false`           | عند تفعيله، لا تُخزَّن البيانات مؤقتًا إلا بعد قراءتها عدة مرات.                                                                                                               |
-| `cache_hits_threshold`                | Integer | `0`               | عدد عمليات القراءة المطلوبة قبل تخزين البيانات مؤقتًا (يتطلب `enable_cache_hits_threshold`).                                                                                   |
+| `cache_on_write_operations`           | Boolean | `false`           | يفعّل التخزين المؤقت بالكتابة المباشرة لاستعلامات `INSERT` وعمليات الدمج في الخلفية. ويمكن تجاوز هذا الإعداد لكل استعلام باستخدام `enable_filesystem_cache_on_write_operations`. |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`           | يفعّل حدود حجم التخزين المؤقت لكل استعلام استنادًا إلى `max_query_cache_size`.                                                                                                   |
+| `cache_hits_threshold`                | Integer | `0`               | تم إهماله؛ ليس له أي تأثير.                                                                                                                                                    |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`           | يتجاوز التخزين المؤقت لنطاقات القراءة الكبيرة.                                                                                                                                 |
 | `bypass_cache_threshold`              | Size    | `256Mi`           | حجم نطاق القراءة الذي يؤدي إلى تجاوز التخزين المؤقت (يتطلب `enable_bypass_cache_with_threshold`).                                                                              |
 | `max_file_segment_size`               | Size    | `8Mi`             | الحجم الأقصى لملف تخزين مؤقت واحد بالبايت أو بصيغة مقروءة.                                                                                                                     |
@@ -1049,11 +1047,7 @@ SETTINGS storage_policy='web';
 
 #### المعلمات الاختيارية {#optional-parameters-web}
 
-| المعلمة                             | الوصف                                                                    | القيمة الافتراضية |
-| ----------------------------------- | ------------------------------------------------------------------------ | ----------------- |
-| `min_bytes_for_seek`                | الحد الأدنى لعدد البايتات لاستخدام عملية seek بدلًا من القراءة التسلسلية | `1` MB            |
-| `remote_fs_read_backoff_threashold` | الحد الأقصى لوقت الانتظار عند محاولة قراءة البيانات من القرص البعيد      | `10000` ثانية     |
-| `remote_fs_read_backoff_max_tries`  | الحد الأقصى لعدد محاولات القراءة باستخدام backoff                        | `5`               |
+تقرأ واجهة التخزين الكائني `web` معلمة `endpoint` فقط. لا توجد معلمات اختيارية إضافية خاصة بـ web؛ وما زالت خيارات القرص العامة سارية.
 
 إذا فشل استعلام مع الاستثناء `DB:Exception Unreachable URL`، فيمكنك محاولة ضبط الإعدادات التالية: [http&#95;connection&#95;timeout](/ar/reference/settings/session-settings/http#http_connection_timeout)، و[http&#95;receive&#95;timeout](/ar/reference/settings/session-settings/http#http_receive_timeout)، و[keep&#95;alive&#95;timeout](/ar/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
@@ -1064,7 +1058,7 @@ SETTINGS storage_policy='web';
 
 إذا تعذر الوصول إلى URL عند تحميل القرص أثناء بدء الخادم للجداول، فستُلتقط جميع الأخطاء. وإذا حدثت أخطاء في هذه الحالة، فيمكن إعادة تحميل الجداول (لتصبح مرئية) عبر `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. وإذا جرى تحميل البيانات الوصفية بنجاح عند بدء تشغيل الخادم، فستكون الجداول متاحة مباشرةً.
 
-استخدم الإعداد [http&#95;max&#95;single&#95;read&#95;retries](/ar/concepts/features/configuration/server-config/storing-data#web-storage) لتقييد الحد الأقصى لعدد retries أثناء عملية قراءة HTTP واحدة.
+استخدم [`http_max_tries`](/ar/reference/settings/session-settings/http-max#http_max_tries) لتقييد عدد محاولات قراءة HTTP، بما في ذلك المحاولة الأولى. استخدم [`http_retry_initial_backoff_ms`](/ar/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) و[`http_retry_max_backoff_ms`](/ar/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) لتهيئة التأخيرات الأولية والقصوى بين محاولات إعادة المحاولة.
 
 ### النسخ المتماثل دون نسخ (غير جاهز لبيئة الإنتاج) {#zero-copy}
 

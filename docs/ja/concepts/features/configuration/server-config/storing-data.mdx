@@ -460,7 +460,6 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -486,14 +485,14 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 #### 制限パラメータ {#azure-blob-storage-limit-parameters}
 
-| Parameter                            | Description                                       |
-| ------------------------------------ | ------------------------------------------------- |
-| `s3_max_single_part_upload_size`     | Blob Storage への単一ブロックのアップロードの最大サイズ。               |
-| `min_bytes_for_seek`                 | シーク可能な領域の最小サイズ。                                   |
-| `max_single_read_retries`            | Blob Storage からデータの chunk を読み取る際の最大再試行回数。         |
-| `max_single_download_retries`        | Blob Storage から読み取り可能な buffer をダウンロードする際の最大再試行回数。 |
-| `thread_pool_size`                   | `IDiskRemote` のインスタンス化に使用するスレッドの最大数。              |
-| `s3_max_inflight_parts_for_one_file` | 単一オブジェクトに対する put リクエストの最大同時実行数。                   |
+| パラメータ                         | Description                                       |
+| --------------------------------- | ------------------------------------------------- |
+| `max_single_part_upload_size`     | Blob Storage への単一ブロックのアップロードの最大サイズ。               |
+| `min_bytes_for_seek`              | シーク可能な領域の最小サイズ。                                   |
+| `max_single_read_retries`         | Blob Storage からデータの chunk を読み取る際の最大再試行回数。         |
+| `max_single_download_retries`     | Blob Storage から読み取り可能な buffer をダウンロードする際の最大再試行回数。 |
+| `thread_pool_size`                | `IDiskRemote` のインスタンス化に使用するスレッドの最大数。              |
+| `max_inflight_parts_for_one_file` | 単一オブジェクトに対する put リクエストの最大同時実行数。                   |
 
 #### その他のパラメータ {#azure-blob-storage-other-parameters}
 
@@ -685,21 +684,20 @@ cache には `LRU` cache ポリシーが使用されます。
 
 これらの設定は、ディスク設定セクションで定義する必要があります。
 
-| パラメータ                             | Type    | Default    | Description                                                                                                                     |
+| パラメータ                                 | Type    | Default    | Description                                                                                                                     |
 | ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                                | String  | -          | **必須**。キャッシュを保存するディレクトリのパス。                                                                                                     |
-| `max_size`                            | Size    | -          | **必須**。キャッシュの最大サイズ (バイト、または人間が読みやすい形式。例: `10Gi`) 。上限に達すると、ファイルは LRU ポリシーに従って追い出されます。`ki`、`Mi`、`Gi` フォーマットをサポートします (v22.10 以降) 。 |
-| `cache_on_write_operations`           | Boolean | `false`    | `INSERT` クエリおよびバックグラウンドマージに対して、ライトスルーキャッシュを有効にします。クエリごとに `enable_filesystem_cache_on_write_operations` で上書きできます。                |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | `max_query_cache_size` に基づく、クエリごとのキャッシュサイズ制限を有効にします。                                                                            |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | 有効にすると、データは複数回読み取られた後にのみキャッシュされます。                                                                                              |
-| `cache_hits_threshold`                | Integer | `0`        | データがキャッシュされるまでに必要な読み取り回数 (`enable_cache_hits_threshold` が必要) 。                                                                  |
-| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 読み取り範囲が大きい場合はキャッシュをスキップします。                                                                                                     |
-| `bypass_cache_threshold`              | Size    | `256Mi`    | キャッシュのバイパスをトリガーする読み取り範囲サイズ (`enable_bypass_cache_with_threshold` が必要) 。                                                         |
-| `max_file_segment_size`               | Size    | `8Mi`      | 単一のキャッシュファイルの最大サイズ (バイト、または人間が読みやすい形式) 。                                                                                        |
-| `max_elements`                        | Integer | `10000000` | キャッシュファイルの最大数。                                                                                                                  |
-| `load_metadata_threads`               | Integer | `16`       | 起動時にキャッシュメタデータを読み込むためのスレッド数。                                                                                                    |
+| `path`                                | String  | -          | **必須**。cacheを保存するディレクトリのパス。                                                                                                     |
+| `max_size`                            | Size    | -          | **必須**。cacheの最大サイズ (バイト、または人間が読みやすい形式。例: `10Gi`) 。上限に達すると、ファイルは LRU ポリシーに従って追い出されます。`ki`、`Mi`、`Gi` フォーマットをサポートします (v22.10 以降) 。 |
+| `cache_on_write_operations`           | Boolean | `false`    | `INSERT` クエリおよびバックグラウンドマージに対して、ライトスルーcacheを有効にします。クエリごとに `enable_filesystem_cache_on_write_operations` で上書きできます。                |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`    | `max_query_cache_size` に基づく、クエリごとのcacheサイズ制限を有効にします。                                                                            |
+| `cache_hits_threshold`                | Integer | `0`        | 非推奨。効果はありません。                                                                                                                   |
+| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 読み取り範囲が大きい場合はcacheをスキップします。                                                                                                     |
+| `bypass_cache_threshold`              | Size    | `256Mi`    | cacheのバイパスをトリガーする読み取り範囲サイズ (`enable_bypass_cache_with_threshold` が必要) 。                                                         |
+| `max_file_segment_size`               | Size    | `8Mi`      | 単一のcacheファイルの最大サイズ (バイト、または人間が読みやすい形式) 。                                                                                        |
+| `max_elements`                        | Integer | `10000000` | cacheファイルの最大数。                                                                                                                  |
+| `load_metadata_threads`               | Integer | `16`       | 起動時にcacheメタデータを読み込むためのスレッド数。                                                                                                    |
 | `use_split_cache`                     | Boolean | `false`    | ファイルをシステム用とデータ用に分離して使用します。                                                                                                      |
-| `split_cache_ratio`                   | Double  | `0.1`      | split&#95;cache における、システムセグメントのキャッシュ総サイズに対する比率。                                                                                 |
+| `split_cache_ratio`                   | Double  | `0.1`      | split&#95;cache における、システムセグメントのcache総サイズに対する比率。                                                                                 |
 
 > **注**: サイズ値は `ki`、`Mi`、`Gi` などの単位をサポートします (例: `10Gi`) 。
 
@@ -1044,11 +1042,7 @@ SETTINGS storage_policy='web';
 
 #### パラメータ {#optional-parameters-web}
 
-| Parameter                           | Description                      | Default Value |
-| ----------------------------------- | -------------------------------- | ------------- |
-| `min_bytes_for_seek`                | 順次読み取りではなく seek 操作を使用するための最小バイト数 | `1` MB        |
-| `remote_fs_read_backoff_threashold` | リモートディスク上のデータ読み取りを試みる際の最大待機時間    | `10000` 秒     |
-| `remote_fs_read_backoff_max_tries`  | バックオフを伴う読み取りの最大試行回数              | `5`           |
+`web` オブジェクトストレージバックエンドは `endpoint` パラメータのみを読み取ります。Web 固有の追加の任意パラメータはありません。汎用ディスクオプションは引き続き適用されます。
 
 クエリが例外 `DB:Exception Unreachable URL` で失敗する場合は、設定 [http&#95;connection&#95;timeout](/ja/reference/settings/session-settings/http#http_connection_timeout)、[http&#95;receive&#95;timeout](/ja/reference/settings/session-settings/http#http_receive_timeout)、[keep&#95;alive&#95;timeout](/ja/reference/settings/server-settings/settings/other#keep_alive_timeout) の調整を試してください。
 
@@ -1059,7 +1053,7 @@ SETTINGS storage_policy='web';
 
 サーバー起動時にテーブルを読み込む際、ディスクのロード中に URL に到達できない場合は、すべてのエラーが捕捉されます。この場合にエラーが発生していても、`DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name` によってテーブルを再読み込みし、再度表示させることができます。サーバー起動時にメタデータの読み込みに成功していれば、テーブルはすぐに利用可能です。
 
-単一の HTTP 読み取り中の最大再試行回数を制限するには、設定 [http&#95;max&#95;single&#95;read&#95;retries](/ja/concepts/features/configuration/server-config/storing-data#web-storage) を使用します。
+初回の試行を含む HTTP 読み取り試行回数を制限するには、[http&#95;max&#95;tries](/ja/reference/settings/session-settings/http-max#http_max_tries) を使用します。再試行間の初期遅延と最大遅延を設定するには、[http&#95;retry&#95;initial&#95;backoff&#95;ms](/ja/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) および [http&#95;retry&#95;max&#95;backoff&#95;ms](/ja/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) を使用します。
 
 ### ゼロコピーレプリケーション (本番環境での利用は非推奨) {#zero-copy}
 

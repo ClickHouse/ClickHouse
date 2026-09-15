@@ -456,7 +456,6 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -482,14 +481,14 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 #### 限制参数 {#azure-blob-storage-limit-parameters}
 
-| 参数                                   | 描述                             |
-| ------------------------------------ | ------------------------------ |
-| `s3_max_single_part_upload_size`     | 上传到 Blob Storage 的单个块的最大大小。    |
-| `min_bytes_for_seek`                 | 可寻道区域的最小大小。                    |
-| `max_single_read_retries`            | 从 Blob Storage 读取一个数据块的最大重试次数。 |
-| `max_single_download_retries`        | 从 Blob Storage 下载可读缓冲区的最大重试次数。 |
-| `thread_pool_size`                   | 用于实例化 `IDiskRemote` 的最大线程数。    |
-| `s3_max_inflight_parts_for_one_file` | 单个对象的并发 PUT 请求最大数量。            |
+| 参数                                | 描述                             |
+| --------------------------------- | ------------------------------ |
+| `max_single_part_upload_size`     | 上传到 blob 存储 的单个块的最大大小。    |
+| `min_bytes_for_seek`              | 可寻道区域的最小大小。                    |
+| `max_single_read_retries`         | 从 blob 存储 读取一个数据块的最大重试次数。 |
+| `max_single_download_retries`     | 从 blob 存储 下载可读缓冲区的最大重试次数。 |
+| `thread_pool_size`                | 用于实例化 `IDiskRemote` 的最大线程数。    |
+| `max_inflight_parts_for_one_file` | 单个对象的并发 PUT 请求最大数量。            |
 
 #### 其他参数 {#azure-blob-storage-other-parameters}
 
@@ -687,8 +686,7 @@ File Cache **磁盘配置设置**：
 | `max_size`                            | Size    | -          | **必填**。缓存的最大大小，单位可以是字节或可读格式 (例如 `10Gi`) 。达到限制时，文件会按 LRU 策略被逐出。支持 `ki`、`Mi`、`Gi` 格式 (自 v22.10 起) 。 |
 | `cache_on_write_operations`           | Boolean | `false`    | 为 `INSERT` 查询和后台合并启用写穿缓存。可通过 `enable_filesystem_cache_on_write_operations` 按查询覆盖。                 |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | 基于 `max_query_cache_size` 启用按查询的缓存大小限制。                                                           |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | 启用后，数据仅在被读取多次后才会被缓存。                                                                              |
-| `cache_hits_threshold`                | Integer | `0`        | 数据被缓存前所需的读取次数 (需要 `enable_cache_hits_threshold`) 。                                                |
+| `cache_hits_threshold`                | Integer | `0`        | 已弃用；无作用。                                                                                          |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 对较大的读取范围跳过缓存。                                                                                     |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | 触发绕过缓存的读取范围大小 (需要 `enable_bypass_cache_with_threshold`) 。                                         |
 | `max_file_segment_size`               | Size    | `8Mi`      | 单个缓存文件段的最大大小，单位可以是字节或可读格式。                                                                        |
@@ -1038,11 +1036,7 @@ SETTINGS storage_policy='web';
 
 #### 可选参数 {#optional-parameters-web}
 
-| 参数                                  | 描述                  | 默认值       |
-| ----------------------------------- | ------------------- | --------- |
-| `min_bytes_for_seek`                | 使用寻道操作而不是顺序读取的最小字节数 | `1` MB    |
-| `remote_fs_read_backoff_threashold` | 读取远程磁盘数据时的最大等待时间    | `10000` 秒 |
-| `remote_fs_read_backoff_max_tries`  | 使用退避机制读取时的最大重试次数    | `5`       |
+`web` 对象存储后端仅读取 `endpoint` 参数。没有其他特定于 Web 的可选参数；通用磁盘选项仍然适用。
 
 如果查询因异常 `DB:Exception Unreachable URL` 失败，你可以尝试调整以下设置：[http&#95;connection&#95;timeout](/zh/reference/settings/session-settings/http#http_connection_timeout)、[http&#95;receive&#95;timeout](/zh/reference/settings/session-settings/http#http_receive_timeout)、[keep&#95;alive&#95;timeout](/zh/reference/settings/server-settings/settings/other#keep_alive_timeout)。
 
@@ -1053,7 +1047,7 @@ SETTINGS storage_policy='web';
 
 如果服务器在启动表时，磁盘加载过程中 URL 无法访问，系统会捕获所有错误。在这种情况下如果出现错误，可以通过 `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name` 重新加载表 (使其重新可见) 。如果元数据在服务器启动时已成功加载，则表会立即可用。
 
-使用 [http&#95;max&#95;single&#95;read&#95;retries](/zh/concepts/features/configuration/server-config/storing-data#web-storage) 设置来限制单次 HTTP 读取期间的最大重试次数。
+使用 [`http_max_tries`](/zh/reference/settings/session-settings/http-max#http_max_tries) 限制 HTTP 读取尝试次数，包括首次尝试。使用 [`http_retry_initial_backoff_ms`](/zh/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) 和 [`http_retry_max_backoff_ms`](/zh/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) 配置重试之间的初始延迟和最大延迟。
 
 ### 零拷贝复制 (尚不适用于生产环境) {#zero-copy}
 

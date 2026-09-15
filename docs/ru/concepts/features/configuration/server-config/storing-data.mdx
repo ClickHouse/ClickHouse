@@ -467,7 +467,6 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -493,14 +492,14 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 #### Параметры ограничений {#azure-blob-storage-limit-parameters}
 
-| Параметр                             | Описание                                                                         |
-| ------------------------------------ | -------------------------------------------------------------------------------- |
-| `s3_max_single_part_upload_size`     | Максимальный размер однократной загрузки блока в Blob Storage.                   |
-| `min_bytes_for_seek`                 | Минимальный размер области, в которой возможно позиционирование.                 |
-| `max_single_read_retries`            | Максимальное число попыток чтения фрагмента данных из Blob Storage.              |
-| `max_single_download_retries`        | Максимальное число попыток скачать буфер, доступный для чтения, из Blob Storage. |
-| `thread_pool_size`                   | Максимальное число потоков для создания экземпляров `IDiskRemote`.               |
-| `s3_max_inflight_parts_for_one_file` | Максимальное число параллельных PUT-запросов для одного объекта.                 |
+| Параметр                          | Описание                                                                         |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| `max_single_part_upload_size`     | Максимальный размер однократной загрузки блока в Blob Storage.                   |
+| `min_bytes_for_seek`              | Минимальный размер области, в которой возможен seek.                              |
+| `max_single_read_retries`         | Максимальное число попыток чтения фрагмента данных из Blob Storage.              |
+| `max_single_download_retries`     | Максимальное число попыток скачать буфер, доступный для чтения, из Blob Storage. |
+| `thread_pool_size`                | Максимальное число потоков для создания экземпляров `IDiskRemote`.               |
+| `max_inflight_parts_for_one_file` | Максимальное число параллельных PUT-запросов для одного объекта.                 |
 
 #### Другие параметры {#azure-blob-storage-other-parameters}
 
@@ -688,7 +687,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-Настройки **дисковой конфигурации** File Cache:
+Настройки **конфигурации диска** File Cache:
 
 Эти настройки должны быть заданы в разделе конфигурации диска.
 
@@ -698,8 +697,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `max_size`                            | Size    | -            | **Обязательно**. Максимальный размер кэша в байтах или в удобочитаемом формате (например, `10Gi`). При достижении лимита файлы вытесняются по политике LRU. Поддерживаются форматы `ki`, `Mi`, `Gi` (начиная с v22.10). |
 | `cache_on_write_operations`           | Boolean | `false`      | Включает сквозное кэширование для запросов `INSERT` и фоновых слияний. Может быть переопределено для конкретного запроса с помощью `enable_filesystem_cache_on_write_operations`.                                       |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`      | Включает ограничение размера кэша для каждого запроса на основе `max_query_cache_size`.                                                                                                                                 |
-| `enable_cache_hits_threshold`         | Boolean | `false`      | Если параметр включен, данные кэшируются только после нескольких чтений.                                                                                                                                                |
-| `cache_hits_threshold`                | Integer | `0`          | Количество чтений, необходимое перед кэшированием данных (требуется `enable_cache_hits_threshold`).                                                                                                                     |
+| `cache_hits_threshold`                | Integer | `0`          | Устарело; не оказывает влияния.                                                                                                                                                                                         |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`      | Пропускает кэш для больших диапазонов чтения.                                                                                                                                                                           |
 | `bypass_cache_threshold`              | Size    | `256Mi`      | Размер диапазона чтения, при котором кэш обходится (требуется `enable_bypass_cache_with_threshold`).                                                                                                                    |
 | `max_file_segment_size`               | Size    | `8Mi`        | Максимальный размер одного файла кэша в байтах или в удобочитаемом формате.                                                                                                                                             |
@@ -1052,11 +1050,7 @@ SETTINGS storage_policy='web';
 
 #### Необязательные параметры {#optional-parameters-web}
 
-| Параметр                            | Описание                                                                                              | Значение по умолчанию |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------- |
-| `min_bytes_for_seek`                | Минимальное количество байтов, при котором используется операция seek вместо последовательного чтения | `1` MB                |
-| `remote_fs_read_backoff_threashold` | Максимальное время ожидания при попытке чтения данных с удалённого диска                              | `10000` секунд        |
-| `remote_fs_read_backoff_max_tries`  | Максимальное количество попыток чтения с задержкой                                                    | `5`                   |
+Бэкенд объектного хранилища `web` использует только параметр `endpoint`. Дополнительные необязательные параметры, относящиеся только к web, отсутствуют; общие параметры диска по-прежнему применяются.
 
 Если запрос завершается исключением `DB:Exception Unreachable URL`, попробуйте изменить настройки: [http&#95;connection&#95;timeout](/ru/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/ru/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/ru/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
@@ -1067,7 +1061,7 @@ SETTINGS storage_policy='web';
 
 Если при загрузке диска URL недоступен в момент, когда сервер поднимает таблицы, все ошибки перехватываются. В этом случае при наличии ошибок таблицы можно перезагрузить (снова сделать видимыми) через `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. Если метаданные были успешно загружены при запуске сервера, таблицы становятся доступными сразу.
 
-Используйте настройку [http&#95;max&#95;single&#95;read&#95;retries](/ru/concepts/features/configuration/server-config/storing-data#web-storage), чтобы ограничить максимальное количество повторных попыток в рамках одного HTTP-чтения.
+Используйте [`http_max_tries`](/ru/reference/settings/session-settings/http-max#http_max_tries), чтобы ограничить количество попыток HTTP-чтения, включая первоначальную попытку. Используйте [`http_retry_initial_backoff_ms`](/ru/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) и [`http_retry_max_backoff_ms`](/ru/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms), чтобы настроить начальную и максимальную задержки между повторными попытками.
 
 ### Репликация без копирования (не готово к использованию в production) {#zero-copy}
 

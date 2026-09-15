@@ -455,7 +455,7 @@ est égal à
 Les moteurs de table de la famille `MergeTree` peuvent stocker des données dans [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
 à l’aide d’un disque de type `azure_blob_storage`.
 
-Configuration :
+Configuration :
 
 ```xml
 <storage_configuration>
@@ -468,7 +468,6 @@ Configuration :
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -494,14 +493,14 @@ Paramètres d’authentification (le disque tentera d’utiliser toutes les mét
 
 #### Paramètres de limitation {#azure-blob-storage-limit-parameters}
 
-| Parameter                            | Description                                                                             |
-| ------------------------------------ | --------------------------------------------------------------------------------------- |
-| `s3_max_single_part_upload_size`     | Taille maximale d’un téléversement en un seul bloc vers Blob Storage.                   |
-| `min_bytes_for_seek`                 | Taille minimale d’une zone autorisant un seek.                                          |
-| `max_single_read_retries`            | Nombre maximal de tentatives de lecture d’un bloc de données depuis Blob Storage.       |
-| `max_single_download_retries`        | Nombre maximal de tentatives de téléchargement d’un tampon lisible depuis Blob Storage. |
-| `thread_pool_size`                   | Nombre maximal de threads pour l’instanciation de `IDiskRemote`.                        |
-| `s3_max_inflight_parts_for_one_file` | Nombre maximal de requêtes PUT simultanées pour un même objet.                          |
+| Paramètre                         | Description                                                                             |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| `max_single_part_upload_size`     | Taille maximale d’un téléversement en un seul bloc vers Blob Storage.                   |
+| `min_bytes_for_seek`              | Taille minimale d’une zone autorisant un seek.                                          |
+| `max_single_read_retries`         | Nombre maximal de tentatives de lecture d’un bloc de données depuis Blob Storage.       |
+| `max_single_download_retries`     | Nombre maximal de tentatives de téléchargement d’un tampon lisible depuis Blob Storage. |
+| `thread_pool_size`                | Nombre maximal de threads pour l’instanciation de `IDiskRemote`.                        |
+| `max_inflight_parts_for_one_file` | Nombre maximal de requêtes PUT simultanées pour un même objet.                          |
 
 #### Autres paramètres {#azure-blob-storage-other-parameters}
 
@@ -699,8 +698,7 @@ Ces paramètres doivent être définis dans la section de configuration du disqu
 | `max_size`                            | Size    | -          | **Obligatoire**. Taille maximale du cache en octets ou dans un format lisible (par ex. `10Gi`). Les fichiers sont retirés du cache selon la politique LRU lorsque la limite est atteinte. Prend en charge les formats `ki`, `Mi`, `Gi` (depuis v22.10). |
 | `cache_on_write_operations`           | Boolean | `false`    | Active le cache en écriture directe pour les requêtes `INSERT` et les merges en arrière-plan. Peut être remplacé au niveau de chaque requête avec `enable_filesystem_cache_on_write_operations`.                                                        |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | Active des limites de taille du cache par requête basées sur `max_query_cache_size`.                                                                                                                                                                    |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | Lorsqu&#39;il est activé, les données ne sont mises en cache qu&#39;après avoir été lues plusieurs fois.                                                                                                                                                |
-| `cache_hits_threshold`                | Integer | `0`        | Nombre de lectures requis avant la mise en cache des données (nécessite `enable_cache_hits_threshold`).                                                                                                                                                 |
+| `cache_hits_threshold`                | Integer | `0`        | Deprecated ; sans effet.                                                                                                                                                                                                                                |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Ignore le cache pour les grandes plages de lecture.                                                                                                                                                                                                     |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | Taille de plage de lecture qui déclenche le contournement du cache (nécessite `enable_bypass_cache_with_threshold`).                                                                                                                                    |
 | `max_file_segment_size`               | Size    | `8Mi`      | Taille maximale d&#39;un fichier de cache unique en octets ou dans un format lisible.                                                                                                                                                                   |
@@ -1053,22 +1051,18 @@ SETTINGS storage_policy='web';
 
 #### Paramètres facultatifs {#optional-parameters-web}
 
-| Paramètre                           | Description                                                                                     | Valeur par défaut |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------- |
-| `min_bytes_for_seek`                | Le nombre minimal d’octets pour utiliser l’opération de seek au lieu d’une lecture séquentielle | `1` MB            |
-| `remote_fs_read_backoff_threashold` | Le temps d’attente maximal lors d’une tentative de lecture de données depuis le disque distant  | `10000` secondes  |
-| `remote_fs_read_backoff_max_tries`  | Le nombre maximal de tentatives de lecture avec backoff                                         | `5`               |
+Le storage backend d’object storage `web` ne lit que le paramètre `endpoint`. Il n’existe aucun paramètre facultatif supplémentaire spécifique au web ; les options de disque génériques restent applicables.
 
-Si une requête échoue avec une exception `DB:Exception Unreachable URL`, vous pouvez essayer d’ajuster les paramètres suivants : [http&#95;connection&#95;timeout](/fr/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/fr/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/fr/reference/settings/server-settings/settings/other#keep_alive_timeout).
+Si une requête échoue avec une exception `DB:Exception Unreachable URL`, vous pouvez essayer d’ajuster les paramètres suivants : [http&#95;connection&#95;timeout](/fr/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/fr/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/fr/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
-Pour obtenir les fichiers à téléverser, exécutez :
+Pour obtenir les fichiers à téléverser, exécutez :
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` peut être trouvé dans la requête `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
 
 Lors du chargement des fichiers via `endpoint`, ils doivent être chargés dans le chemin `<endpoint>/store/`, mais la configuration ne doit contenir que `endpoint`.
 
 Si l’URL n’est pas accessible lors du chargement du disque pendant le démarrage des tables par le serveur, toutes les erreurs sont interceptées. Si, dans ce cas, des erreurs se sont produites, les tables peuvent être rechargées (et redevenir visibles) via `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. Si les métadonnées ont été chargées avec succès au démarrage du serveur, les tables sont alors disponibles immédiatement.
 
-Utilisez le paramètre [http&#95;max&#95;single&#95;read&#95;retries](/fr/concepts/features/configuration/server-config/storing-data#web-storage) pour limiter le nombre maximal de tentatives pendant une seule lecture HTTP.
+Utilisez [`http_max_tries`](/fr/reference/settings/session-settings/http-max#http_max_tries) pour limiter le nombre de tentatives de lecture HTTP, y compris la tentative initiale. Utilisez [`http_retry_initial_backoff_ms`](/fr/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) et [`http_retry_max_backoff_ms`](/fr/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) pour configurer les délais initial et maximal entre les tentatives.
 
 ### Réplication zero-copy (pas prête pour la production) {#zero-copy}
 
