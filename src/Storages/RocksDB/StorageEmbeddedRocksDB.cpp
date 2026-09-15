@@ -57,6 +57,7 @@
 #include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 
 #include <Disks/DiskLocal.h>
 #include <IO/SharedThreadPools.h>
@@ -353,7 +354,9 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     const auto timeout = std::chrono::milliseconds(query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
     /// One budget for all the lease waits, so a lease arriving during a retry cannot extend it.
     /// Acquiring rocksdb_ptr_mx below is not part of that budget and stays untimed.
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    /// The setting accepts magnitudes whose millisecond-to-nanosecond conversion does not fit an
+    /// Int64, so the deadline is built from a bounded value rather than from the raw timeout.
+    const auto deadline = std::chrono::steady_clock::now() + saturatedMilliseconds(timeout.count());
 
     while (true)
     {

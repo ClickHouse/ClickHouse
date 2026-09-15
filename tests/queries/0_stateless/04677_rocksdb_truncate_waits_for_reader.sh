@@ -170,6 +170,40 @@ rm -f "$zero_out"
 # got as far as emptying the table. The reader is already awaited, so this cannot wait on anything.
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb"
 
+# A timeout whose milliseconds do not survive the conversion to the nanoseconds a steady_clock
+# deadline is built from. The setting accepts such magnitudes, so the deadline must be built from a
+# bounded value: unbounded, the conversion overflows, which aborts a build with the integer sanitizer
+# on, and elsewhere yields a deadline already in the past, turning a TRUNCATE asked to wait
+# practically forever into one that gives up at once. Through the alias for the reason given above,
+# with a reader holding the target so the wait is entered at all.
+$CLICKHOUSE_CLIENT -q "INSERT INTO rdb SELECT number, repeat('x', 200) FROM numbers(1000)"
+HUGE_READER_ID="huge_reader_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query_id="$HUGE_READER_ID" -q "
+    SELECT sum(sleepEachRow(0.1)) FROM (SELECT k FROM rdb LIMIT 40) SETTINGS max_block_size = 1, max_threads = 1
+" > /dev/null &
+huge_reader_pid=$!
+
+huge_reader_started=0
+for _ in {1..200}; do
+    if [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$HUGE_READER_ID' AND read_rows > 0") -gt 0 ]]; then
+        huge_reader_started=1
+        break
+    fi
+    sleep 0.05
+done
+echo -e "huge timeout reader started\t$huge_reader_started"
+
+huge_start=$SECONDS
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 10000000000" > /dev/null 2>&1
+huge_rc=$?
+huge_elapsed=$((SECONDS - huge_start))
+echo -e "huge timeout truncate succeeded\t$((huge_rc == 0 ? 1 : 0))"
+# A boolean for the same reason as above. The reader's window is 4s, so a truncate that waited for it
+# cannot return in under 2s, while one built on an overflowed deadline returns in well under a second.
+echo -e "huge timeout truncate waited\t$((huge_elapsed >= 2 ? 1 : 0))"
+wait "$huge_reader_pid" 2>/dev/null
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb"
+
 # What the wait must NOT do: block the handle's other users. The readers above never take
 # rocksdb_ptr_mx, so on their own they cannot tell a wait that holds it from one that does not.
 # A mutation does take it, shared, from inside its own read pipeline, so it also holds a lease
