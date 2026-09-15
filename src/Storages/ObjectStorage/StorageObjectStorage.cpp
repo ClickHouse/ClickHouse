@@ -171,6 +171,7 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+    configuration->check(context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
@@ -248,11 +249,6 @@ StorageObjectStorage::StorageObjectStorage(
 
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
     }
-
-    /// Validate the configuration before schema/format inference, so that e.g. the HTTP host/header
-    /// filters are enforced before any inference network request reads remote data. The `url` table
-    /// function does the same in `TableFunctionURL::getActualTableStructure`.
-    configuration->check(context);
 
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
@@ -789,6 +785,18 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
+    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+}
+
+SinkToStoragePtr StorageObjectStorage::createSink(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const StorageID & storage_id,
+    const std::optional<FormatSettings> & format_settings,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & local_context)
+{
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 
@@ -1092,7 +1100,7 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
 }
 
-void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
