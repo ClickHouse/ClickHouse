@@ -117,6 +117,18 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
         user_dn_detection->updateHash(hash);
 }
 
+bool LDAPClient::Params::templateDependsOnUserName(const String & search_template) const
+{
+    if (search_template.contains("{user_name}"))
+        return true;
+
+    /// `{bind_dn}`, and `{user_dn}` (which equals the bind DN until the detection has run), are
+    /// substituted from the `bind_dn` template, so they carry the login exactly when that
+    /// template does. In search-and-bind `bind_dn` is `{user_dn}` itself and carries nothing.
+    return bind_dn.contains("{user_name}")
+        && (search_template.contains("{bind_dn}") || search_template.contains("{user_dn}"));
+}
+
 LDAPClient::LDAPClient(const Params & params_)
     : params(params_)
 {
@@ -664,13 +676,15 @@ std::optional<String> LDAPClient::detectUserDN(bool tolerate_missing_user)
     if (!params.user_dn_detection)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LDAP user DN detection requested while 'user_dn_detection' is not configured");
 
-    /// A `base_dn` that substitutes `{user_name}` (e.g. `cn={user_name},ou=users,...`) does
-    /// not exist for an unknown user and the directory answers the search itself with
-    /// `LDAP_NO_SUCH_OBJECT`; that is the same "user does not exist" signal as an empty result.
-    /// A static `base_dn` (e.g. `dc=example,dc=org`) must exist, so the same code there means
-    /// the configuration points at a wrong naming context; tolerating it would turn every login
-    /// through this server into a silent "user not found" instead of an `LDAP_ERROR`.
-    const bool base_dn_depends_on_user = params.user_dn_detection->base_dn.contains("{user_name}");
+    /// A `base_dn` that depends on the login (`cn={user_name},ou=users,...`, or `{bind_dn}`
+    /// with a `bind_dn` template carrying `{user_name}`) does not exist for an unknown user
+    /// and the directory answers the search itself with `LDAP_NO_SUCH_OBJECT`; that is the
+    /// same "user does not exist" signal as an empty result. A static `base_dn` (e.g.
+    /// `dc=example,dc=org`) must exist, so the same code there means the configuration points
+    /// at a wrong naming context; tolerating it would turn every login through this server
+    /// into a silent "user not found" instead of an `LDAP_ERROR`. The rule is the one
+    /// `parseLDAPServer` accepts the configuration with, so the two can never disagree.
+    const bool base_dn_depends_on_user = params.templateDependsOnUserName(params.user_dn_detection->base_dn);
     const auto results = search(*params.user_dn_detection, /* tolerate_no_such_object = */ tolerate_missing_user && base_dn_depends_on_user);
 
     if (results.empty())
