@@ -6,7 +6,6 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <base/defines.h>
 
 #include <unordered_set>
 
@@ -20,48 +19,123 @@ namespace
 /// MinMax statistics now store typed Field values, so we can directly construct Range
 /// without lossy Float64 conversions.
 ///
+/// NULL handling: a Nullable column's NULL values sort at POSITIVE_INFINITY. When the NULL
+/// count is known (`Basic` statistics on a nullable column), the range can be tightened:
+///   - null_count == 0: no NULLs in the part, the right bound is the real max;
+///   - null_count == rows_count: the part is all-NULL, represented by the [+inf, +inf] sentinel
+///     range (it intersects nothing except ranges that reach the NULL sentinel);
+///   - otherwise the right bound stays POSITIVE_INFINITY to cover possible NULLs.
+///
 /// Returns std::nullopt when statistics are unavailable or corrupted,
 /// causing the caller to fall back to a whole-universe Range (no pruning).
-std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const DataTypePtr & /*data_type*/, bool is_nullable)
+std::optional<Range> createRangeFromEstimate(const Estimate & estimate, bool is_nullable)
 {
-    if (!estimate.estimated_min.has_value() || !estimate.estimated_max.has_value())
+    if (estimate.rows_count == 0)
         return std::nullopt;
 
-    const Field & min_value = estimate.estimated_min.value();
-    const Field & max_value = estimate.estimated_max.value();
+    const std::optional<UInt64> & null_count = estimate.estimated_null_count;
+    if (null_count.has_value() && *null_count > estimate.rows_count)
+        return std::nullopt;
 
-    auto make_whole_universe = [is_nullable]() -> Range
+    if (is_nullable && null_count.has_value() && *null_count == estimate.rows_count)
+        return Range(POSITIVE_INFINITY, true, POSITIVE_INFINITY, true);
+
+    const bool no_nulls = !is_nullable || (null_count.has_value() && *null_count == 0);
+
+    if (estimate.estimated_min.has_value() && estimate.estimated_max.has_value())
     {
-        if (is_nullable)
-            return Range::createWholeUniverse();
-        return Range::createWholeUniverseWithoutNull();
-    };
+        const Field & min_value = estimate.estimated_min.value();
+        const Field & max_value = estimate.estimated_max.value();
 
-    /// min > max indicates either an all-NULL part (sentinel pair) or corrupted statistics.
-    /// Return whole-universe to avoid incorrect pruning.
-    if (min_value > max_value)
-        return make_whole_universe();
+        /// min > max is a legacy sentinel pair or corrupted statistics.
+        if (min_value > max_value)
+            return std::nullopt;
 
-    /// For nullable columns, extend the right bound to POSITIVE_INFINITY
-    /// because statistics don't track whether NULL values exist in the part.
-    if (is_nullable)
+        if (no_nulls)
+            return Range(min_value, true, max_value, true);
+
+        /// Nullable column that may contain NULLs: keep the right bound at the NULL sentinel.
         return Range(min_value, true, POSITIVE_INFINITY, true);
+    }
 
-    return Range(min_value, true, max_value, true);
+    /// No min/max (non-numeric type like String/Array/Tuple/Map): a known-zero NULL count
+    /// still excludes the NULL sentinel.
+    if (is_nullable && no_nulls)
+        return Range::createWholeUniverseWithoutNull();
+
+    return std::nullopt;
 }
 
-/// Returns true when a column's statistics description is expected to produce numeric
-/// min/max values. Either an explicit `MinMax` statistic is declared, or a `Basic`
-/// statistic on a numeric/temporal column (the only types for which `Basic` populates
-/// min/max). Used before part statistics are loaded to decide whether part pruning can
-/// be beneficial at all.
-bool statisticsHasMinMax(const ColumnStatisticsDescription & stats_desc)
+/// Returns true when a column's statistics description can produce a useful range for part
+/// pruning: numeric min/max values (an explicit `MinMax` statistic, or `Basic` on a
+/// numeric/temporal column), or a NULL count (`Basic` on a nullable column). Used before part
+/// statistics are loaded to decide whether part pruning can be beneficial at all.
+bool statisticsSupportsPartPruning(const ColumnStatisticsDescription & stats_desc)
 {
     if (stats_desc.types_to_desc.contains(StatisticsType::MinMax))
         return true;
     if (stats_desc.types_to_desc.contains(StatisticsType::Basic))
-        return removeLowCardinalityAndNullable(stats_desc.data_type)->isValueRepresentedByNumber();
+        return removeLowCardinalityAndNullable(stats_desc.data_type)->isValueRepresentedByNumber()
+            || isNullableOrLowCardinalityNullable(stats_desc.data_type);
     return false;
+}
+
+/// If `name` is the virtual `<parent>.null` null-map (from `IS NULL` rewritten by
+/// `optimize_functions_to_subcolumns`), return the parent column. A physical column
+/// literally named `foo.null` wins. A parent whose nested type owns a `null` subcolumn
+/// (e.g. `Nullable(JSON)`, where `json.null` is a `Dynamic` path) is excluded.
+std::optional<String> tryResolveNullMapParent(const ColumnsDescription & columns, const String & name)
+{
+    static constexpr std::string_view suffix = ".null";
+    if (!name.ends_with(suffix) || columns.tryGet(name))
+        return std::nullopt;
+
+    String parent = name.substr(0, name.size() - suffix.size());
+    const auto * parent_col = columns.tryGet(parent);
+    if (!parent_col || removeLowCardinalityAndNullable(parent_col->type)->hasSubcolumn("null"))
+        return std::nullopt;
+    return parent;
+}
+
+/// Collect top-level `AND` conjuncts testing a column's NULL-ness: a bare `<col>.null`
+/// input, `not(<col>.null)`, or `isNull(<col>)` / `isNotNull(<col>)` on a bare column.
+/// Whether the column actually has a usable NULL count is decided later from estimates.
+void collectNullPredicates(
+    const ActionsDAG::Node & node,
+    const ColumnsDescription & columns,
+    std::vector<std::pair<String, bool>> & out)
+{
+    if (node.type == ActionsDAG::ActionType::INPUT)
+    {
+        if (auto parent = tryResolveNullMapParent(columns, node.result_name))
+            out.emplace_back(*parent, true);
+        return;
+    }
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return;
+
+    const auto & name = node.function_base->getName();
+    if (name == "and")
+    {
+        for (const auto * child : node.children)
+            collectNullPredicates(*child, columns, out);
+        return;
+    }
+
+    if (node.children.size() != 1 || node.children.front()->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    const String & arg_name = node.children.front()->result_name;
+    if (name == "not")
+    {
+        if (auto parent = tryResolveNullMapParent(columns, arg_name))
+            out.emplace_back(*parent, false);
+    }
+    else if (name == "isNull" || name == "isNotNull")
+    {
+        out.emplace_back(arg_name, name == "isNull");
+    }
 }
 
 /// Functions that negate a comparison, i.e. can be `true` for a `NaN` operand. `NaN` never
@@ -150,12 +224,19 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
 
         if (const auto * col = columns.tryGet(name))
         {
-            if (statisticsHasMinMax(col->statistics))
+            if (statisticsSupportsPartPruning(col->statistics))
             {
                 stats_column_name_to_type_map[col->name] = col->type;
                 useless = false;
             }
         }
+    }
+
+    collectNullPredicates(*filter_dag.predicate, columns, null_predicates);
+    for (const auto & pred : null_predicates)
+    {
+        used_column_names.insert(pred.first);
+        useless = false;
     }
 }
 
@@ -197,25 +278,28 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
 
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 {
-    /// Filter to estimates that actually carry numeric min/max values. Both `MinMax` and
-    /// `Basic` (on numeric/temporal types) populate `estimated_min`/`estimated_max`; for
-    /// other types (Array, Tuple, Map, ...) `Basic` leaves them as `nullopt`. Checking
-    /// `estimated_min.has_value()` is the authoritative gate regardless of statistic type.
-    Estimates minmax_estimates;
-    for (const auto & [col_name, estimate] : estimates)
+    for (const auto & [column, is_null] : null_predicates)
     {
-        if (estimate.estimated_min.has_value())
-            minmax_estimates[col_name] = estimate;
-    }
+        auto est_it = estimates.find(column);
+        if (est_it == estimates.end())
+            continue;
 
-    if (minmax_estimates.empty())
-        return {true, true};
+        const Estimate & estimate = est_it->second;
+        if (!estimate.estimated_null_count.has_value() || estimate.rows_count == 0
+            || *estimate.estimated_null_count > estimate.rows_count)
+            continue;
+
+        if (is_null && *estimate.estimated_null_count == 0)
+            return {false, true};
+        if (!is_null && *estimate.estimated_null_count == estimate.rows_count)
+            return {false, true};
+    }
 
     /// Use only columns that are both in filter and have estimates
     NamesAndTypesList columns;
     for (const auto & [col_name, col_type] : stats_column_name_to_type_map)
     {
-        if (minmax_estimates.contains(col_name))
+        if (estimates.contains(col_name))
             columns.emplace_back(col_name, col_type);
     }
 
@@ -231,22 +315,15 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 
     for (const auto & [col_name, col_type] : columns)
     {
-        auto est_it = minmax_estimates.find(col_name);
-        chassert(est_it != minmax_estimates.end());
-
-        auto is_nullable_type = isNullableOrLowCardinalityNullable(col_type);
-        auto range = createRangeFromEstimate(est_it->second, col_type, is_nullable_type);
+        const bool is_nullable_type = isNullableOrLowCardinalityNullable(col_type);
+        auto range = createRangeFromEstimate(estimates.at(col_name), is_nullable_type);
 
         if (range.has_value())
             hyperrectangle.push_back(std::move(*range));
+        else if (is_nullable_type)
+            hyperrectangle.emplace_back(Range::createWholeUniverse());
         else
-        {
-            /// For columns that cannot create Range, create dummy Ranges.
-            if (is_nullable_type)
-                hyperrectangle.emplace_back(Range::createWholeUniverse());
-            else
-                hyperrectangle.emplace_back(Range::createWholeUniverseWithoutNull());
-        }
+            hyperrectangle.emplace_back(Range::createWholeUniverseWithoutNull());
         types.push_back(col_type);
     }
 
