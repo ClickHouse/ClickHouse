@@ -9,8 +9,6 @@
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
--- The h['k'] -> h.key_k rewrite is disabled by default; this test asserts it happens.
-SET optimize_map_element_to_subcolumn = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
@@ -19,7 +17,7 @@ SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_prewhere_map_cost;
 CREATE TABLE t_prewhere_map_cost (id UInt64, modality LowCardinality(String), h Map(String, String))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0;
 
 INSERT INTO t_prewhere_map_cost
 SELECT number, if(number < 1000, 'active', ''), map('k', repeat('v', 300), 'k2', repeat('w', 300))

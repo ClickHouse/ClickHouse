@@ -57,7 +57,6 @@ namespace Setting
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
-    extern const SettingsBool optimize_map_element_to_subcolumn;
 }
 
 namespace
@@ -772,17 +771,6 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::QBit, "tupleElement"},
 };
 
-/// Extra per-transformer gating on top of `optimize_functions_to_subcolumns`.
-/// Both passes (counting and applying) must call this to stay in sync.
-bool isNodeTransformerEnabled(const std::pair<TypeIndex, String> & key, const Settings & settings)
-{
-    /// The `m['key']` -> Map key subcolumn rewrite relies on the bucketed Map serialization, which is being
-    /// reworked; for regular Map serialization it can be harmful (e.g. subcolumn size estimation).
-    if (key == std::pair{TypeIndex::Map, String("arrayElement")})
-        return settings[Setting::optimize_map_element_to_subcolumn];
-    return true;
-}
-
 /// Optimizes:
 ///   tupleElement(... tupleElement(arrayElement(ColumnNode(Dynamic), N), 'f1') ..., 'fK')
 /// to:
@@ -1038,6 +1026,10 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, const String & function_name)
 {
+    /// The `m['key']` -> `m.key_<key>` rewrite pays off only for bucketed Maps (see IStorage::hasBucketedMapSerialization).
+    if (isMap(type) && function_name == "arrayElement" && !storage.hasBucketedMapSerialization())
+        return false;
+
     if (storage.supportsOptimizationToSubcolumns())
         return true;
     /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
@@ -1388,7 +1380,7 @@ private:
             return;
 
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
-        if (node_transformers.contains(transformer_key) && isNodeTransformerEnabled(transformer_key, getSettings()))
+        if (node_transformers.contains(transformer_key))
         {
             ++optimized_identifiers_count[qualified_name];
             if (transformers_safe_with_indexes.contains(transformer_key))
@@ -1500,7 +1492,6 @@ public:
             auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
 
             if (transformer_it != node_transformers.end()
-                && isNodeTransformerEnabled(transformer_it->first, getSettings())
                 && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
                 ColumnContext ctx{std::move(column), column_source, getContext()};

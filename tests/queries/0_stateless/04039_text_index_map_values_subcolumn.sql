@@ -5,8 +5,6 @@
 SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
--- The rewrite is disabled by default; this test is about the rewritten form.
-SET optimize_map_element_to_subcolumn = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -19,7 +17,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', index_granularity = 1, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
 
 INSERT INTO tab VALUES (0, {'service':'web-api'}), (1, {'service':'backend'}), (2, {'service':'frontend'});
 

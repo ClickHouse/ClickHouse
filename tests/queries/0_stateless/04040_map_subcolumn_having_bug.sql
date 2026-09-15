@@ -8,9 +8,6 @@
 -- results must match.
 
 SET enable_analyzer = 1;
--- The m['key'] -> m.key_<key> rewrite is disabled by default; enable it so the
--- optimize_functions_to_subcolumns = 1 branches actually exercise the rewrite.
-SET optimize_map_element_to_subcolumn = 1;
 
 DROP TABLE IF EXISTS t_map_having;
 
@@ -105,18 +102,6 @@ SELECT mapKeys(m) FROM t_map_having WHERE m['a'] > 5 GROUP BY m ORDER BY m['a']
     SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT mapKeys(m) FROM t_map_having WHERE m['a'] > 5 GROUP BY m ORDER BY m['a']
     SETTINGS optimize_functions_to_subcolumns = 0;
-
--- Memory engine: confirms bug is in the analyzer, not serialization
-SELECT 'Memory engine WHERE + HAVING';
-DROP TABLE IF EXISTS t_map_mem;
-CREATE TABLE t_map_mem (id UInt64, m Map(String, UInt64)) ENGINE = Memory;
-INSERT INTO t_map_mem SELECT number, map('a', number, 'b', number * 10, 'c', number * 100) FROM numbers(10);
-
-SELECT m FROM t_map_mem WHERE m['a'] > 5 GROUP BY m HAVING m['a'] < 9 ORDER BY m['a']
-    SETTINGS optimize_functions_to_subcolumns = 1;
-SELECT m FROM t_map_mem WHERE m['a'] > 5 GROUP BY m HAVING m['a'] < 9 ORDER BY m['a']
-    SETTINGS optimize_functions_to_subcolumns = 0;
-DROP TABLE t_map_mem;
 
 -- Negative: GROUP BY subcolumn (should still work — all uses are transformable)
 SELECT 'Negative: GROUP BY subcolumn';
