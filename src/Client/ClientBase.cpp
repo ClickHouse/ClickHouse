@@ -2032,8 +2032,8 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
 void ClientBase::onProgress(const Progress & value)
 {
-    /// An update carrying totals is not a keep-alive: the totals reach the output format and the
-    /// rendered percentage through no other path.
+    /// An update carrying only totals is not a keep-alive: `updateProgress` reports whether read or
+    /// written rows moved, so it returns false here although the totals still have to be forwarded.
     const bool has_totals = value.total_rows_to_read || value.total_bytes_to_read;
     if (!progress_indication.updateProgress(value) && !has_totals)
     {
