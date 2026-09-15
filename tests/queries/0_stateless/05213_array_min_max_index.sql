@@ -181,3 +181,14 @@ SELECT
     arrayMaxIndex(arrayMap(i -> if(i = 8192, toFloat32('1000000000000'), toFloat32(i % 20000)), range(16384))),
     arrayMinIndex(arrayMap(i -> if(i = 8192, toFloat64('-1000000000000'), toFloat64(i % 20000 + 1)), range(16384))),
     arrayMaxIndex(arrayMap(i -> if(i = 8192, toFloat64('1000000000000'), toFloat64(i % 20000)), range(16384)));
+SELECT
+    arrayMaxIndex(arrayMap(i -> if(i = 0, toFloat32(10), toFloat32(5)), range(128))),
+    arrayMinIndex(arrayMap(i -> if(i = 0, toFloat32(10), toFloat32(5)), range(128))),
+    arrayMaxIndex(arrayMap(i -> if(i = 0, toFloat32(10), toFloat32(5)), range(512))),
+    arrayMinIndex(arrayMap(i -> if(i = 0, toFloat32(10), toFloat32(5)), range(512))),
+    arrayMinIndex(arrayConcat(arrayMap(i -> nan::Float32, range(128)), [toFloat32(3)])),
+    arrayMaxIndex(arrayConcat(arrayMap(i -> nan::Float32, range(128)), [toFloat32(3)])),
+    arrayMinIndex(arrayMap(i -> if(i = 64, -inf::Float32, toFloat32(i)), range(512))),
+    arrayMaxIndex(arrayMap(i -> if(i = 64, inf::Float32, toFloat32(i)), range(512))),
+    arrayMinIndex(arrayMap(i -> nan::Float32, range(512))),
+    arrayMaxIndex(arrayMap(i -> nan::Float32, range(512)));
