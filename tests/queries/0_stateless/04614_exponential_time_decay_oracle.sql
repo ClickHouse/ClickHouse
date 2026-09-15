@@ -232,8 +232,9 @@ CREATE MATERIALIZED VIEW time_decay_mv_nullable_tuple_blocked
 ENGINE = Memory
 AS SELECT CAST(NULL, 'Nullable(Tuple(n UInt8))') AS value; -- { serverError ILLEGAL_COLUMN }
 
--- Materialized views historically skip unrelated suspicious-type validation.
--- Adding the time-decay gate must not change that behavior.
+-- The materialized view inner table still validates storage-specific suspicious types.
+-- Enable this unrelated type explicitly so the test isolates the time-decay gate.
+SET allow_suspicious_low_cardinality_types = 1;
 CREATE MATERIALIZED VIEW time_decay_mv_unrelated_validation
 (
     value LowCardinality(UInt64)
@@ -242,6 +243,7 @@ ENGINE = Memory
 AS SELECT toUInt64(1) AS value;
 SELECT 'unrelated materialized view validation preserved';
 DROP TABLE time_decay_mv_unrelated_validation;
+SET allow_suspicious_low_cardinality_types = 0;
 
 CREATE TABLE time_decay_feature_gate_blocked
 (
