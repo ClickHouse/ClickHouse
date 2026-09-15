@@ -18,8 +18,8 @@ public:
     const String & getHost() const { return host; }
     int getPort() const { return port; }
 
-    /// `timeout_sec` bounds each RPC made through the returned client or options; zero means no
-    /// deadline. Both accessors take it, so no call site can reach the client without one.
+    /// `timeout_sec` bounds the handshake this may have to run; zero means no deadline. The client
+    /// itself carries none, so an RPC is bounded only by the options getCallOptions returns.
     std::shared_ptr<arrow::flight::FlightClient> getClient(UInt64 timeout_sec) const;
 
     /// By value: the connection's shared options carry only the authentication header, while the

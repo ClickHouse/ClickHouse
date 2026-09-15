@@ -8,7 +8,9 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 
 # The STALL_* datasets of the test Flight server block for 120s. Every query against one must
 # finish well inside that, and far inside the harness's own 600s client timeout, so a regression
-# shows up as a failed assertion instead of a killed run.
+# shows up as a failed assertion instead of a killed run. The request timeout must also stay below
+# SLOW_SCHEMA_ANSWER_SECONDS in ci/docker/integration/arrowflight/flight_server.py, because that
+# gap is what makes a deadline fired later than configured end its query in a success.
 STALL_QUERY_BOUND_SEC = 60
 STALL_REQUEST_TIMEOUT_SEC = 3
 
@@ -535,6 +537,15 @@ def test_request_timeout_magnitude_is_honored():
     assert "TimedOut" in error, error
     assert elapsed >= 9.5, f"query returned after {elapsed:.1f}s, before its 10s deadline"
     assert elapsed < STALL_QUERY_BOUND_SEC, f"query took {elapsed:.1f}s"
+
+
+def test_request_timeout_is_not_lengthened():
+    # SLOW_SCHEMA_THEN_ANSWER answers its GetSchema after SLOW_SCHEMA_ANSWER_SECONDS (5s in the
+    # stub), so with a 3s bound the deadline has to fire first. A deadline stretched past the stub's
+    # delay turns this query into a success returning no rows, which query_and_get_error rejects.
+    # Both instants are absolute and start from the same RPC, so the margin does not depend on how
+    # loaded the runner is.
+    assert_timed_out_quickly("SLOW_SCHEMA_THEN_ANSWER", "ARROWFLIGHT_FETCH_SCHEMA_ERROR")
 
 
 def test_kill_query_interrupts_a_stalled_flight_read():

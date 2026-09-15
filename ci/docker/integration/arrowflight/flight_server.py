@@ -16,6 +16,10 @@ SLOW_DOGET_SECONDS = 15
 # How long the stream that follows withholds its first message. Longer than the deadline the test
 # configures, and shorter than STALL_SECONDS so this handler is held no longer than the others.
 SLOW_DOGET_STALL_SECONDS = 60
+# How long SLOW_SCHEMA_THEN_ANSWER withholds its GetSchema answer before answering normally. Longer
+# than the deadline the test configures, and short enough that a deadline stretched past it ends the
+# query in a success rather than in another timeout.
+SLOW_SCHEMA_ANSWER_SECONDS = 5
 
 
 class FlightServer(fl.FlightServerBase):
@@ -111,6 +115,9 @@ class FlightServer(fl.FlightServerBase):
         if dataset == "STALL_SCHEMA":
             # Blocks the unary GetSchema, which ClickHouse issues during query analysis.
             time.sleep(STALL_SECONDS)
+        if dataset == "SLOW_SCHEMA_THEN_ANSWER":
+            # Answers after the delay, so a deadline longer than it lets the query through.
+            time.sleep(SLOW_SCHEMA_ANSWER_SECONDS)
         if dataset in self._tables:
             return fl.SchemaResult(self._tables[dataset].schema)
         else:
