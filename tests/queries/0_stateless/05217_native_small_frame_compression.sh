@@ -231,7 +231,10 @@ assert output == b''
 assert {method for method, _ in frames(streams[1])} == {2}
 print('empty result passed')
 
-output, _ = capture('SELECT 7', ['--proto_caps=chunked', '--send_profile_events=1', '--send_logs_level=trace'])
+# Prefer chunking when the server supports it; Fast test's server requires `notchunked`.
+output, streams = capture('SELECT 7', ['--network_compression_method=ZSTD', '--proto_caps=chunked_optional',
+                                      '--send_profile_events=1', '--send_logs_level=trace'])
 assert output == b'7\n'
-print('chunked protocol passed')
+assert {method for method, _ in frames(streams[1])} == {2, 0x90}
+print('optional chunked transport passed')
 PY

@@ -8,4 +8,4 @@ default boundary with compressible and incompressible values passed
 client mixed frames passed
 mixed frames within a large block passed
 empty result passed
-chunked protocol passed
+optional chunked transport passed
