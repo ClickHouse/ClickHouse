@@ -313,4 +313,9 @@ for table in lower upper; do
     done
 done
 
+# The optional timezone argument of `toDate` / `toDate32` is inert for a `Date32` source.
+check t "toDate(d, 'UTC') = '2026-01-01'"
+check t "toDate32(d, 'UTC') = '2026-01-01'"
+check t "toDate32(d, 'UTC') != '2026-01-01'"
+
 run_all

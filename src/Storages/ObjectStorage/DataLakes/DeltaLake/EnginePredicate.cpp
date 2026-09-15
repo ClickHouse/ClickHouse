@@ -96,7 +96,9 @@ namespace
         const auto & name = conversion->function_base->getName();
         const auto & children = conversion->children;
         const bool is_cast = (name == "CAST" || name == "_CAST") && children.size() == 2 && isConstNode(children[1]);
-        const bool is_to_date = (name == "toDate" || name == "toDate32") && children.size() == 1;
+        /// The optional constant timezone of `toDate` / `toDate32` is inert for a `Date32` source.
+        const bool is_to_date = (name == "toDate" || name == "toDate32")
+            && (children.size() == 1 || (children.size() == 2 && isConstNode(children[1])));
         if (!is_cast && !is_to_date)
             return {};
 
