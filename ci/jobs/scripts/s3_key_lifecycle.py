@@ -30,10 +30,10 @@ from pathlib import Path
 # text is on this line too, unescaped, and may name keys this read never touched.
 KEY_PATTERN = re.compile(r"while reading key: ([^\s,]+), from bucket:")
 
-# The fields before the level are the client's: the query id is written there unescaped, and
-# names no object any emitter touched. The first occurrence is the line's own level slot, so
-# the cut can land early, inside a hostile id, but never past the start of the message.
-LEVEL_PATTERN = re.compile(r" <\w+> ")
+# The formatter closes the client's unescaped query id with "} " before the level, so the first
+# "} <level> " is the line's own slot unless the id holds one as well: the cut can land early,
+# inside a hostile id, but never inside the message, which is where the query text is.
+LEVEL_PATTERN = re.compile(r"\} <\w+> ")
 
 # A log line opens with "<date> <time>", whose text sorts chronologically. grep reports one
 # file at a time, so file order is not time order.
@@ -43,11 +43,11 @@ TIMESTAMP_PATTERN = re.compile(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+")
 # "Writing blob for path" or "were removed from S3" cannot silently empty the report.
 LIFECYCLE_LOGGERS = ("DiskObjectStorageTransaction", "deleteFileFromS3")
 
-# The logger has its own slot after the level; matching the name anywhere on the line
-# instead lets a query that merely mentions it pass. Nothing before the level is anchored:
-# the query id is unescaped, so a pattern spanning it drops lines whose id holds a brace.
-LIFECYCLE_LINE_PATTERN = re.compile(
-    r"<\w+> (?:" + "|".join(re.escape(logger) for logger in LIFECYCLE_LOGGERS) + "): "
+# The logger opens the message, so the name is looked for there and nowhere else on the line:
+# a query whose text replicates a whole "<level> logger: " slot would otherwise select its own
+# failure line, which then holds a key's line cap against that key's write and delete lines.
+LIFECYCLE_MESSAGE_PATTERN = re.compile(
+    r"(?:" + "|".join(re.escape(logger) for logger in LIFECYCLE_LOGGERS) + "): "
 )
 
 # The characters the emit sites put on either side of a key: "key <K>," / "[<K1>, <K2>]" /
@@ -73,8 +73,8 @@ SUBSTRING_ONLY = "matched as a substring only (no delimited occurrence found)"
 def message_in(log_line):
     """What the emitter wrote on a log line, without the fields that precede the level."""
     level = LEVEL_PATTERN.search(log_line)
-    # No level slot at all (a continuation line of a multi-line message) leaves the whole
-    # line: a shape this parser cannot dissect must not silently name no key.
+    # No slot at all (a continuation line of a multi-line message) leaves the whole line: a
+    # shape this parser cannot dissect must not silently name no key.
     return log_line[level.end() :] if level else log_line
 
 
@@ -190,9 +190,9 @@ def collect_lifecycle_lines(keys, logs):
         # Filtered and retained line by line, so the caps bound what is held in memory too.
         for line in grep.stdout:
             line = line.rstrip("\n")
-            if not LIFECYCLE_LINE_PATTERN.search(line):
-                continue
             message = message_in(line)
+            if not LIFECYCLE_MESSAGE_PATTERN.match(message):
+                continue
             for group in groups.values():
                 group.offer(line, message)
         grep.stdout.close()

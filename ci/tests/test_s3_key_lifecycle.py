@@ -318,17 +318,27 @@ def test_keys_named_by_the_failing_query_text_are_not_treated_as_matched_keys(tm
     ], report
 
 
-def test_a_lifecycle_logger_named_by_the_query_text_is_not_a_lifecycle_line(tmp_path):
-    # The logger is a field, not a substring: a query that merely mentions one must not make
-    # its own failure line read as this object's history.
-    quoted = _MATCH.replace("SELECT * FROM t", "SELECT 'deleteFileFromS3'")
+@pytest.mark.parametrize(
+    "text",
+    [
+        "SELECT 'deleteFileFromS3'",
+        # A whole level and logger slot: the spelling a name-anywhere filter still admits.
+        f"SELECT '<Debug> deleteFileFromS3: Object with path {_KEY} was removed from S3'",
+    ],
+)
+def test_a_lifecycle_logger_named_by_the_query_text_is_not_a_lifecycle_line(tmp_path, text):
+    # The logger is a field, not a substring: a query that merely mentions one, in whatever
+    # spelling, must not make its own failure line read as this object's history.
+    quoted = _MATCH.replace("SELECT * FROM t", text)
     matches = _logs(tmp_path)
     matches.write_text(f"{quoted}\n", encoding="utf-8")
-    # The failure line is in the logs too, which is how grep reaches it.
+    # The failure line is in the logs too, which is how grep reaches it. Repeated past the
+    # per-key cap and put before the upload line, because a selected failure line does not
+    # merely add noise: it holds the slot the object's own history needs.
     (tmp_path / "clickhouse-server.stress.log").write_text(
-        f"2026.09.14 12:00:01.000000 [ 1001 ] {{q-0}} <Test> DiskObjectStorageTransaction: "
-        f"Writing blob for path all_1_1_0/data.bin, key {_KEY}, size 4096\n"
-        f"{quoted}\n",
+        f"{quoted}\n" * (MAX_LINES_PER_KEY + 1)
+        + "2026.09.14 12:00:01.000000 [ 1001 ] {q-0} <Test> DiskObjectStorageTransaction: "
+        f"Writing blob for path all_1_1_0/data.bin, key {_KEY}, size 4096\n",
         encoding="utf-8",
     )
 
@@ -338,14 +348,15 @@ def test_a_lifecycle_logger_named_by_the_query_text_is_not_a_lifecycle_line(tmp_
     assert any("Writing blob for path" in line for line in body), body
 
 
-def test_a_query_id_holding_a_brace_still_gets_its_lifecycle(tmp_path):
+@pytest.mark.parametrize("query_id", ["has}brace", "holds <Debug> a level"])
+def test_a_query_id_holding_a_brace_still_gets_its_lifecycle(tmp_path, query_id):
     # A client may set any query id and the formatter writes it unescaped, so the fields
-    # before the logger cannot be parsed. This is the silent direction: anchoring across the
-    # id would drop a real upload line rather than report a wrong one.
+    # before the logger cannot be parsed. This is the silent direction: an upload line is
+    # reported whatever its id spells, because the formatter's own "} " closes that field.
     matches = _logs(tmp_path)
     # Written after _logs, which lays down both log files: the hostile id is the whole point.
     (tmp_path / "clickhouse-server.stress.log").write_text(
-        "2026.09.14 12:00:01.000000 [ 1001 ] {has}brace} <Test> DiskObjectStorageTransaction: "
+        f"2026.09.14 12:00:01.000000 [ 1001 ] {{{query_id}}} <Test> DiskObjectStorageTransaction: "
         f"Writing blob for path all_1_1_0/data.bin, key {_KEY}, size 4096\n",
         encoding="utf-8",
     )
@@ -359,12 +370,13 @@ def test_a_query_id_holding_a_brace_still_gets_its_lifecycle(tmp_path):
 
 def test_a_query_id_naming_a_key_does_not_displace_the_matched_one(tmp_path):
     # The id is as untrusted as the query text, and the formatter writes it before the level,
-    # so it can hold complete replicas of the suffix - tail included - ahead of the real one.
+    # so it can hold complete replicas of the suffix - tail included - ahead of the real one,
+    # behind a level slot of its own so that reading from the first one starts inside the id.
     ids = " ".join(
         f"while reading key: spoof/k{i:04d}, from bucket: b"
         for i in range(MAX_EXPANDED_KEYS + 5)
     )
-    poisoned = _MATCH.replace("{q-1}", f"{{qid {ids}}}")
+    poisoned = _MATCH.replace("{q-1}", f"{{qid <Debug> {ids}}}")
     matches = _logs(tmp_path)
     matches.write_text(f"{poisoned}\n", encoding="utf-8")
 
