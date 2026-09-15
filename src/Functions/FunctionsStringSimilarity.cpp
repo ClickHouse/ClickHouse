@@ -11,6 +11,7 @@
 #include <base/unaligned.h>
 
 #include <algorithm>
+#include <bit>
 #include <climits>
 #include <cstring>
 #include <limits>
@@ -56,6 +57,14 @@ struct NgramDistanceImpl
 
     /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
+
+    /// The code point scratch array is refilled with one 16-byte store and read back with
+    /// narrower loads at every offset (see `readASCIICodePoints`). Aligning it to its own size
+    /// rounded up to a power of two keeps it inside one cache line or, for the UTF-8 variants,
+    /// one 128-byte block, so it can never straddle a page: a store split across pages is not
+    /// forwarded to the loads that follow it, which made `ngramDistance` 25% slower when a
+    /// change in a caller's frame size happened to move the array onto a page boundary.
+    static constexpr size_t code_points_alignment = std::bit_ceil(simultaneously_codepoints_num * sizeof(CodePoint));
 
     /** map_size of this fits mostly in L2 cache all the time.
       * Actually use UInt16 as addings and subtractions do not UB overflow. But think of it as a signed
@@ -201,7 +210,7 @@ struct NgramDistanceImpl
     {
         const char * start = data;
         const char * end = data + size;
-        CodePoint cp[simultaneously_codepoints_num] = {};
+        alignas(code_points_alignment) CodePoint cp[simultaneously_codepoints_num] = {};
         /// read_code_points returns the position of cp where it stopped reading codepoints.
         size_t found = read_code_points(cp, start, end);
         /// We need to start for the first time here, because first N - 1 codepoints mean nothing.
@@ -236,7 +245,7 @@ struct NgramDistanceImpl
         size_t ngram_cnt = 0;
         const char * start = data;
         const char * end = data + size;
-        CodePoint cp[simultaneously_codepoints_num] = {};
+        alignas(code_points_alignment) CodePoint cp[simultaneously_codepoints_num] = {};
 
         /// read_code_points returns the position of cp where it stopped reading codepoints.
         size_t found = read_code_points(cp, start, end);

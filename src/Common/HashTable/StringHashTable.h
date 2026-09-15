@@ -384,7 +384,9 @@ public:
         const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
-        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        /// Aligned to its size rounded up to a power of two so the 16-byte store below can never
+        /// straddle a page: a page-split store is not forwarded to the 8-byte loads of `hash_of`.
+        union alignas(32) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             StringKey8 k8;
             StringKey16 k16;

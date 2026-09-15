@@ -969,13 +969,18 @@ void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
         return;
     }
 
-    size_t rows = self.size();
+    /// Writes through `char *` may alias the pointer array, so keep it in a restrict-qualified local
+    /// instead of re-reading `memories.data()` on every row.
+    const size_t rows = self.size();
+    char ** __restrict memory = memories.data();
     for (size_t i = 0; i < rows; ++i)
     {
-        *memories[i] = is_null[i];
-        ++memories[i];
+        char * dst = memory[i];
+        *dst = is_null[i];
+        ++dst;
         if (!is_null[i])
-            memories[i] = self.serializeValueIntoMemory(i, memories[i], settings);
+            dst = self.serializeValueIntoMemory(i, dst, settings);
+        memory[i] = dst;
     }
 }
 
@@ -996,8 +1001,10 @@ void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(VectorWithMem
 {
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());
-    for (size_t i = 0; i < self.size(); ++i)
-        memories[i] = self.serializeValueIntoMemory(i, memories[i], settings);
+    const size_t rows = self.size();
+    char ** __restrict memory = memories.data();
+    for (size_t i = 0; i < rows; ++i)
+        memory[i] = self.serializeValueIntoMemory(i, memory[i], settings);
 }
 
 template <typename Derived, typename Parent>

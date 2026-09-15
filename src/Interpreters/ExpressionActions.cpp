@@ -18,6 +18,7 @@
 #include <Columns/ColumnConst.h>
 #include <queue>
 #include <stack>
+#include <span>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -616,7 +617,9 @@ namespace
     {
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
+        /// A view: the positions are owned by the caller (precomputed once per header for
+        /// `executeOnColumns`, a local of `execute`), so no copy is made per block.
+        std::span<const ssize_t> inputs_pos = {};
         size_t num_rows = 0;
     };
 }
@@ -808,7 +811,7 @@ void ExpressionActions::execute(
         .num_rows = num_rows,
     };
 
-    execution_context.inputs_pos.assign(required_columns.size(), -1);
+    std::vector<ssize_t> inputs_pos(required_columns.size(), -1);
 
     for (size_t pos = 0; pos < block.columns(); ++pos)
     {
@@ -818,15 +821,16 @@ void ExpressionActions::execute(
         {
             for (auto input_pos : it->second)
             {
-                if (execution_context.inputs_pos[input_pos] < 0)
+                if (inputs_pos[input_pos] < 0)
                 {
-                    execution_context.inputs_pos[input_pos] = pos;
+                    inputs_pos[input_pos] = pos;
                     if (!allow_duplicates_in_input)
                         break;
                 }
             }
         }
     }
+    execution_context.inputs_pos = inputs_pos;
 
     execution_context.columns.resize(num_columns);
 
@@ -982,14 +986,29 @@ Columns ExpressionActions::executeOnColumns(
     /// Then the input columns that were not consumed as action inputs (unless the inputs are projected away).
     if (!project_inputs)
     {
-        std::vector<bool> consumed(inputs.size(), false);
-        for (auto input : execution_context.inputs_pos)
-            if (input >= 0)
-                consumed[input] = true;
+        /// A bitmask for the common narrow case, so the per-block path allocates nothing.
+        if (inputs.size() <= 64)
+        {
+            UInt64 consumed = 0;
+            for (auto input : execution_context.inputs_pos)
+                if (input >= 0)
+                    consumed |= 1ULL << input;
 
-        for (size_t i = 0; i < inputs.size(); ++i)
-            if (!consumed[i])
-                res.push_back(inputs[i].column);
+            for (size_t i = 0; i < inputs.size(); ++i)
+                if (!(consumed & (1ULL << i)))
+                    res.push_back(inputs[i].column);
+        }
+        else
+        {
+            std::vector<bool> consumed(inputs.size(), false);
+            for (auto input : execution_context.inputs_pos)
+                if (input >= 0)
+                    consumed[input] = true;
+
+            for (size_t i = 0; i < inputs.size(); ++i)
+                if (!consumed[i])
+                    res.push_back(inputs[i].column);
+        }
     }
 
     num_rows = execution_context.num_rows;

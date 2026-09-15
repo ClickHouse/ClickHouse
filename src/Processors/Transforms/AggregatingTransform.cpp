@@ -281,6 +281,7 @@ protected:
         if (adaptive_session)
         {
             bucket_arena = data->at(0)->adaptive_merge_bucket_arenas[bucket_num].get();
+            params->aggregator.seedBucketCountTopK(*data->at(0), bucket_num);
             params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), bucket_arena, bucket_num, *adaptive_session, shared_data->is_cancelled);
         }
 
@@ -1037,6 +1038,13 @@ private:
             first->adaptive_merge_bucket_arenas.resize(ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS);
             for (auto & slot : first->adaptive_merge_bucket_arenas)
                 slot = std::make_shared<Arena>();
+
+            if (params->aggregator.tracksBucketCountTopK())
+            {
+                first->adaptive_merge_bucket_topk.resize(ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS);
+                for (auto & slot : first->adaptive_merge_bucket_topk)
+                    slot = std::make_unique<AdaptiveBucketCountTopK>(params->params.bucket_top_k);
+            }
         }
 
         for (size_t thread = 0; thread < num_threads; ++thread)

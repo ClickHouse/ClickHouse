@@ -661,12 +661,50 @@ struct StringEqualsImpl
         {
             fixed_string_vector_constant_16(a_data, b_data, c);
         }
+        else if (b_size <= a_n)
+        {
+            /// A constant no longer than the column is zero-padded to the column width once, so
+            /// every row is a plain equal-width comparison instead of the generic zero-padded
+            /// one (the padded compare walks both tails per row); the equal-width comparison of
+            /// a width up to 16 bytes is a single masked 16-byte compare.
+            ColumnString::Chars padded(a_n + 16, 0);
+            memcpy(padded.data(), b_data.data(), b_size);
+            fixed_string_vector_constant_equal_width(a_data, a_n, padded.data(), c);
+        }
         else
         {
             size_t size = a_data.size() / a_n;
             for (size_t i = 0; i < size; ++i)
                 c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data(), b_size);
         }
+    }
+
+    /// `b` is the constant padded to `a_n` bytes, with at least 16 readable bytes.
+    static void NO_INLINE fixed_string_vector_constant_equal_width( /// NOLINT
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const UInt8 * b,
+        PaddedPODArray<UInt8> & c)
+    {
+        const size_t size = a_data.size() / a_n;
+        const UInt8 * a = a_data.data();
+#if defined(__SSE2__)
+        if (a_n < 16)
+        {
+            /// The row load reads up to 15 bytes past the row, which the padding of the chars
+            /// array allows; the bytes beyond the width are masked out of the comparison.
+            const __m128i b16 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(b));
+            const unsigned width_mask = (1u << a_n) - 1;
+            for (size_t i = 0; i < size; ++i)
+            {
+                const unsigned equal_mask = static_cast<unsigned>(_mm_movemask_epi8(
+                    _mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(a + i * a_n)), b16)));
+                c[i] = positive == ((equal_mask & width_mask) == width_mask);
+            }
+            return;
+        }
+#endif
+        for (size_t i = 0; i < size; ++i)
+            c[i] = positive == memequalSmallAllowOverflow15(a + i * a_n, a_n, b, a_n);
     }
 
     static void fixed_string_vector_string_vector( /// NOLINT

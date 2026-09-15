@@ -29,26 +29,15 @@ namespace DB
 /// behaviour (matches `addOverflow` / `negateOverflow` below). `/=` and `%=` (and the
 /// free `/`) are deliberately left instrumented so UBSan still catches divide-by-zero
 /// and `INT_MIN / -1`.
-template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator += (const T & x) { value += x; return *this; }
-template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator -= (const T & x) { value -= x; return *this; }
-template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator *= (const T & x) { value *= x; return *this; }
+/// The wrap-around operators (`+=`, `-=`, `*=`, `addOverflow`) are defined inline in the
+/// header, so the per-row accumulation of the aggregate functions does not pay a call each.
 template <typename T> const Decimal<T> & Decimal<T>::operator /= (const T & x) { value /= x; return *this; }
 template <typename T> const Decimal<T> & Decimal<T>::operator %= (const T & x) { value %= x; return *this; }
 
-template <typename T> void NO_SANITIZE_UNDEFINED Decimal<T>::addOverflow(const T & x) { value += x; }
-
-/// Maybe this explicit instantiation affects performance since operators cannot be inlined.
-
-template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator += (const Decimal<U> & x) { value += static_cast<T>(x.value); return *this; }
-template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator -= (const Decimal<U> & x) { value -= static_cast<T>(x.value); return *this; }
-template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator *= (const Decimal<U> & x) { value *= static_cast<T>(x.value); return *this; }
 template <typename T> template <typename U> const Decimal<T> & Decimal<T>::operator /= (const Decimal<U> & x) { value /= static_cast<T>(x.value); return *this; }
 template <typename T> template <typename U> const Decimal<T> & Decimal<T>::operator %= (const Decimal<U> & x) { value %= static_cast<T>(x.value); return *this; }
 
 #define DISPATCH(TYPE_T, TYPE_U) \
-    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator += (const Decimal<TYPE_U> & x); \
-    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator -= (const Decimal<TYPE_U> & x); \
-    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator *= (const Decimal<TYPE_U> & x); \
     template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator /= (const Decimal<TYPE_U> & x); \
     template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
 #define INVOKE(X) FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(DISPATCH, X)

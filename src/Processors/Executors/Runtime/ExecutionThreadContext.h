@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <base/types.h>
 
 #include <atomic>
@@ -48,6 +49,15 @@ public:
     /// if it was applied more than `max_scheduled_local_tasks` in a row.
     constexpr static size_t max_scheduled_local_tasks = 128;
     size_t num_scheduled_local_tasks = 0;
+
+    /// Work containers for `ExecutingGraph::updateNode` and the queues it fills, kept per thread so
+    /// their capacity survives between the processors this thread prepares. The queues are drained
+    /// by `ExecutorTasks::pushTasks` after every update, and released again after an update that
+    /// readied more than `max_retained_update_node_queue_size` processors.
+    ExecutingGraph::UpdateNodeScratch update_node_scratch;
+    ExecutingGraph::Queue update_node_queue;
+    ExecutingGraph::Queue update_node_async_queue;
+    constexpr static size_t max_retained_update_node_queue_size = 1024;
 
     const StepWallClockRegistry * step_to_wall_clock_registry = nullptr;
 

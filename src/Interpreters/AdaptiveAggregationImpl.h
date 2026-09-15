@@ -14,6 +14,10 @@
 #include <Common/PODArray.h>
 #include <Interpreters/AdaptiveAggregation.h>
 #include <Interpreters/Aggregator.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
+#include <base/PackedStringRef.h>
+#include <base/unaligned.h>
 
 namespace DB
 {
@@ -34,8 +38,13 @@ constexpr size_t adaptive_dedup_unproductive_passes_to_bypass = 4;
 constexpr size_t adaptive_dedup_resample_interval = 64;
 /// The drain reserves a bucket's table after sampling this fraction of its records.
 constexpr size_t adaptive_reserve_sample_inverse = 8;
-/// Headroom over the sampled insert rate when reserving.
-constexpr double adaptive_reserve_headroom = 1.25;
+/// Multiplier over the sampled insert rate when reserving. No headroom: the grower already rounds
+/// the reserve up to a power of two at most half full, so on a near-distinct stream (ClickBench
+/// Q19: 56M groups from 56M records) a 1.25 headroom pushed most buckets over the next power of
+/// two and left the merge tables ~25% full; zeroing those tables was 18% of the query's cycles.
+/// An estimate that lands just under a boundary costs one late resize, which is cheaper on
+/// average than doubling every table.
+constexpr double adaptive_reserve_headroom = 1.0;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
 /// A thread gives up on freezing once it has consumed this many times the freeze threshold
@@ -79,6 +88,12 @@ constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
 /// bucket instead of one tiny slice per consumed block; a batch of at least half the target
 /// is enqueued as-is. Also bounds the coalescing buffer per thread.
 constexpr size_t adaptive_seal_target_bytes = 4 << 20;
+/// A batch with at least this many records is enqueued as-is regardless of its bytes: with
+/// 256 buckets it already gives the drain slices of 32 records on average, and coalescing
+/// would copy every record (keys, hashes, payload) for a slice-size gain the drain does not
+/// notice. On ClickBench Q19 the batches hold ~12K records, so at 32K every one of them was
+/// copied; the copy was 10% of the query's cycles.
+constexpr size_t adaptive_seal_direct_records = 8 * 1024;
 /// A drain table is detached and written only once it holds at least this many keys, so the
 /// spilled parts stay reasonably sized instead of one tiny file per chunk; the same floor
 /// sizes the batch a pressure sweep claims for a producer-local drain. A key count cannot
@@ -105,6 +120,15 @@ constexpr size_t adaptive_pressure_detached_bytes_budget = 256 << 20;
 /// The staged records route by the two-level bucket of their key's hash, so the backlogs and
 /// the routing structures come in the same 256 buckets as the two-level hash tables.
 inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
+
+/// The two-level bucket of a key hash. Mirrors `TwoLevelHashTable::getBucketFromHash` (and its
+/// string twin) for the 8 bucket bits the adaptive tables use, so a staged record needs no
+/// bucket field of its own.
+ALWAYS_INLINE inline UInt8 adaptiveBucketOfHash(UInt64 hash)
+{
+    static_assert(ADAPTIVE_AGGREGATION_NUM_BUCKETS == 256);
+    return static_cast<UInt8>((hash >> (32 - 8)) & (ADAPTIVE_AGGREGATION_NUM_BUCKETS - 1));
+}
 
 /// All delayed records of one consumed block, grouped by bucket. One record batch per
 /// consumed block, rather than one per (block, bucket); a thread's small batches are
@@ -470,15 +494,42 @@ struct AdaptiveAggregationProducer
 
     AdaptiveAggregationSessionPtr session;
 
-    /// The current block's misses, one entry per delayed record, in staging order.
-    PaddedPODArray<UInt32> miss_source_rows;
-    PaddedPODArray<UInt64> miss_hashes;
-    PaddedPODArray<UInt8> miss_buckets;
-    PaddedPODArray<UInt64> miss_key_sizes;
-    PaddedPODArray<UInt32> miss_multiplicities;
+    /// One delayed record of the current block. The fields live in one record rather than in
+    /// parallel arrays: the publish visits the records in a grouped (random) order, and a
+    /// record's fields then cost one cache line instead of one per array. The record carries
+    /// no bucket: it is a function of the hash (`adaptiveBucketOfHash`). Fixed-size keys stage
+    /// no size either (it is a compile-time constant the publish substitutes), so their record
+    /// is 16 bytes and a byte-staged key's 24.
+    template <bool stages_key_bytes>
+    struct StagedMiss
+    {
+        struct NoKeySize {};
+
+        UInt64 hash;
+        UInt32 source_row;
+        /// Run length of a count record (unused by value-staged records).
+        UInt32 multiplicity;
+        /// Bytes of a byte-staged key.
+        [[no_unique_address]] std::conditional_t<stages_key_bytes, UInt64, NoKeySize> key_size;
+    };
+    static_assert(sizeof(StagedMiss<false>) == 16 && sizeof(StagedMiss<true>) == 24);
+
+    /// The current block's misses, one entry per delayed record, in staging order. A producer
+    /// stages one key kind, so only the array of that kind is ever used; `misses` picks it.
+    PaddedPODArray<StagedMiss<false>> fixed_key_misses;
+    PaddedPODArray<StagedMiss<true>> byte_key_misses;
+
+    template <bool stages_key_bytes>
+    PaddedPODArray<StagedMiss<stages_key_bytes>> & misses()
+    {
+        if constexpr (stages_key_bytes)
+            return byte_key_misses;
+        else
+            return fixed_key_misses;
+    }
 
     /// Scratch for the value-staged publish grouping: the records' staging indexes in group
-    /// order (the hashes stay in `miss_hashes`, so the entries are four bytes, not sixteen).
+    /// order (the hashes stay in the misses, so the entries are four bytes, not sixteen).
     std::vector<UInt32> grouped_index_scratch;
     std::vector<UInt32> group_offsets_scratch;
     std::vector<UInt32> group_cursor_scratch;
@@ -490,6 +541,8 @@ struct AdaptiveAggregationProducer
     /// the next resample, never results.
     struct DedupProductivity
     {
+        /// Consecutive unproductive passes before the dedup is bypassed.
+        size_t unproductive_passes_to_bypass = adaptive_dedup_unproductive_passes_to_bypass;
         size_t consecutive_unproductive = 0;
         size_t passes_since_resample = 0;
         bool bypassed = false;
@@ -515,7 +568,7 @@ struct AdaptiveAggregationProducer
                 return;
             if (surviving_records * 64 > input_records * 63)
             {
-                if (++consecutive_unproductive >= adaptive_dedup_unproductive_passes_to_bypass)
+                if (++consecutive_unproductive >= unproductive_passes_to_bypass)
                     bypassed = true;
             }
             else
@@ -527,7 +580,11 @@ struct AdaptiveAggregationProducer
     };
 
     DedupProductivity publish_dedup;
-    DedupProductivity seal_dedup;
+    /// Keys repeating across the buffered batches are rare by construction (a repeat of a key
+    /// the thread has seen usually hits its frozen table), and a producer seals only a few times
+    /// per query, so one unproductive seal is enough to bypass; the resample re-engages it if the
+    /// distribution changes.
+    DedupProductivity seal_dedup{.unproductive_passes_to_bypass = 1};
 
     /// Small per-block staging batches buffered for coalescing: they are merged into one
     /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
@@ -543,5 +600,68 @@ struct StagedChunkPreparation
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions instructions;
 };
+
+
+namespace AdaptiveAggregationDetail
+{
+
+/// The byte image of a table key as the adaptive staging stores it: the characters of a
+/// string-like key, the value bytes of a fixed-size key.
+template <typename Key>
+ALWAYS_INLINE std::string_view stagedKeyBytesOf(const Key & key)
+{
+    if constexpr (std::is_same_v<Key, PackedStringRef>)
+        return static_cast<std::string_view>(key);
+    else if constexpr (std::is_same_v<Key, std::string_view>)
+        return key;
+    else
+        return std::string_view(reinterpret_cast<const char *>(&key), sizeof(Key));
+}
+
+/// Emplace one staged key into the table. String-like keys were staged as raw characters
+/// and are rebuilt here. `key_storage` selects the ownership: at merge time the delayed
+/// blocks are retained on the shared state until after the merged buckets are converted, so
+/// string-like keys are emplaced pointing into the staged bytes directly, with no copy; a
+/// pressure-time drain instead persists them into the arena, because freeing the blocks is
+/// its purpose. Fixed-size keys were staged as values either way.
+/// `table` is the bucket's own submap: the records were grouped by the same hash dispatch
+/// at staging time, so emplacing into it directly skips the per-record two-level routing.
+template <typename Key, DB::AdaptiveKeyStorage key_storage, typename Table>
+void ALWAYS_INLINE emplaceStagedKey(
+    Table & table,
+    const char * key_pos,
+    size_t key_size,
+    size_t routing_hash,
+    DB::Arena & arena,
+    typename Table::LookupResult & it,
+    bool & inserted)
+{
+    if constexpr (std::is_same_v<Key, std::string_view>)
+    {
+        if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
+            table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
+        else
+            table.emplace(DB::ArenaKeyHolder{std::string_view(key_pos, key_size), arena}, it, inserted, routing_hash);
+    }
+    else if constexpr (std::is_same_v<Key, PackedStringRef>)
+    {
+        /// The staged routing hash IS the packed key's cached content hash
+        /// (`DefaultHash<PackedStringRef>` returns it), so the rebuild reuses it instead of
+        /// re-hashing the key bytes; `build` consults the functor only for lengths that
+        /// store a hash, which is exactly the range the staged hash was derived from.
+        const auto key = PackedStringRef::build(
+            key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
+        if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
+            table.emplace(key, it, inserted, routing_hash);
+        else
+            table.emplace(DB::ArenaPackedStringHolder{key, arena}, it, inserted, routing_hash);
+    }
+    else
+    {
+        table.emplace(unalignedLoad<Key>(key_pos), it, inserted, routing_hash);
+    }
+}
+
+}
 
 }

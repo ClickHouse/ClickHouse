@@ -127,10 +127,20 @@ public:
         Cancelled,
     };
 
+    /// Work containers of `updateNode`. The traversal grows them on every call, so a caller keeps
+    /// one instance per executing thread and passes it in: the containers then keep their
+    /// capacity across calls instead of being allocated anew for every prepared processor.
+    struct UpdateNodeScratch
+    {
+        boost::container::devector<Edge *> updated_edges;
+        boost::container::devector<Node *> updated_processors;
+        std::vector<Node *> pending_expansion;
+    };
+
     /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeScratch & scratch);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);

@@ -15,8 +15,12 @@
   * - in theory, resizes are cache-local in a larger range of sizes.
   */
 
+/// The buckets fill to 5/8 instead of 1/2: a bucket table is zeroed in full when it is created or
+/// resized (the drain of the adaptive aggregation reserves it for its final size in one go), and
+/// on a mostly distinct stream that zeroing is DRAM-bound; the higher fill trades a slightly
+/// longer probe for 20% fewer cells on average.
 template <size_t initial_size_degree = 8>
-struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
+struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree, 5>
 {
     /// Increase the size of the hash table.
     void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
