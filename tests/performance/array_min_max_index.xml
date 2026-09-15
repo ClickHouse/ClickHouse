@@ -31,10 +31,17 @@
                 <value>63</value>
                 <value>64</value>
                 <value>65</value>
+                <value>127</value>
+                <value>128</value>
+                <value>129</value>
                 <value>255</value>
                 <value>256</value>
                 <value>257</value>
+                <value>511</value>
+                <value>512</value>
+                <value>513</value>
                 <value>1024</value>
+                <value>2048</value>
                 <value>4095</value>
                 <value>4096</value>
                 <value>4097</value>
@@ -47,6 +54,7 @@
                 <value>16383</value>
                 <value>16384</value>
                 <value>16385</value>
+                <value>32768</value>
                 <value>65536</value>
             </values>
         </substitution>
@@ -56,8 +64,17 @@
             <values>
                 <value>49</value>
                 <value>65</value>
+                <value>127</value>
+                <value>128</value>
+                <value>129</value>
                 <value>257</value>
+                <value>511</value>
+                <value>512</value>
+                <value>513</value>
                 <value>1024</value>
+                <value>2048</value>
+                <value>4096</value>
+                <value>8192</value>
                 <value>16384</value>
                 <value>65536</value>
             </values>
@@ -67,7 +84,17 @@
             <name>lambda_length</name>
             <values>
                 <value>65</value>
+                <value>127</value>
+                <value>128</value>
+                <value>129</value>
                 <value>257</value>
+                <value>511</value>
+                <value>512</value>
+                <value>513</value>
+                <value>1024</value>
+                <value>2048</value>
+                <value>4096</value>
+                <value>8192</value>
                 <value>16384</value>
             </values>
         </substitution>
@@ -94,6 +121,27 @@
                 <value>49</value>
                 <value>64</value>
                 <value>65</value>
+                <value>127</value>
+                <value>128</value>
+                <value>129</value>
+                <value>255</value>
+                <value>256</value>
+                <value>257</value>
+                <value>511</value>
+                <value>512</value>
+                <value>513</value>
+                <value>1024</value>
+                <value>2048</value>
+                <value>4095</value>
+                <value>4096</value>
+                <value>4097</value>
+                <value>8191</value>
+                <value>8192</value>
+                <value>8193</value>
+                <value>16383</value>
+                <value>16384</value>
+                <value>16385</value>
+                <value>65536</value>
             </values>
         </substitution>
     </substitutions>
