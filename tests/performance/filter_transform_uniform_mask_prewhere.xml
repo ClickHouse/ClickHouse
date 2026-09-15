@@ -33,6 +33,8 @@
     <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE all_true AND selective FORMAT Null</query>
     <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE if(id = 5000000, 0, 1) FORMAT Null</query>
     <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE if(id = 5000000, 1, 0) FORMAT Null</query>
+    <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE if(id = 5000001, 0, 1) FORMAT Null</query>
+    <query>SELECT count() FROM filter_transform_uniform_mask_prewhere PREWHERE if(id = 5000001, 1, 0) FORMAT Null</query>
 
     <drop_query>DROP TABLE filter_transform_uniform_mask_prewhere</drop_query>
 </test>

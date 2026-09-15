@@ -243,26 +243,6 @@ void FilterTransform::transform(Chunk & chunk)
 namespace
 {
 
-bool filterRangeHasValue(const IColumn::Filter & filter, size_t begin, size_t end, bool value)
-{
-    const UInt64 expected_mask = value ? ~UInt64{0} : UInt64{0};
-
-    while (end - begin >= 64)
-    {
-        if (bytes64MaskToBits64Mask(filter.data() + begin) != expected_mask)
-            return false;
-        begin += 64;
-    }
-
-    for (; begin < end; ++begin)
-    {
-        if ((filter[begin] != 0) != value)
-            return false;
-    }
-
-    return true;
-}
-
 bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
 {
     const size_t size = filter.size();
@@ -293,15 +273,66 @@ bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
     return true;
 }
 
-bool filterHasUniformValue(const IColumn::Filter & filter, bool value)
+void appendFilteredRanges(
+    MutableColumnPtr & result, const IColumn & column, const IColumn::Filter & filter, size_t begin, size_t end)
 {
-    if (!filterSampleHasValue(filter, value))
-        return false;
-
-    return filterRangeHasValue(filter, 0, filter.size(), value);
+    while (begin < end)
+    {
+        while (begin < end && !filter[begin])
+            ++begin;
+        const size_t range_begin = begin;
+        while (begin < end && filter[begin])
+            ++begin;
+        if (range_begin != begin)
+            result->insertRangeFrom(column, range_begin, begin - range_begin);
+    }
 }
 
-std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_description, size_t expected_size)
+struct FilterProbeResult
+{
+    std::optional<bool> uniform_value;
+    ColumnPtr filtered_column;
+};
+
+FilterProbeResult filterAndCheckUniformValue(
+    const IColumn::Filter & filter, const IColumn & column, bool value)
+{
+    chassert(column.size() == filter.size());
+
+    const size_t size = filter.size();
+    const UInt64 expected_mask = value ? ~UInt64{0} : UInt64{0};
+    size_t pos = 0;
+
+    while (size - pos >= 64)
+    {
+        if (bytes64MaskToBits64Mask(filter.data() + pos) == expected_mask)
+        {
+            pos += 64;
+            continue;
+        }
+
+        auto result = column.cloneEmpty();
+        if (value)
+            result->insertRangeFrom(column, 0, pos);
+        appendFilteredRanges(result, column, filter, pos, size);
+        return {std::nullopt, std::move(result)};
+    }
+
+    while (pos < size && ((filter[pos] != 0) == value))
+        ++pos;
+
+    if (pos == size)
+        return {value, nullptr};
+
+    auto result = column.cloneEmpty();
+    if (value)
+        result->insertRangeFrom(column, 0, pos);
+    appendFilteredRanges(result, column, filter, pos, size);
+    return {std::nullopt, std::move(result)};
+}
+
+FilterProbeResult tryGetUniformFilterValue(
+    const IFilterDescription & filter_description, const IColumn & column, size_t expected_size)
 {
     if (const auto * sparse_filter_description = typeid_cast<const SparseFilterDescription *>(&filter_description))
     {
@@ -310,9 +341,9 @@ std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_d
 
         const size_t num_set_rows = sparse_filter_description->countBytesInFilter();
         if (num_set_rows == 0)
-            return false;
+            return {false, nullptr};
         if (num_set_rows == expected_size)
-            return true;
+            return {true, nullptr};
         return {};
     }
 
@@ -323,7 +354,10 @@ std::optional<bool> tryGetUniformFilterValue(const IFilterDescription & filter_d
 
     const auto & filter = *dense_filter_description->data;
     const bool value = filter[0] != 0;
-    return filterHasUniformValue(filter, value) ? std::optional<bool>(value) : std::nullopt;
+    if (!filterSampleHasValue(filter, value))
+        return {};
+
+    return filterAndCheckUniformValue(filter, column, value);
 }
 
 /// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's
@@ -451,13 +485,14 @@ void FilterTransform::doTransform(Chunk & chunk)
     }
     (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
 
-    std::optional<bool> uniform_filter_value;
+    FilterProbeResult filter_probe_result;
     if (first_non_constant_column != num_columns)
-        uniform_filter_value = tryGetUniformFilterValue(*filter_description, num_rows_before_filtration);
+        filter_probe_result = tryGetUniformFilterValue(
+            *filter_description, *columns[first_non_constant_column], num_rows_before_filtration);
 
-    if (uniform_filter_value)
+    if (filter_probe_result.uniform_value)
     {
-        if (!*uniform_filter_value)
+        if (!*filter_probe_result.uniform_value)
         {
             writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
             incrementProfileEvents(0, {});
@@ -473,7 +508,10 @@ void FilterTransform::doTransform(Chunk & chunk)
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
     {
-        columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column], -1);
+        if (filter_probe_result.filtered_column)
+            columns[first_non_constant_column] = std::move(filter_probe_result.filtered_column);
+        else
+            columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column], -1);
         num_filtered_rows = columns[first_non_constant_column]->size();
     }
     else

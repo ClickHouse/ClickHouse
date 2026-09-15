@@ -22,6 +22,14 @@ SELECT count(), sum(number)
 FROM numbers(10)
 WHERE if(number = 5, 1, 0);
 
+SELECT count(), sum(number)
+FROM numbers(4096)
+WHERE if(number = 2049, 0, 1);
+
+SELECT count(), sum(number)
+FROM numbers(4096)
+WHERE if(number = 2049, 1, 0);
+
 SELECT number
 FROM
 (
