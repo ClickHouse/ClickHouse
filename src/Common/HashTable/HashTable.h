@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <base/normalizeNegativeZero.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 
@@ -70,13 +71,21 @@ struct HashTableNoState
   *
   * This is needed if you use floats as keys. They are compared by bit equality.
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
+  *
+  * The only exception is negative zero: it is equal to positive zero by the rules of comparison,
+  * but has a different binary representation, and it has to be equal to positive zero here as well,
+  * otherwise hash tables disagree with the `equals` function. See `normalizeNegativeZero`.
   */
 template <typename T>
 inline ALWAYS_INLINE bool bitEquals(T a, T b)
 {
     if constexpr (is_floating_point<T>)
+    {
+        a = normalizeNegativeZero(a);
+        b = normalizeNegativeZero(b);
         /// Note that memcmp with constant size is a compiler builtin.
         return 0 == memcmp(&a, &b, sizeof(T)); /// NOLINT
+    }
     else
         return a == b;
 }

@@ -1,0 +1,19 @@
+injective transform: the two spellings are two different key values
+1
+1
+2
+2
+2
+non-injective transform: the pruner only relaxes `can_be_false`
+1
+1
+1
+1
+Float32
+1
+1
+Nullable
+1
+1
+a transformed key over a domain without two spellings of a value still prunes
+2

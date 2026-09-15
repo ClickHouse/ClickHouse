@@ -1,6 +1,8 @@
-group by, hash	2
+group by, hash	1
 group by, in order	1
-limit by, generic	2
+limit by, generic	1
 limit by, in order	1
-negative limit by, generic	2
+negative limit by, generic	1
 negative limit by, in order	1
+nan, hash	2
+nan, in order	1
