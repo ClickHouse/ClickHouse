@@ -18,3 +18,8 @@ length(m) FINAL: not rewritten
 m['a'] FINAL: not rewritten
 length(m) no FINAL: rewritten
 m['a'] no FINAL: rewritten
+-- Merge over ReplacingMergeTree (wrapper forwarding): surviving row is ver=2, m={'x':9}, n=5 --
+length(m): rewritten
+m['x']: rewritten
+isNull(n): rewritten
+1	9	0	0

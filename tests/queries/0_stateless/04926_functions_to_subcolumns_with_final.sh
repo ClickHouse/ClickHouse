@@ -87,3 +87,22 @@ verdict "m['a'] FINAL"       "SELECT m['a'] FROM t_final_sum FINAL"
 verdict "length(m) no FINAL" "SELECT length(m) FROM t_final_sum"
 verdict "m['a'] no FINAL"    "SELECT m['a'] FROM t_final_sum"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_final_sum"
+
+# Wrapper storages forward the FINAL-safety capability, so the rewrite must fire through them too.
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_final_merge_base"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_final_merge"
+$CLICKHOUSE_CLIENT --query "
+CREATE TABLE t_final_merge_base (k UInt32, ver UInt32, m Map(String, UInt64), n Nullable(UInt64))
+ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS $MAP_SETTINGS;
+INSERT INTO t_final_merge_base VALUES (1, 1, {'a':1,'b':2}, NULL);
+INSERT INTO t_final_merge_base VALUES (1, 2, {'x':9}, 5);
+CREATE TABLE t_final_merge AS t_final_merge_base ENGINE = Merge(currentDatabase(), '^t_final_merge_base\$');
+"
+echo "-- Merge over ReplacingMergeTree (wrapper forwarding): surviving row is ver=2, m={'x':9}, n=5 --"
+verdict "length(m)"  "SELECT length(m) FROM t_final_merge FINAL"
+verdict "m['x']"     "SELECT m['x'] FROM t_final_merge FINAL"
+verdict "isNull(n)"  "SELECT isNull(n) FROM t_final_merge FINAL"
+$CLICKHOUSE_CLIENT --optimize_functions_to_subcolumns=1 --query "
+SELECT length(m), m['x'], m['a'], isNull(n) FROM t_final_merge FINAL"
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_final_merge"
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_final_merge_base"
