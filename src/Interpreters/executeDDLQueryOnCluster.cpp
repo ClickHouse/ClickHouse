@@ -219,7 +219,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     {
         /// A `CREATE TABLE AS SELECT` worker has no trace receiver. Its executable `SELECT`
         /// must not reapply the delivery setting on older workers. Stored view definitions
-        /// retain their settings because those govern subsequent queries of the view.
+        /// retain explicitly supplied SQL settings independently of request-level delivery.
         /// Validate nested and duplicate values before removing the execution-only setting.
         stripProfileTraceOptInsFromQuery(create->select);
         static constexpr std::string_view trace_settings[] = {"send_profile_traces"};
