@@ -99,7 +99,10 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
         case IAST::QueryKind::Check:
         /// Session- and transaction-mutating statements (`USE`, `SET` / `SET ROLE`, `BEGIN` / `COMMIT` / `ROLLBACK` /
         /// `SET TRANSACTION SNAPSHOT`) run under `readonly = 2` - the mode the HTTP execution path sets for safe
-        /// methods such as `GET` - so this readonly-mirror predicate reports them as runnable over a safe method.
+        /// methods such as `GET` - apart from `SET ROLE` when
+        /// `access_control_improvements.readonly_restricts_set_role` is enabled. `QueryKind::Set` does not
+        /// distinguish `SET ROLE` from plain `SET`, so this readonly-mirror predicate reports the kind as
+        /// runnable over a safe method either way.
         /// Their session-visible side effects are fenced off separately by `queryKindHasSideEffectsUnderReadonly`,
         /// which requires *every* method of such a handler to be a mutating one.
         case IAST::QueryKind::Use:
@@ -217,11 +220,12 @@ bool queryWrapsBodyConsumingStatement(const IAST & query)
 /// - `BACKUP` writes an archive to disk or object storage and `RESTORE` writes data into tables, yet
 ///   `BackupsWorker` rejects them only under the strict, user-set `readonly = 1`.
 /// - Session- and transaction-mutating statements: `SET` changes session settings (allowed under `readonly = 2`,
-///   which forbids only changing `readonly` itself), `SET ROLE` changes the active roles, `USE` changes the
+///   which forbids only changing `readonly` itself), `SET ROLE` changes the active roles (which `readonly` blocks
+///   only when `access_control_improvements.readonly_restricts_set_role` is enabled), `USE` changes the
 ///   session database, and `BEGIN` / `COMMIT` / `ROLLBACK` / `SET TRANSACTION SNAPSHOT` mutate the current
-///   transaction - none of which `readonly` blocks. When the client uses `session_id`, these effects persist
+///   transaction - none of which `readonly` blocks by default. When the client uses `session_id`, these effects persist
 ///   across requests, so a `GET` could invisibly commit a transaction or alter session state.
-/// The runtime `readonly` enforcement cannot fence any of these off. HTTP requires safe methods to be
+/// The runtime `readonly` enforcement cannot be relied on to fence these off. HTTP requires safe methods to be
 /// side-effect-free: `GET` is expected to have no effects, and a handler declared for `GET` is also served for
 /// `HEAD` (see `HTTPHandlerFactory`), where the suppressed response body would hide the effect entirely. Such
 /// queries therefore must not be reachable over safe methods at all.
@@ -464,10 +468,10 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
             create.handler_name, fmt::join(handler->methods, ", "));
     }
 
-    /// The `readonly` enforcement above cannot fence off queries whose side effects survive `readonly = 2` - the
-    /// mode that safe methods set: `BACKUP` / `RESTORE` write durable data, and `SET` / `SET ROLE` / `USE` /
-    /// transaction control / `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` / an `INSERT`, `DROP` or
-    /// `TRUNCATE` that may target an existing temporary table mutate session state that
+    /// The `readonly` enforcement above cannot be relied on to fence off queries whose side effects survive
+    /// `readonly = 2` - the mode that safe methods set: `BACKUP` / `RESTORE` write durable data, and `SET` /
+    /// `SET ROLE` / `USE` / transaction control / `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` / an
+    /// `INSERT`, `DROP` or `TRUNCATE` that may target an existing temporary table mutate session state that
     /// persists across requests when `session_id` is in use. A safe method must never trigger them - `GET` is
     /// expected to be side-effect-free, and a declared `GET` is also served for `HEAD` (see `HTTPHandlerFactory`),
     /// where the suppressed response body would hide the effect entirely. So require *every* allowed method of
@@ -476,7 +480,7 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
         && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` runs {}. The read-only mode of safe HTTP methods does not prevent these side effects, "
+            "Handler `{}` runs {}. The read-only mode of safe HTTP methods cannot be relied on to prevent these side effects, "
             "but the handler's allowed HTTP methods ({}) include read-only ones. "
             "List only mutating methods (POST, PUT, or DELETE) in the METHODS clause.",
             create.handler_name,
