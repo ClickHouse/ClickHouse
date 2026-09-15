@@ -153,7 +153,9 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-            return dumpValue(field.safeGet<Int32>());
+            /// Iceberg writes `int` and `date` as 4 bytes, while a `Field` keeps them in its 8-byte
+            /// slot; `dumpValue` takes the width from its argument type, so narrow before dumping.
+            return dumpValue(static_cast<Int32>(field.safeGet<Int32>()));
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
         case TypeIndex::DateTime64:
@@ -284,8 +286,18 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number)
+    std::optional<Int64> user_defined_sequence_number,
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
 {
+    /// A throw, not a `chassert`: mis-pairing statistics with data files publishes metadata that is
+    /// wrong in the unsafe direction for external readers, and `chassert` compiles out of release builds.
+    if (per_file_fresh_statistics && per_file_fresh_statistics->size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "per_file_fresh_statistics size does not match number of data files: {} vs {}",
+            per_file_fresh_statistics->size(),
+            data_file_names.size());
+
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -365,7 +377,13 @@ void generateManifestFile(
         data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name.serialize());
         data_file.field(Iceberg::f_file_format) = avro::GenericDatum(format);
 
-        if (data_file_statistics)
+        /// When per-file statistics were supplied, this entry describes only its own data file; the shared
+        /// `data_file_statistics` accumulator covers every file of the manifest and is the fallback.
+        const DataFileStatistics * effective_statistics
+            = per_file_fresh_statistics ? (*per_file_fresh_statistics)[file_idx]
+                                        : (data_file_statistics ? &*data_file_statistics : nullptr);
+
+        if (effective_statistics)
         {
             auto set_fields = [&]<typename T, typename U>(
                                   const std::vector<std::pair<size_t, T>> & statistics, const std::string & field_name, U && dump_function)
@@ -384,26 +402,26 @@ void generateManifestFile(
                 }
             };
 
-            auto statistics = data_file_statistics->getColumnSizes();
+            auto statistics = effective_statistics->getColumnSizes();
             set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
-            statistics = data_file_statistics->getNullCounts();
+            statistics = effective_statistics->getNullCounts();
             set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
-            auto field_ids = data_file_statistics->getFieldIds();
+            auto field_ids = effective_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
                 field_id_to_column_index[field_ids[i]] = i;
 
             auto dump_fields = [&](size_t field_id, Field value)
             { return dumpFieldToBytes(value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]); };
 
-            auto lower_statistics = data_file_statistics->getLowerBounds();
+            auto lower_statistics = effective_statistics->getLowerBounds();
             if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
             {
                 set_fields(lower_statistics, Iceberg::f_lower_bounds, dump_fields);
             }
-            auto upper_statistics = data_file_statistics->getUpperBounds();
+            auto upper_statistics = effective_statistics->getUpperBounds();
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
             {
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
@@ -1030,6 +1048,14 @@ bool IcebergStorageSink::initializeMetadata()
                 StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
             {
+                /// Each manifest entry must describe only the data file it points at, so pass the writer's
+                /// per-file statistics instead of letting every entry inherit the manifest-wide aggregate
+                /// (which can report more nulls than the file has rows, and prunes non-empty files).
+                std::vector<const DataFileStatistics *> per_file_fresh_statistics;
+                per_file_fresh_statistics.reserve(writer.getPerFileStatistics().size());
+                for (const auto & file_statistics : writer.getPerFileStatistics())
+                    per_file_fresh_statistics.push_back(file_statistics.get());
+
                 generateManifestFile(
                     metadata,
                     partitioner ? partitioner->getColumns() : std::vector<String>{},
@@ -1045,7 +1071,9 @@ bool IcebergStorageSink::initializeMetadata()
                     partititon_spec,
                     partition_spec_id,
                     *buffer_manifest_entry,
-                    Iceberg::FileContentType::DATA);
+                    Iceberg::FileContentType::DATA,
+                    /*user_defined_sequence_number=*/std::nullopt,
+                    &per_file_fresh_statistics);
                 buffer_manifest_entry->finalize();
                 auto size = buffer_manifest_entry->count();
                 if (size == 0)
