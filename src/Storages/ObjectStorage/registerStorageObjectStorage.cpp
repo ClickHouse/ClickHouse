@@ -1811,11 +1811,19 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
 
+## Primary-key tables {#primary-key-tables}
+
+Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
+snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
+declares `primary-key` therefore throws. Set `paimon_allow_unmerged_primary_key_reads = 1` to read the data files
+unmerged and accept those incorrect results.
+
 ## Settings {#settings}
 
 This engine uses the same settings as the corresponding object storage engines and adds Paimon-specific settings:
 
 - `allow_experimental_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
+- `paimon_allow_unmerged_primary_key_reads` — allows reading a primary-key table despite merge-on-read being unimplemented, returning the raw union of its data files (rows superseded by later upserts are also returned). Default: `0` (such reads throw).
 - `use_paimon_metadata_files_cache` — enables the Paimon metadata files cache (caches deserialized manifest lists and manifests). Set to `1` to enable, `0` to disable. Default: `0`. How this setting takes effect differs between table functions and persistent table engines — see the note below.
 - `paimon_incremental_read` — enable incremental read mode.
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
