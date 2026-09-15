@@ -6769,35 +6769,49 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata", entry.metadata_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(entry.alter_version), -1));
 
-    auto table_id = getStorageID();
-    auto alter_context = getContext();
-
-    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    bool is_in_replicated_database = database->getEngineName() == "Replicated";
-
-    if (is_in_replicated_database)
     {
-        auto mutable_alter_context = Context::createCopy(getContext());
-        const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get());
-        mutable_alter_context->makeQueryContext();
-        auto alter_txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, replicated->getZooKeeperPath(),
-                                                                       /* is_initial_query */ false, /* task_zk_path */ "");
-        mutable_alter_context->initZooKeeperMetadataTransaction(alter_txn);
-        alter_context = mutable_alter_context;
-
-        for (auto & op : requests)
-            alter_txn->addOp(std::move(op));
-        requests.clear();
-        /// Requests will be executed by database in setTableStructure
-    }
-    else
-    {
-        zookeeper->multi(requests, /* check_session_valid */ true);
-    }
-
-    {
+        /// Acquire the DDLGuard and locks before writing to ZooKeeper so the per-replica metadata nodes
+        /// and setTableStructure apply together. On contention, shutdown or timeout return without
+        /// touching ZooKeeper: the entry stays in the queue and is retried without recording an exception.
+        auto background_ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
+            shared_from_this(),
+            (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations],
+            [this] { return !shutdown_called && !partial_shutdown_called; });
+        if (!background_ddl_guard)
+        {
+            LOG_INFO(log, "Cannot acquire the DDL guard to apply metadata alter version {}, will retry", entry.alter_version);
+            return false;
+        }
         auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+        /// Refresh table_id: a rename could have slipped in while we were waiting for the guard.
+        auto table_id = getStorageID();
+        auto alter_context = getContext();
+
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        bool is_in_replicated_database = database->getEngineName() == "Replicated";
+
+        if (is_in_replicated_database)
+        {
+            auto mutable_alter_context = Context::createCopy(getContext());
+            const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get());
+            mutable_alter_context->makeQueryContext();
+            auto alter_txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, replicated->getZooKeeperPath(),
+                                                                           /* is_initial_query */ false, /* task_zk_path */ "");
+            mutable_alter_context->initZooKeeperMetadataTransaction(alter_txn);
+            alter_context = mutable_alter_context;
+
+            for (auto & op : requests)
+                alter_txn->addOp(std::move(op));
+            requests.clear();
+            /// Requests will be executed by database in setTableStructure
+        }
+        else
+        {
+            zookeeper->multi(requests, /* check_session_valid */ true);
+        }
+
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
@@ -6966,7 +6980,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
 
 void StorageReplicatedMergeTree::alter(
-    const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder)
+    const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::alter");
     assertNotReadonly();
@@ -7003,6 +7017,7 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
+        auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         /// `changeSettings` installs the old metadata plus the new settings. When the ALTER also
@@ -7023,21 +7038,41 @@ void StorageReplicatedMergeTree::alter(
             setInMemoryMetadata(future_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            if (statistics_changed)
+                setInMemoryMetadata(*old_metadata);
+            throw;
+        }
         return;
     }
 
     if (commands.isCommentAlter())
     {
+        auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            setInMemoryMetadata(*old_metadata);
+            throw;
+        }
         return;
     }
 
@@ -7048,6 +7083,7 @@ void StorageReplicatedMergeTree::alter(
     if (commands.areNonReplicatedAlterCommands())
     {
         merge_strategy_picker.refreshState();
+        auto old_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         /// changeSettings is the sole writer of the setting-derived escape fields and has
@@ -7064,8 +7100,18 @@ void StorageReplicatedMergeTree::alter(
             setInMemoryMetadata(future_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            setInMemoryMetadata(*old_metadata);
+            throw;
+        }
         return;
     }
 
@@ -7198,7 +7244,19 @@ void StorageReplicatedMergeTree::alter(
                 setInMemoryMetadata(metadata_copy);
             }
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            try
+            {
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            }
+            catch (...)
+            {
+                /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+                if (settings_are_changed)
+                    changeSettings(current_metadata->settings_changes, table_lock_holder);
+                if (comment_is_changed)
+                    setInMemoryMetadata(*current_metadata);
+                throw;
+            }
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -7327,6 +7385,9 @@ void StorageReplicatedMergeTree::alter(
     }
 
     table_lock_holder.unlock();
+
+    /// ALTER is durable in ZK; further DDL serializes through ZK, so drop the local guard.
+    ddl_guard.reset();
 
     LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
 
