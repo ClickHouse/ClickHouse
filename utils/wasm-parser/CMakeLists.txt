@@ -112,6 +112,7 @@ set (SUPPORT_SOURCES
     "${CH}/base/base/getPageSize.cpp"
     "${CH}/base/base/IPv4andIPv6.cpp"
     "${CH}/base/base/itoa.cpp"
+    "${CH}/contrib/abseil-cpp/absl/base/throw_delegate.cc"
     "${CH}/contrib/fmtlib/src/format.cc"
     "${CH}/contrib/zmij/zmij.cc"
     "${CH}/base/poco/Foundation/src/ASCIIEncoding.cpp"
