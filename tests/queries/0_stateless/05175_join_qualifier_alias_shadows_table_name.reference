@@ -1,0 +1,10 @@
+the alias of the first table wins over the name of the third one
+10
+and the alias of the second table wins over the name of the first one
+10
+the same for a comma join
+10
+a qualifier that is only a table name still resolves
+20
+an unqualified column of both sides is still ambiguous
+1
