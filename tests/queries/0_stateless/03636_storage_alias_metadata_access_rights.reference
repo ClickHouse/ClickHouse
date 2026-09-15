@@ -51,3 +51,10 @@ Test schema commands with target permission
 DESCRIBE OK
 SHOW COLUMNS OK
 ENGINE = Alias
+Test CREATE TABLE AS an Alias without target permission
+ACCESS_DENIED
+Test CREATE TABLE AS an Alias with column-scoped target permission
+ACCESS_DENIED
+Test CREATE TABLE AS an Alias with target permission
+id	UInt64
+value	String
