@@ -42,7 +42,7 @@
         (n {type} CODEC({codec}))
         ENGINE = MergeTree
         ORDER BY tuple()
-        SETTINGS merge_selector_base=1000
+        SETTINGS optimize_row_order_if_no_order_by = 0, merge_selector_base=1000
     </create_query>
 
     <fill_query>INSERT INTO codec_seq_{type}_{codec} (n) SELECT number FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>

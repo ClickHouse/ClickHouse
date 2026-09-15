@@ -1,6 +1,6 @@
 <test>
   <create_query>
-    CREATE TABLE text_index_build (text String, INDEX idx_text (text) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE text_index_build (text String, INDEX idx_text (text) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
   </create_query>
   <create_query>
     CREATE TABLE text_index_build_src_50 (text String) ENGINE = Memory;

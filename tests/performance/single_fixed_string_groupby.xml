@@ -3,7 +3,7 @@
     <create_query>CREATE TABLE perf_lc_fixed_str_groupby(
             a LowCardinality(FixedString(14)),
             b LowCardinality(FixedString(14))
-        ) ENGINE MergeTree ORDER BY tuple()
+        ) ENGINE MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <fill_query>
