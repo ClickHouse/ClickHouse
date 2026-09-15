@@ -9030,6 +9030,16 @@ bool Context::wasSubqueryMaterializationDeferred() const
     return deferred_subquery_materialization && deferred_subquery_materialization->load();
 }
 
+DeferredSubqueryMaterializationState Context::getDeferredSubqueryMaterializationState() const
+{
+    return deferred_subquery_materialization;
+}
+
+void Context::setDeferredSubqueryMaterializationState(DeferredSubqueryMaterializationState state)
+{
+    deferred_subquery_materialization = std::move(state);
+}
+
 ReverseLookupCache & Context::getReverseLookupCache() const
 {
     auto query_context = getQueryContext();

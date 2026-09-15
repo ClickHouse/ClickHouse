@@ -25,6 +25,7 @@
 #include <Common/typeid_cast.h>
 
 #include <map>
+#include <unordered_set>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -249,9 +250,15 @@ std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 
 /// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
 /// the same read. The plans are built from the same query and differ only where the replicas step is
-/// substituted, so their reads pair up in traversal order; the storage identity of each pair is checked
-/// and the whole transplant is skipped if anything does not line up. Without this only the matched read
-/// gets an analysis and the rest scan everything - on TPC-H q03, 1045 marks against 614.
+/// substituted, so their reads pair up in traversal order. Without this only the matched read gets an
+/// analysis and the rest scan everything - on TPC-H q03, 1045 marks against 614.
+///
+/// An analysis carries the mark ranges selected for one read's predicates, so handing it to the wrong
+/// read changes which rows are returned. Traversal order alone does not rule that out: when a table is
+/// read more than once - a self-join, or the same table under two aliases - the two reads have the same
+/// storage but different predicates, so a pairing that drifted between the plans would still pass a
+/// storage check. Require instead that every read be of a distinct table, which makes each pair the only
+/// possible one, and transplant nothing otherwise.
 void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
 {
     auto single_node_reads = collectReadingSteps(single_node_root);
@@ -264,6 +271,20 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
             "Single-node plan has {} reads and the replicas plan {}; not transplanting index analysis",
             single_node_reads.size(),
             replicas_reads.size());
+        return;
+    }
+
+    std::unordered_set<const MergeTreeData *> distinct_tables;
+    for (const auto * read : single_node_reads)
+        distinct_tables.insert(&read->getMergeTreeData());
+    if (distinct_tables.size() != single_node_reads.size())
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The plan reads some table more than once ({} reads of {} tables), so reads cannot be paired by "
+            "table alone; not transplanting index analysis",
+            single_node_reads.size(),
+            distinct_tables.size());
         return;
     }
 
