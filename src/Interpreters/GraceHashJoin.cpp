@@ -371,7 +371,14 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
         return true;
 
     /// Spilling does not earn a query the right to go over the limits.
-    return checkSizeLimits();
+    if (checkSizeLimits())
+        return true;
+
+    /// `join_overflow_mode = 'break'`: the caller stops feeding this side, but the buckets already on disk
+    /// would still be joined in `getDelayedBlocks` - well past the cap. Latch the stop here as well, so
+    /// the join ends with the bucket in memory, the way `HashJoin` ends with the block that crossed the cap.
+    stop_after_current_bucket = true;
+    return false;
 }
 
 bool GraceHashJoin::checkSizeLimits() const
