@@ -307,45 +307,24 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
-/// E.g. "Trivial count from text index (idx, token = 'alpha')" or "... (idx, tokens = ['alpha', 'zeta'])".
-/// A `keyValuePairs` token is shown as the pair it encodes: "... (idx, token = 'level': 'error')".
+/// E.g. "Trivial count from text index (idx, token = "alpha")" or "... (idx, tokens = ["alpha", "zeta"])".
 String makeStepDescription(const ResolvedQuery & resolved)
 {
     const auto & query_tokens = resolved.query->getTokens();
-    const bool is_key_value_pairs = resolved.condition->getTokenizer()->getType() == ITokenizer::Type::KeyValuePairs;
+    const auto & tokenizer = *resolved.condition->getTokenizer();
 
     WriteBufferFromOwnString description;
     description << "Trivial count from text index (" << resolved.index.index->index.name << ", ";
 
-    auto write_token = [&](const String & token)
-    {
-        if (is_key_value_pairs)
-        {
-            const auto decoded = KeyValuePairsTokenizer::decodeToken(token);
-            description << "'" << decoded.key << "': '" << decoded.value << "'";
-            if (decoded.is_rest)
-                description << " (rest)";
-        }
-        else
-        {
-            description << "'" << token << "'";
-        }
-    };
-
     if (query_tokens.size() == 1)
     {
-        description << "token = ";
-        write_token(query_tokens.front());
+        description << "token = " << tokenizer.formatTokenForLogs(query_tokens.front());
     }
     else
     {
         description << "tokens = [";
         for (size_t i = 0; i < query_tokens.size(); ++i)
-        {
-            if (i > 0)
-                description << ", ";
-            write_token(query_tokens[i]);
-        }
+            description << (i == 0 ? "" : ", ") << tokenizer.formatTokenForLogs(query_tokens[i]);
         description << "]";
     }
     description << ")";

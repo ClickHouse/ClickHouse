@@ -571,8 +571,10 @@ KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::st
     for (size_t shift = 0;; shift += 7)
     {
         if (trailer_start == 0 || shift >= 64)
+        {
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot decode a token of the `keyValuePairs` tokenizer: the trailer is malformed (token size: {})", token.size());
+        }
 
         const UInt8 byte = static_cast<UInt8>(token[--trailer_start]);
         packed |= static_cast<UInt64>(byte & 0x7F) << shift;
@@ -583,9 +585,11 @@ KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::st
 
     const size_t key_size = packed >> 1;
     if (key_size > trailer_start)
+    {
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Cannot decode a token of the `keyValuePairs` tokenizer: the key length {} exceeds the {} bytes before the trailer",
             key_size, trailer_start);
+    }
 
     return DecodedToken
     {
@@ -593,6 +597,12 @@ KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::st
         .value = token.substr(key_size, trailer_start - key_size),
         .is_rest = (packed & 1) != 0,
     };
+}
+
+String KeyValuePairsTokenizer::formatTokenForLogs(std::string_view token) const
+{
+    const auto decoded = decodeToken(token);
+    return fmt::format(R"({{"{}": "{}"}})", decoded.key, decoded.value);
 }
 
 bool KeyValuePairsTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const

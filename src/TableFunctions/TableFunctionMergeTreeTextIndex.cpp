@@ -98,10 +98,12 @@ TableFunctionMergeTreeTextIndex::SourceIndex TableFunctionMergeTreeTextIndex::re
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 
     if (index_desc.type != "text")
+    {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
+    }
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
     if (!merge_tree)
@@ -122,6 +124,7 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(Cont
     /// A `keyValuePairs` token is a `(key, value)` pair of a `Map` with a binary trailer. Expose its parts.
     const auto source_index = resolveSourceIndex(context);
     const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*source_index.index);
+
     if (text_index.tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
         columns.emplace_back("token_key", std::make_shared<DataTypeString>());
