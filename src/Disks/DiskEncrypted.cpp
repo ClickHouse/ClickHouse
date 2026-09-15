@@ -2,6 +2,7 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <Disks/loadLocalDiskConfig.h>
 #include <IO/ReadPipeline.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -585,7 +586,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr,
+        ContextPtr context,
         const DisksMap & map,
         bool attach,
         bool custom_disk) -> DiskPtr
@@ -593,7 +594,15 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
         if (custom_disk && !attach)
-            checkCustomDiskPathIsInsideWrappedDisk(config.getString(config_prefix + ".path", ""));
+        {
+            DiskPtr wrapped_disk;
+            String path;
+            getDiskAndPathFromConfig(config, config_prefix, map, wrapped_disk, path);
+
+            checkCustomDiskPathIsInsideWrappedDisk(path);
+            if (!wrapped_disk->isRemote())
+                checkCustomLocalDiskPath(wrapped_disk->getPath() + path, context);
+        }
 
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(skip_access_check);
