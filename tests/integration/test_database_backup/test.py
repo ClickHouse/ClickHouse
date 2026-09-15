@@ -271,3 +271,89 @@ def test_database_backup_unavailable_but_server_starts(backup_destination):
     instance.query("DROP DATABASE IF EXISTS test_database_backup SYNC")
     instance.query("DROP DATABASE IF EXISTS test_database SYNC")
     cleanup_backup_files(instance)
+
+
+def test_database_backup_metadata_with_quoted_locator_loads_on_restart():
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/118349
+    # An older server regenerated the definition of a `Backup` database with the locator quoted into a
+    # string literal, and `ALTER DATABASE ... MODIFY COMMENT` wrote that back into `metadata/<db>.sql`.
+    # The next start replays the stored full `ATTACH DATABASE ... ENGINE = Backup(...)` statement, which
+    # is neither the short `ATTACH` nor a force-restore load, so it has to accept that form on its own.
+    cleanup_backup_files(instance)
+
+    instance.query(
+        """
+        DROP DATABASE IF EXISTS test_database SYNC;
+        DROP DATABASE IF EXISTS test_database_backup SYNC;
+
+        CREATE DATABASE test_database;
+
+        CREATE TABLE test_database.test_table (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+        INSERT INTO test_database.test_table VALUES (0, 'test_database.test_table');
+
+        BACKUP DATABASE test_database TO File('test_database_backup_file');
+        CREATE DATABASE test_database_backup ENGINE = Backup('test_database', File('test_database_backup_file'));
+    """
+    )
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup.test_table")
+        == "0\ttest_database.test_table\n"
+    )
+
+    # The metadata file exactly as a pre-fix server left it after a comment change.
+    instance.stop_clickhouse()
+    metadata = (
+        "ATTACH DATABASE test_database_backup\n"
+        "ENGINE = Backup('test_database', 'File(\\'test_database_backup_file\\')')\n"
+        "COMMENT 'written by an older server'\n"
+    )
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "cat > /var/lib/clickhouse/metadata/test_database_backup.sql <<'SQL'\n"
+            + metadata
+            + "SQL\n",
+        ],
+        user="root",
+    )
+    assert "'File(\\'test_database_backup_file\\')'" in instance.exec_in_container(
+        ["cat", "/var/lib/clickhouse/metadata/test_database_backup.sql"]
+    )
+    instance.start_clickhouse()
+
+    # The server started and the database loaded with its tables and comment.
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup.test_table")
+        == "0\ttest_database.test_table\n"
+    )
+    assert (
+        instance.query(
+            "SELECT comment FROM system.databases WHERE name = 'test_database_backup'"
+        )
+        == "written by an older server\n"
+    )
+    # The definition is regenerated with the locator as the function it is.
+    assert (
+        "ENGINE = Backup('test_database', File('test_database_backup_file'))"
+        in instance.query("SHOW CREATE DATABASE test_database_backup FORMAT TSVRaw")
+    )
+
+    # A comment change on this server writes the function form, and that survives a restart too.
+    instance.query(
+        "ALTER DATABASE test_database_backup MODIFY COMMENT 'written by this server'"
+    )
+    instance.restart_clickhouse()
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup.test_table")
+        == "0\ttest_database.test_table\n"
+    )
+    assert (
+        instance.query(
+            "SELECT comment FROM system.databases WHERE name = 'test_database_backup'"
+        )
+        == "written by this server\n"
+    )
+
+    instance.query("DROP DATABASE test_database_backup SYNC")
+    instance.query("DROP DATABASE test_database SYNC")
