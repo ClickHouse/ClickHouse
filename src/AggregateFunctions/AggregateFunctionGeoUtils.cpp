@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionGeoUtils.h>
+#include <AggregateFunctions/AggregateFunctionGeoValidity.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -163,7 +164,7 @@ bool correctAndValidatePolygonalGeometry(
         boost::geometry::convert(geometry, wide);
         boost::geometry::correct(wide);
         checkPolygonalPointBudget(wide, max_result_points, function_name);
-        if (!boost::geometry::is_valid(wide, reason))
+        if (!isValidGeoMultiPolygon<AllocatorWithMemoryTracking>(wide, reason))
             return false;
         boost::geometry::convert(wide, geometry);
         return true;
@@ -171,7 +172,7 @@ bool correctAndValidatePolygonalGeometry(
 
     boost::geometry::correct(geometry);
     checkPolygonalPointBudget(geometry, max_result_points, function_name);
-    return boost::geometry::is_valid(geometry, reason);
+    return isValidGeoMultiPolygon<AllocatorWithMemoryTracking>(geometry, reason);
 }
 
 template <typename Operation>
