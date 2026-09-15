@@ -18,6 +18,7 @@ SET enable_parallel_replicas=0;
 SET query_plan_join_swap_table=0;
 SET join_algorithm='hash'; -- to make plan stable
 SET join_runtime_filter_min_probe_rows=0;
+SET enable_join_runtime_filters_index_analysis = 1; -- pinned: the setting is randomized in CI and it changes the `Key range tracking` line of the plan
 
 -- RIGHT ANTI JOIN
 SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')

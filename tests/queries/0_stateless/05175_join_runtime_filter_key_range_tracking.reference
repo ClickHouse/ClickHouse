@@ -1,0 +1,61 @@
+primary key
+Key range tracking: 1
+skip index
+Key range tracking: 1
+no index
+Key range tracking: 0
+not a MergeTree probe side
+Key range tracking: 0
+setting off
+Key range tracking: 0
+two filters in one query
+BuildRuntimeFilter (Build runtime join filter on __table2.k)
+Key range tracking: 1
+BuildRuntimeFilter (Build runtime join filter on __table3.k)
+Key range tracking: 0
+single-key anti join on the primary key
+Key range tracking: 0
+multi-key anti join on the primary key
+Key range tracking: 0
+anti join next to an inner join
+BuildRuntimeFilter (Build runtime join filter on __table2.k)
+Key range tracking: 1
+BuildRuntimeFilter (Build runtime join filter on __table3.k)
+Key range tracking: 0
+skip index on the join key ignored, another one still active
+Key range tracking: 0
+skip index on the join key not ignored
+Key range tracking: 1
+skip indexes disabled
+Key range tracking: 0
+skip indexes disabled, join on the primary key
+Key range tracking: 1
+FINAL
+Key range tracking: 0
+no FINAL
+Key range tracking: 1
+read-time skip indexes disabled
+Key range tracking: 1
+normal projection, join key is the projection sorting key
+ReadFromMergeTree (proj_by_v)
+Key range tracking: 1
+normal projection, join key prunable nowhere
+ReadFromMergeTree (proj_by_v)
+Key range tracking: 0
+aggregate projection
+ReadFromMergeTree (proj_by_v_agg)
+Key range tracking: 1
+granules pruned through the projection
+05175_aggregate_projection	1	1
+05175_normal_projection	1	1
+results
+10
+10
+990
+990
+10
+10
+10
+10
+10
+100
