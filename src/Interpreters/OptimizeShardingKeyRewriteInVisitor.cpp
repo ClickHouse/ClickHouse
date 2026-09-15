@@ -1,6 +1,7 @@
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_erase.h>
 
 namespace
@@ -78,13 +80,50 @@ bool shardContains(
     return data.shard_info.shard_num == shard_num;
 }
 
+/// Collect the names of the `IN` expressions that are reachable without going through a filtering
+/// clause. `WHERE` may be the only place that computes a column which a later stage - `LIMIT BY`, for
+/// example - then consumes by name, so rewriting the filter alone can still make the shard's block
+/// disagree with the header the initiator expects.
+void collectInNamesUsedOutsideFilters(const ASTPtr & node, std::unordered_set<String> & names)
+{
+    if (const auto * select = node->as<ASTSelectQuery>())
+    {
+        for (const auto & child : select->children)
+        {
+            if (child == select->where() || child == select->prewhere())
+                continue;
+
+            collectInNamesUsedOutsideFilters(child, names);
+        }
+
+        return;
+    }
+
+    if (const auto * function = node->as<ASTFunction>(); function && function->name == "in")
+        names.insert(function->getColumnName());
+
+    for (const auto & child : node->children)
+        collectInNamesUsedOutsideFilters(child, names);
+}
+
 }
 
 namespace DB
 {
 
-bool OptimizeShardingKeyRewriteInMatcher::needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/)
+bool OptimizeShardingKeyRewriteInMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
+    /// Rewrite the set only inside the filtering clauses. Pruning the set to the elements routed to
+    /// this shard leaves the value of the expression correct - a row on this shard can only equal an
+    /// element routed here - but it changes the expression's name, and every other clause can carry
+    /// that name into the header the shard returns to the initiator: the projection directly, and
+    /// `GROUP BY` / `ORDER BY` / `LIMIT BY` through the intermediate stages, which ship the
+    /// aggregation keys and the `before_order_by` columns and are matched by name on the initiator.
+    ///
+    /// The join tree is still visited, so a subquery in `FROM` keeps being pruned by its own filters.
+    if (const auto * select = node->as<ASTSelectQuery>())
+        return child == select->where() || child == select->prewhere() || child == select->tables();
+
     return true;
 }
 
@@ -97,6 +136,17 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTPtr & node, Data & data)
 void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & data)
 {
     if (function.name != "in")
+        return;
+
+    /// An aliased `IN` in a filter can be referenced from any other clause - and, in the old
+    /// analyzer, the alias is expanded to a copy of this expression there. Rewriting only the copy
+    /// in the filter would either rename the column the initiator binds, or leave two different
+    /// expressions behind the same alias (`MULTIPLE_EXPRESSIONS_FOR_ALIAS`).
+    if (!function.tryGetAlias().empty())
+        return;
+
+    /// The same expression is used outside the filters, where its name reaches the initiator.
+    if (data.in_names_used_outside_filters && data.in_names_used_outside_filters->contains(function.getColumnName()))
         return;
 
     auto * left = function.arguments->children.front().get();
@@ -149,10 +199,26 @@ public:
         , data(std::move(data_))
     {}
 
+    /// See the comment in `OptimizeShardingKeyRewriteInMatcher::needChildVisit`: outside of the
+    /// filtering clauses the rewrite keeps the value of the expression but changes its name, and the
+    /// initiator binds the columns the shard returns by name.
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        if (const auto * query_node = parent->as<QueryNode>())
+            return child == query_node->getWhere() || child == query_node->getPrewhere() || child == query_node->getJoinTreeNode();
+
+        return true;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "in")
+            return;
+
+        /// An aliased node is shared between the clauses that reference the alias, so rewriting it
+        /// through a filter would also rewrite it in the projection or in `ORDER BY`.
+        if (node->hasAlias())
             return;
 
         auto & arguments = function_node->getArguments().getNodes();
@@ -204,6 +270,16 @@ void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRe
 {
     OptimizeShardingKeyRewriteIn visitor(std::move(data), std::move(context));
     visitor.visit(node);
+}
+
+void optimizeShardingKeyRewriteIn(ASTPtr & query, OptimizeShardingKeyRewriteInMatcher::Data data)
+{
+    std::unordered_set<String> in_names_used_outside_filters;
+    collectInNamesUsedOutsideFilters(query, in_names_used_outside_filters);
+    data.in_names_used_outside_filters = &in_names_used_outside_filters;
+
+    OptimizeShardingKeyRewriteInVisitor visitor(data);
+    visitor.visit(query);
 }
 
 }
