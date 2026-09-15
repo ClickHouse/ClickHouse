@@ -2,62 +2,23 @@
 
 #include <Common/TargetSpecific.h>
 
-#if defined(__AVX2__) || defined(__AVX512F__) || USE_MULTITARGET_CODE
-#include <immintrin.h>
-#endif
-
-#if USE_MULTITARGET_CODE || (defined(__AVX512F__) && defined(__AVX512BW__))
 namespace
 {
 constexpr size_t AVX512_ASCII_THRESHOLD = 16 * 1024;
-}
 
-namespace DB::TargetSpecific::x86_64_v4
-{
-#if USE_MULTITARGET_CODE
-X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
-#endif
-static bool NO_INLINE isAllASCIIAVX512(const UInt8 * data, size_t size)
-{
-    if (unlikely(_mm512_movepi8_mask(_mm512_loadu_si512(reinterpret_cast<const void *>(data))) != 0))
-        return false;
-
-    __m512i mask0 = _mm512_setzero_si512();
-    __m512i mask1 = _mm512_setzero_si512();
-    __m512i mask2 = _mm512_setzero_si512();
-    __m512i mask3 = _mm512_setzero_si512();
-
-    const auto address_alignment = reinterpret_cast<uintptr_t>(data) & 63;
-    size_t i = (64 - address_alignment) & 63;
-    if (i == 0)
-        i = 64;
-
-    for (; i + 256 <= size; i += 256)
+/// Deliberately plain: at x86-64-v3/v4 the compiler vectorizes this reduction,
+/// while the same implementation also produces a good loop on other platforms.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(static bool NO_INLINE),
+    isAllASCIIImpl,
+    MULTITARGET_FUNCTION_BODY((const UInt8 * data, size_t size) /// NOLINT
     {
-        mask0 = _mm512_or_si512(mask0, _mm512_load_si512(reinterpret_cast<const void *>(data + i)));
-        mask1 = _mm512_or_si512(mask1, _mm512_load_si512(reinterpret_cast<const void *>(data + i + 64)));
-        mask2 = _mm512_or_si512(mask2, _mm512_load_si512(reinterpret_cast<const void *>(data + i + 128)));
-        mask3 = _mm512_or_si512(mask3, _mm512_load_si512(reinterpret_cast<const void *>(data + i + 192)));
-    }
-
-    __m512i mask = _mm512_or_si512(
-        _mm512_or_si512(mask0, mask1),
-        _mm512_or_si512(mask2, mask3));
-
-    for (; i + 64 <= size; i += 64)
-        mask = _mm512_or_si512(mask, _mm512_load_si512(reinterpret_cast<const void *>(data + i)));
-
-    if (i < size)
-    {
-        const auto tail_mask = static_cast<__mmask64>(~UInt64{0} >> (64 - (size - i)));
-        mask = _mm512_or_si512(mask, _mm512_maskz_loadu_epi8(tail_mask, data + i));
-    }
-
-    return _mm512_movepi8_mask(mask) == 0;
+        UInt8 mask = 0;
+        for (size_t i = 0; i < size; ++i)
+            mask |= data[i];
+        return !(mask & 0x80);
+    }))
 }
-}
-#endif
-
 
 namespace impl
 {
@@ -76,38 +37,12 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    if (size >= AVX512_ASCII_THRESHOLD)
-        return DB::TargetSpecific::x86_64_v4::isAllASCIIAVX512(data, size);
-#elif USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
     if (size >= AVX512_ASCII_THRESHOLD && DB::isArchSupported(DB::TargetArch::x86_64_v4))
-        return DB::TargetSpecific::x86_64_v4::isAllASCIIAVX512(data, size);
+        return isAllASCIIImpl_x86_64_v4(data, size);
 #endif
 
-#if defined(__AVX2__)
-    __m256i masks = _mm256_setzero_si256();
-
-    size_t i = 0;
-    for (; i + 32 <= size; i += 32)
-    {
-        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
-        masks = _mm256_or_si256(masks, bytes);
-    }
-    int mask = _mm256_movemask_epi8(masks);
-
-    UInt8 tail_mask = 0;
-    for (; i < size; i++)
-        tail_mask |= data[i];
-
-    mask |= (tail_mask & 0x80);
-    return !mask;
-#else
-    UInt8 mask = 0;
-    for (size_t i = 0; i < size; ++i)
-        mask |= data[i];
-
-    return !(mask & 0x80);
-#endif
+    return isAllASCIIImpl(data, size);
 }
 
 LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
