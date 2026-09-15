@@ -9,6 +9,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -250,6 +251,16 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
+
+        /// The rename re-keys every table of the database under the new name, which can close a cycle
+        /// in the server-wide dependency graph - the simplest case being a table
+        /// `db.t = Alias(<new name>, t)`, accepted at `CREATE` because the target database did not
+        /// exist yet and thus becoming a self-reference. Refuse such a rename before doing anything,
+        /// the same way `RENAME TABLE` already refuses it for a single table.
+        Strings table_names;
+        for (auto it = db->getTablesIterator(getContext()); it->isValid(); it->next())
+            table_names.push_back(it->name());
+        catalog.checkDatabaseCanBeRenamedWithNoCyclicDependencies(old_name, new_name, table_names);
         db->renameDatabase(getContext(), new_name);
     }
 
