@@ -641,10 +641,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
-    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up. The projection rewrites,
-    /// which replace the read in the same plan, carry it over with `inheritJoinRuntimeFiltersForIndexAnalysis`.
+    /// optimization. Carried by clone() (in-process clones such as the `IN` subquery build in
+    /// `PreparedSets::build` run against the same runtime filter lookup), but not by
+    /// serialize()/deserialize(), so the pruning is intentionally skipped when the step is rebuilt for
+    /// distributed or parallel-replicas reads (results stay correct, only the optimization is lost);
+    /// propagating it there is a follow-up. The projection rewrites, which replace the read in the same
+    /// plan, carry it over with `inheritJoinRuntimeFiltersForIndexAnalysis`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
     /// Every key `addJoinRuntimeFilterIndexAnalysisOnDataRead` was called with, prunable here or not.
     /// A read that replaces this one (a projection read) re-validates them against its own metadata.

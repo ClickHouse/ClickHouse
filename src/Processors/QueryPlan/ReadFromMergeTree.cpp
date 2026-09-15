@@ -4622,6 +4622,16 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    /// Carry over the join runtime filter descriptors as well. A clone executed in-process shares the
+    /// query context and thus the runtime filter lookup with the original (`PreparedSets::build` runs
+    /// the `IN` subquery on a clone of its source plan, `DirectJoinMergeTreeEntity::findRows` runs a
+    /// clone of the lookup plan), while the cloned `BuildRuntimeFilterStep` keeps tracking the key
+    /// range: a clone taken after optimization that dropped the descriptors would leave the build side
+    /// paying for a range the cloned read never consumes. A clone shipped elsewhere is unaffected:
+    /// `serialize` does not carry them and the read-time predicate fails open when the filter is not
+    /// found in the lookup.
+    cloned_step->join_runtime_filters_for_index_analysis = join_runtime_filters_for_index_analysis;
+    cloned_step->join_runtime_filter_candidates_for_index_analysis = join_runtime_filter_candidates_for_index_analysis;
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }
