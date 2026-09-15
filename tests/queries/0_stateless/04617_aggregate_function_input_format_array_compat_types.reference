@@ -1,0 +1,22 @@
+=== Enum8: legacy string-wrapped form with double-quoted elements (JSONEachRow) ===
+1	['a','b']
+2	['a','c']
+=== Enum8: legacy double-quoted elements, native single-quoted (VALUES) ===
+3	['a','c']
+5	['a','b']
+=== Date: legacy double-quoted elements and native single-quoted ===
+1	['2020-01-01','2020-01-02']
+2	['2021-05-05','2021-06-06']
+3	['2022-02-02']
+=== UInt64: legacy quoted numbers and native bare numbers ===
+1	[1,2]
+2	[3,4]
+3	[5,6]
+=== Nullable(UInt64): native NULL keyword still works ===
+1	[1,2]
+2	[3,4]
+=== UUID: legacy double-quoted elements ===
+1	['00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002']
+2	['00000000-0000-0000-0000-000000000003']
+=== Array argument type keeps the native form (composite types are not on the legacy path) ===
+1	[['x','y'],['z']]

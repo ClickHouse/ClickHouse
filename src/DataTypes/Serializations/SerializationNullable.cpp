@@ -404,24 +404,39 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
         /// It can happen only if there is a string instead of a number
         /// or if someone uses tab or LF in TSV null_representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
-        /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
-
         if constexpr (!throw_exception)
+        {
+            /// We also should delete incorrectly deserialized value from nested column.
+            nested_column.popBack(1);
             return ReturnType(false);
+        }
 
         if (null_representation.contains('\t') || null_representation.contains('\n'))
+        {
+            nested_column.popBack(1);
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                 "containing '\\t' or '\\n' may not work correctly for large input.");
+        }
         if (settings.tsv.crlf_end_of_line_input && null_representation.contains('\r'))
+        {
+            nested_column.popBack(1);
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                 "containing '\\r' may not work correctly for large input.");
+        }
 
+        /// Serialize the just-parsed value for the message while it is still the last row of the nested
+        /// column: popping it first would either report an unrelated earlier row or, for the first row of
+        /// a block, underflow to `size() - 1 == SIZE_MAX`.
         WriteBufferFromOwnString parsed_value;
         if constexpr (escaped)
             nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
         else
             nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
+
+        /// Delete the incorrectly deserialized value from the nested column before throwing: the exception
+        /// may be caught and the row skipped (`input_format_allow_errors_num`), and the null map has no
+        /// entry for this value, so leaving it would desynchronize the nested column and the null map.
+        nested_column.popBack(1);
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
@@ -796,18 +811,26 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
         /// It can happen only if there is an unquoted string instead of a number
         /// or if someone uses csv delimiter, LF or CR in CSV null representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
-        /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
-
         if constexpr (!throw_exception)
+        {
+            /// We also should delete incorrectly deserialized value from nested column.
+            nested_column.popBack(1);
             return ReturnType(false);
+        }
 
         if (null_representation.contains(settings.csv.delimiter) || null_representation.contains('\r') || null_representation.contains('\n'))
+        {
+            nested_column.popBack(1);
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
+        }
 
+        /// See the comment in `deserializeTextEscapedAndRawImpl`: serialize the just-parsed value for the
+        /// message while it is still the last row of the nested column, then pop it so a caught-and-skipped
+        /// exception (`input_format_allow_errors_num`) does not desynchronize the nested column and the null map.
         WriteBufferFromOwnString parsed_value;
         nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
+        nested_column.popBack(1);
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",

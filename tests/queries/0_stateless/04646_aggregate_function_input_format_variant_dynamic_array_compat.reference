@@ -1,0 +1,23 @@
+=== Variant: legacy double-quoted elements (VALUES) ===
+1	['a','b']
+=== Variant: legacy mixed bareword number and double-quoted string, with variant types ===
+2	[('42','UInt64'),('b','String')]
+=== Variant: legacy bareword NULL parses as the string NULL (as released) ===
+3	[('NULL','String'),('c','String')]
+=== Variant: legacy string-wrapped form with double-quoted elements (JSONEachRow) ===
+4	['d','e']
+5	[7,'f']
+=== Variant: native JSON array form still works (JSONEachRow) ===
+6	[8,'g']
+=== Variant: native single-quoted string elements (VALUES) ===
+7	['h','i']
+=== Variant with composite variant: native bracketed elements take the quoted parse ===
+1	[[1,2],'a']
+=== Dynamic: legacy double-quoted elements and bareword number, with dynamic types ===
+1	[('a','String'),('b','String')]
+2	[('42','Int64'),('c','String')]
+=== Dynamic: legacy string-wrapped form (JSONEachRow) and bareword NULL as string ===
+3	[5,'d']
+4	['NULL','e']
+=== Dynamic: native single-quoted string elements (VALUES) ===
+5	['f','g']
