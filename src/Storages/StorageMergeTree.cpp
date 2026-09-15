@@ -519,7 +519,8 @@ void StorageMergeTree::alter(
         /// changed derived metadata (implicit statistics, or implicit skip indices gated by a
         /// mutable setting such as `enable_block_number_column`), the running table must get the
         /// recomputed metadata too, otherwise it only appears after `DETACH` / `ATTACH` or restart.
-        if (statistics_changed || implicitIndicesChanged(old_metadata, new_metadata))
+        const bool new_metadata_installed = statistics_changed || implicitIndicesChanged(old_metadata, new_metadata);
+        if (new_metadata_installed)
         {
             /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
             /// into `new_metadata` so that installing it does not revert the index filename policy.
@@ -540,9 +541,11 @@ void StorageMergeTree::alter(
         }
         catch (...)
         {
-            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE. `changeSettings`
+            /// only swaps the `SETTINGS` clause back; whenever the recomputed metadata was installed
+            /// above (implicit statistics or implicit indices), restore the whole old metadata too.
             changeSettings(old_metadata.settings_changes, table_lock_holder);
-            if (statistics_changed)
+            if (new_metadata_installed)
                 setInMemoryMetadata(old_metadata);
             throw;
         }
