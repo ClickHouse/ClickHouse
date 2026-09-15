@@ -237,8 +237,8 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
 
         auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
 
-        /// Injected on the forward pass only. `rewriteSingleDirectory` is also how the reversal puts a marker back,
-        /// and a fault that never stops firing there cannot be retried to an end.
+        /// Forward pass only: the reversal rewrites markers through the same helper, and a fault that never stops
+        /// firing cannot be retried to an end.
         fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
         {
             throw Exception(
@@ -256,10 +256,8 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
     auto log = getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation");
     LOG_TRACE(log, "Reversing directory move from '{}' to '{}'", path_from, path_to);
 
-    /// Every marker of the subtree is rewritten, not only the ones `execute` reported as written. The old logical path
-    /// of each is known here, so rewriting a marker that `execute` never reached costs one write and changes nothing,
-    /// while depending on what `execute` saw succeed would leave a marker behind when a write reported a failure after
-    /// it had landed.
+    /// Every marker of the subtree is rewritten, not only the ones `execute` reported as written: each old logical
+    /// path is known here, so rewriting one that `execute` never reached costs a write and changes nothing.
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
         auto sub_path_to = path_to / subdir / "";
@@ -268,7 +266,6 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
         if (!remote_info.has_value())
             continue;
 
-        /// One stage per directory, so a marker that is back under its old path is never rewritten again.
         undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", sub_path_from), [&]
         {
             auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/std::nullopt);
@@ -405,8 +402,6 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
     remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
 
-    /// Both keys are known and nothing has been written yet. Past this line the reversal runs, and it converges on the
-    /// blob being back under its own key rather than on what this method saw succeed.
     blob_removal_attempted = true;
 
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
@@ -422,9 +417,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
     auto log = getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation");
 
-    /// The restore states where the blob has to end up and asks object storage whether it is already there, so it
-    /// holds whether the removal never ran, ran, or ran and lost its answer. The temporary copy is dropped in a later
-    /// stage, so a failure never leaves the reversal without the copy it still needs.
+    /// The temporary copy is dropped in a later stage, so a failure never strands the restore.
     undoWithRetries(log, fmt::format("restore the blob of the file '{}'", path), [&]
     {
         if (object_storage->exists(StoredObject(remote_source_path)))
@@ -507,8 +500,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     auto log = getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation");
     LOG_WARNING(log, "Removing file '{}' that was copied from '{}", path_to, path_from);
 
-    /// The target held no file of this filesystem before the copy, so the key has to be empty again whether or not the
-    /// copy reported success.
+    /// The target held no file before the copy, so the key has to be empty again whether or not the copy said so.
     undoWithRetries(log, fmt::format("remove the copy of the file '{}'", path_to), [&]
     {
         object_storage->removeObjectIfExists(StoredObject(remote_path_to));
@@ -569,9 +561,6 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
     if (had_existing_target && !replaceable)
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
-    /// Everything the reversal needs is known now, and nothing has been written yet. Past this line the reversal runs,
-    /// and it converges on the state recorded here rather than on what this method managed to do - an object storage
-    /// call that writes and then reports a failure must not be able to hide a step from it.
     blob_move_attempted = true;
 
     if (had_existing_target)
@@ -615,8 +604,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         object_storage->copyObject(
             /*object_from=*/StoredObject(remote_path_from), /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
 
-        /// Fires once the blob is published but before this method knows it, which is the shape of a client that
-        /// writes and then reports a failure.
+        /// Fires once the blob is published and before this method knows it.
         fiu_do_on(FailPoints::plain_object_storage_fail_after_copy_on_file_move, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after moving from '{}' to '{}'", path_from, path_to);
         });
@@ -638,9 +626,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     auto log = getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation");
     LOG_WARNING(log, "Reversing the move (replaceable = {}) of '{}' to '{}'", replaceable, path_from, path_to);
 
-    /// Each stage states where one key has to end up and asks object storage whether it is already there. That answer
-    /// holds whether the matching step of `execute` never ran, ran, or ran and lost its answer, so no stage depends on
-    /// this operation having seen its own writes succeed.
+    /// Each stage says where one key has to end up and asks object storage whether it is already there, so it holds
+    /// whether the matching step of `execute` never ran, ran, or ran and lost its answer.
     undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
     {
         if (object_storage->exists(StoredObject(remote_path_from)))
@@ -666,8 +653,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     {
         if (!had_existing_target)
         {
-            /// The move published the source blob under a key that held no file of this filesystem, so the key has to
-            /// be empty again. Nothing of value can be there, whether or not the publishing copy reported success.
+            /// The key held no file before the move, so nothing of value can be there.
             object_storage->removeObjectIfExists(StoredObject(remote_path_to));
             return;
         }
@@ -679,10 +665,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
                 read_settings,
                 write_settings);
 
-        /// Otherwise there is nothing to restore. The copy that puts the target aside comes before anything overwrites
-        /// or removes the target, so either it reported success and its result is there, or it threw and the target
-        /// was never touched. A copy that reports success and writes nothing would break this, and it would break
-        /// every other call these reversals depend on just as much.
+        /// Otherwise there is nothing to restore: the copy above comes before anything overwrites or removes the
+        /// target, so either it succeeded and its result is here, or it threw and the target was never touched.
     });
 
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.

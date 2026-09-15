@@ -31,8 +31,6 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
         }
         catch (...)
         {
-            /// This operation and the ones below it keep whatever they have already written, while the transaction is
-            /// reported as failed, so the metadata is left describing a part of a transaction that did not happen.
             ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacksFailed);
 
             state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;

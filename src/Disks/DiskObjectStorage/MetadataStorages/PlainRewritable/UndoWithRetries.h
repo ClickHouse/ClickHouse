@@ -10,29 +10,15 @@ namespace DB
 
 /** Repeats a stage of an `undo` until object storage accepts it.
   *
-  * A commit that fails changes nothing: the snapshot of the filesystem is published only after every operation has
-  * succeeded, and the `undo` of the operations that did run restores what object storage held before. An `undo` that
-  * stops halfway is different. The writes it already made stay in object storage, so object storage describes a
-  * filesystem this process does not have, and nothing reconciles the two until the filesystem is rebuilt from object
-  * storage. For a `MergeTree` part rename that means a part directory that turns up under a name the server never
-  * committed.
-  *
-  * At that point the state of object storage is unknown, so no decision taken from it can be trusted, including the
-  * decision to accept it. Therefore an `undo` does not give up: every stage repeats until it succeeds, and the
-  * transaction reports its failure only once object storage agrees with the in-memory filesystem again. A stage that
-  * succeeded never repeats, so an `undo` that restores several objects does not redo the ones it is done with.
-  *
-  * The cost is that a stage which keeps failing holds the thread, and with it every other transaction of the disk,
-  * because a commit holds the metadata lock. This is deliberate. A disk whose metadata cannot be repaired must not
+  * An `undo` that stops halfway leaves its earlier writes behind while the failed transaction publishes nothing, so
+  * object storage describes a filesystem this process does not have until the next load. What is stored is unknown
+  * from here, so the reversal does not give up; a stage that succeeded never repeats. A stage that keeps failing holds
+  * the thread, and the metadata lock with it, which is deliberate - a disk whose metadata cannot be repaired must not
   * accept more metadata.
   *
-  * A stage that throws `LOGICAL_ERROR` is not repeated, because no invariant is repaired by asking again. A stage uses
-  * it to report the one state a reversal cannot leave: the blob it has to restore exists nowhere.
-  *
-  * That is the only exit, and it is not a repaired one. The blob is gone, so nothing brings back the file it belonged
-  * to, and `MetadataOperationsHolder::rollback` stops at the operation that threw, so the operations below it keep the
-  * writes they have already made. A debug or sanitizer build aborts on the logical error before any of that, and a
-  * release build reports the transaction as failed and leaves the metadata describing a part of it.
+  * `LOGICAL_ERROR` is not repeated, because asking again repairs no invariant. A stage throws it when the blob it has
+  * to restore exists nowhere; `MetadataOperationsHolder::rollback` then stops, and the operations below it keep their
+  * writes.
   */
 void undoWithRetries(const LoggerPtr & log, std::string_view description, const std::function<void()> & stage);
 
