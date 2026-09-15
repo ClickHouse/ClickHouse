@@ -662,6 +662,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RECONNECT_ZOOKEEPER:
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
+        case Type::DISABLE_ALL_FAILPOINTS:
             break;
         case Type::SYNC_FILESYSTEM_CACHE:
         {
