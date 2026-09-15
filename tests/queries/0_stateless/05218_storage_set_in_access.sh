@@ -25,6 +25,10 @@ INSERT INTO mt_table VALUES (4242), (31337);
 
 DROP USER IF EXISTS $user;
 CREATE USER $user IDENTIFIED WITH no_password;
+-- Engine usage is a precondition of the two DDL cases below, not part of the grant progression
+-- under test: where table_engines_require_grant is on, a MergeTree CREATE without this grant is
+-- denied for the engine, which would satisfy the projection assertion without reaching the set.
+GRANT TABLE ENGINE ON MergeTree TO $user;
 "
 
 # Without any grant, the set contents are readable neither directly nor through the right of IN.
