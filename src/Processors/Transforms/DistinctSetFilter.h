@@ -87,6 +87,13 @@ private:
     LCOptimizationController lc_optimization_controller;
 };
 
+/// The comparison keys retained by a `DISTINCT` set and returned by its extractor.
+enum class DistinctKeyRepresentation
+{
+    Columns,
+    Hash128,
+};
+
 /// Owns hash-based `DISTINCT` state, including `LowCardinality` filtering and size-limit enforcement.
 /// `DistinctTransform` uses it for streaming deduplication; `ExternalDistinctTransform` also extracts
 /// its retained keys when spilling.
@@ -96,15 +103,14 @@ public:
     /// `skip_null_keys_` drops rows with a `NULL` key component, matching a `Set` filled with
     /// `transform_null_in = 0`. Enable it only for consumers that discard these rows; ordinary
     /// `DISTINCT` treats `NULL` as a value. Remaining keys use the nested, non-nullable columns.
-    ///
-    /// `require_extractable_keys_` selects `SetMethodSerialized` for generic keys so `extractKeys`
-    /// can recover their values. It requires key-value storage and is incompatible with `skip_null_keys_`.
     DistinctSetFilter(
         const Block & header,
         const Names & columns,
         const SizeLimits & set_size_limits_,
-        bool skip_null_keys_ = false,
-        bool require_extractable_keys_ = false);
+        bool skip_null_keys_ = false);
+
+    /// Returns the representation chosen from the materialized input columns. Requires an initialized set.
+    DistinctKeyRepresentation getKeyRepresentation() const;
 
     const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
     bool hasKeyColumns() const { return !key_columns_pos.empty(); }
@@ -119,8 +125,7 @@ public:
     /// The memory occupied by the set and by the `LowCardinality` fast path.
     size_t getTotalByteCount() const;
 
-    /// Reads owning key columns from a frozen set in hash-table iteration order. Requested serialized
-    /// components are returned as `String` columns containing their original encodings.
+    /// Reads owning comparison-key columns from a frozen set in hash-table iteration order.
     class KeyExtractor
     {
     public:
@@ -132,15 +137,12 @@ public:
         virtual MutableColumns next(size_t max_rows, size_t max_bytes) = 0;
     };
 
-    /// Transfers the hash table, arena, and key metadata into an extractor. The columns it returns
-    /// follow `getKeyColumnsPositions` and own their values independently of the extractor. The table
-    /// is released after its final key is materialized, or when the extractor is destroyed early.
-    /// `serialized_key_indices` selects components whose original encodings must be retained, indexed
-    /// within `getKeyColumnsPositions`. A nonempty selection requires `SetMethodSerialized`; unselected
-    /// components keep their original types. Requires at least one retained key, an extractable method,
-    /// and `skip_null_keys_ = false`. Passing `require_extractable_keys_ = true` guarantees an extractable
-    /// method.
-    std::unique_ptr<KeyExtractor> extractKeys(const ColumnNumbers & serialized_key_indices = {}) &&;
+    /// Transfers the hash table, arena, and key metadata into an extractor. With `Columns`, the result
+    /// follows `getKeyColumnsPositions`; with `Hash128`, it contains one `UInt128` fingerprint column.
+    /// The returned columns own their values independently of the extractor. The table is released
+    /// after its final key is materialized, or when the extractor is destroyed early.
+    /// Requires at least one retained key and `skip_null_keys_ = false`.
+    std::unique_ptr<KeyExtractor> extractKeys() &&;
 
     /// Normalizes input columns and initializes the set on first use, without inserting keys.
     /// The prepared chunk exposes the materialized column memory needed to estimate filtering copies.
@@ -173,8 +175,6 @@ private:
     /// Owns the hash table and arena until the filter is destroyed or extraction takes ownership.
     std::unique_ptr<SetVariants> data;
     Sizes key_sizes;
-    /// The context of the hashing state of the set method; only the serialized method needs one.
-    ColumnsHashing::HashMethodContextPtr hash_method_context;
     DistinctLowCardinalityFilter lc_filter;
 
     /// Restrictions on the maximum size of the set.
@@ -182,7 +182,6 @@ private:
     bool limit_reached = false;
 
     const bool skip_null_keys;
-    const bool require_extractable_keys;
     bool has_const_null_key = false;
 };
 

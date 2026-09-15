@@ -1,12 +1,11 @@
 #include <Processors/Transforms/DistinctSetFilter.h>
 
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
-#include <IO/ReadBufferFromString.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 
@@ -209,10 +208,9 @@ void buildDistinctFilter(
     IColumn::Filter & filter,
     const size_t rows,
     SetVariants & variants,
-    const ColumnsHashing::HashMethodContextPtr & context,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, context);
+    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
 
     if (mask)
     {
@@ -276,15 +274,12 @@ void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Fi
 }
 
 DistinctSetFilter::DistinctSetFilter(
-    const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_, bool require_extractable_keys_)
+    const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_)
     : key_columns_pos(calculateDistinctKeyColumnsPositions(header, columns))
     , data(std::make_unique<SetVariants>())
     , set_size_limits(set_size_limits_)
     , skip_null_keys(skip_null_keys_)
-    , require_extractable_keys(require_extractable_keys_)
 {
-    chassert(!skip_null_keys || !require_extractable_keys);
-
     key_types.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
         key_types.push_back(header.getByPosition(pos).type);
@@ -317,57 +312,19 @@ size_t DistinctSetFilter::getTotalByteCount() const
 namespace
 {
 
-/// Retains selected component encodings because reconstructing an aggregate state can change the
-/// bytes produced by its serializer. Other components are decoded into their original column types.
-void insertSerializedKeyIntoColumns(
-    std::string_view key, const DataTypes & key_types, const std::vector<bool> & serialized_key_mask,
-    const std::vector<IColumn *> & columns)
-{
-    ReadBufferFromString in(key);
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (!serialized_key_mask[i])
-        {
-            columns[i]->deserializeAndInsertFromArena(in, /*settings=*/ nullptr);
-            continue;
-        }
-
-        const char * begin = in.position();
-        if (i + 1 < columns.size())
-        {
-            /// Decode only to locate the component's boundary. The final component occupies the
-            /// remaining bytes and needs no reconstruction, including for a single-column key.
-            auto value = key_types[i]->createColumn();
-            value->deserializeAndInsertFromArena(in, /*settings=*/ nullptr);
-        }
-        else
-            in.ignore(in.available());
-        columns[i]->insertData(begin, in.position() - begin);
-    }
-    chassert(!in.hasPendingData());
-}
-
 /// Keeps the set alive while a typed iterator materializes owning columns one batch at a time.
 template <typename Method>
 class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
 {
 public:
     KeyExtractorImpl(
-        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_,
-        const ColumnNumbers & serialized_key_indices)
+        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_)
         : data(std::move(data_))
         , key_types(std::move(key_types_))
         , key_sizes(std::move(key_sizes_))
-        , serialized_key_mask(key_types.size(), false)
         , position(method.data.begin())
         , end(method.data.end())
     {
-        chassert(serialized_key_indices.empty() || data->type == SetVariants::Type::serialized);
-        for (const auto index : serialized_key_indices)
-        {
-            chassert(index < key_types.size());
-            serialized_key_mask[index] = true;
-        }
         if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
             unpack_order = Method::State::packedKeysOrder(key_sizes);
     }
@@ -385,19 +342,14 @@ public:
         raw_columns.reserve(key_types.size());
         for (size_t i = 0; i < key_types.size(); ++i)
         {
-            if (serialized_key_mask[i])
-                columns.push_back(ColumnString::create());
-            else
-                columns.push_back(key_types[i]->createColumn());
+            columns.push_back(key_types[i]->createColumn());
             raw_columns.push_back(columns.back().get());
         }
 
         size_t rows = 0;
         while (position != end && rows < max_rows)
         {
-            if constexpr (std::is_same_v<Method, SetMethodSerialized<typename Method::Data>>)
-                insertSerializedKeyIntoColumns(position->getValue(), key_types, serialized_key_mask, raw_columns);
-            else if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+            if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
                 Method::insertKeyIntoColumns(
                     position->getValue(), raw_columns, key_sizes, unpack_order ? &*unpack_order : nullptr);
             else
@@ -416,7 +368,7 @@ public:
             }
         }
 
-        /// Returned columns own their values, including strings and deserialized aggregate states.
+        /// Returned columns own their values, including strings extracted from the arena.
         if (position == end)
             data.reset();
 
@@ -427,7 +379,6 @@ private:
     std::unique_ptr<SetVariants> data;
     const DataTypes key_types;
     const Sizes key_sizes;
-    std::vector<bool> serialized_key_mask;
     typename Method::Data::const_iterator position;
     const typename Method::Data::const_iterator end;
     std::optional<Sizes> unpack_order;
@@ -435,20 +386,24 @@ private:
 
 }
 
-std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(const ColumnNumbers & serialized_key_indices) &&
+DistinctKeyRepresentation DistinctSetFilter::getKeyRepresentation() const
+{
+    chassert(!data->empty());
+    return data->type == SetVariants::Type::hashed ? DistinctKeyRepresentation::Hash128 : DistinctKeyRepresentation::Columns;
+}
+
+std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys() &&
 {
     chassert(!skip_null_keys);
     chassert(getTotalRowCount() > 0);
 
-    auto create_extractor = [this, &serialized_key_indices]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
+    if (getKeyRepresentation() == DistinctKeyRepresentation::Hash128)
+        key_types = {std::make_shared<DataTypeUInt128>()};
+
+    auto create_extractor = [this]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
     {
-        if constexpr (std::is_same_v<Method, SetMethodSerialized<typename Method::Data>> || requires { &Method::insertKeyIntoColumns; })
-        {
-            return std::make_unique<KeyExtractorImpl<Method>>(
-                method, std::move(data), std::move(key_types), std::move(key_sizes), serialized_key_indices);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from this DISTINCT set variant");
+        return std::make_unique<KeyExtractorImpl<Method>>(
+            method, std::move(data), std::move(key_types), std::move(key_sizes));
     };
 
     switch (data->type)
@@ -468,14 +423,7 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
 
 void DistinctSetFilter::initialize(const ColumnRawPtrs & key_columns)
 {
-    auto type = SetVariants::chooseMethod(key_columns, key_sizes);
-    /// Generic keys must retain their values when the consumer extracts them for spilling.
-    if (require_extractable_keys && type == SetVariants::Type::hashed)
-    {
-        type = SetVariants::Type::serialized;
-        hash_method_context = decltype(data->serialized)::element_type::createContext();
-    }
-    data->init(type);
+    data->init(SetVariants::chooseMethod(key_columns, key_sizes));
 }
 
 void DistinctSetFilter::prepareForInsert(Chunk & chunk)
@@ -580,7 +528,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, hash_method_context, mask); \
+            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); \
         break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M

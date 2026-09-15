@@ -4,13 +4,11 @@
 #include <numeric>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/ReadBufferFromString.h>
-#include <Common/Arena.h>
+#include <Processors/Transforms/DistinctSetFilter.h>
+#include <Common/ColumnsHashing.h>
 
 namespace DB
 {
@@ -18,24 +16,9 @@ namespace DB
 namespace
 {
 
+constexpr auto FINGERPRINT_COLUMN_NAME = "__distinct_fingerprint";
 constexpr auto FLAG_COLUMN_NAME = "__distinct_already_emitted";
 constexpr auto ARRIVAL_NUMBER_COLUMN_NAME = "__distinct_arrival_number";
-
-SortDescription buildSortDescription(const Block & header, const ColumnNumbers & key_columns_pos)
-{
-    SortDescription description;
-    description.reserve(key_columns_pos.size());
-    for (const auto pos : key_columns_pos)
-        description.emplace_back(header.getByPosition(pos).name, 1, 1);
-    return description;
-}
-
-/// Orders suppression rows before ordinary rows with equal keys, independently of run registration.
-SortDescription buildRunSortDescription(const Block & header, SortDescription description, size_t flag_column_pos)
-{
-    description.emplace_back(header.getByPosition(flag_column_pos).name, -1, 1);
-    return description;
-}
 
 /// Selects the non-constant columns in header order. Constants are restored from the header after
 /// merging, so their values do not need to be written to the temporary runs.
@@ -66,63 +49,8 @@ ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, con
     return spill_positions;
 }
 
-/// Selects keys for bytewise sorting when their types cannot guarantee comparison of all values.
-/// A `Variant` can contain non-comparable types despite reporting comparability. Types with dynamic
-/// structure can acquire non-comparable values in later chunks and therefore always use serialization.
-ColumnNumbers calculateSerializedKeyColumnsPositions(
-    const Block & header, const ColumnNumbers & key_columns_pos, const ColumnNumbers & spill_key_columns_pos)
-{
-    ColumnNumbers positions;
-    for (size_t i = 0; i < key_columns_pos.size(); ++i)
-    {
-        const auto & type = *header.getByPosition(key_columns_pos[i]).type;
-        bool requires_serialization = type.hasDynamicStructure() || !type.isComparable();
-        type.forEachChild([&](const IDataType & nested_type)
-        {
-            requires_serialization |= !nested_type.isComparable();
-        });
-
-        if (requires_serialization)
-            positions.push_back(spill_key_columns_pos[i]);
-    }
-    return positions;
-}
-
-/// Serializes each value with `IColumn::serializeValueIntoArena` into a `String` column.
-ColumnPtr serializeValues(const IColumn & column)
-{
-    const size_t num_rows = column.size();
-    auto serialized = ColumnString::create();
-    serialized->reserve(num_rows);
-
-    Arena arena;
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        const char * begin = nullptr;
-        const auto value = column.serializeValueIntoArena(row, arena, begin, /*settings=*/ nullptr);
-        serialized->insertData(value.data(), value.size());
-        arena.rollback(value.size());
-    }
-    return serialized;
-}
-
-/// Reverses `serializeValues`, producing a column of the original type.
-ColumnPtr deserializeValues(const IColumn & serialized, const IDataType & type)
-{
-    const size_t num_rows = serialized.size();
-    auto column = type.createColumn();
-    column->reserve(num_rows);
-
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        ReadBufferFromString in(serialized.getDataAt(row));
-        column->deserializeAndInsertFromArena(in, /*settings=*/ nullptr);
-    }
-    return column;
-}
-
-/// Prefixes service-column names until they are distinct from user-column names. Consumers address
-/// these columns by position, so the generated names do not affect the row layout.
+/// Prefixes service-column names until they are distinct from payload-column names. Run headers share
+/// these names so the merger can map comparison and output columns independently.
 String uniqueColumnName(const Block & header, String name)
 {
     while (header.has(name))
@@ -130,163 +58,117 @@ String uniqueColumnName(const Block & header, String name)
     return name;
 }
 
-/// Builds the run header from the spilled columns, optional arrival numbers, and the emitted flag.
-/// Serialized keys retain their names and use the `String` type.
-SharedHeader buildSpillHeader(
-    const Block & header,
-    const ColumnNumbers & spill_columns_pos,
-    const ColumnNumbers & spill_serialized_key_columns_pos,
-    bool with_arrival_numbers)
-{
-    Block spill_header;
-    for (const auto pos : spill_columns_pos)
-        spill_header.insert(header.getByPosition(pos));
-
-    auto string_type = std::make_shared<DataTypeString>();
-    for (const auto pos : spill_serialized_key_columns_pos)
-    {
-        auto & column = spill_header.getByPosition(pos);
-        column.type = string_type;
-        column.column = string_type->createColumn();
-    }
-
-    if (with_arrival_numbers)
-    {
-        auto arrival_number_type = std::make_shared<DataTypeUInt64>();
-        spill_header.insert(
-            {arrival_number_type->createColumn(), arrival_number_type, uniqueColumnName(header, ARRIVAL_NUMBER_COLUMN_NAME)});
-    }
-
-    auto flag_type = std::make_shared<DataTypeUInt8>();
-    spill_header.insert({flag_type->createColumn(), flag_type, uniqueColumnName(header, FLAG_COLUMN_NAME)});
-    return std::make_shared<const Block>(std::move(spill_header));
-}
-
-/// Removes the flag from the header of the merged and deduplicated stream.
-SharedHeader buildMergedHeader(const Block & spill_header, size_t flag_column_pos)
-{
-    Block merged_header = spill_header;
-    merged_header.erase(flag_column_pos);
-    return std::make_shared<const Block>(std::move(merged_header));
-}
-
-/// Describes the arrival-number ordering when input order must be restored.
-SortDescription buildArrivalNumberDescription(const Block & merged_header, std::optional<size_t> arrival_number_column_pos)
-{
-    SortDescription description;
-    if (arrival_number_column_pos)
-        description.emplace_back(merged_header.getByPosition(*arrival_number_column_pos).name, 1, 1);
-    return description;
-}
-
 }
 
 DistinctSpillLayout::DistinctSpillLayout(
-    SharedHeader input_header_, const ColumnNumbers & input_key_columns_pos, bool preserve_input_order)
+    SharedHeader input_header_, const ColumnNumbers & input_key_columns_pos,
+    DistinctKeyRepresentation key_representation_, bool preserve_input_order)
     : input_header(std::move(input_header_))
+    , key_representation(key_representation_)
     , spill_columns_pos(calculateSpillColumnsPositions(*input_header))
     , key_columns_pos(mapKeysToSpillPositions(input_key_columns_pos, spill_columns_pos))
-    , serialized_key_columns_pos(
-          calculateSerializedKeyColumnsPositions(*input_header, input_key_columns_pos, key_columns_pos))
     , arrival_number_column_pos(preserve_input_order ? std::optional<size_t>{spill_columns_pos.size()} : std::nullopt)
-    , flag_column_pos(spill_columns_pos.size() + preserve_input_order)
-    , spill_header(buildSpillHeader(*input_header, spill_columns_pos, serialized_key_columns_pos, preserve_input_order))
-    , merged_header(buildMergedHeader(*spill_header, flag_column_pos))
-    , key_sort_description(buildSortDescription(*spill_header, key_columns_pos))
-    , run_sort_description(buildRunSortDescription(*spill_header, key_sort_description, flag_column_pos))
-    , arrival_number_sort_description(buildArrivalNumberDescription(*merged_header, arrival_number_column_pos))
 {
-}
+    Block ordinary;
+    for (const auto pos : spill_columns_pos)
+        ordinary.insert(input_header->getByPosition(pos));
 
-ColumnNumbers DistinctSpillLayout::getSerializedKeyIndices() const
-{
-    ColumnNumbers indices;
-    for (size_t i = 0; i < key_columns_pos.size(); ++i)
+    if (preserve_input_order)
     {
-        if (std::find(serialized_key_columns_pos.begin(), serialized_key_columns_pos.end(), key_columns_pos[i])
-            != serialized_key_columns_pos.end())
-            indices.push_back(i);
+        auto type = std::make_shared<DataTypeUInt64>();
+        const auto name = uniqueColumnName(ordinary, ARRIVAL_NUMBER_COLUMN_NAME);
+        ordinary.insert({type->createColumn(), type, name});
+        arrival_number_sort_description.emplace_back(name, 1, 1);
     }
-    return indices;
+    merged_header = std::make_shared<const Block>(ordinary);
+
+    Block suppression;
+    if (key_representation == DistinctKeyRepresentation::Hash128)
+    {
+        auto type = std::make_shared<DataTypeUInt128>();
+        ordinary.insert({type->createColumn(), type, uniqueColumnName(ordinary, FINGERPRINT_COLUMN_NAME)});
+        suppression.insert(ordinary.getByPosition(ordinary.columns() - 1));
+    }
+    else
+    {
+        for (const auto pos : key_columns_pos)
+            suppression.insert(ordinary.getByPosition(pos));
+    }
+
+    key_sort_description.reserve(suppression.columns());
+    for (const auto & column : suppression)
+        key_sort_description.emplace_back(column.name, 1, 1);
+
+    auto flag_type = std::make_shared<DataTypeUInt8>();
+    const auto flag_name = uniqueColumnName(ordinary, FLAG_COLUMN_NAME);
+    ordinary.insert({flag_type->createColumn(), flag_type, flag_name});
+    suppression.insert(ordinary.getByPosition(ordinary.columns() - 1));
+
+    /// Order suppression rows before ordinary rows with equal keys, independently of run registration.
+    run_sort_description = key_sort_description;
+    run_sort_description.emplace_back(flag_name, -1, 1);
+    input_run_header = std::make_shared<const Block>(std::move(ordinary));
+    suppression_run_header = std::make_shared<const Block>(std::move(suppression));
 }
 
 Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const
 {
-    if (spill_columns_pos.size() != input_header->columns())
-    {
-        const size_t num_rows = chunk.getNumRows();
-        auto input_columns = chunk.detachColumns();
-
-        Columns columns;
-        columns.reserve(spill_columns_pos.size());
-        for (const auto pos : spill_columns_pos)
-            columns.push_back(std::move(input_columns[pos]));
-
-        chunk.setColumns(std::move(columns), num_rows);
-    }
-
-    /// The temporary files use `Native`, which cannot retain special column representations.
-    removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
-
     const size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (const auto pos : serialized_key_columns_pos)
-        columns[pos] = serializeValues(*columns[pos]);
+    auto input_columns = chunk.detachColumns();
+    Columns columns;
+    columns.reserve(input_run_header->columns());
+    for (const auto pos : spill_columns_pos)
+        columns.push_back(std::move(input_columns[pos]));
 
-    return addServiceColumns(std::move(columns), num_rows, /*already_emitted=*/ false, first_arrival_number);
-}
+    chunk.setColumns(std::move(columns), num_rows);
+    /// Match the set's normalization before hashing. Fingerprints survive `Native` round trips,
+    /// which can change an aggregate state's serialized bytes.
+    materializeChunk(chunk);
+    columns = chunk.detachColumns();
 
-Chunk DistinctSpillLayout::prepareSuppressionChunk(MutableColumns key_columns) const
-{
-    const size_t num_rows = key_columns[0]->size();
-    Columns columns(spill_columns_pos.size());
-    for (size_t i = 0; i < key_columns.size(); ++i)
-        columns[key_columns_pos[i]] = std::move(key_columns[i]);
-
-    /// Suppression rows are never emitted, so default values suffice for their non-key payload.
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (!columns[i])
-            columns[i] = input_header->getByPosition(spill_columns_pos[i]).type->createColumn()->cloneResized(num_rows);
-    }
-
-    Chunk chunk(std::move(columns), num_rows);
-    removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
-
-    /// Arrival numbers do not affect rows that are never emitted.
-    return addServiceColumns(chunk.detachColumns(), num_rows, /*already_emitted=*/ true, /*first_arrival_number=*/ 0);
-}
-
-Chunk DistinctSpillLayout::addServiceColumns(
-    Columns columns, size_t num_rows, bool already_emitted, UInt64 first_arrival_number) const
-{
     if (arrival_number_column_pos)
     {
         auto arrival_numbers = ColumnUInt64::create(num_rows);
         std::iota(arrival_numbers->getData().begin(), arrival_numbers->getData().end(), first_arrival_number);
         columns.emplace_back(std::move(arrival_numbers));
     }
-    /// The flag stays constant while sorting and deduplication can reduce the chunk's row count.
-    columns.emplace_back(ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(already_emitted)), num_rows));
 
-    return Chunk(std::move(columns), num_rows);
+    if (key_representation == DistinctKeyRepresentation::Hash128)
+    {
+        ColumnRawPtrs key_columns;
+        key_columns.reserve(key_columns_pos.size());
+        for (const auto pos : key_columns_pos)
+            key_columns.push_back(columns[pos].get());
+        auto hashes = ColumnUInt128::create(num_rows);
+        for (size_t row = 0; row < num_rows; ++row)
+            hashes->getData()[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
+        columns.emplace_back(std::move(hashes));
+    }
+
+    /// The flag stays constant while sorting and deduplication can reduce the chunk's row count.
+    columns.emplace_back(ColumnConst::create(ColumnUInt8::create(1, UInt8{0}), num_rows));
+    chunk.setColumns(std::move(columns), num_rows);
+    return chunk;
+}
+
+Chunk DistinctSpillLayout::prepareSuppressionChunk(MutableColumns key_columns) const
+{
+    chassert(key_columns.size() + 1 == suppression_run_header->columns());
+    const size_t num_rows = key_columns.front()->size();
+    Chunk chunk(std::move(key_columns), num_rows);
+    chunk.addColumn(ColumnConst::create(ColumnUInt8::create(1, UInt8{1}), num_rows));
+    return chunk;
 }
 
 Chunk DistinctSpillLayout::restoreOutputChunk(Chunk chunk) const
 {
-    if (!arrival_number_column_pos && serialized_key_columns_pos.empty()
-        && spill_columns_pos.size() == input_header->columns())
+    if (!arrival_number_column_pos && spill_columns_pos.size() == input_header->columns())
         return chunk;
 
     const size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     if (arrival_number_column_pos)
         columns.erase(columns.begin() + *arrival_number_column_pos);
-
-    for (const auto pos : serialized_key_columns_pos)
-        columns[pos] = deserializeValues(*columns[pos], *input_header->getByPosition(spill_columns_pos[pos]).type);
 
     if (spill_columns_pos.size() != input_header->columns())
     {
@@ -302,7 +184,8 @@ Chunk DistinctSpillLayout::restoreOutputChunk(Chunk chunk) const
         columns = std::move(restored_columns);
     }
 
-    return Chunk(std::move(columns), num_rows);
+    chunk.setColumns(std::move(columns), num_rows);
+    return chunk;
 }
 
 }

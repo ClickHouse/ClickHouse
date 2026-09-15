@@ -61,7 +61,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_size_rows(max_block_size_rows_)
-    , spill_layout(header_, std::get<Hashing>(state).set.getKeyColumnsPositions(), preserve_input_order_)
+    , preserve_input_order(preserve_input_order_)
 {
 }
 
@@ -299,14 +299,16 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     hashing.set.prepareForInsert(input_chunk);
 
     /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation.
-    /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs the
-    /// uncompressed, compressed, and file buffers. Oversized values and codec overhead can exceed
-    /// this estimate.
+    /// Generic spill input also needs a fingerprint column. A suppression run needs its columns,
+    /// a sorted copy, and a permutation. Writing needs uncompressed, compressed, and file buffers.
+    /// Oversized values and codec overhead can exceed this estimate.
+    const size_t fingerprint_bytes = hashing.set.getKeyRepresentation() == DistinctKeyRepresentation::Hash128
+        ? input_chunk.getNumRows() * sizeof(UInt128) : 0;
     const size_t suppression_columns_bytes = 2 * DEFAULT_BYTES_IN_RUN;
     const size_t sort_permutation_bytes = max_block_size_rows * sizeof(IColumn::Permutation::value_type);
     const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
     const size_t spill_headroom_bytes
-        = input_chunk.allocatedBytes() + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
+        = input_chunk.allocatedBytes() + fingerprint_bytes + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
     if (const auto available = getMostStrictAvailableSystemMemory())
     {
         const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk.getNumRows());
@@ -335,13 +337,17 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
 void ExternalDistinctTransform::startSpilling(Hashing & hashing)
 {
+    chassert(!spill_layout);
+    spill_layout.emplace(inputs.front().getSharedHeader(), hashing.set.getKeyColumnsPositions(),
+        hashing.set.getKeyRepresentation(), preserve_input_order);
+
     LOG_TRACE(log, "Switching DISTINCT to the external mode (query memory: {}, spill threshold: {})",
         formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
     if (hashing.set.getTotalRowCount())
     {
-        auto keys = std::move(hashing.set).extractKeys(spill_layout.getSerializedKeyIndices());
+        auto keys = std::move(hashing.set).extractKeys();
         auto & extracting = state.emplace<ExtractingSuppression>(std::move(keys));
         extractSuppressionRun(extracting);
     }
@@ -362,11 +368,11 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
         if (key_columns.empty())
             break;
 
-        auto chunk = spill_layout.prepareSuppressionChunk(std::move(key_columns));
-        Block block = spill_layout.getSpillHeader()->cloneWithColumns(chunk.detachColumns());
+        auto chunk = spill_layout->prepareSuppressionChunk(std::move(key_columns));
+        Block block = spill_layout->getSuppressionRunHeader()->cloneWithColumns(chunk.detachColumns());
         /// Stable sorting preserves binary representatives of sort-equivalent keys. The flag is
         /// constant within this chunk, so key order also satisfies the run order.
-        sortBlock(block, spill_layout.getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
+        sortBlock(block, spill_layout->getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
         const auto rows = block.rows();
         Chunk sorted(block.detachColumns(), rows);
         bytes += sorted.allocatedBytes();
@@ -382,7 +388,8 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
         return;
     }
 
-    auto run = prepareRun(std::move(chunks), bytes, spill_layout.getRunSortDescription(), MergeSorter::Mode::PreserveRows);
+    auto run = prepareRun(spill_layout->getSuppressionRunHeader(), std::move(chunks), bytes,
+        spill_layout->getRunSortDescription(), MergeSorter::Mode::PreserveRows);
     auto keys = std::move(extracting.keys);
     auto & connecting = state.emplace<ConnectingSuppressionRun>(std::move(run), std::move(keys));
     FailPointInjection::pauseFailPoint(FailPoints::external_distinct_suppression_run_prepared_pause);
@@ -397,10 +404,10 @@ void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
 
     const UInt64 first_arrival_number = consumed_rows;
     consumed_rows += chunk.getNumRows();
-    auto prepared = spill_layout.prepareInputChunk(std::move(chunk), first_arrival_number);
-    Block block = spill_layout.getSpillHeader()->cloneWithColumns(prepared.detachColumns());
+    auto prepared = spill_layout->prepareInputChunk(std::move(chunk), first_arrival_number);
+    Block block = spill_layout->getInputRunHeader()->cloneWithColumns(prepared.detachColumns());
     /// Stable compaction keeps the first payload and permutes the service columns with its row.
-    sortBlockAndDeduplicate(block, spill_layout.getKeySortDescription(), IColumn::PermutationSortStability::Stable);
+    sortBlockAndDeduplicate(block, spill_layout->getKeySortDescription(), IColumn::PermutationSortStability::Stable);
     const auto rows = block.rows();
     Chunk sorted(block.detachColumns(), rows);
     collecting.bytes += sorted.allocatedBytes();
@@ -411,17 +418,16 @@ void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
     if (temporary_files_num == 0 || (collecting.bytes >= minBytesInRun()
         && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct)))
     {
-        auto run = prepareRun(std::move(collecting.chunks), collecting.bytes,
-            spill_layout.getKeySortDescription(), MergeSorter::Mode::MergeUniqueChunks);
+        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(collecting.chunks), collecting.bytes,
+            spill_layout->getKeySortDescription(), MergeSorter::Mode::MergeUniqueChunks);
         auto & connecting = state.emplace<ConnectingInputRun>(std::move(run));
         readRun(connecting.run.progress);
     }
 }
 
 ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
-    Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode)
+    SharedHeader run_header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode)
 {
-    const auto & spill_header = spill_layout.getSpillHeader();
     ++temporary_files_num;
 
     LOG_TRACE(log, "Will dump distinct run ({} chunks, {}) to disk (query memory: {}, limit: {})",
@@ -431,12 +437,12 @@ ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
     /// Reserving the run's space also preserves the configured amount of free disk space.
-    TemporaryBlockStreamHolder tmp_stream(spill_header, tmp_data, bytes + min_free_disk_space);
+    TemporaryBlockStreamHolder tmp_stream(run_header, tmp_data, bytes + min_free_disk_space);
     /// The final merge applies the hint after suppression, which can remove keys from ordinary runs.
     auto merger = std::make_unique<MergeSorter>(
-        spill_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0, mode);
-    auto sink = std::make_shared<BufferingToFileSink>(spill_header, std::move(tmp_stream), log);
-    auto source = std::make_shared<BufferingFromFileSource>(spill_header, sink->getHolder(), log);
+        run_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0, mode);
+    auto sink = std::make_shared<BufferingToFileSink>(run_header, std::move(tmp_stream), log);
+    auto source = std::make_shared<BufferingFromFileSource>(run_header, sink->getHolder(), log);
     PreparedRun run{
         .progress = {std::move(merger), {}},
         .sink = std::move(sink),
@@ -476,7 +482,7 @@ void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
     /// Register the final input even when the tail is empty, then close merge-input registration.
     /// The tail is merged into unique chunks under the same contract as ordinary disk runs.
     auto source = std::make_shared<MergeSorterSource>(
-        spill_layout.getSpillHeader(), std::move(tail.chunks), spill_layout.getKeySortDescription(),
+        spill_layout->getInputRunHeader(), std::move(tail.chunks), spill_layout->getKeySortDescription(),
         max_block_size_rows, /*limit=*/ 0, MergeSorter::Mode::MergeUniqueChunks);
     state.emplace<ConnectingTail>(std::move(source));
 }
@@ -489,7 +495,7 @@ void ExternalDistinctTransform::consumeMerged(Merging & merging)
 
     /// Arrival numbers have served their purpose after the optional order-restoration sort.
     chassert(!output_chunk);
-    output_chunk = spill_layout.restoreOutputChunk(std::move(chunk));
+    output_chunk = spill_layout->restoreOutputChunk(std::move(chunk));
     result_rows += output_chunk.getNumRows();
 
     /// The row limit applies to the result. The hash set has been released, so no set memory remains
@@ -501,18 +507,17 @@ void ExternalDistinctTransform::consumeMerged(Merging & merging)
 
 ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge()
 {
-    const auto & spill_header = spill_layout.getSpillHeader();
-    const auto & merged_header = spill_layout.getMergedHeader();
+    const auto & merged_header = spill_layout->getMergedHeader();
 
     /// The merger cannot consume its inputs until the final in-memory tail has been registered.
     PreparedMerge prepared;
     prepared.merger = std::make_shared<DistinctSortedTransform>(
-        spill_header, merged_header, /*num_inputs=*/ 0, spill_layout.getRunSortDescription(),
-        spill_layout.getFlagColumnPosition(), max_block_size_rows, /*have_all_inputs=*/ false);
+        SharedHeaders{}, merged_header, spill_layout->getRunSortDescription(),
+        max_block_size_rows, /*have_all_inputs=*/ false);
 
-    if (spill_layout.preservesInputOrder())
+    if (spill_layout->preservesInputOrder())
     {
-        const auto & arrival_number_description = spill_layout.getArrivalNumberSortDescription();
+        const auto & arrival_number_description = spill_layout->getArrivalNumberSortDescription();
 
         /// Restore arrival order after deduplication, spilling under the same memory policy as the runs.
         /// These rows are distinct, so the limit hint can bound the sort that restores their order.
@@ -548,7 +553,7 @@ void ExternalDistinctTransform::connectMerge(PreparedMerge & prepared, Processor
         processors.emplace_back(processor);
     }
 
-    inputs.emplace_back(*spill_layout.getMergedHeader(), this);
+    inputs.emplace_back(*spill_layout->getMergedHeader(), this);
     connect(*output, inputs.back());
     merge_registration.emplace(std::move(prepared.merger), inputs.back());
 }
@@ -560,9 +565,9 @@ OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Proce
 
     chassert(merge_registration);
     auto & merger = *merge_registration->merger;
-    merger.addInput(*spill_layout.getSpillHeader());
+    merger.addInput(prepared.source->getPort().getHeader());
     connect(prepared.source->getPort(), merger.getInputs().back());
-    outputs.emplace_back(*spill_layout.getSpillHeader(), this);
+    outputs.emplace_back(prepared.sink->getPort().getHeader(), this);
     connect(outputs.back(), prepared.sink->getPort());
     processors.emplace_back(prepared.source);
     processors.emplace_back(prepared.sink);
@@ -603,7 +608,7 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
             chassert(merge_registration);
             auto source = std::move(phase.source);
             auto & merger = *merge_registration->merger;
-            merger.addInput(*spill_layout.getSpillHeader());
+            merger.addInput(*spill_layout->getInputRunHeader());
             connect(source->getPort(), merger.getInputs().back());
             merger.setHaveAllInputs();
             auto & input = merge_registration->input;

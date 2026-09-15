@@ -20,7 +20,7 @@ class DistinctSortedTransform;
 
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
 /// spill threshold or projected table growth leaves insufficient user/server memory for spilling.
-/// Its set retains extractable keys, including serialized keys when needed.
+/// Its set retains typed keys or the same generic-key fingerprints as ordinary `DISTINCT`.
 ///
 /// At the first spill, the set's keys become sorted suppression runs carrying already-emitted flags.
 /// Extraction prepares one run at a time with a soft byte target and waits for its file to finish.
@@ -34,7 +34,7 @@ class DistinctSortedTransform;
 ///
 /// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to spilled rows.
 /// After merging and deduplication, `MergeSortingTransform` restores that order and can itself spill.
-/// Otherwise, the post-spill output is in distinct-key order.
+/// Otherwise, rows follow the spill comparison order, which is fingerprint order for generic keys.
 class ExternalDistinctTransform final : public IProcessor
 {
 public:
@@ -61,7 +61,7 @@ private:
     struct Hashing
     {
         Hashing(const Block & header, const Names & columns, const SizeLimits & limits)
-            : set(header, columns, limits, /*skip_null_keys_=*/ false, /*require_extractable_keys_=*/ true)
+            : set(header, columns, limits)
         {
         }
 
@@ -186,7 +186,8 @@ private:
     void prepareTail(PreparingTail & tail);
     void consumeMerged(Merging & merging);
 
-    PreparedRun prepareRun(Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
+    PreparedRun prepareRun(
+        SharedHeader header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
     PreparedMerge prepareMerge();
     void connectMerge(PreparedMerge & prepared, Processors & processors);
     OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
@@ -200,7 +201,9 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     const size_t min_free_disk_space;
     const size_t max_block_size_rows;
-    const DistinctSpillLayout spill_layout;
+    const bool preserve_input_order;
+    /// Created at the first spill from the representation selected by the initialized set.
+    std::optional<DistinctSpillLayout> spill_layout;
 
     /// Tracks connected merge inputs until tail attachment or early termination closes registration.
     std::optional<MergeRegistration> merge_registration;

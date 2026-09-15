@@ -10,55 +10,51 @@
 namespace DB
 {
 
-/// Describes the column representations used by external `DISTINCT`. Temporary runs omit constant input
-/// columns, serialize keys requiring bytewise comparison, and carry an already-emitted flag and optional
-/// arrival numbers.
+enum class DistinctKeyRepresentation;
+
+/// Describes the comparison keys and output payload used by external `DISTINCT`. Ordinary runs carry
+/// non-constant input columns and optional arrival numbers. Suppression runs carry only comparison keys.
+/// Both carry an already-emitted flag. Generic keys use the fingerprints retained by the hash set.
 /// The layout owns these conversions and their metadata; its caller sorts and schedules the runs.
 class DistinctSpillLayout
 {
 public:
     DistinctSpillLayout(
-        SharedHeader input_header_, const ColumnNumbers & input_key_columns_pos, bool preserve_input_order);
+        SharedHeader input_header_, const ColumnNumbers & input_key_columns_pos,
+        DistinctKeyRepresentation key_representation_, bool preserve_input_order);
 
-    const SharedHeader & getSpillHeader() const { return spill_header; }
+    const SharedHeader & getInputRunHeader() const { return input_run_header; }
+    const SharedHeader & getSuppressionRunHeader() const { return suppression_run_header; }
     const SharedHeader & getMergedHeader() const { return merged_header; }
     const SortDescription & getKeySortDescription() const { return key_sort_description; }
     const SortDescription & getRunSortDescription() const { return run_sort_description; }
     const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
-    size_t getFlagColumnPosition() const { return flag_column_pos; }
     bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
 
-    /// Returns indices within `input_key_columns_pos` of keys whose original encodings are used for sorting.
-    ColumnNumbers getSerializedKeyIndices() const;
-
-    /// Converts an input chunk to the spill layout, with unflagged rows and their arrival numbers.
+    /// Normalizes ordinary rows, adding fingerprints for generic keys and optional arrival numbers.
     Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
 
-    /// Converts extracted keys to flagged suppression rows. Keys selected by `getSerializedKeyIndices`
-    /// must already contain their original encodings in `String` columns. Non-key payload columns contain
-    /// defaults because these rows suppress previously emitted keys and are never returned to the caller.
+    /// Adds the emitted flag to owning comparison-key columns returned by the set's extractor.
     Chunk prepareSuppressionChunk(MutableColumns key_columns) const;
 
-    /// Converts a merged chunk, whose flag has already been removed, to the original input layout.
+    /// Restores constant columns and removes arrival numbers after merging and optional order restoration.
     Chunk restoreOutputChunk(Chunk chunk) const;
 
 private:
-    Chunk addServiceColumns(Columns columns, size_t num_rows, bool already_emitted, UInt64 first_arrival_number) const;
-
     const SharedHeader input_header;
+    const DistinctKeyRepresentation key_representation;
     /// Stores input-header positions of non-constant columns in their original order.
     const ColumnNumbers spill_columns_pos;
-    /// Key positions and serialized-key positions are relative to the spill header.
+    /// Positions of the original key columns within the non-constant payload.
     const ColumnNumbers key_columns_pos;
-    const ColumnNumbers serialized_key_columns_pos;
     const std::optional<size_t> arrival_number_column_pos;
-    const size_t flag_column_pos;
-    const SharedHeader spill_header;
-    const SharedHeader merged_header;
-    const SortDescription key_sort_description;
+    SharedHeader input_run_header;
+    SharedHeader suppression_run_header;
+    SharedHeader merged_header;
+    SortDescription key_sort_description;
     /// Run ordering gives suppression rows precedence; deduplication compares only the keys.
-    const SortDescription run_sort_description;
-    const SortDescription arrival_number_sort_description;
+    SortDescription run_sort_description;
+    SortDescription arrival_number_sort_description;
 };
 
 }

@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Common/assert_cast.h>
+#include <Common/ColumnsHashing.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
@@ -52,12 +53,12 @@ RowsMultiset collectRows(const Columns & columns, size_t num_rows)
 }
 
 /// Feeds the chunks through the filter and checks that the keys extracted from the set are exactly
-/// the emitted (distinct) rows.
+/// the comparison keys of the emitted rows.
 void checkExtractionRoundTrip(
-    const Block & header, std::vector<Columns> chunks, size_t max_batch_rows = 1, bool require_extractable_keys = false)
+    const Block & header, std::vector<Columns> chunks, size_t max_batch_rows = 1)
 {
     std::optional<DistinctSetFilter> filter(
-        std::in_place, header, Names{}, SizeLimits{}, /*skip_null_keys_=*/ false, require_extractable_keys);
+        std::in_place, header, Names{}, SizeLimits{});
 
     RowsMultiset emitted;
     size_t emitted_count = 0;
@@ -68,8 +69,19 @@ void checkExtractionRoundTrip(
         if (filtered.hasRows())
         {
             emitted_count += filtered.getNumRows();
-            auto rows = collectRows(filtered.getColumns(), filtered.getNumRows());
-            emitted.merge(rows);
+            if (filter->getKeyRepresentation() == DistinctKeyRepresentation::Hash128)
+            {
+                ColumnRawPtrs keys;
+                for (const auto & column : filtered.getColumns())
+                    keys.push_back(column.get());
+                for (size_t row = 0; row < filtered.getNumRows(); ++row)
+                    emitted.insert({Field(ColumnsHashing::hash128(row, keys.size(), keys))});
+            }
+            else
+            {
+                auto rows = collectRows(filtered.getColumns(), filtered.getNumRows());
+                emitted.merge(rows);
+            }
         }
     }
 
@@ -488,31 +500,27 @@ TEST(DistinctSetFilterSemantics, DisabledLowCardinalityStateDoesNotConsumeByteLi
     const size_t dictionary_size = 200000;
     const auto small_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 4, 4);
     const auto large_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 6);
-    for (const bool require_extractable_keys : {false, true})
+    for (const auto overflow_mode : {OverflowMode::THROW, OverflowMode::BREAK})
     {
-        SCOPED_TRACE(require_extractable_keys);
-        for (const auto overflow_mode : {OverflowMode::THROW, OverflowMode::BREAK})
-        {
-            SCOPED_TRACE(static_cast<int>(overflow_mode));
-            const SizeLimits limits(/*max_rows=*/ 0, /*max_bytes=*/ dictionary_size / 2, overflow_mode);
-            DistinctSetFilter filter(header, {}, limits, /*skip_null_keys_=*/ false, require_extractable_keys);
-            for (size_t i = 0; i < 4; ++i)
-                ASSERT_EQ(filter.filter(Chunk({small_dictionary->cut(i, 1)}, 1)).getNumRows(), 1);
+        SCOPED_TRACE(static_cast<int>(overflow_mode));
+        const SizeLimits limits(/*max_rows=*/ 0, /*max_bytes=*/ dictionary_size / 2, overflow_mode);
+        DistinctSetFilter filter(header, {}, limits);
+        for (size_t i = 0; i < 4; ++i)
+            ASSERT_EQ(filter.filter(Chunk({small_dictionary->cut(i, 1)}, 1)).getNumRows(), 1);
 
-            /// The fifth chunk disables the bitmap while the hash set retains all previously seen keys.
-            auto result = filter.filter(Chunk({large_dictionary->cut(3, 2)}, 2));
-            ASSERT_EQ(result.getNumRows(), 1);
-            EXPECT_EQ((*result.getColumns().front())[0].safeGet<String>(), "4");
-            EXPECT_LT(filter.getTotalByteCount(), limits.max_bytes);
-            EXPECT_FALSE(filter.isLimitReached());
+        /// The fifth chunk disables the bitmap while the hash set retains all previously seen keys.
+        auto result = filter.filter(Chunk({large_dictionary->cut(3, 2)}, 2));
+        ASSERT_EQ(result.getNumRows(), 1);
+        EXPECT_EQ((*result.getColumns().front())[0].safeGet<String>(), "4");
+        EXPECT_LT(filter.getTotalByteCount(), limits.max_bytes);
+        EXPECT_FALSE(filter.isLimitReached());
 
-            result = filter.filter(Chunk({large_dictionary}, 6));
-            ASSERT_EQ(result.getNumRows(), 1);
-            EXPECT_EQ((*result.getColumns().front())[0].safeGet<String>(), "5");
-            EXPECT_EQ(filter.getTotalRowCount(), 6);
-            EXPECT_LT(filter.getTotalByteCount(), limits.max_bytes);
-            EXPECT_FALSE(filter.isLimitReached());
-        }
+        result = filter.filter(Chunk({large_dictionary}, 6));
+        ASSERT_EQ(result.getNumRows(), 1);
+        EXPECT_EQ((*result.getColumns().front())[0].safeGet<String>(), "5");
+        EXPECT_EQ(filter.getTotalRowCount(), 6);
+        EXPECT_LT(filter.getTotalByteCount(), limits.max_bytes);
+        EXPECT_FALSE(filter.isLimitReached());
     }
 }
 
@@ -553,61 +561,55 @@ TEST(DistinctSetFilterSemantics, DuplicateKeysEnforceByteLimit)
     const Block header = {ColumnWithTypeAndName(type, "k")};
     const size_t dictionary_size = 200000;
 
-    for (const bool require_extractable_keys : {false, true})
+    for (const auto overflow_mode : {OverflowMode::THROW, OverflowMode::BREAK})
     {
-        SCOPED_TRACE(require_extractable_keys);
-        for (const auto overflow_mode : {OverflowMode::THROW, OverflowMode::BREAK})
+        SCOPED_TRACE(static_cast<int>(overflow_mode));
+        const SizeLimits limits(/*max_rows=*/ 0, /*max_bytes=*/ dictionary_size / 2, overflow_mode);
+        DistinctSetFilter filter(header, {}, limits);
+        const auto small_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 3, 3);
+
+        ASSERT_EQ(filter.filter(Chunk({small_dictionary}, 3)).getNumRows(), 3);
+        auto larger_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 100, 3);
+        EXPECT_FALSE(filter.filter(Chunk({larger_dictionary}, 3)).hasRows());
+        EXPECT_FALSE(filter.isLimitReached());
+        ASSERT_LT(filter.getTotalByteCount(), limits.max_bytes);
+
+        /// A new dictionary retains a bitmap even when its rows contain only previously seen keys.
+        auto duplicates = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+        if (overflow_mode == OverflowMode::THROW)
         {
-            SCOPED_TRACE(static_cast<int>(overflow_mode));
-            const SizeLimits limits(/*max_rows=*/ 0, /*max_bytes=*/ dictionary_size / 2, overflow_mode);
-            DistinctSetFilter filter(header, {}, limits, /*skip_null_keys_=*/ false, require_extractable_keys);
-            const auto small_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 3, 3);
-
-            ASSERT_EQ(filter.filter(Chunk({small_dictionary}, 3)).getNumRows(), 3);
-            auto larger_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 100, 3);
-            EXPECT_FALSE(filter.filter(Chunk({larger_dictionary}, 3)).hasRows());
-            EXPECT_FALSE(filter.isLimitReached());
-            ASSERT_LT(filter.getTotalByteCount(), limits.max_bytes);
-
-            /// A new dictionary retains a bitmap even when its rows contain only previously seen keys.
-            auto duplicates = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
-            if (overflow_mode == OverflowMode::THROW)
+            try
             {
-                try
-                {
-                    filter.filter(Chunk({duplicates}, 3));
-                    ADD_FAILURE() << "Expected the dictionary bitmap to exceed the byte limit";
-                }
-                catch (const Exception & exception)
-                {
-                    EXPECT_EQ(exception.code(), ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-                }
+                filter.filter(Chunk({duplicates}, 3));
+                ADD_FAILURE() << "Expected the dictionary bitmap to exceed the byte limit";
             }
-            else
+            catch (const Exception & exception)
             {
-                EXPECT_FALSE(filter.filter(Chunk({duplicates}, 3)).hasRows());
-                EXPECT_TRUE(filter.isLimitReached());
+                EXPECT_EQ(exception.code(), ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
             }
-            EXPECT_EQ(filter.getTotalRowCount(), 3);
-            EXPECT_GT(filter.getTotalByteCount(), limits.max_bytes);
         }
+        else
+        {
+            EXPECT_FALSE(filter.filter(Chunk({duplicates}, 3)).hasRows());
+            EXPECT_TRUE(filter.isLimitReached());
+        }
+        EXPECT_EQ(filter.getTotalRowCount(), 3);
+        EXPECT_GT(filter.getTotalByteCount(), limits.max_bytes);
     }
 }
 
-TEST(DistinctSetFilterExtraction, SerializedKeysOnRequest)
+TEST(DistinctSetFilterExtraction, CompositeFingerprints)
 {
-    /// Two `String` keys fall to the generic `hashed` method, which cannot materialize the keys back; a
-    /// consumer that needs them gets the `serialized` method instead, which stores them.
+    /// Composite variable-width keys retain the same fingerprints used for hash-table equality.
     const Block header
         = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "a"), ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "b")};
     checkExtractionRoundTrip(
         header,
         {{makeStringColumn({"a", "b", "a"}), makeStringColumn({"x", "y", "x"})}, {makeStringColumn({"a", "c"}), makeStringColumn({"y", "z"})}},
-        /*max_batch_rows=*/ 2,
-        /*require_extractable_keys=*/ true);
+        /*max_batch_rows=*/ 2);
 }
 
-TEST(DistinctSetFilterExtraction, SerializedLowCardinalityKey)
+TEST(DistinctSetFilterExtraction, LowCardinalityFingerprints)
 {
     auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     const Block header = {ColumnWithTypeAndName(lc_type, "k")};
@@ -620,10 +622,10 @@ TEST(DistinctSetFilterExtraction, SerializedLowCardinalityKey)
             column->insertData(value.data(), value.size());
         chunks.push_back({std::move(column)});
     }
-    checkExtractionRoundTrip(header, std::move(chunks), /*max_batch_rows=*/ 2, /*require_extractable_keys=*/ true);
+    checkExtractionRoundTrip(header, std::move(chunks), /*max_batch_rows=*/ 2);
 }
 
-TEST(DistinctSetFilterExtraction, SerializedNullableStringKey)
+TEST(DistinctSetFilterExtraction, NullableStringFingerprints)
 {
     auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     const Block header = {ColumnWithTypeAndName(type, "k")};
@@ -634,7 +636,7 @@ TEST(DistinctSetFilterExtraction, SerializedNullableStringKey)
     column->insert(Field("b"));
     column->insert(Field("a"));
     column->insertDefault();
-    checkExtractionRoundTrip(header, {{std::move(column)}}, /*max_batch_rows=*/ 2, /*require_extractable_keys=*/ true);
+    checkExtractionRoundTrip(header, {{std::move(column)}}, /*max_batch_rows=*/ 2);
 }
 
 TEST(DistinctSetFilterExtraction, ByteTargetSplitsVariableWidthKeys)
@@ -707,19 +709,28 @@ TEST(DistinctSetFilterExtraction, ReturnedColumnsSurviveEarlyExtractorDestructio
             columns.push_back(makeStringColumn({"first suffix", "second suffix", "third suffix"}));
         }
 
-        /// One string uses the string table; two strings use serialized keys backed by the arena.
-        DistinctSetFilter filter(header, {}, SizeLimits{}, /*skip_null_keys_=*/ false, /*require_extractable_keys_=*/ true);
+        /// One string retains arena-backed values; two strings retain fingerprints.
+        ColumnRawPtrs keys;
+        for (const auto & column : columns)
+            keys.push_back(column.get());
+        std::set<UInt128> expected_hashes;
+        for (size_t row = 0; row < 3; ++row)
+            expected_hashes.insert(ColumnsHashing::hash128(row, keys.size(), keys));
+        DistinctSetFilter filter(header, {}, SizeLimits{});
         filter.filter(Chunk(std::move(columns), 3));
         auto extractor = std::move(filter).extractKeys();
         auto batch = extractor->next(1, /*max_bytes=*/ 0);
-        ASSERT_EQ(batch.size(), key_count);
+        ASSERT_EQ(batch.size(), 1);
         ASSERT_EQ(batch.front()->size(), 1);
         extractor.reset();
 
-        const auto key = (*batch.front())[0].safeGet<String>();
-        EXPECT_TRUE(key == "first" || key == "second" || key == "third");
-        if (key_count == 2)
-            EXPECT_EQ((*batch[1])[0].safeGet<String>(), key + " suffix");
+        if (key_count == 1)
+        {
+            const auto key = (*batch.front())[0].safeGet<String>();
+            EXPECT_TRUE(key == "first" || key == "second" || key == "third");
+        }
+        else
+            EXPECT_TRUE(expected_hashes.contains((*batch.front())[0].safeGet<UInt128>()));
     }
 }
 
