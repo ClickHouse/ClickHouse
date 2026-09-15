@@ -216,6 +216,11 @@ prune float_above_max_rowgroup "${MANY}" 'val > 1e9' 1 0
 prune integer_not_equals "${INTEGER}" 'i != 5'
 prune integer_not_in "${INTEGER}" 'i NOT IN (5, 6)'
 prune chain_integer "${INTEGER}" 'sign(i) = -1'
+# A float column that declares no NaNs keeps chain-based pruning, because the count says the bounds
+# describe every row: sign maps them to 0, 1 and the atom asks for -1. The second arm has row group
+# pushdown off, so it reads the same count from the page index instead of the column chunk.
+prune chain_finite_float "${MANY}" 'sign(val) = -1'
+prune chain_finite_float_pages "${MANY}" 'sign(val) = -1' 0
 prune finite_float_in "${FINITE}" 'val IN (6.)'
 run_prunes
 

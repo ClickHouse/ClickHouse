@@ -49,4 +49,6 @@ is_null on=1 off=1
 {"label":"integer_not_equals","result":[{"count()":0}],"rows_read":0}
 {"label":"integer_not_in","result":[{"count()":0}],"rows_read":0}
 {"label":"chain_integer","result":[{"count()":0}],"rows_read":0}
+{"label":"chain_finite_float","result":[{"count()":0}],"rows_read":0}
+{"label":"chain_finite_float_pages","result":[{"count()":0}],"rows_read":0}
 {"label":"finite_float_in","result":[{"count()":0}],"rows_read":0}
