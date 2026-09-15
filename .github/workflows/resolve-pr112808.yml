@@ -20,7 +20,6 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/workflows/resolve-pr112808.yml
-            .github/scripts/resolve-pr112808.py
             docs/reference/system-tables/view_refreshes.mdx
             src/Core/ServerSettings.cpp
             src/Core/Settings.cpp
@@ -49,10 +48,12 @@ jobs:
           git remote add upstream https://github.com/ClickHouse/ClickHouse.git || true
 
           head=$(git rev-parse HEAD)
+          merge_base=79305ee77d5b450e827ac16ea1126701c3b076f2
+          resolved_master=64f327c506a9a0c993938629d6f625b69efaefd1
           git fetch --no-tags --filter=blob:none --depth=1 upstream master
           master=$(git rev-parse FETCH_HEAD)
-          merge_base=79305ee77d5b450e827ac16ea1126701c3b076f2
           git fetch --no-tags --filter=blob:none --depth=1 upstream "$merge_base"
+          git fetch --no-tags --filter=blob:none --depth=1 upstream "$resolved_master"
 
           head_tree=$(git rev-parse "$head^{tree}")
           master_tree=$(git rev-parse "$master^{tree}")
@@ -88,9 +89,28 @@ jobs:
                 *) echo "Unexpected conflict: $path" >&2; exit 1 ;;
               esac
             done
-            git checkout "$master" -- "${conflict_files[@]}"
-            python3 .github/scripts/resolve-pr112808.py
-            git add "${conflict_files[@]}"
+
+            mkdir -p /tmp/rmv-three-way
+            for path in "${conflict_files[@]}"; do
+              name=$(echo "$path" | tr '/' '_')
+              git show "$head:$path" > "/tmp/rmv-three-way/${name}.ours"
+              git show "$resolved_master:$path" > "/tmp/rmv-three-way/${name}.base"
+              git show "$master:$path" > "/tmp/rmv-three-way/${name}.theirs"
+              set +e
+              git merge-file -p \
+                -L pr-head -L resolved-master -L current-master \
+                "/tmp/rmv-three-way/${name}.ours" \
+                "/tmp/rmv-three-way/${name}.base" \
+                "/tmp/rmv-three-way/${name}.theirs" > "$path"
+              rc=$?
+              set -e
+              if (( rc != 0 )); then
+                echo "Three-way conflict remains in $path" >&2
+                grep -n -B 8 -A 20 -E '^(<<<<<<<|=======|>>>>>>>)' "$path" || true
+                exit 1
+              fi
+              git add "$path"
+            done
           fi
 
           if git diff --name-only --diff-filter=U | grep -q .; then
