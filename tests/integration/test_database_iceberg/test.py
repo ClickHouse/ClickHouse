@@ -447,8 +447,50 @@ def test_iceberg_history_namespace_filter_pushdown(started_cluster):
         ).strip()
 
         assert result == target_table_name
+        for _ in range(30):
+            if int(node.count_in_log(target_log_message)) > target_requests_before:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError(
+                f"History query did not fetch the table list of '{target_namespace}': {predicate}"
+            )
+
         assert int(node.count_in_log(target_log_message)) == target_requests_before + 1
         assert int(node.count_in_log(sibling_log_message)) == sibling_requests_before
+
+
+def test_iceberg_history_skips_broken_tables(started_cluster):
+    """`system.iceberg_history` logs and skips tables whose metadata cannot be resolved."""
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "history_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table.append(pa.Table.from_pylist([generate_record()]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    qualified_table_name = f"{namespace}.{table_name}"
+    query = (
+        f"SELECT DISTINCT table FROM system.iceberg_history "
+        f"WHERE database = '{CATALOG_NAME}' AND table = '{qualified_table_name}' "
+        "SETTINGS database_datalake_require_metadata_access = 0"
+    )
+    assert node.query(query).strip() == qualified_table_name
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        assert node.query(query).strip() == ""
+        node.wait_for_log_line(
+            re.escape(f"Ignoring broken table {CATALOG_NAME}.{qualified_table_name}")
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    assert node.query(query).strip() == qualified_table_name
 
 
 def test_check_database(started_cluster):
