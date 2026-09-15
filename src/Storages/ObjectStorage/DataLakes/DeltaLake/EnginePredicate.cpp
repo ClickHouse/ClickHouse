@@ -77,19 +77,52 @@ namespace
         return nullable->getNestedType();
     }
 
+    /// All delta-kernel comparison visitors share this signature.
+    using ComparisonVisitor = decltype(&ffi::visit_predicate_eq);
+
+    struct ComparisonVisitors
+    {
+        ComparisonVisitor direct;
+        /// Reads the comparison with its operands swapped (`literal OP column`).
+        ComparisonVisitor mirrored;
+    };
+
+    std::optional<ComparisonVisitors> comparisonVisitors(const String & name)
+    {
+        if (name == DB::NameEquals::name)
+            return ComparisonVisitors{&ffi::visit_predicate_eq, &ffi::visit_predicate_eq};
+        if (name == DB::NameNotEquals::name)
+            return ComparisonVisitors{&ffi::visit_predicate_ne, &ffi::visit_predicate_ne};
+        if (name == DB::NameLess::name)
+            return ComparisonVisitors{&ffi::visit_predicate_lt, &ffi::visit_predicate_gt};
+        if (name == DB::NameLessOrEquals::name)
+            return ComparisonVisitors{&ffi::visit_predicate_le, &ffi::visit_predicate_ge};
+        if (name == DB::NameGreater::name)
+            return ComparisonVisitors{&ffi::visit_predicate_gt, &ffi::visit_predicate_lt};
+        if (name == DB::NameGreaterOrEquals::name)
+            return ComparisonVisitors{&ffi::visit_predicate_ge, &ffi::visit_predicate_le};
+        return {};
+    }
+
     struct DateComparison
     {
         const DB::ActionsDAG::Node * column;
         Int32 day;
         bool narrows_to_date;
+        /// Set when `literal OP conversion(column)` was normalized to `conversion(column) OP literal`.
+        bool swapped;
     };
 
     std::optional<DateComparison> matchDateComparison(const DB::ActionsDAG::Node * node)
     {
         const auto * conversion = node->children[0];
         const auto * literal = node->children[1];
+        bool swapped = false;
         if (isConstNode(conversion))
+        {
             std::swap(conversion, literal);
+            swapped = true;
+        }
         if (!isFunctionNode(conversion) || !isConstNode(literal))
             return {};
 
@@ -121,7 +154,7 @@ namespace
         if (value.isNull())
             return {};
 
-        return DateComparison{column, static_cast<Int32>(value.safeGet<Int32>()), result_type->getTypeId() == DB::TypeIndex::Date};
+        return DateComparison{column, static_cast<Int32>(value.safeGet<Int32>()), result_type->getTypeId() == DB::TypeIndex::Date, swapped};
     }
 }
 
@@ -273,7 +306,7 @@ private:
     static uintptr_t visitComparisonOverDateConversion(
         EngineIteratorData & iterator_data,
         const DateComparison & comparison,
-        bool is_equals);
+        ComparisonVisitor visitor);
 };
 
 uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisitorState * state)
@@ -399,11 +432,11 @@ static uintptr_t visitJunction(
 uintptr_t EngineIterator::visitComparisonOverDateConversion(
     EngineIteratorData & iterator_data,
     const DateComparison & comparison,
-    bool is_equals)
+    ComparisonVisitor visitor)
 {
     auto * state = iterator_data.state;
     const auto column_type = getTypeOrNestedType(comparison.column);
-    auto compare = [&](auto visitor, Int32 day)
+    auto compare = [&](auto comparison_visitor, Int32 day)
     {
         /// Expression IDs are consumed by comparisons, so each needs its own column ID.
         auto column = KernelUtils::unwrapResult(
@@ -411,22 +444,23 @@ uintptr_t EngineIterator::visitComparisonOverDateConversion(
                 state, KernelUtils::toDeltaString(comparison.column->result_name), &KernelUtils::allocateError),
             "visit_expression_column");
         auto literal = visitLiteralValue(DB::Field(Int64(day)), DB::TypeIndex::Date32, column_type, state);
-        return visitor(state, column, literal);
+        return comparison_visitor(state, column, literal);
     };
 
-    auto predicate = compare(ffi::visit_predicate_eq, comparison.day);
+    auto predicate = compare(visitor, comparison.day);
     if (comparison.narrows_to_date)
     {
-        /// `Date32` -> `Date` is identity on [0, DATE_LUT_MAX_DAY_NUM] in every overflow mode.
-        /// Outside that domain it may wrap, saturate, or throw. Keep it unknown under either
-        /// polarity: (d = day) OR ((d < 0 OR d > max_day) AND Unknown).
+        /// `Date32` -> `Date` may wrap, saturate, or throw outside [0, DATE_LUT_MAX_DAY_NUM], so fence: (in_domain AND (d OP day)) OR (outside AND Unknown).
+        auto in_domain = visitJunction(state, ffi::visit_predicate_and,
+            {compare(ffi::visit_predicate_ge, 0), compare(ffi::visit_predicate_le, DATE_LUT_MAX_DAY_NUM)});
         auto outside = visitJunction(state, ffi::visit_predicate_or,
             {compare(ffi::visit_predicate_lt, 0), compare(ffi::visit_predicate_gt, DATE_LUT_MAX_DAY_NUM)});
         auto guarded = visitJunction(state, ffi::visit_predicate_and, {outside, visitUntranslated(iterator_data)});
-        predicate = visitJunction(state, ffi::visit_predicate_or, {predicate, guarded});
+        predicate = visitJunction(state, ffi::visit_predicate_or,
+            {visitJunction(state, ffi::visit_predicate_and, {in_domain, predicate}), guarded});
     }
 
-    return is_equals ? predicate : ffi::visit_predicate_not(state, predicate);
+    return predicate;
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
@@ -597,10 +631,11 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         return ffi::visit_predicate_le(iterator_data.state, column, constant);
                 }
 
-                if (func_name == DB::NameEquals::name || func_name == DB::NameNotEquals::name)
+                if (auto comparison = matchDateComparison(node))
                 {
-                    if (auto comparison = matchDateComparison(node))
-                        return visitComparisonOverDateConversion(iterator_data, *comparison, func_name == DB::NameEquals::name);
+                    if (auto visitors = comparisonVisitors(func_name))
+                        return visitComparisonOverDateConversion(
+                            iterator_data, *comparison, comparison->swapped ? visitors->mirrored : visitors->direct);
                 }
             }
 

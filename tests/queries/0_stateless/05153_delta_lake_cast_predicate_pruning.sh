@@ -318,4 +318,27 @@ check t "toDate(d, 'UTC') = '2026-01-01'"
 check t "toDate32(d, 'UTC') = '2026-01-01'"
 check t "toDate32(d, 'UTC') != '2026-01-01'"
 
+# Ordering: identity conversions map exactly; `Date`-narrowing ones are fenced so out-of-domain files stay scanned in either polarity.
+check t "toDate32(d) < '2026-01-02'"
+check t "toDate32(d) >= '2026-01-02'"
+check t "'2026-01-02' > toDate32(d)"
+check t "d::Date32 <= '2026-01-01'"
+check t "toDate(d) < '2026-01-02'"
+check t "toDate(d) >= '2026-01-02'"
+check t "'2026-01-02' > toDate(d)"
+check t "NOT (toDate(d) < '2026-01-02')"
+check t "NOT (toDate(d) > '2026-01-01')"
+check aliases "toDate(d) <= '2026-01-01'"
+check lower "toDate(d) < '1970-01-02'" "date_time_overflow_behavior='saturate'"
+check upper "toDate(d) > '2149-06-05'" "date_time_overflow_behavior='saturate'"
+# Identity ordering can still prune from a single remaining bound.
+check no_min "toDate32(d) > '2026-01-01'"
+check no_max "toDate32(d) < '2026-01-02'"
+# An actual overflow must survive an ordering comparison whose in-domain answer is false.
+for enabled in 0 1; do
+    expect_error "upper: toDate(d) < '2026-01-01' (engine predicate ${enabled}, throw)" \
+        upper "toDate(d) < '2026-01-01'" "${enabled}" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
+        "date_time_overflow_behavior='throw'"
+done
+
 run_all
