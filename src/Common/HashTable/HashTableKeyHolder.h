@@ -73,17 +73,26 @@ namespace DB
   * ArenaKeyHolder is a key holder for hash tables that serializes a std::string_view
   * key to an Arena.
   */
+/// Where the key of an `ArenaKeyHolder` currently lives.
+enum class ArenaKeyPlacement : UInt8
+{
+    /// Somewhere temporary; persisting copies it into the arena.
+    NeedsCopy,
+    /// Already in the arena, in the place it will stay - a whole block serialized there at once.
+    /// Persisting keeps it as it is; a duplicate is dealt with by whoever laid the block out.
+    InArena,
+};
+
 struct ArenaKeyHolder
 {
     std::string_view key;
     Arena & pool;
-    /// When key is not held by any external instance, then it is held by this unique_ptr.
-    std::unique_ptr<char[]> holder{};
+    ArenaKeyPlacement placement = ArenaKeyPlacement::NeedsCopy;
 
-    ArenaKeyHolder(const std::string_view key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
+    ArenaKeyHolder(const std::string_view key_, Arena & pool_, ArenaKeyPlacement placement_ = ArenaKeyPlacement::NeedsCopy)
         : key(key_)
         , pool(pool_)
-        , holder(std::move(holder_))
+        , placement(placement_)
     {
     }
 };
@@ -97,6 +106,9 @@ inline std::string_view & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & hol
 
 inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
 {
+    if (holder.placement != DB::ArenaKeyPlacement::NeedsCopy)
+        return;
+
     // Normally, our hash table shouldn't ask to persist a zero key,
     // but it can happened in the case of clearable hash table (ClearableHashSet, for example).
     // The clearable hash table doesn't use zero storage and
