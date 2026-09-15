@@ -778,6 +778,72 @@ def test_x509_san_email_support():
     instance.query("DROP USER IF EXISTS bob")
 
 
+def test_x509_san_email_lowercase_type_prefix():
+    # The SAN type prefix is case-insensitive on input: `openssl x509 -text` prints the type as
+    # 'email:', and a subject copied from there must still match the certificate's 'EMAIL:' SAN.
+    # The prefix is stored in the canonical uppercase form.
+
+    # users.xml: <subject_alt_name>email:alice@example.com</subject_alt_name>
+    assert (
+        execute_query_native(
+            instance,
+            "SELECT currentUser()",
+            user="email_lowercase_prefix",
+            cert_name="client13",
+        )
+        == "email_lowercase_prefix\n"
+    )
+    assert (
+        execute_query_https(
+            "SELECT currentUser()", user="email_lowercase_prefix", cert_name="client13"
+        )
+        == "email_lowercase_prefix\n"
+    )
+    assert (
+        instance.query("SHOW CREATE USER email_lowercase_prefix")
+        == "CREATE USER email_lowercase_prefix IDENTIFIED WITH ssl_certificate SAN \\'EMAIL:alice@example.com\\'\n"
+    )
+
+    # SQL: the same lowercase spelling, both for the host-part-insensitive and the literal '*' cases.
+    instance.query("DROP USER IF EXISTS email_lowercase_sql")
+    instance.query("DROP USER IF EXISTS email_lowercase_literal")
+    instance.query(
+        "CREATE USER email_lowercase_sql IDENTIFIED WITH ssl_certificate SAN 'email:alice@EXAMPLE.COM'"
+    )
+    instance.query(
+        "CREATE USER email_lowercase_literal IDENTIFIED WITH ssl_certificate SAN 'Email:*@example.com'"
+    )
+    try:
+        assert (
+            execute_query_https(
+                "SELECT currentUser()", user="email_lowercase_sql", cert_name="client13"
+            )
+            == "email_lowercase_sql\n"
+        )
+        assert (
+            instance.query("SHOW CREATE USER email_lowercase_sql")
+            == "CREATE USER email_lowercase_sql IDENTIFIED WITH ssl_certificate SAN \\'EMAIL:alice@EXAMPLE.COM\\'\n"
+        )
+        assert (
+            execute_query_https(
+                "SELECT currentUser()",
+                user="email_lowercase_literal",
+                cert_name="client14",
+            )
+            == "email_lowercase_literal\n"
+        )
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()",
+                user="email_lowercase_literal",
+                cert_name="client13",
+            )
+        assert "403" in str(err.value)
+    finally:
+        instance.query("DROP USER IF EXISTS email_lowercase_sql")
+        instance.query("DROP USER IF EXISTS email_lowercase_literal")
+
+
 def test_x509_san_email_no_wildcard():
     # '*' is a legal character in an email address local part (RFC 5321), so EMAIL: SANs are
     # matched exactly and a '*' is NEVER treated as a wildcard (unlike the Common Name and DNS:/URI:

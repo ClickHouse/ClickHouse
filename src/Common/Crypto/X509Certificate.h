@@ -76,11 +76,15 @@ public:
     private:
         std::array<container, size_t(Type::SAN) + 1> subjects;
 
+        static void canonicalizeSANTypePrefix(String & subject);
+
     public:
         const container & at(Type type_) const;
         bool empty();
 
         void insert(const String & subject_type_, String && subject);
+        /// A SAN subject with a recognized type prefix ("DNS:", "URI:", "EMAIL:") in any case
+        /// is stored with the prefix in canonical uppercase form.
         void insert(Type type_, String && subject);
 
         static X509Certificate::Subjects::Type parseSubjectType(const String & type_);

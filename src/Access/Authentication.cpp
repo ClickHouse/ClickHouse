@@ -303,7 +303,8 @@ namespace
 
                 // An "EMAIL:" SAN is an `rfc822Name`: the local part is case-sensitive, the host part is not.
                 // The exact comparison above already covers an identical host part, so only the case-insensitive
-                // host-part comparison is left to do here.
+                // host-part comparison is left to do here. The type prefix is already canonicalized to uppercase
+                // by `X509Certificate::Subjects::insert` on both the configured and the certificate side.
                 if (type == X509Certificate::Subjects::Type::SAN && subject.starts_with("EMAIL:"))
                 {
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
