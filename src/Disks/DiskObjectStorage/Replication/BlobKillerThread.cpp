@@ -288,8 +288,10 @@ void BlobKillerThread::run()
 
     remove_tasks_pool.setMaxThreads(round_threads_count);
     int64_t removed_blobs = executeBlobsCleanup(round_request_batch, round_blobs_in_task, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
-    /// Published before the round counter, so a waiter woken by that counter also reads this round's outcome.
-    succeeded_rounds.fetch_add(removed_blobs > 0);
+    /// A round with an empty queue removes nothing without failing, so only a round that had blobs
+    /// queued and removed none of them counts as no progress. Published before the round counter, so
+    /// a waiter woken by that counter also reads this round's outcome.
+    succeeded_rounds.fetch_add(removed_blobs > 0 || dead_queue_estimate == 0);
     finished_rounds.fetch_add(1);
     finished_rounds.notify_all();
 

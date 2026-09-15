@@ -1200,6 +1200,14 @@ try
     EXPECT_GT(errors, 0u);
     /// The wait spends its whole 100-round budget on the failing removal when it does not stop early.
     EXPECT_LT(rounds, 8u);
+
+    /// Abandoning the wait keeps the blob queued: it is removed once it can be unlinked again.
+    fs::remove_all(blob_path);
+    {
+        DB::WriteBufferFromFile wb(blob_path);
+        wb.finalize();
+    }
+    waitBlobsCount(disk, 0);
 }
 catch (...)
 {
