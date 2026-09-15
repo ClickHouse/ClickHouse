@@ -9,3 +9,9 @@ limit by: the condition reaches the read and prunes it, and orders nothing
 Read type: Default
 Prewhere filter column:  tenant = 5
 1
+a with list never reaches the rewrite, so the read is ordered as the replicas order theirs
+Read type: InOrder
+1000
+stateful select list: nothing is ordered either way
+Read type: Default
+1000

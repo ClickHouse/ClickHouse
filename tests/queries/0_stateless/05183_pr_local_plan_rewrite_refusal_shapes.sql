@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS t_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_window_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_untuple_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_limit_by_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_with_pr_rewrite_shapes;
+DROP VIEW IF EXISTS v_stateful_pr_rewrite_shapes;
 
 CREATE TABLE t_pr_rewrite_shapes (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
     SETTINGS index_granularity = 128;
@@ -29,6 +31,15 @@ CREATE VIEW v_untuple_pr_rewrite_shapes AS
 -- fixes the sort key prefix - but `rewriteSubquery` refuses a subquery that has one.
 CREATE VIEW v_limit_by_pr_rewrite_shapes AS
     SELECT tenant, ts FROM t_pr_rewrite_shapes ORDER BY ts LIMIT 1 BY tenant;
+-- A `WITH` list is a shape `rewriteSubquery` refuses when
+-- `allow_push_predicate_when_subquery_contains_with` is off - but the analyzer inlines the alias and
+-- evaluates the scalar subquery before the query is shipped, so no `WITH` ever reaches the rewrite.
+CREATE VIEW v_with_pr_rewrite_shapes AS
+    WITH 7 AS seven, (SELECT max(ts) FROM t_pr_rewrite_shapes) AS mx
+    SELECT tenant, ts, seven, mx FROM t_pr_rewrite_shapes ORDER BY ts;
+-- A stateful function in the `SELECT` list is refused as well, and leaves nothing to withhold.
+CREATE VIEW v_stateful_pr_rewrite_shapes AS
+    SELECT tenant, ts, generateSerialID('05183') AS sid FROM t_pr_rewrite_shapes ORDER BY ts;
 
 -- For runs with the old analyzer
 SET enable_analyzer = 1;
@@ -76,6 +87,28 @@ FROM (
 WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
 SELECT count() FROM (SELECT tenant, ts FROM v_limit_by_pr_rewrite_shapes WHERE tenant = 5);
 
+SELECT 'a with list never reaches the rewrite, so the read is ordered as the replicas order theirs';
+SET allow_push_predicate_when_subquery_contains_with = 0;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts, seven, mx FROM v_with_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (SELECT tenant, ts, seven, mx FROM v_with_pr_rewrite_shapes WHERE tenant = 5);
+SET allow_push_predicate_when_subquery_contains_with = 1;
+
+SELECT 'stateful select list: nothing is ordered either way';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts, sid FROM v_stateful_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (SELECT tenant, ts, sid FROM v_stateful_pr_rewrite_shapes WHERE tenant = 5);
+
+DROP VIEW v_stateful_pr_rewrite_shapes;
+DROP VIEW v_with_pr_rewrite_shapes;
 DROP VIEW v_limit_by_pr_rewrite_shapes;
 DROP VIEW v_untuple_pr_rewrite_shapes;
 DROP VIEW v_window_pr_rewrite_shapes;
