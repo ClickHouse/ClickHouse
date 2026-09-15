@@ -65,7 +65,7 @@ FROM
         arrayMap(i -> if(i % 7 = 0, toUInt32(1000000), if(i % 11 = 0, toUInt32(0), toUInt32(i % 97))), range(n)) AS u32,
         arrayMap(i -> if(i % 7 = 0, toUInt64(1000000), if(i % 11 = 0, toUInt64(0), toUInt64(i % 97))), range(n)) AS u64,
         arrayMap(i -> if(i % 7 = 0, toFloat64(1000000), if(i % 11 = 0, toFloat64(-1000000), toFloat64(i % 97))), range(n)) AS f64
-    FROM (SELECT arrayJoin([1, 48, 49, 64, 65, 256, 257, 1023, 1024, 16383, 16384, 16385]) AS n)
+    FROM (SELECT arrayJoin([1, 48, 49, 64, 65, 256, 257, 1023, 1024, 4095, 4096, 4097, 8191, 8192, 8193, 16383, 16384, 16385]) AS n)
 );
 SELECT min(if(
     arrayMinIndex(a) = arrayMinIndex(x -> tuple(x), a)
@@ -86,6 +86,21 @@ SELECT arrayMinIndex([nan::Float64, -inf::Float64, -inf::Float64, 0::Float64]), 
 SELECT arrayMinIndex([(2, 'b'), (1, 'c'), (1, 'a')]), arrayMaxIndex([(2, 'b'), (1, 'c'), (1, 'a')]);
 SELECT arrayMinIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]), arrayMaxIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]);
 SELECT arrayMinIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]), arrayMaxIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]);
+SELECT
+    arrayMinIndex(d32), arrayMaxIndex(d32), arrayMinIndex(x -> tuple(x), d32), arrayMaxIndex(x -> tuple(x), d32),
+    arrayMinIndex(d64), arrayMaxIndex(d64), arrayMinIndex(x -> tuple(x), d64), arrayMaxIndex(x -> tuple(x), d64),
+    arrayMinIndex(d128), arrayMaxIndex(d128), arrayMinIndex(x -> tuple(x), d128), arrayMaxIndex(x -> tuple(x), d128),
+    arrayMinIndex(d256), arrayMaxIndex(d256), arrayMinIndex(x -> tuple(x), d256), arrayMaxIndex(x -> tuple(x), d256),
+    arrayMinIndex(dt64), arrayMaxIndex(dt64), arrayMinIndex(x -> tuple(x), dt64), arrayMaxIndex(x -> tuple(x), dt64)
+FROM
+(
+    SELECT
+        arrayMap(x -> toDecimal32(x, 2), range(65)) AS d32,
+        arrayMap(x -> toDecimal64(x, 2), range(65)) AS d64,
+        arrayMap(x -> toDecimal128(x, 2), range(65)) AS d128,
+        arrayMap(x -> toDecimal256(x, 2), range(65)) AS d256,
+        [toDateTime64('2024-01-03 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3)] AS dt64
+);
 SELECT arrayMinIndex(x -> length(x), ['aaa', 'b', 'b']), arrayMaxIndex(x -> length(x), ['aaa', 'b', 'b']);
 SELECT arrayMinIndex(x, y -> x + y, [3, 1, 1, 5], [1, 4, 4, 0]), arrayMaxIndex(x, y -> x + y, [3, 1, 1, 5], [1, 4, 4, 0]);
 SELECT
@@ -96,7 +111,7 @@ SELECT
     arrayMinIndex(arrayMap(i -> if(i = 0, toInt64(-100000), toInt64(i)), range(n))),
     arrayMinIndex(arrayMap(i -> if(i = intDiv(n, 2), toInt64(-100000), toInt64(i)), range(n))),
     arrayMinIndex(arrayMap(i -> if(i = n - 1, toInt64(-100000), toInt64(i)), range(n)))
-FROM (SELECT arrayJoin([1, 2, 3, 7, 8, 15, 16, 31, 32, 47, 48, 49, 63, 64, 65, 95, 96, 127, 128, 129, 191, 192, 255, 256, 257, 511, 512, 513, 1023, 1024, 2047, 2048, 4095, 4096, 8191, 8192, 16383, 16384, 16385, 32768]) AS n)
+FROM (SELECT arrayJoin([1, 2, 3, 7, 8, 15, 16, 31, 32, 47, 48, 49, 63, 64, 65, 95, 96, 127, 128, 129, 191, 192, 255, 256, 257, 511, 512, 513, 1023, 1024, 2047, 2048, 4095, 4096, 4097, 8191, 8192, 8193, 16383, 16384, 16385, 32768]) AS n)
 ORDER BY n;
 SELECT min(if(
     arrayMinIndex(arrayMap(x -> nan, range(n))) = 1

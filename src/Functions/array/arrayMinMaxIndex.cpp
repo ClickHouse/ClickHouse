@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <optional>
 #include <type_traits>
 
@@ -103,6 +105,25 @@ size_t findFirstEqualSIMD(const T * data, size_t size, const T & value)
     };
 
     size_t i = prefix_size;
+    for (; i + 4 * lanes <= size; i += 4 * lanes)
+    {
+        const size_t first = findInVector(i);
+        if (first != lanes)
+            return i + first;
+
+        const size_t second = findInVector(i + lanes);
+        if (second != lanes)
+            return i + lanes + second;
+
+        const size_t third = findInVector(i + 2 * lanes);
+        if (third != lanes)
+            return i + 2 * lanes + third;
+
+        const size_t fourth = findInVector(i + 3 * lanes);
+        if (fourth != lanes)
+            return i + 3 * lanes + fourth;
+    }
+
     for (; i + 2 * lanes <= size; i += 2 * lanes)
     {
         const size_t first = findInVector(i);
@@ -164,6 +185,25 @@ size_t findFirstNaNSIMD(const T * data, size_t size)
     };
 
     size_t i = prefix_size;
+    for (; i + 4 * lanes <= size; i += 4 * lanes)
+    {
+        const size_t first = findInVector(i);
+        if (first != lanes)
+            return i + first;
+
+        const size_t second = findInVector(i + lanes);
+        if (second != lanes)
+            return i + lanes + second;
+
+        const size_t third = findInVector(i + 2 * lanes);
+        if (third != lanes)
+            return i + 2 * lanes + third;
+
+        const size_t fourth = findInVector(i + 3 * lanes);
+        if (fourth != lanes)
+            return i + 3 * lanes + fourth;
+    }
+
     for (; i + 2 * lanes <= size; i += 2 * lanes)
     {
         const size_t first = findInVector(i);
@@ -198,13 +238,13 @@ namespace ArrayMinMaxIndexImpl
 
 constexpr size_t small_tournament_limit = 48;
 constexpr size_t medium_two_pass_limit = 256;
-constexpr size_t record_block_limit_64_bit_integer = 16384;
+constexpr size_t record_block_limit_64_bit_integer = 8192;
 
 /*
  * These are measured performance cutovers for the AVX2 path. The small
  * tournament wins up to 48 elements, the two-pass SIMD path is capped at 256
  * to avoid an expensive second scan, and 64-bit one-pass scans stay ahead
- * until record blocks amortize their extra lookup work at 16384 elements.
+ * until record blocks amortize their extra lookup work at 8192 elements.
  */
 
 template <typename T>
@@ -425,7 +465,8 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
     }
     else
     {
-        best = data[0];
+        /// Treat the first block as a record so a terminal integer can stop the scan immediately.
+        have_numeric_value = false;
     }
 
     for (size_t block_begin = 0; block_begin < size; block_begin += block_size)
@@ -459,6 +500,15 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
             best = *block_extreme;
             best_index = block_begin + block_index;
             have_numeric_value = true;
+
+            if constexpr (std::is_integral_v<T>)
+            {
+                constexpr T terminal_value = strategy == ArrayMinMaxIndexStrategy::Min
+                    ? std::numeric_limits<T>::lowest()
+                    : std::numeric_limits<T>::max();
+                if (block_end < size && best == terminal_value)
+                    return best_index;
+            }
         }
     }
 
@@ -474,6 +524,22 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
     return best_index;
 }
 
+template <ArrayMinMaxIndexStrategy strategy, typename Element>
+requires(is_big_int_v<Element>)
+static void executeWideNumericData(const Element * data, const ColumnArray::Offsets & offsets, ColumnUInt32::Container & result)
+{
+    size_t begin = 0;
+    for (size_t row = 0; row < offsets.size(); ++row)
+    {
+        const size_t end = offsets[row];
+        const size_t size = end - begin;
+        result[row] = size <= 1
+            ? static_cast<UInt32>(size)
+            : static_cast<UInt32>(findIndexOnePass<strategy>(data + begin, size) + 1);
+        begin = end;
+    }
+}
+
 /// Wide integers do not have a SIMD findExtreme implementation. Keep them on a typed scan
 /// instead of paying the generic compareAt dispatch for every element.
 template <ArrayMinMaxIndexStrategy strategy, typename Element>
@@ -485,34 +551,15 @@ static bool executeWideNumeric(const ColumnPtr & mapped, const ColumnArray::Offs
         return false;
 
     auto result_column = ColumnUInt32::create(offsets.size());
-    auto & result = result_column->getData();
-    const Element * data = column->getData().data();
-
-    size_t begin = 0;
-    for (size_t row = 0; row < offsets.size(); ++row)
-    {
-        const size_t end = offsets[row];
-        const size_t size = end - begin;
-        result[row] = size <= 1
-            ? static_cast<UInt32>(size)
-            : static_cast<UInt32>(findIndexOnePass<strategy>(data + begin, size) + 1);
-        begin = end;
-    }
+    executeWideNumericData<strategy, Element>(column->getData().data(), offsets, result_column->getData());
 
     result_ptr = std::move(result_column);
     return true;
 }
 
 template <ArrayMinMaxIndexStrategy strategy, typename Element>
-static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & result_ptr)
+static void executeNumericData(const Element * data, const ColumnArray::Offsets & offsets, ColumnUInt32::Container & result)
 {
-    const auto * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
-    if (!column)
-        return false;
-
-    auto result_column = ColumnUInt32::create(offsets.size());
-    auto & result = result_column->getData();
-    const Element * data = column->getData().data();
     const bool use_simd = useAVX2();
 
     size_t begin = 0;
@@ -577,6 +624,38 @@ static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets 
         begin = end;
     }
 
+}
+
+template <ArrayMinMaxIndexStrategy strategy, typename Element>
+static bool executeNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & result_ptr)
+{
+    const auto * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+    if (!column)
+        return false;
+
+    auto result_column = ColumnUInt32::create(offsets.size());
+    executeNumericData<strategy, Element>(column->getData().data(), offsets, result_column->getData());
+    result_ptr = std::move(result_column);
+    return true;
+}
+
+template <ArrayMinMaxIndexStrategy strategy, typename Decimal>
+requires(is_decimal<Decimal>)
+static bool executeDecimal(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & result_ptr)
+{
+    const auto * column = checkAndGetColumn<ColumnDecimal<Decimal>>(&*mapped);
+    if (!column)
+        return false;
+
+    using Element = typename Decimal::NativeType;
+    static_assert(sizeof(Decimal) == sizeof(Element));
+    static_assert(alignof(Decimal) == alignof(Element));
+    const auto * data = reinterpret_cast<const Element *>(column->getData().data());
+    auto result_column = ColumnUInt32::create(offsets.size());
+    if constexpr (is_big_int_v<Element>)
+        executeWideNumericData<strategy, Element>(data, offsets, result_column->getData());
+    else
+        executeNumericData<strategy, Element>(data, offsets, result_column->getData());
     result_ptr = std::move(result_column);
     return true;
 }
@@ -625,7 +704,12 @@ struct ArrayMinMaxIndexImpl
             || executeWideNumeric<strategy, Int128>(mapped, offsets, numeric_result)
             || executeWideNumeric<strategy, Int256>(mapped, offsets, numeric_result)
             || executeNumeric<strategy, Float32>(mapped, offsets, numeric_result)
-            || executeNumeric<strategy, Float64>(mapped, offsets, numeric_result))
+            || executeNumeric<strategy, Float64>(mapped, offsets, numeric_result)
+            || executeDecimal<strategy, Decimal32>(mapped, offsets, numeric_result)
+            || executeDecimal<strategy, Decimal64>(mapped, offsets, numeric_result)
+            || executeDecimal<strategy, Decimal128>(mapped, offsets, numeric_result)
+            || executeDecimal<strategy, Decimal256>(mapped, offsets, numeric_result)
+            || executeDecimal<strategy, DateTime64>(mapped, offsets, numeric_result))
             return numeric_result;
 
         static constexpr int nan_null_direction_hint = strategy == ArrayMinMaxIndexStrategy::Min ? 1 : -1;
