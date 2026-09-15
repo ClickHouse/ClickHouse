@@ -229,10 +229,7 @@ class Db:
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts. Raises on failure."""
-        response = self._cluster.select(query + " FORMAT JSON")
-        if response is None:
-            raise RuntimeError(f"CI logs cluster query failed: {query}")
-        return json.loads(response)["data"]
+        return json.loads(self._cluster.select(query + " FORMAT JSON"))["data"]
 
 
 def quote(s: str) -> str:
