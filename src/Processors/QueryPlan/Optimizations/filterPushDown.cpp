@@ -744,7 +744,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         const auto & join_output_header = *join_header;
 
-        auto create_cast_name = [&](const String & replaced_name)
+        auto create_replacement_name = [&](const String & replaced_name)
         {
             String name = fmt::format("__filterpushdown_cast{}", replaced_name);
             int counter = 0;
@@ -768,14 +768,18 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (!replaced || !replaced->type->equals(*supertype))
                 return;
 
-            /// The side that already has the supertype is not cast by the JOIN either.
-            if (source.getType()->equals(*supertype))
+            /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
+            /// under its own name provided that name denotes a single type here: the JOIN republishes an
+            /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
+            const auto * source_in_output = join_output_header.findByName(source.getColumnName());
+            if (source.getType()->equals(*supertype)
+                && (!source_in_output || source_in_output->type->equals(*source.getType())))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
             }
 
-            auto name = create_cast_name(replaced_name);
+            auto name = create_replacement_name(replaced_name);
             equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, supertype, name);
             replacements.push_back({source, supertype, std::move(name)});
         };
@@ -960,7 +964,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// serialization to `String`, which never appear as a supertype cast - and the date-time
             /// overflow behavior is pinned by `createInternalCast` whether or not a context is given.
             required_actions.push_back(JoinActionRef::transform({replacement.source},
-                [&](ActionsDAG & dag, auto && args) { return &dag.addCast(*args.at(0), replacement.target_type, replacement.name, nullptr); }));
+                [&](ActionsDAG & dag, auto && args)
+                {
+                    /// A replacement renamed to keep its type unambiguous has nothing to convert.
+                    const auto & arg = *args.at(0);
+                    if (arg.result_type->equals(*replacement.target_type))
+                        return &dag.addAlias(arg, replacement.name);
+                    return &dag.addCast(arg, replacement.target_type, replacement.name, nullptr);
+                }));
         }
     };
 
@@ -1061,6 +1072,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
 
     const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
+    size_t pushed_partial_filters = 0;
     if (filter && disj_pushdown_enabled)
     {
         if ((join && join->isDisjunctionsOptimizationApplied()) ||
@@ -1087,6 +1099,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
                 addFilterOnTop(*child_node, 0, nodes, std::move(*left_partial_filter_dag));
                 ++updated_steps;
+                ++pushed_partial_filters;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
                     partial_predicate_column_name,
@@ -1101,6 +1114,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
                 addFilterOnTop(*child_node, 1, nodes, std::move(*right_partial_filter_dag));
                 ++updated_steps;
+                ++pushed_partial_filters;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
                     partial_predicate_column_name,
@@ -1114,6 +1128,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             logical_join->setDisjunctionsOptimizationApplied(true);
         if (filled_join)
             filled_join->setDisjunctionsOptimizationApplied(true);
+
+        /// A partial filter is inserted two levels below this node, as a new child of the join, with the
+        /// expression that renames the read's columns under it. The return value is how many layers the
+        /// traversal comes back down, so reporting one leaves the new filter unvisited: it is never
+        /// merged with that expression, stays one step away from the read, and `optimizePrewhere` - which
+        /// only takes a filter adjacent to the read - cannot move it. Three reaches it, the same depth
+        /// the union push above reports for the filters it inserts.
+        if (pushed_partial_filters)
+            updated_steps = std::max<size_t>(updated_steps, 3);
     }
 
     return updated_steps;
