@@ -195,6 +195,14 @@
         ) ENGINE = Memory
     </create_query>
     <create_query>
+        CREATE TABLE array_min_max_index_perf_float32
+        (
+            case_id UInt8,
+            array_length UInt32,
+            a Array(Float32)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>
         CREATE TABLE array_min_max_index_perf_string
         (
             case_id UInt8,
@@ -332,6 +340,37 @@
                 range({matrix_length}))
         FROM numbers(greatest(1, intDiv(12000, {matrix_length})))
         ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
+    </fill_query>
+
+    <!-- Float32 exercises the AVX-512 indexed path and terminal fast exit. -->
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float32
+        SELECT
+            case_id,
+            {matrix_length},
+            arrayMap(x -&gt;
+                multiIf(
+                    case_id = 1 AND x = 0, toFloat32(1000000000),
+                    case_id = 2 AND x = intDiv({matrix_length}, 2), toFloat32(1000000000),
+                    case_id = 3 AND x = {matrix_length} - 1, toFloat32(1000000000),
+                    case_id = 5 AND x = 0, toFloat32(-1000000000),
+                    case_id = 6 AND x = intDiv({matrix_length}, 2), toFloat32(-1000000000),
+                    case_id = 7 AND x = {matrix_length} - 1, toFloat32(-1000000000),
+                    case_id &gt; 4, toFloat32(x + 1),
+                    toFloat32(x)),
+                range({matrix_length}))
+        FROM numbers(greatest(1, intDiv(12000, {matrix_length})))
+        ARRAY JOIN [1, 2, 3, 5, 6, 7] AS case_id
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float32
+        SELECT 9, 16384, arrayMap(x -&gt; if(x = 8192, inf::Float32, toFloat32(x)), range(16384))
+        FROM numbers(32)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_min_max_index_perf_float32
+        SELECT 10, 16384, arrayMap(x -&gt; if(x = 8192, -inf::Float32, toFloat32(x)), range(16384))
+        FROM numbers(32)
     </fill_query>
 
     <!-- Keep two long floating point edge cases in the performance suite. -->
@@ -560,6 +599,32 @@
         FORMAT Null
     </query>
 
+    <!-- Float32 normal values and terminal values. -->
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_float32
+        WHERE array_length = {matrix_length} AND case_id &lt;= 7
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_float32
+        WHERE array_length = {matrix_length} AND case_id &lt;= 7
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
+        FROM array_min_max_index_perf_float32
+        WHERE case_id &gt;= 9
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a)))
+        FROM array_min_max_index_perf_float32
+        WHERE case_id &gt;= 9
+        FORMAT Null
+    </query>
+
     <!-- Generic String path and a mapped String workload. -->
     <query>
         SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a))
@@ -608,6 +673,7 @@
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u32</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_i64</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_float</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_float32</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_string</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_nullable</drop_query>
 </test>

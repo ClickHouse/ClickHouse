@@ -260,9 +260,14 @@ size_t findFirstNaNSIMD(const T * data, size_t size)
 DECLARE_X86_64_V4_SPECIFIC_CODE(
 
 template <typename T>
+using AVX512Value = std::conditional_t<
+    std::is_same_v<T, Float32>, __m512,
+    std::conditional_t<std::is_same_v<T, Float64>, __m512d, __m512i>>;
+
+template <typename T>
 requires(
     std::is_same_v<T, UInt32> || std::is_same_v<T, Int32> || std::is_same_v<T, UInt64>
-    || std::is_same_v<T, Int64>)
+    || std::is_same_v<T, Int64> || std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
 __m512i addIndexVector(__m512i indices, size_t offset)
 {
     if constexpr (sizeof(T) == 4)
@@ -278,7 +283,7 @@ __m512i addIndexVector(__m512i indices, size_t offset)
 template <typename T>
 requires(
     std::is_same_v<T, UInt32> || std::is_same_v<T, Int32> || std::is_same_v<T, UInt64>
-    || std::is_same_v<T, Int64>)
+    || std::is_same_v<T, Int64> || std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
 __m512i makeIndexVector(size_t offset)
 {
     if constexpr (sizeof(T) == 4)
@@ -314,12 +319,14 @@ size_t findFirstEqualPackedMaskSIMD(const T * data, size_t size, const T & value
 template <ArrayMinMaxIndexStrategy strategy, typename T, size_t accumulator_count>
 requires(
     std::is_same_v<T, UInt32> || std::is_same_v<T, Int32> || std::is_same_v<T, UInt64>
-    || std::is_same_v<T, Int64>)
+    || std::is_same_v<T, Int64> || std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
 size_t findIndexAVX512(const T * data, size_t size)
 {
     constexpr size_t lanes = sizeof(__m512i) / sizeof(T);
     constexpr size_t stride = accumulator_count * lanes;
     static_assert(accumulator_count == 1 || accumulator_count == 2 || accumulator_count == 4);
+
+    using ValueVector = AVX512Value<T>;
 
     const auto is_better = [](T lhs, T rhs)
     {
@@ -329,60 +336,143 @@ size_t findIndexAVX512(const T * data, size_t size)
             return lhs > rhs;
     };
 
-    const auto update = [&](const __m512i values, const __m512i indices, __m512i & best_values, __m512i & best_indices)
+    const auto load_values = [](const T * ptr) -> ValueVector
     {
+        if constexpr (std::is_same_v<T, Float32>)
+            return _mm512_loadu_ps(ptr);
+        else if constexpr (std::is_same_v<T, Float64>)
+            return _mm512_loadu_pd(ptr);
+        else
+            return _mm512_loadu_si512(ptr);
+    };
+
+    alignas(64) std::array<ValueVector, accumulator_count> best_values;
+    alignas(64) std::array<__m512i, accumulator_count> best_indices;
+    alignas(64) std::array<__m512i, accumulator_count> current_indices;
+
+    const auto update = [&](size_t accumulator, const ValueVector values, const __m512i indices)
+    {
+        auto & best_value = best_values[accumulator];
+        auto & best_index = best_indices[accumulator];
+
         if constexpr (std::is_same_v<T, UInt32>)
         {
             constexpr int comparison = strategy == ArrayMinMaxIndexStrategy::Min ? _MM_CMPINT_LT : _MM_CMPINT_GT;
-            const __mmask16 better = _mm512_cmp_epu32_mask(values, best_values, comparison);
-            best_values = _mm512_mask_blend_epi32(better, best_values, values);
-            best_indices = _mm512_mask_blend_epi32(better, best_indices, indices);
+            const __mmask16 better = _mm512_cmp_epu32_mask(values, best_value, comparison);
+            best_value = _mm512_mask_blend_epi32(better, best_value, values);
+            best_index = _mm512_mask_blend_epi32(better, best_index, indices);
         }
         else if constexpr (std::is_same_v<T, Int32>)
         {
             constexpr int comparison = strategy == ArrayMinMaxIndexStrategy::Min ? _MM_CMPINT_LT : _MM_CMPINT_GT;
-            const __mmask16 better = _mm512_cmp_epi32_mask(values, best_values, comparison);
-            best_values = _mm512_mask_blend_epi32(better, best_values, values);
-            best_indices = _mm512_mask_blend_epi32(better, best_indices, indices);
+            const __mmask16 better = _mm512_cmp_epi32_mask(values, best_value, comparison);
+            best_value = _mm512_mask_blend_epi32(better, best_value, values);
+            best_index = _mm512_mask_blend_epi32(better, best_index, indices);
         }
         else if constexpr (std::is_same_v<T, UInt64>)
         {
             constexpr int comparison = strategy == ArrayMinMaxIndexStrategy::Min ? _MM_CMPINT_LT : _MM_CMPINT_GT;
-            const __mmask8 better = _mm512_cmp_epu64_mask(values, best_values, comparison);
-            best_values = _mm512_mask_blend_epi64(better, best_values, values);
-            best_indices = _mm512_mask_blend_epi64(better, best_indices, indices);
+            const __mmask8 better = _mm512_cmp_epu64_mask(values, best_value, comparison);
+            best_value = _mm512_mask_blend_epi64(better, best_value, values);
+            best_index = _mm512_mask_blend_epi64(better, best_index, indices);
         }
-        else
+        else if constexpr (std::is_same_v<T, Int64>)
         {
             constexpr int comparison = strategy == ArrayMinMaxIndexStrategy::Min ? _MM_CMPINT_LT : _MM_CMPINT_GT;
-            const __mmask8 better = _mm512_cmp_epi64_mask(values, best_values, comparison);
-            best_values = _mm512_mask_blend_epi64(better, best_values, values);
-            best_indices = _mm512_mask_blend_epi64(better, best_indices, indices);
+            const __mmask8 better = _mm512_cmp_epi64_mask(values, best_value, comparison);
+            best_value = _mm512_mask_blend_epi64(better, best_value, values);
+            best_index = _mm512_mask_blend_epi64(better, best_index, indices);
+        }
+        else if constexpr (std::is_same_v<T, Float32>)
+        {
+            const __mmask16 ordered = _mm512_cmp_ps_mask(values, values, _CMP_ORD_Q);
+            const __mmask16 best_ordered = _mm512_cmp_ps_mask(best_value, best_value, _CMP_ORD_Q);
+            const __mmask16 strictly_better = strategy == ArrayMinMaxIndexStrategy::Min
+                ? _mm512_cmp_ps_mask(values, best_value, _CMP_LT_OQ)
+                : _mm512_cmp_ps_mask(values, best_value, _CMP_GT_OQ);
+            const __mmask16 better = ordered & (~best_ordered | strictly_better);
+            best_value = _mm512_mask_blend_ps(better, best_value, values);
+            best_index = _mm512_mask_blend_epi32(better, best_index, indices);
+        }
+        else if constexpr (std::is_same_v<T, Float64>)
+        {
+            const __mmask8 ordered = _mm512_cmp_pd_mask(values, values, _CMP_ORD_Q);
+            const __mmask8 best_ordered = _mm512_cmp_pd_mask(best_value, best_value, _CMP_ORD_Q);
+            const __mmask8 strictly_better = strategy == ArrayMinMaxIndexStrategy::Min
+                ? _mm512_cmp_pd_mask(values, best_value, _CMP_LT_OQ)
+                : _mm512_cmp_pd_mask(values, best_value, _CMP_GT_OQ);
+            const __mmask8 better = ordered & (~best_ordered | strictly_better);
+            best_value = _mm512_mask_blend_pd(better, best_value, values);
+            best_index = _mm512_mask_blend_epi64(better, best_index, indices);
         }
     };
 
-    std::array<__m512i, accumulator_count> best_values;
-    std::array<__m512i, accumulator_count> best_indices;
-    std::array<__m512i, accumulator_count> current_indices;
     for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
     {
         const size_t offset = accumulator * lanes;
-        best_values[accumulator] = _mm512_loadu_si512(data + offset);
+        best_values[accumulator] = load_values(data + offset);
         best_indices[accumulator] = makeIndexVector<T>(offset);
         current_indices[accumulator] = best_indices[accumulator];
     }
 
+    const T terminal = []
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return strategy == ArrayMinMaxIndexStrategy::Min ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity();
+        else
+            return strategy == ArrayMinMaxIndexStrategy::Min ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+    }();
+
+    const auto find_terminal_index = [&]
+    {
+        size_t index = size;
+        for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
+        {
+            if constexpr (std::is_same_v<T, Float32>)
+            {
+                const __mmask16 matches = _mm512_cmp_ps_mask(best_values[accumulator], _mm512_set1_ps(terminal), _CMP_EQ_OQ);
+                if (matches)
+                    index = std::min(index, static_cast<size_t>(_mm512_mask_reduce_min_epu32(matches, best_indices[accumulator])));
+            }
+            else if constexpr (std::is_same_v<T, Float64>)
+            {
+                const __mmask8 matches = _mm512_cmp_pd_mask(best_values[accumulator], _mm512_set1_pd(terminal), _CMP_EQ_OQ);
+                if (matches)
+                    index = std::min(index, static_cast<size_t>(_mm512_mask_reduce_min_epu64(matches, best_indices[accumulator])));
+            }
+            else if constexpr (sizeof(T) == 4)
+            {
+                const __mmask16 matches = _mm512_cmpeq_epi32_mask(best_values[accumulator], _mm512_set1_epi32(static_cast<int>(terminal)));
+                if (matches)
+                    index = std::min(index, static_cast<size_t>(_mm512_mask_reduce_min_epu32(matches, best_indices[accumulator])));
+            }
+            else
+            {
+                const __mmask8 matches = _mm512_cmpeq_epi64_mask(best_values[accumulator], _mm512_set1_epi64(static_cast<long long>(terminal)));
+                if (matches)
+                    index = std::min(index, static_cast<size_t>(_mm512_mask_reduce_min_epu64(matches, best_indices[accumulator])));
+            }
+        }
+        return index;
+    };
+
     size_t i = stride;
-    for (; i + stride <= size; i += stride)
+    for (size_t iteration = 0; i + stride <= size; i += stride, ++iteration)
     {
         for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
         {
             current_indices[accumulator] = addIndexVector<T>(current_indices[accumulator], stride);
             update(
-                _mm512_loadu_si512(data + i + accumulator * lanes),
-                current_indices[accumulator],
-                best_values[accumulator],
-                best_indices[accumulator]);
+                accumulator,
+                load_values(data + i + accumulator * lanes),
+                current_indices[accumulator]);
+        }
+
+        if (unlikely((iteration & 3) == 0))
+        {
+            const size_t terminal_index = find_terminal_index();
+            if (terminal_index != size)
+                return terminal_index;
         }
     }
 
@@ -391,14 +481,14 @@ size_t findIndexAVX512(const T * data, size_t size)
     {
         current_indices[accumulator] = addIndexVector<T>(current_indices[accumulator], stride);
         update(
-            _mm512_loadu_si512(data + i + accumulator * lanes),
-            current_indices[accumulator],
-            best_values[accumulator],
-            best_indices[accumulator]);
+            accumulator,
+            load_values(data + i + accumulator * lanes),
+            current_indices[accumulator]);
     }
     i += remaining_vectors * lanes;
 
-    const auto reduce_value = [](const __m512i values) -> T
+    using ReducedValue = std::conditional_t<std::is_floating_point_v<T>, std::optional<T>, T>;
+    const auto reduce_value = [](const ValueVector values) -> ReducedValue
     {
         if constexpr (std::is_same_v<T, UInt32>)
         {
@@ -421,62 +511,126 @@ size_t findIndexAVX512(const T * data, size_t size)
             else
                 return _mm512_reduce_max_epu64(values);
         }
-        else
+        else if constexpr (std::is_same_v<T, Int64>)
         {
             if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
                 return _mm512_reduce_min_epi64(values);
             else
                 return _mm512_reduce_max_epi64(values);
         }
+        else if constexpr (std::is_same_v<T, Float32>)
+        {
+            const __mmask16 ordered = _mm512_cmp_ps_mask(values, values, _CMP_ORD_Q);
+            if (!ordered)
+                return {};
+            if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+                return std::optional<T>(_mm512_mask_reduce_min_ps(ordered, values));
+            else
+                return std::optional<T>(_mm512_mask_reduce_max_ps(ordered, values));
+        }
+        else
+        {
+            const __mmask8 ordered = _mm512_cmp_pd_mask(values, values, _CMP_ORD_Q);
+            if (!ordered)
+                return {};
+            if constexpr (strategy == ArrayMinMaxIndexStrategy::Min)
+                return std::optional<T>(_mm512_mask_reduce_min_pd(ordered, values));
+            else
+                return std::optional<T>(_mm512_mask_reduce_max_pd(ordered, values));
+        }
     };
 
-    T best = reduce_value(best_values[0]);
-    for (size_t accumulator = 1; accumulator < accumulator_count; ++accumulator)
+    T best{};
+    bool have_best = false;
+    if constexpr (std::is_floating_point_v<T>)
     {
-        const T value = reduce_value(best_values[accumulator]);
-        if (is_better(value, best))
-            best = value;
-    }
-
-    size_t best_index = size;
-    if constexpr (sizeof(T) == 4)
-    {
-        const __m512i target = _mm512_set1_epi32(static_cast<int>(best));
         for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
         {
-            const __mmask16 matches = _mm512_cmpeq_epi32_mask(best_values[accumulator], target);
-            if (matches)
+            const auto value = reduce_value(best_values[accumulator]);
+            if (value && (!have_best || is_better(*value, best)))
             {
-                const size_t index = static_cast<size_t>(_mm512_mask_reduce_min_epu32(matches, best_indices[accumulator]));
-                best_index = std::min(best_index, index);
+                best = *value;
+                have_best = true;
             }
         }
     }
     else
     {
-        const __m512i target = _mm512_set1_epi64(static_cast<long long>(best));
-        for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
+        best = reduce_value(best_values[0]);
+        have_best = true;
+        for (size_t accumulator = 1; accumulator < accumulator_count; ++accumulator)
         {
-            const __mmask8 matches = _mm512_cmpeq_epi64_mask(best_values[accumulator], target);
-            if (matches)
+            const T value = reduce_value(best_values[accumulator]);
+            if (is_better(value, best))
+                best = value;
+        }
+    }
+
+    size_t best_index = size;
+    if (have_best)
+    {
+        if constexpr (std::is_same_v<T, Float32>)
+        {
+            for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
             {
-                const size_t index = static_cast<size_t>(_mm512_mask_reduce_min_epu64(matches, best_indices[accumulator]));
-                best_index = std::min(best_index, index);
+                const __mmask16 matches = _mm512_cmp_ps_mask(best_values[accumulator], _mm512_set1_ps(best), _CMP_EQ_OQ);
+                if (matches)
+                    best_index = std::min(best_index, static_cast<size_t>(_mm512_mask_reduce_min_epu32(matches, best_indices[accumulator])));
+            }
+        }
+        else if constexpr (std::is_same_v<T, Float64>)
+        {
+            for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
+            {
+                const __mmask8 matches = _mm512_cmp_pd_mask(best_values[accumulator], _mm512_set1_pd(best), _CMP_EQ_OQ);
+                if (matches)
+                    best_index = std::min(best_index, static_cast<size_t>(_mm512_mask_reduce_min_epu64(matches, best_indices[accumulator])));
+            }
+        }
+        else if constexpr (sizeof(T) == 4)
+        {
+            for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
+            {
+                const __mmask16 matches = _mm512_cmpeq_epi32_mask(best_values[accumulator], _mm512_set1_epi32(static_cast<int>(best)));
+                if (matches)
+                    best_index = std::min(best_index, static_cast<size_t>(_mm512_mask_reduce_min_epu32(matches, best_indices[accumulator])));
+            }
+        }
+        else
+        {
+            for (size_t accumulator = 0; accumulator < accumulator_count; ++accumulator)
+            {
+                const __mmask8 matches = _mm512_cmpeq_epi64_mask(best_values[accumulator], _mm512_set1_epi64(static_cast<long long>(best)));
+                if (matches)
+                    best_index = std::min(best_index, static_cast<size_t>(_mm512_mask_reduce_min_epu64(matches, best_indices[accumulator])));
             }
         }
     }
 
     const auto consider = [&](T value, size_t index)
     {
-        if (is_better(value, best) || (value == best && index < best_index))
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (isNaN(value))
+                return;
+        }
+
+        if (!have_best || is_better(value, best) || (value == best && index < best_index))
         {
             best = value;
             best_index = index;
+            have_best = true;
         }
     };
 
     for (; i < size; ++i)
         consider(data[i], i);
+
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (!have_best)
+            return 0;
+    }
 
     return best_index;
 }
@@ -490,8 +644,8 @@ constexpr size_t small_tournament_limit = 32;
 constexpr size_t small_tournament_limit_64_bit = 48;
 constexpr size_t medium_two_pass_limit = 256;
 constexpr size_t two_pass_limit_64_bit_integer = 16384;
-constexpr size_t avx512_two_accumulator_min_size = 128;
-constexpr size_t avx512_four_accumulator_min_size = 512;
+constexpr size_t avx512_float_min_size = 65;
+constexpr size_t avx512_float64_max_size = 4096;
 constexpr size_t packed_mask_min_size = 8;
 constexpr size_t avx2_packed_mask_max_size = 32;
 constexpr size_t avx512_packed_mask_max_size = 64;
@@ -499,12 +653,33 @@ constexpr size_t avx512_packed_mask_max_size = 64;
 /*
  * These are measured performance cutovers for the AVX2 path. The small
  * tournament wins up to 32 elements (48 for 64-bit integers), the packed-mask
- * path covers short 64-bit rows, the two-pass SIMD path is capped at 256 for
- * other types, and 64-bit arrays stay on the two-pass path until record blocks
- * amortize their extra lookup work at 16384. x86-64-v4 uses a one-pass indexed
- * reduction after the packed-mask path, increasing from one to two and then
- * four accumulators at 128 and 512 elements.
+ * path covers short 64-bit rows, and the two-pass SIMD path is capped at 256
+ * for other types. x86-64-v4 uses a one-pass indexed reduction after the
+ * packed-mask path. The accumulator cutovers are deliberately wider for
+ * 32-bit integers, where the extra state is expensive at 128 elements.
+ * Floating-point rows use the same NaN-safe reduction from 65 elements;
+ * Float64 returns to record blocks after 4096 elements.
  */
+
+template <typename T>
+constexpr size_t avx512TwoAccumulatorMinSize()
+{
+    if constexpr (std::is_floating_point_v<T>)
+        return 128;
+    else if constexpr (sizeof(T) == 4)
+        return 512;
+    else
+        return 384;
+}
+
+template <typename T>
+constexpr size_t avx512FourAccumulatorMinSize()
+{
+    if constexpr (std::is_floating_point_v<T>)
+        return 512;
+    else
+        return 1024;
+}
 
 template <typename T>
 constexpr size_t smallTournamentLimit()
@@ -921,35 +1096,60 @@ static void executeNumericData(const Element * data, const ColumnArray::Offsets 
 #if USE_MULTITARGET_CODE
         if constexpr (
             std::is_same_v<Element, UInt32> || std::is_same_v<Element, Int32>
-            || std::is_same_v<Element, UInt64> || std::is_same_v<Element, Int64>)
+            || std::is_same_v<Element, UInt64> || std::is_same_v<Element, Int64>
+            || std::is_same_v<Element, Float32> || std::is_same_v<Element, Float64>)
         {
-            if constexpr (std::is_same_v<Element, UInt64> || std::is_same_v<Element, Int64>)
+            if constexpr (std::is_integral_v<Element>)
             {
-                if (use_avx512 && size >= packed_mask_min_size && size <= avx512_packed_mask_max_size)
+                if constexpr (std::is_same_v<Element, UInt64> || std::is_same_v<Element, Int64>)
                 {
-                    result[row] = static_cast<UInt32>(
-                        findIndexPackedMask<strategy, Element>(data + begin, size, false, true) + 1);
-                    begin = end;
-                    continue;
+                    if (use_avx512 && size >= packed_mask_min_size && size <= avx512_packed_mask_max_size)
+                    {
+                        result[row] = static_cast<UInt32>(
+                            findIndexPackedMask<strategy, Element>(data + begin, size, false, true) + 1);
+                        begin = end;
+                        continue;
+                    }
+
+                    if (use_simd && size >= packed_mask_min_size && size <= avx2_packed_mask_max_size)
+                    {
+                        result[row] = static_cast<UInt32>(
+                            findIndexPackedMask<strategy, Element>(data + begin, size, true, false) + 1);
+                        begin = end;
+                        continue;
+                    }
                 }
 
-                if (use_simd && size >= packed_mask_min_size && size <= avx2_packed_mask_max_size)
+                if (use_avx512 && size > smallTournamentLimit<Element>())
                 {
-                    result[row] = static_cast<UInt32>(
-                        findIndexPackedMask<strategy, Element>(data + begin, size, true, false) + 1);
+                    if (size >= avx512FourAccumulatorMinSize<Element>())
+                    {
+                        result[row] = static_cast<UInt32>(
+                            TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 4>(data + begin, size) + 1);
+                    }
+                    else if (size >= avx512TwoAccumulatorMinSize<Element>())
+                    {
+                        result[row] = static_cast<UInt32>(
+                            TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 2>(data + begin, size) + 1);
+                    }
+                    else
+                    {
+                        result[row] = static_cast<UInt32>(
+                            TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 1>(data + begin, size) + 1);
+                    }
                     begin = end;
                     continue;
                 }
             }
-
-            if (use_avx512 && size > smallTournamentLimit<Element>())
+            else if (use_avx512 && size >= avx512_float_min_size
+                     && (std::is_same_v<Element, Float32> || size <= avx512_float64_max_size))
             {
-                if (size >= avx512_four_accumulator_min_size)
+                if (size >= avx512FourAccumulatorMinSize<Element>())
                 {
                     result[row] = static_cast<UInt32>(
                         TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 4>(data + begin, size) + 1);
                 }
-                else if (size >= avx512_two_accumulator_min_size)
+                else if (size >= avx512TwoAccumulatorMinSize<Element>())
                 {
                     result[row] = static_cast<UInt32>(
                         TargetSpecific::x86_64_v4::findIndexAVX512<strategy, Element, 2>(data + begin, size) + 1);
