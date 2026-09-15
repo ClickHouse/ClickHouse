@@ -8,6 +8,7 @@
 /// consist only of AVRO_RECORDS
 
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -53,6 +54,12 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+}
+
+namespace Setting
+{
+extern const SettingsInt64 iceberg_snapshot_id;
+extern const SettingsInt64 iceberg_timestamp_ms;
 }
 
 namespace DataLakeStorageSetting
@@ -652,6 +659,12 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
 void AlterDropPartitionExecutor::run()
 {
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "DROP PARTITION does not support iceberg_snapshot_id or iceberg_timestamp_ms settings");
+
     const auto & partition_ast = command.partition->as<ASTPartition &>();
     validateDropPartitionAST(partition_ast, command);
 
