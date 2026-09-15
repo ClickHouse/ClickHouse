@@ -6752,7 +6752,48 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasInterpolate())
+    {
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+
+        /// A column of `ORDER BY ... WITH FILL` must not also be an `INTERPOLATE` output: the fill
+        /// rows would overwrite the very column they are ordered by. The filling transform checks
+        /// this too, but its sort description carries the written name of the column only on some
+        /// read paths - over a `Distributed` table the query used to run and answer with the fill
+        /// column replaced by the interpolated expression.
+        if (query_node_typed.hasOrderBy())
+        {
+            const auto & interpolate_nodes = query_node_typed.getInterpolate()->as<const ListNode &>().getNodes();
+
+            for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+            {
+                const auto & sort_node_typed = sort_node->as<const SortNode &>();
+                if (!sort_node_typed.withFill())
+                    continue;
+
+                for (const auto & interpolate_node : interpolate_nodes)
+                {
+                    const auto & interpolate_node_typed = interpolate_node->as<const InterpolateNode &>();
+
+                    /// The fill key is written by name, as in `ORDER BY x WITH FILL ... INTERPOLATE (x AS ...)`.
+                    bool conflicts = sort_node_typed.getColumnName() == interpolate_node_typed.getExpressionName();
+
+                    /// The fill key is written positionally, as in `ORDER BY 1 WITH FILL ... INTERPOLATE (x AS ...)`:
+                    /// `replaceNodesWithPositionalArguments` put a clone of the projection expression in the sort
+                    /// key and left the written name empty, so the names above do not match. Both the sort key and
+                    /// the interpolated column resolve to the same projection expression, alias included, and the
+                    /// alias is what makes two same-valued columns of different names still distinct here.
+                    if (!conflicts)
+                        conflicts = sort_node_typed.getExpression()->isEqual(*interpolate_node_typed.getExpression());
+
+                    if (conflicts)
+                        throw Exception(
+                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
+                            interpolate_node_typed.getExpressionName());
+                }
+            }
+        }
+    }
 
     expandLimitByAll(query_node_typed);
 
