@@ -56,6 +56,9 @@ public:
 
     String getName() const override;
     std::optional<Field> getDefault() const override;
+    std::optional<String> getSemanticIdentity() const override { return getName(); }
+    bool requiresValueValidation() const override { return true; }
+    void validateColumn(const IColumn & column, const String & operation) const override;
     Float64 getDecayLength() const { return decay_length; }
 
 private:
@@ -70,22 +73,18 @@ bool isExponentialTimeDecayingFloat64(const DataTypePtr & type);
 bool containsExponentialTimeDecayingFloat64(const IDataType & type);
 bool containsExponentialTimeDecayingFloat64(const DataTypePtr & type);
 
-/// Rejects pairwise use when decaying values occupy different nested positions
-/// or have different decay lengths.
+/// Compatibility wrappers retained for existing call sites. Their recursive
+/// behavior is implemented by the generic custom-type semantic layer.
 void assertExponentialTimeDecayingFloat64TypesCompatible(
     const DataTypePtr & left_type, const DataTypePtr & right_type, const String & operation);
-
-/// Also permits an `IN` probe whose exact type is an alternative of the set's `Variant`.
 void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
     const DataTypePtr & probe_type, const DataTypePtr & set_type);
 
 /// Rejects rows whose redundant marker or canonical ordering fields do not match the type.
-/// Used before generic tuple comparison and sorting, which cannot see the custom type name.
 void validateExponentialTimeDecayingFloat64Column(
     const IColumn & column, Float64 decay_length, const String & operation);
 
-/// Applies the same validation recursively when the experimental value is nested in
-/// `Array`, `Tuple`, `Map`, `Variant`, `Nullable`, or `LowCardinality`.
+/// Compatibility wrapper for existing call sites; recursive validation is generic.
 void validateExponentialTimeDecayingFloat64Column(
     const IColumn & column, const DataTypePtr & type, const String & operation);
 
