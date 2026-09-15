@@ -442,6 +442,20 @@ Possible values:
 - `partition_key_only` — only the partition-key columns are tracked.
 - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
 
+## patch_parts_version {#patch_parts_version}
+<SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "v2"},{"label": "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}]}]}/>
+
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
+
 ## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Propagate data types serialization version to nested types by default"}]}]}/>
@@ -610,10 +624,13 @@ Possible values:
 - `basic` - Basic format.
 - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
 This makes settings like `string_serialization_version` effective.
+- `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
+listing omitted columns and the type whose default represents their values.
+Required to enable `skip_empty_columns_on_insert`.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `WITH_TYPES` to enable per-type serialization versions.
+switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
 
 ## share_nested_offsets {#share_nested_offsets}
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -633,6 +650,26 @@ If there are a lot of outdated parts cleanup thread will try to delete up to
 `simultaneous_parts_removal_limit` parts during one iteration.
 `simultaneous_parts_removal_limit` set to `0` means unlimited.
 
+## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to skip writing all type-default columns on INSERT"}]}]}/>
+
+If enabled, columns whose values are entirely type-defaults in a given INSERT
+block are not written to the data part on disk. When the part is later read,
+missing columns are filled with the default of their recorded type. This saves
+disk space for sparse-update workloads
+where most columns in each INSERT are left at their type's default value.
+Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
+skipped, because the read path would evaluate the expression instead of
+returning the type-default that was explicitly inserted. Patch parts
+(used by lightweight UPDATE) are also excluded.
+This optimization records the missing columns in the part's
+`serialization.json` using the `with_missing_columns` format version, so it
+only takes effect when `serialization_info_version` is set to
+`with_missing_columns`. With a lower version (for example pinned to a lower
+value for a rolling upgrade so older servers can read freshly written parts)
+no columns are skipped.
+
 ## storage_policy {#storage_policy}
 <SettingsInfoBlock type="String" default_value="default" />
 
@@ -644,7 +681,7 @@ Name of storage disk policy
 
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to "with_types".
+This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.

@@ -9,3 +9,9 @@
 # Matching is case-insensitive.
 
 azat
+nickitat
+kssenii
+thevar1able
+rschu1ze
+asya-ch
+alesapin

@@ -59,6 +59,7 @@ ClickHouse Cloud는 기본적으로 [SharedMergeTree](/ko/products/cloud/feature
 * Null
 * Buffer
 * Memory
+* `IcebergS3` 및 `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +69,8 @@ ClickHouse Cloud는 기본적으로 [SharedMergeTree](/ko/products/cloud/feature
 * PostgreSQL
 * S3
 * Kafka
+
+실험적 `PaimonS3` 및 `PaimonAzure` 테이블 엔진은 일부 ClickHouse Cloud 서비스에서 활성화할 수 있습니다. 사용 가능 여부를 확인하려면 Support에 문의하십시오.
 
 <div id="interfaces">
   ### 인터페이스
@@ -87,6 +90,8 @@ Dictionaries는 ClickHouse에서 키 조회 속도를 높이는 데 널리 사�
 
 Cloud에서는 클러스터 간 통신을 위한 페더레이티드 ClickHouse 쿼리와 외부 자가 관리형 ClickHouse 클러스터와의 통신을 지원합니다. 현재 ClickHouse Cloud는 다음 integration 엔진을 사용한 페더레이티드 쿼리를 지원합니다.
 
+* `IcebergS3` 및 `IcebergAzure`
+* `PaimonS3` 및 `PaimonAzure` (실험적 기능이며, 사용 가능 여부는 Support에 문의하십시오)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +135,7 @@ ClickHouse Cloud에서는 사용자 정의 함수가 [공개 베타](/ko/referen
   ### 명명된 컬렉션
 </div>
 
-[명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)은 현재 ClickHouse Cloud에서 지원되지 않습니다.
+DDL로 생성된 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)은 일부 ClickHouse Cloud 서비스에서 활성화할 수 있습니다. 사용 가능 여부는 Support에 문의하십시오. ClickHouse Cloud에서는 사용자가 서버 설정 파일을 수정할 수 없으므로 설정 파일에 정의된 명명된 컬렉션은 사용할 수 없습니다.
 
 <div id="operational-defaults-and-considerations">
   ## 운영 기본값 및 고려 사항
