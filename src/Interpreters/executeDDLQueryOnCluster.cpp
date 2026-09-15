@@ -66,6 +66,23 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 }
 
 
+static bool needsDefaultDatabaseForBareDictionaryOnCluster(const ASTPtr & query_ptr)
+{
+    const auto * system_query = query_ptr->as<ASTSystemQuery>();
+    if (!system_query)
+        return false;
+
+    if (system_query->type != ASTSystemQuery::Type::RELOAD_DICTIONARY
+        && system_query->type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
+        return false;
+
+    if (!system_query->table || system_query->database)
+        return false;
+
+    return true;
+}
+
+
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
     OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::SpanKind::PRODUCER);
@@ -136,7 +153,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     bool need_replace_current_database = std::any_of(
         access_to_check.begin(),
         access_to_check.end(),
-        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
+        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
+        || needsDefaultDatabaseForBareDictionaryOnCluster(query_ptr);
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();

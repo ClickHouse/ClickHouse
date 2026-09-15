@@ -5050,10 +5050,6 @@ CONV_FN(SystemCommand, cmd)
             ret += "RELOAD DICTIONARIES";
             can_set_cluster = true;
             break;
-        case CmdType::kReloadModels:
-            ret += "RELOAD MODELS";
-            can_set_cluster = true;
-            break;
         case CmdType::kReloadFunctions:
             ret += "RELOAD FUNCTIONS";
             can_set_cluster = true;

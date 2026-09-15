@@ -70,10 +70,6 @@ void TTLColumnAlgorithm::execute(Block & block)
         return;
     }
 
-    auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
-    if (default_column)
-        default_column = default_column->convertToFullColumnIfConst();
-
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
     const size_t rows = block.rows();
@@ -81,14 +77,30 @@ void TTLColumnAlgorithm::execute(Block & block)
     extractTimestamps(ttl_column.get(), timestamps);
 
     const IColumn * values_column = column_with_type.column.get();
-    MutableColumnPtr result_column = values_column->cloneEmpty();
-    result_column->reserve(rows);
+    MutableColumnPtr result_column;
+    ColumnPtr default_column;
+    bool default_column_initialized = false;
 
     for (size_t i = 0; i < rows; ++i)
     {
         Int64 cur_ttl = timestamps[i];
         if (isTTLExpired(cur_ttl))
         {
+            if (!default_column_initialized)
+            {
+                default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+                if (default_column)
+                    default_column = default_column->convertToFullColumnIfConst();
+                default_column_initialized = true;
+            }
+
+            if (!result_column)
+            {
+                result_column = values_column->cloneEmpty();
+                result_column->reserve(rows);
+                result_column->insertRangeFrom(*values_column, 0, i);
+            }
+
             if (default_column)
                 result_column->insertFrom(*default_column, i);
             else
@@ -98,11 +110,13 @@ void TTLColumnAlgorithm::execute(Block & block)
         {
             new_ttl_info.update(cur_ttl);
             is_fully_empty = false;
-            result_column->insertFrom(*values_column, i);
+            if (result_column)
+                result_column->insertFrom(*values_column, i);
         }
     }
 
-    column_with_type.column = std::move(result_column);
+    if (result_column)
+        column_with_type.column = std::move(result_column);
 }
 
 void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
