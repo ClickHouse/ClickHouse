@@ -14,7 +14,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
-    std::function<void(std::ostream &)> out_stream_callaback = {});
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback = {});
 
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
@@ -23,7 +23,7 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
-    std::function<void(std::ostream &)> out_stream_callaback = {});
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback = {});
 
 /// Validate a bearer token as the `Authorization: Bearer <token>` header that
 /// `createWithBearerToken` synthesizes, applying the same `http_forbid_headers` and

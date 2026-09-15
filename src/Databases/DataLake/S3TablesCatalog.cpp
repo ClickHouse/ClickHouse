@@ -17,6 +17,7 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/URI.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -344,7 +345,7 @@ void S3TablesCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](std::ostream & os) { os << body_str; };
+        out_stream_callback = [body_str](DB::WriteBuffer & out) { DB::writeString(body_str, out); };
     }
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'

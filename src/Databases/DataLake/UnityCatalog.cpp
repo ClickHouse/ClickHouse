@@ -12,7 +12,9 @@
 #include <Common/checkStackSize.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -102,7 +104,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
     return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
-std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
+std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const
 {
     const auto & context = getContext();
     /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
@@ -163,7 +165,11 @@ Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const String & tabl
     request_body.set("table_id", table_id);
     request_body.set("operation", "READ");
 
-    auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    std::ostringstream request_body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    request_body_str.exceptions(std::ios::failbit);
+    request_body.stringify(request_body_str);
+
+    auto callback = [body = request_body_str.str()](DB::WriteBuffer & out) { DB::writeString(body, out); };
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     return json.extract<Poco::JSON::Object::Ptr>();
 }

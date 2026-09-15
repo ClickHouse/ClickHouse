@@ -95,6 +95,42 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
     return std::make_unique<SeekableReadBufferWrapper<SeekableReadBufferPtr>>(*ptr, SeekableReadBufferPtr{ptr});
 }
 
+void copyFromReadBufferWithProgressCallback(ReadBuffer & in, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled)
+{
+    const size_t chunk = DBMS_DEFAULT_BUFFER_SIZE;
+    if (out_cancelled)
+        *out_cancelled = false;
+
+    size_t copied = 0;
+    while (copied < n)
+    {
+        const size_t to_copy = std::min(chunk, n - copied);
+        /// `readBig` so that a buffer that can read into the memory of the caller - the body of
+        /// an HTTP response, for one - does that instead of copying through its own.
+        const size_t gcount = in.readBig(to + copied, to_copy);
+
+        copied += gcount;
+
+        bool cancelled = false;
+        if (gcount && progress_callback)
+            cancelled = progress_callback(copied);
+        *out_bytes_copied = copied;
+
+        /// A short read means the body ended; anything else throws from `read` itself.
+        if (gcount != to_copy)
+            break;
+
+        if (cancelled)
+        {
+            if (out_cancelled != nullptr)
+                *out_cancelled = true;
+            break;
+        }
+    }
+
+    *out_bytes_copied = copied;
+}
+
 void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled)
 {
     const size_t chunk = DBMS_DEFAULT_BUFFER_SIZE;
