@@ -13,8 +13,9 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key.
-/// Limited to `Expression`/`Filter` chains, see `isTransparentForPropagation`
+/// Copies filter conjuncts across equi-join keys. A copy on a primary key column prunes granules;
+/// on any other column it still shrinks the target's hash table. Limited to `Expression`/`Filter`
+/// chains, see `isTransparentForPropagation`
 
 /// Defined in partialJoinFilterPushDown.cpp
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
@@ -80,23 +81,18 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Primary key of the MergeTree the target reads from, empty when there is none
-NameSet getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
+/// Only a MergeTree target is worth it: that is where a smaller input turns into less work
+bool targetReadsFromMergeTree(const QueryPlan::Node * target_root)
 {
-    const auto * read = walkDown(target_root, [](const auto * n)
+    return walkDown(target_root, [](const auto * n)
     {
         return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
-    });
-    if (!read)
-        return {};
-    const auto & primary_key = typeid_cast<const ReadFromMergeTree &>(*read->step).getStorageMetadata()->getPrimaryKey();
-    return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
+    }) != nullptr;
 }
 
-/// Worth copying only when every substituted key is in the target's primary key
-bool atomCanUseTargetPrimaryKey(
+/// Every substituted key has to resolve to a column the target actually reads
+bool atomResolvesOnTarget(
     const QueryPlan::Node * target_root,
-    const NameSet & primary_key_columns,
     const ActionsDAG::Node * atom,
     const SubstitutionMap & substitution)
 {
@@ -107,8 +103,7 @@ bool atomCanUseTargetPrimaryKey(
         const auto it = substitution.find(child->result_name);
         if (it == substitution.end())
             return false;
-        const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
-        if (!target_column || !primary_key_columns.contains(*target_column))
+        if (!resolveDown(target_root, it->second.name, /*stop_at_filter=*/false))
             return false;
     }
     return true;
@@ -220,9 +215,7 @@ size_t tryPropagateToSide(
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    /// Only helps when the target feeds a MergeTree primary key
-    const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
-    if (primary_key_columns.empty())
+    if (!targetReadsFromMergeTree(target_root))
         return 0;
 
     SubstitutionMap filter_level_sub;
@@ -241,7 +234,7 @@ size_t tryPropagateToSide(
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
         if (atomSafelySubstitutable(atom, filter_level_sub)
-            && atomCanUseTargetPrimaryKey(target_root, primary_key_columns, atom, filter_level_sub))
+            && atomResolvesOnTarget(target_root, atom, filter_level_sub))
             propagatable.push_back(atom);
     }
     if (propagatable.empty())

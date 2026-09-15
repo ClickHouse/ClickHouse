@@ -6824,10 +6824,10 @@ equi-join onto the other side via equi-key substitution, so that primary-key/ind
 on the other side can use them.
 
 Applies when the filter and the `MergeTree` read are separated from the join only by expression
-and filter steps, and when the copied conjunct compares a primary key column with a constant
-(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
-comparison between two key columns, is left alone: it could not drive primary key pruning on the
-other side, so copying it would only add work.
+and filter steps, and when the copied conjunct compares the equi-key with a constant (including
+`IN` with a constant set). A copy on a primary key column prunes granules; on any other column it
+still shrinks the target's hash table. A predicate below a nested join or below `DISTINCT`, or a
+comparison between two key columns, is left alone: neither could prune or shrink anything.
 
 Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0) \
