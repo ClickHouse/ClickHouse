@@ -442,8 +442,14 @@ bool WorkloadEntityStorageBase::storeEntity(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a workload", entity_name);
             if (resource && !old_resource)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
-            if (workload && !old_workload->hasParent() && workload->hasParent())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove root workload");
+            // Adding or removing a PARENT via CREATE OR REPLACE (turning a root into a child or a
+            // child into a root) is not supported: the resource manager rejects such a parent
+            // transition, and that failure would only be logged, leaving storage and scheduler
+            // inconsistent. Reject both directions up front so the DDL fails cleanly.
+            if (workload && old_workload->hasParent() != workload->hasParent())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "It is not allowed to add or remove the PARENT of workload '{}' with CREATE OR REPLACE "
+                    "(a root workload cannot become a child, nor a child become a root)", entity_name);
             if (other_entities.contains(entity_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
         }
@@ -451,11 +457,12 @@ bool WorkloadEntityStorageBase::storeEntity(
         // Validate workload
         if (workload)
         {
-            if (!workload->hasParent())
-            {
-                if (!root_name.empty() && root_name != workload->getWorkloadName())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
-            }
+            // Multiple workloads may be created without a PARENT (e.g. one tree via SQL, another from
+            // configuration). Internally each becomes a child of the implicit root workload, so the
+            // name reserved for that implicit root must not be used by a user workload.
+            if (entity_name == IMPLICIT_ROOT_WORKLOAD_NAME)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Workload name '{}' is reserved for the implicit root workload and cannot be used", entity_name);
 
             // Check the settings values and throw if something is wrong
             WorkloadSettings validator;
@@ -706,6 +713,42 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
     for (const auto & [entity_name, create_query] : raw_new_entities)
         local_new_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
 
+    // The implicit root workload uses a reserved name (see storeEntity). A workload with this name
+    // may already be persisted from before the name was reserved, so the load path (config / Keeper /
+    // disk) must NOT abort over it — otherwise a server could fail to start after an upgrade. Ignore
+    // the reserved-name workload AND every workload transitively parented under it: dropping only the
+    // reserved-name node would leave its children with a dangling parent that then fails to attach in
+    // the resource manager. New creations are still rejected by storeEntity on the SQL path.
+    {
+        std::unordered_set<String> ignored;
+        if (auto it = local_new_entities.find(IMPLICIT_ROOT_WORKLOAD_NAME);
+            it != local_new_entities.end() && typeid_cast<ASTCreateWorkloadQuery *>(it->second.get()))
+            ignored.insert(IMPLICIT_ROOT_WORKLOAD_NAME);
+        bool changed = !ignored.empty();
+        while (changed)
+        {
+            changed = false;
+            for (const auto & [name, ast] : local_new_entities)
+            {
+                if (ignored.contains(name))
+                    continue;
+                const auto * child_workload = typeid_cast<const ASTCreateWorkloadQuery *>(ast.get());
+                if (child_workload && ignored.contains(child_workload->getWorkloadParent()))
+                {
+                    ignored.insert(name);
+                    changed = true;
+                }
+            }
+        }
+        if (!ignored.empty())
+        {
+            LOG_WARNING(log, "Ignoring {} workload(s) using or descending from the reserved name '{}', which is reserved for the implicit root workload",
+                ignored.size(), IMPLICIT_ROOT_WORKLOAD_NAME);
+            for (const auto & name : ignored)
+                local_new_entities.erase(name);
+        }
+    }
+
     std::unique_lock lock(mutex);
 
     // Merge `local_new_entities` with existing `other_entities`
@@ -786,12 +829,7 @@ void WorkloadEntityStorageBase::applyEvent(
     {
         LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatForLogging());
 
-        auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
         auto * resource = typeid_cast<ASTCreateResourceQuery *>(event.entity.get());
-
-        // Update root workload
-        if (workload && !workload->hasParent())
-            root_name = workload->getWorkloadName();
 
         // Update resource names. First clear any role-name field that currently points to this
         // resource: `CREATE OR REPLACE RESOURCE r (...)` may change `r`'s operation set, e.g.
@@ -839,9 +877,6 @@ void WorkloadEntityStorageBase::applyEvent(
         chassert(it != entities.end());
 
         LOG_DEBUG(log, "Drop workload entity: {}", event.name);
-
-        if (event.name == root_name)
-            root_name.clear();
 
         if (event.name == master_thread_resource)
             master_thread_resource.clear();

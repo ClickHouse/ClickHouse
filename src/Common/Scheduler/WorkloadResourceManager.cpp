@@ -101,20 +101,18 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for creating workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
 
-    if (info.parent.empty() && root_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The second root workload '{}' is not allowed (current root '{}') in resource '{}'",
-            info.name, dynamic_cast<ISchedulerNode &>(*root_node).basename, resource_name);
+    // Note: multiple root workloads (workloads without a parent) are allowed. Each is attached as a
+    // child of this resource's implicit anonymous root workload (see setup()), not the scheduler.
 
     executeInSchedulerThread([&, this]
     {
-        auto [workload_node, scheduler_node] = make_workload_node(scheduler->event_queue, info);
+        auto node_pair = make_workload_node(scheduler->event_queue, info);
+        const WorkloadNodePtr & workload_node = node_pair.first;
         if (!info.parent.empty())
             node_for_workload[info.parent]->attachWorkloadChild(workload_node);
         else
-        {
-            root_node = workload_node;
-            scheduler->attachChild(scheduler_node);
-        }
+            // Root workload (no explicit parent): attach under the resource's implicit root workload.
+            implicit_root->attachWorkloadChild(workload_node);
         node_for_workload[info.name] = workload_node;
 
         updateCurrentVersion();
@@ -142,11 +140,8 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         if (!info.parent.empty())
             node_for_workload[info.parent]->detachWorkloadChild(n);
         else
-        {
-            chassert(n == root_node);
-            scheduler->removeChild(&dynamic_cast<ISchedulerNode &>(*root_node));
-            root_node.reset();
-        }
+            // Root workload (no explicit parent): detach from the implicit root (see createNode()).
+            implicit_root->detachWorkloadChild(n);
 
         node_for_workload.erase(info.name);
 
@@ -197,8 +192,15 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
             new_info.settings,
             getSharingMode(getUnit())))
         {
+            // A parentless workload is a child of the implicit root, so it must be detached from
+            // (and later reattached to) the implicit root — not skipped — otherwise a priority /
+            // precedence change would update its settings without re-positioning it among the
+            // implicit root's children. (The parent cannot change presence here; that is rejected
+            // above, so old and new parent are both empty or both the same explicit workload.)
             if (!old_info.parent.empty())
                 node_for_workload[old_info.parent]->detachWorkloadChild(node);
+            else
+                implicit_root->detachWorkloadChild(node);
             detached = true;
         }
 
@@ -208,6 +210,8 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
         {
             if (!new_info.parent.empty())
                 node_for_workload[new_info.parent]->attachWorkloadChild(node);
+            else
+                implicit_root->attachWorkloadChild(node);
         }
         updateCurrentVersion();
         SCHED_DBG("WorkloadResourceManager -- [end] updateNode(resource={}, workload={})", resource_name, old_info.name);
@@ -218,10 +222,11 @@ void WorkloadResourceManager::Resource::updateCurrentVersion()
 {
     auto previous_version = current_version;
 
-    // Create a full list of constraints and queues in the current hierarchy
+    // Create a full list of constraints and queues in the current hierarchy (walk from the implicit
+    // root, which owns every workload subtree of this resource).
     current_version = std::make_shared<Version>();
-    if (root_node)
-        root_node->addRawPointerNodes(current_version->nodes);
+    if (implicit_root)
+        implicit_root->addRawPointerNodes(current_version->nodes);
 
     // See details in version control section of description in WorkloadResourceManager.h
     if (previous_version)

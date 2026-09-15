@@ -1,10 +1,7 @@
 -- Tags: no-parallel
--- Do not run in parallel: `CREATE WORKLOAD <name>` (without `IN <parent>`) claims the
--- single global root-workload slot enforced in `WorkloadEntityStorageBase::storeEntityImpl`,
--- so a rootless `CREATE WORKLOAD` races with any other test that does the same (e.g.
--- `03232_workload_create_and_drop`) and one side fails with
--- `BAD_ARGUMENTS: The second root is not allowed`. Workload names are isolated; the root
--- slot is not.
+-- Do not run in parallel: these tests create and drop WORKLOADs, which are global server-wide
+-- state shared with other workload tests. (Multiple root workloads are now allowed, so a rootless
+-- `CREATE WORKLOAD` no longer collides with another test's root; unique names still must not clash.)
 --
 -- Test that negative Float64 values are rejected for workload settings.
 -- Fixes https://github.com/ClickHouse/ClickHouse/issues/101825:
