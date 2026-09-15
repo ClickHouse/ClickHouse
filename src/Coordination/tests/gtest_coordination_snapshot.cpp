@@ -27,6 +27,7 @@
 #include <Disks/DiskLocal.h>
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -52,6 +53,8 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
 
 namespace
@@ -3327,6 +3330,194 @@ TEST(KeeperSnapshotFileNameTest, CanonicalSnapshotS3Name)
     EXPECT_EQ(DB::getCanonicalSnapshotS3Name("snapshot_100.bin.zstd"), "snapshot_100.bin.zstd");
     EXPECT_EQ(DB::getCanonicalSnapshotS3Name("snapshot_100.bin"), "snapshot_100.bin");
     EXPECT_EQ(DB::getCanonicalSnapshotS3Name("/var/lib/x/snapshot_5_deadbeef.bin.zstd"), "snapshot_5.bin.zstd");
+}
+
+namespace
+{
+
+/// Flags when the copied target file's content is fsynced (WriteBuffer::sync).
+class SyncCountingWriteBuffer : public DB::WriteBufferFromFileDecorator
+{
+public:
+    SyncCountingWriteBuffer(std::unique_ptr<DB::WriteBuffer> impl_, std::atomic<size_t> & synced_)
+        : DB::WriteBufferFromFileDecorator(std::move(impl_)), synced(synced_) {}
+
+    void sync() override
+    {
+        ++synced;
+        DB::WriteBufferFromFileDecorator::sync();
+    }
+
+private:
+    std::atomic<size_t> & synced;
+};
+
+/// A DiskLocal that counts directory sync guards (per directory) and content fsyncs on written
+/// files, records every tmp_ marker path created, and can be told to fail the next copyFile,
+/// while delegating to the real implementation so genuine fsyncs still happen. Used to assert
+/// moveFileBetweenDisks() makes a cross-disk move durable (issue #111339 move-path sibling).
+class DurabilityCountingDisk : public DB::DiskLocal
+{
+public:
+    DurabilityCountingDisk(const std::string & disk_name, const std::string & disk_path)
+        : DB::DiskLocal(disk_name, disk_path) {}
+
+    DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        ++dir_syncs[path];
+        return DB::DiskLocal::getDirectorySyncGuard(path);
+    }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        if (fs::path(path).filename().string().starts_with(DB::tmp_keeper_file_prefix))
+            markers_created.push_back(path);
+        auto impl = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+        return std::make_unique<SyncCountingWriteBuffer>(std::move(impl), content_syncs);
+    }
+
+    void copyFile(
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const DB::ReadSettings & read_settings,
+        const DB::WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook,
+        bool sync) override
+    {
+        if (fail_copy)
+            throw std::runtime_error("injected copyFile failure");
+        DB::DiskLocal::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook, sync);
+    }
+
+    size_t dirSyncs(const String & path) const
+    {
+        auto it = dir_syncs.find(path);
+        return it == dir_syncs.end() ? 0 : it->second;
+    }
+    size_t contentSyncs() const { return content_syncs.load(); }
+    const std::vector<String> & markersCreated() const { return markers_created; }
+
+    bool fail_copy = false;
+
+private:
+    mutable std::map<String, size_t> dir_syncs;
+    std::atomic<size_t> content_syncs{0};
+    std::vector<String> markers_created;
+};
+
+}
+
+/// A cross-disk move (with a rename, as changelog rotation does) fsyncs the copied content and
+/// every touched directory, and names the tmp_ marker after the target. A counting disk observes
+/// the fsyncs and the marker path instead of simulating power loss.
+TEST(KeeperMoveFileBetweenDisksTest, CrossDiskMoveIsDurable)
+{
+    ChangelogDirTest root("./move_root");
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    /// INIT with a bounded retry count: a failing filesystem op gives up after a few retries
+    /// instead of looping until shutdown, so a regression fails the test quickly rather than hanging.
+    (*settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 3;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 1;
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setServerState(DB::KeeperContext::Phase::INIT);
+
+    auto disk_from = std::make_shared<DurabilityCountingDisk>("MoveSrc", "./move_root/src");
+    auto disk_to = std::make_shared<DurabilityCountingDisk>("MoveDst", "./move_root/dst");
+    disk_from->createDirectories("logs");
+    disk_to->createDirectories("logs");
+
+    /// Rename on move: changelog rotation shrinks the index range, e.g. 1_100 -> 1_57.
+    const std::string source_path = "logs/changelog_1_100.bin";
+    const std::string target_path = "logs/changelog_1_57.bin";
+    {
+        auto buf = disk_from->writeFile(source_path, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        buf->write("payload", 7);
+        buf->finalize();
+    }
+    ASSERT_TRUE(disk_from->existsFile(source_path));
+
+    bool publish_called = false;
+    DB::moveFileBetweenDisks(
+        disk_from,
+        source_path,
+        disk_to,
+        target_path,
+        [&] { publish_called = true; return true; },
+        getLogger("KeeperMoveFileBetweenDisksTest"),
+        keeper_context);
+
+    /// The move published, the (renamed) target is present with the source's content, the source
+    /// is gone, and no tmp_ marker is left behind.
+    EXPECT_TRUE(publish_called);
+    EXPECT_TRUE(disk_to->existsFile(target_path));
+    EXPECT_FALSE(disk_from->existsFile(source_path));
+    {
+        auto in = disk_to->readFile(target_path, DB::ReadSettings{});
+        std::string content;
+        DB::readStringUntilEOF(content, *in);
+        EXPECT_EQ(content, "payload");
+    }
+
+    /// The marker is created on the TARGET disk and named after the TARGET file (changelog_1_57),
+    /// not the source (changelog_1_100). Recovery pairs a marker with the file of the same name,
+    /// so a source-named marker would fail to flag a partial renamed target as incomplete.
+    ASSERT_EQ(disk_to->markersCreated().size(), 1u);
+    EXPECT_EQ(disk_to->markersCreated()[0], "logs/" + std::string{DB::tmp_keeper_file_prefix} + "changelog_1_57.bin");
+    EXPECT_TRUE(disk_from->markersCreated().empty());
+
+    /// Content fsynced once. The target directory ("logs" on disk_to) is fsynced at least twice:
+    /// after creating the marker (marker presence durable before copy) and after removing it
+    /// (marker-absent + target-present durable before publish). Requiring >= 2 means neither
+    /// barrier can regress undetected. The source directory is fsynced after the source removal.
+    EXPECT_GE(disk_to->contentSyncs(), 1u);
+    EXPECT_GE(disk_to->dirSyncs("logs"), 2u);
+    EXPECT_GE(disk_from->dirSyncs("logs"), 1u);
+}
+
+/// A move interrupted after marker creation (copy fails and exhausts retries) must leave a
+/// marker named after the target file, so startup recovery pairs it with the partial target.
+TEST(KeeperMoveFileBetweenDisksTest, InterruptedRenameMoveLeavesTargetNamedMarker)
+{
+    ChangelogDirTest root("./move_root_fail");
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 2;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 1;
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setServerState(DB::KeeperContext::Phase::INIT);
+
+    auto disk_from = std::make_shared<DurabilityCountingDisk>("MoveSrcF", "./move_root_fail/src");
+    auto disk_to = std::make_shared<DurabilityCountingDisk>("MoveDstF", "./move_root_fail/dst");
+    disk_from->createDirectories("logs");
+    disk_to->createDirectories("logs");
+
+    const std::string source_path = "logs/changelog_1_100.bin";
+    const std::string target_path = "logs/changelog_1_57.bin";
+    {
+        auto buf = disk_from->writeFile(source_path, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        buf->write("payload", 7);
+        buf->finalize();
+    }
+
+    disk_from->fail_copy = true;
+    bool publish_called = false;
+    DB::moveFileBetweenDisks(
+        disk_from,
+        source_path,
+        disk_to,
+        target_path,
+        [&] { publish_called = true; return true; },
+        getLogger("KeeperMoveFileBetweenDisksTest"),
+        keeper_context);
+
+    /// The copy never succeeded, so the move did not publish and did not remove the source.
+    EXPECT_FALSE(publish_called);
+    EXPECT_TRUE(disk_from->existsFile(source_path));
+    /// The leftover marker on the target disk is named after the target file, matching what
+    /// recovery expects to pair with a partial "changelog_1_57.bin".
+    EXPECT_TRUE(disk_to->existsFile("logs/" + std::string{DB::tmp_keeper_file_prefix} + "changelog_1_57.bin"));
+    EXPECT_FALSE(disk_to->existsFile("logs/" + std::string{DB::tmp_keeper_file_prefix} + "changelog_1_100.bin"));
 }
 
 #endif
