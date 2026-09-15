@@ -42,6 +42,41 @@ namespace DB
   */
 
 
+/// UNPIVOT [INCLUDE NULLS | EXCLUDE NULLS] (value FOR name IN (col [AS alias], ...)) [AS alias]
+///
+/// Turns the listed columns of a table expression into rows. It is a clause of `ASTTableExpression`,
+/// but a node of its own rather than a handful of its members: a table expression is allocated for
+/// every query with a FROM section, and four more members would move it into the next allocation
+/// size class for all of them.
+struct ASTUnpivot : public IAST
+{
+    /// The name of the produced value column and of the produced name column.
+    ASTPtr value_name;
+    ASTPtr name_name;
+
+    /// An `ASTExpressionList` of identifiers, each optionally aliased: the alias, or the column name
+    /// when there is none, is what lands in the name column.
+    ASTPtr columns;
+
+    /// `INCLUDE NULLS` keeps the rows whose value is NULL, which `EXCLUDE NULLS` (the default) drops.
+    bool include_nulls = false;
+
+    /// The alias of the result, as in `t UNPIVOT (v FOR k IN (a, b)) AS u`. It cannot live on the
+    /// source node, which carries its own alias, and this node is not an `ASTWithAlias`.
+    String result_alias;
+
+    using IAST::IAST;
+    String getID(char) const override { return "Unpivot"; }
+    ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
+
 /// Table expression, optionally with alias.
 struct ASTTableExpression : public IAST
 {
@@ -58,6 +93,9 @@ struct ASTTableExpression : public IAST
 
     /// Column aliases for the table expression (AS t(a, b))
     ASTPtr column_aliases;
+
+    /// UNPIVOT clause, an `ASTUnpivot`.
+    ASTPtr unpivot;
 
     using IAST::IAST;
     String getID(char) const override { return "TableExpression"; }
