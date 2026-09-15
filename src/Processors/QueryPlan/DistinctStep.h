@@ -5,10 +5,8 @@
 namespace DB
 {
 
-/// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
-/// caller has already resolved. Such a step deduplicates each stream on its own so that the final,
-/// single-stream DISTINCT has fewer rows left to merge, which takes a second stream to be worth
-/// anything: at one thread it only hashes every row a second time.
+/// Preliminary hashing `DISTINCT` reduces the rows each stream sends to final deduplication. At one
+/// effective thread it only hashes every row a second time, so the caller should omit that step.
 bool preliminaryDistinctIsUseful(size_t max_threads);
 
 /// Execute DISTINCT for specified columns.
@@ -20,7 +18,7 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        /// If enabled, execute the `DISTINCT` for separate streams, otherwise for merged streams. The
+        /// If enabled, reduce duplicates within each input stream before final deduplication. This
         /// per-stream deduplication is best-effort: duplicates from different streams pass through it
         /// in any case, so a deduplicating consumer must follow, and on mostly-unique input the
         /// transform may abandon deduplication entirely (see `allow_preliminary_distinct_abandoning`).
@@ -62,8 +60,21 @@ public:
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
 
+    /// Allow final deduplication to run in parallel by partitioning streams by the hash of the
+    /// `DISTINCT` columns. Input-order requirements and sorted deduplication take precedence.
+    void enableParallelDistinct() { parallel_distinct = true; }
+
+    /// Preserve the established global ordering of the input during final deduplication.
+    /// The input pipeline must already have a single stream.
+    void preserveInputOrder() { preserve_input_order = true; }
+    bool mustPreserveInputOrder() const { return preserve_input_order; }
+
 private:
     void updateOutputHeader() override;
+
+    /// Partition by the hash of the `DISTINCT` keys when there are multiple streams, threads, and
+    /// non-constant keys. Return whether partitioning was applied; otherwise leave the pipeline intact.
+    bool tryScatterStreams(QueryPipelineBuilder & pipeline) const;
 
     SizeLimits set_size_limits;
     UInt64 limit_hint;
@@ -71,6 +82,8 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+    bool parallel_distinct = false;
+    bool preserve_input_order = false;
 };
 
 }

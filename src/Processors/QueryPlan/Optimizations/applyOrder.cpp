@@ -7,11 +7,11 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
-#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Functions/IFunction.h>
 
@@ -75,9 +75,13 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
-        /// Distinct never breaks global order
+        /// Preserve an established global ordering even when deduplication does not use that order.
         if (properties->sort_scope == SortingProperty::SortScope::Global)
+        {
+            if (!distinct_step->isPreliminary())
+                distinct_step->preserveInputOrder();
             return *properties;
+        }
 
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)

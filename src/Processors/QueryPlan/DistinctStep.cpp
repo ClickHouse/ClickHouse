@@ -1,14 +1,15 @@
+#include <Core/SortDescription.h>
+#include <IO/Operators.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/Operators.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
-#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -23,6 +24,7 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 bool preliminaryDistinctIsUseful(size_t max_threads)
@@ -36,7 +38,7 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
     return ITransformingStep::Traits
     {
         {
-            .returns_single_stream = !pre_distinct,
+            .returns_single_stream = false,
             .preserves_number_of_streams = preserves_number_of_streams,
             .preserves_sorting = preserves_number_of_streams,
         },
@@ -73,19 +75,51 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
+bool DistinctStep::tryScatterStreams(QueryPipelineBuilder & pipeline) const
+{
+    /// Each input chunk is split across all partitions. Bound both dimensions of the scatter mesh
+    /// to limit hashing, copying, and scheduling overhead at high thread counts.
+    static constexpr size_t max_partitions = 16;
+    static constexpr size_t max_scatter_streams = 16;
+
+    const size_t num_partitions = std::min(pipeline.getNumThreads(), max_partitions);
+    if (pipeline.getNumStreams() <= 1 || num_partitions <= 1)
+        return false;
+
+    const auto key_column_positions = DistinctTransform::getNonConstantKeyColumnPositions(*pipeline.getSharedHeader(), columns);
+    if (key_column_positions.empty())
+        return false;
+
+    if (pipeline.getNumStreams() > max_scatter_streams)
+        pipeline.resize(max_scatter_streams);
+    scatterByPartition(pipeline, num_partitions, key_column_positions);
+    return true;
+}
+
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    /// The final distinct deduplicates across the whole input, so it needs all data in a single
-    /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
-    /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
-    /// can be deduplicated independently, so we keep the streams and skip merging them into one.
-    if (!pre_distinct && !skip_stream_merging)
-        pipeline.resize(1);
+    /// Final deduplication can keep disjoint streams separate unless a consumer requires their original
+    /// order. Preliminary deduplication always processes each stream independently.
+    if (preserve_input_order && pipeline.getNumStreams() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Order-preserving DISTINCT requires a single input stream");
 
-    /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
-    /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
-    /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
-    const bool allow_abandoning = pre_distinct && settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
+    if (!pre_distinct && !skip_stream_merging)
+    {
+        /// Hash partitioning makes the streams disjoint, but changes their order. Sorted deduplication
+        /// needs equal prefix values to remain contiguous so it can deduplicate one range at a time.
+        const bool scattered = parallel_distinct && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
+        if (!scattered)
+            pipeline.resize(1);
+    }
+
+    /// Size limits apply to the combined set across all disjoint streams, whether inherited from the
+    /// input or created by scattering. Each stream reports its new keys and retained set bytes to one
+    /// limit processor, so local size checks are disabled in this case. Preliminary sets are independent.
+    const bool global_limits = !pre_distinct && pipeline.getNumStreams() > 1 && set_size_limits.hasLimits();
+
+    /// The planner selects sorted final deduplication only for globally ordered, single-stream input.
+    chassert(!global_limits || distinct_sort_desc.empty());
+    const SizeLimits local_limits = global_limits ? SizeLimits{} : set_size_limits;
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -93,14 +127,24 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            /// When the stream is sorted by a prefix of the distinct columns, deduplicate by
-            /// ranges of equal prefix values, hashing only the remaining columns within a range
-            /// (and with no remaining columns, keeping one row per range without hashing at all).
+            /// When the stream is sorted by a prefix of the distinct columns, deduplicate by ranges of
+            /// equal prefix values, hashing only the remaining columns within each range. If no columns
+            /// remain, keep one row per range without hashing.
             if (!distinct_sort_desc.empty())
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, allow_abandoning);
+            /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
+            /// mostly-unique input the transform may abandon it and free its hash table. A limit hint
+            /// forbids this: an abandoned transform cannot count distinct rows to stop its input early.
+            const bool allow_abandoning = pre_distinct && settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
+            return std::make_shared<DistinctTransform>(
+                header, local_limits, limit_hint, columns, allow_abandoning, /*skip_null_keys=*/false, /*report_set_size=*/global_limits);
         });
+
+    /// The parallel final outputs are already disjoint, so a later merge needs no further deduplication.
+    /// Global limit accounting keeps their stream assignments intact for downstream steps to reuse.
+    if (global_limits)
+        pipeline.addTransform(std::make_shared<DistinctLimitTransform>(pipeline.getSharedHeader(), set_size_limits, pipeline.getNumStreams()));
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const
@@ -154,8 +198,7 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings, 
 
 void DistinctStep::serialize(Serialization & ctx) const
 {
-    /// Let's not serialize limit_hint.
-    /// Ideally, we can get if from a query plan optimization on the follower.
+    /// Limit hints and ordering requirements are derived again during plan optimization.
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
@@ -178,8 +221,7 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     size_limits.max_bytes = ctx.settings[QueryPlanSerializationSetting::max_bytes_in_distinct];
     size_limits.overflow_mode = ctx.settings[QueryPlanSerializationSetting::distinct_overflow_mode];
 
-    return std::make_unique<DistinctStep>(
-        ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
+    return std::make_unique<DistinctStep>(ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
 }
 
 QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)

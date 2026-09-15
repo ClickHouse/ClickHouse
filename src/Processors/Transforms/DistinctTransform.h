@@ -7,6 +7,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ColumnsHashing.h>
 
+#include <memory>
 #include <optional>
 #include <unordered_map>
 
@@ -99,13 +100,19 @@ public:
     /// `skip_null_keys_` drops rows with a NULL in any key column instead of emitting them, mirroring a
     /// set fill with `transform_null_in = 0`, which skips such rows; it must only be enabled when the
     /// consumer drops them anyway.
+    /// `report_set_size_` attaches retained set-byte increments to output chunks for global limit
+    /// accounting by `DistinctLimitTransform` over disjoint streams.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
         bool allow_abandoning_ = false,
-        bool skip_null_keys_ = false);
+        bool skip_null_keys_ = false,
+        bool report_set_size_ = false);
+
+    /// Select non-constant key columns. An empty name list selects every column in the header.
+    static ColumnNumbers getNonConstantKeyColumnPositions(const Block & header, const Names & columns);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -113,7 +120,7 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    ColumnNumbers key_columns_pos;
+    const ColumnNumbers key_columns_pos;
     /// Reset after the controller abandons deduplication, freeing the accumulated set.
     std::optional<SetVariants> data{std::in_place};
     Sizes key_sizes;
@@ -121,6 +128,12 @@ private:
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
+
+    /// Report set growth so the global limit processor can sum the sizes of the disjoint partitions.
+    const bool report_set_size;
+    /// Bytes already reported in output chunks. Parallel final deduplication never frees its set,
+    /// so subsequent reports contain nonnegative increments rather than counting the same bytes again.
+    UInt64 reported_set_bytes = 0;
 
     using LCDictionaryKey = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey;
     using LCDictionaryKeyHash = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash;
@@ -171,4 +184,36 @@ private:
     void maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows);
 };
 
+/// Enforce size limits on the combined sets of parallel final `DISTINCT` transforms.
+/// Each input keeps its corresponding output so downstream steps can reuse the disjoint streams.
+/// A `BREAK` limit emits the chunk that reaches the limit before closing every input, including
+/// partitions that emit no rows and may otherwise keep reading.
+class DistinctLimitTransform final : public IProcessor
+{
+public:
+    DistinctLimitTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams);
+
+    String getName() const override { return "DistinctLimitTransform"; }
+
+    Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
+    Status prepare() override;
+
+private:
+    struct PortPair
+    {
+        InputPort & input;
+        OutputPort & output;
+        bool is_finished = false;
+    };
+
+    Status preparePair(PortPair & pair);
+
+    std::vector<PortPair> port_pairs;
+    std::unordered_map<const Port *, PortPair *> port_to_pair;
+    size_t num_finished_port_pairs = 0;
+    const SizeLimits size_limits;
+    UInt64 rows = 0;
+    UInt64 bytes = 0;
+    bool limit_reached = false;
+};
 }
