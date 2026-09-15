@@ -375,9 +375,12 @@ TEST(IcebergSchemaProcessor, ConflictingManifestCopiesSettledByMetadataSchema)
     auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
     IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(first_manifest, FROM_MANIFEST, TOLERANT);
+    EXPECT_TRUE(processor.isSchemaSettled(0));
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second_manifest, FROM_MANIFEST, TOLERANT));
+    EXPECT_FALSE(processor.isSchemaSettled(0));
     expectSchemaLookupsFail(processor, 0);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata, FROM_METADATA, TOLERANT));
+    EXPECT_TRUE(processor.isSchemaSettled(0));
     EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
     EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6, 'UTC'))");
 }
@@ -413,6 +416,12 @@ TEST(IcebergSchemaProcessor, ConflictingManifestCopiesWithoutMetadataSchemaFailE
         processor.addIcebergTableSchema(other_metadata, FROM_METADATA, TOLERANT);
         processor.addIcebergTableSchema(first_manifest, FROM_MANIFEST, TOLERANT);
         EXPECT_NO_THROW(processor.addIcebergTableSchema(second_manifest, FROM_MANIFEST, TOLERANT));
+
+        /// A manifest walk asks this without throwing, to skip deriving anything from the id.
+        EXPECT_FALSE(processor.isSchemaSettled(5));
+        EXPECT_TRUE(processor.isSchemaSettled(7));
+        /// An id that was never registered is not unsettled either: only a header conflict makes it so.
+        EXPECT_TRUE(processor.isSchemaSettled(42));
 
         expectSchemaLookupsFail(processor, 5);
         try

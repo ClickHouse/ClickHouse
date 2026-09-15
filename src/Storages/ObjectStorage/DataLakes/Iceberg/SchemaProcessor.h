@@ -117,6 +117,12 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickHouseTableSchemaById(Int32 id) const;
 
+    /// False while `id` is bound to two different schemas by manifest file headers and no
+    /// metadata.json copy has settled which one is authoritative; every lookup of such an id throws.
+    /// Callers that only walk manifests (collecting file paths, e.g. `remove_orphan_files`) consult
+    /// this before deriving anything from the schema, so that the walk itself does not fail.
+    bool isSchemaSettled(Int32 id) const;
+
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);

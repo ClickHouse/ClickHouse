@@ -1,0 +1,16 @@
+strict remove_orphan_files
+ICEBERG_SPECIFICATION_VIOLATION
+tolerant remove_orphan_files
+deleted_data_files_count	0
+deleted_position_delete_files_count	0
+deleted_equality_delete_files_count	0
+deleted_manifest_files_count	0
+deleted_manifest_lists_count	0
+deleted_metadata_files_count	0
+deleted_statistics_files_count	0
+skipped_missing_metadata_count	0
+failed_deletions_count	0
+tolerant read
+4	62
+1	10
+1	11

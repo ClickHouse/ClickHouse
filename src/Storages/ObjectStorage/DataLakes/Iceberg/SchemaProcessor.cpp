@@ -984,6 +984,13 @@ bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const
     return clickhouse_table_schemas_by_ids.contains(id);
 }
 
+bool IcebergSchemaProcessor::isSchemaSettled(Int32 id) const
+{
+    SharedLockGuard lock(mutex);
+
+    return !unsettled_manifest_schema_ids.contains(id);
+}
+
 std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
 {
     std::unordered_map<String, Int64> result;
