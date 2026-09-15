@@ -200,21 +200,102 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
 각 타일에는 값이 표시되는 방식을 제어하는 옵션이 있는 **Display Settings** 드로어가 있습니다. 타일 편집기에서 **Display Settings**를 클릭해 여십시오. 사용 가능한 옵션은 시각화 유형에 따라 달라집니다.
 
-Number 타일은 **Background chart**를 표시할 수 있습니다. 값 뒤에 추세 스파크라인이 그려져, 선택한 시간 범위 동안의 변화를 한눈에 파악할 수 있습니다. 현재 값만큼이나 값의 추세가 중요한 SLO 및 오류 예산 타일에서 특히 유용합니다.
+<div id="number-tile-color">
+  #### 숫자 타일 색상
+</div>
 
-Number 타일을 선택한 상태에서 **Display Settings**를 열고 **Background chart**를 **Line** 또는 **Area**로 설정하십시오(끄려면 **None** 선택). 스파크라인은 타일 쿼리의 시간 버킷 기준 버전에서 파생되므로 추가 구성은 필요하지 않습니다. 기본적으로 타일 색상을 그대로 사용하며, 특정 팔레트 색상으로 재정의하려면 **Background color**를 설정하십시오.
+숫자 타일에서는 미리 정의된 차트 팔레트에서 정적 **색상**을 선택할 수 있습니다. 숫자 타일을 선택한 상태에서 **표시 설정**을 열고 **색상** 컨트롤(접근성을 위해 **숫자 타일 색상**으로 레이블 지정됨)에서 색상 견본을 선택하거나 선택을 해제하여 기본 텍스트 색상을 사용하십시오.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Number 타일의 Display Settings 드로어에서 Background chart가 Area로 설정된 상태" size="lg" />
+색상은 원시 hex 값이 아닌 팔레트 토큰으로 저장되므로 동일한 타일이 밝은 테마, 어두운 테마, IDE 테마에서 올바르게 표시됩니다.
 
-Background chart는 query-builder Number 타일에 적용됩니다. Raw SQL Number 타일은 버킷으로 나눌 시간 차원이 없는 단일 값만 반환하므로, 이 옵션은 표시되지만 비활성화됩니다.
+**범주형 토큰**(다중 series 색조):
+
+| 토큰                 | 레이블   |
+| ------------------ | ----- |
+| `chart-blue`       | 파랑    |
+| `chart-orange`     | 주황    |
+| `chart-red`        | 빨강    |
+| `chart-cyan`       | 청록    |
+| `chart-green`      | 녹색    |
+| `chart-pink`       | 분홍    |
+| `chart-purple`     | 보라    |
+| `chart-light-blue` | 연한 파랑 |
+| `chart-brown`      | 갈색    |
+| `chart-gray`       | 회색    |
+
+**의미론적 토큰**(상태 기반):
+
+| 토큰              | 레이블 |
+| --------------- | --- |
+| `chart-success` | 성공  |
+| `chart-warning` | 경고  |
+| `chart-error`   | 오류  |
+
+숫자가 상태를 나타낼 때는 의미론적 토큰을 사용하십시오(예: 오류 수에는 `chart-error`, 정상 비율에는 `chart-success`). 상태를 암시하지 않으면서 관련 KPI 타일을 시각적으로 구분하려면 범주형 토큰을 사용하십시오.
+
+이전 구성에는 legacy 숫자 토큰(`chart-1`부터 `chart-10`)이 저장되어 있을 수 있습니다. ClickStack은 대시보드를 로드할 때 이를 위의 색조 이름 토큰에 매핑합니다.
+
+같은 팔레트는 동일한 드로어의 선택적 **색상 규칙**에도 사용됩니다. 색상 규칙은 표시된 값을 기준으로 순서대로 평가되는 조건이며, 마지막으로 일치한 규칙이 적용됩니다. 일치하는 규칙이 없으면 정적 색상이 적용되고, 그다음 기본 텍스트 색상이 적용됩니다.
+
+<div id="number-tile-background-chart">
+  #### 숫자 타일 배경 차트
+</div>
+
+숫자 타일은 **Background chart**를 표시할 수 있습니다. 값 뒤에 추세 스파크라인이 그려져, 선택한 시간 범위 동안의 변화를 한눈에 파악할 수 있습니다. 현재 값만큼이나 값의 추세가 중요한 SLO 및 오류 예산 타일에서 특히 유용합니다.
+
+숫자 타일을 선택한 상태에서 **표시 설정**를 열고 **Background chart**를 **Line** 또는 **Area**로 설정하십시오(끄려면 **None** 선택). 스파크라인은 타일 쿼리의 시간 버킷 기준 버전에서 파생되므로 추가 구성은 필요하지 않습니다. 기본적으로 타일 색상을 그대로 사용하며, 특정 팔레트 색상으로 재정의하려면 **Background color**를 설정하십시오.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="숫자 타일의 표시 설정 드로어에서 Background chart가 Area로 설정된 상태" size="lg" />
+
+Background chart는 query-builder 숫자 타일에 적용됩니다. Raw SQL 숫자 타일은 버킷으로 나눌 시간 차원이 없는 단일 값만 반환하므로, 이 옵션은 표시되지만 비활성화됩니다.
 
 Table 타일에서는 **Alternate Row Background**를 사용해 행에 줄무늬를 적용할 수 있습니다. 한 행씩 번갈아 배경색을 넣어 컬럼 수가 많은 테이블도 더 쉽게 훑어볼 수 있습니다. 기본적으로는 꺼져 있습니다.
 
-Table 타일을 선택한 상태에서 **Display Settings**를 열고 **Alternate Row Background**를 켜십시오. 줄무늬는 순전히 시각적인 표시이므로 query-builder와 raw SQL Table 타일 모두에서 작동합니다.
+Table 타일을 선택한 상태에서 **표시 설정**를 열고 **Alternate Row Background**를 켜십시오. 줄무늬는 순전히 시각적인 표시이므로 query-builder와 raw SQL Table 타일 모두에서 작동합니다.
 
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Table 타일의 Display Settings 드로어에서 Alternate Row Background가 켜진 상태" size="lg" />
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Table 타일의 표시 설정 드로어에서 Alternate Row Background가 켜진 상태" size="lg" />
 
 Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분선도 유지하므로 컬럼 헤더를 계속 뚜렷하게 구분할 수 있습니다.
+
+<div id="api-number-tile-color">
+  #### Dashboards API: 숫자 타일 색상
+</div>
+
+외부 API(`POST` / `PUT` `/api/v2/dashboards`)를 통해 대시보드를 생성하거나 업데이트할 때는 builder 숫자 타일 구성의 `color`를 팔레트 토큰으로 설정하십시오. 원시 hex 값은 허용되지 않습니다.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color`에는 위의 범주형 및 의미론적 목록에 있는 모든 토큰(예: `chart-blue` 또는 `chart-success`)을 사용할 수 있습니다. 선택 사항인 `backgroundChart.color`는 동일한 토큰 enum을 사용하여 스파크라인 색상을 재정의합니다. authentication 및 기준 URL은 [ClickStack API 참조](/ko/clickstack/api-reference)를 참조하십시오.
 
 <div id="dashboard-listing-search">
   ## 대시보드 - 목록 및 검색
@@ -233,28 +314,37 @@ Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분�
 <Tagging />
 
 <div id="custom-filters">
-  ## 사용자 지정 필터
+  ## 사용자 지정 필터 및 변수
 </div>
 
 모든 대시보드에서 사용할 수 있는 [자유 텍스트 필터](#filter-dashboards) 외에도, 저장된 대시보드에서는 ClickHouse에서 쿼리한 데이터로 채워지는 사용자 지정 드롭다운 필터를 지원합니다. 이를 통해 재사용 가능한 클릭형 필터 컨트롤을 제공하므로, 대시보드 사용자는 표현식을 직접 작성하지 않고도 필터링할 수 있습니다.
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="사용 가능한 서비스 이름을 보여주는 서비스 드롭다운 필터" size="lg" />
 
-다음 단계에서는 [&quot;대시보드 만들기&quot;](#creating-dashboards) 섹션에서 만든 대시보드에 사용자 지정 필터를 추가하는 방법을 설명합니다.
+각 필터에서는 사용자가 하나 이상의 값을 선택할 수 있으며, 선택한 값으로 다음 중 하나 또는 둘 다를 수행합니다.
+
+* **Broadcast** — 일치하는 타일에 선택 항목을 필터 조건으로 적용합니다. 타일에서 필터를 참조하도록 업데이트할 필요가 없습니다.
+* **Variable** — 선택 항목을 `$variableName`으로 타일 쿼리에 노출하므로, 각 타일에서 값을 사용할 위치와 방법을 결정합니다.
+
+필터는 두 가지 중 하나 이상을 수행해야 합니다. 필터를 만들 때 Broadcast가 기본적으로 활성화됩니다.
+
+다음 단계에서는 [&quot;대시보드 만들기&quot;](#creating-dashboards) 섹션에서 만든 대시보드에 필터를 추가하는 방법을 설명합니다.
 
 <Steps>
   <Step title="필터 편집 대화상자 열기" id="open-edit-filters">
-    저장된 대시보드를 열고 도구 모음에서 **Edit Filters**를 선택합니다.
+    저장된 대시보드를 열고 도구 모음에서 **Edit Filters and Variables**를 선택합니다.
 
     <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="대시보드 도구 모음의 Edit Filters 버튼" size="lg" />
   </Step>
 
   <Step title="새 필터 추가" id="add-new-filter">
-    **Add new filter**를 클릭합니다. **Name**을 입력하고, **데이터 소스**를 선택하고, **Filter expression**(드롭다운을 채울 고유값을 가져오는 SQL 컬럼 또는 표현식)을 입력해 필터를 구성합니다. 그런 다음 **Save filter**를 클릭합니다.
+    **Add new filter**를 클릭합니다. **Display Name**을 입력하고, **데이터 소스**를 선택하고, **필터 표현식**(드롭다운을 채울 고유값을 가져오는 SQL 컬럼 또는 표현식)을 입력해 필터를 구성합니다. 그런 다음 **Save filter**를 클릭합니다.
 
     예를 들어, trace 데이터용 서비스 필터를 추가하려면 `Traces` 데이터 소스에서 `ServiceName`을 필터 표현식으로 사용합니다. &quot;Dropdown values filter&quot;는 선택 사항이며, 드롭다운에 표시할 값을 제한할 때 사용할 수 있습니다.
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Name, 데이터 소스, Filter expression 필드가 있는 필터 추가 대화상자" size="md" />
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Display Name, 데이터 소스, 필터 표현식 필드가 있는 필터 추가 대화상자" size="md" />
+
+    같은 대화상자에서 필터가 값을 [브로드캐스트](#broadcast-filters)할지와 [변수로 사용할 수 있는지](#dashboard-variables)도 제어하며, 두 기능은 아래에서 설명합니다.
 
     Filters 모달에는 대시보드에 구성된 모든 필터가 표시됩니다. 여기에서 기존 필터를 편집하거나 삭제하고, 추가 필터를 더 만들 수 있습니다.
 
@@ -276,6 +366,85 @@ Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분�
 
 <Note>
   사용자 지정 드롭다운 필터는 저장된 대시보드에서 사용할 수 있습니다. 이 방식이 실제로 적용된 예시는 [Kubernetes 대시보드](#kubernetes-dashboard)를 참조하십시오. 이 대시보드에는 파드, 배포, 노드 이름, 네임스페이스, 클러스터용 기본 드롭다운 필터가 제공됩니다.
+</Note>
+
+<div id="broadcast-filters">
+  ### 브로드캐스팅
+</div>
+
+**Broadcast filter condition**을 활성화하면 어떤 타일도 필터를 명시적으로 참조하지 않아도 선택한 값이 대시보드의 타일에 필터 조건으로 적용됩니다. 기본적으로 조건은 모든 타일에 적용됩니다. **Applies to sources**를 사용하면 지정된 소스 집합을 사용하는 타일로 적용 대상을 제한할 수 있습니다. 필터 표현식이 대시보드의 일부 데이터에만 의미가 있을 때 유용합니다.
+
+차트 빌더 타일은 브로드캐스트 필터를 자동으로 적용합니다. Raw SQL 타일에는 [`$__filters` 매크로](/ko/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro)를 포함하고 소스를 선택해야 합니다. ClickStack은 직접 작성한 쿼리에서 조건을 적용할 위치를 자동으로 추론할 수 없기 때문입니다.
+
+<div id="dashboard-variables">
+  ### 변수
+</div>
+
+**Available as variable**를 활성화하면 필터에서 선택한 항목을 타일 쿼리에서도 `$variableName`으로 사용할 수 있습니다. **Variable name**의 기본값은 필터 표시 이름에서 사용할 수 없는 문자를 제거한 값이며, 변경할 수 있습니다. 이름은 문자로 시작해야 하며 문자, 숫자, 밑줄만 포함할 수 있습니다.
+
+`WHERE` 조건을 브로드캐스트하지 않으려는 경우 변수를 사용하십시오. 예를 들어 값을 `SELECT` 표현식, `HAVING` 절 또는 join key에 사용하거나, 필터 자체의 표현식이 아닌 다른 컬럼을 기준으로 타일을 필터링할 수 있습니다.
+
+<div id="referencing-variables">
+  #### 변수 참조
+</div>
+
+변수는 드롭다운에서 현재 선택된 값으로 확장됩니다. 참조 형식에 따라 렌더링 방식이 결정됩니다.
+
+| 참조                  | 확장 결과                                                                                               | 선택 항목 없음 |
+| ------------------- | --------------------------------------------------------------------------------------------------- | -------- |
+| `$name`, `${name}`  | 컨텍스트에 따라 `sqlstring` 또는 `lucene` 포맷의 선택된 값입니다. `${name}_total`처럼 이름 뒤에 단어 문자가 오는 경우 중괄호로 이름을 구분합니다. | `NULL`   |
+| `${name:sqlstring}` | 선택된 값이 작은따옴표로 묶이고 쉼표로 구분되며 SQL 값으로 이스케이프됩니다(예: `'a', 'b'`).                                         | `NULL`   |
+| `${name:csv}`       | 따옴표 없이 쉼표로 구분됩니다: `a,b`. SQL용으로 이스케이프되지 않습니다.                                                       | 빈 문자열    |
+| `${name:regex}`     | 정규식 이스케이프가 적용된 정규식 대안입니다: `(a\|b)`.                                                                 | `.*`     |
+| `${name:lucene}`    | Lucene 입력용으로 따옴표로 묶인 항목을 `OR`로 연결합니다: `("a" OR "b")`.                                               | `("")`   |
+
+아무 항목도 선택되지 않은 상태에서는 `$name`이 `NULL`로 렌더링되므로, SQL 프레디케이트가 필요한 곳에서는 다음 매크로를 사용하는 것이 좋습니다. 두 매크로 모두 변수에 선택 항목이 없으면 `1=1`로 확장되므로 쿼리가 유효하게 유지됩니다.
+
+| 매크로                                           | 설명                                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | `variable`에 값이 선택되면 `toString(<filter expression>) IN ($variable)`로 확장되고, 그렇지 않으면 `1=1`로 확장됩니다. |
+| `$__filter(<expression>, $<variable>)`        | `variable`에 값이 선택되면 `<expression> IN ($variable)`로 확장되고, 그렇지 않으면 `1=1`로 확장됩니다.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | 변수에 선택 항목이 있으면 `<condition>`으로 확장되고, 그렇지 않으면 `1=1`로 확장됩니다.                                      |
+
+<div id="variables-in-builder-tiles">
+  #### 차트 빌더 타일에서 변수 사용하기
+</div>
+
+차트 빌더의 모든 SQL 표현식 입력에서 변수 참조를 사용할 수 있습니다. 여기에는 `SELECT` 컬럼과 시리즈별 표현식, `WHERE`, `GROUP BY`, `HAVING`이 포함됩니다. 편집기는 대시보드 변수를 자동 완성하고, 현재 선택에 따라 각 참조가 어떻게 확장되는지 표시합니다.
+
+SQL 모드에서는 변수 선택값이 비어 있어도 쿼리가 유효하게 유지되도록 `$__filter` 및 `$__conditionalAll` 매크로를 사용하는 것이 좋습니다. Lucene 입력에서는 매크로를 사용할 수 없으므로 대신 원시 변수를 참조하십시오(예: `ServiceName:$service`).
+
+Lucene 입력에서는 변수 참조 자체를 따옴표로 묶는지 여부에 따라 다중 값 선택이 일치하는 방식이 달라집니다. `$service`에서 `a,b`를 선택한 경우:
+
+| 참조                       | 확장 결과                                  | 일치 방식                                                                          |
+| ------------------------ | -------------------------------------- | ------------------------------------------------------------------------------ |
+| `ServiceName:$service`   | `ServiceName:("a" OR "b")`             | 부분 문자열 일치 — SQL에서는 `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'`로 변환됩니다 |
+| `ServiceName:"$service"` | `(ServiceName:"a" OR ServiceName:"b")` | 선택한 각 값과 정확히 일치                                                                |
+
+선택한 값이 부분 문자열이 아니라 `Field`와 정확히 일치해야 하는 경우 변수 참조를 따옴표로 묶으십시오. 즉, `Field:"$var"` 형식을 사용합니다.
+
+<div id="variables-in-sql-tiles">
+  #### SQL 타일에서 변수 사용
+</div>
+
+Raw SQL 타일에서는 쿼리 내 어느 위치에서든 동일한 방식으로 변수를 참조합니다:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+SQL 타일에서 사용할 수 있는 매크로 전체 목록은 [SQL 기반 시각화](/ko/clickstack/features/dashboards/sql-visualizations#dashboard-variables)를 참조하십시오.
+
+<Note>
+  대시보드 변수를 참조하는 타일의 알림은 대시보드에서 선택한 값이 아니라 모든 변수가 비어 있는 상태를 기준으로 평가됩니다.
 </Note>
 
 <div id="drilldown-to-search">

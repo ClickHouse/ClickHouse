@@ -52,6 +52,10 @@ GRANT default_role TO clickhouse_admin;
   ### Тонкая настройка управления доступом
 </div>
 
+<Tip>
+  Для управления доступом к базе данных из консоли предпочтительно использовать [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (бета). Роли `sql-console-role:<email>` несовместимы с [JWT-аутентификацией](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
 Этот механизм управления доступом также можно настроить вручную с точностью до отдельного пользователя. Перед тем как назначать пользователям новые роли `sql_console_*`, следует создать роли базы данных для отдельных пользователей SQL Console по шаблону `sql-console-role:<email>`. Например:
 
 ```sql
