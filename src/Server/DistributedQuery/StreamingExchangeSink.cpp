@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
 StreamingExchangeSink::~StreamingExchangeSink()
@@ -58,36 +57,6 @@ void StreamingExchangeSink::extractSocket()
 
     /// Prepare initial in-memory buffer for serializing chunks
     out = std::make_shared<WriteBufferFromOwnString>();
-
-    /// Register the socket so the sink hears an inbound `NoMoreDataNeeded` while it waits.
-    updateSocketWaitEvents();
-}
-
-void StreamingExchangeSink::updateSocketWaitEvents()
-{
-    uint32_t desired_events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
-    if (hasUnsentBytes())
-        desired_events |= EPOLLOUT;
-
-    if (desired_events == registered_socket_events)
-        return;
-
-    /// `Epoll` has no modify operation; re-add the socket with the new event mask.
-    if (registered_socket_events != 0)
-    {
-        wait_events_epoll.remove(socket->sockfd());
-        registered_socket_events = 0;
-    }
-    wait_events_epoll.add(socket->sockfd(), desired_events);
-    registered_socket_events = desired_events;
-}
-
-void StreamingExchangeSink::onUpdatePorts()
-{
-    /// Called by the executor on every port update while the sink is not idle, possibly from
-    /// another thread. An extra wake is harmless: `work` drains it and `prepare` re-checks
-    /// everything.
-    port_update_wakeup.notify();
 }
 
 /// Send data to socket until the buffer is empty or until socket would block.
@@ -125,7 +94,7 @@ void StreamingExchangeSink::sendToSocket()
                 }
                 else
                 {
-                    StreamingExchangeProtocol::throwSocketError(last_error, *socket, "send data to exchange stream " + stream_name);
+                    throw Poco::Net::NetException(fmt::format("Failed to send data to socket for stream {}, last error {}", stream_name, last_error));
                 }
             }
 
@@ -140,9 +109,9 @@ void StreamingExchangeSink::sendToSocket()
             /// in those cases, otherwise it's a real network error.
             LOG_TRACE(log, "Send to exchange stream {} hit IO exception: {}; checking for peer close", stream_name, e.displayText());
             tryReceiveControlPacket();
-            if (no_more_data_needed)
-                return;
-            StreamingExchangeProtocol::rethrowSocketException(*socket, "send data to exchange stream " + stream_name);
+            if (!no_more_data_needed)
+                throw;
+            return;
         }
     }
 
@@ -221,12 +190,13 @@ ISink::Status StreamingExchangeSink::prepare()
     input.setNeeded();
     if (!input.hasData())
     {
-        /// Wait on the socket, not only on the input port: an inbound `NoMoreDataNeeded`
-        /// must wake the sink even if this stage never produces another chunk. Pending bytes
-        /// go out on the same wait even below `FLUSH_BUFFER_TO_SOCKET_THRESHOLD`; without
-        /// that they would sit here until the next chunk arrives, and that can take a long
-        /// time. `onUpdatePorts` wakes the sink when input arrives.
-        return Status::Async;
+        /// There is no input right now, but some data waits in the buffers. Send it even if
+        /// there is less than `FLUSH_BUFFER_TO_SOCKET_THRESHOLD` of it; otherwise it would
+        /// sit here until the next chunk arrives, and that can take a long time.
+        const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
+        if (unsent > 0 || out->count() > 0)
+            return Status::Async;
+        return Status::NeedData;
     }
 
     current_chunk = input.pull(true);
@@ -242,9 +212,6 @@ void StreamingExchangeSink::work()
         extractSocket();
         return;
     }
-
-    /// Drain the wakeup pipe; otherwise it would stay readable and wake the sink again at once.
-    port_update_wakeup.drain();
 
     /// React to EPOLLIN / EPOLLRDHUP wakeups (see scheduleForEvent).
     tryReceiveControlPacket();
@@ -279,10 +246,7 @@ void StreamingExchangeSink::work()
         return;
     }
 
-    /// Without the `final_chunk_added` check, a wake with an empty input and empty buffers
-    /// (for example the port-update wakeup) would call `onFinish` while the stream is still
-    /// open.
-    if (final_chunk_added && !was_on_finish_called)
+    if (!was_on_finish_called)
     {
         was_on_finish_called = true;
         onFinish();
@@ -292,25 +256,26 @@ void StreamingExchangeSink::work()
 
 std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
 {
-    if (socket)
+    /// If socket is not ready yet, wait on the eventfd
+    if (!socket)
     {
-        updateSocketWaitEvents();
-        LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
-        /// `wait_events_epoll` becomes readable on socket events (inbound `NoMoreDataNeeded`,
-        /// peer close, writability while there are unsent bytes) and on the port-update wakeup.
-        /// No timeout: socket events and port updates each wake the sink explicitly; a timeout
-        /// would only hide a missed wakeup as a delay instead of a visible hang.
-        return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, -1};
+        if (!future_connection)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
+
+        if (future_connection->isReady())
+            extractSocket();
     }
 
-    if (!future_connection)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
+    if (socket)
+    {
+        LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
+        /// EPOLLIN | EPOLLRDHUP wake us on peer-initiated NoMoreDataNeeded / half-close.
+        return {
+            socket->sockfd(),
+            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR,
+            -1};
+    }
 
-    /// Wait on the eventfd; `work` extracts the socket after the wake. The eventfd stays
-    /// readable once the connection is ready, so the wake is immediate even if the connection
-    /// got ready before this call. Extracting the socket here instead would skip that wake and
-    /// `prepare` would never run with the socket: the sink would sleep on a quiet socket
-    /// without ever marking its input as needed, and the fragment would never start.
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
@@ -360,13 +325,6 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     if (chunk.getNumColumns() > 0)
     {
-        /// The exchange stream uses the server default codec (now `ZSTD(3)`): `network_compression_method`
-        /// is a per-query setting and the sink has no query settings at hand (it is constructed from a
-        /// header, a connection and a stream name), so the setting is not plumbed here. This is safe:
-        /// each compressed frame is self-describing (the receiver auto-detects the codec via
-        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel —
-        /// `StreamingExchangeProtocol` rejects peers on a different protocol version during the
-        /// handshake, so a stream is never read back by a node expecting a different codec.
         auto compressed_buf = std::make_unique<CompressedWriteBuffer>(*out);
         auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_TCP_PROTOCOL_VERSION, input.getSharedHeader());
 
@@ -428,12 +386,22 @@ bool StreamingExchangeSink::tryReadFromSocketNonBlocking(char * buffer, size_t b
 {
     while (position < buffer_size)
     {
-        ssize_t received = StreamingExchangeProtocol::tryReceive(
-            *socket, buffer + position, buffer_size - position, "control packet on exchange stream " + stream_name);
+        const size_t remaining = buffer_size - position;
+        ssize_t received = socket->receiveBytes(
+            buffer + position,
+            static_cast<int>(std::min<size_t>(remaining, std::numeric_limits<int>::max())));
         if (received < 0)
-            return false; /// Peer half-closed.
+        {
+            auto last_error = errno;
+            if (last_error == EINTR)
+                continue;
+            if (last_error == EAGAIN || last_error == EWOULDBLOCK)
+                return true; /// No data right now, try later.
+            throw Poco::Net::NetException(fmt::format(
+                "Failed to receive control packet on exchange stream {}, error {}", stream_name, last_error));
+        }
         if (received == 0)
-            return true; /// No data right now, try later.
+            return false; /// Peer half-closed.
         position += received;
     }
     return true;
@@ -465,9 +433,8 @@ void StreamingExchangeSink::tryReceiveControlPacket()
 
     if (!not_eof)
     {
-        /// The consumer went away mid-stream, most likely because its task failed or was cancelled.
         if (incoming_packet_bytes_filled > 0)
-            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED,
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                 "Peer half-closed exchange stream {} after {} of {} control bytes; truncated control message",
                 stream_name, incoming_packet_bytes_filled, sizeof(incoming_packet_type));
 
@@ -475,7 +442,7 @@ void StreamingExchangeSink::tryReceiveControlPacket()
         /// and closes without sending NoMoreDataNeeded. Treat EOF as benign only with nothing left to send.
         const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
         if (!final_chunk_added || unsent > 0 || out->count() > 0)
-            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED,
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                 "Peer half-closed exchange stream {} without sending NoMoreDataNeeded "
                 "(final_chunk_added={}, unsent={}, out={})",
                 stream_name, final_chunk_added, unsent, out->count());

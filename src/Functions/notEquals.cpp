@@ -7,14 +7,12 @@ namespace DB
 {
 
 using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
-
-/// Instantiated in equals.cpp.
+using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 extern template class FunctionComparison<EqualsOp, NameEquals>;
-/// Used through `FunctionIsNotDistinctFrom` in `executeArrayLexicographic`; instantiated in isNotDistinctFrom.cpp.
-extern template class FunctionComparison<EqualsOp, NameEquals, true>;
 
 REGISTER_FUNCTION(NotEquals)
 {
+    // Documentation for notEquals
     FunctionDocumentation::Description description = "Compares two values for inequality.";
     FunctionDocumentation::Syntax syntax = R"(
     notEquals(a, b)
@@ -72,8 +70,5 @@ ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals>::executeArrayLexicograp
         column_type_name1,
         input_rows_count);
 }
-
-/// Explicit instantiation definition, see the comment in equals.cpp. Must come after the member specializations above.
-template class FunctionComparison<NotEqualsOp, NameNotEquals>;
 
 }
