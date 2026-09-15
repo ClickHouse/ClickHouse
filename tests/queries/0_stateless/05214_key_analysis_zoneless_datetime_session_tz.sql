@@ -62,6 +62,12 @@ SELECT '-- the same defect on a DateTime key, which resolves its implicit zone t
 SELECT (SELECT count() FROM 05214_dt_seconds WHERE dt = '2024-01-03 05:00:00') AS pruned,
        (SELECT countIf(dt = '2024-01-03 05:00:00') FROM 05214_dt_seconds) AS honest
 SETTINGS session_timezone = 'Asia/Tokyo';
+SELECT trim(explain)
+FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM 05214_dt_seconds WHERE dt = '2024-01-03 05:00:00'
+)
+WHERE trim(explain) ilike 'condition: %' OR trim(explain) ilike 'parts: %'
+SETTINGS session_timezone = 'Asia/Tokyo';
 
 SELECT '';
 SELECT '-- a primary key over the same transform: the condition reaches the mark filter, so a wrong';
@@ -80,6 +86,12 @@ SELECT '';
 SELECT '-- and a minmax skip index, which evaluates the same transform per granule';
 SELECT (SELECT count() FROM 05214_skip WHERE dt = '2024-01-03 05:00:00') AS pruned,
        (SELECT countIf(dt = '2024-01-03 05:00:00') FROM 05214_skip) AS honest
+SETTINGS session_timezone = 'Asia/Tokyo';
+SELECT trim(explain)
+FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM 05214_skip WHERE dt = '2024-01-03 05:00:00'
+)
+WHERE trim(explain) ilike 'condition: %' OR trim(explain) ilike 'granules: %'
 SETTINGS session_timezone = 'Asia/Tokyo';
 
 SELECT '';

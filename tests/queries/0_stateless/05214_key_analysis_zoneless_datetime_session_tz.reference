@@ -10,6 +10,12 @@ UTC
 
 -- the same defect on a DateTime key, which resolves its implicit zone the same way
 1	1
+Condition: (dt in [1704225600, 1704225600])
+Parts: 1/2
+Condition: (toYYYYMMDD(dt) in [20240102, 20240102])
+Parts: 1/1
+Condition: true
+Parts: 1/1
 
 -- a primary key over the same transform: the condition reaches the mark filter, so a wrong
 -- instant drops granules instead of parts
@@ -19,6 +25,10 @@ Granules: 2/2
 
 -- and a minmax skip index, which evaluates the same transform per granule
 1	1
+Condition: true
+Granules: 3/3
+Condition: (toYYYYMMDD(dt) in [20240102, 20240102])
+Granules: 2/3
 
 -- a timezone-sensitive non-monotonic key: the pruner must look for the key value computed in
 -- the frozen zone (hour 20 in UTC), because that is the zone the stored values were computed in
