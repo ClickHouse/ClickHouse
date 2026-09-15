@@ -202,8 +202,7 @@ public:
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
         const ContextPtr & context,
-        bool force_fetch_latest_metadata = false,
-        bool ignore_explicit_metadata_file_path = false) const;
+        bool force_fetch_latest_metadata = false) const;
 
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {

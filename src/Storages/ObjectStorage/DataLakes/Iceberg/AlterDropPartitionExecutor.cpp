@@ -64,6 +64,7 @@ extern const SettingsInt64 iceberg_timestamp_ms;
 
 namespace DataLakeStorageSetting
 {
+extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
@@ -233,10 +234,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = metadata.getRelevantState(
-            context,
-            /*force_fetch_latest_metadata=*/true,
-            /*ignore_explicit_metadata_file_path=*/true);
+        auto [snapshot, table_state] = metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true);
         if (!snapshot)
             return std::nullopt;
 
@@ -659,6 +657,9 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
 void AlterDropPartitionExecutor::run()
 {
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION does not support the iceberg_metadata_file_path setting");
+
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
         throw Exception(
