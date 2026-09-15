@@ -203,7 +203,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// leading to column name mismatches with the expected header.
     auto select_query_options = SelectQueryOptions(processed_stage);
     select_query_options.is_local_shard_plan
-        = processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        = processed_stage == QueryProcessingStage::WithMergeableState
+        || processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
     /// The local replica's plan is united into the parent pipeline in this process.
     select_query_options.is_local_plan_for_distributed_query = true;
 
