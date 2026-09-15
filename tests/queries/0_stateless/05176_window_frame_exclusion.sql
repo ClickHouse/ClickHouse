@@ -121,5 +121,9 @@ SELECT count() FROM (SELECT lag(v) OVER (ORDER BY v) FROM t_05176);
 SELECT 'an aggregate that allocates in an arena rejects the exclusion, because the state is rebuilt per row';
 SELECT groupArray(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM t_05176; -- { serverError NOT_IMPLEMENTED }
 SELECT groupArray(v) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t_05176; -- { serverError NOT_IMPLEMENTED }
+-- The arena is what the refusal is about, not the size of the state: an aggregate that owns heap
+-- memory of its own takes the clause.
+SELECT 'a heap-owning state that does not use the arena takes the exclusion';
+SELECT v, uniqExact(v) OVER (ORDER BY g ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t_05176 ORDER BY ALL;
 
 DROP TABLE t_05176;

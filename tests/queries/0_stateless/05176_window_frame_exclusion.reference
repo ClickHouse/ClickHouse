@@ -69,3 +69,9 @@ the clause survives an AST JSON round trip, and an older payload without it stil
 a function that walks the frame itself rejects the exclusion instead of ignoring it
 5
 an aggregate that allocates in an arena rejects the exclusion, because the state is rebuilt per row
+a heap-owning state that does not use the arena takes the exclusion
+10	3
+20	3
+30	4
+40	3
+50	3
