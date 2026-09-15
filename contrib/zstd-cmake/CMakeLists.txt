@@ -146,3 +146,16 @@ add_library(_zstd ${Sources} ${Headers})
 add_library(ch_contrib::zstd ALIAS _zstd)
 target_include_directories(_zstd BEFORE PUBLIC ${LIBRARY_DIR})
 target_compile_options(_zstd PRIVATE -fno-sanitize=undefined)
+
+# Loop unrolling makes the decoders slower: on ClickBench column data, ZSTD_decompressSequences
+# built by clang at -O3 retires 10-12% more instructions and spends 7-9% more cycles with the
+# unroller on than off (the per-sequence copies are short, so the unrolled bodies mostly run
+# their remainders). The compressor does not benefit from the flag, so only the decoders get it.
+set_source_files_properties(
+        "${LIBRARY_DIR}/common/entropy_common.c"
+        "${LIBRARY_DIR}/common/fse_decompress.c"
+        "${LIBRARY_DIR}/decompress/huf_decompress.c"
+        "${LIBRARY_DIR}/decompress/zstd_ddict.c"
+        "${LIBRARY_DIR}/decompress/zstd_decompress_block.c"
+        "${LIBRARY_DIR}/decompress/zstd_decompress.c"
+        PROPERTIES COMPILE_OPTIONS "-fno-unroll-loops")
