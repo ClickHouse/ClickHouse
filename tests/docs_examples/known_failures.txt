@@ -128,5 +128,6 @@ Function/transactionLatestSnapshot#0      unstable  # the snapshot counter grows
 Function/transactionOldestSnapshot#0      unstable  # the snapshot counter grows with the number of transactions the server has run
 Function/uptime#0                         output  # the response describes the server or the machine it runs on
 Function/version#0                        output  # the response describes the server or the machine it runs on
+Function/year#1                           unstable  # the output depends on the current year
 Function/yesterday#0                      unstable  # the output depends on the current date
 Function/zookeeperSessionUptime#0         unstable  # the output grows with the uptime of the session
