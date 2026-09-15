@@ -1,0 +1,9 @@
+both spellings equal the needle
+1	1
+the same rows with and without the index
+[1,3]
+[1,3]
+a needle that carries no padding still prunes
+[2]
+[3]
+[2]
