@@ -6,6 +6,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
+#include <DataTypes/TypeTree.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -1758,17 +1759,9 @@ bool SingleValueReference::setIfGreater(const SingleValueDataBase & /*other*/, A
 
 bool canUseFieldForValueData(const DataTypePtr & value_type)
 {
-    bool result = true;
-    auto check = [&](const IDataType & type)
-    {
-        /// Variant, Dynamic and Object types doesn't work well with Field
-        /// because they can store values of different data types in a single column.
-        result &= !isVariant(type) && !isDynamic(type) && !isObject(type);
-    };
-
-    check(*value_type);
-    value_type->forEachChild(check);
-    return result;
+    /// Variant, Dynamic and Object types doesn't work well with Field
+    /// because they can store values of different data types in a single column.
+    return !anyInTypeTree(*value_type, [](const IDataType & type) { return isVariant(type) || isDynamic(type) || isObject(type); });
 };
 
 void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data)

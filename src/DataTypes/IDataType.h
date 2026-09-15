@@ -129,9 +129,21 @@ public:
         const SubcolumnCallback & callback,
         const SubstreamData & data);
 
-    /// Call callback for each nested type recursively.
-    using ChildCallback = std::function<void(const IDataType &)>;
-    virtual void forEachChild(const ChildCallback &) const {}
+    /// The types nested directly in this one, in a canonical order that `cloneWithChildren` accepts
+    /// back. Empty for a type that has none.
+    /// The order is part of the contract - a walker may zip the children of two types of the same kind
+    /// positionally - so an implementation must never derive it from the iteration order of a hash
+    /// table. See `DataTypes/TypeTree.h` for the recursive walks written on top of this.
+    virtual DataTypes getChildren() const { return {}; }
+
+    /// Rebuild this type with `new_children`, given in the same order and number as `getChildren`,
+    /// in place of its current children. Everything about the type that is not a child is kept:
+    /// `Tuple` element names and explicit-name mode, `Variant` discriminator order, `Object` path names
+    /// and limits.
+    /// The result carries no customization even when this type has one, because a custom name is not
+    /// generally still correct for different children; re-deriving it is the caller's decision, see
+    /// `IDataTypeCustomName::rederiveFor` and `CustomizationPolicy` in `DataTypes/TypeTree.h`.
+    DataTypePtr cloneWithChildren(const DataTypes & new_children) const;
 
     Names getSubcolumnNames() const;
 
@@ -166,6 +178,7 @@ public:
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
+    virtual DataTypePtr doCloneWithChildren(const DataTypes & new_children) const;
     virtual SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const = 0;
 
     virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }

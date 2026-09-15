@@ -405,13 +405,11 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 }
 
 
-void DataTypeTuple::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeTuple::doCloneWithChildren(const DataTypes & new_children) const
 {
-    for (const auto & elem : elems)
-    {
-        callback(*elem);
-        elem->forEachChild(callback);
-    }
+    if (has_explicit_names)
+        return std::make_shared<DataTypeTuple>(new_children, names);
+    return std::make_shared<DataTypeTuple>(new_children);
 }
 
 void DataTypeTuple::updateHashImpl(SipHash & hash) const

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -133,8 +134,7 @@ String SharedPartColumns::describeColumns(const NamesAndTypesList & columns)
             const auto * custom = type.getCustomSerialization();
             writeStringBinary(custom ? custom->getCustomSerializationIdentity() : "", out);
         };
-        describe_custom_serialization(*column.type);
-        column.type->forEachChild(describe_custom_serialization);
+        forEachInTypeTree(*column.type, describe_custom_serialization);
     }
     return out.str();
 }

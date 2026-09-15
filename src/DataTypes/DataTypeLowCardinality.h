@@ -62,9 +62,10 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
-    void forEachChild(const ChildCallback & callback) const override;
+    DataTypes getChildren() const override { return {dictionary_type}; }
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     template <typename ... Params>

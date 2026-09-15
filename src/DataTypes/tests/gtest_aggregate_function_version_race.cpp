@@ -347,11 +347,14 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VariantAlternativesCollapsingIsAnEr
         setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt), DB::Exception);
 }
 
-/// `DataTypeObject` does not traverse typed `JSON` paths when assigning aggregate-state versions.
-/// This parses a type declaration that `JSON` serialization subsequently rejects, and protects that
-/// traversal boundary; it does not describe a `Native` wire-format exception. Binary type encoding
-/// does contain an explicit aggregate-state version field.
-GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsNotAssigned)
+/// A typed `JSON` path is a child like any other, so a versioned state below one is re-versioned
+/// with the rest of the type rather than stopping at the `JSON` boundary. That boundary used to
+/// exist only because the walk was hand-written per caller and this one did not descend into
+/// `DataTypeObject`; every walk now goes through `IDataType::getChildren`.
+/// The declaration parses but `JSON` serialization rejects it later, so this pins the traversal and
+/// not a `Native` wire-format shape - binary type encoding carries an explicit aggregate-state
+/// version field of its own.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsAssigned)
 {
     tryRegisterAggregateFunctions();
 
@@ -361,8 +364,11 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsNo
     DataTypePtr assigned = json;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
 
-    ASSERT_EQ(assigned.get(), json.get());
+    ASSERT_NE(assigned.get(), json.get());
+    const auto & assigned_paths = typeid_cast<const DataTypeObject &>(*assigned).getTypedPaths();
+    ASSERT_EQ(asAgg(assigned_paths.at("x")).getVersion(), 0u);
 
+    /// The shared source type is untouched.
     const auto & source_paths = typeid_cast<const DataTypeObject &>(*json).getTypedPaths();
     ASSERT_EQ(asAgg(source_paths.at("x")).getVersion(), 1u);
 }
