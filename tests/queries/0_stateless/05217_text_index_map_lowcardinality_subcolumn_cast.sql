@@ -131,7 +131,9 @@ SELECT '-- join_use_nulls pushes the filter down to the outer side as toNullable
 DROP TABLE IF EXISTS tab_ids;
 CREATE TABLE tab_ids (id UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab_ids SELECT number FROM numbers(1, 4);
-SELECT count() FROM (EXPLAIN indexes = 1 SELECT l.id FROM tab_ids AS l LEFT JOIN tab_s AS r ON l.id = r.id WHERE hasToken(r.s, 'network') SETTINGS join_use_nulls = 1) WHERE explain LIKE '%Name: idx%';
+-- `query_plan_convert_outer_join_to_inner_join` is pinned because the filter is pushed below the join only
+-- when the LEFT JOIN becomes an INNER one; otherwise it stays above the join and no index is consulted.
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT l.id FROM tab_ids AS l LEFT JOIN tab_s AS r ON l.id = r.id WHERE hasToken(r.s, 'network') SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1) WHERE explain LIKE '%Name: idx%';
 SELECT l.id FROM tab_ids AS l LEFT JOIN tab_s AS r ON l.id = r.id WHERE hasToken(r.s, 'network') ORDER BY l.id SETTINGS join_use_nulls = 1;
 DROP TABLE tab_ids;
 
