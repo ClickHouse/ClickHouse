@@ -90,8 +90,7 @@ namespace QueryPlanFormat
         const PrettyColumnNameMap & pretty_names,
         const PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
-        int parent_precedence = 0,
-        bool in_secret_slot = false);
+        int parent_precedence = 0);
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 

@@ -330,7 +330,10 @@ namespace QueryPlanFormat
         return slots;
     }
 
-    String formatNodePretty(
+    /// `in_secret_slot` is set while rendering the subtree of a secret argument: the secret may sit
+    /// below a wrapping expression (`HMAC(mode, msg, concat(k, 'salt'))`), so the whole argument
+    /// inherits it, and a nested function adds its own secret slots on top.
+    static String formatNodePrettyImpl(
         const ActionsDAG::Node * node,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,
         const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
@@ -371,10 +374,10 @@ namespace QueryPlanFormat
             case ActionType::COLUMN:
                 return formatConstant(node);
             case ActionType::ALIAS:
-                return formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, parent_precedence, in_secret_slot);
+                return formatNodePrettyImpl(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, parent_precedence, in_secret_slot);
 
             case ActionType::ARRAY_JOIN:
-                return "arrayJoin(" + formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot) + ")";
+                return "arrayJoin(" + formatNodePrettyImpl(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot) + ")";
 
             case ActionType::FUNCTION:
             {
@@ -404,7 +407,7 @@ namespace QueryPlanFormat
 
                 if ((func_name == "_CAST" || func_name == "CAST") && node->children.size() == 2)
                 {
-                    auto inner = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot);
+                    auto inner = formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot);
                     Field type_field;
                     node->children[1]->column->get(0, type_field);
                     return "CAST(" + inner + " AS " + type_field.safeGet<String>() + ")";
@@ -414,7 +417,7 @@ namespace QueryPlanFormat
 
                 if (func_name == "not" && node->children.size() == 1)
                 {
-                    String result = "NOT " + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
+                    String result = "NOT " + formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
@@ -422,17 +425,17 @@ namespace QueryPlanFormat
 
                 if (func_name == "negate" && node->children.size() == 1)
                 {
-                    String result = "-" + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
+                    String result = "-" + formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
                 }
 
                 if (func_name == "isNull" && node->children.size() == 1)
-                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot) + " IS NULL";
+                    return formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot) + " IS NULL";
 
                 if (func_name == "isNotNull" && node->children.size() == 1)
-                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot) + " IS NOT NULL";
+                    return formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot) + " IS NOT NULL";
 
                 if ((func_name == "and" || func_name == "or") && node->children.size() >= 2)
                 {
@@ -440,7 +443,7 @@ namespace QueryPlanFormat
                     std::vector<String> parts;
                     parts.reserve(node->children.size());
                     for (const auto * child : node->children)
-                        parts.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot));
+                        parts.push_back(formatNodePrettyImpl(child, pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot));
 
                     String result = fmt::format("{}", fmt::join(parts, separator));
                     if (op_info->precedence < parent_precedence)
@@ -450,22 +453,22 @@ namespace QueryPlanFormat
 
                 if (func_name == "arrayElement" && node->children.size() == 2)
                 {
-                    auto arr = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
-                    auto idx = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot);
+                    auto arr = formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
+                    auto idx = formatNodePrettyImpl(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot);
                     return arr + "[" + idx + "]";
                 }
 
                 if (func_name == "tupleElement" && node->children.size() == 2)
                 {
-                    auto tup = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
-                    auto elem = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot);
+                    auto tup = formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
+                    auto elem = formatNodePrettyImpl(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot);
                     return tup + "." + elem;
                 }
 
                 if (op_info && (op_info->symbol == "IN" || op_info->symbol == "NOT IN")
                     && node->children.size() == 2)
                 {
-                    auto lhs = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
+                    auto lhs = formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot);
                     auto rhs = formatSetPretty(node->children[1], subquery_set_names);
                     String result = fmt::format("{} {} {}", lhs, op_info->symbol, rhs);
                     if (op_info->precedence < parent_precedence)
@@ -476,9 +479,9 @@ namespace QueryPlanFormat
                 if (op_info && !op_info->symbol.empty() && node->children.size() == 2)
                 {
                     String result = fmt::format("{} {} {}",
-                        formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot),
+                        formatNodePrettyImpl(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot),
                         op_info->symbol,
-                        formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot));
+                        formatNodePrettyImpl(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence, in_secret_slot));
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
@@ -488,7 +491,7 @@ namespace QueryPlanFormat
                 std::vector<String> args;
                 args.reserve(node->children.size());
                 for (size_t i = 0; i < node->children.size(); ++i)
-                    args.push_back(formatNodePretty(node->children[i], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot || secret_slots[i]));
+                    args.push_back(formatNodePrettyImpl(node->children[i], pretty_names, runtime_filter_names, subquery_set_names, 0, in_secret_slot || secret_slots[i]));
 
                 return func_name + "(" + fmt::format("{}", fmt::join(args, ", ")) + ")";
             }
@@ -496,6 +499,16 @@ namespace QueryPlanFormat
             default:
                 return node->result_name;
         }
+    }
+
+    String formatNodePretty(
+        const ActionsDAG::Node * node,
+        const std::unordered_map<String, PrettyColumnName> & pretty_names,
+        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        int parent_precedence)
+    {
+        return formatNodePrettyImpl(node, pretty_names, runtime_filter_names, subquery_set_names, parent_precedence, /*in_secret_slot=*/ false);
     }
 
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names)
