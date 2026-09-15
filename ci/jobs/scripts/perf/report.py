@@ -392,7 +392,8 @@ if args.report == "main":
         exit(0)
 
     run_error_rows = tsvRows("run-errors.tsv")
-    error_tests += len(run_error_rows)
+    # row[0] is the test name, and one failing test can produce several rows.
+    error_tests += len({row[0] for row in run_error_rows if row})
     addSimpleTable("Run Errors", ["Test", "Error"], run_error_rows)
     if run_error_rows:
         errors_explained.append(
