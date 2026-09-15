@@ -88,6 +88,9 @@ private:
     size_t words;
     size_t modulus; /// 8 * size, cached for fast modulo.
     libdivide::divider<size_t, libdivide::BRANCHFREE> divider; /// Divider for fast modulo by modulus.
+    /// A power-of-two `modulus` (the default runtime join filter size, for one) reduces to a mask;
+    /// the positions are the same as with the division, so the layout stays compatible.
+    bool modulus_is_pow2 = false;
     Container filter;
 
     inline size_t fastMod(size_t value) const { return value - (value / divider) * modulus; }
