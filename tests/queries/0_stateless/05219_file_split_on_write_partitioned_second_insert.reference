@@ -1,0 +1,48 @@
+--- The first insert
+p_0.1.json
+p_0.2.json
+p_0.3.json
+p_0.json
+p_1.1.json
+p_1.2.json
+p_1.3.json
+p_1.json
+--- The second insert steps aside from the non-empty first file of every partition into the next numbered one
+p_0.1.json
+p_0.2.json
+p_0.3.json
+p_0.4.json
+p_0.5.json
+p_0.6.json
+p_0.7.json
+p_0.json
+p_1.1.json
+p_1.2.json
+p_1.3.json
+p_1.4.json
+p_1.5.json
+p_1.6.json
+p_1.7.json
+p_1.json
+0	400	159600	8
+1	400	160000	8
+--- Without the setting the insert is refused, and nothing is written
+CANNOT_APPEND_TO_FILE
+p_0.1.json
+p_0.2.json
+p_0.3.json
+p_0.4.json
+p_0.5.json
+p_0.6.json
+p_0.7.json
+p_0.json
+p_1.1.json
+p_1.2.json
+p_1.3.json
+p_1.4.json
+p_1.5.json
+p_1.6.json
+p_1.7.json
+p_1.json
+0	400	159600	8
+1	400	160000	8

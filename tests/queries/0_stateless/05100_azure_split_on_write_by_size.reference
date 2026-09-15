@@ -1,0 +1,25 @@
+--- Split into numbered blobs
+data.1.tsv	300	300	599
+data.2.tsv	300	600	899
+data.3.tsv	100	900	999
+data.tsv	300	0	299
+1000	499500
+--- The numbering continues from the number in the name of the first blob
+data.5.tsv	300
+data.6.tsv	300
+data.7.tsv	300
+data.8.tsv	100
+--- All the split blobs are visible for the AzureBlobStorage engine table, and a truncating insert overwrites them and removes the leftovers
+1000	499500	4
+data.1.tsv	200	300	499
+data.tsv	300	0	299
+data.1.tsv	200
+data.tsv	300
+--- An exception if the name is already taken
+BAD_ARGUMENTS
+--- The taken names are skipped with azure_create_new_file_on_insert
+data.1.tsv	1
+data.2.tsv	300
+data.3.tsv	300
+data.4.tsv	100
+data.tsv	300

@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"engine_file_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into a `File` engine table or into the `file` table function into multiple numbered files of the specified size."},
+            {"s3_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an S3 engine table or into the `s3` table function into multiple numbered objects of the specified size."},
+            {"azure_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an Azure Blob Storage engine table or into the `azureBlobStorage` table function into multiple numbered blobs of the specified size."},
+            {"hdfs_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an HDFS engine table or into the `hdfs` table function into multiple numbered files of the specified size."},
             {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
             {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
             {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},

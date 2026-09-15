@@ -325,6 +325,25 @@ std::string WildcardPartitionStrategy::getPathForWrite(
     return PartitionedSink::replaceWildcards(prefix, partition_key);
 }
 
+NumberedFileNames WildcardPartitionStrategy::getNumberedPathsForWrite(
+    const std::string & prefix,
+    const std::string & partition_key,
+    const std::string & /* path_for_write */)
+{
+    /// The number is placed into the path pattern, before the partition key is substituted into it. The partition
+    /// key is data: with the number placed into the path of the partition instead, a key with a dot in it would
+    /// shift the number into the middle of itself (`data_{_partition_id}.csv` with the key `a.b` would give
+    /// `data_a.1.b.csv`), and a key that ends with a number would be taken for a numbered file (the files of
+    /// the partition `a.5` would continue as `data_a.6.csv` - the name of the first file of the partition `a.6`).
+    return {
+        .getName = [prefix, partition_key](size_t sequence_number)
+        {
+            return PartitionedSink::replaceWildcards(setSequenceNumberInFileName(prefix, sequence_number), partition_key);
+        },
+        .start_sequence_number = getStartSequenceNumber(prefix, 1),
+    };
+}
+
 HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     KeyDescription partition_key_description_,
     const Block & sample_block_,
@@ -383,6 +402,16 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
     path += std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
 
     return path;
+}
+
+NumberedFileNames HiveStylePartitionStrategy::getNumberedPathsForWrite(
+    const std::string & /* prefix */,
+    const std::string & /* partition_key */,
+    const std::string & path_for_write)
+{
+    /// The partition key makes up the directories of the path, and the name of the file is generated,
+    /// so the number is placed into the name of the file as for a plain path.
+    return getNumberedFileNames(path_for_write);
 }
 
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) const

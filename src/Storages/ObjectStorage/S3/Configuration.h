@@ -121,8 +121,8 @@ public:
     void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
-    const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override
+    const Paths & getPathsUnlocked() const override { return keys; }
+    void setPathsUnlocked(const Paths & paths) override
     {
         keys = paths;
     }

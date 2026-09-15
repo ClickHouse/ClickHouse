@@ -14,6 +14,7 @@
 #include <Common/Logger.h>
 
 #include <atomic>
+#include <mutex>
 #include <shared_mutex>
 #include <sys/stat.h>
 
@@ -203,7 +204,24 @@ private:
     String compression_method;
 
     std::string base_path;
+
+    /// The list of the files of the table. A write mutates it - an insert with
+    /// `engine_file_allow_create_multiple_files` or `engine_file_split_on_write_by_size_bytes` appends the new
+    /// numbered files to it, and a truncating insert retires them - while a read snapshots it at planning time,
+    /// so every access outside the constructors goes through the accessors below and is guarded by `paths_mutex`.
     std::vector<std::string> paths;
+    mutable std::mutex paths_mutex;
+
+    /// A copy of the list of the files, safe to use while a concurrent insert is appending to it.
+    std::vector<std::string> getPathsSnapshot() const;
+    size_t getPathsCount() const;
+    void setPaths(std::vector<std::string> new_paths);
+    /// Appends a file to the list, unless it is already there.
+    void appendPath(const std::string & path);
+    /// Drops a file from the list. Used to retire a file as soon as it has been deleted.
+    void retirePath(const std::string & path);
+    /// Replaces a file in the list, keeping its position. Used when a file is renamed after processing.
+    void renamePath(const std::string & path, const std::string & new_path);
 
     std::optional<ArchiveInfo> archive_info;
 
@@ -252,9 +270,21 @@ public:
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            String archive_member_path_ = {},
+            std::shared_lock<std::shared_timed_mutex> read_lock_ = {});
 
         String next();
+
+        /// The number of files the iterator was created with, before the `_path` / `_file` filter.
+        size_t getTotalFilesCount() const { return total_files_count; }
+
+        /// Releases the shared lock on the storage that the file list was taken under, see `read_lock`.
+        /// Called by the last reader when it needs the exclusive lock to rename the files it has read.
+        void releaseReadLock()
+        {
+            if (read_lock.owns_lock())
+                read_lock.unlock();
+        }
 
         bool isReadFromArchive() const
         {
@@ -290,6 +320,17 @@ private:
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;
+
+        size_t total_files_count = 0;
+
+        /// The shared lock on `StorageFile::rwlock` that the file list was taken under. A writer holds
+        /// the exclusive lock for the whole insert and publishes the files it has written one by one,
+        /// so the list is a consistent set of complete files only while no writer is active. The lock
+        /// is taken when the list is snapshotted (at planning time, which happens before the sources
+        /// are created), and it stays held for as long as a source reads from this list, because every
+        /// source shares this iterator. The sources take no lock of their own: a second shared lock
+        /// from the same reader would wait behind a writer that arrived in between.
+        std::shared_lock<std::shared_timed_mutex> read_lock;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -378,8 +419,6 @@ private:
     LazyFileRegistryPtr lazy_row_index_registry;
     /// The registry index of the file currently being read. Assigned on the first chunk.
     std::optional<UInt64> current_file_index;
-
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
 };
 
 class ReadFromFile : public SourceStepWithFilter

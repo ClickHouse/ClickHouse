@@ -1,0 +1,11 @@
+--- A large insert produces multiple numbered files
+1000	0	999
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- The first numbered file is replaced by a non-empty directory, which cannot be removed
+--- A truncating insert fails instead of leaving the stale data in place
+CANNOT_UNLINK
+--- The table still reads the whole set of its files
+1000	0	999
