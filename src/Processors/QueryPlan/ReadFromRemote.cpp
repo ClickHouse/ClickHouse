@@ -27,6 +27,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
@@ -203,6 +204,7 @@ ReadFromRemote::ReadFromRemote(
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     const String & cluster_name_,
+    const String & shard_scope_identity_,
     UnavailableShardTrackerPtr unavailable_shard_tracker_)
     : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
@@ -217,6 +219,7 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
     , cluster_name(cluster_name_)
+    , shard_scope_identity(shard_scope_identity_)
     , unavailable_shard_tracker(std::move(unavailable_shard_tracker_))
 {
 }
@@ -619,7 +622,7 @@ void ReadFromRemote::addLazyPipe(
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, my_storage = storage,
+            my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
             pushed_down_filters, parallel_marshalling_threads]() mutable
@@ -724,8 +727,7 @@ void ReadFromRemote::addLazyPipe(
         String query_string = formattedAST(query, enable_analyzer);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
-        my_scalars["_shard_num"] = Block{
-            {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+        my_scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(my_shard.shard_info.shard_num, my_shard_scope_identity);
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
@@ -762,8 +764,7 @@ void ReadFromRemote::addPipe(
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
-    scalars["_shard_num"]
-        = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+    scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(shard.shard_info.shard_num, shard_scope_identity);
 
     if (context->canUseTaskBasedParallelReplicas())
     {

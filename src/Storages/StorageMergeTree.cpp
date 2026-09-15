@@ -356,8 +356,10 @@ void StorageMergeTree::read(
     /// With `parallel_replicas_plan_based` do not build the query-based reading step either: the
     /// plan-based implementation is meant to replace it, so a query the planner never saw reads
     /// locally instead of falling back to the implementation being replaced.
+    /// A shard number shipped for a different cluster cannot scope this read.
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
-        && !settings[Setting::allow_experimental_analyzer] && !settings[Setting::parallel_replicas_plan_based])
+        && !settings[Setting::allow_experimental_analyzer] && !settings[Setting::parallel_replicas_plan_based]
+        && !ClusterProxy::hasForeignShardScope(local_context))
     {
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
