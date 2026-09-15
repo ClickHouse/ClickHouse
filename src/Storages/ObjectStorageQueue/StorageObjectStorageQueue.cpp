@@ -2237,22 +2237,11 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
 
     /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
     /// so the rebuilt settings object always carries its default. Report what the table actually
-    /// does, which is what `partitioning_mode` now says.
-    auto find_setting = [&](std::string_view name)
-    {
-        return std::find_if(settings.begin(), settings.end(), [&](const SettingDescription & s) { return s.name == name; });
-    };
-    if (auto hive = find_setting("use_hive_partitioning"), mode = find_setting("partitioning_mode");
-        hive != settings.end() && mode != settings.end())
-    {
-        hive->value = mode->value == "hive" ? "1" : "0";
-        /// Unconditionally from `partitioning_mode`, including when the derived value is the
-        /// default. They are one setting after the fold, so whatever acted on that one acted on
-        /// this one, and `source` answers who set a setting rather than whether the result differs
-        /// from the default - `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
-        /// Hence after the relabel above, or it copies the origin `partitioning_mode` had before it.
-        hive->origin = mode->origin;
-    }
+    /// does, which is what `partitioning_mode` now says - last, so that it takes that setting's final
+    /// origin. The origin is taken even when the value is the default: they are one setting after the
+    /// fold, and `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
+    if (const auto mode = std::ranges::find(settings, "partitioning_mode", &SettingDescription::name); mode != settings.end())
+        reportEffectiveValue(settings, "use_hive_partitioning", mode->value == "hive" ? "1" : "0", mode->origin);
 
     return settings;
 }

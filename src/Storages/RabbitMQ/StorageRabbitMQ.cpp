@@ -1794,16 +1794,10 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) 
     /// none. A `rabbitmq_address` table takes them from the address, and these two settings are not used.
     if (!configuration.host.empty())
     {
-        const auto from_config = [](const String & stated, const String & effective)
-        {
-            return stated.empty() && !effective.empty() ? std::optional(SettingOrigin::Config) : std::nullopt;
-        };
-        reportEffectiveValue(
-            settings, "rabbitmq_username", configuration.username,
-            from_config((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username));
-        reportEffectiveValue(
-            settings, "rabbitmq_password", configuration.password,
-            from_config((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password));
+        reportEffectiveValueWithConfigFallback(
+            settings, "rabbitmq_username", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
+        reportEffectiveValueWithConfigFallback(
+            settings, "rabbitmq_password", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
     }
     return settings;
 }

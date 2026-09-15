@@ -1650,15 +1650,11 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) cons
     reportEffectiveValue(settings, "nats_client_cert_file", configuration.client_cert_file);
     reportEffectiveValue(settings, "nats_client_key_file", configuration.client_key_file);
 
-    const auto report_authentication = [&](std::string_view name, const String & stated, const String & effective)
-    {
-        reportEffectiveValue(
-            settings, name, effective, stated.empty() && !effective.empty() ? std::optional(SettingOrigin::Config) : std::nullopt);
-    };
-    report_authentication("nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
-    report_authentication("nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
-    report_authentication("nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
-    report_authentication("nats_credential_file", (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
+    reportEffectiveValueWithConfigFallback(settings, "nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
+    reportEffectiveValueWithConfigFallback(settings, "nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
+    reportEffectiveValueWithConfigFallback(settings, "nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
+    reportEffectiveValueWithConfigFallback(
+        settings, "nats_credential_file", (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
     return settings;
 }
 

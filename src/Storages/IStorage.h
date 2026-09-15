@@ -285,6 +285,11 @@ public:
     static void reportEffectiveValue(
         SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin = {});
 
+    /// The same for a value the engine takes from a server config section when the table's own is empty: reported
+    /// as coming from the config when `stated` is empty and `value` is not.
+    static void reportEffectiveValueWithConfigFallback(
+        SettingDescriptions & settings, std::string_view name, const String & stated, const String & value);
+
     /// For an engine that consumes its settings at construction and keeps nothing. It cannot say
     /// what its settings are, and the base implementation would report only what the definition
     /// states - which looks like a complete answer and is not, since the effective values can come

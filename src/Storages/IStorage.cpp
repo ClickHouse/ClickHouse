@@ -334,6 +334,12 @@ void IStorage::reportEffectiveValue(
         it->origin = *origin;
 }
 
+void IStorage::reportEffectiveValueWithConfigFallback(
+    SettingDescriptions & settings, std::string_view name, const String & stated, const String & value)
+{
+    reportEffectiveValue(settings, name, value, stated.empty() && !value.empty() ? std::optional(SettingOrigin::Config) : std::nullopt);
+}
+
 SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
 {
     /// Only what the table's own `SETTINGS` clause states. Values come from the AST, so unlike an
