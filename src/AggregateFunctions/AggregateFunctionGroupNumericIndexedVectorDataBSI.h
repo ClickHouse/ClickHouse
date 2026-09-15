@@ -1723,17 +1723,23 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
         }
 
-        if (value == 0)
-        {
-            zero_indexes->add(index);
-            return;
-        }
-
         const UInt32 total_bit_num = getTotalBitNum();
 
         /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
         /// index through `make_unsigned` instead of sign-extending it to the storage width.
         const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
+
+        if (value == 0)
+        {
+            /// Adding zero leaves the value unchanged, so only record that the index is present,
+            /// and only when it does not already hold a non-zero value.
+            for (size_t i = 0; i < total_bit_num; ++i)
+                if (getDataArrayAt(i)->rb_contains(lookup))
+                    return;
+
+            zero_indexes->add(index);
+            return;
+        }
 
         /** This converts a floating-point value into a fixed-point representation, then store it in data_array using bit-sliced index.
           * - When value is an UInt/Int, fraction_bit_num is usually set to 0. So when integer_bit_num is set to the number of
@@ -1778,6 +1784,7 @@ public:
         }
 
         UInt8 cin = 0;
+        UInt8 any_bit_set = 0;
         for (size_t j = 0; j < total_bit_num; ++j)
         {
             UInt8 augend = getDataArrayAt(j)->rb_contains(lookup) ? 1 : 0;
@@ -1788,14 +1795,29 @@ public:
 
             UInt8 sum = augend ^ addend ^ cin;
 
-            if ((sum & 1) == 1)
+            /// A full adder has to write both outcomes: leaving the bit set when the sum bit is 0
+            /// makes every carry keep the lower bit, which is not addition. Touch the bitmap only
+            /// when the bit actually changes.
+            if (sum != augend)
             {
-                getDataArrayAt(j)->add(index);
+                if (sum)
+                    getDataArrayAt(j)->add(index);
+                else
+                    getDataArrayAt(j)->remove(index);
             }
+
+            any_bit_set |= sum;
 
             cin = cin & x_xor_y;
             cin = cin | x_and_y;
         }
+
+        /// Keep `zero_indexes` exclusive with the bit slices, the same invariant the pointwise
+        /// operations restore when they finish.
+        if (any_bit_set)
+            zero_indexes->remove(index);
+        else
+            zero_indexes->add(index);
     }
 
     /// return origin_vector(this)[index]
@@ -2010,6 +2032,13 @@ public:
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown value of is_empty: {}", toString(is_empty));
             getDataArrayAt(i)->read(in);
         }
+
+        /// `zero_indexes` holds the indexes whose value is zero, so it has to be exclusive with the
+        /// bit slices. States written before `addValue` maintained that could hold an index in both,
+        /// and the readers that answer zero comparisons trust `zero_indexes` alone, so restore the
+        /// invariant here rather than let a persisted state keep contradicting itself.
+        if (zero_indexes->size() > 0)
+            zero_indexes->rb_andnot(*getAllNonZeroIndex());
     }
 
     void write(DB::WriteBuffer & out) const
