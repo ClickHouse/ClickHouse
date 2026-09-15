@@ -165,7 +165,9 @@ public:
         bool blob_missing_ = false,
         bool a_blob_is_at_the_key_a_write_creates_ = false,
         bool no_etag_in_the_copy_response_ = false,
-        std::optional<std::string> replace_the_destination_right_after_the_copy_ = {})
+        std::optional<std::string> replace_the_destination_right_after_the_copy_ = {},
+        bool no_copy_source_in_the_properties_ = false,
+        bool report_the_copy_as_failed_ = false)
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
@@ -179,6 +181,8 @@ public:
         , a_blob_is_at_the_key_a_write_creates(a_blob_is_at_the_key_a_write_creates_)
         , no_etag_in_the_copy_response(no_etag_in_the_copy_response_)
         , replace_the_destination_right_after_the_copy(std::move(replace_the_destination_right_after_the_copy_))
+        , no_copy_source_in_the_properties(no_copy_source_in_the_properties_)
+        , report_the_copy_as_failed(report_the_copy_as_failed_)
     {
     }
 
@@ -272,10 +276,16 @@ public:
             properties->SetHeader("x-ms-lease-state", "available");
             properties->SetHeader("x-ms-lease-status", "unlocked");
             properties->SetHeader("x-ms-server-encrypted", "true");
+            /// `x-ms-copy-source` and `x-ms-copy-status-description` are optional in the properties
+            /// of a blob; the SDK models them as `Nullable`. A blob another writer put at the
+            /// destination key while the copy was running carries no copy source at all, and a
+            /// failed copy is reported without a description by some endpoints, so both can be
+            /// left out to check that the completion code does not dereference them.
             properties->SetHeader("x-ms-copy-id", "copy-id");
-            properties->SetHeader("x-ms-copy-status", "success");
+            properties->SetHeader("x-ms-copy-status", report_the_copy_as_failed ? "failed" : "success");
             properties->SetHeader("x-ms-copy-progress", std::to_string(blob_size) + "/" + std::to_string(blob_size));
-            properties->SetHeader("x-ms-copy-source", "http://azure.invalid/container/blob");
+            if (!no_copy_source_in_the_properties)
+                properties->SetHeader("x-ms-copy-source", "http://azure.invalid/container/blob");
             properties->SetHeader("x-ms-copy-completion-time", "Wed, 21 Oct 2015 07:28:00 GMT");
             properties->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
             return properties;
@@ -476,6 +486,8 @@ private:
     /// The generation another writer puts at the destination right after a write that creates a
     /// blob (a copy, a `Put Blob`, a `Put Block List`), before the response to it is delivered.
     std::optional<std::string> replace_the_destination_right_after_the_copy;
+    bool no_copy_source_in_the_properties;
+    bool report_the_copy_as_failed;
     bool a_copy_was_served = false;
     size_t responses_sent = 0;
     bool saw_create_if_absent = false;
@@ -748,15 +760,26 @@ struct NativeCopyOutcome
 /// Copies a `blob_size`-byte blob with the native copy enabled, pinned to `expected_etag`, against
 /// an endpoint whose object generation behaves as `etags` says. With `asynchronous`, the copy is
 /// the asynchronous `Copy Blob` (`StartCopyFromUri`, polled to completion) rather than the
-/// synchronous `Copy Blob From URL` (`CopyFromUri`).
+/// synchronous `Copy Blob From URL` (`CopyFromUri`). The properties the asynchronous copy polls
+/// leave out `x-ms-copy-source` with `no_copy_source_in_the_properties`, and report the copy as
+/// failed, without a description, with `report_the_copy_as_failed`.
 NativeCopyOutcome copyNatively(
-    size_t blob_size, const std::string & expected_etag, const ETagBehaviour & etags, bool asynchronous)
+    size_t blob_size,
+    const std::string & expected_etag,
+    const ETagBehaviour & etags,
+    bool asynchronous,
+    bool no_copy_source_in_the_properties = false,
+    bool report_the_copy_as_failed = false)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
     auto transport = std::make_shared<MisbehavingRangeTransport>(
         blob_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt,
-        /* ignore_range */ false, etags);
+        /* ignore_range */ false, etags, /* blob_size_after_first */ std::nullopt,
+        /* refuse_range_past_the_data */ false, /* blob_missing */ false,
+        /* a_blob_is_at_the_key_a_write_creates */ false, /* no_etag_in_the_copy_response */ false,
+        /* replace_the_destination_right_after_the_copy */ std::nullopt,
+        no_copy_source_in_the_properties, report_the_copy_as_failed);
     client_options.Transport.Transport = transport;
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
@@ -1991,6 +2014,34 @@ TEST(AzureNativeCopy, NoETagMeansNoCondition)
 
     ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::second_generation}));
     ASSERT_EQ(outcome.source_if_match_headers, (std::vector<std::string>{""}));
+}
+
+/// The properties an asynchronous copy polls until it completes are of whatever blob is at the
+/// destination key by then, and `x-ms-copy-source` is optional in them: a completion without it
+/// must not abort the process (the SDK's `Nullable::Value()` of an empty field does, in a release
+/// build) - the copy that was started is told apart by its id, and this one is it, so it succeeds.
+TEST(AzureNativeCopy, CompletionWithoutTheCopySourceInTheProperties)
+{
+    NativeCopyOutcome outcome;
+    ASSERT_NO_THROW(outcome = copyNatively(
+        /* blob_size */ 100, ETagBehaviour::first_generation,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
+        /* asynchronous */ true, /* no_copy_source_in_the_properties */ true));
+
+    ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::first_generation}));
+    ASSERT_TRUE(outcome.uploaded.empty());
+}
+
+/// An asynchronous copy the endpoint reports as failed, without a `x-ms-copy-status-description`
+/// (optional too), is an exception and not an abort: the SDK gives up polling with an exception of
+/// its own before the completion code sees the status, and the completion code dereferences
+/// nothing unchecked either way.
+TEST(AzureNativeCopy, FailedCompletionWithoutADescriptionIsAnException)
+{
+    ASSERT_ANY_THROW(copyNatively(
+        /* blob_size */ 100, ETagBehaviour::first_generation,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
+        /* asynchronous */ true, /* no_copy_source_in_the_properties */ true, /* report_the_copy_as_failed */ true));
 }
 
 /// A `StoredObject` that carries an `ETag` is deleted with `If-Match` in the quoted form the header

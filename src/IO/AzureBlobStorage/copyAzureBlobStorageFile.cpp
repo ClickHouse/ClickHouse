@@ -478,10 +478,15 @@ String copyAzureBlobStorageFile(
                 auto copy_status = properties_model.CopyStatus;
                 auto copy_status_description = properties_model.CopyStatusDescription;
 
-
+                /// `CopySource`, `CopyStatusDescription` and `CopyId` are optional in the properties
+                /// of a blob (the SDK models them as `Nullable`, and `Value()` of an empty one aborts
+                /// the process in a release build), and the properties polled here are of whatever
+                /// blob is at the destination key by then: a blob another writer put there while the
+                /// copy was running may carry none of them. Nothing here dereferences them unchecked;
+                /// the copy that was started is told apart by its id below.
                 if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
                 {
-                    LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+                    LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
 
                     const bool reports_the_started_copy = !started_copy_id.empty()
                         && properties_model.CopyId.HasValue() && properties_model.CopyId.Value() == started_copy_id;
@@ -502,7 +507,9 @@ String copyAzureBlobStorageFile(
                 {
                     if (copy_status.HasValue())
                         throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                        src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
+                                        src_blob, dest_blob, copy_status.Value().ToString(),
+                                        copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
+                                        operation.IsDone());
                     throw Exception(
                         ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
                         "Copy from {} to {} didn't complete with success status (operation is done {})",
