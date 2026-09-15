@@ -582,7 +582,7 @@ SELECT a.2 FROM named_tuples; -- by index
 
 ## Comparison operations with Tuple {#comparison-operations-with-tuple}
 
-Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller), otherwise (both elements are equal), the next element is compared.
+Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
 
 Example:
 
@@ -593,7 +593,7 @@ SELECT (1, 'z') > (1, 'a') c1, (2022, 01, 02) > (2023, 04, 02) c2, (1,2,3) = (3,
 ```text
 ┌─c1─┬─c2─┬─c3─┐
 │  1 │  0 │  0 │
-└────┴────┴────┘
+└────┴────┴─────┘
 ```
 
 Real world examples:
@@ -638,8 +638,8 @@ SELECT * FROM test;
 ┌─key─┬─duration─┬─value─┐
 │   1 │       42 │  66.5 │
 │   1 │       42 │    70 │
-│   2 │         1 │    10 │
-│   2 │         2 │     0 │
+│   2 │        1 │    10 │
+│   2 │        2 │     0 │
 └─────┴──────────┴───────┘
 
 -- Let's find a value for each key with the biggest duration, if durations are equal, select the biggest value
