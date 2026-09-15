@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Macros.h>
+#include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Core/LogsLevel.h>
@@ -100,11 +101,14 @@ String getNextKeyForSplittingBySize(
 void removeStaleSplitObjects(
     IObjectStorage & object_storage,
     const std::vector<String> & stale_keys,
-    const std::function<void(const String &)> & on_removed)
+    const std::function<void(const String &)> & on_removed,
+    const LoggerPtr & log)
 {
     for (const auto & stale_key : stale_keys)
     {
         object_storage.removeObjectIfExists(StoredObject(stale_key));
+        /// Logged here rather than left to the object storage: `S3` and `Azure` log the objects they delete, `HDFS` and `Local` do not.
+        LOG_INFO(log, "Removed the object {} written by a previous insert into the table", stale_key);
         on_removed(stale_key);
     }
 }
@@ -118,7 +122,8 @@ void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
     const String & key,
     size_t sequence_number,
-    bool create_new_file_on_insert)
+    bool create_new_file_on_insert,
+    const LoggerPtr & log)
 {
     if (create_new_file_on_insert)
         return;
@@ -132,6 +137,7 @@ void removeStaleSplitObjectsByNumber(
             break;
 
         object_storage.removeObjectIfExists(StoredObject(stale_key));
+        LOG_INFO(log, "Removed the stale object {} of a previous insert split by size, overwritten by a truncating insert", stale_key);
     }
 }
 

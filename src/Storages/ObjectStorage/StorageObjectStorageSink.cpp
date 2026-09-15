@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -259,7 +260,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
                 *object_storage,
                 key_for_splitting,
                 getStartSequenceNumber(key_for_splitting, 1),
-                query_settings.create_new_file_on_insert);
+                query_settings.create_new_file_on_insert,
+                getLogger("PartitionedStorageObjectStorageSink"));
 
         get_next_path = [storage = object_storage, config = configuration, settings = query_settings,
                          key = key_for_splitting,

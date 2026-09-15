@@ -843,6 +843,9 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// prefix keep seeing the stale rows.
     if (settings.truncate_on_insert)
     {
+        /// The same logger the storage uses; the sink is created from a static context.
+        const auto log = getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), storage_id.getFullTableName()));
+
         if (paths.size() > 1)
         {
             /// These objects were written by this table, and are deleted whatever their keys are.
@@ -857,7 +860,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
             removeStaleSplitObjects(
                 *object_storage,
                 stale_keys,
-                [&](const String & removed_key) { configuration->retirePath(removed_key); });
+                [&](const String & removed_key) { configuration->retirePath(removed_key); },
+                log);
         }
         else if (settings.split_on_write_by_size_bytes)
         {
@@ -867,7 +871,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
                 *object_storage,
                 paths.front().path,
                 getStartSequenceNumber(paths.front().path, 1),
-                settings.create_new_file_on_insert);
+                settings.create_new_file_on_insert,
+                log);
         }
 
         paths.resize(1);
@@ -1003,13 +1008,18 @@ void StorageObjectStorage::truncate(
         StoredObjects successful_objects;
         SCOPE_EXIT({
             for (const auto & object : successful_objects)
+            {
+                /// Logged here rather than left to the object storage: not every one of them logs the objects it deletes.
+                LOG_INFO(log, "Removed the object {} written by a previous insert into the truncated table", object.remote_path);
                 configuration->retirePath(object.remote_path);
+            }
         });
 
         object_storage->removeObjectsIfExist(tail_objects, &successful_objects);
     }
 
     object_storage->removeObjectIfExists(StoredObject(paths.front().path));
+    LOG_INFO(log, "Removed the object {} of the truncated table", paths.front().path);
 }
 
 void StorageObjectStorage::drop()

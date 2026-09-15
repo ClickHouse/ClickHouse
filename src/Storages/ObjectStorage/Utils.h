@@ -37,10 +37,12 @@ std::string getNextKeyForSplittingBySize(
 /// `on_removed` is called for every key that is no longer there, right after it is gone, so that the caller can
 /// retire it from the list of the paths of the table one by one. A cleanup that throws in the middle then leaves
 /// the table reading exactly the objects that still exist, instead of the ones it has already removed.
+/// Every removal is written to `log`: not every object storage logs the objects it deletes itself.
 void removeStaleSplitObjects(
     IObjectStorage & object_storage,
     const std::vector<std::string> & stale_keys,
-    const std::function<void(const std::string &)> & on_removed);
+    const std::function<void(const std::string &)> & on_removed,
+    const LoggerPtr & log);
 
 /// The same for a table that does not know the keys of the objects of the previous insert - an `INSERT` into
 /// a table function, or a table that was reloaded since then. The objects are written with consecutive numbers,
@@ -50,7 +52,8 @@ void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
     const std::string & key,
     size_t sequence_number,
-    bool create_new_file_on_insert);
+    bool create_new_file_on_insert,
+    const LoggerPtr & log);
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,

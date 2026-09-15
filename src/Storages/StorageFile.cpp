@@ -2804,9 +2804,14 @@ static void removeStaleSplitFiles(const Strings & stale_paths, const std::functi
         /// A file that is already gone is not an error, a file that cannot be deleted is:
         /// otherwise the truncating insert would succeed with the stale data still visible.
         std::error_code error;
-        fs::remove(stale_path, error);
+        bool removed = fs::remove(stale_path, error);
         if (error)
             throw Exception(ErrorCodes::CANNOT_UNLINK, "Cannot remove the stale file {}: {}", stale_path, error.message());
+        /// The deletion of a file that the table has read until now is worth a trace in the server log.
+        if (removed)
+            LOG_INFO(getLogger("StorageFile"), "Removed the file {} written by a previous insert into the table", stale_path);
+        else
+            LOG_INFO(getLogger("StorageFile"), "The file {} written by a previous insert into the table is already gone", stale_path);
         on_removed(stale_path);
     }
 }
@@ -2839,6 +2844,7 @@ static void removeStaleSplitFilesByNumber(const String & path, size_t sequence_n
             throw Exception(ErrorCodes::CANNOT_UNLINK, "Cannot remove the stale file {}: {}", stale_path, error.message());
         if (!removed)
             break;
+        LOG_INFO(getLogger("StorageFile"), "Removed the stale file {} of a previous insert split by size, overwritten by a truncating insert", stale_path);
     }
 }
 
