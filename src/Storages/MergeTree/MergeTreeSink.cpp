@@ -50,6 +50,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char merge_tree_sink_on_start_random_sleep[];
+    extern const char merge_tree_sink_after_commit_part[];
 }
 
 MergeTreeSink::~MergeTreeSink()
@@ -449,6 +450,11 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
     }
+
+    /// Pause after registering the part in the query transaction, with the parts lock released,
+    /// so a native cancellation can exercise rollback of the persisted version metadata.
+    if (context->getCurrentTransaction())
+        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_sink_after_commit_part);
 
     return {};
 }

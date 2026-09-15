@@ -60,6 +60,7 @@ public:
         const ContextPtr & context_);
 
     Block getHeader() const override { return header; }
+    void cancelReading() noexcept override;
 
     /// Build the descriptions list for the initial parallel-replicas announcement: same as
     /// `parts_ranges.getDescriptions()` but with per-part `min_marks_per_task` filled in from
@@ -120,6 +121,9 @@ protected:
     /// Applies the refiner (if any) to ranges cut from a part right before creating a read task.
     /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
+
+    /// Preserve a stored `QueryStatus` exception when it exists; otherwise stop work for a partial result.
+    void checkIfNotCancelled() const;
 
     MergeTreeReadRangesRefinerPtr ranges_refiner;
 
