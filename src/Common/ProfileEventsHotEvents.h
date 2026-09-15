@@ -1,0 +1,80 @@
+#pragma once
+
+#include <Common/ProfileEventsNonAllocatingEventList.h>
+
+/// Reserve nonallocating publishers, then common events ranked from public functional workloads.
+/// The hot set uses event names so additions to the event catalogue do not change its meaning.
+#define APPLY_FOR_HOT_PROFILE_EVENTS(M) \
+    APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M) \
+    M(AsyncLoggingFileLogTotalMessages) \
+    M(AsyncLoggingTextLogTotalMessages) \
+    M(ContextLock) \
+    M(LogDebug) \
+    M(LogTrace) \
+    M(LoggerElapsedNanoseconds) \
+    M(OSReadChars) \
+    M(RealTimeMicroseconds) \
+    M(QueryParseMicroseconds) \
+    M(InitialQuery) \
+    M(Query) \
+    M(QueriesWithSubqueries) \
+    M(SoftPageFaults) \
+    M(OSCPUVirtualTimeMicroseconds) \
+    M(OSWriteChars) \
+    M(UserTimeMicroseconds) \
+    M(RWLockAcquiredReadLocks) \
+    M(GlobalThreadPoolJobs) \
+    M(NetworkSendBytes) \
+    M(NetworkSendElapsedMicroseconds) \
+    M(SelectedRows) \
+    M(SelectedBytes) \
+    M(QueryPlanOptimizeMicroseconds) \
+    M(SelectQueriesWithSubqueries) \
+    M(QueryAnalysisMicroseconds) \
+    M(QueryPlanBuildMicroseconds) \
+    M(QueryTimeMicroseconds) \
+    M(SelectQueryTimeMicroseconds) \
+    M(InsertQueryTimeMicroseconds) \
+    M(OtherQueryTimeMicroseconds) \
+    M(ArenaAllocChunks) \
+    M(ArenaAllocBytes) \
+    M(AggregationTopKKeysEvicted) \
+    M(AggregationTopKKeysPruned) \
+    M(IOBufferAllocBytes) \
+    M(IOBufferAllocs) \
+    M(FunctionExecute) \
+    M(FileOpen) \
+    M(NativeProtocolSend) \
+    M(InterfaceNativeSendBytes) \
+    M(ReadCompressedBytes) \
+    M(CompressedReadBufferBlocks) \
+    M(CompressedReadBufferBytes) \
+    M(SystemTimeMicroseconds) \
+    M(QueryLocalWriteThrottlerBytes) \
+    M(DiskReadElapsedMicroseconds) \
+    M(LocalThreadPoolJobs) \
+    M(SynchronousReadWaitMicroseconds) \
+    M(ReadBufferFromFileDescriptorReadBytes) \
+    M(QueryLocalReadThrottlerBytes) \
+    M(ThreadPoolReaderPageCacheHitElapsedMicroseconds) \
+    M(InterfaceHTTPSendBytes) \
+    M(SharedPartsLocks) \
+    M(ThreadPoolReaderPageCacheHit) \
+    M(ThreadPoolReaderPageCacheHitBytes) \
+    M(LocalThreadPoolExpansions) \
+    M(LocalThreadPoolThreadCreationMicroseconds) \
+    M(CreatedReadBufferOrdinary) \
+    M(ConcurrencyControlSlotsGranted) \
+    M(OpenedFileCacheMisses) \
+    M(OSWriteBytes) \
+    M(QueryPipelineBuildMicroseconds) \
+    M(SelectQuery) \
+    M(InitialSelectQuery) \
+    M(MarkCacheHits) \
+    M(LogInfo) \
+    M(MarksTasksFromCache) \
+    M(OpenedFileCacheMicroseconds) \
+    M(OSCPUWaitMicroseconds) \
+    M(FilteringMarksWithPrimaryKeyProcessedMarks) \
+    M(SharedPartsLockHoldMicroseconds) \
+    M(PartsLockHoldMicroseconds)

@@ -9,6 +9,7 @@
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
 
@@ -202,6 +203,9 @@ private:
     void setPreempted(size_t thread_num);
     void resetPreempted(size_t thread_num);
 
+    /// Publish a dequeued request's wait time before acknowledging its callback completion.
+    void publishWaitTime(std::unique_lock<std::mutex> & lock);
+
     /// Resource request failed.
     void failed(const std::exception_ptr & ptr);
 
@@ -335,14 +339,12 @@ private:
     /// Introspection
     CurrentMetrics::Increment acquired_increment;
     CurrentMetrics::Increment scheduled_increment;
-    /// Stable counters for wait_timer. We cannot use CurrentThread::getProfileEvents() in
-    /// schedule() because it returns the calling thread's counters, which may be destroyed
-    /// before the timer is flushed — storing a Timer with a dangling Counters& causes UAF.
-    /// The ThreadGroupPtr keeps the ThreadGroup (and its performance_counters) alive.
-    /// Declared before wait_timer so the owner outlives the timer during member destruction.
+    /// Stable destination for wait time, including callbacks on a scheduler thread.
+    /// A pending measurement retains this owner while publishing outside the scheduler mutex.
     std::shared_ptr<ThreadGroup> wait_thread_group;
     ProfileEvents::Counters * wait_counters = &ProfileEvents::global_counters;
-    std::optional<ProfileEvents::Timer> wait_timer;
+    /// Stop and detach under `mutex`; publish the captured duration after unlocking.
+    std::optional<Stopwatch> wait_timer;
     const size_t lease_id; /// Unique identifier for this lease allocation, used for tracing
     static std::atomic<size_t> lease_counter;
 };
