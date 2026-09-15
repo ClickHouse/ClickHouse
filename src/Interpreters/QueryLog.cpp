@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Interpreters/QueryLog.h>
 
 #include <Columns/ColumnArray.h>
@@ -17,9 +18,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatSettings.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/getFQDNOrHostName.h>
@@ -167,6 +171,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
+
+        {"query_plan", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON), "The query plan that was executed, serialized as JSON, with per-step runtime statistics. Unlike `EXPLAIN ANALYZE`, which runs the query a second time, this is the plan of the execution this row describes. Only filled when the `log_query_plans` setting is enabled, and empty for `QueryStart` rows, because no plan exists yet at that point."},
     };
 }
 
@@ -380,6 +386,45 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
+
+    {
+        auto & query_plan_column = *columns[i++];
+        const size_t row_before_plan = query_plan_column.size();
+        if (query_plan.empty())
+        {
+            query_plan_column.insertDefault();
+        }
+        else
+        {
+            /// The serialization is built here rather than kept in a static, because a
+            /// SerializationJSON carries mutable per-use caches that must not be shared across
+            /// queries (see the comment on SerializationJSON::create). Only a query that enabled
+            /// `log_query_plans` reaches this branch, and for it the JSON parse dominates anyway.
+            /// The type has to be heap-allocated: IDataType derives from enable_shared_from_this
+            /// and building the serialization calls getPtr() on it, which throws bad_weak_ptr for
+            /// an object that no shared_ptr owns. That exception would escape into the SystemLog
+            /// flush and lose the whole batch, not just this column.
+            const auto plan_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+            const auto plan_serialization = plan_type->getDefaultSerialization();
+
+            try
+            {
+                ReadBufferFromString plan_buffer(query_plan);
+                plan_serialization->deserializeWholeText(query_plan_column, plan_buffer, FormatSettings{});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    "QueryLog",
+                    "Could not parse the query plan of query " + client_info.current_query_id + ", storing it empty");
+
+                if (query_plan_column.size() > row_before_plan)
+                    query_plan_column.popBack(query_plan_column.size() - row_before_plan);
+
+                query_plan_column.insertDefault();
+            }
+        }
+    }
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

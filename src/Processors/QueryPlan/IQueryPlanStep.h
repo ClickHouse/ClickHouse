@@ -41,11 +41,29 @@ struct ExplainFormatSettings;
 
 using StepProcessors = std::span<IProcessor * const>;
 
+/// Identity of a plan step, unique within a query. A copy of a step is a different step:
+/// clone() is `make_unique<Step>(*this)` and both copies can end up in the same plan, so
+/// copying allocates a new index rather than duplicating the source's. Moving preserves it.
+class PlanStepIndex
+{
+public:
+    PlanStepIndex();                                                   // fresh index
+    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}          // copy => fresh index
+    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
+    PlanStepIndex(PlanStepIndex &&) noexcept = default;
+    PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
+
+    size_t get() const { return value; }
+
+private:
+    size_t value = 0;
+};
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
 public:
-    IQueryPlanStep();
+    IQueryPlanStep() = default;
 
     IQueryPlanStep(const IQueryPlanStep &) = default;
     IQueryPlanStep(IQueryPlanStep &&) = default;
@@ -214,7 +232,7 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    size_t step_index = 0;
+    PlanStepIndex step_index;
 };
 
 }
