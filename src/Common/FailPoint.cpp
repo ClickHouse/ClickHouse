@@ -83,6 +83,7 @@ static struct InitFiu
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
+    ONCE(azure_inject_forbidden_response_on_put_once) \
     REGULAR(azure_inject_auth_failure_on_request) \
     ONCE(azure_inject_auth_failure_on_request_once) \
     REGULAR(azure_inject_poco_timeout) \

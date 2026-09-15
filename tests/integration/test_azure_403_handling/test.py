@@ -57,7 +57,8 @@ ERROR_KINDS = {
 }
 
 ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + [
-    "azure_inject_bad_request"
+    "azure_inject_bad_request",
+    "azure_inject_forbidden_response_on_put_once",
 ]
 
 # The OSS-observable signal that reportBroken() was taken (part-check thread).
@@ -264,16 +265,17 @@ def test_permanent_forbidden_on_write_fails(started_cluster):
 
 def test_transient_forbidden_on_write_succeeds(started_cluster):
     # nosdk (SDK retry off) so the one-shot 403 must reach execWithRetry; the "Write at attempt" log proves the
-    # CH write loop recovered. stop_merges keeps the upload PUT the only in-flight Azure traffic.
+    # CH write loop recovered. The one-shot fires only on a blob PUT, so the read below cannot take it.
     _create_table("t_write_transient", stop_merges=True, policy="azure_policy_nosdk")
 
-    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response_once")
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response_on_put_once")
     try:
+        assert node.query("SELECT sum(k) FROM t_write_transient").strip() == "44850"
         node.query(
             "INSERT INTO t_write_transient SELECT number + 300, toString(number) FROM numbers(100)"
         )
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_on_put_once")
 
     assert node.query("SELECT count() FROM t_write_transient").strip() == "400"
     assert node.contains_in_log(
