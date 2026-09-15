@@ -622,5 +622,12 @@ def test_malformed_mget_reply(started_cluster):
         node.query("SELECT * FROM redis_fake_long WHERE key IN ('a', 'b')")
     assert "INTERNAL_REDIS_ERROR" in str(long_in.value)
 
+    # A zero-element reply is a null array in Poco, not an empty one, so it is the isNull()
+    # term of the guard that rejects it. One key against the delta = -1 endpoint produces it.
+    with pytest.raises(QueryRuntimeException) as zero_in:
+        node.query("SELECT * FROM redis_fake_short WHERE key IN ('a')")
+    assert "INTERNAL_REDIS_ERROR" in str(zero_in.value)
+    assert "returned 0 values" in str(zero_in.value)
+
     for table in tables:
         drop_table(table)
