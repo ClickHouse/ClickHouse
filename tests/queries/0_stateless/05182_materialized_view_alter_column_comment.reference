@@ -1,0 +1,8 @@
+created	initial
+comment column	changed
+modify column	changed again
+after table comment	changed again
+alias subcolumn	1
+alias comment	alias comment
+alias subcolumn again	1
+to target after modify query	initial
