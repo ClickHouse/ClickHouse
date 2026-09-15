@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -56,18 +57,21 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Names & index_columns,
     const String & json_function_name);
 
-/// Check if a JSON path filter is safe to use for index skipping.
+/// Whether a `JSONAllPaths` index may skip a granule that lacks the path, for an `equals` comparison of
+/// a JSON subcolumn with a constant. The caller has already established that the function is `equals`.
 /// When a JSON path is absent in a granule, the expression evaluates to:
 ///   - NULL if the type is Dynamic or Nullable (always safe — comparisons with NULL are false)
 ///   - The type's default value if the type is non-Nullable (safe only if the comparison
-///     value differs from the default)
+///     does not hold against that default)
 ///
 /// @param key_expression_type  the actual result type of the key expression from the DAG node
 /// @param value_field          the constant value being compared against
-/// @param value_type           the declared type of that constant, i.e. what it is converted FROM
+/// @param value_type           the declared type of that constant
+/// @param context              query context, to build the comparison function
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field,
-    const DataTypePtr & value_type);
+    const DataTypePtr & value_type,
+    const ContextPtr & context);
 
 }
