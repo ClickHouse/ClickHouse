@@ -1,5 +1,6 @@
 #include <Storages/StorageURL.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Columns/ColumnConst.h>
@@ -17,6 +18,9 @@
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DatabaseOnDisk.h>
+#include <Databases/IDatabase.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -47,9 +51,12 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+
+#include <base/scope_guard.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
@@ -107,6 +114,8 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NAMED_COLLECTION_DOESNT_EXIST;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -2590,6 +2599,313 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         configuration.url, std::move(resolved_format));
 }
 
+/// Set while the lazy proxy (see `registerStorageURL`) re-runs this creator on first access. It
+/// makes the retry go through the normal eager construction so a still-missing named collection
+/// surfaces its real `NAMED_COLLECTION_DOESNT_EXIST` at query time instead of deferring forever.
+static thread_local bool url_named_collection_resolution_in_progress = false;
+
+/// Lazy proxy for a `URL(named_collection)` table attached while its named collection is missing.
+/// It re-runs the full `URL` creator on first access. Until then, DDL must follow the plain `URL`
+/// engine rather than forward to `getNested()`, which would retry the creator and throw.
+class StorageDeferredURL final : public StorageTableProxy
+{
+public:
+    /// The analyzer resolves columns from `getInMemoryMetadataPtr()` before anything materializes the
+    /// proxy, so the file-like virtuals must be seeded here. Only path-independent ones: hive-partition
+    /// virtuals need a sample path and are rebuilt when the nested storage materializes.
+    StorageDeferredURL(
+        const StorageID & table_id_,
+        std::function<StoragePtr(const StorageID &)> get_nested_,
+        ColumnsDescription columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment_,
+        const ContextPtr & context_)
+        : StorageTableProxy(table_id_, std::move(get_nested_), columns_)
+    {
+        StorageInMemoryMetadata metadata;
+        metadata.setColumns(columns_);
+        /// Constraints and comment too: the first `INSERT` snapshots `getInMemoryMetadataPtr()` before
+        /// `write()` materializes the proxy, so seeding only columns would skip every `CHECK`.
+        metadata.setConstraints(constraints_);
+        if (!comment_.empty())
+            metadata.setComment(comment_);
+
+        ColumnsDescription storage_columns = columns_;
+        auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
+            storage_columns, context_, std::nullopt, PartitionStrategyFactory::StrategyType::NONE, /*path*/ "");
+
+        if (!metadata.getColumns().has("_headers"))
+        {
+            virtual_columns_desc.addEphemeral(
+                "_headers",
+                std::make_shared<DataTypeMap>(
+                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+                "",
+                VirtualsMaterializationPlace::Reader);
+        }
+
+        metadata.setVirtuals(virtual_columns_desc);
+        setInMemoryMetadata(metadata);
+    }
+
+    /// Always report `URL`, both before and after the nested storage is materialized (the nested
+    /// storage is a `URL`/`URL`-dispatch engine whose `getName()` is also `URL`). Keeps `SHOW CREATE`,
+    /// `system.tables` and the `NOT_IMPLEMENTED` truncate message consistent with the `URL` engine.
+    String getName() const override { return "URL"; }
+
+    /// Metadata-only rename, like the plain `URL` engine (`IStorage::rename`): a `URL` table can be
+    /// renamed without touching the external resource, so this must not materialize the nested
+    /// storage (which would retry the creator and throw while the collection is missing).
+    void rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id) override
+    {
+        renameInMemory(new_table_id);
+    }
+
+    /// `URL` does not support `TRUNCATE`. Report it without materializing, so the bulk
+    /// `TRUNCATE ALL TABLES` / `TRUNCATE DATABASE ... LIKE` paths skip this table.
+    bool supportsTruncate() const override { return false; }
+
+    /// An explicit `TRUNCATE TABLE` calls `truncate` directly (bypassing `supportsTruncate`). Throw
+    /// `NOT_IMPLEMENTED` (the `URL` contract) instead of forwarding to `getNested()`.
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
+    }
+
+    /// While the collection is missing, report no on-disk data (like a plain `URL`/HTTP table), so
+    /// `DatabaseAtomic::tryCreateSymlink` (reached during `RENAME`) does not call `getDataPaths()` ->
+    /// `getNested()` and materialize the table. Once materialized, forward to the real storage.
+    bool storesDataOnDisk() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->storesDataOnDisk();
+        return false;
+    }
+
+    Strings getDataPaths() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->getDataPaths();
+        return {};
+    }
+
+    /// No drop-size guard while unmaterialized, matching the plain `URL` engine's `IStorage` defaults.
+    /// Safe to skip: every backend a `URL(nc)` can dispatch to has a no-op `drop()` (external objects
+    /// are never deleted), so a drop is metadata-only and leaks nothing.
+    void checkTableCanBeDropped(ContextPtr query_context) const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            materialized->checkTableCanBeDropped(query_context);
+    }
+
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            materialized->checkTableSizeBelowDropLimit(query_context);
+    }
+
+    /// Must NOT materialize: `DROP TABLE` scrubs the named-collection dependency *before* calling this,
+    /// and the creator would re-register it for a table already being dropped. In an `Ordinary` database
+    /// that resurrected entry outlives the drop and fails later `DROP NAMED COLLECTION`.
+    void drop() override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            materialized->drop();
+    }
+
+    /// `IStorage`, not `StorageProxy`: the plain `URL` engine inherits the `IStorage` alter contract
+    /// (comment-only), while `StorageProxy` would forward to `getNested()` and materialize, so a
+    /// metadata-only `MODIFY COMMENT` would throw while the collection is missing.
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            materialized->checkAlterIsPossible(commands, context);
+        else
+            IStorage::checkAlterIsPossible(commands, context); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
+    {
+        if (tryGetNestedIfMaterialized())
+            StorageProxy::alter(params, context, alter_lock_holder);
+        else
+            IStorage::alter(params, context, alter_lock_holder); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    /// `StorageProxy` forwards `supportsPrewhere` but not these two, so without the overrides the
+    /// wrapper would report the unrestricted `IStorage` defaults instead of `IStorageURLBase`'s
+    /// narrower contract. Materializing is fine here: these are only read during query planning.
+    std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }
+    bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
+
+    /// Also not forwarded by `StorageProxy`: the `IStorage` default (`false`) would disable the
+    /// backend's optimized `SELECT count()` path, which every `URL` backend supports.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
+    {
+        return getNested()->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    }
+
+    /// Read by the `disable_insertion_and_mutation` guard before the `write()` that would
+    /// materialize, so the `IStorage` default (a local engine) would reject an `INSERT` the eager
+    /// `URL(...)` path allows. Materializing is fine: such an `INSERT` materializes anyway.
+    bool isDataLake() const override { return getNested()->isDataLake(); }
+    bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
+    bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
+    bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
+
+    /// Partition DDL and `CHECK TABLE` are unsupported by every backend a `URL` can dispatch to, so
+    /// resolve the answer here: `StorageProxy` would forward to `getNested()` and report the missing
+    /// collection instead of the `URL` engine's `NOT_IMPLEMENTED`.
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr context) const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            materialized->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, context);
+        else
+            IStorage::checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, context); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    Pipe alterPartition(
+        const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr context) override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->alterPartition(metadata_snapshot, commands, context);
+        return IStorage::alterPartition(metadata_snapshot, commands, context); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->getCheckTaskList(check_task_filter, context);
+        return IStorage::getCheckTaskList(check_task_filter, context); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    /// Swept over every table by the bulk `SYSTEM STOP MERGES` / `SELECT ... FROM system.tables`
+    /// forms, so materializing here fails a server-wide query because of one unresolvable table.
+    ActionLock getActionLock(StorageActionBlockType action_type) override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->getActionLock(action_type);
+        return IStorage::getActionLock(action_type); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    bool supportsReplication() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->supportsReplication();
+        return IStorage::supportsReplication(); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    /// Every backend derives these from the column list alone (`getFakeColumnSizes`), which this
+    /// proxy already holds, so the unmaterialized answer is the delegate's answer.
+    ColumnSizeByName getColumnSizes() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->getColumnSizes();
+        auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        return metadata_snapshot->getFakeColumnSizes();
+    }
+};
+
+/// The full eager construction of a `URL(...)` engine: scheme dispatch, named-collection /
+/// argument resolution, hive partitioning, virtuals and format inference. Factored out so the
+/// deferred path below can re-run exactly this once a previously-missing named collection is back.
+static StoragePtr createStorageURLImpl(const StorageFactory::Arguments & args)
+{
+    /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
+    if (auto dispatched = tryDispatchURLEngineByScheme(args))
+        return dispatched;
+
+    ASTs & engine_args = args.engine_args;
+    auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
+    auto context = args.getLocalContext();
+
+    ASTPtr partition_by;
+    if (args.storage_def->partition_by)
+        partition_by = args.storage_def->partition_by->clone();
+
+    auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+    const bool use_object_storage
+        = config.http_method.empty()
+        && urlPathHasListableGlobs(config.url);
+
+    if (!use_object_storage)
+    {
+        return std::make_shared<StorageURL>(
+            config.url,
+            args.table_id,
+            config.format,
+            format_settings,
+            args.columns,
+            args.constraints,
+            args.comment,
+            context,
+            config.compression_method,
+            config.headers,
+            config.http_method,
+            partition_by,
+            /* distributed_processing */ false);
+    }
+
+    if (args.mode <= LoadingStrictnessLevel::CREATE)
+        checkExperimentalURLWildcardFromIndexPages(context);
+
+    /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
+    /// still holds the raw user-provided URL. Without this override, e.g.
+    /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
+    /// would build the object storage from an unresolved relative URL.
+    ///
+    /// `args.engine_args` is a reference to the arguments of the `CREATE` AST, so materialize
+    /// the resolved URL there with the same `skip_userinfo=true` policy as the other
+    /// `url_base` materialization paths: a resolved URL may carry `user:pass@` coming from
+    /// `url_base`, and persisting it would expose the credentials through `SHOW CREATE TABLE`
+    /// and the table metadata. The object storage itself has to be built from the fully
+    /// resolved URL including userinfo, so it is initialized from a scratch copy of the
+    /// arguments that never reaches the AST.
+    StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
+
+    ASTs object_storage_args;
+    object_storage_args.reserve(engine_args.size());
+    for (const auto & engine_arg : engine_args)
+        object_storage_args.push_back(engine_arg->clone());
+    StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
+
+    auto configuration = std::make_shared<StorageWebConfiguration>();
+    StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
+
+    /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
+    /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must
+    /// load pre-existing `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
+    configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
+
+    ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+    Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+    context_copy->setSettings(settings_copy);
+
+    return std::make_shared<StorageObjectStorage>(
+        configuration,
+        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        context_copy,
+        args.table_id,
+        args.columns,
+        args.constraints,
+        args.comment,
+        format_settings,
+        args.mode,
+        configuration->getCatalog(context, args.table_id),
+        args.query.if_not_exists,
+        /* is_datalake_query */ false,
+        /* distributed_processing */ false,
+        partition_by,
+        /* order_by */ nullptr,
+        /* is_table_function */ false,
+        /* lazy_init */ false);
+}
+
 void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
@@ -2597,94 +2913,75 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
-            if (auto dispatched = tryDispatchURLEngineByScheme(args))
-                return dispatched;
+            /// Only a definition replayed from metadata stored on this server may defer a missing named
+            /// collection to a lazy proxy; one the user supplies now must fail its own DDL. The WHOLE
+            /// construction is deferred, so the retry rebuilds through the eager path.
+            const bool loading_from_existing_metadata
+                = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const bool can_defer_missing_named_collection
+                = loading_from_existing_metadata
+                && !args.columns.empty()
+                && !url_named_collection_resolution_in_progress;
 
-            ASTs & engine_args = args.engine_args;
-            auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
-            auto context = args.getLocalContext();
+            if (!can_defer_missing_named_collection)
+                return createStorageURLImpl(args);
 
-            ASTPtr partition_by;
-            if (args.storage_def->partition_by)
-                partition_by = args.storage_def->partition_by->clone();
-
-            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
-            const bool use_object_storage
-                = config.http_method.empty()
-                && urlPathHasListableGlobs(config.url);
-
-            if (!use_object_storage)
+            try
             {
-                return std::make_shared<StorageURL>(
-                    config.url,
-                    args.table_id,
-                    config.format,
-                    format_settings,
-                    args.columns,
-                    args.constraints,
-                    args.comment,
-                    context,
-                    config.compression_method,
-                    config.headers,
-                    config.http_method,
-                    partition_by,
-                    /* distributed_processing */ false);
+                return createStorageURLImpl(args);
             }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST)
+                    throw;
 
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                checkExperimentalURLWildcardFromIndexPages(context);
+                /// Register the dependency even though the collection is missing: the graph is otherwise
+                /// only populated by a successful `getConfiguration(..., &table_id)`, which this path
+                /// skips, so until the first read a `DROP NAMED COLLECTION` would wrongly succeed.
+                std::optional<String> deferred_collection_name;
+                if (!args.engine_args.empty())
+                    if (const auto * identifier = args.engine_args[0]->as<ASTIdentifier>())
+                        deferred_collection_name = identifier->name();
+                if (deferred_collection_name)
+                    NamedCollectionFactory::instance().addDependency(*deferred_collection_name, args.table_id);
 
-            /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
-            /// still holds the raw user-provided URL. Without this override, e.g.
-            /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
-            /// would build the object storage from an unresolved relative URL.
-            ///
-            /// `args.engine_args` is a reference to the arguments of the `CREATE` AST, so materialize
-            /// the resolved URL there with the same `skip_userinfo=true` policy as the other
-            /// `url_base` materialization paths: a resolved URL may carry `user:pass@` coming from
-            /// `url_base`, and persisting it would expose the credentials through `SHOW CREATE TABLE`
-            /// and the table metadata. The object storage itself has to be built from the fully
-            /// resolved URL including userinfo, so it is initialized from a scratch copy of the
-            /// arguments that never reaches the AST.
-            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
+                /// `args` holds references and the factory runs later, so copy what the rebuild needs.
+                /// `createTableFromAST` is the same entry point database loading uses, so the retry
+                /// takes the identical construction path as an eager ATTACH.
+                auto attach_create_query = args.query.clone();
+                auto get_nested
+                    = [attach_create_query,
+                       relative_data_path = String(args.relative_data_path),
+                       global_context = args.getContext()->getGlobalContext(),
+                       mode = args.mode](const StorageID & current_id) -> StoragePtr
+                {
+                    auto load_context = Context::createCopy(global_context);
 
-            ASTs object_storage_args;
-            object_storage_args.reserve(engine_args.size());
-            for (const auto & engine_arg : engine_args)
-                object_storage_args.push_back(engine_arg->clone());
-            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
+                    /// Prefer the current CREATE query from the catalog so metadata-only DDL applied
+                    /// while the collection was missing is reflected; fall back to the attach-time
+                    /// clone if the table is not (yet) registered in the catalog.
+                    ASTPtr create_query;
+                    if (auto database = DatabaseCatalog::instance().tryGetDatabase(current_id.getDatabaseName()))
+                        create_query = database->tryGetCreateTableQuery(current_id.getTableName(), load_context);
+                    if (!create_query)
+                        create_query = attach_create_query;
 
-            auto configuration = std::make_shared<StorageWebConfiguration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
+                    /// The attach-time placeholder dependency is deliberately NOT removed first: the
+                    /// creator re-registers it idempotently, so a concurrent `DROP NAMED COLLECTION`
+                    /// never observes a zero-dependent gap, and a throw leaves the table tracked.
+                    url_named_collection_resolution_in_progress = true;
+                    SCOPE_EXIT({ url_named_collection_resolution_in_progress = false; });
+                    return createTableFromAST(
+                        create_query->as<const ASTCreateQuery &>(),
+                        current_id.getDatabaseName(),
+                        relative_data_path,
+                        load_context,
+                        mode).second;
+                };
 
-            /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
-            /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must
-            /// load pre-existing `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
-            configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
-
-            ContextMutablePtr context_copy = Context::createCopy(args.getContext());
-            Settings settings_copy = args.getLocalContext()->getSettingsCopy();
-            context_copy->setSettings(settings_copy);
-
-            return std::make_shared<StorageObjectStorage>(
-                configuration,
-                configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
-                context_copy,
-                args.table_id,
-                args.columns,
-                args.constraints,
-                args.comment,
-                format_settings,
-                args.mode,
-                configuration->getCatalog(context, args.table_id),
-                args.query.if_not_exists,
-                /* is_datalake_query */ false,
-                /* distributed_processing */ false,
-                partition_by,
-                /* order_by */ nullptr,
-                /* is_table_function */ false,
-                /* lazy_init */ false);
+                return std::make_shared<StorageDeferredURL>(
+                    args.table_id, std::move(get_nested), args.columns, args.constraints, args.comment, args.getContext());
+            }
         },
         {
             .supports_settings = true,
