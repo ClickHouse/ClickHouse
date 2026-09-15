@@ -47,7 +47,9 @@ struct BitRotateLeftImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// Compiled code cannot throw, so the argument types `apply` refuses are left uncompiled and raise there.
+    /// A negative count needs none of that: `apply` masks it, and `llvm.fshl`/`llvm.fshr` take their shift amount modulo the bit width.
+    static constexpr bool compilable = !is_big_int_v<A> && !is_big_int_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
@@ -71,7 +73,7 @@ REGISTER_FUNCTION(BitRotateLeft)
         {"a", "A value to rotate.", {"(U)Int8/16/32/64"}},
         {"N", "The number of positions to rotate left.", {"UInt8/16/32/64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the rotated value with type equal to that of `a`.", {"(U)Int8/16/32/64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the rotated value, with as many bits as the wider of the two arguments and signed if either of them is signed.", {"(U)Int8/16/32/64"}};
     FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
 SELECT 99 AS a, bin(a), bitRotateLeft(a, 2) AS a_rotated, bin(a_rotated);
