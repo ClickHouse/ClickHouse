@@ -68,10 +68,13 @@ expect "created"
 expect "bash) "
 
 # The read buffer is small, so that the reads (each one a scheduler request that waits for
-# its share of the bandwidth) are frequent enough for the rate to be steady. Parallel replicas
-# are pinned off: the test harness may enable them at random, and then the client is not
-# shown the rows read by the replicas, so the bar would have no cell to color.
-send "\$CLICKHOUSE_CLIENT --progress --workload w_05213_slow --max_threads 1 --max_read_buffer_size 65536 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query 'SELECT count() FROM t_05213 WHERE NOT ignore(s)' >/dev/null 2>&1\r"
+# its share of the bandwidth) are frequent enough for the rate to be steady, and the parts are
+# read one after another: the prefetched read pool and the userspace page cache are pinned off,
+# as either may put the reads of all the parts into the scheduler at once, and then the parts
+# are done together at the end instead of one by one. Parallel replicas are pinned off: the
+# test harness may enable them at random, and then the client is not shown the rows read by
+# the replicas, so the bar would have no cell to color.
+send "\$CLICKHOUSE_CLIENT --progress --workload w_05213_slow --max_threads 1 --max_read_buffer_size 65536 --allow_prefetched_read_pool_for_remote_filesystem 0 --use_page_cache_for_disks_without_file_cache 0 --enable_parallel_replicas 0 --automatic_parallel_replicas_mode 0 --query 'SELECT count() FROM t_05213 WHERE NOT ignore(s)' >/dev/null 2>&1\r"
 
 # The query is waiting for the IO scheduler most of the time: a non-zero `waited` figure is
 # shown next to `CPU` and the bar turns yellow.
