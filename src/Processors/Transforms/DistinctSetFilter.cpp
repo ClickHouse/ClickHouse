@@ -340,9 +340,9 @@ public:
         std::vector<IColumn *> raw_columns;
         columns.reserve(key_types.size());
         raw_columns.reserve(key_types.size());
-        for (size_t i = 0; i < key_types.size(); ++i)
+        for (const auto & key_type : key_types)
         {
-            columns.push_back(key_types[i]->createColumn());
+            columns.push_back(key_type->createColumn());
             raw_columns.push_back(columns.back().get());
         }
 
