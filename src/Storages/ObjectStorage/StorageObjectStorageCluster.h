@@ -4,6 +4,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -59,6 +61,8 @@ public:
 
     void drop() override;
 
+    void prepareForDrop(ContextPtr query_context) override;
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,
@@ -85,6 +89,11 @@ private:
     const std::optional<FormatSettings> format_settings;
     const std::shared_ptr<DataLake::ICatalog> catalog;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+
+    /// `data_lake_delete_data_on_drop` as it was set for the `DROP TABLE` query, captured by
+    /// `prepareForDrop` because `drop` runs without a query context. Stays empty when the drop does not
+    /// come from a `DROP TABLE` query, and `drop` then keeps the data rather than guessing.
+    std::atomic<std::optional<bool>> delete_data_on_drop;
 };
 
 }

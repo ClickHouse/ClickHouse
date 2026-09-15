@@ -35,7 +35,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool iceberg_delete_data_on_drop;
+    extern const SettingsBool data_lake_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
@@ -281,16 +281,40 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, getStorageID());
 }
 
+void StorageObjectStorageCluster::prepareForDrop(ContextPtr query_context)
+{
+    /// `drop` runs in the background, when the query context is gone, so a per-query or per-session
+    /// `data_lake_delete_data_on_drop` has to be read while the `DROP TABLE` query is still running.
+    delete_data_on_drop = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+}
+
 void StorageObjectStorageCluster::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
+    /// No query context here, because `drop` runs in the background. `prepareForDrop` captured the value
+    /// if this drop came from a `DROP TABLE` query; without a capture we keep the data, because deleting
+    /// it is irreversible while an orphaned data directory can still be removed later.
+    const std::optional<bool> captured_delete_data = delete_data_on_drop.load();
+    const bool delete_data = captured_delete_data.value_or(false);
+
+    if (!captured_delete_data
+        && Context::getGlobalContextInstance()->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
+    {
+        LOG_WARNING(
+            getLogger("StorageObjectStorageCluster"),
+            "Keeping the data of table {} although `data_lake_delete_data_on_drop` is enabled server-wide: the value for this drop "
+            "could not be captured, which happens when the table was never loaded, and data is never deleted on a fallback path. "
+            "Access the table before dropping it, so that the settings of the `DROP TABLE` query reach the table.",
+            getStorageID().getNameForLogs());
+    }
+
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        /// This runs in the background, after the query has finished, so a missing table cannot be
+        /// reported as a no-op to the user anyway: keep reporting it as an error in the log.
+        catalog->dropTable(namespace_name, table_name, delete_data, /* if_exists */ false);
     }
-    configuration->drop(drop_context);
+    configuration->drop(delete_data);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const

@@ -240,8 +240,8 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
 
         throw DB::Exception(
             DB::ErrorCodes::SUPPORT_IS_DISABLED,
-            "S3 Tables cannot drop table {}.{} without deleting its data, and `iceberg_delete_data_on_drop` is disabled. "
-            "Enable `iceberg_delete_data_on_drop` to drop the table together with its data",
+            "S3 Tables cannot drop table {}.{} without deleting its data, and `data_lake_delete_data_on_drop` is disabled. "
+            "Enable `data_lake_delete_data_on_drop` to drop the table together with its data",
             namespace_name, table_name);
     }
 
