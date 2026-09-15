@@ -1,0 +1,9 @@
+<clickhouse>
+    <access_control_improvements>
+        <functions_requiring_grant>
+            <function>hex</function>
+            <function>decrypt</function>
+            <function>listed_udf</function>
+        </functions_requiring_grant>
+    </access_control_improvements>
+</clickhouse>

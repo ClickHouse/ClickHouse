@@ -6,6 +6,7 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 
@@ -209,6 +210,17 @@ public:
 
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
+
+    /// Functions listed in `access_control_improvements.functions_requiring_grant` require
+    /// `GRANT FUNCTION ON <name>` to execute. The default empty list is backward compatible:
+    /// any user can call any function. `hasFunctionsRequiringGrant` is lock-free and false
+    /// when the list is empty, so the function-resolution path pays nothing in the default case.
+    static bool hasFunctionsRequiringGrant() noexcept;
+    static bool functionRequiresGrant(std::string_view function_name);
+    /// No-op when the list is empty or `context` is null. Call only after the function was found.
+    static void checkFunctionGrant(const ContextPtr & context, std::string_view function_name);
+    void setFunctionsRequiringGrant(const Strings & function_names);
+    void setFunctionsRequiringGrantFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     /// Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).
     void setImpersonateUserAllowed(bool allow) { allow_impersonate_user = allow; }
