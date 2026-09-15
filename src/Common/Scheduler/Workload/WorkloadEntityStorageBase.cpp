@@ -700,13 +700,17 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
     for (const auto & [entity_name, create_query] : raw_new_entities)
         local_new_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
 
-    // The implicit root workload name is reserved (see storeEntity). Enforce it here too so
-    // config/Keeper/disk-loaded workloads cannot use it — the invariant must hold on every entry
-    // point, not just the SQL path.
-    for (const auto & [entity_name, entity] : local_new_entities)
-        if (entity_name == IMPLICIT_ROOT_WORKLOAD_NAME && typeid_cast<ASTCreateWorkloadQuery *>(entity.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Workload name '{}' is reserved for the implicit root workload and cannot be used", entity_name);
+    // The implicit root workload uses a reserved name (see storeEntity). A workload with this name
+    // may already be persisted from before the name was reserved, so the load path (config / Keeper /
+    // disk) must NOT abort over it — otherwise a server could fail to start after an upgrade. Ignore
+    // such a workload here (it cannot be used anyway) and warn; new creations are still rejected by
+    // storeEntity on the SQL path.
+    if (auto it = local_new_entities.find(IMPLICIT_ROOT_WORKLOAD_NAME);
+        it != local_new_entities.end() && typeid_cast<ASTCreateWorkloadQuery *>(it->second.get()))
+    {
+        LOG_WARNING(log, "Ignoring workload '{}': this name is reserved for the implicit root workload", IMPLICIT_ROOT_WORKLOAD_NAME);
+        local_new_entities.erase(it);
+    }
 
     std::unique_lock lock(mutex);
 
