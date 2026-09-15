@@ -624,6 +624,10 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
         }
     }
 
+    /// Outside the branch above on purpose: `QuotaCache` refreshes the quota set in place, so an already
+    /// memoised object has to be re-checked on every call.
+    enabled_quota->checkClientKeySupplied();
+
     return enabled_quota;
 }
 
