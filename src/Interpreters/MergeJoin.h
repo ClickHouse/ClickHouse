@@ -6,6 +6,7 @@
 #include <Interpreters/SortedBlocksWriter.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/CacheBase.h>
+#include <Common/PODArray.h>
 #include <Common/SharedMutex.h>
 
 namespace DB
@@ -15,6 +16,7 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
+class ExpressionActions;
 enum class JoinTableSide : uint8_t;
 
 class MergeJoin : public IJoin
@@ -24,6 +26,29 @@ public:
 
     MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
 
+    /// One bit per row of the sorted left block, set when the row has already produced at least
+    /// one result row. A padded word array with manual bit access, the same construct as
+    /// `IEJoinTransform::bit_array`.
+    struct LeftMatchedBitmap
+    {
+        PaddedPODArray<UInt64> words;
+
+        bool empty() const { return words.empty(); }
+        void reset(size_t rows) { words.resize_fill((rows + 63) / 64); }
+        bool test(size_t pos) const { return (words[pos / 64] >> (pos % 64)) & 1; }
+        void set(size_t pos) { words[pos / 64] |= UInt64(1) << (pos % 64); }
+
+        /// Sets the bit. Returns true when the bit was not set before (a transition).
+        bool setOnce(size_t pos)
+        {
+            UInt64 & word = words[pos / 64];
+            const UInt64 mask = UInt64(1) << (pos % 64);
+            const bool was_unset = !(word & mask);
+            word |= mask;
+            return was_unset;
+        }
+    };
+
     struct NotProcessed
     {
         Block block;
@@ -31,6 +56,9 @@ public:
         size_t left_key_tail{};
         size_t right_position{};
         size_t right_block{};
+        /// With a mixed JOIN ON condition: whether a row of the sorted left block has already
+        /// produced at least one result row. Carried across continuations of the same block.
+        LeftMatchedBitmap left_row_matched{};
 
         bool empty() const { return block.empty(); }
     };
@@ -108,6 +136,20 @@ private:
     String mask_column_name_left;
     String mask_column_name_right;
 
+    /// Non-equi condition from JOIN ON that uses columns of both tables (e.g. `t1.x < t2.y`).
+    /// It is evaluated on candidate pairs that matched the equality keys; only pairs where it is
+    /// true are joined.
+    std::shared_ptr<const ExpressionActions> mixed_join_expression;
+
+    /// A source column of `mixed_join_expression`: its name, type and the side to take it from.
+    struct MixedConditionColumn
+    {
+        String name;
+        DataTypePtr type;
+        bool from_right;
+    };
+    std::vector<MixedConditionColumn> mixed_condition_columns;
+
     /// Each block stores first and last row from corresponding sorted block on disk
     Blocks min_max_right_blocks;
     std::shared_ptr<SortedBlocksBuffer> left_blocks_buffer;
@@ -147,7 +189,7 @@ private:
     template <bool is_all>
     std::optional<NotProcessed> extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                              size_t left_position, size_t left_key_tail, size_t right_position,
-                             size_t right_block_number);
+                             size_t right_block_number, LeftMatchedBitmap && left_row_matched);
 
     void mergeRightBlocks();
 
@@ -174,11 +216,43 @@ private:
 
     template <bool is_all> /// ALL or ANY
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                  LeftMatchedBitmap * left_row_matched);
     bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                  LeftMatchedBitmap * left_row_matched);
     bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                  LeftMatchedBitmap * left_row_matched);
+
+    /// Support for a mixed JOIN ON condition (`mixed_join_expression`).
+
+    void validateMixedJoinExpression();
+
+    /// Evaluates the condition on the cross product of left rows [left_start, left_start + left_length)
+    /// and right rows [right_start, right_start + right_length). Returns a full UInt8 column of
+    /// left_length * right_length rows in [right][left] order: NULL results become 0.
+    ColumnPtr evaluateMixedJoinExpression(const Block & left_block, size_t left_start, size_t left_length,
+                                          const Block & right_block, size_t right_start, size_t right_length) const;
+
+    /// ALL-strictness analog of joinEquals: emits only candidate pairs that pass the condition.
+    /// Marks used right rows per row and sets bits of joined left rows in `left_row_matched`
+    /// (if not null). `matched_rows` counts the left rows whose bit changes to 1 here: like the
+    /// hash join, a left row counts as matched only when a pair passes the condition, and the
+    /// bit transition removes double counting when an equal-key run spans right blocks.
+    /// Returns false when the range was cut by `max_rows` (same contract as joinEquals).
+    bool joinEqualsWithMixedCondition(const Block & left_block, RightBlockInfo & right_block_info,
+                                      const Columns & right_columns_to_add_, MutableColumns & left_columns,
+                                      MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows,
+                                      LeftMatchedBitmap * left_row_matched, size_t & matched_rows);
+
+    /// ANY/SEMI analog: emits the first passing pair for each left row of the range that has no
+    /// output yet (per `left_row_matched`), and marks emitted rows in it. `matched_rows` counts
+    /// the emitted rows (each emission is a bit transition).
+    void joinAnyWithMixedCondition(const Block & left_block, const Block & right_block,
+                                   const Columns & right_columns_to_add_, MutableColumns & left_columns,
+                                   MutableColumns & right_columns, const MergeJoinEqualRange & range,
+                                   LeftMatchedBitmap & left_row_matched, size_t & matched_rows) const;
 
     Block modifyRightBlock(const Block & src_block) const;
     bool saveRightBlock(Block && block);
