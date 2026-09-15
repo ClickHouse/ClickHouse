@@ -24,7 +24,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
-#if defined(__AVX2__)
+#if defined(__SSSE3__)
 #include <immintrin.h>
 #endif
 
@@ -1582,46 +1582,26 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
 }
 )
 
-/* The BMI2 intrinsic, _pdep_u64 (unsigned __int64 a, unsigned __int64 mask), works
- * by copying contiguous low-order bits from unsigned 64-bit integer a to destination
- * at the corresponding bit locations specified by mask. To implement the column
- * combination with the intrinsic, 8 contiguous bytes would be loaded from second_begin
- * as a UInt64 and act the first operand, meanwhile the mask should be constructed from
- * first_begin so that the bytes to be replaced (non-zero elements) are mapped to 0xFF
- * at the exact bit locations and 0x00 otherwise.
+/* For each 8-bit mask of non-zero bytes of the first filter, `combine_filters_expand_table` holds a `pshufb` control
+ * that moves the next bytes of the second filter to the set positions and zeroes the rest.
  *
- * The construction of mask employs the SSE intrinsic, mm_cmpeq_epi8(__m128i a, __m128i
- * b), which compares packed 8-bit integers in first_begin and packed 0s and outputs
- * 0xFF for equality and 0x00 for inequality. The result's negation then creates the
- * desired bit masks for _pdep_u64.
+ * Do not replace this with `_pdep_u64`: it is microcoded on AMD Zen 1 and Zen 2, where it is slower than the scalar loop.
  *
- * The below example visualizes how this optimization applies to the combination of
- * two quadwords from first_begin and second_begin.
- *
- *                                      Addr  high                           low
- *                                      <----------------------------------------
- * first_begin............................0x00 0x11 0x12 0x00 0x00 0x13 0x14 0x15
- *     |      mm_cmpeq_epi8(src, 0)        |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *  inv_mask..............................0xFF 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00
- *     |      (negation)                   |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *    mask-------------------------+......0x00 0xFF 0xFF 0x00 0x00 0xFF 0xFF 0xFF
- *                                 |            |    |              |    |    |
- *                                 v            v    v              v    v    v
- *    dst = pdep_u64(second_begin, mask)..0x00 0x05 0x04 0x00 0x00 0x03 0x02 0x01
- *                        ^                     ^    ^              ^    ^    ^
- *                        |                     |    |              |    |    |
- *                        |                     |    +---------+    |    |    |
- *     +------------------+                     +---------+    |    |    |    |
- *     |                                                  |    |    |    |    |
- * second_begin...........................0x00 0x00 0x00 0x05 0x04 0x03 0x02 0x01
- *
- * References:
- * 1. https://www.felixcloutier.com/x86/pdep
- * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
+ * Both filters are `PaddedPODArray`, so loading 8 bytes at `second_begin` is safe near the end.
  */
-#if defined(__BMI2__)
+#if defined(__SSSE3__)
+static constexpr auto combine_filters_expand_table = []
+{
+    std::array<UInt64, 256> table{};
+    for (size_t mask = 0; mask < 256; ++mask)
+    {
+        UInt64 source_index = 0;
+        for (size_t i = 0; i < 8; ++i)
+            table[mask] |= ((mask >> i) & 1 ? source_index++ : 0x80) << (8 * i);
+    }
+    return table;
+}();
+
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
@@ -1629,22 +1609,19 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
 
     while (first_begin + XMM_VEC_SIZE_IN_BYTES <= first_end)
     {
-        __m128i src = _mm_loadu_si128(reinterpret_cast<__m128i *>(first_begin));
-        __m128i inv_mask = _mm_cmpeq_epi8(src, zero16);
+        __m128i src = _mm_loadu_si128(reinterpret_cast<const __m128i *>(first_begin));
+        UInt32 mask = static_cast<UInt32>(_mm_movemask_epi8(_mm_cmpeq_epi8(src, zero16))) ^ 0xFFFF;
 
-        UInt64 masks[] = {
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 0)),
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 1)),
-        };
+        __m128i low = _mm_shuffle_epi8(
+            _mm_loadl_epi64(reinterpret_cast<const __m128i *>(second_begin)),
+            _mm_cvtsi64_si128(static_cast<Int64>(combine_filters_expand_table[mask & 0xFF])));
+        __m128i high = _mm_shuffle_epi8(
+            _mm_loadl_epi64(reinterpret_cast<const __m128i *>(second_begin + std::popcount(mask & 0xFF))),
+            _mm_cvtsi64_si128(static_cast<Int64>(combine_filters_expand_table[mask >> 8])));
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(first_begin), _mm_unpacklo_epi64(low, high));
 
-        for (const auto & mask: masks)
-        {
-            UInt64 dst = _pdep_u64(unalignedLoad<UInt64>(second_begin), mask);
-            unalignedStore<UInt64>(first_begin, dst);
-
-            first_begin += sizeof(UInt64);
-            second_begin += std::popcount(mask) / 8;
-        }
+        first_begin += XMM_VEC_SIZE_IN_BYTES;
+        second_begin += std::popcount(mask);
     }
 
     for (/* empty */; first_begin < first_end; ++first_begin)
@@ -1707,7 +1684,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     else
 #endif
     {
-#if defined(__BMI2__)
+#if defined(__SSSE3__)
         combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
 #else
         for (auto & val : first_data)
