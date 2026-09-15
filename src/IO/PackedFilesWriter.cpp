@@ -222,7 +222,7 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
         need_sync |= data->need_sync;
     }
 
-    return {std::move(index), std::move(ordered_file_names), version, need_sync};
+    return {std::move(index), std::move(ordered_file_names), version, need_sync, data_offset};
 }
 
 void PackedFilesWriter::finalize(WriteBuffer & out, const FinalizePlan & plan) const
