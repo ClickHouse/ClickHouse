@@ -9,6 +9,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/FunctionArrayMapped.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -35,10 +37,11 @@ namespace ErrorCodes
   * takes one argument per array.
   *
   * Groups follow the order of the array elements and the bit stream is laid out across bytes most-significant-bit
-  * first (like `bin`/`unbin`); a trailing partial byte keeps its bits in the most significant positions. The `UInt64`
-  * variants interpret that byte stream in little-endian byte order (as requested by issue #48830), so
-  * `arrayPackBitsToUInt64(f, arr) == reinterpretAsUInt64(arrayPackBitsToString(f, arr))`; only the leading whole
-  * groups that fit into 64 bits are kept.
+  * first (like `bin`/`unbin`); a trailing partial byte keeps its bits in the most significant positions. The `String`
+  * variants hold the whole stream. The `FixedString(n)` variants hold its first `n` bytes (zero-padded if it is
+  * shorter), and the `UInt64` variants hold its first 8 bytes interpreted in little-endian byte order (as requested by
+  * issue #48830), so `arrayPackBitsToUInt64(f, arr) == reinterpretAsUInt64(arrayPackBitsToString(f, arr))`. The
+  * stream is cut at the bit boundary, so a group that straddles the boundary contributes its leading bits.
   */
 template <typename ResultType, bool PackGroups = false>
 struct ArrayPackBitsImpl
@@ -153,46 +156,51 @@ struct ArrayPackBitsImpl
                 return mapped->getBool(index) ? 1 : 0;
         };
 
+        /// Packs the groups of one row into a bit stream, most-significant-bit first within each byte, and passes every
+        /// completed byte to `emit_byte`. The stream is cut after `max_bits` bits: a group that straddles the limit
+        /// contributes only its leading bits, so a shorter result is always a prefix of the byte stream of the `String`
+        /// variant. A trailing partial byte keeps its bits in the most significant positions.
+        auto pack_row = [&](size_t begin, size_t end, size_t max_bits, auto && emit_byte)
+        {
+            UInt8 current_byte = 0;
+            size_t filled_bits = 0;
+            size_t remaining_bits = max_bits;
+            for (size_t index = begin; index < end && remaining_bits != 0; ++index)
+            {
+                const UInt64 value = get_value(index);
+                for (size_t bit = bits_per_element; bit-- > 0 && remaining_bits != 0; --remaining_bits)
+                {
+                    current_byte = static_cast<UInt8>((current_byte << 1) | ((value >> bit) & 1));
+                    if (++filled_bits == 8)
+                    {
+                        emit_byte(current_byte);
+                        current_byte = 0;
+                        filled_bits = 0;
+                    }
+                }
+            }
+            if (filled_bits != 0)
+                emit_byte(static_cast<UInt8>(current_byte << (8 - filled_bits)));
+        };
+
         if constexpr (std::is_same_v<ResultType, ColumnUInt64>)
         {
             auto column = ColumnUInt64::create();
             column->reserve(num_rows);
             ColumnUInt64::Container & data = column->getData();
 
-            /// The result holds 64 bits, so only the leading whole groups that fit are kept.
-            const size_t max_groups = static_cast<size_t>(64 / bits_per_element);
-
             size_t prev_offset = 0;
             for (size_t row = 0; row < num_rows; ++row)
             {
-                const size_t row_size = offsets[row] - prev_offset;
-                const size_t num_groups = std::min(row_size, max_groups);
-
-                /// The bytes are the same as in the String / FixedString variants (bits within a byte are written
-                /// most-significant-bit first) and are interpreted in little-endian byte order, so the result equals
+                /// The first 8 bytes of the stream interpreted in little-endian byte order, so the result equals
                 /// reinterpretAsUInt64 of the corresponding String variant.
                 UInt64 result = 0;
-                UInt8 current_byte = 0;
-                size_t filled_bits = 0;
                 size_t byte_index = 0;
-                for (size_t j = 0; j < num_groups; ++j)
+                pack_row(prev_offset, offsets[row], 64, [&](UInt8 byte)
                 {
-                    const UInt64 value = get_value(prev_offset + j);
-                    for (size_t bit = bits_per_element; bit-- > 0;)
-                    {
-                        current_byte = static_cast<UInt8>((current_byte << 1) | ((value >> bit) & 1));
-                        if (++filled_bits == 8)
-                        {
-                            result |= static_cast<UInt64>(current_byte) << (8 * byte_index);
-                            ++byte_index;
-                            current_byte = 0;
-                            filled_bits = 0;
-                        }
-                    }
-                }
-                /// A trailing partial byte keeps its bits in the most significant positions, as in the String variant.
-                if (filled_bits != 0)
-                    result |= static_cast<UInt64>(static_cast<UInt8>(current_byte << (8 - filled_bits))) << (8 * byte_index);
+                    result |= static_cast<UInt64>(byte) << (8 * byte_index);
+                    ++byte_index;
+                });
 
                 data.push_back(result);
                 prev_offset = offsets[row];
@@ -211,38 +219,17 @@ struct ArrayPackBitsImpl
             }();
             column->reserve(num_rows);
 
+            /// A String packs every element; a FixedString keeps the first `fixed_string_size` bytes of the stream.
+            size_t max_bits = std::numeric_limits<size_t>::max();
+            if constexpr (return_fixed_string)
+                max_bits = fixed_string_size * 8;
+
             std::string buffer;
             size_t prev_offset = 0;
             for (size_t row = 0; row < num_rows; ++row)
             {
-                const size_t row_size = offsets[row] - prev_offset;
-
-                /// A String packs every element; a FixedString keeps only as many leading whole groups as fit into
-                /// `fixed_string_size` bytes, the remaining bytes stay zero.
-                size_t num_groups = row_size;
-                if constexpr (return_fixed_string)
-                    num_groups = std::min<size_t>(row_size, static_cast<size_t>(fixed_string_size * 8 / bits_per_element));
-
                 buffer.clear();
-                UInt8 current_byte = 0;
-                size_t filled_bits = 0;
-                for (size_t j = 0; j < num_groups; ++j)
-                {
-                    const UInt64 value = get_value(prev_offset + j);
-                    for (size_t bit = bits_per_element; bit-- > 0;)
-                    {
-                        current_byte = static_cast<UInt8>((current_byte << 1) | ((value >> bit) & 1));
-                        if (++filled_bits == 8)
-                        {
-                            buffer.push_back(static_cast<char>(current_byte));
-                            current_byte = 0;
-                            filled_bits = 0;
-                        }
-                    }
-                }
-                /// A trailing partial byte keeps its bits in the most significant positions.
-                if (filled_bits != 0)
-                    buffer.push_back(static_cast<char>(current_byte << (8 - filled_bits)));
+                pack_row(prev_offset, offsets[row], max_bits, [&](UInt8 byte) { buffer.push_back(static_cast<char>(byte)); });
 
                 /// For FixedString a shorter buffer is zero-padded to the declared size by insertData.
                 column->insertData(buffer.data(), buffer.size());
@@ -302,7 +289,7 @@ For each element the lambda returns an integer that is treated as a single bit (
 The bit stream is laid out across bytes most-significant-bit first (the same bytes as `arrayPackBitsToString`),
 and the bytes are interpreted in little-endian order, so
 `arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
-Only the first 64 elements are used; the remaining bits are assumed to be zero.
+Only the first 64 elements are used; if there are fewer, the remaining bits are zero.
     )";
     FunctionDocumentation::Syntax syntax_to_uint64 = "arrayPackBitsToUInt64(f, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_to_uint64 = {
@@ -336,8 +323,9 @@ Bits are written most-significant-bit first; the length of the result is `ceil(s
     FunctionDocumentation::Description description_to_fixed_string = R"(
 Applies a lambda function to each element of the array and packs the resulting bits into a `FixedString(n)`.
 For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
-Bits are written most-significant-bit first. If the array has more than `n * 8` elements the rest are ignored;
-if it has fewer, the result is zero-padded to `n` bytes. The size `n` must be a positive constant.
+Bits are written most-significant-bit first, so the result is the first `n` bytes of `arrayPackBitsToString`.
+If the array has more than `n * 8` elements the rest are ignored; if it has fewer, the result is zero-padded to `n` bytes.
+The size `n` must be a positive constant.
     )";
     FunctionDocumentation::Syntax syntax_to_fixed_string = "arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_to_fixed_string = {
@@ -355,9 +343,9 @@ if it has fewer, the result is zero-padded to `n` bytes. The size `n` must be a 
     FunctionDocumentation::Description description_groups_to_uint64 = R"(
 The same as `arrayPackBitsToUInt64`, but the lambda returns an integer whose low `g` bits form a group, and the groups
 are packed contiguously (most-significant-bit first within each byte, bytes interpreted in little-endian order, so
-`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). Because the
-result is a `UInt64`, only the leading whole groups that fit into 64 bits are kept. The group size `g` must be a
-constant between 1 and 64.
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). The result
+holds the first 64 bits of the packed stream: if `g` does not divide 64, the group that straddles the boundary
+contributes only its leading bits. The group size `g` must be a constant between 1 and 64.
     )";
     FunctionDocumentation::Syntax syntax_groups_to_uint64 = "arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_groups_to_uint64 = {
@@ -392,9 +380,9 @@ The group size `g` must be a constant between 1 and 64.
 
     FunctionDocumentation::Description description_groups_to_fixed_string = R"(
 The same as `arrayPackBitsToFixedString`, but the lambda returns an integer whose low `g` bits form a group, and the groups
-are packed contiguously (most-significant-bit first) into a `FixedString(n)`. Only the leading whole groups that fit into
-`n` bytes are kept, and the result is zero-padded to `n` bytes. Both the size `n` and the group size `g` must be positive
-constants, and `g` must not exceed 64.
+are packed contiguously (most-significant-bit first) into a `FixedString(n)`. The result is the first `n` bytes of
+`arrayPackBitGroupsToString` (a group that straddles the boundary contributes only its leading bits), zero-padded to `n`
+bytes. Both the size `n` and the group size `g` must be positive constants, and `g` must not exceed 64.
     )";
     FunctionDocumentation::Syntax syntax_groups_to_fixed_string = "arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_groups_to_fixed_string = {

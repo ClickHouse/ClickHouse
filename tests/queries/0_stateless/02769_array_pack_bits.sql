@@ -71,3 +71,13 @@ SELECT arrayPackBitsToUInt64((x, y, z) -> x + y + z, [1, 0, 0, 0, 0, 0], [0, 0, 
 
 -- arrays of different sizes are rejected, as for the other higher-order array functions.
 SELECT arrayPackBitsToUInt64((x, y) -> x > y, [1, 0], [0]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
+-- A group size that does not divide 64 (or n * 8): the UInt64 / FixedString results are the leading bytes of the
+-- String variant, so a group that straddles the boundary contributes its leading bits instead of being dropped.
+SELECT arrayPackBitGroupsToUInt64(x -> x, 3, arrayWithConstant(22, 7)); -- 66 bits, all set: the first 64 are kept
+SELECT arrayPackBitGroupsToUInt64(x -> x, 3, arrayWithConstant(22, 7)) = reinterpretAsUInt64(arrayPackBitGroupsToString(x -> x, 3, arrayWithConstant(22, 7)));
+SELECT arrayPackBitGroupsToUInt64(x -> x, 3, arrayWithConstant(22, 1)) = reinterpretAsUInt64(arrayPackBitGroupsToString(x -> x, 3, arrayWithConstant(22, 1)));
+SELECT hex(arrayPackBitGroupsToString(x -> x, 3, arrayWithConstant(22, 1)));
+SELECT hex(arrayPackBitGroupsToFixedString(x -> x, 1, 3, [7, 7, 7])); -- 9 bits, the first 8 are kept
+SELECT hex(arrayPackBitGroupsToFixedString(x -> x, 2, 3, [1, 2, 3, 4, 5, 6])) = substring(hex(arrayPackBitGroupsToString(x -> x, 3, [1, 2, 3, 4, 5, 6])), 1, 4);
+SELECT hex(arrayPackBitGroupsToFixedString(x -> x, 2, 3, [1, 2, 3, 4, 5, 6]));
