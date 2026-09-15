@@ -13,8 +13,8 @@ namespace DB
 {
 
 /// A `/`-prefixed meta-command of the client, such as `/help`. The client runs it itself instead of
-/// sending it to the server, and the line editor offers the commands as as-you-type hints and as Tab
-/// completions.
+/// sending it to the server (and, in the AI-chat mode, instead of sending it to the agent), and the
+/// line editor offers the commands as as-you-type hints and as Tab completions.
 struct ClientSlashCommand
 {
     std::string_view name;
@@ -32,6 +32,11 @@ std::span<const ClientSlashCommand> clientSlashCommands();
 /// left to the SQL parser as before. The input has to be trimmed of whitespace and `;` already.
 std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input);
 
+/// Whether the input (trimmed of whitespace and `;`) is one of the `/`-commands, with or without
+/// its argument. In the AI-chat mode such a line runs as the command itself instead of being sent
+/// to the agent; unknown `/...` input is left for the agent.
+bool isClientSlashCommand(std::string_view trimmed_input);
+
 /// The `/`-commands matching what is being typed; see `matchClientSlashCommandPrefix`.
 struct ClientSlashCommandMatch
 {
@@ -45,9 +50,10 @@ struct ClientSlashCommandMatch
 
 /// Match the beginning of the input up to the cursor against the names of the `/`-commands, for the
 /// hints and the completion of the line editor. There is a match only while the command name itself
-/// is being typed - leading whitespace is skipped, but as soon as the name is followed by whitespace
-/// what is being typed is its argument, and a `/` that is not at the beginning of the input (in a
-/// `/* comment */`, on a continuation line, in a path) is not a command at all.
+/// is being typed - leading whitespace and the `?` of the inline AI-chat form are skipped, but as
+/// soon as the name is followed by whitespace what is being typed is its argument, and a `/` that
+/// is not at the beginning of the input (in a `/* comment */`, on a continuation line, in a path)
+/// is not a command at all.
 ClientSlashCommandMatch matchClientSlashCommandPrefix(std::string_view text_before_cursor);
 
 }

@@ -1,0 +1,350 @@
+# The schema tools are the documented exception to the rule that a step the agent takes without
+# asking stays on this server. `show_create_table` resolves the table the way any query resolves
+# it, so for a database backed by an external system it reads the definition from that system -
+# and it does so unconfirmed. That is deliberate: the tool renders a definition and cannot read
+# data, and taking it away would leave the agent unable to see the schema of such a database at
+# all. The read-only tool makes the opposite choice for the very same table, because a query can
+# read the data behind it, and both halves are pinned here so neither can drift silently.
+#
+# The second half of the test repeats the schema tools in a `readonly = 1` session. There the
+# client can install no per-query isolation of its own - a read-only session rejects every
+# setting change - so what is left is the boundary itself, which is where the isolation of the
+# schema tools was questioned in review. It is a second session over the same `--path`, because
+# the database has to be created first and creating it needs a session that is not read-only.
+#
+# `SQLite` stands in for the externally-backed database engines: it is not a database of this
+# server (`isAllowedDatabaseEngineForAIAgent` rejects it, so the read-only tool refuses it), its
+# schema really comes from the other system, and unlike `MySQL`, `PostgreSQL` and the data-lake
+# catalogs it needs nothing running. `05112_client_ai_readonly_tool_database_engines` uses
+# `Filesystem` for the same role, which cannot be used here: it has no `SHOW CREATE TABLE` at all,
+# so it could not show that the tool reads one from the other system.
+import json
+import os
+import pty
+import select
+import shlex
+import signal
+import sqlite3
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+TIMEOUT_SECONDS = 120
+
+# How long a client may take to end after its terminal was closed, before it is killed.
+TEARDOWN_SECONDS = 30
+
+# `clickhouse-test` prints this file when the test fails, and it names it after the test case -
+# the `.sh` wrapper - not after this script. Writing anywhere else means the trace of a failure in
+# CI is collected and then never shown, which is the only record of what the client did.
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".sh.debuglog",
+)
+
+# Set when the pseudo-terminal reaches end of file: the client is gone. Every later read then
+# returns at once and every write is silently discarded, so without noticing it the test runs to
+# the end and reports every expectation as unmet, saying nothing about the client having died.
+client_gone = False
+
+FINAL_ANSWER = "MOCK-DONE"
+
+SQLITE_PATH = os.path.join(os.environ["CLICKHOUSE_TMP"], "05136_foreign.sqlite")
+FOREIGN_TABLE = "rows"
+
+# One tool call per case: the tool, its arguments, and whether it should be accepted. Each list
+# is the plan of one session; `current_plan` selects the one the mock provider is answering.
+WRITABLE_SESSION = [
+    ("local_show_create", "show_create_table", {"database": "default", "table": "plain"}, True),
+    ("foreign_show_create", "show_create_table", {"database": "foreign_db", "table": FOREIGN_TABLE}, True),
+    ("foreign_list_tables", "list_tables", {"database": "foreign_db"}, True),
+    # The same table through the read-only tool: a query can read the rows behind the name, so
+    # the engine of the database decides and this one is refused.
+    (
+        "foreign_readonly_query",
+        "run_readonly_query",
+        {"query": f"SHOW CREATE TABLE foreign_db.`{FOREIGN_TABLE}`"},
+        False,
+    ),
+]
+READONLY_SESSION = [
+    ("readonly_foreign_show_create", "show_create_table", {"database": "foreign_db", "table": FOREIGN_TABLE}, True),
+    ("readonly_foreign_list_tables", "list_tables", {"database": "foreign_db"}, True),
+]
+CASES = WRITABLE_SESSION + READONLY_SESSION
+
+# The statements typed before the question of each session. The first one creates what the second
+# one reads; the second one only narrows the session it inherits.
+WRITABLE_SETUP = [
+    "CREATE TABLE default.plain (x UInt32) ENGINE = MergeTree ORDER BY x AS SELECT 1",
+    f"CREATE DATABASE foreign_db ENGINE = SQLite('{SQLITE_PATH}')",
+]
+READONLY_SETUP = ["SET readonly = 1"]
+
+# The plan the mock provider is answering, and the last request it received: the request carries
+# the results of every tool call of its session.
+current_plan = []
+last_request = {}
+
+
+class Handler(BaseHTTPRequestHandler):
+    """A mock OpenAI-compatible provider. It answers with one tool call per case of the current
+    turn, in order, and finishes the turn with a plain text message."""
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        request = json.loads(self.rfile.read(length))
+        last_request["value"] = request
+
+        # The number of tool results already in the history is the number of calls made so far.
+        index = sum(1 for m in request["messages"] if m.get("role") == "tool")
+
+        if index < len(current_plan):
+            name, tool, arguments, _ = current_plan[index]
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"call_{name}",
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(arguments)},
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        else:
+            message = {"role": "assistant", "content": FINAL_ANSWER}
+            finish_reason = "stop"
+
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o",
+                "choices": [
+                    {"index": 0, "message": message, "finish_reason": finish_reason}
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def make_config(port):
+    """A client configuration that points the AI agent at the mock provider. The credentials come
+    from the configuration and not from the environment, so the agent does not ask for the
+    confirmation of using an API key found there. `max_steps` must cover every tool call."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse><ai>"
+            "<provider>openai</provider>"
+            "<api_key>mock-key</api_key>"
+            f"<base_url>http://127.0.0.1:{port}/v1</base_url>"
+            "<model>gpt-4o</model>"
+            f"<max_steps>{len(CASES) + 5}</max_steps>"
+            "</ai></clickhouse>"
+        )
+    return path
+
+
+def drain(master, debug_log_fd, idle):
+    global client_gone
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    global client_gone
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def report_client_if_gone(child_pid):
+    """Print how the client ended if it is gone. The expected output has no such line, so it
+    shows up in the diff of the failure instead of leaving only unmet expectations behind."""
+    if not client_gone:
+        return
+    try:
+        _, status = os.waitpid(child_pid, os.WNOHANG)
+    except ChildProcessError:
+        print("client_gone: already reaped")
+        return
+    if os.WIFSIGNALED(status):
+        print(f"client_gone: killed by signal {os.WTERMSIG(status)}")
+    elif os.WIFEXITED(status):
+        print(f"client_gone: exited with code {os.WEXITSTATUS(status)}")
+    else:
+        print("client_gone: yes")
+
+
+def run_session(server, config, name, setup, question):
+    """Drive one interactive session: type `setup`, ask `question`, and return the results of the
+    tool calls the agent made, keyed by the id of the call."""
+    global client_gone
+    client_gone = False
+    last_request.clear()
+
+    base = shlex.split(os.environ["CLICKHOUSE_LOCAL"])
+    argv = base + [
+        "--config-file",
+        config,
+        "--history_file=/dev/null",
+        # The same path for both sessions: the second one reads what the first one created.
+        "--path",
+        os.path.join(os.environ["CLICKHOUSE_TMP"], "05136_local_db"),
+    ]
+
+    child_pid, master = pty.fork()
+    if child_pid == 0:
+        os.environ["TERM"] = "xterm"
+        # An API key in the environment would take precedence over the configured mock provider.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.execv(base[0], argv)
+        return {}
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        # Every statement waits for the timing line the interactive client prints when a query is
+        # done: `replxx` submits everything that is already buffered when it starts reading as a
+        # single statement, so typing ahead would merge the statements with the question that
+        # follows them and the `?` would never start the agent. Waiting for the prompt would not
+        # prevent it: `replxx` repaints the prompt while the line is being typed, so it is back in
+        # the output before the statement has been submitted, let alone run.
+        for statement in setup:
+            os.write(master, statement.encode() + b"\n")
+            read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
+
+        os.write(master, question.encode() + b"\n")
+        read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+        report_client_if_gone(child_pid)
+        return collect(last_request)
+    finally:
+        # There is no way to type an exit: after answering, the client is still in AI-chat mode,
+        # where a line is a question for the agent and not a command. Closing the terminal is what
+        # ends the client, and it is waited for, so that the next session starts against a
+        # released `--path` and a request still in flight cannot be read as its answer.
+        drain(master, debug_log_fd, 1.0)
+        os.close(master)
+        debug_log_fd.close()
+        wait_for_client(child_pid)
+
+
+def wait_for_client(child_pid):
+    """Wait for the client to end after its terminal was closed, and make sure it is gone. A
+    client that ignores the end of its terminal must not outlive its session, so the wait is
+    bounded and ends in a kill rather than in hanging the test."""
+    deadline = time.time() + TEARDOWN_SECONDS
+    while time.time() < deadline:
+        try:
+            reaped, _ = os.waitpid(child_pid, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if reaped == child_pid:
+            return
+        time.sleep(0.05)
+    try:
+        os.kill(child_pid, signal.SIGKILL)
+        os.waitpid(child_pid, 0)
+    except (ChildProcessError, ProcessLookupError):
+        pass
+
+
+def main():
+    global current_plan
+
+    # The table the schema tools are pointed at lives in the SQLite file, not in this server:
+    # `SHOW CREATE TABLE` for it can only be answered by reading that file.
+    with sqlite3.connect(SQLITE_PATH) as sqlite_db:
+        sqlite_db.execute(f"CREATE TABLE IF NOT EXISTS {FOREIGN_TABLE} (x INTEGER, s TEXT)")
+        sqlite_db.execute(f"INSERT INTO {FOREIGN_TABLE} VALUES (1, 'a')")
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    config = make_config(server.server_port)
+
+    try:
+        results = {}
+        for plan, setup, question in [
+            (WRITABLE_SESSION, WRITABLE_SETUP, "? look at the schema"),
+            (READONLY_SESSION, READONLY_SETUP, "? look again"),
+        ]:
+            current_plan = plan
+            results |= run_session(server, config, plan[0][0], setup, question)
+
+        for name, _, _, should_be_allowed in CASES:
+            answer = results.get(f"call_{name}")
+            if answer is None:
+                print(f"{name}: NO RESULT")
+                continue
+            # The tool reports a refusal as an error; an accepted call reports its outcome.
+            allowed = '"success":true' in answer.replace(" ", "")
+            if allowed == should_be_allowed:
+                print(f"{name}: {'OK' if allowed else 'BLOCKED'}")
+            else:
+                print(f"{name}: UNEXPECTED {answer[:200]}")
+    finally:
+        server.shutdown()
+
+
+def collect(request_holder):
+    """The results of the tool calls of the request, keyed by the id of the call."""
+    results = {}
+    for message in request_holder.get("value", {}).get("messages", []):
+        if message.get("role") == "tool":
+            results[message.get("tool_call_id")] = str(message.get("content"))
+    return results
+
+
+if __name__ == "__main__":
+    main()
