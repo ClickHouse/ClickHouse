@@ -1,0 +1,24 @@
+-- iceberg cluster: a worker keeps the metadata sorting key when only the initiator injected a structure
+1
+0
+1
+1
+-- iceberg cluster: a worker keeps declared columns that the metadata does not have
+2	2	Nullable(String)
+-- iceberg cluster: a DEFAULT declared in the structure is not honored, on either branch
+-- iceberg cluster: a structure given as a server-constant expression is dispatched
+2	2
+2	2
+2
+-- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key
+['10','2','9']
+[2,9,10]
+-- iceberg: a retyped filter column is read as declared where equality deletes are applied
+92
+92
+92
+92
+2
+String	881
+-- control: a declared DEFAULT is still honored where it always was
+2	84
