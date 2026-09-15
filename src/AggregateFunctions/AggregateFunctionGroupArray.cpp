@@ -158,6 +158,10 @@ public:
 
     String getName() const override { return getNameByTrait<Trait>(); }
 
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+
     void insertWithSampler(Data & a, const T & v, Arena * arena) const
     {
         ++a.total_values;
@@ -522,6 +526,10 @@ public:
     }
 
     String getName() const override { return getNameByTrait<Trait>(); }
+
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
 
     void insertWithSampler(Data & a, const Node * v, Arena * arena) const
     {
