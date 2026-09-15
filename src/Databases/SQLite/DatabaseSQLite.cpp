@@ -48,8 +48,24 @@ DatabaseSQLite::DatabaseSQLite(
     /// Only a genuine `CREATE DATABASE ... ENGINE = SQLite(...)` may create a missing database file. On
     /// `ATTACH` (including replaying the stored definition on server startup) a missing file must stay
     /// missing, so that table lookups surface `Cannot access sqlite database` instead of silently operating
-    /// on a fabricated empty database.
-    sqlite_db = openSQLiteDB(database_path_, context_, /* throw_on_error */ !is_attach_, /* allow_create */ !is_attach_);
+    /// on a fabricated empty database. The connection opened here is not kept: see `openConnection`.
+    openSQLiteDB(database_path_, context_, /* throw_on_error */ !is_attach_, /* allow_create */ !is_attach_);
+}
+
+
+DatabaseSQLite::SQLitePtr DatabaseSQLite::openConnection() const
+{
+    /// Table discovery, existence checks and schema fetches must describe the database file that is at the
+    /// path now, not the one that was there when the database was created or attached. A long-lived
+    /// connection would keep the file it was opened on: after the file has been replaced at the same path
+    /// (`mv new.sqlite data.sqlite`), it still sees the old, unlinked file, so `SHOW TABLES` would keep
+    /// listing the old tables, a table of the replacement would be reported as missing, and a table would be
+    /// read with the old schema. `StorageSQLite` opens its scans and writes afresh for the same reason.
+    ///
+    /// The connection never creates the file: a missing file surfaces an error here instead of reading a
+    /// fabricated empty database, both when the file was unavailable on `ATTACH` and when it went missing
+    /// later.
+    return openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 }
 
 
@@ -60,7 +76,7 @@ bool DatabaseSQLite::empty() const
     /// because `shouldBeEmptyOnDetach` is `false` for this engine (like for the other external database
     /// engines), so `DROP DATABASE` and `DETACH DATABASE` never probe emptiness here.
     std::lock_guard lock(mutex);
-    return fetchTablesList().empty();
+    return fetchTablesList(openConnection().get()).empty();
 }
 
 
@@ -77,9 +93,10 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
     /// database engines, see `DatabasePostgreSQL::getTablesIterator`.
     try
     {
-        auto table_names = fetchTablesList();
+        auto sqlite_db = openConnection();
+        auto table_names = fetchTablesList(sqlite_db.get());
         for (const auto & table_name : table_names)
-            tables[table_name] = fetchTable(table_name, local_context, true);
+            tables[table_name] = fetchTable(sqlite_db, table_name, local_context, true);
     }
     catch (...)
     {
@@ -93,14 +110,8 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
 }
 
 
-NameSet DatabaseSQLite::fetchTablesList() const
+NameSet DatabaseSQLite::fetchTablesList(sqlite3 * sqlite_db)
 {
-    /// A lazy reopen only happens when the database file was unavailable on `ATTACH`; it must not create
-    /// the file either - a still-missing file surfaces an error here instead of reading a fabricated
-    /// empty database. The same applies to the reopens in `checkSQLiteTable` and `fetchTable`.
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
-
     std::unordered_set<String> tables;
     /// Escape the `_` in the `sqlite_` prefix so that `LIKE` treats it as a literal underscore
     /// rather than a single-character wildcard. Otherwise a genuine user table such as `sqliteX`
@@ -111,7 +122,7 @@ NameSet DatabaseSQLite::fetchTablesList() const
 
     /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
     /// concurrent writer holds an exclusive lock, like the scan paths do.
-    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db.get(), query);
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db, query);
 
     while (true)
     {
@@ -122,7 +133,7 @@ NameSet DatabaseSQLite::fetchTablesList() const
         if (status != SQLITE_ROW)
             throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                             "Cannot fetch sqlite database tables. Error status: {}. Message: {}",
-                            status, sqlite3_errmsg(sqlite_db.get()));
+                            status, sqlite3_errmsg(sqlite_db));
 
         const auto * name_data = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 0));
         int name_size = sqlite3_column_bytes(statement.get(), 0);
@@ -133,11 +144,8 @@ NameSet DatabaseSQLite::fetchTablesList() const
 }
 
 
-bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
+bool DatabaseSQLite::checkSQLiteTable(sqlite3 * sqlite_db, const String & table_name)
 {
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
-
     /// The table name is passed as a bound parameter instead of being re-serialized into the SQL text:
     /// SQLite string literals have no escape sequences (only an embedded quote is doubled), so any
     /// backslash-style textual escaping would make the existence check miss a valid table whose name
@@ -146,14 +154,14 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 
     /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
     /// concurrent writer holds an exclusive lock, like the scan paths do.
-    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db.get(), query);
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db, query);
     sqlite3_stmt * compiled_stmt = statement.get();
 
     int status = sqlite3_bind_text64(compiled_stmt, 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Cannot check sqlite table. Error status: {}. Message: {}",
-                        status, sqlite3_errmsg(sqlite_db.get()));
+                        status, sqlite3_errmsg(sqlite_db));
 
     status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(compiled_stmt);
     if (status == SQLITE_ROW)
@@ -163,30 +171,27 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 
     throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                     "Cannot check sqlite table. Error status: {}. Message: {}",
-                    status, sqlite3_errmsg(sqlite_db.get()));
+                    status, sqlite3_errmsg(sqlite_db));
 }
 
 
 bool DatabaseSQLite::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
-    return checkSQLiteTable(table_name);
+    return checkSQLiteTable(openConnection().get(), table_name);
 }
 
 
 StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
     std::lock_guard lock(mutex);
-    return fetchTable(table_name, local_context, false);
+    return fetchTable(openConnection(), table_name, local_context, false);
 }
 
 
-StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr local_context, bool table_checked) const
+StoragePtr DatabaseSQLite::fetchTable(const SQLitePtr & sqlite_db, const String & table_name, ContextPtr local_context, bool table_checked) const
 {
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
-
-    if (!table_checked && !checkSQLiteTable(table_name))
+    if (!table_checked && !checkSQLiteTable(sqlite_db.get(), table_name))
         return StoragePtr{};
 
     auto columns = fetchSQLiteTableStructure(sqlite_db.get(), table_name);
@@ -226,7 +231,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     StoragePtr storage;
     {
         std::lock_guard lock(mutex);
-        storage = fetchTable(table_name, local_context, false);
+        storage = fetchTable(openConnection(), table_name, local_context, false);
     }
     if (!storage)
     {
