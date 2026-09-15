@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <optional>
 #include <utility>
 #include <vector>
 #include <ranges>
@@ -88,13 +87,7 @@ BlobKillerEffectiveParams calculateBlobKillerEffectiveParams(
     return {batch, blobs, threads};
 }
 
-struct BlobsCleanupRound
-{
-    int64_t removed_blobs = 0;
-    bool succeeded = true;
-};
-
-std::optional<IMetadataStorage::BlobsToRemove> findBlobsToRemove(
+IMetadataStorage::BlobsToRemove findBlobsToRemove(
     size_t request_batch,
     const ClusterConfigurationPtr & cluster,
     const MetadataStoragePtr & metadata_storage,
@@ -187,7 +180,7 @@ std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> schedule
     return running_removals;
 }
 
-bool recordBlobsRemoval(
+void recordBlobsRemoval(
     const StoredObjects & removed_blobs,
     const MetadataStoragePtr & metadata_storage,
     const LoggerPtr & log) noexcept
@@ -196,17 +189,15 @@ bool recordBlobsRemoval(
     {
         int64_t recorded_count = metadata_storage->recordAsRemoved(removed_blobs);
         ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordedBlobs, recorded_count);
-        return true;
     }
     catch (...)
     {
         tryLogCurrentException(log);
         ProfileEvents::increment(ProfileEvents::BlobKillerThreadRecordBlobsErrors);
-        return false;
     }
 }
 
-BlobsCleanupRound removeBlobs(
+int64_t removeBlobs(
     IMetadataStorage::BlobsToRemove blobs_to_remove,
     size_t blobs_in_task,
     ThreadPoolCallbackRunnerLocal<bool> & remove_tasks_runner,
@@ -215,7 +206,7 @@ BlobsCleanupRound removeBlobs(
     const LoggerPtr & log) noexcept
 {
     if (blobs_to_remove.empty())
-        return {};
+        return 0;
 
     auto tasks = sliceIntoRemoveTasks(blobs_to_remove, blobs_in_task);
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemoveTasks, tasks.size());
@@ -224,13 +215,10 @@ BlobsCleanupRound removeBlobs(
     auto removals = scheduleRemovalTasks(remove_tasks_runner, tasks, object_storages, log);
     ThreadPoolCallbackRunnerLocal<bool>::waitForAllToFinish(removals);
 
-    /// A short list means some tasks could not be scheduled at all, so their blobs were not removed either.
-    bool all_removals_succeeded = removals.size() == tasks.size();
     for (auto [removal, task] : std::views::zip(removals, tasks))
     {
         const auto & [location, remove_batch] = task;
         const bool is_removed = removal->future.get();
-        all_removals_succeeded = all_removals_succeeded && is_removed;
         if (is_removed)
             for (const auto & removed_blob : remove_batch)
                 blobs_to_remove[removed_blob].erase(location);
@@ -242,11 +230,11 @@ BlobsCleanupRound removeBlobs(
         if (locations_cleanup_list.empty())
             blobs_removed_from_all_locations.push_back(blob);
 
-    const bool recorded = recordBlobsRemoval(blobs_removed_from_all_locations, metadata_storage, log);
-    return {static_cast<int64_t>(blobs_removed_from_all_locations.size()), all_removals_succeeded && recorded};
+    recordBlobsRemoval(blobs_removed_from_all_locations, metadata_storage, log);
+    return blobs_removed_from_all_locations.size();
 }
 
-BlobsCleanupRound executeBlobsCleanup(
+int64_t executeBlobsCleanup(
     size_t max_to_remove,
     size_t blobs_in_task,
     ThreadPoolCallbackRunnerLocal<bool> & remove_tasks_runner,
@@ -257,9 +245,7 @@ BlobsCleanupRound executeBlobsCleanup(
 {
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRuns);
     auto blobs_to_remove = findBlobsToRemove(max_to_remove, cluster, metadata, log);
-    if (!blobs_to_remove)
-        return {.removed_blobs = 0, .succeeded = false};
-    return removeBlobs(std::move(*blobs_to_remove), blobs_in_task, remove_tasks_runner, metadata, object_storages, log);
+    return removeBlobs(std::move(blobs_to_remove), blobs_in_task, remove_tasks_runner, metadata, object_storages, log);
 }
 
 }
@@ -301,14 +287,13 @@ void BlobKillerThread::run()
         dead_queue_estimate, round_request_batch, round_blobs_in_task, round_threads_count);
 
     remove_tasks_pool.setMaxThreads(round_threads_count);
-    const auto round = executeBlobsCleanup(round_request_batch, round_blobs_in_task, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
-    /// Publish the outcome first, so a waiter that sees this round finished also sees its outcome.
-    if (round.succeeded)
-        succeeded_rounds.fetch_add(1);
+    int64_t removed_blobs = executeBlobsCleanup(round_request_batch, round_blobs_in_task, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+    /// Published before the round counter, so a waiter woken by that counter also reads this round's outcome.
+    succeeded_rounds.fetch_add(removed_blobs > 0);
     finished_rounds.fetch_add(1);
     finished_rounds.notify_all();
 
-    if (round.removed_blobs < static_cast<int64_t>(0.9 * static_cast<double>(round_request_batch)))
+    if (removed_blobs < static_cast<int64_t>(0.9 * static_cast<double>(round_request_batch)))
     {
         const int64_t interval = reschedule_interval_sec.load();
         const int64_t schedule_after_ms = DelayWithJitter(interval * 1000).getDelayWithJitter(-500, 500);
@@ -318,7 +303,7 @@ void BlobKillerThread::run()
     else
     {
         task->schedule();
-        LOG_TRACE(log, "Removed {} blobs it is more than 90% of requested size - rescheduling imediately", round.removed_blobs);
+        LOG_TRACE(log, "Removed {} blobs it is more than 90% of requested size - rescheduling imediately", removed_blobs);
     }
 }
 
@@ -369,16 +354,16 @@ void BlobKillerThread::waitRound(int64_t expected_round)
 
 bool BlobKillerThread::triggerAndWait()
 {
-    const int64_t succeeded_before = succeeded_rounds.load();
-    const int64_t expected_round = trigger();
+    int64_t succeeded_before = succeeded_rounds.load();
+    int64_t expected_round = trigger();
 
-    bool wrapped_made_progress = true;
+    bool wrapped_removed_blobs = true;
     if (wrapped_blob_killer)
-        wrapped_made_progress = wrapped_blob_killer->triggerAndWait();
+        wrapped_removed_blobs = wrapped_blob_killer->triggerAndWait();
 
     waitRound(expected_round);
 
-    return wrapped_made_progress && succeeded_rounds.load() > succeeded_before;
+    return wrapped_removed_blobs && succeeded_rounds.load() > succeeded_before;
 }
 
 void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

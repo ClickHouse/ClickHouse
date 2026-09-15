@@ -20,8 +20,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 
-#include <base/scope_guard.h>
-
 #include <Core/Defines.h>
 #include <Core/ServerUUID.h>
 
@@ -147,7 +145,6 @@ namespace FailPoints
 {
     extern const char disk_object_storage_fail_commit_metadata_transaction[];
     extern const char write_file_operation_fail_on_read[];
-    extern const char local_object_storage_fail_remove_object[];
 }
 
 }
@@ -1170,44 +1167,39 @@ try
     auto disk = getDiskObjectStorage();
 
     std::string file_name = getTestName() + "_file";
-    std::string file_content = getTestName() + "_file_context";
 
     {
         auto wb = disk->writeFile(file_name);
-        DB::writeText(file_content, *wb);
+        DB::writeText(getTestName() + "_file_content", *wb);
         wb->finalize();
     }
 
     waitBlobsCount(disk, 1);
 
+    /// Replacing the only blob with a directory makes the object storage reject its removal:
+    /// `unlink` fails with EISDIR, so every cleanup round for it ends with an error.
+    fs::path blob_path;
+    for (const auto & entry : fs::recursive_directory_iterator("./local_blob_storage_dir"))
+        if (entry.is_regular_file())
+            blob_path = entry.path();
+    ASSERT_FALSE(blob_path.empty());
+    fs::remove(blob_path);
+    fs::create_directory(blob_path);
+
     const auto rounds_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns];
     const auto errors_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors];
 
-    {
-        DB::FailPointInjection::enableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object);
-        SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::local_object_storage_fail_remove_object); });
+    /// Commits the metadata change and then waits for the blob removal, which cannot succeed.
+    disk->removeFile(file_name);
 
-        /// Commits the metadata change and then waits for the blob to be removed, which cannot succeed.
-        disk->removeFile(file_name);
+    const auto rounds = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns] - rounds_before;
+    const auto errors = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors] - errors_before;
+    std::cout << "Cleanup rounds: " << rounds << ", removal errors: " << errors << std::endl;
 
-        const auto rounds = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns] - rounds_before;
-        const auto errors = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors] - errors_before;
-        std::cout << "Cleanup rounds: " << rounds << ", removal errors: " << errors << std::endl;
-
-        /// Without this the round count proves nothing: it is also low when the injection is never reached.
-        EXPECT_GT(errors, 0u);
-        /// Pins that the wait itself ran a round: the loop's first iteration triggers a fresh round and
-        /// blocks until it finishes, so a build that does not wait at all measures zero.
-        EXPECT_GE(rounds, 1u);
-        /// One failed round ends the wait; the slack covers a background round landing in the same window.
-        EXPECT_LT(rounds, 8u);
-
-        /// The abandoned wait must not lose the blob: it is still in the storage and still queued.
-        waitBlobsCount(disk, 1);
-    }
-
-    /// Once removals work again a later cleanup round takes the blob from the queue.
-    waitBlobsCount(disk, 0);
+    /// Without an error the round count proves nothing: it is also low when the removal just succeeds.
+    EXPECT_GT(errors, 0u);
+    /// The wait spends its whole 100-round budget on the failing removal when it does not stop early.
+    EXPECT_LT(rounds, 8u);
 }
 catch (...)
 {

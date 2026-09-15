@@ -31,9 +31,7 @@ public:
 
     void startup();
     void shutdown();
-    /// Returns false when no cleanup round completed its removals while the caller waited, so the queued
-    /// blobs were left for a later round. The counter is compared as a snapshot, so a concurrent round's
-    /// success can be attributed to this wait; that can only lengthen a wait, never end one early.
+    /// Returns false when no cleanup round removed a blob while the caller waited.
     bool triggerAndWait();
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
@@ -51,7 +49,6 @@ private:
     std::atomic<bool> started{false};
     std::atomic<bool> enabled{true};
     std::atomic<int64_t> finished_rounds{0};
-    /// Rounds that finished without a blob removal or metadata error.
     std::atomic<int64_t> succeeded_rounds{0};
 
     /// Runtime parameters

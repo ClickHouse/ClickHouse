@@ -38,7 +38,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
-    extern const char local_object_storage_fail_remove_object[];
 }
 
 namespace ErrorCodes
@@ -704,11 +703,6 @@ void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
 
 void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    /// Injected before the removal, so the object survives and stays queued for removal.
-    fiu_do_on(FailPoints::local_object_storage_fail_remove_object, {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error before removing object {}", object.remote_path);
-    });
-
     removeObject(object);
 
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {

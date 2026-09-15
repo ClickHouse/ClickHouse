@@ -1186,9 +1186,8 @@ By default, it is `false`:
     DECLARE(Bool, storage_metadata_write_full_object_key, true, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format. This is enabled by default. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, disk_transaction_wait_for_blob_removal, true, R"(
 Default value for the per-disk `wait_for_blob_removal` setting.
-When enabled, the server waits for background blob removal before acknowledging the operation. The wait
-is best-effort: it ends when a cleanup round cannot remove the blobs, which stay queued for removal in
-background.
+When enabled, the server waits for background blob removal before acknowledging the operation. The wait is
+best-effort: it also ends when a cleanup round removes no blobs, which stay queued for removal in background.
 )", 0) \
     DECLARE(UInt64, max_materialized_views_count_for_table, 0, R"(
 A limit on the number of materialized views attached to a table.
