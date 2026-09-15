@@ -5,6 +5,10 @@ SET explain_query_plan_default = 'legacy';
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0; -- for stable max_rows_to_read
 SET read_overflow_mode = 'break';
 SET query_plan_max_limit_for_top_k_optimization = 1000; -- pin to default so LIMIT 10 always qualifies
+-- The dynamic filter shares the `PREWHERE` with the `WHERE` below, so the asserted filter column
+-- depends on that promotion. Either of these off leaves the predicate above the read.
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -43,16 +47,21 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 0)
 WHERE explain LIKE '%TopK%';
 
--- Verify that dynamic filter injects PREWHERE dynamic filter
-SELECT trimLeft(explain) AS explain FROM (
+-- Verify that the dynamic filter is injected into the `PREWHERE` and shares it with the promoted
+-- `WHERE` predicate. Matching stops before that predicate's operands: the analyzer qualifies the
+-- column (`__table1.v2`) and types the constant (`0_UInt8`), the old analyzer prints neither.
+SELECT
+    'dynamic filter in prewhere',
+    countIf(explain LIKE '%Prewhere filter column: and(\_\_topKFilter(v1), greater(%'),
+    countIf(explain LIKE '%FUNCTION \_\_topKFilter(v1 : %) -> \_\_topKFilter(v1) UInt8 : %')
+FROM (
     EXPLAIN actions = 1
     SELECT id, v1
     FROM tab
     WHERE v2 > 0
     ORDER BY v1 ASC
     LIMIT 10
-    SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 1)
-WHERE explain LIKE '%topK%';
+    SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 1);
 
 -- Verify execution of dynamic filter
 SELECT id, v1
