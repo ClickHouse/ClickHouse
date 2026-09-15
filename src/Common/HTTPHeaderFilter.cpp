@@ -35,22 +35,30 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
                 [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
             normalized_name.end());
 
-        /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
-        /// entries are stored lower-cased, so lower-case the name for that lookup.
+        /// HTTP header names are case-insensitive (RFC 7230 3.2). Both the exact set and the
+        /// regexps match the lower-cased name, so a rule cannot be bypassed by changing the case
+        /// of a header, and a pattern cannot opt out of that with an inline (?-i) scope.
         const std::string lower_name = Poco::toLower(normalized_name);
 
         if (forbidden_headers.contains(lower_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                     "see <http_forbid_headers>", entry.name);
 
-        /// Match the regexp against the original-case name: patterns are compiled
-        /// case-insensitive by default, but an inline (?-i) scope must see the real
-        /// case (lower-casing here would stop existing (?-i) configs from matching).
         for (const auto & header_regex : forbidden_headers_regexp)
-            if (re2::RE2::FullMatch(normalized_name, *header_regex))
+            if (re2::RE2::FullMatch(lower_name, *header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", entry.name);
     }
+}
+
+void HTTPHeaderFilter::checkAndNormalizeHeaders(NormalizedHTTPHeaderEntries & entries) const
+{
+    checkAndNormalizeHeaders(entries.entries);
+
+    /// The check only removes characters from a name, which cannot introduce an upper-case letter.
+    /// Restore the invariant anyway, so that it does not rest on that argument.
+    for (auto & entry : entries.entries)
+        Poco::toLowerInPlace(entry.name);
 }
 
 void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -86,6 +94,15 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
                         pattern, regexp->error());
                     continue;
                 }
+                /// The name is matched in lower case, so a case-sensitive scope can only weaken the
+                /// rule: an upper-case letter inside it never matches anything.
+                if (pattern.contains("(?-i"))
+                    LOG_WARNING(
+                        getLogger("HTTPHeaderFilter"),
+                        "<http_forbid_headers> regexp \"{}\" turns off case-insensitive matching. A header name is "
+                        "matched in lower case, so an upper-case letter in that scope forbids nothing. "
+                        "Write the pattern in lower case.",
+                        pattern);
                 forbidden_headers_regexp.push_back(std::move(regexp));
             }
             else if (startsWith(key, "header"))

@@ -113,26 +113,47 @@ TEST(HTTPHeaderFilter, RegexpMatchExplicitInlineFlagStillWorks)
     EXPECT_TRUE(isForbidden(filter, "Secret_Header"));
 }
 
-/// An inline (?-i) scope re-enables case-sensitive matching for that literal.
-/// On master the regexp matched the original-case header, so such a config must
-/// keep blocking it: the regexp is matched against the original-case name, not a
-/// lower-cased one, otherwise an existing (?-i) blocklist would silently weaken.
-TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeStillBlocksOriginalCase)
+/// A header name is matched in lower case, so a pattern cannot opt out of case insensitivity with
+/// an inline (?-i) scope. A lower-case literal in such a scope still blocks every case variant,
+/// which is what keeps the blocklist from being bypassed by changing the case of a header.
+TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeCannotBeBypassed)
 {
     HTTPHeaderFilter filter;
     configure(filter, R"(
         <clickhouse>
             <http_forbid_headers>
-                <header_regexp>(?-i)Authorization</header_regexp>
+                <header_regexp>(?-i)authorization</header_regexp>
             </http_forbid_headers>
         </clickhouse>
     )");
 
-    /// The case-sensitive literal still matches the header it matched on master.
+    EXPECT_TRUE(isForbidden(filter, "authorization"));
     EXPECT_TRUE(isForbidden(filter, "Authorization"));
-    /// And the (?-i) scope keeps its case-sensitive semantics for other cases.
-    EXPECT_FALSE(isForbidden(filter, "authorization"));
-    EXPECT_FALSE(isForbidden(filter, "AUTHORIZATION"));
+    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
+}
+
+/// The filter also guards a collection that already holds lower-cased names. The verdict must be
+/// the same there, and the collection must still hold lower-cased names afterwards.
+TEST(HTTPHeaderFilter, ChecksNormalizedEntries)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>Authorization</header>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    NormalizedHTTPHeaderEntries forbidden(HTTPHeaderEntries{{"Authorization", "Bearer token"}});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(forbidden), Exception);
+
+    NormalizedHTTPHeaderEntries allowed(HTTPHeaderEntries{{"X-Amz-Meta\tOwner", "analytics"}});
+    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(allowed));
+
+    const HTTPHeaderEntries seen(allowed.begin(), allowed.end());
+    ASSERT_EQ(seen.size(), 1u);
+    EXPECT_EQ(seen[0].name, "x-amz-metaowner");
 }
 
 /// Case normalization must compose with whitespace/control-character stripping:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace DB
@@ -19,16 +20,9 @@ using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>; // STYLE_CHECK_ALLOW_STD
 
 /// Header names lower-cased on insertion.
 ///
-/// The S3 client sorts a header by the literal prefix `x-amz-`: once before signing, to pick what
-/// joins the canonical list, and once after, to pick what is attached as an ordinary header. A name
-/// in the spelling an operator wrote, such as `X-Amz-Meta-Owner`, fails both tests and leaves
-/// unsigned and untranslated.
-///
-/// The conversion cannot happen any earlier than the client. `HTTPHeaderFilter` matches
-/// `<http_forbid_headers>` regexps against the original case, so that an inline `(?-i)` scope keeps
-/// working, and the refresh of a GCS token finds the header to replace by comparing the name to
-/// `Authorization`. Both run on the way here. Holding the rule in the type is what keeps the last
-/// step from being skipped.
+/// S3 reserves the `x-amz-` family and expects it in lower case. The client picks those headers out
+/// by that literal prefix, so a name spelled `X-Amz-Meta-Owner` is treated as an ordinary header and
+/// is neither signed nor translated.
 class NormalizedHTTPHeaderEntries
 {
 public:
@@ -38,11 +32,27 @@ public:
     explicit NormalizedHTTPHeaderEntries(const HTTPHeaderEntries & headers);
 
     void push_back(HTTPHeaderEntry entry); /// NOLINT
+    void append(const HTTPHeaderEntries & headers);
+    void append(const NormalizedHTTPHeaderEntries & headers);
+
+    /// Remove every entry with this name. The name is normalized first, so the caller may spell it
+    /// in any case.
+    void eraseByName(std::string_view name);
+
+    void clear() { entries.clear(); }
+    bool empty() const { return entries.empty(); }
+    size_t size() const { return entries.size(); }
+
+    bool operator==(const NormalizedHTTPHeaderEntries & other) const { return entries == other.entries; }
 
     const_iterator begin() const { return entries.begin(); }
     const_iterator end() const { return entries.end(); }
 
 private:
+    /// `HTTPHeaderFilter` strips control characters from a name in place, then restores the
+    /// invariant. It is the only code that edits an entry already held here.
+    friend class HTTPHeaderFilter;
+
     HTTPHeaderEntries entries;
 };
 

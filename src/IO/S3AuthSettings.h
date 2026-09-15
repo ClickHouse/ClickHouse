@@ -57,7 +57,7 @@ struct S3AuthSettings
     bool hasUpdates(const S3AuthSettings & other) const;
     void updateIfChanged(const S3AuthSettings & settings);
     bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
-    HTTPHeaderEntries getHeaders() const;
+    NormalizedHTTPHeaderEntries getHeaders() const;
 
     /// Clear request-auth material that may have been merged in from the server `<s3>`/endpoint config (generic
     /// headers, per-request access headers, and the SSE-C key / SSE-KMS config), so a credential-restricted
@@ -77,8 +77,10 @@ struct S3AuthSettings
     /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
     void clearServerManagedGcpOAuth();
 
-    HTTPHeaderEntries headers;
-    HTTPHeaderEntries access_headers;
+    /// S3 reads a reserved header name by its lower-case spelling, so the names are held normalized
+    /// from the moment they are read out of the config or the query.
+    NormalizedHTTPHeaderEntries headers;
+    NormalizedHTTPHeaderEntries access_headers;
 
     UnorderedSetWithMemoryTracking<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;

@@ -242,7 +242,8 @@ private:
 /// The API mode is GCS only when the endpoint is Google's and the credentials are empty, so the
 /// endpoint has to carry the real name. It is never resolved: the request is routed to the mock
 /// through a proxy, and `HTTPConnectionPool` connects to the proxy without consulting the resolver.
-std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(UInt16 mock_port, const DB::RemoteHostFilter & remote_host_filter)
+std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
+    UInt16 mock_port, const DB::RemoteHostFilter & remote_host_filter, DB::NormalizedHTTPHeaderEntries headers = {})
 {
     auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         "us-east-1",
@@ -280,7 +281,7 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(UInt16 mock_port, con
         /* secret_access_key = */ "",
         /* server_side_encryption_customer_key_base64 = */ "",
         /* sse_kms_config = */ {},
-        /* headers = */ {},
+        std::move(headers),
         DB::S3::CredentialsConfiguration{
             .no_sign_request = true,
             .forbid_implicit_credentials = true,
@@ -312,6 +313,41 @@ TEST(GCSHeaderTranslation, RequestLeavesInTheGoogleSpelling)
     EXPECT_EQ(headers.get("x-goog-meta-owner", ""), "analytics");
     EXPECT_FALSE(headers.has("x-amz-meta-owner"));
     EXPECT_FALSE(headers.has("x-amz-api-version"));
+}
+
+/// The same boundary for a header an operator configured, which is what `NormalizedHTTPHeaderEntries`
+/// exists for. The client picks the `x-amz-` family out by the lower-case prefix, so the spelling
+/// `X-Amz-Meta-Owner` would be attached as an ordinary header after signing and never reach the
+/// rename. Giving `create` the name unnormalized fails here: the mock sees the `x-amz-` spelling and
+/// no `x-goog-` one, while every helper test above still passes.
+TEST(GCSHeaderTranslation, ConfiguredHeaderLeavesInTheGoogleSpellingInAnyCase)
+{
+    MockGCSServer mock_gcs;
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(
+        mock_gcs.getPort(),
+        remote_host_filter,
+        DB::NormalizedHTTPHeaderEntries(DB::HTTPHeaderEntries{
+            {"X-Amz-Meta-Owner", "analytics"},
+            {"X-AMZ-STORAGE-CLASS", "COLDLINE"},
+        }));
+    ASSERT_TRUE(client);
+
+    DB::S3::PutObjectRequest request;
+    request.SetBucket("test-bucket");
+    request.SetKey("test.txt");
+    request.SetBody(std::make_shared<Aws::StringStream>("content"));
+
+    const auto outcome = client->PutObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    /// `MessageHeader` compares a name case-insensitively, so this also rules out the original
+    /// spelling reaching the wire.
+    const auto headers = mock_gcs.getLastRequestHeader();
+    EXPECT_EQ(headers.get("x-goog-meta-owner", ""), "analytics");
+    EXPECT_EQ(headers.get("x-goog-storage-class", ""), "COLDLINE");
+    EXPECT_FALSE(headers.has("x-amz-meta-owner"));
+    EXPECT_FALSE(headers.has("x-amz-storage-class"));
 }
 
 /// The other half of the boundary: GCS answers in its own spelling, and the SDK parses only the

@@ -1265,7 +1265,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
-    const HTTPHeaderEntries & headers,
+    NormalizedHTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
     const String & session_token,
     const std::shared_ptr<ClientCache> & shared_cache)
@@ -1273,26 +1273,24 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
 
-    // These will be added after request signing
-    NormalizedHTTPHeaderEntries extra_headers(headers);
-
     if (!server_side_encryption_customer_key_base64.empty())
     {
         /// See Client::GeneratePresignedUrlWithSSEC().
 
-        extra_headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
             Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
 
-        extra_headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
             server_side_encryption_customer_key_base64});
 
         Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
         String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
-        extra_headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
             Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
     }
 
-    client_configuration.extra_headers = std::move(extra_headers);
+    // These will be added after request signing
+    client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
 
