@@ -134,8 +134,11 @@ public:
         UInt16 port = 636;
 
         TLSEnable enable_tls = TLSEnable::YES;
-        TLSProtocolVersion tls_minimum_protocol_version = TLSProtocolVersion::TLS1_2;
-        /// Unset means "whatever the library negotiates"; when set, must not be lower than the minimum.
+        /// Unset means `default_tls_minimum_protocol_version`; the value is kept optional so that a build of libldap without
+        /// `LDAP_OPT_X_TLS_PROTOCOL_MIN` can reject an explicitly configured value instead of ignoring it, see `openConnection`.
+        static constexpr TLSProtocolVersion default_tls_minimum_protocol_version = TLSProtocolVersion::TLS1_2;
+        std::optional<TLSProtocolVersion> tls_minimum_protocol_version;
+        /// Unset means "whatever the library negotiates"; when set, must not be lower than the effective minimum.
         std::optional<TLSProtocolVersion> tls_maximum_protocol_version;
         TLSRequireCert tls_require_cert = TLSRequireCert::DEMAND;
         String tls_cert_file;
