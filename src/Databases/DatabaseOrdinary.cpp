@@ -10,6 +10,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Core/SettingsFields.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
@@ -247,6 +248,30 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
             "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
+
+    /** `table_readonly` is not supported for `ReplicatedMergeTree`, and a converted table keeps the
+      * settings of the table it was converted from, so converting would produce a replicated table
+      * in the state the check in its constructor exists to make unrepresentable. Leave the table
+      * alone and say so: it keeps loading and serving as it is, `RESET SETTING table_readonly` is
+      * allowed on it, and the flag stays in place, so the conversion happens on the next start once
+      * the setting is gone. Throwing here would take the table down with the whole database load,
+      * and the setting could then not be reset at all.
+      */
+    if (const auto * query_settings = create_query.storage->settings)
+    {
+        if (const Field * readonly_setting = query_settings->changes.tryGet("table_readonly");
+            readonly_setting && SettingFieldBool{*readonly_setting}.value)
+        {
+            LOG_ERROR(
+                log,
+                "Not converting table {} to replicated: it has `table_readonly = 1`, which is not supported for "
+                "ReplicatedMergeTree. Reset the setting with `ALTER TABLE ... RESET SETTING table_readonly`; the {} flag is kept, "
+                "so the conversion runs on the next start.",
+                backQuote(qualified_name.getFullName()),
+                CONVERT_TO_REPLICATED_FLAG_NAME);
+            return;
+        }
+    }
 
     checkReplicaPathIsSafe(create_query, getContext());
     checkReplicaPathExists(create_query, getContext());
