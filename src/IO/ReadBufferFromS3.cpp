@@ -6,6 +6,7 @@
 
 #include <IO/ReadBufferFromS3.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/HTTPConnectionPool.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
@@ -138,6 +139,14 @@ bool ReadBufferFromS3::nextImpl()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
+    if (impl && impl->isResultReleased() && cut_request_end && static_cast<size_t>(offset) == cut_request_end)
+    {
+        /// The request was cut to one buffer fill, and that fill is consumed: the connection has
+        /// already returned to the pool, and the next fill needs a new request.
+        resetWorkingBuffer();
+        impl.reset();
+    }
+
     if (impl)
     {
         fiu_do_on(FailPoints::s3_read_buffer_throw_expired_token,
@@ -222,13 +231,15 @@ bool ReadBufferFromS3::nextImpl()
             if (!processException(getPosition(), attempt) || last_attempt)
                 throw;
 
+            /// Drop the failed request before pausing. Its connection is of no use to this buffer
+            /// anymore, and keeping it during the back-off would only take it away from the others.
+            /// `impl` is reinitialized on the next attempt.
+            resetWorkingBuffer();
+            impl.reset();
+
             /// Pause before next attempt.
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
-
-            /// Try to reinitialize `impl`.
-            resetWorkingBuffer();
-            impl.reset();
         }
     }
 
@@ -266,13 +277,14 @@ bool ReadBufferFromS3::nextImpl()
     offset += working_buffer.size();
 
     // release result if possible to free pooled HTTP session for better reuse
-    bool is_read_until_position = read_until_position && read_until_position == offset;
+    const bool is_read_until_position = read_until_position && read_until_position == offset;
+    const bool is_cut_request_end = cut_request_end && cut_request_end == static_cast<size_t>(offset);
     const bool stream_eof = impl->isStreamEof();
-    if (stream_eof || is_read_until_position)
+    if (stream_eof || is_read_until_position || is_cut_request_end)
     {
         release_reason = fmt::format(
             "{} (read {}/{}, file size: {}, restricted seek: {})",
-            impl->isStreamEof() ? "stream EOF" : "read until position reached",
+            stream_eof ? "stream EOF" : is_read_until_position ? "read until position reached" : "end of the request cut to one buffer fill",
             offset.load(), read_until_position.load(),
             file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
 
@@ -544,7 +556,31 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     if (read_until_position && offset >= read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
 
-    const auto right_offset = read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt;
+    std::optional<size_t> right_offset = read_until_position ? std::make_optional<size_t>(read_until_position - 1) : std::nullopt;
+
+    /// A request normally covers the whole range this buffer has to deliver, and its connection stays
+    /// with the buffer until the range is consumed. A MergeTree reader opens one such buffer per
+    /// substream of every part it reads and consumes them in lockstep, so a merge of parts with a
+    /// `JSON` column holds thousands of connections that are idle nearly all the time, and several
+    /// such merges can take the whole connection group away from everyone else.
+    ///
+    /// Once the connection group of the disks is above its soft limit, cut the request to what one
+    /// buffer fill consumes. The response is then complete right after the fill, the connection
+    /// returns to the pool at once, and the next fill sends a new request from the new offset.
+    /// The connections held by such readers are then bounded by the fills in flight rather than by
+    /// the number of open streams. This costs a request per fill, so it is done only under pressure.
+    cut_request_end = 0;
+    if (client_ptr->isClientForDisk() && HTTPConnectionPools::instance().isSoftLimitReached(HTTPConnectionGroupType::DISK))
+    {
+        /// Exclusive end of the range this buffer has to deliver; unknown when reading to the end of an object of unknown size.
+        const std::optional<size_t> range_end = read_until_position ? std::make_optional<size_t>(read_until_position) : file_size;
+        const size_t fill_size = use_external_buffer ? internal_buffer.size() : read_settings.remote_fs_settings.buffer_size;
+        if (range_end && fill_size && static_cast<size_t>(offset) + fill_size < *range_end)
+        {
+            cut_request_end = static_cast<size_t>(offset) + fill_size;
+            right_offset = cut_request_end - 1;
+        }
+    }
 
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);

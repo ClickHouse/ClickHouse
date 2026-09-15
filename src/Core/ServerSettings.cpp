@@ -1217,7 +1217,7 @@ The replica name in ZooKeeper.
 <default_replica_name>{replica}</default_replica_name>
 ```
 )", 0) \
-    DECLARE(UInt64, disk_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. The limit applies to the disks connections.)", 0) \
+    DECLARE(UInt64, disk_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. While the number of connections in the group, in use and idle together, is at or above this limit, reads from S3 disks stop keeping a connection open between buffer fills: each fill is a separate request whose connection returns to the pool as soon as the fill completes. This bounds the connections held by readers that keep many streams open at once, such as merges of parts with a `JSON` column, at the cost of one request per fill. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_warn_limit, 8000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_store_limit, 10000, R"(The maximum number of idle connections kept in the pool for reuse. Once this many connections are stored, further connections are reset after use instead of being kept. The limit does not bound the connections in use. Set to 0 to turn connection cache off. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, disk_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the disks connections.)", 0) \
