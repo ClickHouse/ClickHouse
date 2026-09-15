@@ -1,7 +1,6 @@
--- The writer reduces polygonal chunks immediately after their function-specific threshold is
--- crossed: 16 for `groupPolygonUnion` and 8 for `groupPolygonIntersection`. The reader must accept
--- the boundary states but reject a fully valid crafted state with one additional chunk instead of
--- admitting a shape that the writer cannot produce.
+-- Legacy version-1 states can contain up to 16 chunks for `groupPolygonUnion` and 8 for
+-- `groupPolygonIntersection`. Readers must keep accepting these boundary states while rejecting
+-- a fully valid crafted state with one additional chunk.
 
 SELECT 'union_chunk_count_at_limit';
 SELECT round(polygonAreaCartesian(groupPolygonUnionMerge(state)), 2)

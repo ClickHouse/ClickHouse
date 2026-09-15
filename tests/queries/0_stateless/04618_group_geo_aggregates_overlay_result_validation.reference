@@ -1,2 +1,4 @@
-union_rejects_empty_overlay_result
-intersection_rejects_non_finite_overlay_result
+union_extreme_overlay_result
+1	15.86098392
+intersection_extreme_overlay_result
+1	0.19328498

@@ -8,8 +8,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <boost/geometry.hpp>
-
+#include <algorithm>
+#include <bit>
 #include <vector>
 
 
@@ -28,102 +28,134 @@ extern const int INCORRECT_DATA;
 namespace
 {
 
-constexpr size_t UNION_REDUCTION_THRESHOLD = 16;
+constexpr size_t MAX_SERIALIZED_UNION_CHUNKS = 16;
 
 
-/// Pairwise reduction to keep intermediate complexity lower than a linear left-fold.
-void reduceChunksPairwiseUnion(
-    std::vector<CartesianMultiPolygon> & chunks, // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    const char * function_name)
+/// A factor of four keeps the number of occupied tiers within the version-1 wire limit.
+/// Cache point counts: recounting a large retained chunk on each input would itself be quadratic.
+constexpr size_t unionChunkTier(size_t points)
 {
-    while (chunks.size() > 1)
-    {
-        size_t n = chunks.size();
-        size_t out = 0;
-        for (size_t i = 0; i + 1 < n; i += 2)
-        {
-            CartesianMultiPolygon tmp;
-            boost::geometry::union_(chunks[i], chunks[i + 1], tmp);
-            if (tmp.empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} produced an empty union from non-empty inputs", function_name);
-            normalizeAndValidatePolygonalResult(tmp, function_name);
-            chunks[out++] = std::move(tmp);
-        }
-        if (n % 2 == 1)
-            chunks[out++] = std::move(chunks[n - 1]);
-        chunks.resize(out);
-    }
+    return points ? (std::bit_width(points) - 1) / 2 : 0;
 }
+
+static_assert(unionChunkTier(MAX_POINTS_IN_POLYGONAL_STATE) + 1 <= MAX_SERIALIZED_UNION_CHUNKS);
 
 
 struct GroupPolygonUnionData
 {
-    std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    struct Chunk
+    {
+        CartesianMultiPolygon geometry;
+        size_t points;
+    };
+
+    std::vector<Chunk> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t total_points = 0;
 
-    void add(CartesianMultiPolygon && mp, const char * function_name)
+    static Chunk unite(
+        const Chunk & lhs, const Chunk & rhs, const char * function_name, std::optional<size_t> max_result_points = {})
     {
-        if (mp.empty())
+        CartesianMultiPolygon result;
+        unionPolygonalGeometries(lhs.geometry, rhs.geometry, result);
+        if (result.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} produced an empty union from non-empty inputs", function_name);
+        normalizeAndValidatePolygonalResult(result, function_name, max_result_points);
+        size_t points = countMultiPolygonPoints(result);
+        return {std::move(result), points};
+    }
+
+    void insertChunk(Chunk chunk, const char * function_name, bool final_chunk)
+    {
+        if (chunk.geometry.empty())
             return;
-        total_points += countMultiPolygonPoints(mp);
-        chunks.push_back(std::move(mp));
 
-        /// The accumulated point count may exceed the budget only because identical or
-        /// overlapping polygons have not been unioned yet. Reduce to the canonical state
-        /// first and enforce the cap on the reduced representation, mirroring `merge`, so a
-        /// valid result is not rejected based on the row/chunk shape of the input.
+        /// Only combine comparable geometries during accumulation. A large prefix remains in
+        /// its tier until enough new geometry has accumulated, instead of joining every batch.
+        while (true)
+        {
+            const auto tier = unionChunkTier(chunk.points);
+            const auto it = std::find_if(chunks.begin(), chunks.end(), [tier](const auto & existing)
+            {
+                return unionChunkTier(existing.points) == tier;
+            });
+            if (it == chunks.end())
+            {
+                total_points += chunk.points;
+                chunks.push_back(std::move(chunk));
+                return;
+            }
+
+            /// If this is the last pending chunk and the only retained tier, this overlay
+            /// is the complete state. Enforce its budget before expensive validation.
+            auto combined = unite(
+                *it, chunk, function_name,
+                final_chunk && chunks.size() == 1 ? std::optional{MAX_POINTS_IN_POLYGONAL_STATE} : std::nullopt);
+            total_points -= it->points;
+            chunks.erase(it);
+            chunk = std::move(combined);
+        }
+    }
+
+    void reduceAll(const char * function_name)
+    {
+        /// There are only logarithmically many chunks. Merge the smallest remaining pair,
+        /// including when finalization is followed by more inputs in a window or running state.
+        while (chunks.size() > 1)
+        {
+            std::sort(chunks.begin(), chunks.end(), [](const auto & lhs, const auto & rhs)
+            {
+                return lhs.points > rhs.points;
+            });
+            auto & lhs = chunks[chunks.size() - 2];
+            const auto & rhs = chunks.back();
+            /// Only the final pair has no remaining geometry that could reduce its point count.
+            auto combined = unite(
+                lhs, rhs, function_name, chunks.size() == 2 ? std::optional{MAX_POINTS_IN_POLYGONAL_STATE} : std::nullopt);
+            total_points -= lhs.points + rhs.points;
+            total_points += combined.points;
+            lhs = std::move(combined);
+            chunks.pop_back();
+        }
+    }
+
+    void checkPointBudget(const char * function_name) const
+    {
         if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
-        {
-            reduceChunksPairwiseUnion(chunks, function_name);
-            recountPoints(function_name);
-        }
-        else
-            maybeReduce(function_name);
-    }
-
-    void merge(const GroupPolygonUnionData & other, const char * function_name)
-    {
-        chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
-        total_points += other.total_points;
-
-        /// The combined point count may exceed the budget only because identical or
-        /// overlapping polygons coming from two partial states have not been unioned yet.
-        /// Reduce first, then enforce the budget on the canonical (reduced) state, so a
-        /// valid result is not rejected merely because of the merge-tree shape.
-        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
-        {
-            reduceChunksPairwiseUnion(chunks, function_name);
-            recountPoints(function_name);
-        }
-        else
-            maybeReduce(function_name);
-    }
-
-    void maybeReduce(const char * function_name)
-    {
-        if (chunks.size() > UNION_REDUCTION_THRESHOLD)
-        {
-            reduceChunksPairwiseUnion(chunks, function_name);
-            recountPoints(function_name);
-        }
-    }
-
-    /// Boost union may add intersection vertices, so the post-reduction sum can grow.
-    /// Re-enforce the budget here so post-reduce state never exceeds what deserialize accepts.
-    void recountPoints(const char * function_name)
-    {
-        size_t recomputed = 0;
-        for (const auto & chunk : chunks)
-            recomputed += countMultiPolygonPoints(chunk);
-        if (recomputed > MAX_POINTS_IN_POLYGONAL_STATE)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Aggregate function {} state has too many points after reduction: {} (limit {})",
                 function_name,
-                recomputed,
+                total_points,
                 MAX_POINTS_IN_POLYGONAL_STATE);
-        total_points = recomputed;
+    }
+
+    void compactIfOverBudget(const char * function_name)
+    {
+        /// Overlap between retained tiers can make their sum larger than the actual union.
+        /// Keep the existing policy of reducing before rejecting an over-budget state.
+        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+        {
+            reduceAll(function_name);
+            checkPointBudget(function_name);
+        }
+    }
+
+    void add(CartesianMultiPolygon && mp, const char * function_name)
+    {
+        size_t points = countMultiPolygonPoints(mp);
+        insertChunk({std::move(mp), points}, function_name, true);
+        compactIfOverBudget(function_name);
+    }
+
+    void merge(const GroupPolygonUnionData & other, const char * function_name)
+    {
+        if (this == &other)
+            return;
+        /// Copy each right-hand chunk only when it is needed. The right state remains reusable.
+        for (size_t i = 0; i < other.chunks.size(); ++i)
+            insertChunk(other.chunks[i], function_name, i + 1 == other.chunks.size());
+        compactIfOverBudget(function_name);
     }
 
     const CartesianMultiPolygon & getResult(const char * function_name)
@@ -132,12 +164,10 @@ struct GroupPolygonUnionData
 
         if (chunks.empty())
             return empty_result;
-        reduceChunksPairwiseUnion(chunks, function_name);
-        /// `insertResultInto` may be followed by further `add`/`merge`/`insertResultInto`
-        /// calls (for example in `runningAccumulate` or window execution), so keep
-        /// `total_points` consistent with the reduced `chunks` instead of leaving a stale count.
-        recountPoints(function_name);
-        return chunks[0];
+        reduceAll(function_name);
+        /// An overlay can add intersection vertices, including during finalization.
+        checkPointBudget(function_name);
+        return chunks[0].geometry;
     }
 };
 
@@ -192,7 +222,7 @@ public:
         const auto & chunks = AggregateFunctionGroupPolygonUnion::data(place).chunks;
         writeVarUInt(chunks.size(), buf);
         for (const auto & chunk : chunks)
-            serializeGeoMultiPolygon(chunk, buf);
+            serializeGeoMultiPolygon(chunk.geometry, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
@@ -208,32 +238,44 @@ public:
                 static_cast<int>(GEO_SERDE_VERSION));
 
         auto & data = AggregateFunctionGroupPolygonUnion::data(place);
-        auto & chunks = data.chunks;
         UInt64 chunk_count = 0;
         readVarUInt(chunk_count, buf);
-        /// `add` and `merge` reduce immediately after crossing this threshold, so the writer can
-        /// never emit a larger chunk vector. Keep the reader on the same invariant instead of
-        /// admitting crafted states with a much more expensive reduction shape.
-        if (chunk_count > UNION_REDUCTION_THRESHOLD)
+        /// Version 1 allowed up to 16 arbitrary chunks. The size tiers use fewer chunks without
+        /// changing that format; retain the old bound when reading existing states.
+        if (chunk_count > MAX_SERIALIZED_UNION_CHUNKS)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Corrupted state of aggregate function {}: {} chunks (limit {})",
                 getName(),
                 chunk_count,
-                UNION_REDUCTION_THRESHOLD);
+                MAX_SERIALIZED_UNION_CHUNKS);
 
-        chunks.resize(chunk_count);
+        std::vector<CartesianMultiPolygon> restored_chunks(chunk_count); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         PolygonalStateBudget budget;
         for (UInt64 i = 0; i < chunk_count; ++i)
         {
-            chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), budget);
-            validateDeserializedMultiPolygon(chunks[i], getName().c_str());
+            restored_chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), budget);
+            validateDeserializedMultiPolygon(restored_chunks[i], getName().c_str());
         }
         /// `validateDeserializedMultiPolygon` runs `boost::geometry::correct`, which can append
         /// closing points that were not charged against `budget.points`. Recount from the
         /// normalized geometry and re-enforce the cap so an accepted state never exceeds the
         /// limit that this same reader applies to serialized bytes.
-        data.total_points = recountPolygonalPointsAndCheck(chunks, getName().c_str());
+        recountPolygonalPointsAndCheck(restored_chunks, getName().c_str());
+
+        data.chunks.clear();
+        data.total_points = 0;
+        std::erase_if(restored_chunks, [](const auto & chunk)
+        {
+            return chunk.empty();
+        });
+        for (size_t i = 0; i < restored_chunks.size(); ++i)
+        {
+            auto & chunk = restored_chunks[i];
+            size_t points = countMultiPolygonPoints(chunk);
+            data.insertChunk({std::move(chunk), points}, getName().c_str(), i + 1 == restored_chunks.size());
+        }
+        data.compactIfOverBudget(getName().c_str());
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
