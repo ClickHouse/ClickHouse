@@ -395,6 +395,9 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char claim_inject_stale_part_dir[];
+    /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
+    /// test can make the table read-only while the loading is pending and check that it stops.
+    extern const char mt_pause_before_loading_outdated_part[];
 }
 
 namespace ErrorCodes
@@ -3552,7 +3555,8 @@ try
     /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
     /// Loading detaches broken parts, removes duplicates, and prepares parts for removal, so it waits
     /// for the commit. A rolled-back commit restores `table_readonly` and the task then stays idle
-    /// until the next toggle schedules it again.
+    /// until the next toggle schedules it again. The same holds for a writable table that was made
+    /// read-only while this task was still pending from its start: it loads nothing until toggled back.
     if (is_async && !areBackgroundWorkersEnabled())
     {
         if (!(*getSettings())[MergeTreeSetting::table_readonly])
@@ -3592,6 +3596,7 @@ try
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();
+        FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_outdated_part);
         PartLoadingTree::NodePtr part;
 
         {
@@ -3606,6 +3611,22 @@ try
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
                     "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+                return;
+            }
+
+            /// The table was made read-only while its outdated parts were still loading, see
+            /// `StorageMergeTree::alter`. Parts whose loading already started may finish, like any
+            /// other background operation in progress; the rest stay unloaded on disk until the
+            /// setting is toggled back, which schedules this task again.
+            if (is_async && !areBackgroundWorkersEnabled())
+            {
+                runner.waitForAllToFinishAndRethrowFirstError();
+
+                LOG_DEBUG(log,
+                    "Suspended loading outdated data parts because the background workers are disabled. "
+                    "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+                if (!(*getSettings())[MergeTreeSetting::table_readonly])
+                    outdated_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
                 return;
             }
 

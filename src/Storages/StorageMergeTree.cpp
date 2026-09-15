@@ -526,10 +526,11 @@ void StorageMergeTree::alter(
         /// that passes the `isTableReadonly` guard while the setting is temporarily off could queue a
         /// merge, mutation, move, or disk cleanup that then runs on a table whose failed commit has
         /// restored `table_readonly = 1`. So the workers are disabled for the whole commit of a
-        /// read-only table (they may already be running if the table was created writable) and
-        /// enabled again only after the commit succeeded, see the end of this method.
+        /// read-only table and enabled again only after the commit succeeded, see the end of this
+        /// method. They are already disabled for a table that started read-only or was made read-only
+        /// by an earlier `ALTER`; this keeps the invariant for a table created with `table_readonly = 1`.
         if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
-            background_workers_enabled = false;
+            disableBackgroundWorkers();
 
         try
         {
@@ -898,8 +899,17 @@ void StorageMergeTree::alter(
 
         /// Wait for an active cleanup iteration and prevent further disk cleanup while read-only.
         /// Already scheduled merges, mutations and moves may finish, as documented for `table_readonly`.
+        /// The workers of a writable table are gated by `isTableReadonly` already; disabling them as
+        /// well matters for the outdated part loader, which a writable table starts asynchronously
+        /// and which may still be pending: it detaches, removes, and prepares parts for removal, and
+        /// its only guard is `background_workers_enabled`. It suspends itself after the part it is
+        /// loading and resumes when the setting is toggled back. Done after the commit: a failed
+        /// commit leaves the table writable, with every worker enabled.
         if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isTableReadonly())
+        {
+            disableBackgroundWorkers();
             cleanup_thread.stop();
+        }
 
         /// The background workers were started, but kept disabled, before the settings commit above
         /// (see the settings-alter branch). Now that the table is durably writable, enable them and
@@ -4074,6 +4084,11 @@ void StorageMergeTree::startBackgroundWorkers()
 void StorageMergeTree::enableBackgroundWorkers() noexcept
 {
     background_workers_enabled = true;
+}
+
+void StorageMergeTree::disableBackgroundWorkers() noexcept
+{
+    background_workers_enabled = false;
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const

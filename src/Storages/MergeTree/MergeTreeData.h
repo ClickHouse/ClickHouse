@@ -2282,11 +2282,12 @@ private:
 
     virtual void startBackgroundMovesIfNeeded() = 0;
 
-    /// Whether the started background workers may modify the table. `StorageMergeTree` unsets it
-    /// while a settings `ALTER` of a read-only table is between making `table_readonly = 0` visible in
-    /// memory and committing it durably: the asynchronous outdated and unexpected part loaders check
-    /// it before touching the disk, and the waits for them return at once while it is unset, exactly
-    /// as for a read-only table, because nothing is loading.
+    /// Whether the started background workers may modify the table. `StorageMergeTree` keeps it unset
+    /// while the table is read-only, including while a settings `ALTER` of a read-only table is between
+    /// making `table_readonly = 0` visible in memory and committing it durably: the asynchronous
+    /// outdated and unexpected part loaders check it before touching the disk and between parts, and
+    /// the waits for them return at once while it is unset, exactly as for a read-only table, because
+    /// nothing is loading.
     virtual bool areBackgroundWorkersEnabled() const { return true; }
 
     /// Re-arm period of an asynchronous part loader that woke up while the workers are disabled.

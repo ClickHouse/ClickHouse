@@ -371,6 +371,7 @@ private:
     /// after the commit, a plain flag flip that cannot fail. Starting is idempotent.
     void startBackgroundWorkers();
     void enableBackgroundWorkers() noexcept;
+    void disableBackgroundWorkers() noexcept;
 
     /// Whether the started background workers may do work. Every worker entry point
     /// (`scheduleDataProcessingJob`, `scheduleDataMovingJob`, the cleanup iteration, the outdated and
@@ -379,6 +380,11 @@ private:
     /// a merge, mutation, move, disk cleanup, or part detach/removal that would survive a rolled-back
     /// commit. `startBackgroundMovesIfNeeded` starts nothing while it is unset: the toggle starts the
     /// move assignee itself.
+    ///
+    /// Set exactly when the table is durably writable: on the startup of a writable table and after
+    /// the commit of a `table_readonly` 1 -> 0 `ALTER`; unset after the commit of a 0 -> 1 `ALTER`, so
+    /// that the outdated part loader of a table that started writable, whose only guard this is,
+    /// stops modifying the disk once the table is read-only.
     std::atomic<bool> background_workers_enabled {false};
 
     friend class MergeTreeSink;
