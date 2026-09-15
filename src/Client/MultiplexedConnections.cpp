@@ -171,9 +171,9 @@ void MultiplexedConnections::sendQuery(
     /// below, so all of them are marked changed afterwards and are serialized.
     prepareSecondaryQuerySettings(modified_settings);
 
-    modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+    modified_settings.set(Setting::interactive_delay, scaleInteractiveDelayByFanout(
         modified_settings[Setting::interactive_delay],
-        distributed_fanout * replica_states.size());
+        distributed_fanout * replica_states.size()));
 
     for (auto & replica : replica_states)
     {
@@ -183,8 +183,8 @@ void MultiplexedConnections::sendQuery(
         if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
         {
             /// Disable two-level aggregation due to version incompatibility.
-            modified_settings[Setting::group_by_two_level_threshold] = 0;
-            modified_settings[Setting::group_by_two_level_threshold_bytes] = 0;
+            modified_settings.set(Setting::group_by_two_level_threshold, 0);
+            modified_settings.set(Setting::group_by_two_level_threshold_bytes, 0);
         }
     }
 
@@ -215,12 +215,12 @@ void MultiplexedConnections::sendQuery(
     {
         if (enable_offset_parallel_processing)
             /// Use multiple replicas for parallel query processing.
-            modified_settings[Setting::parallel_replicas_count] = num_replicas;
+            modified_settings.set(Setting::parallel_replicas_count, num_replicas);
 
         for (size_t i = 0; i < num_replicas; ++i)
         {
             if (enable_offset_parallel_processing)
-                modified_settings[Setting::parallel_replica_offset] = i;
+                modified_settings.set(Setting::parallel_replica_offset, i);
 
             replica_states[i].connection->sendQuery(
                 timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});

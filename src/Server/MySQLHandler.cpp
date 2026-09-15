@@ -884,7 +884,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto settings = query_context->getSettingsCopy();
         if (!settings[Setting::allow_experimental_analyzer])
         {
-            settings[Setting::prefer_column_name_to_alias] = true;
+            settings.set(Setting::prefer_column_name_to_alias, true);
             query_context->setSettings(settings);
         }
 

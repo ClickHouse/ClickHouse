@@ -82,6 +82,12 @@
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
     M(ContextLockWait, "Number of threads waiting for lock in Context. This is global lock.") \
+    M(SettingsObjects, "Number of live query Settings wrappers, including moved-from wrappers. This is not the number of queries.") \
+    M(SettingsImplementations, "Number of owned query Settings implementation allocations. Moving a Settings wrapper does not allocate an implementation.") \
+    M(SettingsDenseData, "Number of owned complete dense query Settings data allocations, including the shared snapshot default data. Excludes static accessor metadata and its canonical defaults.") \
+    M(SettingsSnapshotStates, "Number of owned query Settings snapshot read-table allocations and resolved-profile cache entries. Shared allocations are counted once, including cached and asynchronous owners.") \
+    M(SettingsSnapshotChunks, "Number of owned query Settings copy-on-write chunk allocations. Shared chunks are counted once; borrowed default chunks are not counted.") \
+    M(SettingsStructuralMemoryBytes, "Requested structural bytes in live query Settings wrappers, implementations, snapshot tables, resolved-profile cache entries, owned chunks and shared default data, including allocated shared-pointer control blocks. Shared allocations are counted once. Excludes separately allocated string, map and custom-value payloads, static accessor metadata, allocator rounding and RSS. Individual metric reads are not a transactional snapshot.") \
     M(StorageBufferRows, "Number of rows in buffers of Buffer tables") \
     M(StorageBufferBytes, "Number of bytes in buffers of Buffer tables") \
     M(DictCacheRequests, "Number of requests in fly to data sources of dictionaries of cache type.") \

@@ -148,8 +148,8 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
     auto query_context = Context::createCopy(local_context);
     {
         Settings new_settings = query_context->getSettingsCopy();
-        new_settings[Setting::max_result_rows] = 0;
-        new_settings[Setting::max_result_bytes] = 0;
+        new_settings.set(Setting::max_result_rows, 0);
+        new_settings.set(Setting::max_result_bytes, 0);
         query_context->setSettings(new_settings);
     }
 

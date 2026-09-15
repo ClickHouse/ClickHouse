@@ -14,6 +14,7 @@
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 #include <boost/blank.hpp>
 
@@ -157,7 +158,32 @@ std::string_view resolveCustomSettingName(std::string_view name)
 }
 
 template <class TTraits>
-class BaseSettings : public TTraits::Data
+struct SettingsDataStorage
+{
+    using Type = typename TTraits::Data;
+};
+
+template <typename Data, typename Storage>
+const void * settingsFieldPointer(const Storage & storage, size_t offset)
+{
+    if constexpr (requires { storage.getSettingPointer(offset); })
+        return storage.getSettingPointer(offset);
+    else
+        return reinterpret_cast<const char *>(static_cast<const Data *>(&storage)) + offset;
+}
+
+template <typename Data, typename Storage>
+    requires (!std::is_const_v<Storage>)
+void * settingsFieldPointer(Storage & storage, size_t offset)
+{
+    if constexpr (requires { storage.getSettingPointer(offset); })
+        return storage.getSettingPointer(offset);
+    else
+        return reinterpret_cast<char *>(static_cast<Data *>(&storage)) + offset;
+}
+
+template <class TTraits>
+class BaseSettings : public SettingsDataStorage<TTraits>::Type
 {
     /// Hash function for efficient string lookups in custom settings map
     struct StringHash
@@ -185,18 +211,15 @@ public:
     {
         static_assert(std::is_same_v<Owner, typename SettingsOwner<TTraits>::type>,
                       "SettingIndex belongs to a different settings class than this BaseSettings");
-        /* `index.offset` is relative to `Traits::Data`; convert from `this` (a real Impl object) */
-        /* to its `Data` base subobject via a well-defined static_cast, then add the field offset. */
-        const auto * data = static_cast<const typename TTraits::Data *>(this);
-        return *reinterpret_cast<const FieldType *>(reinterpret_cast<const char *>(data) + index.offset);
+        /// The storage policy resolves the logical offset into either dense or shared storage.
+        return *static_cast<const FieldType *>(settingsFieldPointer<typename TTraits::Data>(*this, index.offset));
     }
     template <typename Owner, typename FieldType>
     FieldType & operator[](SettingIndex<Owner, FieldType> index)
     {
         static_assert(std::is_same_v<Owner, typename SettingsOwner<TTraits>::type>,
                       "SettingIndex belongs to a different settings class than this BaseSettings");
-        auto * data = static_cast<typename TTraits::Data *>(this);
-        return *reinterpret_cast<FieldType *>(reinterpret_cast<char *>(data) + index.offset);
+        return *static_cast<FieldType *>(settingsFieldPointer<typename TTraits::Data>(*this, index.offset));
     }
     BaseSettings & operator=(const BaseSettings &) = default;
     BaseSettings & operator=(BaseSettings &&) noexcept = default;
@@ -1369,45 +1392,55 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             } \
             \
             /* Direct data access (by index) */ \
-            static void * settingPtr(Data & data, size_t offset) \
+            template <typename Storage> \
+            static void * settingPtr(Storage & data, size_t offset) \
             { \
-                return reinterpret_cast<char *>(&data) + offset; \
+                return settingsFieldPointer<Data>(data, offset); \
             } \
-            static const void * settingPtr(const Data & data, size_t offset) \
+            template <typename Storage> \
+            static const void * settingPtr(const Storage & data, size_t offset) \
             { \
-                return reinterpret_cast<const char *>(&data) + offset; \
+                return settingsFieldPointer<Data>(data, offset); \
             } \
-            void setValue(Data & data, size_t index, const Field & value) const \
+            template <typename Storage> \
+            void setValue(Storage & data, size_t index, const Field & value) const \
             { \
                 const auto & fi = field_infos[index]; \
                 fi.ops->assign_from_field(settingPtr(data, fi.data_offset), value); \
             } \
-            Field getValue(const Data & data, size_t index) const \
+            template <typename Storage> \
+            Field getValue(const Storage & data, size_t index) const \
             { \
                 const auto & fi = field_infos[index]; \
                 return fi.ops->to_field(settingPtr(data, fi.data_offset)); \
             } \
-            void setValueString(Data & data, size_t index, const String & str) const \
+            template <typename Storage> \
+            void setValueString(Storage & data, size_t index, const String & str) const \
             { \
                 const auto & fi = field_infos[index]; \
                 fi.ops->parse_from_string(settingPtr(data, fi.data_offset), str); \
             } \
-            String getValueString(const Data & data, size_t index) const \
+            template <typename Storage> \
+            String getValueString(const Storage & data, size_t index) const \
             { \
                 const auto & fi = field_infos[index]; \
                 return fi.ops->to_string(settingPtr(data, fi.data_offset)); \
             } \
-            bool isValueChanged(const Data & data, size_t index) const \
+            template <typename Storage> \
+            bool isValueChanged(const Storage & data, size_t index) const \
             { \
                 const auto & fi = field_infos[index]; \
                 return fi.ops->is_changed(settingPtr(data, fi.data_offset)); \
             } \
-            void setValueChanged(Data & data, size_t index, bool changed) const \
+            template <typename Storage> \
+            void setValueChanged(Storage & data, size_t index, bool changed) const \
             { \
                 const auto & fi = field_infos[index]; \
-                fi.ops->set_changed(settingPtr(data, fi.data_offset), changed); \
+                if (fi.ops->is_changed(settingPtr(std::as_const(data), fi.data_offset)) != changed) \
+                    fi.ops->set_changed(settingPtr(data, fi.data_offset), changed); \
             } \
-            void resetValueToDefault(Data & data, size_t index) const \
+            template <typename Storage> \
+            void resetValueToDefault(Storage & data, size_t index) const \
             { \
                 /* Typed copy from the canonical default-constructed Data, dispatched per type via */ \
                 /* SettingFieldOps::typed_copy. Avoids a Field round-trip for types whose */ \
@@ -1417,12 +1450,14 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             } \
             \
             /* Binary serialization (by index) */ \
-            void writeBinary(const Data & data, size_t index, WriteBuffer & out) const \
+            template <typename Storage> \
+            void writeBinary(const Storage & data, size_t index, WriteBuffer & out) const \
             { \
                 const auto & fi = field_infos[index]; \
                 fi.ops->write_binary(settingPtr(data, fi.data_offset), out); \
             } \
-            void readBinary(Data & data, size_t index, ReadBuffer & in) const \
+            template <typename Storage> \
+            void readBinary(Storage & data, size_t index, ReadBuffer & in) const \
             { \
                 const auto & fi = field_infos[index]; \
                 fi.ops->read_binary(settingPtr(data, fi.data_offset), in); \

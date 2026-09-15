@@ -298,9 +298,9 @@ void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
     Settings settings = context->getSettingsCopy();
 
-    settings[Setting::allow_introspection_functions] = true;
-    settings[Setting::storage_file_read_method] = LocalFSReadMethod::mmap;
-    settings[Setting::implicit_select] = true;
+    settings.set(Setting::allow_introspection_functions, true);
+    settings.set(Setting::storage_file_read_method, LocalFSReadMethod::mmap);
+    settings.set(Setting::implicit_select, true);
 
     context->setSettings(settings);
 }

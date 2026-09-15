@@ -81,9 +81,9 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     /// since this is a service query and should not lead to query failure.
     {
         Settings new_settings = new_context->getSettingsCopy();
-        new_settings[Setting::max_result_rows] = 0;
-        new_settings[Setting::max_result_bytes] = 0;
-        new_settings[Setting::describe_compact_output] = false;
+        new_settings.set(Setting::max_result_rows, 0);
+        new_settings.set(Setting::max_result_bytes, 0);
+        new_settings.set(Setting::describe_compact_output, false);
         new_context->setSettings(new_settings);
     }
 

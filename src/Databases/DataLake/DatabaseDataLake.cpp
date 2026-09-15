@@ -852,7 +852,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
     Settings settings_copy = context_copy->getSettingsCopy();
-    settings_copy[Setting::use_hive_partitioning] = false;
+    settings_copy.set(Setting::use_hive_partitioning, false);
     context_copy->setSettings(settings_copy);
 
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)

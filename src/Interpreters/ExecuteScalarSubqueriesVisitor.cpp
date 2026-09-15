@@ -95,9 +95,9 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
 {
     auto subquery_context = Context::createCopy(data.getContext());
     Settings subquery_settings = data.getContext()->getSettingsCopy();
-    subquery_settings[Setting::max_result_rows] = 1;
-    subquery_settings[Setting::extremes] = false;
-    subquery_settings[Setting::implicit_table_at_top_level] = "";
+    subquery_settings.set(Setting::max_result_rows, 1);
+    subquery_settings.set(Setting::extremes, false);
+    subquery_settings.set(Setting::implicit_table_at_top_level, "");
     subquery_context->setSettings(subquery_settings);
 
     if (subquery_context->hasQueryContext())
