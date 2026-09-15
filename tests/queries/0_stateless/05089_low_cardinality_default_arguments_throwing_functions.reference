@@ -1,0 +1,50 @@
+1000	167772410
+1000	1000
+the whole family over a LowCardinality argument
+167772161
+00000000000000000000000000000001
+1
+2024-01-01 00:00:00
+2024-01-01 00:00:00.000000
+2024-01-01 00:00:00
+60
+1024
+60310
+{"a":1,"b":2}
+599686042433355775
+581672437419081727
+5
+0
+20
+604189641121202175
+265092558
+the results agree with the plain argument type
+1
+1
+1
+invalid values are still reported
+\N
+0
+a referenced default value is still processed
+1
+2
+the s2 family over a LowCardinality argument
+1
+1
+1
+a referenced NULL is not evaluated either
+2024-01-01 00:00:00
+\N
+2024-01-01 00:00:00
+\N
+167772161
+\N
+60310
+\N
+1024
+\N
+5
+\N
+1
+\N
+invalid values behind a NULL-containing dictionary are still reported
