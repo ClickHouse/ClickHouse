@@ -44,6 +44,13 @@ SELECT
     arrayMaxIndex(arrayMap(i -> if(i = 0, toUInt64(10), toUInt64(5)), range(4096))),
     arrayMinIndex(arrayMap(i -> if(i = 0, toUInt64(10), toUInt64(5)), range(4096)));
 SELECT
+    arrayMaxIndex(arrayMap(i -> if(i = 0, toUInt32(10), toUInt32(5)), range(128))),
+    arrayMinIndex(arrayMap(i -> if(i = 0, toUInt32(10), toUInt32(5)), range(128))),
+    arrayMaxIndex(arrayMap(i -> if(i = 0, toUInt32(10), toUInt32(5)), range(512))),
+    arrayMinIndex(arrayMap(i -> if(i = 0, toUInt32(10), toUInt32(5)), range(512))),
+    arrayMaxIndex(arrayMap(i -> if(i = 0, toUInt32(10), toUInt32(5)), range(4096))),
+    arrayMinIndex(arrayMap(i -> if(i = 0, toUInt32(10), toUInt32(5)), range(4096)));
+SELECT
     arrayMinIndex([toInt128(0), toInt128(-1), toInt128(-1), toInt128(1), toInt128(1)]),
     arrayMaxIndex([toInt128(0), toInt128(-1), toInt128(-1), toInt128(1), toInt128(1)]),
     arrayMinIndex([toUInt128(0), toUInt128(2), toUInt128(2), toUInt128(1), toUInt128(1)]),
