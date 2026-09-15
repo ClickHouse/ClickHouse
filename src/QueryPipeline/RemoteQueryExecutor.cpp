@@ -763,10 +763,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 connections->dumpAddresses());
             break;
         case Protocol::Server::Data:
-            /// Note: `packet.block.rows() > 0` means it's a header block.
+            /// Note: `packet.block.rows() == 0` means it's a header block.
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
-            if (!packet.block.empty() && (packet.block.rows() > 0))
+            /// A block with no columns carries its number of rows in the block info.
+            if (packet.block.rows() > 0 || packet.block.info.num_rows_without_columns > 0)
             {
                 got_data_from_replica = true;
                 return ReadResult(adaptBlockStructure(packet.block, *header));
