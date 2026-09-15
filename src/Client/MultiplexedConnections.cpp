@@ -108,7 +108,7 @@ void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
 
     for (ReplicaState & state : replica_states)
     {
