@@ -14,7 +14,6 @@ namespace DB
 
 void enableAllExperimentalSettings(ContextMutablePtr context)
 {
-    context->setSetting("allow_experimental_codecs", 1);
     for (const auto & name : CompressionCodecFactory::instance().getGateSettingNames())
         context->setSetting(name, 1);
     context->setSetting("allow_experimental_funnel_functions", 1);
@@ -69,6 +68,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_iceberg_remove_orphan_files", 1);
     context->setSetting("allow_experimental_expire_snapshots", 1);
     context->setSetting("allow_experimental_delta_lake_writes", 1);
+    context->setSetting("allow_delta_lake_create_table", 1);
     context->setSetting("allow_experimental_paimon_storage_engine", 1);
     context->setSetting("allow_dynamic_type_in_join_keys", 1);
     context->setSetting("allow_experimental_alias_table_engine", 1);
