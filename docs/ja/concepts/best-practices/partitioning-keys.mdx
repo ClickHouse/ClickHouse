@@ -32,7 +32,7 @@ ORDER BY (town, street)
 PARTITION BY toStartOfMonth(date)
 ```
 
-行のセットがテーブルに挿入されるたびに、挿入されたすべての行を含む単一の データパーツ を (少なく[とも](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)) 1つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の一意なパーティションキーの値ごとに、新しい データパーツ を1つ作成します。
+行のセットがテーブルに挿入されるたびに、挿入されたすべての行を含む単一の データパーツ を (少なく[とも](/ja/reference/settings/session-settings#max_insert_block_size)) 1つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の一意なパーティションキーの値ごとに、新しい データパーツ を1つ作成します。
 
 <Image img="/images/bestpractices/partitions.webp" size="lg" alt="パーティション" />
 
@@ -62,7 +62,7 @@ PARTITION BY toStartOfMonth(date)
   ## 低カーディナリティのパーティションキーを選択する
 </div>
 
-重要なのは、パーツ数が増えるほどクエリパフォーマンスに悪影響が出ることです。そのため ClickHouse では、パーツ数が [合計](/ja/reference/settings/merge-tree-settings/max-parts#max_parts_in_total) または [パーティションごと](/ja/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) の指定された制限を超えると、insert に対して [「パーツが多すぎる」](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) エラーが返されます。
+重要なのは、パーツ数が増えるほどクエリパフォーマンスに悪影響が出ることです。そのため ClickHouse では、パーツ数が [合計](/ja/reference/settings/merge-tree-settings#max_parts_in_total) または [パーティションごと](/ja/reference/settings/merge-tree-settings#parts_to_throw_insert) の指定された制限を超えると、insert に対して [「パーツが多すぎる」](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) エラーが返されます。
 
 パーティションキーに適切な **カーディナリティ** を選ぶことは非常に重要です。カーディナリティの高いパーティションキー、つまり異なるパーティション値の数が多いものは、データパーツの増加を招く可能性があります。ClickHouse はパーティションをまたいでパーツをマージしないため、パーティションが多すぎると未マージのパーツが増えすぎ、最終的に「パーツが多すぎる」エラーが発生します。[マージは不可欠です](/ja/concepts/core-concepts/merges)。ストレージの断片化を減らしてクエリ速度を最適化するうえで重要ですが、カーディナリティの高いパーティションでは、そのマージの余地が失われます。
 

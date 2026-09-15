@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## قواعد TTL والتحكم
 </div>
 
-سيُطبَّق TTL ***في نهاية الأمر***. ماذا يعني ذلك؟ يحدّد إعداد الجدول [`merge_with_ttl_timeout`](/ar/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout) في `MergeTree` الحد الأدنى للتأخير بالثواني قبل تكرار عملية دمج مع delete TTL. القيمة الافتراضية هي 14400 ثانية (4 ساعات). لكن هذا ليس سوى الحد الأدنى للتأخير، وقد يستغرق الأمر وقتًا أطول قبل أن يتم تشغيل عملية الدمج الخاصة بـ delete TTL.
+سيُطبَّق TTL ***في نهاية الأمر***. ماذا يعني ذلك؟ يحدّد إعداد الجدول [`merge_with_ttl_timeout`](/ar/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) في `MergeTree` الحد الأدنى للتأخير بالثواني قبل تكرار عملية دمج مع delete TTL. القيمة الافتراضية هي 14400 ثانية (4 ساعات). لكن هذا ليس سوى الحد الأدنى للتأخير، وقد يستغرق الأمر وقتًا أطول قبل أن يتم تشغيل عملية الدمج الخاصة بـ delete TTL.
 
 يمكنك عرض جميع إعدادات TTL الحالية لديك (مثل `merge_with_ttl_timeout`) باستخدام هذا الاستعلام:
 
@@ -52,7 +52,7 @@ ALTER TABLE my_table
 ```
 
 <div id="background-threads-affecting-ttl">
-  ## الخيوط الخلفية التي تؤثر في TTL
+  ## خيوط المعالجة الخلفية التي تؤثر في TTL
 </div>
 
 قد لا تُطبَّق قواعد TTL لديك بسبب عدم توفر عدد كافٍ من خيوط المعالجة العاملة في المجمّع الخلفي. على سبيل المثال، إذا كنت تُدرج البيانات بكثافة، فقد يُستغل المجمّع الخلفي بالكامل في عمليات الدمج العادية. ومع ذلك، يمكنك زيادة حجم المجمّع الخلفي.
@@ -73,7 +73,7 @@ WHERE name = 'background_pool_size';
 └──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
 ```
 
-راجع التوثيق لمعرفة كيفية تعديل [إعداد `background_pool_size`](/ar/reference/settings/server-settings/settings/background#background_pool_size)، وهو مُهيّأ على النحو التالي:
+راجع التوثيق لمعرفة كيفية تعديل [إعداد `background_pool_size`](/ar/reference/settings/server-settings/settings#background_pool_size)، وهو مُهيّأ على النحو التالي:
 
 ```xml
 <background_pool_size>16</background_pool_size>

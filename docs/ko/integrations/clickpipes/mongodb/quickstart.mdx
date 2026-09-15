@@ -134,10 +134,10 @@ SELECT doc.^shipping as shipping_info FROM t1;
 ```
 
 <div id="dynamic-type">
-  ### Dynamic 타입
+  ### Dynamic type
 </div>
 
-ClickHouse에서는 JSON의 각 필드가 `Dynamic` type입니다. Dynamic 타입을 사용하면 ClickHouse는 사전에 type을 몰라도 어떤 type의 값이든 저장할 수 있습니다. 이는 `toTypeName` 함수를 사용해 확인할 수 있습니다:
+ClickHouse에서는 JSON의 각 field가 `Dynamic` type입니다. Dynamic type을 사용하면 ClickHouse는 사전에 type을 몰라도 어떤 type의 값이든 저장할 수 있습니다. 이는 `toTypeName` 함수를 사용해 확인할 수 있습니다:
 
 ```sql title="Query"
 SELECT toTypeName(doc.customer_id) AS type FROM t1;
@@ -161,7 +161,7 @@ SELECT dynamicType(doc.customer_id) AS type FROM t1;
 └───────┘
 ```
 
-[일반 함수](/ko/reference/functions/regular-functions/overview)는 일반 컬럼과 마찬가지로 Dynamic 타입에서도 작동합니다:
+[일반 함수](/ko/reference/functions/regular-functions/regular-functions-index)는 일반 컬럼과 마찬가지로 Dynamic 타입에서도 작동합니다:
 
 **예시 1: 날짜 파싱**
 

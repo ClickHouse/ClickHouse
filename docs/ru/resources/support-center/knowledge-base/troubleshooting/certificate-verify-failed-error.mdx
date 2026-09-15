@@ -6,7 +6,7 @@ tags: ['Безопасность и аутентификация', 'Ошибки
 keywords: ['Ошибка', 'SSL-сертификат', '210']
 ---
 
-<div id="resolving-ssl-certificate-verify-error-in-clickhouse">
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
   ## Устранение ошибки проверки SSL-сертификата с кодом 210 в ClickHouse
 </div>
 
@@ -18,9 +18,9 @@ keywords: ['Ошибка', 'SSL-сертификат', '210']
   ## Причина ошибки
 </div>
 
-Эта ошибка возникает при попытке подключиться к серверу ClickHouse с помощью клиента ClickHouse. Причина может быть одной из следующих:
+Эта ошибка возникает при попытке подключиться к серверу ClickHouse с помощью `clickhouse-client`. Причина может быть одной из следующих:
 
-* в файле конфигурации клиента `config.xml` отсутствует корневой CA‑сертификат из системного хранилища доверенных CA по умолчанию, или
+* в файле конфигурации клиента `config.xml` отсутствует корневой сертификат из системного хранилища доверенных CA по умолчанию, или
 * самоподписанный или внутренний CA‑сертификат не настроен
 
 <div id="solution">
@@ -46,39 +46,8 @@ keywords: ['Ошибка', 'SSL-сертификат', '210']
 </openSSL>
 ```
 
-<div id="python-clients-on-macos">
-  ## Клиенты Python на macOS
-</div>
-
-Клиенты Python сообщают об этой ошибке по-разному, обычно так:
-
-`ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
-
-На macOS сборка Python с python.org проверяет сертификаты через стандартные пути OpenSSL, а не через системную связку ключей. При чистой установке эти пути не указывают ни на один набор корневых сертификатов: установщик включает [certifi](https://pypi.org/project/certifi/), но не связывает его со стандартным расположением OpenSSL, пока вы не запустите входящий в комплект скрипт `Install Certificates.command`. До этого клиент не может проверить сертификат сервера ClickHouse Cloud, хотя сам сертификат действителен. Это касается сборок python.org для macOS в целом (Python 3.6 и новее), а не только Python 3.11.
-
-Запустите `Install Certificates.command`, чтобы связать certifi со стандартным путем к сертификатам OpenSSL. Скорректируйте версию в пути в соответствии с вашей установкой:
-
-```bash
-open "/Applications/Python 3.11/Install Certificates.command"
-```
-
-В качестве альтернативы укажите клиенту пакет сертификатов certifi напрямую. [ClickHouse Connect](/ru/integrations/language-clients/python/index) сам по себе не использует certifi в качестве резервного варианта, поэтому передайте пакет через параметр `ca_cert`:
-
-```python
-import certifi
-import clickhouse_connect
-
-client = clickhouse_connect.get_client(
-    host='HOSTNAME.clickhouse.cloud',
-    port=8443,
-    username='default',
-    password='YOUR_SECRET_PASSWORD',
-    ca_cert=certifi.where(),
-)
-```
-
 <div id="additional-resources">
   ## Дополнительные ресурсы
 </div>
 
-См. [документацию по конфигурации клиента ClickHouse](/ru/concepts/features/interfaces/client#configuration_files).
+См. [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/ru/concepts/features/interfaces/cli#configuration_files)

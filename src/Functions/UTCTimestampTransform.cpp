@@ -1,4 +1,3 @@
-#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnString.h>
@@ -144,25 +143,15 @@ namespace
                 {
                     DateTime64 date_time_val = date_time_col.getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
-                    /// Truncating division rounds toward zero, so a negative sub-second remainder
-                    /// lands on the next second up. Floor it, otherwise timezoneOffset() reads the
-                    /// wrong side of a DST/offset boundary.
-                    if (date_time_val.value % scale_multiplier < 0)
-                        seconds -= 1;
+                    Int64 micros = date_time_val.value % scale_multiplier;
                     auto time_zone_offset = time_zone.timezoneOffset(seconds);
-                    /// Shifting the floored seconds by the offset and reassembling is the same as
-                    /// shifting the underlying value by `offset * scale_multiplier`. That product fits
-                    /// Int64 (|offset| < 2^18, scale_multiplier <= 10^9); only the shift can overflow.
-                    Int64 offset_scaled = time_zone_offset * scale_multiplier;
-                    Int64 res = 0;
-                    if (to_utc ? common::subOverflow(date_time_val.value, offset_scaled, res)
-                               : common::addOverflow(date_time_val.value, offset_scaled, res))
-                    {
-                        /// The sign of the applied shift tells which end the true value ran past.
-                        const bool shift_is_negative = to_utc ? (offset_scaled > 0) : (offset_scaled < 0);
-                        res = shift_is_negative ? std::numeric_limits<Int64>::min() : std::numeric_limits<Int64>::max();
-                    }
-                    result_data[i] = DateTime64(res);
+                    Int64 time_val = seconds;
+                    if (to_utc)
+                        time_val -= time_zone_offset;
+                    else
+                        time_val += time_zone_offset;
+                    DateTime64 date_time_64(time_val * scale_multiplier + micros);
+                    result_data[i] = date_time_64;
                 }
                 return result_column;
             }

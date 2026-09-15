@@ -1,10 +1,10 @@
 ---
-title: "Join Order Benchmark (JOB)"
-description: "Jeu de données et requêtes du Join Order Benchmark (JOB)."
-sidebarTitle: "JOB"
-slug: "/getting-started/example-datasets/job"
-doc_type: "guide"
-keywords: ["example dataset", "job", "join order benchmark", "benchmark", "performance testing", "query optimizer", "join ordering"]
+description: 'Jeu de données et requêtes du Join Order Benchmark (JOB).'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['example dataset', 'job', 'join order benchmark', 'benchmark', 'performance testing', 'query optimizer', 'join ordering']
 ---
 
 Le Join Order Benchmark (JOB) met à rude épreuve l’optimiseur de requêtes avec 113 requêtes analytiques sur un jeu de données réel fortement corrélé (un instantané d’IMDb). Depuis son introduction, le benchmark JOB est devenu la norme de facto pour évaluer les performances des optimiseurs de requêtes des SGBD relationnels, notamment pour l’estimation de cardinalité et l’optimisation de l’ordre des jointures. Contrairement aux benchmarks synthétiques qui supposent des données uniformes et indépendantes, JOB utilise des données réelles avec une distribution asymétrique et des corrélations, ce qui en fait un test exigeant pour l’ordre des jointures et l’estimation de cardinalité.
@@ -24,7 +24,7 @@ Les 113 requêtes sont organisées en 33 familles (`1`–`33`). Les requêtes d�
 
 Le jeu de données JOB est un instantané d’IMDb comprenant 21 tables. Les définitions des tables sont disponibles dans [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) du dépôt ClickHouse.
 
-Chaque table utilise le moteur [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree), avec un tri sur sa colonne de clé primaire `id`, en miroir du schéma PostgreSQL d’origine dans lequel chaque table déclare `id integer NOT NULL PRIMARY KEY`. Les colonnes PostgreSQL pouvant contenir des valeurs NULL sont mappées sur des types `Nullable(...)`.
+Chaque table utilise le moteur [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), avec un tri sur sa colonne de clé primaire `id`, en miroir du schéma PostgreSQL d’origine dans lequel chaque table déclare `id integer NOT NULL PRIMARY KEY`. Les colonnes PostgreSQL pouvant contenir des valeurs NULL sont mappées sur des types `Nullable(...)`.
 
 Créez les tables :
 
@@ -38,9 +38,12 @@ clickhouse client --database job --queries-file init_cloud.sql
   ## Chargement des données
 </div>
 
-Les données proviennent de l’instantané IMDb d’origine utilisé par JOB, distribué sous la forme d’un fichier CSV par table (`aka_name.csv`, `title.csv`, ...). Ces fichiers CSV utilisent la sémantique `COPY` de PostgreSQL avec `ESCAPE '\'` : un backslash n’échappe le caractère de guillemet qu’à l’intérieur d’un champ entre guillemets, tandis qu’en dehors des guillemets, un backslash est un caractère littéral. ClickHouse attend des CSV conformes à la RFC 4180 (guillemets doublés, sans échappement par backslash), les fichiers doivent donc d’abord être réencodés.
+Les données proviennent de l’instantané IMDb d’origine utilisé par JOB, distribué sous la forme d’un fichier CSV par table (`aka_name.csv`, `title.csv`, ...).
+Ces fichiers CSV utilisent la sémantique `COPY` de PostgreSQL avec `ESCAPE '\'` : un backslash n’échappe le caractère de guillemet qu’à l’intérieur d’un champ entre guillemets, tandis qu’en dehors des guillemets, un backslash est un caractère littéral.
+ClickHouse attend des CSV conformes à la RFC 4180 (guillemets doublés, sans échappement par backslash), les fichiers doivent donc d’abord être réencodés.
 
-[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) effectue ce réencodage. Il lit le CSV d’origine sur stdin et écrit un CSV standard sur stdout, en doublant les guillemets internes et en conservant les champs vides non entre guillemets (que ClickHouse associe à `NULL` pour les colonnes `Nullable`).
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) effectue ce réencodage.
+Il lit le CSV d’origine sur stdin et écrit un CSV standard sur stdout, en doublant les guillemets internes et en conservant les champs vides non entre guillemets (que ClickHouse associe à `NULL` pour les colonnes `Nullable`).
 
 Pour créer les tables à partir des CSV d’origine :
 
@@ -61,7 +64,8 @@ for table in aka_name aka_title cast_info char_name comp_cast_type company_name 
 done
 ```
 
-Une fois les tables alimentées, elles peuvent être exportées au format Parquet pour être réimportées plus rapidement par la suite, par exemple. `clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+Une fois les tables alimentées, elles peuvent être exportées au format Parquet pour être réimportées plus rapidement par la suite, par exemple.
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
 
 Tailles détaillées des tables :
 
@@ -96,7 +100,9 @@ Tailles détaillées des tables :
   ## Requêtes
 </div>
 
-Les 113 requêtes JOB sont disponibles [ici](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) dans le dépôt ClickHouse. Les paramètres utilisés pour les exécuter se trouvent dans [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json). Consultez le [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) pour connaître les problèmes connus et les remarques concernant certaines requêtes.
+Les 113 requêtes JOB sont disponibles [ici](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) dans le dépôt ClickHouse.
+Les paramètres utilisés pour les exécuter se trouvent dans [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+Consultez le [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) pour connaître les problèmes connus et les remarques concernant certaines requêtes.
 
 Les requêtes font référence aux tables par leur nom ; exécutez-les donc sur la base de données `job` (par exemple avec `clickhouse client --database job`).
 
@@ -122,9 +128,3 @@ WHERE ct.kind = 'production companies'
   AND mc.movie_id = mi_idx.movie_id
   AND it.id = mi_idx.info_type_id;
 ```
-
-<div id="performance-benchmark">
-  ## Benchmark de performances
-</div>
-
-ClickHouse suit les performances des requêtes JOB pour chaque version publiée. Consultez les temps d’exécution des 113 requêtes JOB sur la page [benchmark des versions de ClickHouse](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ob\&metric=hot\&queries=-) pour voir l’évolution des performances au fil du temps.
