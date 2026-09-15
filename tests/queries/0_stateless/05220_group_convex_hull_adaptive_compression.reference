@@ -6,6 +6,8 @@ adaptive_partial_merge
 1
 legacy_state
 1	1
+adaptive_legacy_suffix
+1
 legacy_rejects_adaptive_gap
 adaptive_rejects_excess_growth
 adaptive_rejects_invalid_watermark

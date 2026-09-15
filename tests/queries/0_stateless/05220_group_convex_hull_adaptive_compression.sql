@@ -5,8 +5,8 @@ INSERT INTO hull_adaptive_points
 SELECT number, (cos(number * 2 * pi() / 35004), sin(number * 2 * pi() / 35004))
 FROM numbers(35004);
 
--- All points are vertices. The state contains more than 10,000 fresh points after
--- its last compression, so a version-2 reader would incorrectly reject this writer's output.
+-- All points are vertices. Adaptive accumulation and compact serialization must
+-- preserve every vertex across a binary round trip.
 CREATE TEMPORARY TABLE hull_adaptive_state (s AggregateFunction(groupConvexHull, Point));
 INSERT INTO hull_adaptive_state SELECT groupConvexHullState(pt) FROM hull_adaptive_points;
 
@@ -53,9 +53,15 @@ FROM
     )
 );
 
--- Downgrading an adaptive state with >10,000 fresh points must fail the legacy invariant.
+-- Earlier version-3 writers could leave an adaptive suffix. The current writer compacts
+-- it, so construct the old metadata explicitly: 35,004 points, watermark 20,003.
+SELECT 'adaptive_legacy_suffix';
+SELECT length(finalizeAggregation(CAST(unhex(concat('03BC9102A39C01', substring(hex(s), 15)))
+    AS AggregateFunction(groupConvexHull, Point)))) = 35005 FROM hull_adaptive_state;
+
+-- Downgrading that adaptive suffix must fail the version-2 invariant.
 SELECT 'legacy_rejects_adaptive_gap';
-SELECT finalizeAggregation(CAST(unhex(concat('02', substring(hex(s), 3)))
+SELECT finalizeAggregation(CAST(unhex(concat('02BC9102A39C01', substring(hex(s), 15)))
     AS AggregateFunction(groupConvexHull, Point)))
 FROM hull_adaptive_state; -- { serverError INCORRECT_DATA }
 
