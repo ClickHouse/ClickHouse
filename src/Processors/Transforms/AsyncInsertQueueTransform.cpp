@@ -339,10 +339,13 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             context->getProcessListElement(), context->getProgressCallback(),
             /* report_read_progress */ false);
     }
+    else if (!fallback_executor)
+    {
+        /// Empty result: still run the destination pipeline so its `onStart` checks fire, as a plain
+        /// `INSERT ... SELECT` would, instead of silently skipping the destination.
+        startFallback();
+    }
 
-    /// Set only once the fallback pipeline actually ran (`disqualify` -> `startFallback`); a no-op
-    /// otherwise, e.g. an eligible query that diverted above, or an empty `SELECT` result that never
-    /// produced a block to divert or fall back at all.
     if (fallback_executor)
         fallback_executor->finish();
 
