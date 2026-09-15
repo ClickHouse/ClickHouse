@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/IDataType.h>
 #include <Parsers/IASTHash.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
@@ -82,6 +83,15 @@ private:
 
     /// Check if is LowCardinality OR chain
     bool isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const;
+
+    /** Whether folding the chain into `IN` keeps the semantics of `equals`. It does not for a
+      * floating-point NaN or signed zero, because `IN` matches by set membership - see
+      * `comparisonWithConstantMatchesSetMembership`.
+      */
+    bool equalityChainMatchesSetMembership(const std::vector<ASTFunction *> & functions) const;
+
+    /// Type of the compared expression, if it is a column reference that resolves to a known table column.
+    DataTypePtr tryGetColumnType(const IAST & expression) const;
 
     /// Insert the IN expression into the OR chain.
     static void addInExpression(const DisjunctiveEqualityChain & chain);
