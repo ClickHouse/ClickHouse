@@ -327,6 +327,7 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list);
     void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
     void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);

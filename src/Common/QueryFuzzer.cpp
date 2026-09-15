@@ -1429,9 +1429,9 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         }
     }
 
-    /// Swap between MergeTree variants that require no mandatory extra columns.
-    /// CollapsingMergeTree/VersionedCollapsingMergeTree require a sign column and
-    /// GraphiteMergeTree requires a config name, so those are excluded.
+    /// Swap between MergeTree variants that need no mandatory extra columns. The Collapsing ones do,
+    /// so `swapEngineToCollapsing` handles them; GraphiteMergeTree additionally wants a server-config
+    /// rollup section and four specifically named columns, which a corpus table essentially never has.
     if (endsWith(engine_name, "MergeTree") && fuzz_rand() % 20 == 0)
     {
         static const Strings safe_mergetree_engines = {
@@ -1518,6 +1518,50 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         return;
     }
 
+    auto fuzz_setting = [&](const String & name, Field value)
+    {
+        if (!storage.settings)
+        {
+            auto new_settings = make_intrusive<ASTSetQuery>();
+            new_settings->is_standalone = false;
+            storage.set(storage.settings, new_settings);
+        }
+        storage.settings->changes.emplace_back(name, std::move(value));
+    };
+
+    /// `TimeSeries` keeps its own settings, so it never reaches the MergeTree block below.
+    if (engine_name == "TimeSeries")
+    {
+        /// Only `use_all_tags_column_to_generate_id` defaults to false, so draw both ways.
+        static const Strings timeseries_bool_settings
+            = {"aggregate_min_time_and_max_time",
+               "filter_by_min_time_and_max_time",
+               "store_min_time_and_max_time",
+               "use_all_tags_column_to_generate_id"};
+
+        for (const auto & name : timeseries_bool_settings)
+            if (fuzz_rand() % 20 == 0)
+                fuzz_setting(name, UInt64(fuzz_rand() % 2));
+
+        if (fuzz_rand() % 20 == 0)
+            fuzz_setting("samples_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+        if (fuzz_rand() % 20 == 0)
+            fuzz_setting("tags_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+
+        /// Writing `recent_samples_index_granularity` at all is rejected once the recent-samples
+        /// table is off, so only offer it while the TTL stays non-zero.
+        bool recent_samples_disabled = false;
+        if (fuzz_rand() % 20 == 0)
+        {
+            recent_samples_disabled = fuzz_rand() % 4 == 0;
+            fuzz_setting("recent_samples_ttl_seconds", UInt64(recent_samples_disabled ? 0 : fuzz_rand() % 345600 + 1));
+        }
+        if (!recent_samples_disabled && fuzz_rand() % 20 == 0)
+            fuzz_setting("recent_samples_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+
+        return;
+    }
+
     /// For MergeTree family engines, inject hot table settings with low probability.
     if (!endsWith(engine_name, "MergeTree"))
         return;
@@ -1546,17 +1590,6 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
            "ttl_only_drop_parts",
            "use_const_adaptive_granularity",
            "use_primary_key_cache"};
-
-    auto fuzz_setting = [&](const String & name, Field value)
-    {
-        if (!storage.settings)
-        {
-            auto new_settings = make_intrusive<ASTSetQuery>();
-            new_settings->is_standalone = false;
-            storage.set(storage.settings, new_settings);
-        }
-        storage.settings->changes.emplace_back(name, std::move(value));
-    };
 
     for (const auto & name : hot_bool_settings)
         if (fuzz_rand() % 20 == 0)
@@ -1692,6 +1725,71 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
     }
 }
 
+/// Swap a MergeTree-family engine for `CollapsingMergeTree(sign)` or
+/// `VersionedCollapsingMergeTree(sign, version)`. Both name columns of a specific type, so this
+/// lives here rather than in `fuzzTableStorage`, which never sees the column list.
+void QueryFuzzer::swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list)
+{
+    if (!storage.engine || !columns_list)
+        return;
+
+    auto & engine_name = storage.engine->name;
+    /// Plain MergeTree-family engines only: `Replicated` is already stripped by `fuzzTableStorage`,
+    /// and `Shared` is left alone - both are Keeper-backed and out of scope here.
+    if (!endsWith(engine_name, "MergeTree") || startsWith(engine_name, "Shared") || fuzz_rand() % 30 != 0)
+        return;
+
+    auto & columns = columns_list->children;
+    Strings sign_candidates;
+    Strings version_candidates;
+    for (const auto & column_ast : columns)
+    {
+        const auto * column = column_ast->as<ASTColumnDeclaration>();
+        if (!column)
+            continue;
+        const auto column_type = column->getType();
+        if (!column_type)
+            continue;
+        /// tryGet, not get: by now the column types have been through `fuzzColumnDeclarationList`.
+        const auto type = DataTypeFactory::instance().tryGet(column_type);
+        if (!type)
+            continue;
+        /// `MergeTreeData` requires the sign to be plain `Int8` - `Nullable(Int8)` and `UInt8` are both
+        /// rejected - so match the type exactly the way it does.
+        if (typeid_cast<const DataTypeInt8 *>(type.get()))
+            sign_candidates.push_back(column->name);
+        if (type->canBeUsedAsVersion())
+            version_candidates.push_back(column->name);
+    }
+
+    if (sign_candidates.empty())
+        return;
+
+    const String sign_column = pickRandomly(fuzz_rand, sign_candidates);
+    /// `Int8` can serve as a version too, so the chosen sign column is usually a version candidate
+    /// as well - but naming it twice is rejected outright ("The version and sign column cannot be
+    /// the same"), which would turn every such CREATE into a guaranteed no-op.
+    std::erase(version_candidates, sign_column);
+
+    auto arguments = make_intrusive<ASTExpressionList>();
+    arguments->children.push_back(make_intrusive<ASTIdentifier>(sign_column));
+    if (!version_candidates.empty() && fuzz_rand() % 2 == 0)
+    {
+        engine_name = "VersionedCollapsingMergeTree";
+        arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, version_candidates)));
+    }
+    else
+    {
+        engine_name = "CollapsingMergeTree";
+    }
+
+    auto * engine = storage.engine;
+    if (engine->arguments)
+        engine->replace(engine->arguments, std::move(arguments));
+    else
+        engine->set(engine->arguments, std::move(arguments));
+}
+
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -1717,6 +1815,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     else if (create.storage)
     {
         fuzzTableStorage(*create.storage);
+        swapEngineToCollapsing(*create.storage, create.columns_list ? create.columns_list->columns : nullptr);
     }
 
     /// Fuzz the view targets: MV `TO`, window-view `INNER`, and TimeSeries `SAMPLES`/`TAGS`/`METRICS`.
@@ -1736,9 +1835,15 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             create.targets->removeTarget(kind);
         }
 
-        for (auto * inner_storage : create.targets->getInnerEngines())
-            if (inner_storage)
+        /// Iterate kinds rather than `getInnerEngines`, which yields no kind: the Collapsing swap
+        /// needs each inner engine paired with that target's own column list to find a sign column.
+        for (auto kind : create.targets->getKinds())
+            if (auto * inner_storage = create.targets->getInnerEngine(kind))
+            {
                 fuzzTableStorage(*inner_storage);
+                auto * inner_cols = create.targets->getInnerColumns(kind);
+                swapEngineToCollapsing(*inner_storage, inner_cols ? inner_cols->columns : nullptr);
+            }
 
         for (auto kind : create.targets->getKinds())
             if (auto * inner_cols = create.targets->getInnerColumns(kind))
@@ -4318,6 +4423,15 @@ ASTPtr QueryFuzzer::generatePredicate()
                                 next_condition = makeASTFunction(variant, expression_1, entry.second->clone());
                             break;
                         }
+                        const auto * table_expr = typeid_cast<ASTTableExpression *>(entry.second.get());
+                        if (table_expr && table_expr->database_and_table_name)
+                        {
+                            next_condition = makeASTFunction(
+                                in_variants[fuzz_rand() % in_variants.size()],
+                                expression_1,
+                                table_expr->database_and_table_name->clone());
+                            break;
+                        }
                     }
                 }
                 else if (nprob == 2)
@@ -5114,7 +5228,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Array construction from a length and a value (n, value -> Array)
         {"arrayWithConstant", "range"},
         /// Array scalar reductions (array → scalar)
-        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayAutocorrelation"},
+        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayFlattenedLength", "arrayAutocorrelation"},
         /// Array transform functions (array → array, no lambda)
         {"arrayReverse",
          "arrayShuffle",
@@ -5385,17 +5499,44 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"multiFuzzyMatchAny", "multiFuzzyMatchAnyIndex", "multiFuzzyMatchAllIndices"},
         /// Integer GCD / LCM
         {"gcd", "lcm"},
-        /// Time-series group/id single-argument accessors (group or id → Map/Array/String)
+        /// Time-series group/id single-argument accessors (group or id → Map/Array/String).
+        /// `timeSeriesTagsGroupToTags` and `timeSeriesIdToTagsGroup` are aliases of two of these.
         {"timeSeriesGroupToTags",
          "timeSeriesGroupToSamplingKey",
          "timeSeriesIdToGroup",
          "timeSeriesIdToTags",
          "timeSeriesExtractTag",
-         "timeSeriesTagsToGroup"},
+         "timeSeriesTagsToGroup",
+         "timeSeriesTagsGroupToTags",
+         "timeSeriesIdToTagsGroup"},
         /// Time-series tag removal (group, tag(s) → group)
         {"timeSeriesRemoveTag", "timeSeriesRemoveTags", "timeSeriesRemoveAllTagsExcept"},
         /// Time-series tag copying (dest_group, src_group, tag(s) → group)
         {"timeSeriesCopyTag", "timeSeriesCopyTags"},
+        /// Time-series grid aggregates: all take the same four parameters (start_timestamp,
+        /// end_timestamp, step, window) and the same samples arguments, so only the name differs.
+        /// `timeSeriesPredictLinearToGrid` is deliberately absent: it takes a fifth parameter.
+        {"timeSeriesAvgToGrid",
+         "timeSeriesChangesToGrid",
+         "timeSeriesCountToGrid",
+         "timeSeriesDeltaToGrid",
+         "timeSeriesDerivToGrid",
+         "timeSeriesIncreaseToGrid",
+         "timeSeriesInstantDeltaToGrid",
+         "timeSeriesInstantRateToGrid",
+         "timeSeriesLastToGrid",
+         "timeSeriesMaxToGrid",
+         "timeSeriesMinToGrid",
+         "timeSeriesRateToGrid",
+         "timeSeriesResampleToGridWithStaleness",
+         "timeSeriesResetsToGrid",
+         "timeSeriesSumToGrid",
+         "timeSeriesTimestampOfMaxToGrid",
+         "timeSeriesTimestampOfMinToGrid"},
+        /// Time-series top-k masks over a grid ((k)(key, values) → Array masks)
+        {"timeSeriesTopKMasks", "timeSeriesBottomKMasks", "timeSeriesLimitKMasks"},
+        /// Time-series aggregates over sample pairs (timestamp, value → samples)
+        {"timeSeriesGroupArray", "timeSeriesLastTwoSamples"},
         /// Series analysis over a numeric array (array[, extra params] → Array/number)
         {"seriesDecomposeSTL", "seriesOutliersDetectTukey", "seriesPeriodDetectFFT"},
         /// Tumbling time windows (time_attr, interval[, timezone] → Tuple/DateTime)
@@ -8187,19 +8328,43 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                                                                                            : ASTConstraintDeclaration::Type::CHECK;
         fuzz(constraint->children);
     }
-    else if (auto * hypo_index = typeid_cast<ASTHypotheticalObjectQuery *>(ast.get()))
+    else if (auto * hypo_object = typeid_cast<ASTHypotheticalObjectQuery *>(ast.get()))
     {
-        fuzzTableName(*hypo_index);
-        /// CREATE/DROP HYPOTHETICAL INDEX: mutate the embedded index declaration
-        /// like a regular skipping index and toggle the IF [NOT] EXISTS flags.
-        if (hypo_index->index_decl)
-            if (auto * idx = hypo_index->index_decl->as<ASTIndexDeclaration>())
+        fuzzTableName(*hypo_object);
+        /// CREATE/DROP HYPOTHETICAL INDEX and CREATE/DROP HYPOTHETICAL PROJECTION: mutate the
+        /// embedded declaration exactly like the table-level one it mirrors, and toggle the
+        /// IF [NOT] EXISTS flags.
+        if (hypo_object->index_decl)
+            if (auto * idx = hypo_object->index_decl->as<ASTIndexDeclaration>())
                 fuzzIndexDeclaration(*idx);
+        if (hypo_object->projection_decl)
+            if (auto * proj = hypo_object->projection_decl->as<ASTProjectionDeclaration>())
+                fuzzProjectionDeclaration(*proj);
+        /// `object_kind` only selects the keyword for a DROP, so it is always free to flip there.
+        /// A CREATE also prints the matching declaration, and only one of the two is ever set,
+        /// so flipping it would make the formatter assert on the missing one.
+        if (hypo_object->kind != ASTHypotheticalObjectQuery::Create && fuzz_rand() % 20 == 0)
+            hypo_object->object_kind = hypo_object->object_kind == ASTHypotheticalObjectQuery::Index
+                ? ASTHypotheticalObjectQuery::Projection
+                : ASTHypotheticalObjectQuery::Index;
+        /// Swap a CREATE for the DROP of the same object and back. `DropAll` is left alone: it
+        /// keeps neither a name nor a declaration, so nothing could turn it back into the others.
         if (fuzz_rand() % 20 == 0)
-            hypo_index->if_not_exists = !hypo_index->if_not_exists;
+        {
+            const bool has_decl = hypo_object->object_kind == ASTHypotheticalObjectQuery::Projection
+                ? hypo_object->projection_decl != nullptr
+                : hypo_object->index_decl != nullptr;
+
+            if (hypo_object->kind == ASTHypotheticalObjectQuery::Create)
+                hypo_object->kind = ASTHypotheticalObjectQuery::Drop;
+            else if (hypo_object->kind == ASTHypotheticalObjectQuery::Drop && has_decl)
+                hypo_object->kind = ASTHypotheticalObjectQuery::Create;
+        }
         if (fuzz_rand() % 20 == 0)
-            hypo_index->if_exists = !hypo_index->if_exists;
-        fuzz(hypo_index->children);
+            hypo_object->if_not_exists = !hypo_object->if_not_exists;
+        if (fuzz_rand() % 20 == 0)
+            hypo_object->if_exists = !hypo_object->if_exists;
+        fuzz(hypo_object->children);
     }
     else if (dynamic_cast<ASTDataType *>(ast.get()))
     {

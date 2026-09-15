@@ -2125,9 +2125,13 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
 }
 
-void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef)
+void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const ProjectionUsage usage, ProjectionDef * pdef)
 {
-    pdef->mutable_proj()->set_value(rg.nextIdentifier("p", t.proj_counter++, fc.allow_nasty_identifiers));
+    const bool hypothetical = usage == ProjectionUsage::HypotheticalProjection;
+    const String prefix = hypothetical ? "hp" : "p";
+    uint32_t & counter = hypothetical ? t.hproj_counter : t.proj_counter;
+
+    pdef->mutable_proj()->set_value(rg.nextIdentifier(prefix, counter++, fc.allow_nasty_identifiers));
     this->inside_projection = true;
     if (rg.nextBool())
     {
@@ -2583,7 +2587,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                  {add_proj,
                   [&]
                   {
-                      addTableProjection(rg, next, ndef->mutable_proj_def());
+                      addTableProjection(rg, next, ProjectionUsage::TableProjection, ndef->mutable_proj_def());
                       added_projs++;
                   }},
                  {add_const,
