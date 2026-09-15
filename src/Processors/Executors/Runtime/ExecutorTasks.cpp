@@ -1,5 +1,4 @@
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -152,12 +151,10 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         threads_queue.push(context.thread_number);
     }
 
-    {
-        /// This worker has no task and is about to sleep: park its CPU lease so the slot is freed
-        /// while idle (a sleeping worker never calls renew() to downscale) and unpark on wake.
-        CPULeaseParkGuard park_guard;
-        context.wait(finished);
-    }
+    /// This worker has no task and is going to sleep. `context.wait()` parks the CPU lease while it
+    /// actually blocks (a sleeping worker never renews to downscale) and unparks on wake; the park
+    /// is gated on the real block there, so a wake that arrives before we sleep does not churn the slot.
+    context.wait(finished);
 }
 
 size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
