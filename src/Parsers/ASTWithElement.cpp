@@ -23,16 +23,19 @@ ASTPtr ASTWithElement::clone() const
     res->subquery = subquery->clone();
     if (aliases)
         res->aliases = aliases->clone();
+    if (key_columns)
+        res->key_columns = key_columns->clone();
     res->children.emplace_back(res->subquery);
     return res;
 }
 
 void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// The name selects which CTE a reference resolves to, and `aliases` renames the subquery
-    /// columns, but neither is a child, so without this both are absent from the hash.
+    /// The name selects which CTE a reference resolves to, `aliases` renames the subquery
+    /// columns and `key_columns` selects keyed recursive evaluation, but none of them is a
+    /// child, so without this they are all absent from the hash.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 80, "If members were added to ASTWithElement, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 88, "If members were added to ASTWithElement, hash them here unless they are purely cosmetic.");
     /// Length-prefixed, otherwise the name runs into whatever `getID` writes next.
     hash_state.update(name.size());
     hash_state.update(name);
@@ -40,6 +43,9 @@ void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(aliases != nullptr);
     if (aliases)
         aliases->updateTreeHash(hash_state, ignore_aliases);
+    hash_state.update(key_columns != nullptr);
+    if (key_columns)
+        key_columns->updateTreeHash(hash_state, ignore_aliases);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -51,6 +57,7 @@ void ASTWithElement::writeJSON(WriteBuffer & out) const
         w.writeBool("is_materialized", true);
     w.writeChild("subquery", subquery);
     w.writeChild("aliases", aliases);
+    w.writeChild("key_columns", key_columns);
 }
 
 void ASTWithElement::readJSON(const Poco::JSON::Object & json)
@@ -84,6 +91,17 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
         /// `updateTreeHashImpl` hashes the member explicitly, so adding it here would make a
         /// JSON-built copy of the same definition hash the aliases twice and compare unequal.
     }
+
+    /// `key_columns` is an `ASTExpressionList` of `ASTIdentifier` as well: `QueryTreeBuilder`
+    /// does `key_column->as<ASTIdentifier &>()` over its children. It is kept out of `children`
+    /// for the same reason as `aliases`.
+    key_columns = r.readChildOfType<ASTExpressionList>("key_columns");
+    if (key_columns)
+    {
+        for (const auto & key_column : key_columns->children)
+            if (!key_column || !key_column->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`WithElement` USING KEY columns must be identifiers during AST JSON deserialization");
+    }
 }
 
 void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -98,6 +116,17 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         ostr << "(";
         aliases->format(ostr, settings, state, frame);
+        ostr << ")";
+
+        frame.expression_list_prepend_whitespace = prep_whitespace;
+    }
+    if (key_columns)
+    {
+        const bool prep_whitespace = frame.expression_list_prepend_whitespace;
+        frame.expression_list_prepend_whitespace = false;
+
+        ostr << " USING KEY (";
+        key_columns->format(ostr, settings, state, frame);
         ostr << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;
