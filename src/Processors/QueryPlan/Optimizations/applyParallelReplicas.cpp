@@ -1,3 +1,4 @@
+#include <functional>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -32,6 +33,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -174,21 +176,29 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
     return false;
 }
 
+/// True if `predicate` holds for any `ActionsDAG` a step in this subtree hands to its `serialize` - a
+/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, or a source step's row-level
+/// filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
+/// serializes a DAG not listed here would escape every check built on this walk. Child plans are walked
+/// too, so a subplan held by a step (`ReadFromMerge`) is not invisible.
+static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate);
+
 /// True if the DAG references an `IN`/`NOT IN` subquery set which cannot be shipped. This path always
 /// ships such a set as its subquery plan, never as data: `serializeSets` takes the `SubqueryPlan` branch
 /// unless `sets_must_be_ready` is set, which only `QueryPlan::serializeForDistributedTask` (the worker-task
-/// path) does - `ensureSerialized` here goes through `QueryPlan::serialize`. So the set is unshippable when
-/// that plan is missing, or is present but holds a step which cannot be serialized:
-/// - missing: the subquery source is non-clonable and took the destructive in-place build (dictionary /
-///   system-table subquery, nested `IN`, or a `GLOBAL IN` external table), which throws
+/// path) does - `ensureSerialized` here goes through `QueryPlan::serialize`. Every replica then rebuilds
+/// the set from that plan, so it is unshippable in three cases:
+/// - the plan is missing: the subquery source is non-clonable and took the destructive in-place build
+///   (dictionary / system-table subquery, nested `IN`, or a `GLOBAL IN` external table), which throws
 ///   `Cannot serialize FutureSetFromSubquery with no query plan`;
-/// - unserializable: the plan is still there - either `FutureSetFromSubquery::buildOrderedSetInplace` kept
-///   it by cloning a clonable source, or no in-place build was attempted at all (only an `IN` over the
-///   primary key runs one) - but a step in it has no `serialize`. `generateRandom()` is such a source: it is
+/// - the plan is there but holds a step with no `serialize`. `generateRandom()` is such a source: it is
 ///   read through `ReadFromStorageStep`, whose `isSerializable` accepts only `system.one`, and shipping it
-///   throws `Method serialize is not implemented`. It must never be shipped anyway - it is
-///   non-deterministic, so every replica would build a different set.
-/// A present plan says nothing about serializability, so the plan itself has to be checked.
+///   throws `Method serialize is not implemented`. A present plan says nothing about serializability, so
+///   the plan itself has to be checked;
+/// - the plan is serializable but not deterministic. Rebuilding it per replica would then give each one a
+///   different set, and an `IN` is supposed to compare against a single set - wrong rows, no exception.
+///   `rand()` is the example: unlike `now()`, it is not constant-folded (folding needs a `ColumnConst`
+///   result), so it reaches the replicas as a live function and each evaluates it itself.
 static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
@@ -216,27 +226,37 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
                 offending->step->getName());
             return true;
         }
+
+        /// `dagContainsNonDeterministicFunction` asks for determinism *within* one query, which is the right
+        /// question here: `now()` and friends are folded to their value on the initiator and the value is
+        /// what gets serialized, so only a function which is recomputed per row - and therefore per replica -
+        /// is rejected.
+        if (checkQueryPlanActionDAGs(subquery_plan->getRootNode(), dagContainsNonDeterministicFunction))
+        {
+            LOG_DEBUG(
+                getLogger("ApplyParallelReplicas"),
+                "Keeping the plan fragment local: an IN-subquery set is not deterministic, so every replica "
+                "would build a different one");
+            return true;
+        }
     }
     return false;
 }
 
-/// True if any step in the fragment references such an unshippable subquery set - in a filter, an
-/// expression, or a source step's row-level filter or PREWHERE. Used to keep that fragment local instead of
-/// shipping it.
-static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
+static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate)
 {
     if (!node)
         return false;
 
-    const auto * step = node->step.get();
+    auto * step = node->step.get();
     if (const auto * filter = typeid_cast<const FilterStep *>(step))
     {
-        if (dagReferencesUnshippableSubquerySet(filter->getExpression()))
+        if (predicate(filter->getExpression()))
             return true;
     }
     else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
     {
-        if (dagReferencesUnshippableSubquerySet(expression->getExpression()))
+        if (predicate(expression->getExpression()))
             return true;
     }
     else if (const auto * join = typeid_cast<const JoinStepLogical *>(step))
@@ -245,8 +265,17 @@ static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
         /// residual filter) and `actions_after_join` are only node ids into it. An `ON` conjunct which reads
         /// the preserved side of an outer join stays here instead of being pushed down to that side - see
         /// `canPushDownFromOn` - so this is where such a set is found.
-        if (dagReferencesUnshippableSubquerySet(join->getActionsDAG()))
+        if (predicate(join->getActionsDAG()))
             return true;
+    }
+    else if (const auto * totals_having = typeid_cast<const TotalsHavingStep *>(step))
+    {
+        /// A fragment never holds the outer query's `HAVING` - it ends at the partial aggregation, and
+        /// `HAVING` runs above the merge on the initiator. A set's subquery plan is shipped whole, though,
+        /// so `IN (SELECT ... GROUP BY ... WITH TOTALS HAVING ...)` does put one in the walked plan.
+        if (const auto * actions = totals_having->getActions())
+            if (predicate(*actions))
+                return true;
     }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))
     {
@@ -254,18 +283,29 @@ static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
         /// `prewhere_info`), and index analysis builds the sets of both in place, so either can carry a set
         /// whose plan is gone. A row policy (`USING k IN (SELECT ...)`) reaches the read this way.
         if (const auto row_level_filter = source_with_filter->getRowLevelFilter())
-            if (dagReferencesUnshippableSubquerySet(row_level_filter->actions))
+            if (predicate(row_level_filter->actions))
                 return true;
 
         if (const auto prewhere_info = source_with_filter->getPrewhereInfo())
-            if (dagReferencesUnshippableSubquerySet(prewhere_info->prewhere_actions))
+            if (predicate(prewhere_info->prewhere_actions))
                 return true;
     }
 
+    for (auto * child_plan : step->getChildPlans())
+        if (child_plan && checkQueryPlanActionDAGs(child_plan->getRootNode(), predicate))
+            return true;
+
     for (const auto * child : node->children)
-        if (fragmentHasUnshippableSubquerySet(child))
+        if (checkQueryPlanActionDAGs(child, predicate))
             return true;
     return false;
+}
+
+/// True if any step in the fragment references a subquery set which cannot be shipped. Used to keep that
+/// fragment local instead of shipping it.
+static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
+{
+    return checkQueryPlanActionDAGs(node, dagReferencesUnshippableSubquerySet);
 }
 
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>
