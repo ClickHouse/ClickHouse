@@ -159,6 +159,11 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToTupleElementSubcolumns();
     }
+    bool supportsSubcolumnOptimizationWithFinal() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsSubcolumnOptimizationWithFinal();
+    }
     bool supportsParallelInsert() const override
     {
         auto target = tryGetTargetTable();

@@ -50,6 +50,7 @@ public:
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
+    bool supportsSubcolumnOptimizationWithFinal() const override { return getTargetTable()->supportsSubcolumnOptimizationWithFinal(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
