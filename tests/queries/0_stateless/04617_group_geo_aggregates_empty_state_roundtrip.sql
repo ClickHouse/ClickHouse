@@ -35,7 +35,7 @@ FROM
 
 SELECT 'convex_hull_empty_state';
 SELECT
-    any(serialized) = '020000' AS writer_bytes,
+    any(serialized) = '030000' AS writer_bytes,
     hex(CAST(unhex(any(serialized)) AS AggregateFunction(groupConvexHull, Point))) = any(serialized) AS bytes_equal,
     empty(groupConvexHullMerge(CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point)))) AS result_empty
 FROM

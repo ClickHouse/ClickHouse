@@ -16,6 +16,7 @@
 
 #include <boost/geometry.hpp>
 
+#include <algorithm>
 #include <vector>
 
 
@@ -35,10 +36,16 @@ namespace
 {
 
 constexpr size_t CONVEX_HULL_COMPRESSION_THRESHOLD = 10000;
-/// `maybeCompress` triggers after the threshold is exceeded, so a full ingestion
-/// batch includes one extra point and is compressed before the next batch.
+/// Bound materialization independently of the size of the accumulated hull. The first
+/// complete batch exceeds the minimum compression threshold by one point.
 constexpr size_t CONVEX_HULL_INGESTION_BATCH_SIZE = CONVEX_HULL_COMPRESSION_THRESHOLD + 1;
-constexpr UInt8 GROUP_CONVEX_HULL_SERDE_VERSION = 2;
+constexpr UInt8 GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION = 2;
+constexpr UInt8 GROUP_CONVEX_HULL_SERDE_VERSION = 3;
+
+size_t convexHullCompressionThreshold(size_t size_after_compression)
+{
+    return std::max(CONVEX_HULL_COMPRESSION_THRESHOLD, size_after_compression);
+}
 
 using CartesianMultiPoint = boost::geometry::model::multi_point<CartesianPoint, std::vector, AllocatorWithMemoryTracking>;
 
@@ -46,11 +53,9 @@ struct GroupConvexHullData
 {
     CartesianMultiPoint points;
 
-    /// Stored point count right after the most recent `compress`. The compression trigger looks
-    /// at growth since then, not the total size, so a large valid hull (many points in convex
-    /// position, e.g. on a circle) whose vertex count alone exceeds
-    /// `CONVEX_HULL_COMPRESSION_THRESHOLD` does not force a full hull recomputation on every
-    /// subsequent row.
+    /// Stored point count right after the most recent `compress`. Require at least this many
+    /// new points before recomputing a large hull, so an all-convex input grows geometrically
+    /// between compressions instead of repeatedly sorting a large prefix every 10,001 points.
     size_t size_after_compression = 0;
 
     void finishAdd(const char * function_name)
@@ -137,9 +142,7 @@ struct GroupConvexHullData
 
     void maybeCompress()
     {
-        /// Trigger on points accumulated since the last compression, not the total size: a hull
-        /// already larger than the threshold must not recompress on every single appended point.
-        if (points.size() - size_after_compression > CONVEX_HULL_COMPRESSION_THRESHOLD)
+        if (points.size() - size_after_compression > convexHullCompressionThreshold(size_after_compression))
             compress();
     }
 
@@ -222,12 +225,13 @@ public:
     {
         UInt8 version = 0;
         readBinaryLittleEndian(version, buf);
-        if (version != GROUP_CONVEX_HULL_SERDE_VERSION)
+        if (version != GROUP_CONVEX_HULL_SERDE_VERSION && version != GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Unsupported serialization version {} for aggregate function {} (expected {})",
+                "Unsupported serialization version {} for aggregate function {} (expected {} or {})",
                 static_cast<int>(version),
                 getName(),
+                static_cast<int>(GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION),
                 static_cast<int>(GROUP_CONVEX_HULL_SERDE_VERSION));
 
         UInt64 size = 0;
@@ -250,18 +254,19 @@ public:
                 size_after_compression,
                 size);
 
-        /// `finishAdd` and `merge` compress immediately when growth since the previous compression
-        /// exceeds this threshold. Therefore the writer can never emit a state whose watermark
-        /// lags farther behind. Enforce the same invariant on untrusted serialized states so a
-        /// crafted watermark cannot defer compression for a point set the writer would already
-        /// have reduced.
-        if (size - size_after_compression > CONVEX_HULL_COMPRESSION_THRESHOLD)
+        /// Version 2 had a fixed growth threshold. Version 3 preserves the same fields but
+        /// allows growth proportional to the compressed prefix. Check each writer's invariant
+        /// before reading the coordinate payload, including when accepting legacy states.
+        const size_t compression_threshold = version == GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION
+            ? CONVEX_HULL_COMPRESSION_THRESHOLD
+            : convexHullCompressionThreshold(static_cast<size_t>(size_after_compression));
+        if (size - size_after_compression > compression_threshold)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Corrupted state of aggregate function {}: {} points since compression exceed the threshold {}",
                 getName(),
                 size - size_after_compression,
-                CONVEX_HULL_COMPRESSION_THRESHOLD);
+                compression_threshold);
 
         /// The prefix before the watermark is not recomputed to prove that it is already a convex
         /// hull. Such a check would add an O(n log n) operation to every state read, while accepting
