@@ -251,6 +251,15 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
 
     const DataTypeTuple & rhs_tuple = static_cast<const DataTypeTuple &>(rhs);
 
+    const auto * custom_name = getCustomName();
+    const auto * rhs_custom_name = rhs_tuple.getCustomName();
+    if ((custom_name && custom_name->useCustomNameForTypeIdentity())
+        || (rhs_custom_name && rhs_custom_name->useCustomNameForTypeIdentity()))
+    {
+        if (!custom_name || !rhs_custom_name || custom_name->getName() != rhs_custom_name->getName())
+            return false;
+    }
+
     size_t size = elems.size();
     if (size != rhs_tuple.elems.size())
         return false;
@@ -573,7 +582,7 @@ SELECT a.2 FROM named_tuples; -- by index
 
 ## Comparison operations with Tuple {#comparison-operations-with-tuple}
 
-Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
+Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller), otherwise (both elements are equal), the next element is compared.
 
 Example:
 
@@ -629,8 +638,8 @@ SELECT * FROM test;
 ┌─key─┬─duration─┬─value─┐
 │   1 │       42 │  66.5 │
 │   1 │       42 │    70 │
-│   2 │        1 │    10 │
-│   2 │        2 │     0 │
+│   2 │         1 │    10 │
+│   2 │         2 │     0 │
 └─────┴──────────┴───────┘
 
 -- Let's find a value for each key with the biggest duration, if durations are equal, select the biggest value
