@@ -207,3 +207,18 @@ upper: toDate(d) < '2026-01-01' (engine predicate 0, throw)
 1
 upper: toDate(d) < '2026-01-01' (engine predicate 1, throw)
 1
+t: toDate32(d) = toDate('2026-01-01')
+['2026-01-01']
+1
+t: toDate(d) = toDate32('2026-01-01')
+['2026-01-01','2205-06-08']
+2
+t: toDate(d) != toDate32('2026-01-01')
+['2026-01-02']
+2
+t: toDate32(d) < toDate('2026-01-02')
+['2026-01-01']
+1
+t: toDate(d) = toDate32('2205-06-08')
+[]
+3
