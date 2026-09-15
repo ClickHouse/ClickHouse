@@ -731,7 +731,7 @@ private:
             const IMergeTreeIndex * index_ptr = condition.info->index ? condition.info->index->index.get() : condition.info->index_helper.get();
             const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_ptr);
 
-            if (text_index && text_index->getParams().scoring == ScoringKind::BM25)
+            if (text_index && text_index->getParams().hasScoring())
                 scoring_predicate_indexes->insert(condition.index_name);
         }
     }
@@ -1256,7 +1256,7 @@ static void attachScoreColumnIfRequested(
             return;
 
         const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_task.index.index.get());
-        if (!text_index || text_index->getParams().scoring != ScoringKind::BM25)
+        if (!text_index || !text_index->getParams().hasScoring())
             continue;
 
         const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index_task.index.condition_template->generateUnsubstituted());

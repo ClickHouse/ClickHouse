@@ -141,8 +141,8 @@ void BM25GlobalStatsBuilder::addPart(const DataPartPtr & part, const MergeTreeRe
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index '{}' produced a granule of an unexpected type", text_index->index.name);
     }
 
-    const auto & scoring_stats = granule->getScoringStats();
-    if (granule->getScoringKind() != ScoringKind::BM25)
+    const auto & scoring_stats = granule->getTextIndexScoringStats();
+    if (granule->getTextIndexScoringKind() != TextIndexScoringKind::BM25)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot compute text score: the text index '{}' in part '{}' was written without BM25 scoring data. "

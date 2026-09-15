@@ -3062,7 +3062,7 @@ void ReadFromMergeTree::buildIndexes(
                     return nullptr;
 
                 const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_helper);
-                bool enable_scoring = query_computes_bm25_score && text_index.getParams().scoring == ScoringKind::BM25;
+                bool enable_scoring = query_computes_bm25_score && text_index.getParams().hasScoring();
                 return text_index.createIndexCondition(predicate, query_context, enable_scoring);
             };
         }

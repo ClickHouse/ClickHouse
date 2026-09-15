@@ -89,18 +89,17 @@ namespace DB
 
 using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
 
-/// What a text index stores for relevance scoring, chosen by the `scoring` index argument.
-/// Persisted in the index header since `V3_WithScoring`, so the reader knows which scoring data follows:
-/// `BM25` stores per-posting term frequencies, per-row document lengths (`.dl`) and the corpus statistics of the header.
-enum class ScoringKind : UInt8
+/// The scoring kind of the text index.
+/// Determines the extra data for scoring that is store in the text index.
+enum class TextIndexScoringKind : UInt8
 {
     None = 0,
     BM25 = 1,
 };
 
 /// Parses the value of the `scoring` index argument (`'none'` or `'bm25'`); throws `BAD_ARGUMENTS` for other values.
-ScoringKind parseScoringKind(std::string_view name);
-std::string_view toString(ScoringKind kind);
+TextIndexScoringKind parseTextIndexScoringKind(std::string_view name);
+std::string_view toString(TextIndexScoringKind kind);
 
 struct MergeTreeIndexTextParams
 {
@@ -108,13 +107,13 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     bool enable_positions = false;
-    ScoringKind scoring = ScoringKind::None;
+    TextIndexScoringKind scoring = TextIndexScoringKind::None;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 
-    bool hasScoring() const { return scoring != ScoringKind::None; }
+    bool hasScoring() const { return scoring != TextIndexScoringKind::None; }
 };
 
 using PostingList = roaring::Roaring;
@@ -408,9 +407,7 @@ using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 
 /// Per-part statistics required for BM25 scoring.
-/// The per-row document lengths live in the `.dl` substream: one `SmallFloat` byte per row,
-/// uncompressed, with the marks of the part (see `MergeTreeIndexSubstream::isPerRow`).
-struct ScoringStats
+struct TextIndexScoringStats
 {
     /// Total number of documents in the data part.
     UInt64 num_docs = 0;
@@ -428,10 +425,10 @@ struct TextIndexHeader
     bool has_positions = false;
     UInt8 positions_codec = 0;
     /// Persisted for version >= V3_WithScoring. The scoring stats follow it for `BM25`.
-    ScoringKind scoring = ScoringKind::None;
+    TextIndexScoringKind scoring = TextIndexScoringKind::None;
 
     DictionarySparseIndex sparse_index;
-    ScoringStats scoring_stats;
+    TextIndexScoringStats scoring_stats;
 };
 
 struct TextIndexSerialization
@@ -511,8 +508,8 @@ public:
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
     UInt8 getPositionsCodec() const { return positions_codec; }
 
-    const ScoringStats & getScoringStats() const { return scoring_stats; }
-    ScoringKind getScoringKind() const { return scoring_kind; }
+    const TextIndexScoringStats & getTextIndexScoringStats() const { return scoring_stats; }
+    TextIndexScoringKind getTextIndexScoringKind() const { return scoring_kind; }
     bool isScoringEnabled() const { return scoring_enabled; }
 
     struct PostingsBlock
@@ -567,9 +564,9 @@ private:
     /// Positions on-disk codec persisted in the header.
     UInt8 positions_codec = 0;
     /// Per-part statistics for BM25 scoring, read from the text index header.
-    ScoringStats scoring_stats;
+    TextIndexScoringStats scoring_stats;
     /// The scoring data the index stores, read from the text index header.
-    ScoringKind scoring_kind = ScoringKind::None;
+    TextIndexScoringKind scoring_kind = TextIndexScoringKind::None;
     /// Flat postings of the single-block tokens decoded for BM25 scoring during the granule
     /// analysis, keyed by the block's offset in the postings file.
     absl::flat_hash_map<UInt64, ScoringPostingsPtr> scoring_postings_by_offset;

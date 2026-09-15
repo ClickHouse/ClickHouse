@@ -101,7 +101,7 @@ struct ScoringStreamHarness
     std::string buffer;
     TokenPostingsInfo info;
     PaddedPODArray<UInt8> doc_lengths;
-    DocLengthsReaderPtr doc_lengths_provider;
+    TextIndexDocLengthsReaderPtr doc_lengths_provider;
 
     std::shared_ptr<DiskLocal> disk;
     std::shared_ptr<SingleDiskVolume> volume;
@@ -151,10 +151,10 @@ std::shared_ptr<PostingListScoringCursor> makeScoringCursor(ScoringStreamHarness
     if (!harness.cache)
         harness.cache = std::make_shared<TextIndexPostingsCache>("SLRU", 1ULL << 30, 0, 0.5);
 
-    /// `harness.doc_lengths` is fully filled by now; snapshot it into an in-memory `DocLengthsReader`.
+    /// `harness.doc_lengths` is fully filled by now; snapshot it into an in-memory `TextIndexDocLengthsReader`.
     PaddedPODArray<UInt8> doc_length_bytes;
     doc_length_bytes.assign(harness.doc_lengths);
-    harness.doc_lengths_provider = std::make_shared<DocLengthsReader>(std::move(doc_length_bytes));
+    harness.doc_lengths_provider = std::make_shared<TextIndexDocLengthsReader>(std::move(doc_length_bytes));
 
     return std::make_shared<PostingListScoringCursor>(
         *harness.stream, harness.info, harness.doc_lengths_provider.get(), harness.cache.get());

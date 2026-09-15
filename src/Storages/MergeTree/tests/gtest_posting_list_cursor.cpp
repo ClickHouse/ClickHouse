@@ -3741,7 +3741,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     EXPECT_EQ(with_positions_data.positions_codec, static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor));
 }
 
-TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringKind)
+TEST(PostingListCursorTest, TextIndexHeaderPersistsTextIndexScoringKind)
 {
     auto tokens = ColumnString::create();
     tokens->insert("delta");
@@ -3750,7 +3750,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringKind)
     offsets->insertValue(5);
 
     /// `DictionarySparseIndex` is not copyable, so build a fresh header for every case under test.
-    auto make_header = [&](ScoringKind scoring)
+    auto make_header = [&](TextIndexScoringKind scoring)
     {
         TextIndexHeader header;
         header.version = MergeTreeTextIndexSerializationVersion::V3_WithScoring;
@@ -3762,20 +3762,20 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringKind)
     };
 
     WriteBufferFromOwnString out_scoring;
-    TextIndexSerialization::serializeHeader(make_header(ScoringKind::BM25), out_scoring);
+    TextIndexSerialization::serializeHeader(make_header(TextIndexScoringKind::BM25), out_scoring);
 
     ReadBufferFromString in_scoring(out_scoring.str());
     auto scoring_data = TextIndexSerialization::deserializeHeader(in_scoring);
 
     EXPECT_EQ(scoring_data.version, MergeTreeTextIndexSerializationVersion::V3_WithScoring);
-    EXPECT_EQ(scoring_data.scoring, ScoringKind::BM25);
+    EXPECT_EQ(scoring_data.scoring, TextIndexScoringKind::BM25);
     EXPECT_EQ(scoring_data.scoring_stats.num_docs, 100u);
     EXPECT_EQ(scoring_data.scoring_stats.sum_doc_length, 4000u);
     EXPECT_EQ(scoring_data.sparse_index.getToken(0), "delta");
 
     /// Without scoring the statistics are not written at all, so they read back at their defaults.
     WriteBufferFromOwnString out_no_scoring;
-    TextIndexSerialization::serializeHeader(make_header(ScoringKind::None), out_no_scoring);
+    TextIndexSerialization::serializeHeader(make_header(TextIndexScoringKind::None), out_no_scoring);
 
     EXPECT_LT(out_no_scoring.str().size(), out_scoring.str().size());
 
@@ -3783,7 +3783,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringKind)
     auto no_scoring_data = TextIndexSerialization::deserializeHeader(in_no_scoring);
 
     EXPECT_EQ(no_scoring_data.version, MergeTreeTextIndexSerializationVersion::V3_WithScoring);
-    EXPECT_EQ(no_scoring_data.scoring, ScoringKind::None);
+    EXPECT_EQ(no_scoring_data.scoring, TextIndexScoringKind::None);
     EXPECT_EQ(no_scoring_data.scoring_stats.num_docs, 0u);
     EXPECT_EQ(no_scoring_data.scoring_stats.sum_doc_length, 0u);
     EXPECT_EQ(no_scoring_data.sparse_index.getToken(0), "delta");
@@ -3792,7 +3792,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringKind)
     std::string corrupted = out_no_scoring.str();
     const auto known_prefix = std::string("\x03\x00\x00\x00", 4);
     ASSERT_EQ(corrupted.substr(0, 4), known_prefix) << "the header layout changed, adjust the test";
-    corrupted[3] = static_cast<char>(static_cast<UInt8>(ScoringKind::BM25) + 1);
+    corrupted[3] = static_cast<char>(static_cast<UInt8>(TextIndexScoringKind::BM25) + 1);
 
     ReadBufferFromString in_corrupted(corrupted);
     EXPECT_THROW(TextIndexSerialization::deserializeHeader(in_corrupted), Exception);

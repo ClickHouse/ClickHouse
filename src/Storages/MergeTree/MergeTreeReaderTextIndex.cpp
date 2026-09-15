@@ -442,10 +442,10 @@ void MergeTreeReaderTextIndex::initializeScoreCursors()
     if (analyzer.alwaysFalse())
         return;
 
-    const auto & scoring_stats = granule->getScoringStats();
+    const auto & scoring_stats = granule->getTextIndexScoringStats();
 
     /// The pool pre-pass has already rejected parts without BM25 scoring data; keep a defensive check.
-    if (granule->getScoringKind() != ScoringKind::BM25)
+    if (granule->getTextIndexScoringKind() != TextIndexScoringKind::BM25)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot fill '{}': the text index '{}' in part '{}' was written without BM25 scoring data. "
@@ -469,7 +469,7 @@ void MergeTreeReaderTextIndex::initializeScoreCursors()
                 index.index->index.name, BM25ScoreColumn::name);
         }
 
-        score_doc_lengths = std::make_unique<DocLengthsReader>(
+        score_doc_lengths = std::make_unique<TextIndexDocLengthsReader>(
             makeDocLengthsStream(*doc_lengths_substream),
             data_part_info_for_read->getIndexGranularity(),
             scoring_stats.num_docs);
@@ -775,17 +775,18 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexSt
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeDocLengthsStream(const MergeTreeIndexSubstream & substream) const
 {
-    /// The `.dl` substream has the marks of the part, so it is read like a column: only the granules
-    /// of `all_mark_ranges`, through a buffer sized to the largest of them.
+    /// The `.dl` substream has the marks of the part, so it is read like a column:
+    /// only the granules of `all_mark_ranges`, through a buffer sized to the largest of them.
+
     auto stream_name = index.index->getFileName() + substream.suffix;
     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, data_part_info_for_read->getChecksums());
+
     if (!actual_stream_name)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + substream.extension);
 
     auto context = data_part_info_for_read->getContext();
     auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
     const auto & index_granularity_info = data_part_info_for_read->getIndexGranularityInfo();
-    /// The substream has no final mark (see `writePerRowSubstreamMarks`).
     size_t marks_count = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
 
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(

@@ -1223,7 +1223,7 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
     if (header.has_positions && version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support positions", static_cast<UInt64>(version));
 
-    if (header.scoring != ScoringKind::None && version < MergeTreeTextIndexSerializationVersion::V3_WithScoring)
+    if (header.scoring != TextIndexScoringKind::None && version < MergeTreeTextIndexSerializationVersion::V3_WithScoring)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support scoring", static_cast<UInt64>(version));
 
     writeVarUInt(static_cast<UInt64>(version), ostr);
@@ -1243,7 +1243,7 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
         writeVarUInt(static_cast<UInt64>(header.scoring), ostr);
 
     /// The corpus statistics of BM25.
-    if (header.scoring == ScoringKind::BM25)
+    if (header.scoring == TextIndexScoringKind::BM25)
     {
         writeVarUInt(header.scoring_stats.num_docs, ostr);
         writeVarUInt(header.scoring_stats.sum_doc_length, ostr);
@@ -1309,14 +1309,14 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 scoring = 0;
         readVarUInt(scoring, istr);
 
-        if (scoring > static_cast<UInt64>(ScoringKind::BM25))
+        if (scoring > static_cast<UInt64>(TextIndexScoringKind::BM25))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown scoring kind {} in text index header", scoring);
 
-        header.scoring = static_cast<ScoringKind>(scoring);
+        header.scoring = static_cast<TextIndexScoringKind>(scoring);
     }
 
     /// BM25 corpus stats.
-    if (header.scoring == ScoringKind::BM25)
+    if (header.scoring == TextIndexScoringKind::BM25)
     {
         readVarUInt(header.scoring_stats.num_docs, istr);
         readVarUInt(header.scoring_stats.sum_doc_length, istr);
@@ -1584,8 +1584,8 @@ static DictionarySparseIndex serializeTokensAndPostings(
 }
 
 /// Appends the per-row `SmallFloat` document-length bytes of the granule to the `.dl` substream.
-/// The stream is not compressed and holds one byte per row of the part; the writer gives it the
-/// marks of the part, so scoring reads it like a column.
+/// The stream is not compressed and holds one byte per row of the part.
+/// The writer gives it the marks of the part, so scoring reads it like a regular column.
 static void serializeDocumentLengths(const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams)
 {
     auto * doc_lengths_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
@@ -1632,7 +1632,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         .segment_size = codec->getSegmentSize(params.posting_list_block_size),
         .enable_positions = params.enable_positions,
         .enable_scoring = params.hasScoring(),
-        .doc_lengths = params.scoring == ScoringKind::BM25 ? &doc_lengths : nullptr,
+        .doc_lengths = params.scoring == TextIndexScoringKind::BM25 ? &doc_lengths : nullptr,
         .doc_lengths_first_row_id = static_cast<UInt32>(num_docs - doc_lengths.size()),
     };
 
@@ -1644,9 +1644,9 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         *postings_stream,
         positions_stream);
 
-    ScoringStats scoring_stats;
+    TextIndexScoringStats scoring_stats;
 
-    if (params.scoring == ScoringKind::BM25)
+    if (params.scoring == TextIndexScoringKind::BM25)
     {
         serializeDocumentLengths(*context.doc_lengths, streams);
         scoring_stats = {.num_docs = num_docs, .sum_doc_length = sum_doc_length};
@@ -1826,7 +1826,7 @@ PostingListBuildContext MergeTreeIndexTextGranuleBuilder::buildContext() const
         .segment_size = posting_list_codec->getSegmentSize(params.posting_list_block_size),
         .enable_positions = params.enable_positions,
         .enable_scoring = params.hasScoring(),
-        .doc_lengths = params.scoring == ScoringKind::BM25 ? &doc_lengths : nullptr,
+        .doc_lengths = params.scoring == TextIndexScoringKind::BM25 ? &doc_lengths : nullptr,
         .doc_lengths_first_row_id = static_cast<UInt32>(current_row - doc_lengths.size()),
     };
 }
@@ -1942,7 +1942,7 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
     ++current_row;
     num_processed_tokens += tokens_in_current_row;
 
-    if (params.scoring == ScoringKind::BM25)
+    if (params.scoring == TextIndexScoringKind::BM25)
     {
         UInt8 dl_norm = SmallFloat::toInt4Byte(static_cast<UInt32>(tokens_in_current_row));
         doc_lengths.push_back(dl_norm);
@@ -2229,7 +2229,7 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
         {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
 
-    if (params.scoring == ScoringKind::BM25)
+    if (params.scoring == TextIndexScoringKind::BM25)
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexDocLengths, ".dl", ".idx"});
 
     if (params.enable_positions)
@@ -2324,27 +2324,29 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_SCORING = "scoring";
+static const String ARGUMENT_POSITIONS = "support_phrase_search";
 
-ScoringKind parseScoringKind(std::string_view name)
+TextIndexScoringKind parseTextIndexScoringKind(std::string_view name)
 {
     if (name == "none")
-        return ScoringKind::None;
+        return TextIndexScoringKind::None;
 
     if (name == "bm25")
-        return ScoringKind::BM25;
+        return TextIndexScoringKind::BM25;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown text index scoring '{}'. Supported values: 'none', 'bm25'", name);
 }
 
-std::string_view toString(ScoringKind kind)
+std::string_view toString(TextIndexScoringKind kind)
 {
-    if (kind == ScoringKind::BM25)
-        return "bm25";
-
-    chassert(kind == ScoringKind::None);
-    return "none";
+    switch (kind)
+    {
+        case TextIndexScoringKind::None:
+            return "none";
+        case TextIndexScoringKind::BM25:
+            return "bm25";
+    }
 }
-static const String ARGUMENT_POSITIONS = "support_phrase_search";
 
 namespace
 {
@@ -2450,7 +2452,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
     bool enable_positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS) != 0;
-    ScoringKind scoring = parseScoringKind(extractFieldOption<String>(options, ARGUMENT_SCORING).value_or("none"));
+    TextIndexScoringKind scoring = parseTextIndexScoringKind(extractFieldOption<String>(options, ARGUMENT_SCORING).value_or("none"));
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
@@ -2470,7 +2472,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     if (enable_positions)
         min_version = V2_WithPositions;
 
-    if (scoring != ScoringKind::None)
+    if (scoring != TextIndexScoringKind::None)
         min_version = V3_WithScoring;
 
     const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
@@ -2490,7 +2492,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
-    if (scoring != ScoringKind::None)
+    if (scoring != TextIndexScoringKind::None)
     {
         /// BM25 scoring relies on the per-block term-frequency payload that cannot be stored in the `none` codec.
         if (posting_list_codec->getType() == IPostingListCodec::Type::None)
@@ -2568,7 +2570,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
 
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
-    ScoringKind scoring = parseScoringKind(extractFieldOption<String>(options, ARGUMENT_SCORING).value_or("none"));
+    TextIndexScoringKind scoring = parseTextIndexScoringKind(extractFieldOption<String>(options, ARGUMENT_SCORING).value_or("none"));
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -2579,7 +2581,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     const auto & index_data_type = index.data_types[0];
 
-    if (scoring != ScoringKind::None)
+    if (scoring != TextIndexScoringKind::None)
     {
         if (!settings[MergeTreeSetting::allow_experimental_text_index_scoring])
         {

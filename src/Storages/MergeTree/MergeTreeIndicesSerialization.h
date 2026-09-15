@@ -56,17 +56,13 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        /// Document lengths are `SmallFloat` bytes, which LZ4 expands rather than compresses
-        /// (measured ratio 1.0039 on 24.1M rows), so they are written raw as well.
+        /// Document lengths are `SmallFloat` bytes, which generic codec expand rather than compress.
         return type != Type::TextIndexPostings
             && type != Type::TextIndexPositions
             && type != Type::TextIndexDocLengths;
     }
 
-    /// A per-row substream holds exactly one uncompressed byte per row of the part (the document
-    /// lengths). Its marks are the marks of the part, one per granule, like those of a column, so the
-    /// substream is read with the regular marks-based stream; the writer derives the marks from the
-    /// index granularity instead of writing one mark per index granule.
+    /// A per-row substream holds exactly one uncompressed byte per row of the part.
     static bool isPerRow(Type type)
     {
         return type == Type::TextIndexDocLengths;
@@ -94,8 +90,7 @@ using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, Merg
 
 class MergeTreeIndexGranularity;
 
-/// Writes the marks of a per-row index substream (see `MergeTreeIndexSubstream::isPerRow`): one mark
-/// per granule of the part at the granule's starting row. Call it once all bytes of the stream are written.
+/// Writes the marks of a per-row index substream: one mark per granule of the part at the granule's starting row.
 void writePerRowSubstreamMarks(MergeTreeWriterStream & stream, const MergeTreeIndexGranularity & index_granularity, bool can_use_adaptive_granularity);
 
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;

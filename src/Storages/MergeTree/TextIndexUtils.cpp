@@ -988,7 +988,7 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
         .segment_size = codec->getSegmentSize(params.posting_list_block_size),
         .enable_positions = params.enable_positions,
         .enable_scoring = params.hasScoring(),
-        .doc_lengths = params.scoring == ScoringKind::BM25 ? &merged_doc_lengths : nullptr,
+        .doc_lengths = params.scoring == TextIndexScoringKind::BM25 ? &merged_doc_lengths : nullptr,
     };
 
     mergePostings([&](std::span<const UInt32> row_ids, std::span<const UInt32> tf_minus_one)
@@ -1241,7 +1241,7 @@ bool MergeTextIndexesTask::executeStep()
         /// On the scoring path, build the merged per-row document lengths and per-part collection
         /// statistics once, before token iteration. This reads the per-source `.dl` and `Regular`
         /// (header) streams, which are independent of the dictionary / postings cursors used below.
-        if (params.scoring == ScoringKind::BM25)
+        if (params.scoring == TextIndexScoringKind::BM25)
             buildDocLengthsAndStats();
     }
 
@@ -1307,9 +1307,9 @@ void MergeTextIndexesTask::finalize()
     if (!output_tokens->empty())
         flushDictionaryBlock();
 
-    ScoringStats scoring_stats;
+    TextIndexScoringStats scoring_stats;
 
-    if (params.scoring == ScoringKind::BM25)
+    if (params.scoring == TextIndexScoringKind::BM25)
     {
         auto * doc_lengths_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
         if (!doc_lengths_stream)
@@ -1324,7 +1324,7 @@ void MergeTextIndexesTask::finalize()
             writePerRowSubstreamMarks(*doc_lengths_stream, *index_granularity, new_data_part->index_granularity_info.mark_type.adaptive);
         }
 
-        scoring_stats = ScoringStats
+        scoring_stats = TextIndexScoringStats
         {
             .num_docs = num_rows,
             .sum_doc_length = merged_sum_doc_length,

@@ -550,62 +550,10 @@ void PostingListCursor::next()
     }
 }
 
-DocLengthsReader::DocLengthsReader(
-    std::unique_ptr<MergeTreeReaderStream> stream_,
-    const MergeTreeIndexGranularity & index_granularity_,
-    size_t num_docs_)
-    : stream(std::move(stream_))
-    , index_granularity(&index_granularity_)
-    , num_docs(static_cast<UInt32>(num_docs_))
-{
-}
-
-DocLengthsReader::DocLengthsReader(PaddedPODArray<UInt8> bytes_)
-    : num_docs(static_cast<UInt32>(bytes_.size()))
-    , bytes(std::move(bytes_))
-    , rows_begin(0)
-    , rows_end(num_docs)
-    , is_positioned(true)
-{
-}
-
-DocLengthsReader::~DocLengthsReader() = default;
-
-void DocLengthsReader::readRows(size_t from_mark, size_t row_offset, size_t num_rows)
-{
-    if (num_rows == 0)
-        return;
-
-    if (row_offset + num_rows > num_docs)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Rows [{}, {}) are out of range for DocLengthsReader with {} docs",
-            row_offset, row_offset + num_rows, num_docs);
-    }
-
-    /// The in-memory variant holds the whole part.
-    if (!stream)
-        return;
-
-    /// A read step may resume in the middle of a granule, so a gap is closed by seeking
-    /// to the granule's mark and skipping the rows before `row_offset`.
-    if (!is_positioned || row_offset != rows_end)
-    {
-        stream->seekToMark(from_mark);
-        stream->getDataBuffer()->ignore(row_offset - index_granularity->getMarkStartingRow(from_mark));
-        is_positioned = true;
-    }
-
-    bytes.resize(num_rows);
-    stream->getDataBuffer()->readStrict(reinterpret_cast<char *>(bytes.data()), num_rows);
-    rows_begin = row_offset;
-    rows_end = row_offset + num_rows;
-}
-
 PostingListScoringCursor::PostingListScoringCursor(
     MergeTreeReaderStream & stream_,
     const TokenPostingsInfo & info_,
-    const DocLengthsReader * doc_lengths_,
+    const TextIndexDocLengthsReader * doc_lengths_,
     TextIndexPostingsCache * postings_cache_,
     const String & index_id_for_cache_)
     : PostingListCursor(stream_, info_, postings_cache_, index_id_for_cache_)
@@ -614,7 +562,7 @@ PostingListScoringCursor::PostingListScoringCursor(
     chassert(doc_lengths);
 }
 
-PostingListScoringCursor::PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const DocLengthsReader * doc_lengths_)
+PostingListScoringCursor::PostingListScoringCursor(std::shared_ptr<const ScoringPostings> scoring_postings_, const TextIndexDocLengthsReader * doc_lengths_)
     : PostingListCursor(PaddedPODArrayPtr(scoring_postings_, &scoring_postings_->row_ids))
     , doc_lengths(doc_lengths_)
     , embedded_scoring_postings(std::move(scoring_postings_))

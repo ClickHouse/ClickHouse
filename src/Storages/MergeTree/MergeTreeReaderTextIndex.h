@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/BM25State.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/TextIndexDocLengthsReader.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -60,7 +61,6 @@ private:
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
-    /// Opens the per-row `.dl` substream with the marks of the part, bounded to `all_mark_ranges` like a column stream.
     std::unique_ptr<MergeTreeReaderStream> makeDocLengthsStream(const MergeTreeIndexSubstream & substream) const;
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
@@ -185,7 +185,7 @@ private:
     /// True when every scoring token is present in this part.
     bool score_all_tokens_present = false;
     /// Reads the part's `.dl` document lengths for the rows of the current read step.
-    std::unique_ptr<DocLengthsReader> score_doc_lengths;
+    std::unique_ptr<TextIndexDocLengthsReader> score_doc_lengths;
 };
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
