@@ -1,0 +1,21 @@
+the query from the issue
+k
+durations are seconds at every scale
+DateTime64(0)	1	0
+DateTime64(6)	1	0
+DateTime64(9)	1	0
+the same answer as DateTime for a whole-second pattern
+1	1	1	1
+sub-second ordering is preserved
+1	0
+sequenceMatchEvents returns DateTime64 with the sub-second part
+Array(DateTime64(3))	['2020-01-01 00:00:00.125','2020-01-01 00:00:03.250']
+a duration spanning the epoch is compared as a signed value
+0	1	1
+a duration larger than the ticks of the timestamp type is still evaluated
+1	0
+timestamps at the boundary of the type do not overflow
+0	1
+a condition at the upper boundary of DateTime64(9)
+1	0
+other types are still rejected
