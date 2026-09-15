@@ -8,19 +8,11 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <unordered_map>
-#include <vector>
 
 namespace DB
 {
 
 struct MergeTreeSettings;
-
-struct TupleSubcolumnsClassifyResult
-{
-    bool flatten = false;
-    String reason;
-    std::vector<NameAndTypePair> leaves;
-};
 
 /// Column count for `vertical_merge_algorithm_min_columns_to_activate`.
 /// When the experimental setting is off, this is `gathering_columns.size()`.
@@ -31,24 +23,18 @@ size_t countGatheringColumnsForVerticalActivation(
     const NamesAndTypesList & gathering_columns,
     const MergeTreeSettings & settings);
 
-/// Classify flattenable `Tuple` gathering columns after Vertical has been chosen.
-/// Does not replace `gathering_columns`. Logs one line per gathering column.
-std::vector<TupleSubcolumnsClassifyResult> classifyVerticalMergeTupleSubcolumns(
+/// After Vertical has been chosen, replace flattenable gathering parents with
+/// leaf pairs and re-key skip indexes that were stored under the parent name
+/// onto the exact leaf they require. Logs one line per gathering column.
+void tryFlattenGatheringColumns(
     const MergeTreeSettings & settings,
-    const NamesAndTypesList & gathering_columns,
+    NamesAndTypesList & gathering_columns,
     const NamesAndTypesList & merging_columns,
     const NamesAndTypesList & storage_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartsVector & parts,
     const MergeTreeDataPartsVector & patch_parts,
     const NameSet & expired_columns,
-    LoggerPtr log);
-
-/// Replace a flattenable gathering parent with its leaf pairs. Re-keys skip
-/// indexes that were stored under the parent name onto the exact leaf they require.
-void applyVerticalMergeTupleSubcolumns(
-    const std::vector<TupleSubcolumnsClassifyResult> & results,
-    NamesAndTypesList & gathering_columns,
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log);
 

@@ -8,14 +8,11 @@
 #include <IO/NullWriteBuffer.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
-#include <optional>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -151,29 +148,41 @@ bool anySourceOrPatchCannotReadLeaves(
     return check_parts(parts) || check_parts(patch_parts);
 }
 
-std::optional<NameAndTypePair> buildLeafPair(
-    const ColumnsDescription & columns,
+/// Recurse flattenable `Tuple` nodes and emit one four-arg subcolumn pair per leaf.
+void appendFlattenedLeafPairs(
     const NameAndTypePair & parent,
-    const String & leaf_name)
+    const String & subcolumn_path,
+    const DataTypePtr & type,
+    std::vector<NameAndTypePair> & leaves)
 {
-    auto pair = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), leaf_name);
-    if (!pair)
-        return {};
-
-    if (!pair->isSubcolumn() || pair->getNameInStorage() != parent.name)
+    const auto * tuple_type = Nested::tryGetFlattenableTuple(type);
+    if (!tuple_type)
     {
-        const String prefix = parent.name + ".";
-        if (!leaf_name.starts_with(prefix))
-            return {};
-        return NameAndTypePair(parent.name, leaf_name.substr(prefix.size()), parent.type, pair->type);
+        if (!subcolumn_path.empty())
+            leaves.emplace_back(parent.name, subcolumn_path, parent.type, type);
+        return;
     }
 
-    return pair;
+    const auto & element_names = tuple_type->getElementNames();
+    const auto & element_types = tuple_type->getElements();
+    for (size_t i = 0; i < element_names.size(); ++i)
+    {
+        const String child_path = subcolumn_path.empty()
+            ? element_names[i]
+            : Nested::concatenateName(subcolumn_path, element_names[i]);
+        appendFlattenedLeafPairs(parent, child_path, element_types[i], leaves);
+    }
 }
+
+struct TupleSubcolumnsClassifyResult
+{
+    bool flatten = false;
+    String reason;
+    std::vector<NameAndTypePair> leaves;
+};
 
 TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     const NameAndTypePair & column,
-    const MergeTreeSettings & settings,
     const NameSet & merging_names,
     const NameSet & storage_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -182,12 +191,6 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     const NameSet & expired_columns)
 {
     TupleSubcolumnsClassifyResult result;
-
-    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
-    {
-        result.reason = "setting_off";
-        return result;
-    }
 
     if (!Nested::tryGetFlattenableTuple(column.type))
     {
@@ -213,8 +216,18 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
         return result;
     }
 
+    std::vector<NameAndTypePair> leaves;
+    appendFlattenedLeafPairs(column, /*subcolumn_path=*/ "", column.type, leaves);
+    if (leaves.empty())
+    {
+        result.reason = "cannot_build_leaf_pair";
+        return result;
+    }
+
     Names leaf_names;
-    Nested::flattenTupleLeafNames(column.name, column.type, leaf_names);
+    leaf_names.reserve(leaves.size());
+    for (const auto & leaf : leaves)
+        leaf_names.push_back(leaf.name);
     const NameSet leaf_name_set(leaf_names.begin(), leaf_names.end());
 
     if (leafNameCollides(leaf_names, storage_names, column.name))
@@ -227,20 +240,6 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     {
         result.reason = "index_or_stats_pins_parent";
         return result;
-    }
-
-    std::vector<NameAndTypePair> leaves;
-    leaves.reserve(leaf_names.size());
-    const auto & columns_desc = metadata_snapshot->getColumns();
-    for (const auto & leaf_name : leaf_names)
-    {
-        auto leaf = buildLeafPair(columns_desc, column, leaf_name);
-        if (!leaf)
-        {
-            result.reason = "cannot_build_leaf_pair";
-            return result;
-        }
-        leaves.push_back(*leaf);
     }
 
     if (anyLeafHasDynamicSubcolumns(leaves))
@@ -277,82 +276,6 @@ void logClassifyResult(LoggerPtr log, const NameAndTypePair & column, const Tupl
         fmt::join(leaf_names, ", "));
 }
 
-}
-
-size_t countGatheringColumnsForVerticalActivation(
-    const NamesAndTypesList & gathering_columns,
-    const MergeTreeSettings & settings)
-{
-    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
-        return gathering_columns.size();
-
-    size_t count = 0;
-    for (const auto & column : gathering_columns)
-    {
-        const auto * tuple_type = Nested::tryGetFlattenableTuple(column.type);
-        if (!tuple_type)
-        {
-            ++count;
-            continue;
-        }
-
-        for (const auto & element : tuple_type->getElements())
-        {
-            if (Nested::tryGetFlattenableTuple(element) || element->hasDynamicSubcolumns())
-                return gathering_columns.size();
-
-            ++count;
-        }
-    }
-    return count;
-}
-
-std::vector<TupleSubcolumnsClassifyResult> classifyVerticalMergeTupleSubcolumns(
-    const MergeTreeSettings & settings,
-    const NamesAndTypesList & gathering_columns,
-    const NamesAndTypesList & merging_columns,
-    const NamesAndTypesList & storage_columns,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeDataPartsVector & parts,
-    const MergeTreeDataPartsVector & patch_parts,
-    const NameSet & expired_columns,
-    LoggerPtr log)
-{
-    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
-        return {};
-
-    std::vector<TupleSubcolumnsClassifyResult> results;
-    results.reserve(gathering_columns.size());
-
-    const NameSet merging_names = namesOf(merging_columns);
-    const NameSet storage_names = namesOf(storage_columns);
-
-    for (const auto & column : gathering_columns)
-    {
-        auto result = classifyOneGatheringColumn(
-            column,
-            settings,
-            merging_names,
-            storage_names,
-            metadata_snapshot,
-            parts,
-            patch_parts,
-            expired_columns);
-        logClassifyResult(log, column, result);
-        results.push_back(std::move(result));
-    }
-
-    return results;
-}
-
-namespace
-{
-
-bool canApplyFlatten(const TupleSubcolumnsClassifyResult & result)
-{
-    return result.flatten && !result.leaves.empty();
-}
-
 void rerouteSkipIndexesOntoLeaves(
     const String & parent,
     const NameSet & leaf_names,
@@ -387,6 +310,95 @@ void rerouteSkipIndexesOntoLeaves(
     if (!leftover.empty())
         skip_indexes_by_column[parent] = std::move(leftover);
 }
+
+}
+
+size_t countGatheringColumnsForVerticalActivation(
+    const NamesAndTypesList & gathering_columns,
+    const MergeTreeSettings & settings)
+{
+    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
+        return gathering_columns.size();
+
+    size_t count = 0;
+    for (const auto & column : gathering_columns)
+    {
+        const auto * tuple_type = Nested::tryGetFlattenableTuple(column.type);
+        if (!tuple_type)
+        {
+            ++count;
+            continue;
+        }
+
+        for (const auto & element : tuple_type->getElements())
+        {
+            if (Nested::tryGetFlattenableTuple(element) || element->hasDynamicSubcolumns())
+                return gathering_columns.size();
+
+            ++count;
+        }
+    }
+    return count;
+}
+
+void tryFlattenGatheringColumns(
+    const MergeTreeSettings & settings,
+    NamesAndTypesList & gathering_columns,
+    const NamesAndTypesList & merging_columns,
+    const NamesAndTypesList & storage_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartsVector & parts,
+    const MergeTreeDataPartsVector & patch_parts,
+    const NameSet & expired_columns,
+    std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
+    LoggerPtr log)
+{
+    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
+        return;
+
+    NamesAndTypesList new_gathering;
+    const NameSet merging_names = namesOf(merging_columns);
+    const NameSet storage_names = namesOf(storage_columns);
+
+    for (const auto & column : gathering_columns)
+    {
+        auto result = classifyOneGatheringColumn(
+            column,
+            merging_names,
+            storage_names,
+            metadata_snapshot,
+            parts,
+            patch_parts,
+            expired_columns);
+        logClassifyResult(log, column, result);
+
+        if (!result.flatten)
+        {
+            new_gathering.push_back(column);
+            continue;
+        }
+
+        NameSet leaf_names;
+        for (const auto & leaf : result.leaves)
+        {
+            leaf_names.insert(leaf.name);
+            new_gathering.push_back(leaf);
+        }
+
+        rerouteSkipIndexesOntoLeaves(column.name, leaf_names, skip_indexes_by_column);
+
+        LOG_DEBUG(
+            log,
+            "Vertical merge tuple subcolumns apply: column='{}' leaves=[{}]",
+            column.name,
+            fmt::join(leaf_names, ", "));
+    }
+
+    gathering_columns = std::move(new_gathering);
+}
+
+namespace
+{
 
 void foldLeafDataIntoParent(
     SerializationInfo & info,
@@ -460,45 +472,6 @@ ColumnsSubstreams synthesizeParentColumnsSubstreams(
     return result;
 }
 
-}
-
-void applyVerticalMergeTupleSubcolumns(
-    const std::vector<TupleSubcolumnsClassifyResult> & results,
-    NamesAndTypesList & gathering_columns,
-    std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
-    LoggerPtr log)
-{
-    if (results.empty() || results.size() != gathering_columns.size())
-        return;
-
-    NamesAndTypesList new_gathering;
-    auto result_it = results.begin();
-    for (const auto & column : gathering_columns)
-    {
-        const auto & result = *result_it++;
-        if (!canApplyFlatten(result))
-        {
-            new_gathering.push_back(column);
-            continue;
-        }
-
-        NameSet leaf_names;
-        for (const auto & leaf : result.leaves)
-        {
-            leaf_names.insert(leaf.name);
-            new_gathering.push_back(leaf);
-        }
-
-        rerouteSkipIndexesOntoLeaves(column.name, leaf_names, skip_indexes_by_column);
-
-        LOG_DEBUG(
-            log,
-            "Vertical merge tuple subcolumns apply: column='{}' leaves=[{}]",
-            column.name,
-            fmt::join(leaf_names, ", "));
-    }
-
-    gathering_columns = std::move(new_gathering);
 }
 
 size_t countFlattenedTupleParentStreams(

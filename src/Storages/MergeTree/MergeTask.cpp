@@ -6,10 +6,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/ColumnsDescription.h>
 
-#include <algorithm>
-#include <iterator>
 #include <memory>
-#include <optional>
 #include <fmt/format.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -1141,7 +1138,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end());
             MergeTreeDataPartsVector classify_patch_parts(
                 global_ctx->future_part->patch_parts.begin(), global_ctx->future_part->patch_parts.end());
-            auto classify_results = classifyVerticalMergeTupleSubcolumns(
+            tryFlattenGatheringColumns(
                 *global_ctx->data_settings,
                 global_ctx->gathering_columns,
                 global_ctx->merging_columns,
@@ -1150,10 +1147,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 classify_parts,
                 classify_patch_parts,
                 global_ctx->new_data_part->expired_columns,
-                ctx->log);
-            applyVerticalMergeTupleSubcolumns(
-                classify_results,
-                global_ctx->gathering_columns,
                 global_ctx->skip_indexes_by_column,
                 ctx->log);
 
@@ -1439,6 +1432,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
 
     new_ctx->rows_sources_temporary_file = std::move(ctx->rows_sources_temporary_file);
     new_ctx->column_sizes = std::move(ctx->column_sizes);
+    new_ctx->it_name_and_type = std::move(ctx->it_name_and_type);
     new_ctx->read_with_direct_io = std::move(ctx->read_with_direct_io);
     new_ctx->need_sync = std::move(ctx->need_sync);
 
@@ -2186,10 +2180,10 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
 void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 {
-    const auto & column = *ctx->it_name_and_type;
+    const auto & column_name = ctx->it_name_and_type->name;
 
     ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
-    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column.name));
+    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column_name));
 
     VerticalMergeRuntimeContext::PreparedColumnPipeline column_pipepline;
     if (ctx->prepared_pipeline)
@@ -2203,7 +2197,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     }
     else
     {
-        column_pipepline = createPipelineForReadingOneColumn(column.name);
+        column_pipepline = createPipelineForReadingOneColumn(column_name);
     }
 
     ctx->build_statistics_transforms = std::move(column_pipepline.build_statistics_transforms);
@@ -2220,12 +2214,12 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->column_parts_pipeline.disableProfileEventUpdate();
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
-    NamesAndTypesList columns_list = {column};
+    NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
     std::optional<size_t> adaptive_buffer_stream_count;
-    if (column.isSubcolumn())
+    if (ctx->it_name_and_type->isSubcolumn())
     {
-        const String parent_name = column.getNameInStorage();
+        const String parent_name = ctx->it_name_and_type->getNameInStorage();
         auto cached = ctx->parent_stream_counts.find(parent_name);
         if (cached != ctx->parent_stream_counts.end())
         {
@@ -2363,8 +2357,7 @@ void MergeTask::VerticalMergeStage::commitPendingTupleGroupIfComplete(bool force
 
 void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
-    const auto & column = *ctx->it_name_and_type;
-    const String & column_name = column.name;
+    const String & column_name = ctx->it_name_and_type->name;
     global_ctx->checkOperationIsNotCanceled();
 
     ctx->executor.reset();
@@ -2372,13 +2365,13 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
     ctx->column_to->finalizeIndexGranularity();
 
-    const bool flattened_leaf = column.isSubcolumn();
+    const bool flattened_leaf = ctx->it_name_and_type->isSubcolumn();
     if (flattened_leaf)
     {
         auto changed_checksums = ctx->column_to->collectChecksums(global_ctx->new_data_part->checksums);
         global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
 
-        const String parent_name = column.getNameInStorage();
+        const String parent_name = ctx->it_name_and_type->getNameInStorage();
         if (ctx->pending_tuple_parent.empty())
             ctx->pending_tuple_parent = parent_name;
         else if (ctx->pending_tuple_parent != parent_name)
@@ -2462,9 +2455,8 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
 {
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
-        const size_t gathered_count = global_ctx->gathering_columns.size();
         ProfileEvents::increment(ProfileEvents::MergedColumns, global_ctx->merging_columns.size());
-        ProfileEvents::increment(ProfileEvents::GatheredColumns, gathered_count);
+        ProfileEvents::increment(ProfileEvents::GatheredColumns, global_ctx->gathering_columns.size());
 
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
@@ -2472,7 +2464,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->merge_list_element_ptr->rows_read.load(),
             global_ctx->storage_columns.size(),
             global_ctx->merging_columns.size(),
-            gathered_count,
+            global_ctx->gathering_columns.size(),
             elapsed_seconds,
             static_cast<double>(global_ctx->merge_list_element_ptr->rows_read) / elapsed_seconds,
             ReadableSize(static_cast<double>(global_ctx->merge_list_element_ptr->bytes_read_uncompressed) / elapsed_seconds));
