@@ -1581,7 +1581,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                   */
                 bool alias_can_take_over = can_check_aliases
                     && identifier_lookup.isExpressionLookup()
-                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME) != nullptr;
 
                 if (alias_can_take_over)
                 {
