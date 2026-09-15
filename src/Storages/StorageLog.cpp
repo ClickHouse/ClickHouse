@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -158,13 +159,17 @@ private:
             if (offset)
                 plain->seek(offset, SEEK_SET);
 
+            /// `allow_different_codecs = true`: the data file is append-only, so blocks written by
+            /// different inserts may use different codecs - in particular after a server upgrade that
+            /// changes the default compression codec (e.g. `LZ4` -> `ZSTD`). Each compressed block is
+            /// self-describing (the codec method byte is in its header), so a mixed-codec stream is valid.
             if (limited_by_file_size)
             {
                 limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
-                compressed.emplace(*limited);
+                compressed.emplace(*limited, /* allow_different_codecs = */ true);
             }
             else
-                compressed.emplace(*plain);
+                compressed.emplace(*plain, /* allow_different_codecs = */ true);
         }
 
         std::unique_ptr<ReadBufferFromFileBase> plain;
@@ -988,7 +993,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return std::chrono::seconds{lock_timeout};
+    return saturatedSeconds(lock_timeout);
 }
 
 size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
@@ -1207,6 +1212,25 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
+bool StorageLog::hasNothingToBackUp() const
+{
+    if (!num_data_files)
+        return true;
+
+    /// Recorded bytes in any column mean there is something to preserve, whatever the row signal says:
+    /// a leading column can serialize to nothing while a later one holds the rows, and a table whose
+    /// marks file went missing still has its data on disk.
+    for (const auto & data_file : data_files)
+        if (file_checker.getFileSize(data_file.path))
+            return false;
+
+    /// No column occupies bytes, which is legitimate for a column of empty aggregate states. For `Log`
+    /// the marks are then what say whether there are rows; `TinyLog` keeps none and cannot tell.
+    return !use_marks_file
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty()
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows == 0;
+}
+
 std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
@@ -1233,7 +1257,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
+    if (hasNothingToBackUp())
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
