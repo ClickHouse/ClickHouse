@@ -75,6 +75,7 @@ TEST(SupportsTrivialCountOptimization, NullMutationsSnapshot)
         metadata,
         LoadingStrictnessLevel::ATTACH,
         context,
+        context,
         /*date_column_name=*/"",
         MergeTreeData::MergingParams{},
         std::move(storage_settings));

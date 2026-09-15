@@ -432,6 +432,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
     ContextMutablePtr context_,
+    ContextPtr local_context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
@@ -440,6 +441,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     : MergeTreeData(table_id_,
                     metadata_,
                     context_,
+                    local_context_,
                     date_column_name,
                     merging_params_,
                     std::move(settings_),
@@ -1890,7 +1892,9 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+    /// Not `local_context`: the diff is already committed and was authorised on the submitting replica,
+    /// so re-checking it against whoever drains the queue would only stall replication.
+    setProperties(new_metadata, old_metadata, /*attach=*/false, getContext());
 
     try
     {
@@ -1899,7 +1903,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        setProperties(old_metadata, new_metadata, /*attach=*/false, getContext());
         throw;
     }
 }

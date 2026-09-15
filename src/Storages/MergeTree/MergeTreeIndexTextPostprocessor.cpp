@@ -146,7 +146,8 @@ std::optional<MergeTreeIndexTextInlineFilter> tryExtractInlineFilter(const ASTPt
 
 }
 
-MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
+MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(
+    ASTPtr expression_ast, const IndexDescription & index_description, ContextPtr context)
     : string_type(std::make_shared<DataTypeString>())
 {
     if (!expression_ast)
@@ -164,7 +165,7 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
 
     /// Build ActionsDAG treating the input as a plain String token.
     NamesAndTypesList source_columns{{postprocessor_token_name, string_type}};
-    ActionsDAG actions_dag = buildActionsDAGFromAST(transformed_ast, source_columns);
+    ActionsDAG actions_dag = buildActionsDAGFromAST(transformed_ast, source_columns, context);
     validateTransformActionsDAG(actions_dag, "postprocessor", postprocessor_token_name);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
@@ -226,7 +227,11 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
 }
 
 ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
-    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast) const
+    const String & col_name,
+    const DataTypePtr & col_type,
+    const String & tokenizer_description,
+    ContextPtr context,
+    const ASTPtr & source_ast) const
 {
     chassert(actions);
 
@@ -264,6 +269,6 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
         std::move(tokens_ast));
 
     NamesAndTypesList source_columns{{col_name, col_type}};
-    return buildActionsDAGFromAST(std::move(expr), source_columns);
+    return buildActionsDAGFromAST(std::move(expr), source_columns, context);
 }
 }

@@ -536,7 +536,7 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(StorageMetadataPtr metadata_snap
     return result;
 }
 
-void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const
+void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
@@ -578,7 +578,7 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
             );
     }
 
-    it->second(index, attach, settings);
+    it->second(index, attach, settings, context);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
