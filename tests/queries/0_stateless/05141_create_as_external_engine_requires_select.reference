@@ -1,0 +1,21 @@
+with SHOW COLUMNS only:
+-- copy_of_local_src:
+MergeTree
+-- copy_of_url_src:
+necessary to have the grant SELECT ON db.url_src
+-- copy_of_function_src:
+necessary to have the grant SELECT ON db.function_src
+-- copy_of_url_src_no_password:
+URL
+-- copy_of_function_src_no_password:
+Proxy
+after GRANT SELECT:
+-- copy_of_url_src:
+URL
+-- copy_of_function_src:
+Proxy
+without SHOW COLUMNS:
+-- local_src:
+necessary to have the grant SHOW COLUMNS ON db.local_src
+-- url_src:
+necessary to have the grant SHOW COLUMNS ON db.url_src

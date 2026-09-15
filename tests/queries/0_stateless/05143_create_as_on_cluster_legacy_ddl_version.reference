@@ -1,0 +1,12 @@
+with SHOW COLUMNS only:
+-- copy_legacy:
+necessary to have the grant SELECT ON db.url_src
+-- copy_current:
+necessary to have the grant SELECT ON db.url_src
+-- copy_legacy_unqualified:
+necessary to have the grant SELECT ON db.url_src
+after GRANT SELECT:
+-- copy_legacy:
+URL
+-- copy_legacy_unqualified:
+URL
