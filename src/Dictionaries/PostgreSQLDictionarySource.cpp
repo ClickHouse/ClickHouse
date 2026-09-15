@@ -420,7 +420,7 @@ SOURCE(POSTGRESQL(
 ```xml
 <source>
   <postgresql>
-      <host>postgresql-hostname</hoat>
+      <host>postgresql-hostname</host>
       <port>5432</port>
       <user>clickhouse</user>
       <password>qwerty</password>
