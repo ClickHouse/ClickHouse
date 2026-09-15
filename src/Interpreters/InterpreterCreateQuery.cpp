@@ -51,6 +51,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -1001,6 +1002,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade({as_database_name, create.as_table}, as_storage))
             getContext()->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
 
+        /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
+        /// target that describing the target requires.
+        if (const auto * alias = as_storage->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                            StorageID{as_database_name, create.as_table}.getNameForLogs());
+
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
@@ -1318,7 +1326,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         check_columns = true;
     }
 
-    if (create.refresh_strategy && !create.refresh_strategy->append)
+    if (create.refresh_strategy && !create.refresh_strategy->isAppend())
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -2997,7 +3005,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
     /// built while the view being replaced still owns it, so reject only when a different view owns it.
     /// Gate this like the constructor-side guard, which only applies to non-APPEND refreshable views.
-    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append)
+    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->isAppend())
     {
         auto target_table_id = create.getTargetTableID(ViewTarget::To);
         if (!target_table_id.empty())
