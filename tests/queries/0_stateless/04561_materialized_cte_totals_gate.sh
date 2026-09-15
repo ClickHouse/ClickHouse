@@ -13,10 +13,11 @@ explain_insert() {
         DROP TABLE IF EXISTS t_04561_plan SYNC;
         CREATE TABLE t_04561_plan (id UInt64) ENGINE = Memory;
     "
-    # With the setting disabled the analyzer warns that MATERIALIZED is ignored; keep it out of stderr.
+    # With the setting disabled, force_materialized_cte would reject MATERIALIZED; without it the
+    # analyzer warns that the keyword is ignored, so keep that warning out of stderr.
     local quiet_logs=''
     [ "$1" = 0 ] && quiet_logs="SET send_logs_level = 'error';"
-    $CLICKHOUSE_CLIENT --enable_analyzer 1 --enable_materialized_cte "$1" -q "
+    $CLICKHOUSE_CLIENT --enable_analyzer 1 --enable_materialized_cte "$1" --force_materialized_cte 0 -q "
         $quiet_logs
         EXPLAIN PIPELINE INSERT INTO t_04561_plan
             WITH a AS MATERIALIZED (SELECT number AS id FROM numbers(10))
