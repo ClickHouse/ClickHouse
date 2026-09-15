@@ -169,3 +169,77 @@ def test_three_replicas_ten_partitions_rebalance(kafka_cluster):
             assert sum(values) == num_partitions
             assert all(v in (base_count-1, base_count, base_count+1) for v in values), f"Values: {values}"
             assert values[-1] - values[0] <= 2
+
+
+def wait_for_locks(kafka_cluster, base, expected_locks, expected_owner, timeout=60.0, interval=1.0):
+    """Wait until the lock set stabilizes to `expected_locks`, all owned by `expected_owner`."""
+    start = time.time()
+    owners = {}
+    while time.time() - start < timeout:
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            children = [c for c in zk.ls(base) if c]
+            owners = {lock: zk.get(f"{base}/{lock}") for lock in children}
+        if set(owners) == expected_locks and all(v == expected_owner for v in owners.values()):
+            return owners
+        time.sleep(interval)
+    pytest.fail(f"Timed out waiting for locks {expected_locks} owned by {expected_owner!r}, got {owners!r}")
+
+
+def test_inactive_replica_not_counted(kafka_cluster):
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_inactive_replica_topic"
+    num_partitions = 4
+    keeper_path = "/clickhouse/test/zk_inactive_replica"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1"
+        )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(2 * num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=30,
+            sleep_time=1,
+        )
+
+        base = f"{keeper_path}/topic_partition_locks"
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
+
+        # Simulate a replica that died without cleaning up: a persistent replica
+        # znode without the is_active ephemeral node
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            zk.create(f"{keeper_path}/replicas/ghost", "0")
+
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        # The ghost replica must not be counted as active: r1 keeps all locks and consumes everything
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= 2 * len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
