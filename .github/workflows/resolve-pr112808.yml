@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  inspect-merge:
+  resolve-merge:
     if: github.repository == 'vanchaklar/ClickHouse'
     runs-on: ubuntu-latest
     steps:
@@ -17,26 +17,418 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
-      - name: Inspect merge conflicts
+      - name: Merge upstream master and resolve RMV workload conflicts
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           git config user.name 'clickhouse-gh'
           git config user.email 'clickhouse-gh@users.noreply.github.com'
           git remote add upstream https://github.com/ClickHouse/ClickHouse.git || true
           git fetch --no-tags --filter=blob:none upstream master
+
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo 'upstream/master is already merged'
+            exit 0
+          fi
+
           set +e
           git merge --no-commit --no-ff upstream/master
-          rc=$?
+          merge_rc=$?
           set -e
-          echo '=== STATUS ==='
+
+          expected=(
+            src/Core/Settings.cpp
+            src/Core/SettingsChangesHistory.cpp
+            src/Storages/MaterializedView/RefreshTask.cpp
+            src/Storages/MaterializedView/RefreshTask.h
+            src/Storages/StorageMaterializedView.cpp
+            src/Storages/StorageMaterializedView.h
+          )
+
+          if (( merge_rc != 0 )); then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            printf 'conflicts:\n'; printf '  %s\n' "${conflicts[@]}"
+            if [[ "$(printf '%s\n' "${conflicts[@]}" | sort)" != "$(printf '%s\n' "${expected[@]}" | sort)" ]]; then
+              echo 'Unexpected conflict set; refusing an unsafe resolution.' >&2
+              exit 1
+            fi
+            git checkout --theirs -- "${expected[@]}"
+          fi
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(old)
+              if n != 1:
+                  raise RuntimeError(f"{path}: expected one match, found {n}: {old[:100]!r}")
+              p.write_text(s.replace(old, new, 1))
+
+          def replace_count(path, old, new, expected):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(old)
+              if n != expected:
+                  raise RuntimeError(f"{path}: expected {expected} matches, found {n}: {old[:100]!r}")
+              p.write_text(s.replace(old, new))
+
+          # Settings: retain the current master workload admission timeout and add the RMV-only selector.
+          replace_once(
+              'src/Core/Settings.cpp',
+              '''    DECLARE(String, workload, "default", R"(\nName of workload to be used to access resources\n)", 0) \\\n    DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(''',
+              '''    DECLARE(String, workload, "default", R"(\nName of workload to be used to access resources\n)", 0) \\\n    DECLARE(String, refresh_workload, "", R"(\nWorkload used for refreshable materialized view admission and execution. Specify it in the stored SELECT settings. A non-empty value overrides `workload` for the complete refresh, including its SELECT and internal operations, without changing the workload of the CREATE or ALTER query.\n\nAn empty value preserves the existing `workload` behavior. This setting has no effect on ordinary query execution. QUERY admission for refreshes also requires `use_query_slot_to_refresh_materialized_view` and a configured QUERY resource.\n)", 0) \\\n    DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(''')
+
+          replace_once(
+              'src/Core/SettingsChangesHistory.cpp',
+              '''        addSettingsChanges(settings_changes_history, "26.9",\n        {\n            {"allow_experimental_nullable_tuple_type", false, true,''',
+              '''        addSettingsChanges(settings_changes_history, "26.9",\n        {\n            {"refresh_workload", "", "", "New setting to choose the workload for refreshable materialized view execution independently of the creating query."},\n            {"allow_experimental_nullable_tuple_type", false, true,''')
+
+          # StorageMaterializedView: create one coherent SELECT/settings snapshot for admission + execution,
+          # while keeping master's RefreshMode/incremental-stream cursor path.
+          replace_once(
+              'src/Storages/StorageMaterializedView.h',
+              '    ContextMutablePtr createRefreshContext(const String & log_comment) const;\n',
+              '    ContextMutablePtr createRefreshContext(const String & log_comment, ASTPtr & out_select_query) const;\n')
+          replace_once(
+              'src/Storages/StorageMaterializedView.h',
+              '''    prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,\n        const CursorTreeNodePtr & stream_cursor) const;''',
+              '''    prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, ASTPtr select_query, std::optional<StorageID> & out_temp_table_id,\n        const CursorTreeNodePtr & stream_cursor) const;''')
+
+          replace_once(
+              'src/Storages/StorageMaterializedView.cpp',
+              '#include <Parsers/ASTRefreshStrategy.h>\n#include <Parsers/queryNormalization.h>',
+              '#include <Parsers/ASTRefreshStrategy.h>\n#include <Parsers/ASTSetQuery.h>\n#include <Parsers/queryNormalization.h>')
+          replace_once(
+              'src/Storages/StorageMaterializedView.cpp',
+              '    extern const SettingsUInt64 log_queries_cut_to_length;\n}',
+              '    extern const SettingsUInt64 log_queries_cut_to_length;\n    extern const SettingsString refresh_workload;\n}')
+          replace_once(
+              'src/Storages/StorageMaterializedView.cpp',
+              'ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & log_comment) const',
+              'ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & log_comment, ASTPtr & out_select_query) const')
+          replace_once(
+              'src/Storages/StorageMaterializedView.cpp',
+              '''    /// Use the database where the materialized view is created to run the select query in the refresh task\n    refresh_context->setCurrentDatabase(getStorageID().database_name);\n    return refresh_context;''',
+              '''    /// Use the database where the materialized view is created to run the select query in the refresh task\n    refresh_context->setCurrentDatabase(getStorageID().database_name);\n    /// Use the same metadata snapshot for SQL SECURITY and the SELECT settings/query.\n    out_select_query = view_metadata->getSelectQuery().select_query->clone();\n    InterpreterSetQuery::applySettingsFromQuery(out_select_query, refresh_context);\n    const String refresh_workload = refresh_context->getSettingsRef()[Setting::refresh_workload];\n    if (!refresh_workload.empty())\n    {\n        /// Apply through the settings interpreter so the definer's workload constraints are checked.\n        auto runtime_settings = make_intrusive<ASTSetQuery>();\n        runtime_settings->changes.emplace_back("workload", refresh_workload);\n        InterpreterSetQuery(runtime_settings, refresh_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);\n\n        /// SELECT interpreters may reapply settings, including in nested queries. Keep the private\n        /// execution copy consistent with admission; the persisted SELECT and CREATE are unchanged.\n        ASTs pending{out_select_query};\n        while (!pending.empty())\n        {\n            auto node = std::move(pending.back());\n            pending.pop_back();\n            if (auto * settings = node->as<ASTSetQuery>())\n                for (auto & change : settings->changes)\n                    if (change.name == "workload")\n                        change.value = refresh_workload;\n            pending.insert(pending.end(), node->children.begin(), node->children.end());\n        }\n    }\n    return refresh_context;''')
+          replace_once(
+              'src/Storages/StorageMaterializedView.cpp',
+              '''StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,\n    const CursorTreeNodePtr & stream_cursor) const''',
+              '''StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, ASTPtr select_query, std::optional<StorageID> & out_temp_table_id,\n    const CursorTreeNodePtr & stream_cursor) const''')
+          replace_once(
+              'src/Storages/StorageMaterializedView.cpp',
+              '''    auto view_metadata = getInMemoryMetadataPtr(refresh_context, false);\n    auto select_query = view_metadata->getSelectQuery().select_query->clone();\n    InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);\n\n''',
+              '')
+
+          # RefreshTask header: add the asynchronous admission state while preserving master's cursor mode.
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.h',
+              '#include <IO/Progress.h>\n',
+              '#include <IO/Progress.h>\n#include <Interpreters/QuerySlot.h>\n')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.h',
+              '''    WaitingForDependencies,\n    MissingDependencies,\n    Running,''',
+              '''    WaitingForDependencies,\n    MissingDependencies,\n    WaitingForResource,\n    Running,''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.h',
+              'public:\n    struct DependencyRefreshInfo',
+              'public:\n    ~RefreshTask();\n\n    struct DependencyRefreshInfo')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.h',
+              '''        DependencyRefreshInfo notified_dependents;\n    };\n\n    /// Information about the currently running refresh.''',
+              '''        DependencyRefreshInfo notified_dependents;\n    };\n\n    class AsyncQuerySlot;\n\n    /// Information about the currently running refresh.''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.h',
+              '''            /// doScheduling() decided to run a refresh, executeRefresh() didn't start yet.\n            Requested,\n            /// executeRefresh() is in progress.''',
+              '''            /// doScheduling() decided to run a refresh, executeRefresh() didn't start yet.\n            Requested,\n            /// The scheduler has not resolved query-slot admission yet.\n            WaitingForResource,\n            /// executeRefresh() is in progress.''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.h',
+              '''        StopSource cancel_ddl_queries;\n        Progress progress;\n\n        State state = State::None;''',
+              '''        StopSource cancel_ddl_queries;\n        Progress progress;\n\n        /// Only the classifier and admission outcome survive the resource wait, not a query context.\n        std::unique_ptr<AsyncQuerySlot> query_slot;\n        std::exception_ptr admission_exception;\n\n        State state = State::None;''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.h',
+              '''    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor);''',
+              '''    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message,\n        CursorTreeNodePtr & out_cursor, std::unique_ptr<AsyncQuerySlot> query_slot, std::exception_ptr admission_exception);''')
+
+          # RefreshTask implementation.
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '#include <Common/thread_local_rng.h>\n',
+              '#include <Common/thread_local_rng.h>\n#include <Common/Scheduler/ISchedulerQueue.h>\n#include <Common/Scheduler/IResourceManager.h>\n#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>\n')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '    extern const Metric RefreshingViews;\n}',
+              '    extern const Metric RefreshingViews;\n    extern const Metric ConcurrentQueryScheduled;\n}')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;\n}',
+              '    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;\n    extern const Event ConcurrentQueryWaitMicroseconds;\n}')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '    extern const SettingsSeconds lock_acquire_timeout;\n}',
+              '    extern const SettingsSeconds lock_acquire_timeout;\n    extern const SettingsString workload;\n}')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '    extern const ServerSettingsBool disable_insertion_and_mutation;\n}',
+              '    extern const ServerSettingsBool disable_insertion_and_mutation;\n    extern const ServerSettingsBool use_query_slot_to_refresh_materialized_view;\n}')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '    extern const int TABLE_UUID_MISMATCH;\n}',
+              '    extern const int TABLE_UUID_MISMATCH;\n    extern const int RESOURCE_ACCESS_DENIED;\n}')
+
+          async_slot = r'''
+/// The scheduler only publishes an outcome and wakes the refresh scheduling task. It never runs
+/// user callbacks or takes RefreshTask::mutex. The classifier keeps the queue and constraints alive
+/// even after this object is transferred to the process list.
+class RefreshTask::AsyncQuerySlot final : public QuerySlotBase
+{
+public:
+    AsyncQuerySlot(RefreshTask & task_, ClassifierPtr classifier_, ResourceLink link_, String workload_)
+        : task(task_), classifier(std::move(classifier_)), link(link_), workload(std::move(workload_))
+    {
+    }
+
+    ~AsyncQuerySlot() override
+    {
+        cancel();
+        std::unique_lock lock(slot_mutex);
+        /// Cancellation may lose to dequeue. Wait only for that in-flight scheduler notification,
+        /// never for admission, and keep both the task and classifier alive until it has returned.
+        cv.wait(lock, [this] { return ready; });
+        release();
+    }
+
+    void enqueue()
+    {
+        scheduled.emplace(CurrentMetrics::ConcurrentQueryScheduled);
+        stopwatch.restart();
+        ready = false;
+        try
+        {
+            link.queue->enqueueRequest(this);
+        }
+        catch (...)
+        {
+            /// A throwing enqueue did not publish the request. Resolve it as an admission error.
+            failed(std::current_exception());
+        }
+    }
+
+    void cancel()
+    {
+        if (link.queue->cancelRequest(this))
+        {
+            std::lock_guard lock(slot_mutex);
+            complete();
+        }
+    }
+
+    bool isReady() const
+    {
+        std::lock_guard lock(slot_mutex);
+        return ready;
+    }
+
+    void checkGranted(const String & current_workload) const
+    {
+        std::lock_guard lock(slot_mutex);
+        chassert(ready);
+        if (exception)
+            throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Unable to obtain a query slot: {}",
+                getExceptionMessage(exception, /* with_stacktrace = */ false));
+        if (!granted)
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh query-slot admission was cancelled");
+        if (workload != current_workload)
+            throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED,
+                "Refresh workload changed from '{}' to '{}' while waiting for a query slot; retry admission",
+                workload, current_workload);
+    }
+
+private:
+    void execute() override
+    {
+        std::lock_guard lock(slot_mutex);
+        granted = true;
+        acquired();
+        complete();
+    }
+
+    void failed(const std::exception_ptr & ptr) override
+    {
+        std::lock_guard lock(slot_mutex);
+        exception = ptr;
+        complete();
+    }
+
+    void complete()
+    {
+        scheduled.reset();
+        ProfileEvents::increment(ProfileEvents::ConcurrentQueryWaitMicroseconds, stopwatch.elapsedMicroseconds());
+        ready = true;
+        try
+        {
+            task.scheduling_task->schedule();
+        }
+        catch (...)
+        {
+            /// Preserve an original admission error. The already-armed scheduling check will
+            /// consume this failure, so it neither escapes the scheduler nor strands a slot.
+            if (!exception)
+                exception = std::current_exception();
+        }
+        cv.notify_all();
+    }
+
+    RefreshTask & task;
+    ClassifierPtr classifier;
+    ResourceLink link;
+    String workload;
+    mutable std::mutex slot_mutex;
+    std::condition_variable cv;
+    bool ready = true;
+    bool granted = false;
+    std::exception_ptr exception;
+    std::optional<CurrentMetrics::Increment> scheduled;
+    Stopwatch stopwatch;
+};
+
+RefreshTask::~RefreshTask() = default;
+'''
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '    extern const char refresh_mv_skip_execution[];\n}\n\nnamespace\n{',
+              '    extern const char refresh_mv_skip_execution[];\n}\n' + async_slot + '\nnamespace\n{')
+
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''    scheduling_task->deactivate();\n    execution_task->deactivate();\n\n    /// Best-effort final update of information in zookeeper''',
+              '''    scheduling_task->deactivate();\n    execution_task->deactivate();\n\n    {\n        std::lock_guard guard(mutex);\n        /// Quiesce any scheduler notification before the final Keeper reconciliation or destruction.\n        execution.query_slot.reset();\n        execution.admission_exception = nullptr;\n    }\n\n    /// Best-effort final update of information in zookeeper''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''    if (std::exchange(scheduling.stop_requested, true))\n        return;\n    scheduleRefresh(guard);\n}\n\nvoid RefreshTask::startReplicated()''',
+              '''    if (std::exchange(scheduling.stop_requested, true))\n        return;\n    /// A query slot can be granted before the execution task starts. Cancel both queued\n    /// admission and that dispatch window; neither has started refreshing the target yet.\n    if (execution.query_slot\n        && (execution.state == ExecutionState::State::WaitingForResource\n            || execution.state == ExecutionState::State::Requested))\n        interruptExecution();\n    scheduleRefresh(guard);\n}\n\nvoid RefreshTask::startReplicated()''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '        if (state == RefreshState::Running || state == RefreshState::RunningOnAnotherReplica)\n',
+              '        if (state == RefreshState::WaitingForResource || state == RefreshState::Running || state == RefreshState::RunningOnAnotherReplica)\n')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '            return state != RefreshState::Running && state != RefreshState::Scheduling;\n',
+              '            return state != RefreshState::WaitingForResource && state != RefreshState::Running && state != RefreshState::Scheduling;\n')
+
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''        setState(RefreshState::Scheduling, lock);\n\n        if (coordination.unavailable)''',
+              '''        setState(RefreshState::Scheduling, lock);\n\n        if (!is_shutdown && execution.state == ExecutionState::State::WaitingForResource)\n        {\n            if (execution.query_slot->isReady())\n            {\n                /// Resolve admission before the coordination early returns as well: losing Keeper\n                /// capabilities or ownership must not strand an already-cancelled attempt.\n                execution_task->schedule();\n                execution.state = ExecutionState::State::Requested;\n            }\n            else\n            {\n                /// Normally completion wakes us immediately. Keep a scheduled check so a failed\n                /// wake-up can be reported as an admission error without another scheduler callback.\n                scheduling_task->scheduleAfter(1000);\n            }\n        }\n\n        if (coordination.unavailable)''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''                    && (execution.state == ExecutionState::State::Requested\n                        || execution.state == ExecutionState::State::Running))''',
+              '''                    && (execution.state == ExecutionState::State::Requested\n                        || execution.state == ExecutionState::State::WaitingForResource\n                        || execution.state == ExecutionState::State::Running))''')
+          replace_count(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              'if (execution.state == ExecutionState::State::Requested)\n',
+              'if (execution.state == ExecutionState::State::Requested\n                        || execution.state == ExecutionState::State::WaitingForResource)\n',
+              2)
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''                case ExecutionState::State::Requested:\n                case ExecutionState::State::Running:''',
+              '''                case ExecutionState::State::WaitingForResource:\n                case ExecutionState::State::Requested:\n                case ExecutionState::State::Running:''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''                    if (view->getContext()->getRefreshSet().refreshesStopped())\n                        interruptExecution();\n\n                    setState(RefreshState::Running, lock);''',
+              '''                    if (view->getContext()->getRefreshSet().refreshesStopped())\n                        interruptExecution();\n\n                    if (execution.state == ExecutionState::State::WaitingForResource)\n                    {\n                        setState(RefreshState::WaitingForResource, lock);\n                        break;\n                    }\n                    setState(RefreshState::Running, lock);''')
+
+          admission = r'''
+        execution.admission_exception = nullptr;
+        try
+        {
+            if (view->getContext()->getServerSettings()[ServerSetting::use_query_slot_to_refresh_materialized_view])
+            {
+                ASTPtr select_query;
+                auto admission_context = view->createRefreshContext("refresh workload admission", select_query);
+                auto workload_storage = admission_context->getWorkloadEntityStoragePtr();
+                auto query_resource = workload_storage->getQueryResourceName();
+                if (!query_resource.empty())
+                {
+                    auto classifier = admission_context->getWorkloadClassifier();
+                    if (auto link = classifier->get(query_resource))
+                    {
+                        /// Arm before enqueue: completion (including failure) may happen immediately.
+                        scheduling_task->scheduleAfter(1000);
+                        execution.query_slot = std::make_unique<AsyncQuerySlot>(*this, std::move(classifier), link,
+                            admission_context->getSettingsRef()[Setting::workload]);
+                        execution.state = ExecutionState::State::WaitingForResource;
+                        execution.query_slot->enqueue();
+                        setState(RefreshState::WaitingForResource, lock);
+                        return;
+                    }
+                }
+            }
+        }
+        catch (...)
+        {
+            /// Configuration/authorization errors use the normal refresh failure and retry path.
+            execution.admission_exception = std::current_exception();
+            execution.query_slot.reset();
+            execution.state = ExecutionState::State::Requested;
+        }
+'''
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''        execution.out_of_schedule = out_of_schedule;\n        execution.state = ExecutionState::State::Requested;\n\n        execution_task->schedule();''',
+              '''        execution.out_of_schedule = out_of_schedule;\n        execution.state = ExecutionState::State::Requested;\n''' + admission + '''\n        execution_task->schedule();''')
+
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''    std::vector<StorageID> deps = set_handle.getDependencies();\n\n    lock.unlock();''',
+              '''    std::vector<StorageID> deps = set_handle.getDependencies();\n    auto query_slot = std::move(execution.query_slot);\n    auto admission_exception = std::exchange(execution.admission_exception, nullptr);\n\n    lock.unlock();''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, cursor_after_refresh);',
+              '        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, cursor_after_refresh,\n            std::move(query_slot), std::move(admission_exception));')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor)''',
+              '''std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message,\n    CursorTreeNodePtr & out_cursor, std::unique_ptr<AsyncQuerySlot> query_slot, std::exception_ptr admission_exception)''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''        refresh_context = view->createRefreshContext(log_comment);\n\n        const bool incremental = isIncremental();''',
+              '''        query_for_logging = "(workload admission)";\n        normalized_query_hash = normalizedQueryHash(query_for_logging, false);\n        if (execution.interrupt_execution.load())\n            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());\n        if (admission_exception)\n            std::rethrow_exception(admission_exception);\n\n        /// Do not retain the pre-admission context across the wait: SQL SECURITY, the SELECT and\n        /// the database may have changed. Build a fresh, internally consistent definition now.\n        ASTPtr select_query;\n        refresh_context = view->createRefreshContext(log_comment, select_query);\n        if (query_slot)\n            query_slot->checkGranted(refresh_context->getSettingsRef()[Setting::workload]);\n\n        const bool incremental = isIncremental();''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''        {\n            /// Create a table.\n            query_for_logging = "(create target table)";''',
+              '''        {\n            /// Release admission before the target-table exchange or error cleanup. Planning may\n            /// fail before the slot is adopted by `ProcessList`, so cover both owners.\n            SCOPE_EXIT({\n                query_slot.reset();\n                if (process_list_entry)\n                    process_list_entry->getQueryStatus()->releaseQuerySlot();\n            });\n\n            /// Create a table.\n            query_for_logging = "(create target table)";''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_mode, refresh_context, table_to_drop, stream_cursor);',
+              '            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_mode, refresh_context, std::move(select_query), table_to_drop, stream_cursor);')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''            process_list_entry = refresh_context->getProcessList().insert(\n                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);''',
+              '''            process_list_entry = refresh_context->getProcessList().insert(\n                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal,\n                std::move(query_slot));''')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '    if (state != RefreshState::Running)\n        state = RefreshState::Scheduling;',
+              '    if (state != RefreshState::WaitingForResource && state != RefreshState::Running)\n        state = RefreshState::Scheduling;')
+          replace_once(
+              'src/Storages/MaterializedView/RefreshTask.cpp',
+              '''void RefreshTask::interruptExecution()\n{\n    chassert(!mutex.try_lock());\n    std::shared_ptr<QueryStatus> query_status;''',
+              '''void RefreshTask::interruptExecution()\n{\n    chassert(!mutex.try_lock());\n    if (execution.query_slot)\n    {\n        if (execution.state == ExecutionState::State::Requested)\n        {\n            /// Admission is resolved, but execution has not taken ownership yet. Release the slot\n            /// now even if `RefreshExec` is backlogged; its pending invocation observes cancellation.\n            execution.query_slot.reset();\n        }\n        else\n            execution.query_slot->cancel();\n    }\n    std::shared_ptr<QueryStatus> query_status;''')
+          PY
+
+          git add "${expected[@]}"
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo 'Unresolved conflicts remain:' >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+          if grep -R -n '^<<<<<<<\|^=======\|^>>>>>>>' "${expected[@]}"; then
+            echo 'Conflict markers remain.' >&2
+            exit 1
+          fi
+          git diff --check
           git status --short
-          echo '=== CONFLICT FILES ==='
-          conflicts="$(git diff --name-only --diff-filter=U)"
-          printf '%s\n' "$conflicts"
-          for f in $conflicts; do
-            echo "=== CONFLICT MARKERS: $f ==="
-            grep -n -B 12 -A 28 '^<<<<<<<\|^=======\|^>>>>>>>' "$f" || true
-          done
-          git merge --abort || true
-          exit "$rc"
+          git diff --cached --stat
+          git commit -m 'Merge upstream master into RMV workload branch'
+          git push origin HEAD:agent/refreshable-mv-workload
