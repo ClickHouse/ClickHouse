@@ -27,8 +27,13 @@ import tempfile
 from pathlib import Path
 
 # The whole suffix ReadBufferFromS3 appends, not just its first field: the failing query's
-# text and id are on this line too, unescaped, and may name keys this read never touched.
+# text is on this line too, unescaped, and may name keys this read never touched.
 KEY_PATTERN = re.compile(r"while reading key: ([^\s,]+), from bucket:")
+
+# The fields before the level are the client's: the query id is written there unescaped, and
+# names no object any emitter touched. The first occurrence is the line's own level slot, so
+# the cut can land early, inside a hostile id, but never past the start of the message.
+LEVEL_PATTERN = re.compile(r" <\w+> ")
 
 # A log line opens with "<date> <time>", whose text sorts chronologically. grep reports one
 # file at a time, so file order is not time order.
@@ -65,11 +70,33 @@ NO_LIFECYCLE = (
 SUBSTRING_ONLY = "matched as a substring only (no delimited occurrence found)"
 
 
+def message_in(log_line):
+    """What the emitter wrote on a log line, without the fields that precede the level."""
+    level = LEVEL_PATTERN.search(log_line)
+    # No level slot at all (a continuation line of a multi-line message) leaves the whole
+    # line: a shape this parser cannot dissect must not silently name no key.
+    return log_line[level.end() :] if level else log_line
+
+
+def keys_in(match_line):
+    """The keys one match line names, in the order the line names them."""
+    return KEY_PATTERN.findall(message_in(match_line))
+
+
 def extract_keys(matches_text):
-    """The keys named by the match lines, de-duplicated, in first-seen order."""
+    """The keys named by the match lines, de-duplicated, in rank-within-line order.
+
+    Every line's first key comes before any line's second, so one line naming many keys
+    cannot spend the report's key cap before another line's failing read is reached.
+    """
+    ranked = sorted(
+        (rank, position, key)
+        for position, line in enumerate(matches_text.splitlines())
+        for rank, key in enumerate(keys_in(line))
+    )
     keys = []
     seen = set()
-    for key in KEY_PATTERN.findall(matches_text):
+    for _, _, key in ranked:
         if key not in seen:
             seen.add(key)
             keys.append(key)
@@ -98,7 +125,7 @@ def _in_time_order(lines, total):
 class _KeyLifecycle:
     """One key's retained lines, kept as they arrive so the caps bound memory too.
 
-    A line belongs to the key when a separator (or a line edge) flanks the key on both
+    A line belongs to the key when a separator (or a message edge) flanks the key on both
     sides, which is what keeps a key out of the group of a key that merely contains it. A
     line that names the key with no separator is kept separately and reported only when
     there is no separated line at all: a reworded message must not empty the group silently.
@@ -117,10 +144,12 @@ class _KeyLifecycle:
         self.loose = []
         self.loose_total = 0
 
-    def offer(self, line):
-        if self.key not in line:
+    def offer(self, line, message):
+        # Matched in the emitter's own text, so a key the client put in a field before the
+        # level cannot pull an event of a different object into this key's history.
+        if self.key not in message:
             return
-        if self.pattern.search(line):
+        if self.pattern.search(message):
             self.total += 1
             if len(self.lines) < MAX_LINES_PER_KEY:
                 self.lines.append(line)
@@ -163,8 +192,9 @@ def collect_lifecycle_lines(keys, logs):
             line = line.rstrip("\n")
             if not LIFECYCLE_LINE_PATTERN.search(line):
                 continue
+            message = message_in(line)
             for group in groups.values():
-                group.offer(line)
+                group.offer(line, message)
         grep.stdout.close()
         returncode = grep.wait()
         grep_errors.seek(0)

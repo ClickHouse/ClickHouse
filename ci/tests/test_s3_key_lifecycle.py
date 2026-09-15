@@ -19,9 +19,8 @@ from ci.jobs.scripts.s3_key_lifecycle import MAX_EXPANDED_KEYS, MAX_LINES_PER_KE
 _KEY = "test/hbh/aaaaaaaaaaaaaaaaaaaaaaaaa"
 _OTHER = "test/hbh/bbbbbbbbbbbbbbbbbbbbbbbbb"
 
-# Field order as executeQuery assembles it: the exception text, whose tail is the suffix
-# ReadBufferFromS3 appended, and only then the query. Reversing the two would make the
-# match line's own key unreachable from any test that trusts this fixture.
+# Field order as executeQuery assembles it: the query id, then the level, then the exception
+# text whose tail is the suffix ReadBufferFromS3 appended, and only then the query.
 _MATCH = (
     "2026.09.14 12:00:09.100000 [ 1111 ] {q-1} <Error> executeQuery: Code: 499. "
     "DB::Exception: The specified key does not exist. This error happened for S3 disk: "
@@ -359,11 +358,11 @@ def test_a_query_id_holding_a_brace_still_gets_its_lifecycle(tmp_path):
 
 
 def test_a_query_id_naming_a_key_does_not_displace_the_matched_one(tmp_path):
-    # The id is as untrusted as the query text, and is printed before the exception. A full
-    # replica of the suffix in either is indistinguishable from the real thing, so what is
-    # guaranteed is that the read's own key is still found and expanded.
+    # The id is as untrusted as the query text, and the formatter writes it before the level,
+    # so it can hold complete replicas of the suffix - tail included - ahead of the real one.
     ids = " ".join(
-        f"while reading key: spoof/k{i:04d}" for i in range(MAX_EXPANDED_KEYS + 50)
+        f"while reading key: spoof/k{i:04d}, from bucket: b"
+        for i in range(MAX_EXPANDED_KEYS + 5)
     )
     poisoned = _MATCH.replace("{q-1}", f"{{qid {ids}}}")
     matches = _logs(tmp_path)
@@ -372,9 +371,66 @@ def test_a_query_id_naming_a_key_does_not_displace_the_matched_one(tmp_path):
     report = report_for(matches, tmp_path)
 
     assert not any("spoof/" in line for line in report), report
-    assert _group(report, _KEY) != [
-        f"not expanded: per-report key cap {MAX_EXPANDED_KEYS} reached"
-    ], report
+    body = _group(report, _KEY)
+    assert any("Writing blob for path all_1_1_0/data.bin" in line for line in body), body
+
+
+def test_one_match_lines_keys_do_not_crowd_out_another_lines_key(tmp_path):
+    # A query that spells the whole suffix out in its own text really does name those keys on
+    # its line, and can name more of them than the report expands. Spending the cap on one
+    # line before the next is reached is what leaves the following failure unexplained.
+    spoof = " ".join(
+        f"while reading key: spoof/k{i:04d}, from bucket: b"
+        for i in range(MAX_EXPANDED_KEYS + 5)
+    )
+    poisoned = _MATCH.replace("SELECT * FROM t", f"SELECT '{spoof}'")
+    matches = _logs(tmp_path)
+    matches.write_text(f"{poisoned}\n{_MATCH.replace(_KEY, _OTHER)}\n", encoding="utf-8")
+
+    report = report_for(matches, tmp_path)
+    poisoned_line = _group(report, _KEY)
+    next_line = _group(report, _OTHER)
+
+    # The read's own key is the first one its message names, so it survives its own query text.
+    assert any("all_1_1_0/data.bin" in line for line in poisoned_line), poisoned_line
+    assert any("all_2_2_0/data.bin" in line for line in next_line), next_line
+    assert any("was removed from S3" in line for line in next_line), next_line
+
+
+def test_a_delete_of_another_object_is_not_attributed_by_the_query_id(tmp_path):
+    # A genuine delete, of a different object, run under a query id that happens to hold the
+    # matched key. Putting it in this object's history is worse than reporting no history at
+    # all: it says the object was removed at a time nothing removed it.
+    matches = _logs(tmp_path)
+    # Written after _logs, which lays down both log files: the hostile id is the whole point.
+    (tmp_path / "clickhouse-server.stress.log").write_text(
+        f"2026.09.14 12:00:01.000000 [ 1001 ] {{q {_KEY} tail}} <Debug> deleteFileFromS3: "
+        f"Object with path {_OTHER} was removed from S3\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "clickhouse-server.final.log").write_text("", encoding="utf-8")
+    matches.write_text(f"{_MATCH}\n", encoding="utf-8")
+
+    body = _group(report_for(matches, tmp_path), _KEY)
+
+    assert len(body) == 1, body
+    assert body[0].startswith("no lifecycle line found"), body
+
+
+def test_a_match_line_with_no_level_slot_still_names_its_key(tmp_path):
+    # An exception can be several lines long and only its first line carries the prefix
+    # fields. A shape this parser cannot dissect must fall back to reading the whole line,
+    # because a continuation line's key is as real as any.
+    matches = _logs(tmp_path)
+    matches.write_text(
+        f"Received from localhost:9000. DB::Exception: while reading key: {_KEY}, "
+        "from bucket: b.\n",
+        encoding="utf-8",
+    )
+
+    body = _group(report_for(matches, tmp_path), _KEY)
+
+    assert any("Writing blob for path all_1_1_0/data.bin" in line for line in body), body
 
 
 def test_the_per_key_line_cap_says_how_many_lines_it_omitted(tmp_path):
