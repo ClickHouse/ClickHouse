@@ -34,6 +34,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -1082,15 +1083,79 @@ static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Bl
     return !isFixedString(indexed_type);
 }
 
+namespace
+{
+
+/// Whether converting a value of type `from` to type `to` never changes it and never throws.
+/// `LowCardinality` may be added or dropped and `Nullable` may be added, at any depth of `Array`.
+/// `Nullable` cannot be dropped, because it may throw on NULL.
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto from_type = removeLowCardinality(from);
+    auto to_type = removeLowCardinality(to);
+
+    if (to_type->isNullable())
+    {
+        from_type = removeNullable(from_type);
+        to_type = removeNullable(to_type);
+    }
+    else if (from_type->isNullable())
+    {
+        return false;
+    }
+
+    if (from_type->equals(*to_type))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
+    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
+}
+
+/// Strips `CAST`, `_CAST`, `toNullable` and `toLowCardinality` from the node while the conversion is lossless (see above).
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return node;
+
+    const auto function = node.toFunctionNode();
+    const auto function_name = function.getFunctionName();
+    const size_t arguments_size = function.getArgumentsSize();
+
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
+    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
+
+    if (!is_cast && !is_wrapper)
+        return node;
+
+    /// Only the DAG form carries the types; the AST form is left as is.
+    auto argument = function.getArgumentAt(0);
+    const auto * function_dag_node = function.getDAGNode();
+    const auto * argument_dag_node = argument.getDAGNode();
+
+    if (!function_dag_node || !argument_dag_node)
+        return node;
+
+    if (!isLosslessConversion(argument_dag_node->result_type, function_dag_node->result_type))
+        return node;
+
+    return unwrapLosslessConversion(argument);
+}
+
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
-    const RPNBuilderTreeNode & index_column_node,
+    const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
     Field value_field,
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
+
+    /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
+    const auto index_column_node = unwrapLosslessConversion(argument_node);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
@@ -2020,8 +2085,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
-    auto has_index = [&](const RPNBuilderTreeNode & node)
+    auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
+        const auto node = unwrapLosslessConversion(argument);
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
@@ -2071,7 +2137,18 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (*set_key_position >= columns.size())
         return false;
 
-    const auto & set_column = *columns[*set_key_position];
+    const IColumn * set_column_ptr = columns[*set_key_position].get();
+    if (const auto * nullable_set_column = checkAndGetColumn<ColumnNullable>(set_column_ptr))
+    {
+        /// A NULL element has no token, and `x IN (NULL, ...)` is NULL for the rows that match nothing else.
+        const auto & null_map = nullable_set_column->getNullMapData();
+        if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+            return false;
+
+        set_column_ptr = &nullable_set_column->getNestedColumn();
+    }
+
+    const auto & set_column = *set_column_ptr;
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 
