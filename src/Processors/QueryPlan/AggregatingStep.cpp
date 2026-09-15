@@ -632,18 +632,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(new_merge_threads);
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
-            /// The sample is taken from this single-node plan, but it prices what the replicas will
-            /// put on the wire. A replica runs this same merge over a `WithMergeableState`, which does
-            /// produce results in bucket order, so memory-bound merging applies there and sorts the rows
-            /// by the group by keys before they are sent. Here it does not apply - `required_sort_description`
-            /// is empty just above - and the sample is left in hash table order, which compresses several
-            /// times worse. Ask the sampler to sort it, so both sides are priced in the same row order.
-            if (dataflow_cache_updater && required_sort_description.empty()
-                && DB::memoryBoundMergingWillBeUsed(
-                    /*should_produce_results_in_order_of_bucket_number=*/true,
-                    memory_bound_merging_of_aggregation_results_enabled,
-                    sort_description_for_merging))
-                dataflow_cache_updater->setReplicasSendOutputInKeyOrder();
+            /// When this merge does not sort but the replicas' does, the sample it feeds to the updater is
+            /// priced in the replicas' row order all the same - see `setReplicasSendOutputInKeyOrder`,
+            /// which `considerEnablingParallelReplicas` sets from the plan the replicas will run.
             pipeline.addSimpleTransform(
                 [&](const SharedHeader &)
                 { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description, dataflow_cache_updater); });

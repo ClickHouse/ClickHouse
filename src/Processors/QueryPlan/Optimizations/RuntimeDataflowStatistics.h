@@ -122,10 +122,9 @@ public:
     /// block that is actually sampled, since building it costs a sort of the block's key columns.
     using KeyOrderProvider = std::function<IColumn::Permutation()>;
 
-    /// Sort the sample by the group by keys before pricing it. Call this when the replicas sort this
-    /// step's output that way before sending it - they do whenever memory-bound merging applies to the
-    /// `WithMergeableState` they produce - but the plan the sample is taken from does not, because it
-    /// is not producing results in bucket order. Left in hash table order such a sample compresses
+    /// Sort the sample by the group by keys before pricing it. Call this when the replicas' partial
+    /// aggregation uses memory-bound merging, and so sorts its output that way before sending it, while
+    /// the plan the sample is taken from does not. Left in hash table order such a sample compresses
     /// several times worse than what it is meant to price.
     void setReplicasSendOutputInKeyOrder() { replicas_send_output_in_key_order = true; }
 
