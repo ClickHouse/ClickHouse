@@ -1192,10 +1192,12 @@ private:
 
         Field string_value = left_const ? left_const->getField() : right_const->getField();
 
+        /// A string literal that is not a member of the enum converts to no value of the compared type, so it
+        /// is treated like every other unconvertible constant: the comparison is `false`, and `true` for `!=`,
+        /// see the comment below. `!=` used to fall through to `convertFieldToType`, which throws for such a
+        /// literal, so `e = '4'` answered while `e != '4'` threw on the same column.
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
         {
-            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
-                return false;
             if (params.validate_enum_literals_in_operators)
                 return false;
             if (!enum_values || string_value.getType() != Field::Types::String)
