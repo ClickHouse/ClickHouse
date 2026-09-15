@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- These server-wide defaults must not reach the internal DDL of the system log tables. -->
+            <flatten_nested>0</flatten_nested>
+            <data_type_default_nullable>1</data_type_default_nullable>
+        </default>
+    </profiles>
+</clickhouse>

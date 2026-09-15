@@ -34,6 +34,14 @@ node3 = cluster.add_instance(
     stay_alive=True,
 )
 
+# The same as `node3`, but with type-related settings changed server-wide.
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=["configs/union_merge.xml"],
+    user_configs=["configs/type_settings.xml"],
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -150,6 +158,53 @@ def test_stable_across_restarts(start_cluster):
         "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
     )
     assert uuid_before == uuid_after
+
+
+def test_stable_with_non_default_create_settings(start_cluster):
+    # The settings are non-default for the whole server, so they are also in effect
+    # in the context the system logs create their tables from.
+    assert (
+        node4.query(
+            "SELECT value FROM system.settings WHERE name = 'data_type_default_nullable'"
+        ).strip()
+        == "1"
+    )
+
+    node4.query("SELECT 'test_non_default_create_settings_marker'")
+    node4.query("SYSTEM FLUSH LOGS query_log")
+
+    # The declared structure of the system log tables must not be reshaped by them.
+    assert "Nullable" not in node4.query("DESCRIBE TABLE system.query_log")
+    assert node4.query("DESCRIBE TABLE system.all_query_log") == node4.query(
+        "DESCRIBE TABLE system.query_log"
+    )
+
+    uuid_before = node4.query(
+        "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
+    )
+
+    node4.restart_clickhouse()
+    node4.query("SYSTEM FLUSH LOGS query_log")
+
+    # Neither the log table nor its union table is rotated and recreated on every check.
+    assert (
+        node4.query(
+            "SELECT count() FROM system.tables WHERE database = 'system' AND name LIKE 'query\\_log\\_%'"
+        ).strip()
+        == "0"
+    )
+    uuid_after = node4.query(
+        "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
+    )
+    assert uuid_before == uuid_after
+    assert (
+        int(
+            node4.query(
+                "SELECT count() > 0 FROM system.all_query_log WHERE query LIKE '%test_non_default_create_settings_marker%'"
+            )
+        )
+        == 1
+    )
 
 
 def test_cluster(start_cluster):
