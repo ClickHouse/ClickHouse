@@ -74,18 +74,20 @@ SELECT DISTINCT d, dynamicType(d)
 FROM (SELECT materialize(toDecimal64('123456789012.34567', 5)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
 
 -- Time64 is backed by a scaled decimal but, unlike DateTime64, is not serialized as text, so a bare
--- literal would be parsed as Float64 on the shard and lose ticks. It must reach the shard exactly.
-SELECT DISTINCT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)) AS t
+-- literal would come back on the shard as a Float64 and not as a Time64, and the differing column name
+-- makes the query fail with NOT_FOUND_COLUMN_IN_BLOCK. The value stays inside the clock window of
+-- Time64 ([-999:59:59, 999:59:59]) - outside it every numeric conversion saturates to the extreme tick.
+SELECT DISTINCT materialize(toDecimal64('3599999.123456789', 9)::Time64(9)) AS t
 FROM remote('127.0.0.{1,2}', system.one);
 
 -- Time64 nested in Variant/Dynamic must keep both its exact value and its Time64 type on every shard:
 -- the decimal carrier has to be cast back to Time64 before the Variant/Dynamic cast (a Decimal carrier
 -- is not a member of Variant(Time64), and Dynamic would otherwise store a Decimal active subtype).
 SELECT DISTINCT v, variantType(v)
-FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Variant(Time64(9))) AS v FROM remote('127.0.0.{1,2}', system.one));
+FROM (SELECT materialize(toDecimal64('3599999.123456789', 9)::Time64(9)::Variant(Time64(9))) AS v FROM remote('127.0.0.{1,2}', system.one));
 
 SELECT DISTINCT dynamicType(d)
-FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
+FROM (SELECT materialize(toDecimal64('3599999.123456789', 9)::Time64(9)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
 
 -- A Variant that has a decimal member takes the exact serialization path even when it currently holds
 -- a value of another member. Conversion to Variant is allowed only from a type equal by name to one of

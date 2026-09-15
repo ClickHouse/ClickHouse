@@ -95,8 +95,9 @@ INSERT INTO test_dt_time_overflow_vec VALUES ('2020-01-01 00:00:00', '00:00:01')
 SELECT dt + t FROM test_dt_time_overflow_vec ORDER BY dt; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 DROP TABLE test_dt_time_overflow_vec;
 
--- Large negative Time64 brings an intermediate overflow back into range
-SELECT toDateTime64('2299-12-31 23:59:59', 0) + CAST(toDecimal128('-1200000000.000000000', 9), 'Time64(9)');
+-- A `Decimal` source of a `Time64` is clamped to the clock window of the type like every other numeric source,
+-- so it can no longer hold the 1.2 billion seconds that used to bring an intermediate overflow back into range.
+SELECT toDateTime64('2299-12-31 23:59:59', 0) + CAST(toDecimal128('-1200000000.000000000', 9), 'Time64(9)'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 -- Overflow with saturate
 SET date_time_overflow_behavior = 'saturate';
