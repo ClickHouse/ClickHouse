@@ -108,19 +108,7 @@ jobs:
               if (( rc != 0 )); then
                 if [[ "$path" == "src/Core/SettingsChangesHistory.cpp" ]]; then
                   cp "/tmp/rmv-three-way/${name}.theirs" "$path"
-                  python3 - "$path" <<'PY'
-from pathlib import Path
-import sys
-p = Path(sys.argv[1])
-s = p.read_text()
-entry = '            {"refresh_workload", "", "", "New setting to choose the workload for refreshable materialized view execution independently of the creating query."},\n'
-if entry not in s:
-    marker = '        addSettingsChanges(settings_changes_history, "26.9",\n        {\n'
-    if s.count(marker) != 1:
-        raise SystemExit(f"unexpected 26.9 history anchor count: {s.count(marker)}")
-    s = s.replace(marker, marker + entry, 1)
-p.write_text(s)
-PY
+                  python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); s=p.read_text(); entry="            {\"refresh_workload\", \"\", \"\", \"New setting to choose the workload for refreshable materialized view execution independently of the creating query.\"},\n"; marker="        addSettingsChanges(settings_changes_history, \"26.9\",\n        {\n"; assert s.count(marker) == 1, s.count(marker); p.write_text(s if entry in s else s.replace(marker, marker + entry, 1))' "$path"
                 else
                   echo "Three-way conflict remains in $path" >&2
                   grep -n -B 8 -A 20 -E '^(<<<<<<<|=======|>>>>>>>)' "$path" || true
