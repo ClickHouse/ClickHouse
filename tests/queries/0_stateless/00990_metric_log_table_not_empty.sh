@@ -9,9 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query "SELECT sleep(2) FORMAT Null"
 
 # Attempt an explicit flush of metric_log. Under sanitizers with
-# distributed cache the server-side 180s timeout may fire before the
-# wide metric_log (1700+ columns) finishes writing.  Only suppress that
-# specific error so that real regressions still fail the test.
+# distributed cache the server-side 180s timeout may fire before
+# metric_log finishes writing (in particular with the `wide` schema, where
+# the table has 1700+ columns).  Only suppress that specific error so that
+# real regressions still fail the test.
 flush_output=$($CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS metric_log" 2>&1)
 flush_rc=$?
 if [[ $flush_rc -ne 0 ]]; then

@@ -223,8 +223,15 @@ def generate_columns_markdown(columns, aliases=None):
         lines.append("")
         for alias in aliases:
             name = alias["name"]
+            comment = alias.get("comment", "").strip()
             description = ALIAS_DESCRIPTIONS.get((alias.get("table", ""), name))
-            if description:
+            if comment:
+                # An alias with its own description documents a value rather than a
+                # spelling of another column (the per-metric aliases of
+                # `system.metric_log`), so it is rendered like an ordinary column.
+                type_linked = format_type_link(alias["type"])
+                lines.append(f"- `{name}` ({type_linked}) — {indent_continuation(comment)}")
+            elif description:
                 lines.append(f"- `{name}` — {description}")
             else:
                 target = alias.get("default_expression", "")
@@ -433,7 +440,7 @@ def main():
     aliases = run_query(
         binary,
         config,
-        "SELECT table, name, type, default_expression"
+        "SELECT table, name, type, comment, default_expression"
         " FROM system.columns WHERE database = 'system'"
         " AND default_kind = 'ALIAS'"
         " ORDER BY table, position",
