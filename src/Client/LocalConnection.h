@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -29,6 +30,7 @@ struct LocalQueryState
 
     /// Query text.
     String query;
+    ASTPtr parsed_query;
     /// Parser-affecting settings captured when the query was received, before any query-local `SETTINGS`
     /// from the query itself are applied during execution. The `input()` initializer reparses `query` and
     /// must use the dialect/gate the query was originally accepted with — a JSON
