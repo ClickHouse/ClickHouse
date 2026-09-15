@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-04
+title: 'Demo days - 2026-09-04'
+sidebarTitle: '2026-09-04'
+description: 'ClickStack demo days del 2026-09-04'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Nuevos tipos de filtro de dashboard {#new-types-of-dashboard-filter}
+
+*Demo por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VnlNxvcvg-g" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Hasta ahora, los filtros de dashboard ofrecían un único tipo de valor: los valores de consulta, cuyas opciones del desplegable provienen de una columna de ClickHouse. Abre el modal de filtros y variables y verás que ahora hay dos tipos más entre los que elegir.
+
+Los valores estáticos te permiten escribir tú mismo las opciones al crear el filtro, de modo que un filtro de entorno puede ofrecer simplemente `dev`, `staging` y `prod` sin ninguna consulta detrás. Un filtro de lista estática no tiene `expression`, por lo que solo admite el modo variable y no puede convertirse en una condición SQL para el modo de difusión.
+
+Los valores de label de PromQL obtienen las opciones del endpoint `<label>/values` de una fuente PromQL. Eliges el label que quieras y, si lo deseas, puedes acotarlo con un matcher, que a su vez puede hacer referencia a otras variables. Así los filtros quedan encadenados entre sí: al seleccionar un entorno, las instancias que ofrece el siguiente filtro se reducen para coincidir, y los gráficos de PromQL se van filtrando sobre la marcha.
+
+Ambos tipos pueden exponerse como variables, lo que significa que un filtro puede controlar algo más que una cláusula `WHERE`. En la demo, un filtro estático con `ServiceName` y `SeverityText` se usa como dimensión de group-by de un gráfico, de modo que elegir un valor en el desplegable cambia el criterio de agrupación del gráfico, en cualquier combinación.
+
+**PRs relacionados:** [#3017](https://github.com/hyperdxio/hyperdx/pull/3017) añade filtros de lista de valores estáticos a los schemas y las API, [#3022](https://github.com/hyperdxio/hyperdx/pull/3022) renderiza las entradas de los filtros de lista de valores estáticos, [#3020](https://github.com/hyperdxio/hyperdx/pull/3020) permite crear y editar filtros de lista estática en la UI, [#3060](https://github.com/hyperdxio/hyperdx/pull/3060) admite filtros de valores personalizados estáticos en MCP, [#3053](https://github.com/hyperdxio/hyperdx/pull/3053) admite filtros de dashboard basados en valores de label de Prometheus, [#3072](https://github.com/hyperdxio/hyperdx/pull/3072) admite autocompletado para los filtros de label de PromQL, [#3039](https://github.com/hyperdxio/hyperdx/pull/3039) acepta límites de tiempo opcionales en el endpoint de valores de label de Prometheus, [#3079](https://github.com/hyperdxio/hyperdx/pull/3079) admite match[] en los endpoints de labels y valores de PromQL, [#3080](https://github.com/hyperdxio/hyperdx/pull/3080) admite match[] en los filtros de label de PromQL, [#3083](https://github.com/hyperdxio/hyperdx/pull/3083) elimina duplicados en labels y valores de PromQL para evitar un crash de Mantine, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) pide confirmación antes de descartar cambios sin guardar al cerrar el editor de filtros, [#3078](https://github.com/hyperdxio/hyperdx/pull/3078) permite configurar filtros de dashboard como obligatorios, [#3093](https://github.com/hyperdxio/hyperdx/pull/3093) aplica opcionalmente los filtros de dashboard a la vista previa del editor de tiles
+
+## Plantillas de leyenda personalizadas para gráficos de PromQL {#custom-legend-templates-for-promql-charts}
+
+*Demo por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2rR_kRAEvWw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las leyendas de PromQL eran difíciles de leer, como señaló Vladimir. De forma predeterminada mostramos el nombre de la métrica seguido de cada label que difiere entre las series devueltas, lo que en una consulta que devuelve muchas series da lugar a una cadena larguísima en la que hay que hacer clic para entenderla.
+
+La configuración de visualización del gráfico ahora admite una plantilla de leyenda. Es una plantilla de Handlebars, de modo que puedes referenciar solo los labels que te interesan y obtener un nombre de serie corto tanto en la leyenda como en el tooltip.
+
+Si la plantilla hace referencia a un label que no existe, esa referencia se muestra vacía. Y si el resultado queda vacío o no es único entre las series, recurrimos al conjunto completo de labels distintivos, de modo que nunca acabes con dos series que no puedas diferenciar.
+
+**PRs relacionados:** [#3055](https://github.com/hyperdxio/hyperdx/pull/3055) admite una plantilla personalizada para las leyendas de series de PromQL
+
+## Guardar un rango de fechas relativo como valor predeterminado del dashboard {#saving-a-relative-date-range-as-a-dashboard-default}
+
+*Demo por [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8KzwsEG-KSg" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los dashboards ahora pueden guardar un rango de fechas relativo como valor predeterminado. Establezca el rango de tiempo que desee y haga clic en «Save Consulta and Filters as default»: a partir de ese momento, el dashboard se abrirá con ese rango.
+
+Ahí está la ventaja de los rangos relativos. Guardar «las últimas 6 horas» hace que el dashboard sea siempre pertinente al abrirlo, en lugar de quedar fijado a una ventana estática que se queda obsoleta. Puede seguir cambiando el rango mientras usa el dashboard, consultar los últimos 7 días, salir y volver al valor predeterminado guardado.
+
+**PR relacionados:** [#3073](https://github.com/hyperdxio/hyperdx/pull/3073) los rangos de fechas relativos se pueden guardar en los dashboards
+
+## Alertas sin una búsqueda guardada ni un tile de dashboard {#alerts-without-a-saved-search-or-dashboard-tile}
+
+*Demo por [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wuK7geV7F94" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, toda alerta necesitaba algo detrás: una búsqueda guardada para logs, o un tile de dashboard para métricas. Eso no escala cuando estás migrando miles de alertas de Grafana.
+
+Las alertas en línea eliminan ese requisito. En la barra de acciones del explorador de gráficos hay una acción **Create alert**, de modo que puedes construir un gráfico sobre métricas o eventos y crear una alerta directamente sobre él sin guardar nada antes. También puedes crear una alerta en línea desde la página de alertas, que es la vía indicada cuando no quieres que la alerta quede asociada a una búsqueda guardada ni a un dashboard.
+
+Una alerta en línea persiste su propio `chartConfig` en el documento de la alerta, con la misma forma exacta que almacena un tile de dashboard, por lo que se evalúa mediante la misma ruta de código que las alertas de tiles y no por una paralela. Cubre el constructor y el SQL sin procesar en las visualizaciones `line`, `stacked_bar` y `number`. Por ahora, PromQL no es compatible.
+
+La API externa v2 y la herramienta MCP `save_alert` aceptan esa misma forma `source: 'inline'`, con el mismo dialecto de configuración de tiles que usan los dashboards v2, de modo que las alertas pueden crearse programáticamente a escala. El router reutiliza los conversores de tiles de dashboard, lo que evita que ambas superficies se distancien.
+
+**PRs relacionados:** [#3010](https://github.com/hyperdxio/hyperdx/pull/3010) soporte para crear alertas sin búsquedas guardadas ni tiles de dashboard (backend), [#3069](https://github.com/hyperdxio/hyperdx/pull/3069) UI para crear y editar alertas de gráficos en línea, [#3043](https://github.com/hyperdxio/hyperdx/pull/3043) soporte para alertas de gráficos en la API externa v2 y MCP
+
+## Nombres y etiquetas de alertas {#alert-names-and-tags}
+
+*Demo por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/nIJGusSLBuk" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las alertas ahora pueden tener su propio nombre y sus propias etiquetas. El formulario de alerta de un tile de dashboard o de una búsqueda guardada incluye un campo de nombre y un campo de etiquetas; una alerta nueva toma por defecto el nombre del gráfico o de la búsqueda guardada y hereda las etiquetas del dashboard o de la búsqueda guardada a la que pertenece.
+
+Esos nombres son los que muestra la página de alertas y los que se usan para buscar y filtrar. Las alertas que ya están en la base de datos sin nombre asignado siguen derivándolo de la búsqueda guardada o del dashboard al que hacen referencia.
+
+Las etiquetas que devuelve el endpoint `team/tags` ahora incluyen las etiquetas de los documentos de alerta, además de las de los dashboards y las búsquedas guardadas. De lo contrario, una etiqueta utilizada únicamente por una alerta no se sugeriría al etiquetar la siguiente.
+
+Esto sienta las bases para paginar la página de alertas manteniendo la búsqueda y el filtrado por etiqueta, lo que requiere que el nombre y las etiquetas estén en el propio documento de alerta en lugar de depender de un join contra las colecciones de dashboards y búsquedas guardadas. La paginación aún no está lista.
+
+**PR relacionados:** [#3063](https://github.com/hyperdxio/hyperdx/pull/3063) persistir displayName y etiquetas a nivel de alerta, [#3065](https://github.com/hyperdxio/hyperdx/pull/3065) admitir la escritura de displayName y etiquetas de alerta, [#3067](https://github.com/hyperdxio/hyperdx/pull/3067) mostrar y editar displayName y etiquetas de alerta en la UI, [#3092](https://github.com/hyperdxio/hyperdx/pull/3092) incluir las etiquetas de alerta en la respuesta de la API de etiquetas, [#3029](https://github.com/hyperdxio/hyperdx/pull/3029) backfill del nombre y las etiquetas de alerta (abierto)
+
+## Un prototipo de Explore {#an-explore-prototype}
+
+*Demo por [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Se trata de un trabajo exploratorio, sin compromiso de llegar a lanzarlo.**
+
+El prototipo es una única página Explore que reemplazaría tanto la página de búsqueda como el explorador de gráficos. Está en borrador en el repositorio de HyperDX. Podría reemplazar esas páginas, podría convivir con ellas como una tercera página, o bien podría no llegar a nada.
+
+El problema que busca resolver es el ir y venir entre las dos páginas que tenemos hoy. Los clientes nos cuentan que trasladar una pregunta de la búsqueda al explorador de gráficos resulta incómodo: a menudo hay que volver a seleccionar la data source y reconstruir la misma consulta del otro lado. Explore lo mantiene todo en una sola página, alternando la vista entre eventos, patterns, deltas y gráficos en lugar de cambiarte la página debajo de los pies.
+
+El segundo eje es reducir la barrera de entrada para quienes no dominan los lenguajes de consulta. Agregar una columna a la tabla, ordenar y elegir un group-by se hacen desde desplegables, y SQL sigue ahí cuando lo necesites. El group-by es un buen ejemplo de la carencia actual: el histogram de la página de búsqueda está agrupado por status code sin forma de cambiarlo, así que quien quiera otra agrupación tiene que irse al explorador de gráficos. Aquí defines el group-by en la vista de eventos, cambias a una time series o a un gráfico de barras cuando el histogram pequeño no alcanza, cambias la aggregation a algo como `p99` y guardas el resultado en un dashboard.
+
+La barra de filtros es un pequeño creador de consultas que abstrae tanto Lucene como SQL: eliges un field, eliges un operator y escribes un valor, con el editor de consultas completo y los macros disponibles para usuarios avanzados. Una de las preguntas abiertas es, precisamente, si tener dos lenguajes de consulta es la respuesta correcta.
+
+Queda mucho por resolver. Todavía no hay PromQL, y no está decidido si las métricas tienen cabida en esta página o si eso sería pedirle demasiado a una sola página. El prototipo se centra en la experiencia de logs y traces.
+
+Nos encantaría recibir comentarios al respecto.
+
+**PRs relacionados:** [#2985](https://github.com/hyperdxio/hyperdx/pull/2985) Explore as search-first visualization (prototype) (abierto)

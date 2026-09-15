@@ -18,14 +18,12 @@ ClickHouse 支持以下语法变体：
 在查询处理过程中，ClickHouse 会选择按排序键排序的数据。排序键既可以通过 [ORDER BY](/zh/reference/statements/select/order-by) 子句显式设置，也可以作为表引擎的属性隐式设置 (只有使用 [ORDER BY](/zh/reference/statements/select/order-by) 时，才保证行顺序；否则由于多线程处理，行块将不会按顺序排列) 。随后，ClickHouse 会应用 `LIMIT n BY expressions`，并针对 `expressions` 的每种不同组合返回前 `n` 行。如果指定了 `OFFSET`，那么对于属于 `expressions` 某种不同组合的每个数据块，ClickHouse 会从块开头跳过 `offset_value` 行，并最多返回 `n` 行。如果 `offset_value` 大于数据块中的行数，ClickHouse 将不会从该块返回任何行。
 
 <Note>
-  `LIMIT BY` 与 [LIMIT](/zh/reference/statements/select/limit) 无关。两者可以在同一个查询中同时使用。
+  `LIMIT BY` 与 [LIMIT](/zh/reference/statements/select/limit) 无关。两者可以在同一个查询中同时使用。这包括 [`LIMIT ... AFTER ... UNTIL`](/zh/reference/statements/select/limit#limit-after-until) 范围形式，后者适用于 `LIMIT BY` 保留的行。
 </Note>
 
 如果你想在 `LIMIT BY` 子句中使用列编号而不是列名，请启用设置 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments)。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 示例表：
 
@@ -124,9 +122,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
 
 对于 `id = 1`，第一行 (`10`) 会被跳过；`11, 12` 中最后两行都会返回。对于 `id = 2`，第一行 (`20`) 会被跳过，因此只剩下 `21`。
 
-<div id="limit-by-all">
-  ## LIMIT BY ALL
-</div>
+## LIMIT BY ALL {#limit-by-all}
 
 `LIMIT BY ALL` 等同于列出所有已 SELECT 且非聚合函数的表达式。
 
@@ -156,9 +152,7 @@ SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIM
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples-limit-by-all}
 
 示例表：
 

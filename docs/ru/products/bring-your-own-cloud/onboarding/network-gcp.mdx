@@ -2,7 +2,7 @@
 title: 'Настройка приватной сети GCP для BYOC'
 slug: /cloud/reference/byoc/onboarding/network-gcp
 sidebarTitle: 'Настройка приватной сети GCP'
-keywords: ['BYOC', 'облако', 'собственное облако', 'пиринг VPC', 'gcp', 'Private Service Connect']
+keywords: ['BYOC', 'облако', 'собственное облако', 'пиринг VPC', 'gcp', 'Private Service Connect', 'PSC subnet', 'BYO-VPC']
 description: 'Настройте пиринг VPC или Private Service Connect для BYOC в GCP'
 doc_type: 'reference'
 ---
@@ -12,22 +12,18 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 ClickHouse BYOC в GCP поддерживает два варианта приватного подключения: пиринг VPC и PSC (Private Service Connect).
 
 <div id="common-prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#common-prerequisites}
 </div>
 
 Общие действия, необходимые как для пиринга VPC, так и для PSC.
 
-<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
-  ### Включите приватный балансировщик нагрузки для ClickHouse BYOC
-</div>
+### Включите приватный балансировщик нагрузки для ClickHouse BYOC {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 В консоли ClickHouse Cloud включите **приватный балансировщик нагрузки** для своей инфраструктуры BYOC.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC Включение приватного балансировщика нагрузки" border />
 
-<div id="gcp-vpc-peering">
-  ## Настройка пиринга VPC
-</div>
+## Настройка пиринга VPC {#gcp-vpc-peering}
 
 Ознакомьтесь с [возможностью пиринга VPC в GCP](https://docs.cloud.google.com/vpc/docs/vpc-peering) и учитывайте ограничения пиринга VPC (например, диапазоны IP-адресов подсетей не должны пересекаться в VPC-сетях, связанных пирингом). ClickHouse BYOC использует приватный балансировщик нагрузки, чтобы обеспечить сетевую связность с сервисами ClickHouse через пиринг.
 
@@ -67,9 +63,7 @@ ClickHouse BYOC в GCP поддерживает два варианта прив
   </Step>
 </Steps>
 
-<div id="setup-psc">
-  ## Настройка PSC (Private Service Connect)
-</div>
+## Настройка PSC (Private Service Connect) {#setup-psc}
 
 GCP PSC (Private Service Connect) обеспечивает безопасное частное подключение к вашим сервисам ClickHouse BYOC без необходимости в пиринге VPC или интернет-шлюзах. Весь трафик передаётся внутри сети GCP и никогда не проходит через публичный интернет.
 
@@ -77,6 +71,27 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
   <Step title="Включите PrivateLink в консоли ClickHouse" id="step-1-enable-private-link">
     <Note>
       Предварительно убедитесь, что включён **приватный балансировщик нагрузки**.
+    </Note>
+
+    Если ваша инфраструктура работает в [управляемом клиентом VPC (BYO-VPC)](/ru/cloud/reference/byoc/onboarding/customization-gcp), перед включением PrivateLink создайте NAT-подсеть для Private Service Connect. ClickHouse Cloud не может создавать подсети в вашей VPC, а GCP выделяет из этой подсети NAT IP-адрес для каждого входящего подключения PSC.
+
+    Создайте подсеть в той же VPC и в том же регионе, что и инфраструктура, а при использовании Shared VPC — в host-проекте:
+
+    ```bash
+    gcloud compute networks subnets create <psc-subnet-name> \
+        --project=<vpc-project-id> \
+        --network=<vpc-network-name> \
+        --region=<region> \
+        --range=<cidr-range> \
+        --purpose=PRIVATE_SERVICE_CONNECT
+    ```
+
+    Значение `<cidr-range>` должно быть не менее `/29`; при сайзинге под ожидаемое количество подключений см. [рекомендации GCP по размеру подсети NAT](https://cloud.google.com/vpc/docs/about-vpc-hosted-services#subnet-capacity).
+
+    При включении PrivateLink в инфраструктуре BYO-VPC консоль запрашивает **PSC subnet name**. Укажите имя созданной вами подсети.
+
+    <Note>
+      Подсеть PSC нельзя изменить, пока PrivateLink включён. Чтобы перейти на другую подсеть, отключите PrivateLink и включите его снова с новым именем.
     </Note>
 
     <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="Включение BYOC PrivateLink" />
@@ -92,7 +107,7 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
   <Step title="Создайте конечную точку в своей сети" id="step-3-create-endpoint">
     1. Откройте **свою консоль GCP** (то есть аккаунт GCP, в котором находится ваше клиентское приложение) → Network Services → Private Service Connect → Connected Endpoints.
 
-    2. Откройте диалог создания Private Service Connect, нажав кнопку «Connect Endpoint».
+    2. Откройте диалог создания Private Service Connect, нажав кнопку &quot;Connect Endpoint&quot;.
        <Image img="/images/cloud/security/gcp-psc-open.webp" size="md" alt="Открытие Private Service Connect в консоли Google Cloud" border />
 
     3. Заполните следующие поля:
@@ -103,7 +118,7 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
        * **IP address**: выберите или создайте IP-адрес для конечной точки; он понадобится на шаге [Укажите частное DNS-имя для конечной точки](#step-5-set-private-dns-name-for-endpoint)
        * (необязательно) **Enable global access**: включите, если хотите сделать конечную точку доступной из любого региона
          <Image img="/images/cloud/security/gcp-psc-enable-global-access.webp" size="md" alt="Включение глобального доступа для Private Service Connect" border />
-       * Нажмите «ADD ENDPOINT», чтобы создать конечную точку.
+       * Нажмите кнопку &quot;ADD ENDPOINT&quot;, чтобы создать конечную точку.
 
     4. После одобрения подключения значение в столбце Status изменится с Pending на Accepted.
 
@@ -130,7 +145,7 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
       DNS можно настроить различными способами. Настройте его в соответствии со своим сценарием использования.
     </Note>
 
-    Настройте все поддомены (wildcard) «DNS name» так, чтобы они указывали на IP-адрес конечной точки GCP PSC. Это позволит сервисам и компонентам в вашей VPC/сети корректно разрешать это имя.
+    Настройте все поддомены (wildcard) &quot;DNS name&quot; так, чтобы они указывали на IP-адрес конечной точки GCP PSC. Это позволит сервисам и компонентам в вашей VPC/сети корректно разрешать это имя.
   </Step>
 
   <Step title="Получите доступ к экземпляру через PSC" id="step-6-connect-via-psc">
@@ -139,7 +154,7 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
     3. В открывшейся выдвижной панели скопируйте `DNS name`.
        <Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="md" alt="DNS-имя частной конечной точки" border />
        <Note>
-         Доступ к сервисам ClickHouse через PSC контролируется политикой авторизации Istio на уровне сервиса, которой ClickHouse управляет в вашей инфраструктуре BYOC.
+         Доступ к сервисам ClickHouse через PSC контролируется политикой авторизации **Istio Authorization Policy** на уровне сервиса, которой ClickHouse управляет в вашей инфраструктуре BYOC.
        </Note>
   </Step>
 </Steps>

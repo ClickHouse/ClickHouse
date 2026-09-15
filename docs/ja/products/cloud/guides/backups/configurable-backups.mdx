@@ -10,21 +10,36 @@ doc_type: 'guide'
 import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
+import ConfigurableBackupsCLI from "/snippets/ja/cloud/backups/_configurable_backups_cli.mdx";
 
-<ScalePlanFeatureBadge feature="設定可能なバックアップ" linking_verb_are="True" />
+<Visibility for="agents">
+  <ConfigurableBackupsCLI />
+</Visibility>
 
-サービスのバックアップスケジュールを設定するには、コンソールの **Settings** タブに移動し、**Change backup configuration** をクリックします。
+<Visibility for="humans">
+  <View title="Cloud UI">
+    <ScalePlanFeatureBadge feature="設定可能なバックアップ" linking_verb_are="True" />
 
-<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="バックアップ設定を設定する" border />
+    サービスのバックアップスケジュールを設定するには、コンソールの **Settings** タブに移動し、**Change backup configuration** をクリックします。
 
-クリックすると右側にタブが開き、バックアップ保持期間、頻度、開始時刻を選択できます。設定を反映するには、選択した内容を保存する必要があります。
+    <Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="バックアップ設定を設定する" border />
 
-<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="バックアップ保持期間と頻度を選択する" border />
+    クリックすると右側にタブが開き、バックアップ保持期間、頻度、開始時刻を選択できます。設定を反映するには、選択した内容を保存する必要があります。
 
-<Note>
-  開始時刻と頻度は相互排他的です。開始時刻が優先されます。
-</Note>
+    <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="バックアップ保持期間と頻度を選択する" border />
 
-<Note>
-  バックアップスケジュールを変更すると、一部のバックアップがサービスのデフォルトバックアップの対象外になる可能性があるため、ストレージの月額料金が高くなる場合があります。詳細は [&quot;バックアップコストについて理解する&quot;](/ja/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost) を参照してください。
-</Note>
+    <Note>
+      開始時刻と頻度は相互排他的です。開始時刻が優先されます。
+    </Note>
+
+    <Note>
+      バックアップスケジュールを変更すると、一部のバックアップがサービスのデフォルトバックアップの対象外になる可能性があるため、ストレージの月額料金が高くなる場合があります。詳細は [&quot;バックアップコストについて理解する&quot;](/ja/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost) を参照してください。
+    </Note>
+  </View>
+
+  <View title="CLI">
+    この手順は自分で実行することも、スクリプト化することも、AI エージェントに任せることもできます。コンソール版については **Cloud UI** ビューに切り替えてください。
+
+    <ConfigurableBackupsCLI />
+  </View>
+</Visibility>

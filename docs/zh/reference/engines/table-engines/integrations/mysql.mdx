@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 MySQL 引擎允许你对存储在远程 MySQL 服务器中的数据执行 `SELECT` 和 `INSERT` 查询。
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -58,9 +56,7 @@ SETTINGS
 
 其余条件以及 `LIMIT` 采样约束仅会在对 MySQL 的查询完成后由 ClickHouse 执行。
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 与 MySQL 的加密连接凭据以命名集合键 (或键值参数) 的形式传递：
 
@@ -86,9 +82,7 @@ SETTINGS
 </named_collections>
 ```
 
-<div id="passing-a-query">
-  ## 传入查询而非表名
-</div>
+## 传入查询而非表名 {#passing-a-query}
 
 `table` 参数除了可以是表名外，也可以是原样传递给 MySQL 的 `SELECT` 查询。表的结构会根据查询结果自动推断。该查询既可以写成子查询，也可以封装在 `query` 函数中：
 
@@ -102,7 +96,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 <Note>
   子查询形式 `(SELECT ...)` 会由 ClickHouse 解析，并在发送到服务器之前按 MySQL 方言 (使用反引号引用标识符) 重新序列化。因此，它必须是有效的 ClickHouse SQL。若要传递 ClickHouse 无法解析的 MySQL 特有语法，请使用 `query('...')` 形式，其文本会原样发送到 MySQL。
 
-  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是会在拉取完整查询结果后由 ClickHouse 应用。要限制从 MySQL 读取的数据，请将过滤条件写在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤条件会直接被拒绝并抛出异常，而不是在本地应用。
+  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是会在拉取完整查询结果后由 ClickHouse 应用。要限制从 MySQL 读取的数据，请将过滤条件写在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推到传入查询的该表列上的外层过滤条件会直接被拒绝并抛出异常，而不是在本地应用。该检查涵盖顶层 `WHERE` 谓词以及顶层 `AND` 中的每个合取项。对此表列使用 `PREWHERE` 不属于此设置的适用情形：此表引擎不支持 `PREWHERE`，无论该设置如何，此类查询都会因 `ILLEGAL_PREWHERE` 被拒绝。使用 analyzer (默认设置) 时，仅在过滤条件本可下推的情况下才会执行检查：即此表是查询中的唯一表、位于 `INNER JOIN` 的任一侧，或位于外连接的保留侧 (`LEFT JOIN` 的左侧、`RIGHT JOIN` 的右侧) 。在 `LEFT`/`RIGHT JOIN` 的非保留侧以及 `FULL JOIN` 的任一侧，均不会下推任何内容，也不会执行任何检查，因此即使在严格模式下，此表列上的过滤条件也会在 JOIN 后于本地应用。在执行检查的位置，引用外层查询中其他已 JOIN 表的谓词不会被下推，且不纳入检查范围；无论它只引用已 JOIN 的一侧，还是在一个非 `AND` 表达式 (例如 `OR`) 中将其与此表混用，都是如此。此类谓词会保持其通常的 ClickHouse 求值位置 (JOIN 后的 `WHERE`、JOIN 前的 `PREWHERE`) ，且不会被拒绝。使用旧 analyzer (`enable_analyzer = 0`) 时，不适用此范围限定：当此表是 JOIN 树中的第一个表时，会检查整个外层过滤条件，包括已 JOIN 一侧的谓词；而不会检查已 JOIN 的右侧表。
 </Note>
 
 支持多个副本，必须用 `|` 列出。例如：
@@ -111,9 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-<div id="usage-example">
-  ## 使用示例
-</div>
+## 使用示例 {#usage-example}
 
 在 MySQL 中创建表：
 
@@ -178,15 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-<div id="mysql-settings">
-  ## 设置
-</div>
+## 设置 {#mysql-settings}
 
 默认设置的效率并不高，因为它们甚至不会复用连接。通过这些设置，可以提高服务器每秒可执行的查询数量。
 
-<div id="connection-auto-close">
-  ### `connection_auto_close`
-</div>
+### `connection_auto_close` {#connection-auto-close}
 
 允许在查询执行后自动关闭连接，即禁用连接复用。
 
@@ -197,9 +185,7 @@ SELECT * FROM mysql_table
 
 默认值：`1`。
 
-<div id="connection-max-tries">
-  ### `connection_max_tries`
-</div>
+### `connection_max_tries` {#connection-max-tries}
 
 设置启用故障转移的连接池的重试次数。
 
@@ -210,9 +196,7 @@ SELECT * FROM mysql_table
 
 默认值：`3`。
 
-<div id="connection-pool-size">
-  ### `connection_pool_size`
-</div>
+### `connection_pool_size` {#connection-pool-size}
 
 连接池大小 (如果所有连接都在使用中，查询会等待，直到有连接被释放) 。
 
@@ -222,9 +206,7 @@ SELECT * FROM mysql_table
 
 默认值：`16`。
 
-<div id="connection-wait-timeout">
-  ### `connection_wait_timeout`
-</div>
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 等待空闲连接的超时时间 (秒)  (当已有 `connection_pool_size` 个活动连接时) ，0 表示不等待。
 
@@ -234,9 +216,7 @@ SELECT * FROM mysql_table
 
 默认值：`5`。
 
-<div id="connect-timeout">
-  ### `connect_timeout`
-</div>
+### `connect_timeout` {#connect-timeout}
 
 连接超时时间 (以秒为单位) 。
 
@@ -246,9 +226,7 @@ SELECT * FROM mysql_table
 
 默认值：`10`。
 
-<div id="read-write-timeout">
-  ### `read_write_timeout`
-</div>
+### `read_write_timeout` {#read-write-timeout}
 
 读写超时 (单位：秒) 。
 
@@ -258,9 +236,7 @@ SELECT * FROM mysql_table
 
 默认值：`300`。
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 为 MySQL 协议连接启用压缩。
 
@@ -289,9 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [MySQL 表函数](/zh/reference/functions/table-functions/mysql)
 * [使用 MySQL 作为字典源](/zh/reference/statements/create/dictionary/sources/mysql)

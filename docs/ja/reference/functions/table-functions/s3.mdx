@@ -18,9 +18,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 `s3 table function` を [`INSERT INTO...SELECT`](/ja/reference/statements/insert-into#inserting-the-results-of-select) と併用すると、データはストリーミング方式で読み込まれ、挿入されます。S3 からブロックが継続的に読み込まれて宛先テーブルに送られるため、メモリ上に保持されるデータブロックはごく少数です。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -39,25 +37,25 @@ s3(named_collection[, option=value [,..]])
 
 `s3` テーブル関数は、以下の通常のパラメーターをサポートします。
 
-| パラメーター                                  | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                                   | ファイルへのパスを含むバケット URL。読み取り専用モードでは、`*`、`**`、`?`、`{abc,def}`、`{N..M}` のワイルドカードをサポートします。ここで、`N` と `M` は数値、`'abc'` と `'def'` は文字列です。詳細は[こちら](/ja/reference/engines/table-engines/integrations/s3#wildcards-in-path)を参照してください。                                                                                                                                                                                                                                              |
-| `NOSIGN`                                | 認証情報の代わりにこのキーワードを指定すると、すべてのリクエストが署名なしで送信されます。                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `access_key_id` and `secret_access_key` | 指定した endpoint で使用する認証情報を指定するキーです。省略可能です。                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `session_token`                         | 指定したキーとともに使用するセッショントークンです。キーを渡す場合は省略可能です。                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `format`                                | ファイルの[フォーマット](/ja/reference/formats/index)です。                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `structure`                             | テーブルの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                                                                                                                                                                                                                   |
-| `compression_method`                    | 省略可能なパラメーターです。サポートされる値は `none`、`gzip` または `gz`、`brotli` または `br`、`xz` または `LZMA`、`zstd` または `zst` です。デフォルトでは、ファイル拡張子から圧縮方式を自動判別します。                                                                                                                                                                                                                                                                                                                               |
-| `headers`                               | 省略可能なパラメーターです。S3 リクエストにヘッダーを渡せます。形式は `headers(key=value)` です。例: `headers('x-amz-request-payer' = 'requester')`。                                                                                                                                                                                                                                                                                                                                                   |
+| パラメーター                                  | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                   | ファイルへのパスを含むバケット URL。読み取り専用モードでは、`*`、`**`、`?`、`{abc,def}`、`{N..M}` のワイルドカードをサポートします。ここで、`N` と `M` は数値、`'abc'` と `'def'` は文字列です。詳細は[こちら](/ja/reference/engines/table-engines/integrations/s3#wildcards-in-path)を参照してください。                                                                                                                                                                                                                                            |
+| `NOSIGN`                                | 認証情報の代わりにこのキーワードを指定すると、すべてのリクエストが署名なしで送信されます。                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `access_key_id` and `secret_access_key` | 指定した endpoint で使用する認証情報を指定するキーです。省略可能です。                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `session_token`                         | 指定したキーとともに使用するセッショントークンです。キーを渡す場合は省略可能です。                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `format`                                | ファイルの[フォーマット](/ja/reference/formats/index)です。                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `structure`                             | テーブルの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                                                                                                                                                                                                                 |
+| `compression_method`                    | 省略可能なパラメーターです。サポートされる値は `none`、`gzip` または `gz`、`deflate`、`brotli` または `br`、`xz` または `LZMA`、`zstd` または `zst`、`lz4`、`bz2`、`snappy` です。デフォルトでは、ファイル拡張子から圧縮方式を自動判別します。`snappy` の場合、ワイヤーフォーマットは [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。                                                                                                                                                            |
+| `headers`                               | 省略可能なパラメーターです。S3 リクエストにヘッダーを渡せます。形式は `headers(key=value)` です。例: `headers('x-amz-request-payer' = 'requester')`。                                                                                                                                                                                                                                                                                                                                                 |
 | `partition_strategy`                    | 省略可能なパラメーターです。サポートされる値は `wildcard` または `hive` です。`wildcard` ではパス内に `{_partition_id}` が必要で、これはパーティションキーに置き換えられます。`hive` ではワイルドカードは使用できず、パスがテーブルのルートであると見なされ、ファイル名に Snowflake ID、拡張子にファイルフォーマットを使用した Hive 形式のパーティションディレクトリが生成されます。明示的な方式を指定しない場合、`{_partition_id}` を含むパスでは `wildcard` が使用されます。別の グロブ を含むパスではパーティション方式を使用せず、`PARTITION BY` は無視されます。グロブ を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` を使用し、それ以外の場合はパーティション方式を使用しません。 |
-| `partition_columns_in_data_file`        | 省略可能なパラメーターです。`hive` パーティション方式でのみ使用されます。パーティションカラムがデータファイルに書き込まれている想定かどうかを ClickHouse に指定します。デフォルトは `false` です。                                                                                                                                                                                                                                                                                                                                                   |
-| `extra_credentials`                     | 省略可能なパラメーターです。ClickHouse Cloud のrole-based accessで `role_arn` を渡すために使用します。設定手順については [Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。                                                                                                                                                                                                                                                                                        |
-| `storage_class_name`                    | 省略可能なパラメーターです。サポートされる値は `STANDARD`、`REDUCED_REDUNDANCY`、`STANDARD_IA`、`ONEZONE_IA`、`INTELLIGENT_TIERING`、`GLACIER_IR`、`EXPRESS_ONEZONE` です。即時取得が可能な S3 storage classes のみサポートされます (`GLACIER` や `DEEP_ARCHIVE` などのアーカイブクラスはサポートされません) 。[AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) を指定できます。デフォルトは `STANDARD` です。                                                                                                  |
+| `partition_columns_in_data_file`        | 省略可能なパラメーターです。`hive` パーティション方式でのみ使用されます。パーティションカラムがデータファイルに書き込まれている想定かどうかを ClickHouse に指定します。デフォルトは `false` です。                                                                                                                                                                                                                                                                                                                                                 |
+| `extra_credentials`                     | 省略可能なパラメーターです。ClickHouse Cloud のrole-based accessで `role_arn` を渡すために使用します。設定手順については [Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。                                                                                                                                                                                                                                                                                      |
+| `storage_class_name`                    | 省略可能なパラメーターです。サポートされる値は `STANDARD`、`REDUCED_REDUNDANCY`、`STANDARD_IA`、`ONEZONE_IA`、`INTELLIGENT_TIERING`、`GLACIER_IR`、`EXPRESS_ONEZONE` です。即時取得が可能な S3 storage classes のみサポートされます (`GLACIER` や `DEEP_ARCHIVE` などのアーカイブクラスはサポートされません) 。[AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) を指定できます。デフォルトは `STANDARD` です。                                                                                                |
 
 <Info>
   **GCS**
 
-  Google XML API の endpoint は JSON API とは異なるため、GCS の URL は次の形式になります。
+  Google XML API のエンドポイントは JSON API とは異なるため、GCS URL は次の形式になります。
 
   ```text
     https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
@@ -66,24 +64,20 @@ s3(named_collection[, option=value [,..]])
   ~~https://storage.cloud.google.com~~ ではありません。
 </Info>
 
-引数は、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`url`、`access_key_id`、`secret_access_key`、`format`、`structure`、`compression_method` は同じように機能し、いくつかの追加パラメータがサポートされます。
+引数は、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`url`、`access_key_id`、`secret_access_key`、`format`、`structure`、`compression_method` は同じように機能し、いくつかの追加パラメーターがサポートされます。
 
 | 引数                            | 説明                                                                                                                                                                                |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `filename`                    | 指定した場合、URL に追加されます。                                                                                                                                                               |
-| `use_environment_credentials` | デフォルトで有効です。環境変数 `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`、`AWS_CONTAINER_CREDENTIALS_FULL_URI`、`AWS_CONTAINER_AUTHORIZATION_TOKEN`、`AWS_EC2_METADATA_DISABLED` を使用して追加のパラメータを渡せます。 |
+| `use_environment_credentials` | デフォルトで有効です。環境変数 `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`、`AWS_CONTAINER_CREDENTIALS_FULL_URI`、`AWS_CONTAINER_AUTHORIZATION_TOKEN`、`AWS_EC2_METADATA_DISABLED` を使用して追加のパラメーターを渡せます。 |
 | `no_sign_request`             | デフォルトでは無効です。                                                                                                                                                                      |
 | `expiration_window_seconds`   | デフォルト値は 120 です。                                                                                                                                                                   |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定したファイル内のデータの読み書きに使用する、指定した構造を持つテーブル。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 S3 上のファイル `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv` からテーブルの先頭 5 行を選択する例:
 
@@ -138,20 +132,18 @@ LIMIT 5;
   ```
 </Note>
 
-<div id="usage">
-  ## 使用方法
-</div>
+## 使用方法 {#usage}
 
 S3上に以下のURIを持つ複数のファイルがあるとします：
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 1から3までの数字で終わるファイルの行数を数えます：
 
@@ -210,27 +202,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-Glob ** を使用すると、ディレクトリを再帰的にトラバースできます。次の例では、`my-test-bucket-768` ディレクトリからすべてのファイルを再帰的にフェッチします。
+`**` glob を使用すると、ディレクトリを再帰的にトラバースできます。次のクエリは、`my-test-bucket-768` 配下にある `some_file_1.csv` という名前のすべてのファイルを読み取ります：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-以下は、`my-test-bucket` ディレクトリ内の任意のフォルダにあるすべての `test-data.csv.gz` ファイルからデータを再帰的に取得します：
+波括弧は `**` と組み合わせて、複数のファイル名を再帰的に照合できます：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-注意: サーバー設定ファイルにカスタムURLマッパーを指定できます。例:
+同じ再帰的なパターンは `s3://` URL でも使用できます：
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` は `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'` に置き換えられます
-
-カスタムマッパーは `config.xml` に追加できます:
+`config.xml` にカスタムURLマッパーを追加できます:
 
 ```xml
 <url_scheme_mappers>
@@ -257,13 +247,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-<div id="partitioned-write">
-  ## パーティション分割書き込み
-</div>
+## パーティション分割書き込み {#partitioned-write}
 
-<div id="partition-strategy">
-  ### パーティション方式
-</div>
+### パーティション方式 {#partition-strategy}
 
 `INSERT`クエリでのみサポートされます。
 
@@ -309,9 +295,7 @@ INSERT INTO TABLE FUNCTION
 
 その結果、データは異なるバケット内の3つのファイル、`my_bucket_1/file.csv`、`my_bucket_10/file.csv`、`my_bucket_20/file.csv` に書き込まれます。
 
-<div id="accessing-public-buckets">
-  ## 公開バケットへのアクセス
-</div>
+## 公開バケットへのアクセス {#accessing-public-buckets}
 
 ClickHouse は、さまざまなソースから認証情報を取得しようとします。
 そのため、公開バケットによってはアクセス時に問題が発生し、クライアントが `403` エラーコードを返すことがあります。
@@ -327,9 +311,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-<div id="using-s3-credentials-clickhouse-cloud">
-  ## S3認証情報の使用 (ClickHouse Cloud)
-</div>
+## S3認証情報の使用 (ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
 
 公開されていないバケットでは、`aws_access_key_id` と `aws_secret_access_key` を関数に渡すことができます。例:
 
@@ -355,9 +337,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 さらに詳しい例は[こちら](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)をご覧ください
 
-<div id="working-with-archives">
-  ## アーカイブの扱い
-</div>
+## アーカイブの扱い {#working-with-archives}
 
 S3 上に、次の URI を持つ複数のアーカイブファイルがあるとします。
 
@@ -383,24 +363,18 @@ FROM s3(
   ZIP アーカイブと TAR アーカイブはサポート対象の任意のストレージからアクセスできますが、7Z アーカイブは ClickHouse がインストールされているローカルのファイルシステムからのみ読み取れます。
 </Note>
 
-<div id="inserting-data">
-  ## データの挿入
-</div>
+## データの挿入 {#inserting-data}
 
 行を挿入できるのは新しいファイルに対してのみである点に注意してください。マージサイクルやファイルの分割処理はありません。いったんファイルが書き込まれると、その後の挿入は失敗します。詳細は[こちら](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)を参照してください。
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — ファイルのパス。Type: `LowCardinality(String)`。アーカイブの場合は、`"{path_to_archive}::{path_to_file_inside_archive}"` 形式のパスを表示します。
 * `_file` — ファイル名。Type: `LowCardinality(String)`。アーカイブの場合は、アーカイブ内のファイル名を表示します。
 * `_size` — ファイルサイズ (バイト単位) 。Type: `Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` です。アーカイブの場合は、アーカイブ内のファイルの非圧縮サイズを表示します。
 * `_time` — ファイルの最終更新時刻。Type: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 
-<div id="hive-style-partitioning">
-  ## use_hive_partitioning 設定
-</div>
+## use_hive_partitioning 設定 {#hive-style-partitioning}
 
 これは、読み取り時に ClickHouse が Hive スタイルでパーティション化されたファイルを解析するためのヒントです。書き込みには影響しません。読み取りと書き込みを対称的に行うには、`partition_strategy` 引数を使用してください。
 
@@ -412,9 +386,7 @@ FROM s3(
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="accessing-requester-pays-buckets">
-  ## requester-pays バケットへのアクセス
-</div>
+## requester-pays バケットへのアクセス {#accessing-requester-pays-buckets}
 
 requester-pays バケットにアクセスするには、すべてのリクエストにヘッダー `x-amz-request-payer = requester` を含める必要があります。これを行うには、s3関数にパラメーター `headers('x-amz-request-payer' = 'requester')` を渡します。例:
 
@@ -432,9 +404,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-<div id="resolving-relative-urls">
-  ## 相対 URL の解決
-</div>
+## 相対 URL の解決 {#resolving-relative-urls}
 
 [s3&#95;base](/ja/reference/settings/session-settings/s3#s3_base) 設定を使用すると、`s3` 関数に相対 URL を渡すことができます。`s3_base` が設定されており、関数の引数にスキームが指定されていない場合、[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従い、ベース URL を基準に解決されます。これは、[url](/ja/reference/functions/table-functions/url#resolving-relative-urls) 関数の [url&#95;base](/ja/reference/settings/session-settings/url#url_base) 設定と同じルールです。絶対 URL は変更されずにそのまま渡されます。
 
@@ -447,18 +417,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-<div id="storage-settings">
-  ## ストレージ設定
-</div>
+## ストレージ設定 {#storage-settings}
 
 * [s3&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings/s3#s3_truncate_on_insert) - ファイルに insert する前に、そのファイルを切り詰めることを許可します。デフォルトでは無効です。
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成することを許可します。デフォルトでは無効です。
 * [s3&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/s3#s3_skip_empty_files) - 読み取り時に空のファイルをスキップすることを許可します。デフォルトでは有効です。
 * [s3&#95;base](/ja/reference/settings/session-settings/s3#s3_base) - `s3` 関数に渡された相対 URL を解決するためのベース URL。デフォルトでは空 (無効) です。
 
-<div id="nested-avro-schemas">
-  ## ネストされた Avro スキーマ
-</div>
+## ネストされた Avro スキーマ {#nested-avro-schemas}
 
 ファイルごとに構造が異なる**ネストされたレコード**を含む Avro ファイルを読み込むと (たとえば、一部のファイルではネストされたオブジェクト内に追加のフィールドがある場合) 、ClickHouse は次のようなエラーを返すことがあります。
 
@@ -488,9 +454,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-<div id="related">
-  ## Related
-</div>
+## Related {#related}
 
 * [S3 engine](/ja/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

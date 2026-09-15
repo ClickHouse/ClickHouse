@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="join_algorithm">
-  ## join_algorithm
-</div>
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -83,7 +81,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 基于排序的 [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 算法，适用于其 `ON` 部分包含两个参与连接表表达式之间不等比较 (`<`、`<=`、`>`、`>=`) 的 `JOIN`。支持 `ALL INNER/LEFT/RIGHT/FULL JOIN` 和 `SEMI`/`ANTI` `LEFT/RIGHT JOIN`。
 
-在列表中的位置决定优先级：若列在其他算法之后，仅当其他算法不适用时才使用 IEJoin (即 `ON` 部分没有等值条件)；若列在首位，只要 `ON` 部分包含两个不等式条件便会使用它。对于 `ALL INNER JOIN`，其余条件 (包括等值条件) 会作为过滤器应用于连接结果；对于其他 kind，则会在 operator 内部作为影响匹配的残余条件进行评估。如果列表中没有 `ie_join`，仅含不等条件的 `INNER JOIN` 会作为带过滤器的 `CROSS JOIN` 执行，其他 kind 不受支持。
+在列表中的位置决定优先级：若列在其他算法之后，仅当其他算法不适用时才使用 IEJoin (即 `ON` 部分没有等值条件)；若列在首位，只要 `ON` 部分包含两个不等式条件便会使用它。对于 `ALL INNER JOIN`，其余条件 (包括等值条件) 会作为过滤器应用于连接结果；对于其他 kind，则会在 operator 内部作为影响匹配的残余条件进行评估。当 `ON` 部分包含超过两个符合条件的不等式条件时，算法使用的两个条件会根据列 min/max 统计信息估算的选择性来选定 (参见 [Column statistics](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) 中的 `basic` 类型)；当估算不可用时 (没有统计信息，或禁用了 [`use_statistics`](/zh/reference/settings/session-settings/use-statistics#use_statistics))，则使用语法顺序中的前两个条件。如果列表中没有 `ie_join`，仅含不等条件的 `INNER JOIN` 会作为带过滤器的 `CROSS JOIN` 执行，其他 kind 不受支持。
 
 连接前，两个输入都会累积到内存中：[`max_rows_in_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_join) 和 [`max_bytes_in_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) 会限制两侧合计的累积输入 (而不只是右侧)，溢出时的操作由 [`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 设置；operator 在累积输入之上构建的排序索引不计入该限制。连接 operator 本身在单个线程中运行；只有输入在连接前的排序会并行执行。
 
@@ -97,20 +95,18 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * 已排序的侧 (按顺序读取的 MergeTree，或任何预排序输入)：保序地将数据分散到每分片 merge join 中可能会导致管道死锁。因此会保留按顺序读取及其 `read_in_order_use_virtual_row` 优化。
 * 当 initiator 构建分布式查询计划 (`make_distributed_plan`) 时，因为分散排序无法序列化以供远程执行。本地单片段计划和每个 worker 的片段会在禁用该设置后重新优化，因此仍可进行分片。
 
-跳过它只会禁用此重写，而不会禁用一般的并行性：join 将作为单个 `full_sorting_merge` 运行，并且当启用 `query_plan_join_shard_by_pk_ranges` 时，按顺序读取的 MergeTree 侧仍可在源端按主键范围分片 (主键范围使用与 join 相同的比较方式排序，因此相等的键会保持在一起)。
+跳过它只会禁用这一 rewrite，而不会禁用整体的 parallelism：join 会作为单个 `full_sorting_merge` 运行；当启用 `query_plan_join_shard_by_pk_ranges` 时，按顺序读取的 MergeTree 侧仍可在数据源处按主键 ranges 进行分片 (这些 ranges 按与 join 相同的比较方式排序，因此相等的键会保持在一起)。
 
 * prefer&#95;partial&#95;merge
 
-如果可能，ClickHouse 总是会尝试使用 `partial_merge` join，否则使用 `hash`。*已弃用*，等同于 `partial_merge,hash`。
+ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*已弃用*，等同于 `partial_merge,hash`。
 
-* default (deprecated)
+* default (已弃用)
 
-旧版取值，请不要再使用。
-等同于 `direct,hash`，即尝试使用 direct join 和 hash join (按此顺序) 。
+遗留值，请不要再使用。
+等同于 `direct,hash`，即依次尝试使用 direct join 和 hash join。
 
-<div id="join_any_take_last_row">
-  ## join_any_take_last_row
-</div>
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,9 +129,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * [Join 表引擎](/zh/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/zh/reference/settings/session-settings/join#join_default_strictness)
 
-<div id="join_default_strictness">
-  ## join_default_strictness
-</div>
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -148,9 +142,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * `ASOF` — 用于连接匹配关系不确定的序列。
 * `Empty string` — 如果查询中未指定 `ALL` 或 `ANY`，ClickHouse 会抛出异常。
 
-<div id="join_on_disk_max_files_to_merge">
-  ## join_on_disk_max_files_to_merge
-</div>
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -162,9 +154,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 * 任意大于等于 2 的正整数。
 
-<div id="join_output_by_rowlist_perkey_rows_threshold">
-  ## join_output_by_rowlist_perkey_rows_threshold
-</div>
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -172,9 +162,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 在 hash join 中，用于判断是否按行列表输出的右表每个键平均行数下限。
 
-<div id="join_overflow_mode">
-  ## join_overflow_mode
-</div>
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -199,9 +187,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * [JOIN 子句](/zh/reference/statements/select/join)
 * [Join 表引擎](/zh/reference/engines/table-engines/special/join)
 
-<div id="join_use_nulls">
-  ## join_use_nulls
-</div>
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

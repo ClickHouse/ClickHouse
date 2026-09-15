@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 이 엔진을 사용하면 ClickHouse를 [Redis](https://redis.io/)와 통합할 수 있습니다. Redis는 키-값(kv) 모델을 사용하므로, `where k=xx` 또는 `where k in (xx, xx)`와 같이 특정 키를 지정하는 방식으로만 쿼리할 것을 강력히 권장합니다.
 
-<div id="creating-a-table">
-  ## 테이블 생성하기
-</div>
+## 테이블 생성하기 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,25 +30,19 @@ PRIMARY KEY(primary_key_name);
 * `pool_size` — Redis 최대 연결 풀 크기입니다. 기본값은 16입니다.
 * `primary_key_name` - 컬럼 목록에 있는 임의의 컬럼 이름입니다.
 
-<Info>
-  **직렬화**
-
+<Note title="직렬화">
   `PRIMARY KEY`는 하나의 컬럼만 지원합니다. 기본 키는 Redis 키로 바이너리 직렬화됩니다.
   기본 키를 제외한 컬럼은 해당 순서대로 Redis 값으로 바이너리 직렬화됩니다.
   선택한 Redis 데이터베이스에 ClickHouse에서 기록하지 않은 키 또는 값이 포함된 경우 `SELECT * FROM redis_table`을 사용한 전체 스캔은 바이너리 역직렬화 오류로 실패할 수 있습니다.
-</Info>
+</Note>
 
 인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `host`와 `port`는 별도로 지정해야 합니다. 이 방식은 운영 환경에 권장됩니다. 현재는 이름이 지정된 컬렉션을 사용해 Redis에 전달하는 모든 매개변수가 필수입니다.
 
-<Info>
-  **필터링**
-
+<Note title="필터링">
   `key equals` 또는 `in filtering`이 있는 쿼리는 Redis의 다중 키 조회로 최적화됩니다. 필터링 키 없이 쿼리하면 전체 테이블 스캔이 발생하며, 이는 비용이 큰 작업입니다.
-</Info>
+</Note>
 
-<div id="usage-example">
-  ## 사용 예시
-</div>
+## 사용 예시 {#usage-example}
 
 일반 인수로 `Redis` engine을 사용하여 ClickHouse에 테이블을 생성합니다:
 
@@ -156,9 +148,7 @@ TRUNCATE TABLE redis_table SYNC;
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-<div id="limitations">
-  ## 제한 사항
-</div>
+## 제한 사항 {#limitations}
 
 Redis engine는 `where k > xx`와 같은 스캔 쿼리도 지원하지만, 몇 가지 제한 사항이 있습니다.
 

@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 このページでは、BYOC デプロイメントで利用できる各種インフラストラクチャ設定オプションについて説明します。これらの設定により、要件に応じてネットワーク、セキュリティ、コンピュートリソースをカスタマイズできます。
 
-<div id="load-balancers">
-  ## ロードバランサー
-</div>
+## ロードバランサー {#load-balancers}
 
 BYOC デプロイメントでは、**Network Load Balancers (NLBs)** を使用して、ClickHouse サービスへのトラフィックを管理・ルーティングします。ネットワーク構成に応じて、*パブリック* または *プライベート* のロードバランサーエンドポイントを選択できます。
 
@@ -34,9 +32,7 @@ BYOC デプロイメントでは、**Network Load Balancers (NLBs)** を使用�
 
 BYOC インフラストラクチャのプライベートロードバランサーは、ClickHouse Cloud console で直接有効にできます。その他のエンドポイント調整 (たとえば、パブリックロードバランサーの削除) については、**ClickHouse Cloud Support** と連携してください。
 
-<div id="private-load-balancer-security-group">
-  ### AWS のプライベートロードバランサーのセキュリティグループ
-</div>
+### AWS のプライベートロードバランサーのセキュリティグループ {#private-load-balancer-security-group}
 
 BYOC デプロイメントでプライベートロードバランサーを使用する場合は、想定しているプライベートネットワーク (ピアリングされた VPC など) からのアクセスを許可するため、適切なセキュリティグループルールが設定されていることを確認する必要があります。デフォルトでは、このセキュリティグループは VPC 内からのトラフィックのみを許可します。
 
@@ -52,25 +48,19 @@ BYOC デプロイメントでプライベートロードバランサーを使用
   プライベートロードバランサーのセキュリティグループに対する変更は、すべて ClickHouse Support が実施する必要があります。これにより、設定の一貫性が確保され、ClickHouse Cloud 管理環境内での競合を回避できます。
 </Note>
 
-<div id="privatelink-or-private-service-connect">
-  ## PrivateLink、Private Service Connect、または プライベートリンク
-</div>
+## PrivateLink、Private Service Connect、または プライベートリンク {#privatelink-or-private-service-connect}
 
 ネットワーク分離とセキュリティを最大限に高めるため、BYOC デプロイでは **AWS PrivateLink**、**GCP Private Service Connect**、または **Azure プライベートリンク** を利用できます。これらのオプションを使用すると、VPC/VNet peering を必要とせず、エンドポイントをパブリックインターネットに公開することなく、アプリケーションから ClickHouse Cloud サービスにプライベート接続できます。
 
 手順を追ったセットアップについては、[Private Networking Setup guide](/ja/products/bring-your-own-cloud/onboarding/network)を参照してください。
 
-<div id="k8s-api-private-connection">
-  ## Kubernetes API のプライベート接続
-</div>
+## Kubernetes API のプライベート接続 {#k8s-api-private-connection}
 
-デフォルトでは、BYOC クラスターの Kubernetes API サーバーのエンドポイントはパブリックインターネットからアクセス可能ですが、IP フィルタリングにより、ClickHouse NAT ゲートウェイの IP からのアクセスのみに制限されています。より強固なセキュリティを実現するには、Kubernetes API サーバーを、プライベートネットワーク接続経由でのみアクセスできるように制限できます。
+デフォルトでは、BYOC クラスターの Kubernetes API サーバーのエンドポイントはパブリックインターネットからアクセス可能です。AWS では、IP フィルタリングにより、ClickHouse NAT ゲートウェイの IP からのアクセスのみに制限されています。GCP と Azure では、代わりにクラウドの IAM によって制御されます ([Kubernetes API サーバーの公開](/ja/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)を参照) 。より強固なセキュリティを実現するには、Kubernetes API サーバーを、プライベートネットワーク接続経由でのみアクセスできるように制限できます。
 
 利用可能なプライベート接続オプションは 2 つあります:
 
-<div id="k8s-api-private-connection-tailscale">
-  ### Tailscale (デフォルト)
-</div>
+### Tailscale (デフォルト) {#k8s-api-private-connection-tailscale}
 
 プライベート API エンドポイントが有効になっている場合、ClickHouse 管理サービスは、トラブルシューティングアクセスに使用されるものと同じ Tailscale のゼロトラストネットワークを介して Kubernetes API サーバーに接続します。この接続の仕組みの詳細については、[Tailscale Private Network](/ja/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) を参照してください。
 
@@ -78,9 +68,7 @@ BYOC デプロイメントでプライベートロードバランサーを使用
   プライベート接続を Tailscale のみに依存している場合、Tailscale エージェントが利用できなくなると、ClickHouse Support がお使いの環境にアクセスできなくなるリスクがあります。その結果、トラブルシューティングやサポート対応に時間がかかる可能性があります。
 </Note>
 
-<div id="k8s-api-private-connection-vpc-lattice">
-  ### AWS VPC Lattice
-</div>
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
 <Info>
   VPC Lattice 接続は現在プライベートプレビューです。お使いのデプロイメントで有効にするには、ClickHouse Support にお問い合わせください。
@@ -95,15 +83,11 @@ AWS のデプロイメントでは、サードパーティ製コンポーネン�
 
 プライベート API エンドポイントの設定を依頼するには、**ClickHouse Support にお問い合わせください**。
 
-<div id="node-groups">
-  ## ノードグループ
-</div>
+## ノードグループ {#node-groups}
 
 Kubernetes のノードグループは、BYOC デプロイメントで ClickHouse サービスを実行するために必要なリソースを提供するコンピュートインスタンスの集まりです。ClickHouse Cloud はこれらのノードグループを管理し、設定とスケーリングを自動的に行います。
 
-<div id="default-configuration">
-  ### デフォルト設定
-</div>
+### デフォルト設定 {#default-configuration}
 
 BYOCクラスターは、2種類の主要なノードグループでプロビジョニングされます。
 
@@ -113,9 +97,7 @@ BYOCクラスターは、2種類の主要なノードグループでプロビジ
 * **ワークロードノードグループ**
   server や Keeper サービスを含む、ClickHouse のデータワークロード専用のノードグループです。デフォルトでは、ワークロードノードは ARM ベースのインスタンス上で稼働し、パフォーマンスとコスト効率のバランスに優れています。ただし、別の CPU/メモリプロファイルを指定したり、要望に応じて x86 アーキテクチャに切り替えたりすることもできます。
 
-<div id="customizing-node-groups">
-  ### ノードグループのカスタマイズ
-</div>
+### ノードグループのカスタマイズ {#customizing-node-groups}
 
 特殊なリソースやアーキテクチャが必要な場合は、以下のカスタマイズに対応できます。ご相談や導入については、ClickHouse Support までお問い合わせください。
 
@@ -132,9 +114,7 @@ BYOCクラスターは、2種類の主要なノードグループでプロビジ
   ノードグループのカスタマイズや設定変更は、すべて ClickHouse Support と連携して実施する必要があります。これにより、互換性、安定性、最適なパフォーマンスを確保できます。
 </Note>
 
-<div id="auto-scaling">
-  ### 自動スケーリング
-</div>
+### 自動スケーリング {#auto-scaling}
 
 クラスターのノードグループは、クラスターオートスケーラーによって、次の要素に基づいて自動的にスケールされます。
 

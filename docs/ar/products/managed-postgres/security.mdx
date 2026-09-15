@@ -14,16 +14,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 صُمِّم ClickHouse Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
 
-<div id="ip-whitelisting">
-  ## قائمة سماح عناوين IP
-</div>
+## قائمة سماح عناوين IP {#ip-whitelisting}
 
 تتحكم عوامل تصفية IP في عناوين IP المصدر المسموح لها بالاتصال بمثيل ClickHouse Managed Postgres لديك، مما يوفر تحكمًا في الوصول على مستوى الشبكة لحماية قاعدة بياناتك من الاتصالات غير المصرح بها.
 
 <Image img="/images/managed-postgres/ip-filters.webp" alt="تهيئة قائمة الوصول إلى IP" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### تكوين عوامل تصفية IP
+  ### تكوين عوامل تصفية IP {#configuring-ip-filters}
 </div>
 
 لتكوين عوامل تصفية IP:
@@ -51,71 +49,61 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   * عناوين IP لخطوط CI/CD لعمليات النشر المؤتمتة
 </Warning>
 
-<div id="encryption">
-  ## التشفير
-</div>
+## التشفير {#encryption}
 
 يشفّر ClickHouse Managed Postgres بياناتك سواء كانت في التخزين أو منقولة، لضمان حماية شاملة للبيانات.
 
-<div id="encryption-at-rest">
-  ### التشفير في التخزين
-</div>
+### التشفير في التخزين {#encryption-at-rest}
 
 تُشفَّر جميع البيانات المخزَّنة بواسطة ClickHouse Managed Postgres في التخزين للحماية من الوصول غير المصرَّح به إلى البنية التحتية الأساسية للتخزين.
 
 <div id="nvme-encryption">
-  #### تشفير تخزين NVMe
+  #### تشفير تخزين NVMe {#nvme-encryption}
 </div>
 
 تُشفَّر ملفات قاعدة البيانات، وسجلات المعاملات، والملفات المؤقتة المخزَّنة على أقراص NVMe باستخدام خوارزميات تشفير متوافقة مع معايير الصناعة. ويتم هذا التشفير بشفافية بالنسبة إلى تطبيقاتك، ولا يتطلب أي إعداد.
 
-<div id="s3-encryption">
-  #### تشفير التخزين الكائني (S3)
-</div>
+#### تشفير التخزين الكائني {#s3-encryption}
 
-تُشفَّر أيضًا النسخ الاحتياطية وأرشيفات سجل الكتابة المسبقة (WAL) المخزنة في التخزين الكائني في التخزين. ويشمل ذلك:
+تُشفَّر أيضًا النسخ الاحتياطية وأرشيفات سجل الكتابة المسبقة (WAL) المخزنة في التخزين الكائني في التخزين. ويشمل ذلك:
 
 * النسخ الاحتياطية اليومية الكاملة
 * أرشيفات WAL التزايدية
 * بيانات الاستعادة إلى نقطة زمنية محددة
 
-تُخزَّن جميع بيانات النسخ الاحتياطي في حاويات تخزين مخصصة ومعزولة، مع بيانات اعتماد مخصّصة لكل مثيل على حدة، مما يضمن بقاء بيانات النسخ الاحتياطي آمنة وألا تكون متاحة إلا للأنظمة المصرَّح لها.
+تُخزَّن جميع بيانات النسخ الاحتياطي في حاويات تخزين مخصصة ومعزولة، مع بيانات اعتماد مخصّصة لكل مثيل على حدة، مما يضمن بقاء بيانات النسخ الاحتياطي آمنة وألا تكون متاحة إلا للأنظمة المصرَّح لها.
 
 <Info>
-  التشفير في التخزين مُمكَّن افتراضيًا لجميع مثيلات ClickHouse Managed Postgres، ولا يمكن تعطيله. لا يلزم أي إعداد إضافي.
+  التشفير في التخزين مُمكَّن افتراضيًا لجميع مثيلات ClickHouse Managed Postgres، ولا يمكن تعطيله. لا يلزم أي إعداد إضافي.
 </Info>
 
-<div id="encryption-in-transit">
-  ### التشفير أثناء النقل
-</div>
+### التشفير أثناء النقل {#encryption-in-transit}
 
 تُؤمَّن جميع اتصالات الشبكة بـ ClickHouse Managed Postgres باستخدام TLS ‏(أمن طبقة النقل) لحماية البيانات أثناء انتقالها بين تطبيقاتك وقاعدة البيانات.
 
 <div id="tls-ssl">
-  #### إعدادات TLS/SSL
+  #### إعدادات TLS/SSL {#tls-ssl}
 </div>
 
 تستخدم الاتصالات افتراضيًا تشفير TLS من دون التحقق من الشهادة. بالنسبة إلى أعباء العمل في بيئة الإنتاج، نوصي بالاتصال عبر TLS مع التحقق من الشهادة لضمان أنك تتواصل مع الخادم الصحيح.
 
 لمزيد من التفاصيل حول إعدادات TLS وخيارات الاتصال، راجع صفحة [الاتصال](/ar/products/managed-postgres/connection#tls).
 
-<div id="private-link">
-  ## Private Link
-</div>
+## AWS PrivateLink {#private-link}
 
-يتيح Private Link اتصالًا خاصًا بين مثيل ClickHouse Managed Postgres لديك وVirtual Private Cloud (VPC) لديك، من دون تعريض حركة المرور للإنترنت العام. ويوفر ذلك طبقة إضافية من عزل الشبكة والأمان.
+يتيح AWS PrivateLink اتصالًا خاصًا بين مثيل ClickHouse Managed Postgres لديك وAWS Virtual Private Cloud (VPC) لديك، من دون تعريض حركة المرور للإنترنت العام. ويوفر ذلك طبقة إضافية من عزل الشبكة والأمان.
 
 <Info>
   **يتطلب إعدادًا يدويًا**
 
-  يتوفر دعم Private Link، لكنه يتطلب إعدادًا يدويًا من قِبل ClickHouse Support. وتُعد هذه الميزة مثالية لعملاء Enterprise ذوي متطلبات صارمة لعزل الشبكة.
+  يتوفر دعم AWS PrivateLink، لكنه يتطلب إعدادًا يدويًا من قِبل ClickHouse Support. وتُعد هذه الميزة مثالية لعملاء Enterprise ذوي متطلبات صارمة لعزل الشبكة.
 </Info>
 
 <div id="requesting-private-link">
-  ### طلب إعداد Private Link
+  ### طلب إعداد AWS PrivateLink {#requesting-private-link}
 </div>
 
-لتمكين Private Link لمثيل ClickHouse Managed Postgres لديك:
+لتمكين AWS PrivateLink لمثيل ClickHouse Managed Postgres لديك:
 
 1. **تواصل مع ClickHouse Support** عبر إنشاء تذكرة دعم
 
@@ -129,27 +117,31 @@ import { Image } from "/snippets/ar/components/Image.jsx";
    * توفير endpoint لـ Private Link على جانب ClickHouse Managed Postgres
    * تزويدك بـ connection details الخاصة بـ endpoint التي يمكنك استخدامها لإنشاء endpoint interface.
 
-4. **أكمل Setup لـ Private Link**:
-   * أنشئ Private Link بالانتقال إلى endpoint interface في إعدادات AWS واستخدام configuration التي يوفّرها ClickHouse Support.
-   * بمجرد أن تصبح Private Link في حالة &quot;Available&quot;، يمكنك الاتصال بها باستخدام اسم private DNS المتوفر في AWS UI.
+4. **أكمل Setup لـ AWS PrivateLink**:
+   * أنشئ AWS PrivateLink بالانتقال إلى endpoint interface في إعدادات AWS واستخدام configuration التي يوفّرها ClickHouse Support.
+   * بمجرد أن تصبح AWS PrivateLink في حالة &quot;Available&quot;، يمكنك الاتصال بها باستخدام اسم private DNS المتوفر في AWS UI.
+
+## GCP Private Service Connect {#gcp-private-service-connect}
+
+يتيح Private Service Connect اتصالًا خاصًا بين مثيل ClickHouse Managed Postgres لديك وGCP Virtual Private Cloud (VPC) لديك، من دون تعريض حركة المرور للإنترنت العام.
+
+لتمكين Private Service Connect لمثيل ClickHouse Managed Postgres لديك، تواصل مع ClickHouse Support عبر إنشاء تذكرة دعم.
 
 <div id="backup-retention">
-  ## الاحتفاظ بالنسخ الاحتياطية
+  ## الاحتفاظ بالنسخ الاحتياطية {#backup-retention}
 </div>
 
 يُنشئ ClickHouse Managed Postgres نسخًا احتياطية من بياناتك تلقائيًا للحماية من الحذف غير المقصود أو التلف أو غير ذلك من حالات فقدان البيانات.
 
 <div id="retention-policy">
-  ### سياسة الاحتفاظ
+  ### سياسة الاحتفاظ {#retention-policy}
 </div>
 
 * **فترة الاحتفاظ الافتراضية**: 7 أيام
 * **وتيرة النسخ الاحتياطي**: نسخ احتياطية كاملة يوميًا + أرشفة WAL مستمرة (كل 60 ثانية أو 16 ميغابايت، أيهما يحدث أولًا)
 * **دقة الاستعادة**: استعادة إلى نقطة زمنية محددة في أي لحظة ضمن نافذة الاحتفاظ
 
-<div id="backup-security">
-  ### أمان النسخ الاحتياطية
-</div>
+### أمان النسخ الاحتياطية {#backup-security}
 
 تُخزَّن النسخ الاحتياطية مع ضمانات الأمان نفسها المطبَّقة على بياناتك الأساسية:
 

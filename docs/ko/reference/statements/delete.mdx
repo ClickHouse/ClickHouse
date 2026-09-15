@@ -12,23 +12,21 @@ doc_type: 'reference'
 경량 `DELETE` 문은 표현식 `expr`과 일치하는 `[db.]table` 테이블의 행을 제거합니다. 이 기능은 *MergeTree 테이블 엔진 계열에서만 사용할 수 있습니다.
 
 ```sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr;
 ```
 
 이는 무거운 작업인 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 명령과 구분하기 위해 &quot;경량 `DELETE`&quot;라고 합니다.
 
-<div id="examples">
-  ## 예시
-</div>
+`IN PARTITION` 절은 삭제 대상을 나열된 파티션으로 제한합니다. 이 절이 없으면 `ReplicatedMergeTree` 계열 테이블에서는 [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ko/reference/settings/session-settings/optimize) 설정이 활성화된 경우(기본값), ClickHouse가 `expr`에 포함된 파티션 키 조건을 자동으로 감지하여 해당 파티션에서만 삭제를 수행합니다. 복제되지 않은 `MergeTree` 테이블에서는 명시적인 `IN PARTITION` 절을 사용해 삭제 대상을 특정 파티션으로 제한하십시오.
+
+## 예시 {#examples}
 
 ```sql
 -- `hits` 테이블에서 `Title` 컬럼에 `hello` 텍스트가 포함된 모든 행을 삭제합니다
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## 경량 `DELETE`는 데이터를 즉시 삭제하지 않습니다
-</div>
+## 경량 `DELETE`는 데이터를 즉시 삭제하지 않습니다 {#lightweight-delete-does-not-delete-data-immediately}
 
 경량 `DELETE`는 [뮤테이션(mutation)](/ko/reference/statements/alter/index#mutations)으로 구현되며, 행을 삭제된 것으로 표시하지만 즉시 물리적으로 삭제하지는 않습니다.
 
@@ -38,27 +36,19 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 예측 가능한 시간 내에 데이터가 스토리지에서 삭제되도록 보장해야 한다면 테이블 설정 [`min_age_to_force_merge_seconds`](/ko/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds) 사용을 고려하십시오. 또는 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 명령을 사용할 수 있습니다. `ALTER TABLE ... DELETE`를 사용해 데이터를 삭제하면 영향을 받는 모든 파트를 다시 생성하므로 상당한 리소스를 사용할 수 있다는 점에 유의하십시오.
 
-<div id="deleting-large-amounts-of-data">
-  ## 대량의 데이터 삭제
-</div>
+## 대량의 데이터 삭제 {#deleting-large-amounts-of-data}
 
 대량 삭제는 ClickHouse 성능에 부정적인 영향을 줄 수 있습니다. 테이블의 모든 행을 삭제하려는 경우 [`TRUNCATE TABLE`](/ko/reference/statements/truncate) 명령 사용을 고려하세요.
 
 삭제가 자주 필요할 것으로 예상된다면 [사용자 지정 파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 사용을 고려하세요. 그러면 [`ALTER TABLE ... DROP PARTITION`](/ko/reference/statements/alter/partition#drop-partitionpart) 명령을 사용해 해당 파티션에 속한 모든 행을 빠르게 삭제할 수 있습니다.
 
-<div id="limitations-of-lightweight-delete">
-  ## 경량 `DELETE`의 제한 사항
-</div>
+## 경량 `DELETE`의 제한 사항 {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### 프로젝션이 있는 테이블에서의 경량 `DELETE`
-</div>
+### 프로젝션이 있는 테이블에서의 경량 `DELETE` {#lightweight-deletes-with-projections}
 
 기본적으로 프로젝션이 있는 테이블에서는 `DELETE`가 작동하지 않습니다. 이는 `DELETE` 작업이 프로젝션의 행에 영향을 줄 수 있기 때문입니다. 하지만 동작 방식을 변경하는 [MergeTree 설정](/ko/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode`가 있습니다.
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## 경량 `DELETE` 사용 시 성능 고려 사항
-</div>
+## 경량 `DELETE` 사용 시 성능 고려 사항 {#performance-considerations-when-using-lightweight-delete}
 
 **경량 `DELETE` 문으로 대량의 데이터를 삭제하면 SELECT 쿼리 성능에 부정적인 영향을 미칠 수 있습니다.**
 
@@ -69,9 +59,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 * 영향을 받는 테이블에 데이터 파트가 매우 많은 경우.
 * Compact 파트에 데이터가 많이 있는 경우. Compact 파트에서는 모든 컬럼이 하나의 파일에 저장됩니다.
 
-<div id="delete-permissions">
-  ## DELETE 권한
-</div>
+## DELETE 권한 {#delete-permissions}
 
 `DELETE`를 사용하려면 `ALTER DELETE` privilege가 필요합니다. 특정 사용자가 특정 table에서 `DELETE` SQL 문을 실행할 수 있도록 하려면 다음 명령을 실행하십시오.
 
@@ -79,9 +67,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## ClickHouse 내부에서 경량 DELETE가 작동하는 방식
-</div>
+## ClickHouse 내부에서 경량 DELETE가 작동하는 방식 {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **영향을 받은 행에 &quot;마스크&quot;가 적용됩니다**
 
@@ -111,9 +97,7 @@ GRANT ALTER DELETE ON db.table to username;
 
    위 단계를 보면, 마스킹 기법을 사용하는 경량 `DELETE`는 영향을 받은 파트의 모든 컬럼 파일을 다시 기록하지 않으므로 기존 `ALTER TABLE ... DELETE`보다 성능이 더 좋습니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse에서 업데이트 및 삭제를 처리하는 방법](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

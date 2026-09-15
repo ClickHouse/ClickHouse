@@ -15,26 +15,20 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="adaptive_write_buffer_initial_size">
-  ## adaptive_write_buffer_initial_size
-</div>
+## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
 الحجم الأولي لمخزن مؤقت للكتابة التكيفية
 
-<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
-  ## add_implicit_sign_column_constraint_for_collapsing_engine
-</div>
+## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 إذا كانت القيمة `true`، فسيُضاف قيد ضمني إلى العمود `sign` في جدول من نوع CollapsingMergeTree
 أو VersionedCollapsingMergeTree، بحيث لا يُسمح إلا بالقيم الصالحة (`1` و `-1`).
 
-<div id="alter_column_secondary_index_mode">
-  ## alter_column_secondary_index_mode
-</div>
+## alter_column_secondary_index_mode {#alter_column_secondary_index_mode}
 
 <SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
 
@@ -51,18 +45,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `compatibility`: يطابق السلوك الأصلي: `throw` مع `ALTER ... MODIFY COLUMN` و`rebuild` مع `ALTER ... UPDATE/DELETE`.
 * `ignore`: مخصص لاستخدام الخبراء. سيترك الفهارس في حالة غير متسقة، مما قد يؤدي إلى نتائج استعلام غير صحيحة.
 
-<div id="always_use_copy_instead_of_hardlinks">
-  ## always_use_copy_instead_of_hardlinks
-</div>
+## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 انسخ البيانات دائمًا بدلًا من إنشاء روابط صلبة أثناء عمليات تعديل/Replace/detach
 وما إلى ذلك.
 
-<div id="apply_patches_on_merge">
-  ## apply_patches_on_merge
-</div>
+## apply_patches_on_merge {#apply_patches_on_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,18 +60,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا كانت القيمة true، فسيتم تطبيق أجزاء التصحيح أثناء عمليات الدمج
 
-<div id="assign_part_uuids">
-  ## assign_part_uuids
-</div>
+## assign_part_uuids {#assign_part_uuids}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 عند التفعيل، سيُخصَّص معرّف جزء فريد لكل جزء جديد.
 قبل التفعيل، تحقّق من أن جميع النسخ المتماثلة تدعم الإصدار 4 من UUID.
 
-<div id="auto_statistics_types">
-  ## auto_statistics_types
-</div>
+## auto_statistics_types {#auto_statistics_types}
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
@@ -91,26 +77,20 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 أنواع الإحصاءات المدعومة: basic و tdigest و countmin و uniq و uniq&#95;v2.
 نوع الإحصاءات `minmax` مُهمَل: فهو مجموعة فرعية من `basic`، لذا ينبغي استخدام `basic` بدلًا منه.
 
-<div id="background_task_preferred_step_execution_time_ms">
-  ## background_task_preferred_step_execution_time_ms
-</div>
+## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="50" />
 
 الوقت المستهدف لتنفيذ خطوة واحدة من عملية الدمج أو التعديل. يمكن تجاوزه إذا استغرقت
 إحدى الخطوات وقتًا أطول
 
-<div id="clean_deleted_rows">
-  ## clean_deleted_rows
-</div>
+## clean_deleted_rows {#clean_deleted_rows}
 
 <SettingsInfoBlock type="CleanDeletedRows" default_value="أبدًا" />
 
 إعداد متقادم، بلا أي تأثير.
 
-<div id="clone_replica_zookeeper_create_get_part_batch_size">
-  ## clone_replica_zookeeper_create_get_part_batch_size
-</div>
+## clone_replica_zookeeper_create_get_part_batch_size {#clone_replica_zookeeper_create_get_part_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -118,9 +98,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 حجم الدفعة لطلبات get-part متعددة الإنشاء في ZooKeeper عند استنساخ النسخة المتماثلة.
 
-<div id="compatibility_allow_sampling_expression_not_in_primary_key">
-  ## compatibility_allow_sampling_expression_not_in_primary_key
-</div>
+## compatibility_allow_sampling_expression_not_in_primary_key {#compatibility_allow_sampling_expression_not_in_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -128,9 +106,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 مطلوب فقط للسماح مؤقتًا بتشغيل الخادم مع جداول غير صحيحة حفاظًا على
 التوافق مع الإصدارات السابقة.
 
-<div id="compute_exact_num_defaults_for_sparse_columns">
-  ## compute_exact_num_defaults_for_sparse_columns
-</div>
+## compute_exact_num_defaults_for_sparse_columns {#compute_exact_num_defaults_for_sparse_columns}
 
 <BetaBadge />
 
@@ -146,9 +122,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يؤدي تركه معطّلًا إلى الإبقاء على سرعة عمليات `إدراج`/`الدمج` كما
 كانت سابقًا؛ أما تفعيله فيضيف مرورًا بتعقيد O(rows) لكل عمود مؤهَّل لـ `متناثر`.
 
-<div id="deduplicate_merge_projection_mode">
-  ## deduplicate_merge_projection_mode
-</div>
+## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode}
 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
 
@@ -169,9 +143,7 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 * `drop`
 * `rebuild`
 
-<div id="deduplication_hashes_cache_update_wait_ms">
-  ## deduplication_hashes_cache_update_wait_ms
-</div>
+## deduplication_hashes_cache_update_wait_ms {#deduplication_hashes_cache_update_wait_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="100" />
 
@@ -182,9 +154,7 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 الدليل `deduplication_hashes` في ClickHouse Keeper، بحيث تتمكن عمليات الإدراج من اكتشاف التكرارات دون
 الحاجة إلى رحلة ذهاب وإياب إلى Keeper.
 
-<div id="default_compression_codec">
-  ## default_compression_codec
-</div>
+## default_compression_codec {#default_compression_codec}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "إعداد جديد"}]}]} />
 
@@ -196,15 +166,11 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 3. مرمّز الضغط الافتراضي المعرَّف في إعدادات `compression`
    القيمة الافتراضية: سلسلة فارغة (غير معرَّفة).
 
-<div id="disk">
-  ## القرص
-</div>
+## القرص {#disk}
 
 اسم قرص التخزين. يمكن تحديده بدلًا من سياسة التخزين.
 
-<div id="dynamic_serialization_version">
-  ## dynamic_serialization_version
-</div>
+## dynamic_serialization_version {#dynamic_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
 
@@ -218,9 +184,7 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 * `v2`
 * `v3`
 
-<div id="enforce_index_structure_match_on_partition_manipulation">
-  ## enforce_index_structure_match_on_partition_manipulation
-</div>
+## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -231,9 +195,7 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 متطابقة بين جدولَي المصدر والوجهة. وإلا، يمكن أن يشتمل جدول الوجهة
 على فهارس وإسقاطات أكثر من تلك الموجودة في جدول المصدر.
 
-<div id="execute_merges_on_single_replica_time_threshold">
-  ## execute_merges_on_single_replica_time_threshold
-</div>
+## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="0" />
 
@@ -247,18 +209,14 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 
 * أي عدد صحيح موجب.
 
-<div id="finished_mutations_to_keep">
-  ## finished_mutations_to_keep
-</div>
+## finished_mutations_to_keep {#finished_mutations_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 عدد السجلات الخاصة بعمليات التعديل المكتملة المطلوب الاحتفاظ بها. إذا كانت القيمة صفرًا، فسيتم الاحتفاظ
 بها كلها.
 
-<div id="force_read_through_cache_for_merges">
-  ## force_read_through_cache_for_merges
-</div>
+## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 
 <ExperimentalBadge />
 
@@ -266,25 +224,19 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 
 فرض القراءة عبر ذاكرة التخزين المؤقت لنظام الملفات أثناء عمليات الدمج
 
-<div id="initialization_retry_period">
-  ## initialization_retry_period
-</div>
+## initialization_retry_period {#initialization_retry_period}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="60" />
 
 فترة إعادة المحاولة لتهيئة الجدول، بالثواني.
 
-<div id="kill_threads">
-  ## kill_threads
-</div>
+## kill_threads {#kill_threads}
 
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
 إعداد متقادم، ولا تأثير له.
 
-<div id="lightweight_mutation_projection_mode">
-  ## lightweight_mutation_projection_mode
-</div>
+## lightweight_mutation_projection_mode {#lightweight_mutation_projection_mode}
 
 <SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
 
@@ -307,9 +259,7 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 * `drop`
 * `rebuild`
 
-<div id="load_existing_rows_count_for_old_parts">
-  ## load_existing_rows_count_for_old_parts
-</div>
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -326,17 +276,13 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 
 * الإعداد [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](/ar/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge)
 
-<div id="lock_acquire_timeout_for_background_operations">
-  ## lock_acquire_timeout_for_background_operations
-</div>
+## lock_acquire_timeout_for_background_operations {#lock_acquire_timeout_for_background_operations}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="120" />
 
 لعمليات الخلفية مثل عمليات الدمج وعمليات التعديل وما إلى ذلك، يحدِّد عدد الثواني قبل الفشل في الحصول على أقفال الجدول.
 
-<div id="mutation_workload">
-  ## mutation_workload
-</div>
+## mutation_workload {#mutation_workload}
 
 يُستخدم لتنظيم كيفية استخدام الموارد وتوزيعها بين عمليات التعديل
 وأعباء العمل الأخرى. وتُستخدم القيمة المحددة بوصفها قيمة إعداد `workload`
@@ -347,9 +293,7 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 
 * [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="non_replicated_deduplication_window">
-  ## non_replicated_deduplication_window
-</div>
+## non_replicated_deduplication_window {#non_replicated_deduplication_window}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -367,9 +311,7 @@ MergeTree الكلاسيكي يتجاهل هذا الإعداد. كما أنه �
 يشمل hash sum الخاص بـ deduplication كامل inserted block. وتُكتَب قيم
 hash sums إلى ملف محلي على قرص بدلًا من ClickHouse Keeper.
 
-<div id="notify_newest_block_number">
-  ## notify_newest_block_number
-</div>
+## notify_newest_block_number {#notify_newest_block_number}
 
 <ExperimentalBadge />
 
@@ -379,9 +321,7 @@ hash sums إلى ملف محلي على قرص بدلًا من ClickHouse Keeper
 
 إبلاغ SharedJoin أو SharedSet بأحدث رقم block. في ClickHouse Cloud فقط.
 
-<div id="nullable_serialization_version">
-  ## nullable_serialization_version
-</div>
+## nullable_serialization_version {#nullable_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
 
@@ -395,9 +335,7 @@ hash sums إلى ملف محلي على قرص بدلًا من ClickHouse Keeper
 
 * allow&#95;sparse — السماح لـ `Nullable(T)` باستخدام الترميز المتناثر.
 
-<div id="object_serialization_version">
-  ## object_serialization_version
-</div>
+## object_serialization_version {#object_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
 
@@ -413,9 +351,7 @@ hash sums إلى ملف محلي على قرص بدلًا من ClickHouse Keeper
 
 لا يدعم تغيير إصدار تسلسل البيانات المشتركة إلا الإصدار `v3`.
 
-<div id="old_parts_lifetime">
-  ## old_parts_lifetime
-</div>
+## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
 
@@ -449,9 +385,7 @@ hash sums إلى ملف محلي على قرص بدلًا من ClickHouse Keeper
 تجريبيًا قيمة 480 ثانية لـ `old_parts_lifetime`، وهي مدة يُضمَن خلالها
 كتابة الجزء الجديد إلى القرص.
 
-<div id="optimize_row_order">
-  ## optimize_row_order
-</div>
+## optimize_row_order {#optimize_row_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -522,9 +456,7 @@ hash sums إلى ملف محلي على قرص بدلًا من ClickHouse Keeper
 ولا يُتوقع أن تستفيد المفاتيح الأساسية عالية الكاردينالية، مثل تلك التي تتضمن أعمدة طابع زمني من النوع
 `DateTime64`، من هذا الإعداد.
 
-<div id="packed_skip_index_max_bytes">
-  ## packed_skip_index_max_bytes
-</div>
+## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />
 
@@ -557,9 +489,7 @@ below the threshold)`.
 المجمَّعة من داخله بشفافية. يؤثر تغيير هذا الإعداد في الأجزاء المكتوبة حديثًا فقط؛
 أما الأجزاء الموجودة فستحتفظ بأي تخطيط كانت عليه وقت الكتابة.
 
-<div id="part_minmax_index_columns">
-  ## part_minmax_index_columns
-</div>
+## part_minmax_index_columns {#part_minmax_index_columns}
 
 <SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
 
@@ -572,9 +502,7 @@ below the threshold)`.
 * `partition_key_only` — لا تُتتبَّع إلا أعمدة مفتاح التقسيم.
 * `with_block_number_offset` — أعمدة مفتاح التقسيم، بالإضافة إلى العمودين الافتراضيين المحفوظين `_block_number` و`_block_offset`. يتيح ذلك الاستبعاد على مستوى الجزء باستخدام هذين العمودين.
 
-<div id="patch_parts_version">
-  ## patch_parts_version
-</div>
+## patch_parts_version {#patch_parts_version}
 
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
 
@@ -591,9 +519,7 @@ below the threshold)`.
 
 تظل التصحيحات ذات التنسيق القديم المخزنة على القرص قابلة للقراءة بغض النظر عن هذا الإعداد.
 
-<div id="propagate_types_serialization_versions_to_nested_types">
-  ## propagate_types_serialization_versions_to_nested_types
-</div>
+## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -601,9 +527,7 @@ below the threshold)`.
 
 إذا كانت القيمة true، فستُمرَّر إصدارات التسلسل مثل string&#95;serialization&#95;version إلى داخل الأنواع المتداخلة مثل Array/Map/Nullable/JSON/etc. وإذا كان هذا الخيار معطّلًا، فلن يسري إصدار التسلسل إلا على الأعمدة ذات المستوى الأعلى من هذا النوع وعلى عناصر Tuple el
 
-<div id="ratio_of_defaults_for_sparse_serialization">
-  ## ratio_of_defaults_for_sparse_serialization
-</div>
+## ratio_of_defaults_for_sparse_serialization {#ratio_of_defaults_for_sparse_serialization}
 
 <SettingsInfoBlock type="Float" default_value="0.9375" />
 
@@ -716,9 +640,7 @@ WHERE table LIKE 'my_sparse_table';
 └────────┴────────────────────┘
 ```
 
-<div id="reduce_blocking_parts_sleep_ms">
-  ## reduce_blocking_parts_sleep_ms
-</div>
+## reduce_blocking_parts_sleep_ms {#reduce_blocking_parts_sleep_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -729,18 +651,14 @@ WHERE table LIKE 'my_sparse_table';
 خفض هذا الإعداد إلى تشغيل المهام في background&#95;schedule&#95;pool بشكل متكرر، مما
 يسفر عن عدد كبير من الطلبات إلى ZooKeeper في المجموعات كبيرة الحجم
 
-<div id="replace_long_file_name_to_hash">
-  ## replace_long_file_name_to_hash
-</div>
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 إذا كان اسم ملف العمود طويلًا جدًا (أكثر من `max_file_name_length`
 بايت)، فاستبدله بـ SipHash128
 
-<div id="replicated_can_become_leader">
-  ## replicated_can_become_leader
-</div>
+## replicated_can_become_leader {#replicated_can_become_leader}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -751,9 +669,7 @@ WHERE table LIKE 'my_sparse_table';
 * `true`
 * `false`
 
-<div id="search_orphaned_parts_disks">
-  ## search_orphaned_parts_disks
-</div>
+## search_orphaned_parts_disks {#search_orphaned_parts_disks}
 
 <SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
 
@@ -770,9 +686,7 @@ WHERE table LIKE 'my_sparse_table';
 * local - يقتصر النطاق على الأقراص المحلية.
 * none - نطاق فارغ، لا تُجرى أي عملية بحث
 
-<div id="serialization_info_version">
-  ## serialization_info_version
-</div>
+## serialization_info_version {#serialization_info_version}
 
 <SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
 
@@ -786,14 +700,15 @@ WHERE table LIKE 'my_sparse_table';
 * `basic` - تنسيق basic.
 * `with_types` - تنسيق يتضمن الحقل الإضافي `types_serialization_versions`، مما يتيح إصدارات تسلسل لكل نوع.
   وهذا يجعل إعدادات مثل `string_serialization_version` فعّالة.
+* `with_missing_columns` - كل ما يسجّله `with_types`، بالإضافة إلى الحقل `missing_columns`
+  الذي يسرد الأعمدة المفقودة والنوع الذي تمثّل قيمته الافتراضية قيمها.
+  مطلوب لتمكين `skip_empty_columns_on_insert`.
 
 أثناء الترقيات المتدرجة، اضبط هذا على `basic` لكي تُنتج الخوادم الجديدة
 أجزاء بيانات متوافقة مع الخوادم القديمة. بعد اكتمال الترقية،
-بدّل إلى `WITH_TYPES` لتمكين إصدارات التسلسل لكل نوع.
+بدّل إلى `with_types` (أو `with_missing_columns`) لتمكين الميزات المقابلة.
 
-<div id="share_nested_offsets">
-  ## share_nested_offsets
-</div>
+## share_nested_offsets {#share_nested_offsets}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -806,9 +721,7 @@ WHERE table LIKE 'my_sparse_table';
 دلالات خاصة، كما يمكن أن يتعايش عمود scalar مع أعمدة Array منقطة تشترك في البادئة نفسها
 (مثل n UInt32 إلى جانب n.a Array(String)). هذا الإعداد غير قابل للتغيير بعد إنشاء الجدول.
 
-<div id="simultaneous_parts_removal_limit">
-  ## simultaneous_parts_removal_limit
-</div>
+## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -816,17 +729,35 @@ WHERE table LIKE 'my_sparse_table';
 `simultaneous_parts_removal_limit` جزءًا خلال تكرار واحد.
 ويعني تعيين `simultaneous_parts_removal_limit` إلى `0` عدم وجود حد.
 
-<div id="storage_policy">
-  ## storage_policy
-</div>
+## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتخطي كتابة جميع الأعمدة ذات القيم الافتراضية للنوع عند INSERT"}]}]} />
+
+عند تفعيله، لا تُكتب إلى جزء البيانات على القرص الأعمدةُ التي تكون قيمها بالكامل هي القيم الافتراضية لنوعها ضمن
+block إدراج معيّن. وعند قراءة الجزء لاحقًا،
+تُملأ الأعمدة المفقودة بالقيمة الافتراضية للنوع المسجَّل لها. ويوفّر هذا
+مساحة على القرص في أحمال العمل ذات التحديثات المتفرقة،
+حيث تبقى معظم الأعمدة في كل INSERT عند القيمة الافتراضية لنوعها.
+أما الأعمدة التي تحتوي على تعبيرات `DEFAULT` أو `MATERIALIZED` أو `ALIAS` فلا تُتخطى أبدًا،
+لأن مسار القراءة سيقيّم التعبير بدلًا من
+إرجاع القيمة الافتراضية للنوع التي أُدرجت صراحةً. كما تُستثنى أجزاء التصحيح
+(المستخدمة في UPDATE خفيف الوزن).
+ويسجّل هذا التحسين الأعمدة المفقودة في ملف
+`serialization.json` الخاص بالجزء باستخدام إصدار الصيغة `with_missing_columns`، ولذلك
+لا يسري مفعوله إلا عندما تكون قيمة `serialization_info_version` مضبوطة على
+`with_missing_columns`. أما مع إصدار أقل (كأن تُثبَّت على قيمة أدنى
+من أجل ترقية متدرجة بحيث تتمكن الخوادم الأقدم من قراءة الأجزاء المكتوبة حديثًا)
+فلا تُتخطى أي أعمدة.
+
+## storage_policy {#storage_policy}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 اسم سياسة تخزين القرص
 
-<div id="string_serialization_version">
-  ## string_serialization_version
-</div>
+## string_serialization_version {#string_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
 
@@ -834,7 +765,7 @@ WHERE table LIKE 'my_sparse_table';
 
 يتحكم هذا الإعداد في تنسيق التسلسل لأعمدة `String` ذات المستوى الأعلى.
 
-لا يكون هذا الإعداد فعّالًا إلا عندما تكون قيمة `serialization_info_version` مضبوطة على &quot;with&#95;types&quot;.
+لا يكون هذا الإعداد فعّالًا إلا عندما تكون قيمة `serialization_info_version` مضبوطة على &quot;with&#95;types&quot; أو أحدث.
 وعند ضبطه على `with_size_stream`، تُسلسَل أعمدة `String` ذات المستوى الأعلى باستخدام
 عمود فرعي منفصل `.size` لتخزين أطوال السلاسل النصية بدلًا من تضمينها مباشرةً. يتيح ذلك أعمدة فرعية
 حقيقية باسم `.size`، ويمكن أن يحسّن كفاءة الضغط.
@@ -847,9 +778,7 @@ WHERE table LIKE 'my_sparse_table';
 * `single_stream` — استخدم تنسيق التسلسل القياسي مع أحجام مضمنة.
 * `with_size_stream` — استخدم تدفّق أحجام منفصلًا لأعمدة `String` ذات المستوى الأعلى.
 
-<div id="temporary_directories_lifetime">
-  ## temporary_directories_lifetime
-</div>
+## temporary_directories_lifetime {#temporary_directories_lifetime}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="86400" />
 
@@ -857,9 +786,7 @@ WHERE table LIKE 'my_sparse_table';
 لأن عمليات الدمج والتعديل قد لا تتمكن من العمل إذا كانت قيمة هذا
 الإعداد منخفضة.
 
-<div id="try_fetch_recompressed_part_timeout">
-  ## try_fetch_recompressed_part_timeout
-</div>
+## try_fetch_recompressed_part_timeout {#try_fetch_recompressed_part_timeout}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="7200" />
 
@@ -875,9 +802,7 @@ WHERE table LIKE 'my_sparse_table';
 
 * أي عدد صحيح موجب.
 
-<div id="ttl_only_drop_parts">
-  ## ttl_only_drop_parts
-</div>
+## ttl_only_drop_parts {#ttl_only_drop_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -890,9 +815,7 @@ WHERE table LIKE 'my_sparse_table';
 عندما يكون `ttl_only_drop_parts` مفعّلًا، يُحذف الجزء بالكامل إذا كانت جميع
 الصفوف في ذلك الجزء قد انتهت صلاحيتها وفقًا لإعدادات `TTL` الخاصة بها.
 
-<div id="wait_for_unique_parts_send_before_shutdown_ms">
-  ## wait_for_unique_parts_send_before_shutdown_ms
-</div>
+## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="0" />
 
@@ -900,9 +823,7 @@ WHERE table LIKE 'my_sparse_table';
 (الموجودة فقط على النسخة المتماثلة الحالية) (0 يعني
 التعطيل).
 
-<div id="zookeeper_session_expiration_check_period">
-  ## zookeeper_session_expiration_check_period
-</div>
+## zookeeper_session_expiration_check_period {#zookeeper_session_expiration_check_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 

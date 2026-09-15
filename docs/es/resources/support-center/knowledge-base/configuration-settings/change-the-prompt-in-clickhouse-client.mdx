@@ -20,7 +20,7 @@ Estas son las variables que puedes usar en un prompt: `{user}`, `{host}`
 Hay varias formas de actualizar el prompt, y veremos cada una de ellas.
 
 <div id="--prompt-flag">
-  ## Opción `--prompt`
+  ## Opción `--prompt` {#--prompt-flag}
 </div>
 
 La primera forma de cambiar la opción consiste en usar `--prompt`:
@@ -34,7 +34,7 @@ Esto añadirá el emoji de dedo antes de la carita sonriente:
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con emoji de dedo" />
 
 <div id="config-file---top-level">
-  ## Archivo de configuración: nivel superior
+  ## Archivo de configuración: nivel superior {#config-file---top-level}
 </div>
 
 Como alternativa, puedes proporcionar un prefijo para el `prompt` en un archivo `config.xml`:
@@ -78,12 +78,10 @@ clickhouse -C christmas.yaml
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="prompt del cliente de ClickHouse con emoji de círculo amarillo" />
 
-<div id="config-file---connections_credentials">
-  ## Archivo de configuración - connections_credentials
-</div>
+## Archivo de configuración - connections_credentials {#config-file---connections_credentials}
 
 Como alternativa, puede especificar un prompt para cada conjunto de credenciales de conexión.
-Esto solo tiene sentido cuando se utiliza `clickhouse-client`.
+Esto solo tiene sentido cuando se utiliza clickhouse-client.
 
 ```xml
 <config>

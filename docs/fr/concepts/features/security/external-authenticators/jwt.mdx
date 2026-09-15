@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/fr/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/fr/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -18,7 +17,7 @@ ClickHouse peut authentifier les utilisateurs à l’aide de JSON Web Tokens (JW
 L’authentification JWT se distingue donc fondamentalement des méthodes basées sur un mot de passe ou un certificat : il n’existe pas d’instruction `CREATE USER ... IDENTIFIED WITH jwt`, et toute tentative en ce sens provoque une exception. Les utilisateurs JWT sont entièrement gérés par le cycle de vie du jeton.
 
 <div id="overview">
-  ## Vue d’ensemble
+  ## Vue d’ensemble {#overview}
 </div>
 
 Le flux d’authentification fonctionne comme suit :
@@ -30,11 +29,11 @@ Le flux d’authentification fonctionne comme suit :
 5. Lorsque le jeton expire, une tâche de garbage collection en arrière-plan supprime l’utilisateur.
 
 <div id="token-claims">
-  ## Claim du jeton
+  ## Claim du jeton {#token-claims}
 </div>
 
 <div id="required-claims">
-  ### Claims obligatoires
+  ### Claims obligatoires {#required-claims}
 </div>
 
 Chaque JWT présenté à ClickHouse doit contenir les claims suivants :
@@ -51,7 +50,7 @@ Chaque JWT présenté à ClickHouse doit contenir les claims suivants :
 Le claim d&#39;en-tête `kid` (ID de clé) est également requis lorsque la résolution de clés basée sur JWKS est utilisée.
 
 <div id="other-recognized-claims">
-  ### Autres claims reconnues
+  ### Autres claims reconnues {#other-recognized-claims}
 </div>
 
 | Claim | Description                                                                                                                       |
@@ -60,7 +59,7 @@ Le claim d&#39;en-tête `kid` (ID de clé) est également requis lorsque la rés
 | `jti` | Réservé. Accepté dans les jetons, mais n&#39;est actuellement ni validé ni utilisé.                                               |
 
 <div id="optional-claims">
-  ### Claims facultatifs
+  ### Claims facultatifs {#optional-claims}
 </div>
 
 | Claim                                                                                                                                                                        | Nom par défaut      | Description                                                                                                                                                                    |
@@ -70,7 +69,7 @@ Le claim d&#39;en-tête `kid` (ID de clé) est également requis lorsque la rés
 | Les noms de claim par défaut peuvent être redéfinis avec des noms de claim personnalisés si votre fournisseur d&#39;identité utilise des conventions de nommage différentes. |                     |                                                                                                                                                                                |
 
 <div id="example-token-header-and-payload">
-  ### Exemple de jeton, d’en-tête et de charge utile
+  ### Exemple de jeton, d’en-tête et de charge utile {#example-token-header-and-payload}
 </div>
 
 ```json
@@ -93,13 +92,13 @@ Le claim d&#39;en-tête `kid` (ID de clé) est également requis lorsque la rés
 ```
 
 <div id="ephemeral-user-behavior">
-  ## Comportement des utilisateurs éphémères
+  ## Comportement des utilisateurs éphémères {#ephemeral-user-behavior}
 </div>
 
 Les utilisateurs JWT se distinguent des utilisateurs ClickHouse classiques à plusieurs égards importants.
 
 <div id="identity-and-naming">
-  ### Identité et nommage
+  ### Identité et nommage {#identity-and-naming}
 </div>
 
 Chaque utilisateur JWT se voit attribuer un UUID déterministe calculé à partir des claims `iss`, `sub` et `aud`. Cet UUID est **stable** d’une connexion à l’autre. Un utilisateur qui se connecte plusieurs fois avec des jetons différents (mais avec le même émetteur, le même sujet et la même audience) obtient toujours le même UUID.
@@ -115,7 +114,7 @@ Le `<claims_hash>` est un hash dérivé des claims `iss`, `sub` et `aud`, ainsi 
 La partie `<claims_hash>` change chaque fois que les claims `clickhouse:roles` ou `clickhouse:grants` changent. Cela signifie que des jetons avec des ensembles de rôles ou de grants différents produisent des noms d&#39;utilisateur différents, même pour la même identité.
 
 <div id="access-rights">
-  ### Droits d’accès
+  ### Droits d’accès {#access-rights}
 </div>
 
 Les droits d’accès effectifs sont calculés comme suit :
@@ -127,13 +126,13 @@ effective_rights = permission_limit ∩ (token_grants ∪ token_roles)
 Ici, `permission_limit` correspond à l’ensemble des droits d’accès détenus par un rôle ou un utilisateur de référence, configuré comme limite supérieure. Les droits demandés par le jeton qui dépassent cette limite sont silencieusement supprimés.
 
 <div id="token-freshness">
-  ### Fraîcheur du jeton
+  ### Fraîcheur du jeton {#token-freshness}
 </div>
 
 ClickHouse suit la claim `iat` (issued-at) du jeton authentifié le plus récemment pour chaque identité stable. Si un jeton dont le `iat` est identique à la valeur enregistrée ou lui est antérieur est présenté, le serveur réutilise l&#39;utilisateur éphémère existant sans réévaluer les claims. Cela empêche d&#39;anciens jetons de réduire les autorisations d&#39;un utilisateur.
 
 <div id="lifetime-and-garbage-collection">
-  ### Durée de vie et garbage collection
+  ### Durée de vie et garbage collection {#lifetime-and-garbage-collection}
 </div>
 
 Les utilisateurs éphémères sont créés lorsqu&#39;un jeton est authentifié pour la première fois, puis supprimés par une tâche de garbage collection exécutée en arrière-plan une fois `valid_until` (dérivé de `exp`) dépassé. L&#39;intervalle du GC est défini par le paramètre `gc_interval` (par défaut : 5 minutes).
@@ -141,7 +140,7 @@ Les utilisateurs éphémères sont créés lorsqu&#39;un jeton est authentifié 
 Entre deux exécutions du GC, les utilisateurs expirés peuvent encore apparaître dans `system.users`, mais ne peuvent plus s&#39;authentifier.
 
 <div id="persistent-access-assignments">
-  ### Attributions d’accès persistantes
+  ### Attributions d’accès persistantes {#persistent-access-assignments}
 </div>
 
 Comme l’UUID est stable, vous pouvez attribuer des profils de paramètres, des quotas, des politiques d’accès aux lignes et des politiques de masquage des colonnes à un utilisateur JWT à l’aide d’instructions SQL. Ces attributions sont conservées dans le stockage du contrôle d’accès (sur disque ou dans ZooKeeper) et restent valides après l’expiration du jeton et une nouvelle authentification.
@@ -159,7 +158,7 @@ ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 Notez que `ALTER USER` ne fonctionne pas directement sur les utilisateurs JWT, car ils sont en lecture seule. Pour attribuer des profils de paramètres, des quotas ou des politiques, utilisez les instructions `ALTER SETTINGS PROFILE`, `ALTER QUOTA` ou `ALTER ROW POLICY` comme indiqué ci-dessus.
 
 <div id="differences-from-regular-users">
-  ## Différences avec les utilisateurs classiques
+  ## Différences avec les utilisateurs classiques {#differences-from-regular-users}
 </div>
 
 | Fonctionnalité                        | Utilisateurs JWT                                                    | Utilisateurs classiques                                      |
@@ -179,7 +178,7 @@ Notez que `ALTER USER` ne fonctionne pas directement sur les utilisateurs JWT, c
 | Rôles par défaut                      | Non configurables                                                   | Configurables                                                |
 
 <div id="sql-security-definer-views">
-  ## Vues avec SQL SECURITY DEFINER
+  ## Vues avec SQL SECURITY DEFINER {#sql-security-definer-views}
 </div>
 
 Lorsqu&#39;un utilisateur JWT éphémère crée une vue avec `SQL SECURITY DEFINER`, le serveur crée automatiquement une copie fantôme permanente de l&#39;utilisateur pour faire office de définisseur de la vue. Cet utilisateur fantôme :
@@ -191,11 +190,11 @@ Lorsqu&#39;un utilisateur JWT éphémère crée une vue avec `SQL SECURITY DEFIN
 Cela garantit que la vue continue de fonctionner après l&#39;expiration du jeton de l&#39;utilisateur éphémère et la suppression de l&#39;utilisateur d&#39;origine par le garbage collector.
 
 <div id="client-usage">
-  ## Utilisation du client
+  ## Utilisation du client {#client-usage}
 </div>
 
 <div id="passing-token-directly">
-  ### Passer directement un jeton
+  ### Passer directement un jeton {#passing-token-directly}
 </div>
 
 Utilisez le flag `--jwt` avec `clickhouse-client` pour vous authentifier à l’aide d’un jeton obtenu au préalable :
@@ -209,7 +208,7 @@ clickhouse-client --host your-instance.clickhouse.cloud --secure --jwt '<your_jw
 </Note>
 
 <div id="http-interface">
-  ### Interface HTTP
+  ### Interface HTTP {#http-interface}
 </div>
 
 Envoyez le jeton sous forme de Bearer token dans l’en-tête `Authorization` :
@@ -224,7 +223,7 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
 </Warning>
 
 <div id="oauth2-device-code-login">
-  ### Connexion OAuth2 par code d’appareil
+  ### Connexion OAuth2 par code d’appareil {#oauth2-device-code-login}
 </div>
 
 Le `clickhouse-client` prend en charge un flux interactif de code d’appareil OAuth2 via l’option `--login`. Pour les endpoints ClickHouse Cloud, le client effectue automatiquement un échange de jeton afin d’obtenir un JWT spécifique à ClickHouse. Les jetons sont renouvelés de manière transparente pendant la session. Lorsqu’un nouveau jeton est obtenu, le client se reconnecte automatiquement.
@@ -234,7 +233,7 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
 
 <div id="clickhouse-cloud-built-in">
-  ## Authentificateur JWT intégré à ClickHouse Cloud
+  ## Authentificateur JWT intégré à ClickHouse Cloud {#clickhouse-cloud-built-in}
 </div>
 
 Chaque service ClickHouse Cloud inclut un authentificateur JWT prédéfini, utilisé par la SQL Console et le flux `--login` de `clickhouse-client`. Cet authentificateur est configuré comme suit :
@@ -249,34 +248,30 @@ L’authentificateur intégré a une limite d’autorisations définie sur le r�
 
 Vous n’avez rien à configurer pour utiliser cet authentificateur. Il est provisionné automatiquement lors de la création du service.
 
-<div id="enabling-jwt-authentication-for-your-service">
-  ## Activation de l’authentification JWT pour votre service
-</div>
-
-<BetaBadge />
+## Activation de l’authentification JWT pour votre service {#enabling-jwt-authentication-for-your-service}
 
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Authentification JWT avec un fournisseur d’identité personnalisé" />
 
-En plus de l’authentificateur intégré, vous pouvez configurer votre service ClickHouse Cloud pour accepter les JWT émis par votre propre fournisseur d’identité (par exemple, Microsoft Entra ou Okta). Cette fonctionnalité bêta est disponible avec le plan Enterprise pour les services exécutant ClickHouse version 26.4 ou ultérieure. Vous pouvez la configurer vous-même depuis la Cloud Console, sous **Settings → Security → JWT authentication** — consultez [Configuration de l’authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) pour obtenir des instructions étape par étape. Chaque fournisseur est défini par les éléments suivants :
+En plus de l’authentificateur intégré, vous pouvez configurer votre service ClickHouse Cloud pour accepter les JWT émis par votre propre fournisseur d’identité (par exemple, Microsoft Entra ou Okta). Cette fonctionnalité est disponible avec le plan Enterprise pour les services exécutant ClickHouse version 26.4 ou ultérieure. Vous pouvez la configurer vous-même depuis la Cloud Console, sous **Settings → Security → JWT authentication** — consultez [Configuration de l’authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) pour obtenir des instructions étape par étape. Chaque fournisseur est défini par les éléments suivants :
 
 | Paramètre                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Nom                          | Un nom unique pour le fournisseur sur le service.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Émetteur                     | La valeur du claim `iss` des jetons émis par votre fournisseur d’identité, généralement l’URL de ce fournisseur (par exemple, `https://your-tenant.okta.com`). ClickHouse rejette les jetons dont l’émetteur ne correspond pas à cette valeur.                                                                                                                                                                                                                                                              |
 | Audience                     | La valeur du claim `aud` que votre fournisseur d’identité inclut dans les jetons destinés à ce service. ClickHouse rejette les jetons émis pour une autre audience.                                                                                                                                                                                                                                                                                                                                         |
-| URL JWKS                     | Le endpoint HTTPS sur lequel votre fournisseur d’identité publie son jeu de clés Web JSON (par exemple, `https://idp.example.com/.well-known/jwks.json`). ClickHouse récupère les clés publiques depuis ce endpoint afin de vérifier les signatures des jetons. La vérification JWKS fonctionne avec les clés RSA (`RS256`) et, à partir de la version 26.8, avec les clés EC sur les courbes P-256, P-384 et P-521 (`ES256`, `ES384`, `ES512`), comme décrit dans [Claims obligatoires](#required-claims). |
+| URL JWKS                     | Le endpoint HTTPS sur lequel votre fournisseur d’identité publie son jeu de clés Web JSON (par exemple, `https://idp.example.com/.well-known/jwks.json`). ClickHouse récupère les clés publiques depuis ce endpoint afin de vérifier les signatures des jetons. La vérification JWKS fonctionne avec les clés RSA (`RS256`) et, à partir de la version 26.8, avec les clés EC sur les courbes P-256, P-384 et P-521 (`ES256`, `ES384`, `ES512`), comme décrit dans [Claims obligatoires](#required-claims). |
 | Claim des rôles (facultatif) | Le nom du claim du jeton contenant les rôles ClickHouse de l’utilisateur éphémère. Laissez ce champ vide pour utiliser le nom de claim par défaut `clickhouse:roles`. Ce claim doit contenir un tableau JSON de noms de rôles, par exemple `["analyst", "reader"]`.                                                                                                                                                                                                                                         |
 
 <div id="interserver-communication">
-  ## Communication interserveur
+  ## Communication interserveur {#interserver-communication}
 </div>
 
 Lorsqu&#39;une requête est redirigée vers un autre segment ou une autre réplique, le jeton JWT est inclus dans le protocole de communication interserveur. Le nœud distant réauthentifie le jeton de manière autonome, en créant son propre utilisateur éphémère.
 
 <div id="troubleshooting">
-  ## Dépannage
+  ## Dépannage {#troubleshooting}
 </div>
 
 * **Aucun droit d&#39;accès accordé :** Le rôle ou l&#39;utilisateur référencé peut ne pas avoir les grants requis. Assurez-vous que les rôles référencés dans `clickhouse:roles` existent et incluent les grants appropriés.

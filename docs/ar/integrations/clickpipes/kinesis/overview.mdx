@@ -15,24 +15,22 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن نشر ClickPipes لـ Kinesis وإدارتها يدويًا عبر ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="prerequisite">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#prerequisite}
 </div>
 
 يُفترض أنك اطّلعت على [مقدمة ClickPipes](/ar/integrations/clickpipes/home) وأعددت [بيانات اعتماد IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) أو [دور IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). اتبع [دليل الوصول المستند إلى الأدوار في Kinesis](/ar/integrations/clickpipes/kinesis/auth) للحصول على معلومات حول كيفية إعداد دور يعمل مع ClickHouse Cloud.
 
-<div id="creating-your-first-clickpipe">
-  ## إنشاء أول ClickPipe لك
-</div>
+## إنشاء أول ClickPipe لك {#creating-your-first-clickpipe}
 
 1. افتح SQL Console الخاصة بخدمة ClickHouse Cloud لديك.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
 
-2. حدِّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;إعداد ClickPipe&quot;
+2. حدِّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;إعداد ClickPipe&quot;
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد عمليات الاستيراد" size="lg" border />
 
-3. حدِّد مصدر البيانات.
+3. حدِّد مصدر البيانات.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="تحديد نوع مصدر البيانات" size="lg" border />
 
@@ -40,7 +38,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
 
-5. حدِّد تدفق Kinesis وإزاحة البدء. ستعرض واجهة المستخدم مستندًا نموذجيًا من المصدر المحدد (Kafka topic، إلخ). يمكنك أيضًا تمكين Enhanced Fan-out لـ تدفقات Kinesis لتحسين أداء ClickPipe واستقراره (يمكنك العثور على مزيد من المعلومات حول Enhanced Fan-out [هنا](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. حدِّد تدفق Kinesis و**تنسيق البيانات** وإزاحة البدء. بالنسبة إلى `Protobuf`، ارفع ملف `.proto` أو `FileDescriptorSet` مُسلسلًا (بحد أقصى 768 KiB). ولا يُشترط وجود schema registry.
+
+   تعرض واجهة المستخدم بيانات العينة من التدفق المحدد. ويكون خيار **Use Kinesis Enhanced Fan-Out** مُمكّنًا افتراضيًا. راجع [توثيق Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) لمزيد من التفاصيل.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="تعيين تنسيق البيانات والموضوع" size="lg" border />
 
@@ -60,7 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 **الأذونات:** سيُنشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى الجدول الوجهة. يمكنك تحديد دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المعرّفة مسبقًا:
 
-* `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم materialized view أو Dictionary مع الجدول الوجهة.
+* `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم عرض مُجسَّد أو Dictionary مع الجدول الوجهة.
   * `Only destination table`: مع أذونات `INSERT` على الجدول الوجهة فقط.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" border />
@@ -71,7 +71,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="إشعار الإزالة" size="lg" border />
 
-يوفر جدول الملخص عناصر تحكم لعرض بيانات نموذجية من المصدر أو من الجدول الوجهة في ClickHouse
+يوفر جدول الملخص عناصر تحكم لعرض بيانات العينة من المصدر أو من الجدول الوجهة في ClickHouse
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="عرض الوجهة" size="lg" border />
 
@@ -82,15 +82,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 10. **تهانينا!** لقد أعددت أول ClickPipe بنجاح. إذا كان هذا ClickPipe من نوع streaming، فسيستمر في العمل بشكل متواصل مع إدخال البيانات في الوقت الفعلي من مصدر البيانات البعيد لديك. أما إذا لم يكن كذلك، فسيُدخل الدفعة ثم يكتمل.
 
 <div id="supported-data-formats">
-  ## تنسيقات البيانات المدعومة
+  ## تنسيقات البيانات المدعومة {#supported-data-formats}
 </div>
 
 التنسيقات المدعومة هي:
 
 * [JSON](/ar/reference/formats/JSON/JSON)
+* [Protobuf](/ar/reference/formats/Protobuf/Protobuf)
 
 <div id="compression">
-  ## الضغط
+  ## الضغط {#compression}
 </div>
 
 يكتشف ClickPipes for Kinesis السجلات المضغوطة ويفك ضغطها تلقائيًا. وعلى عكس Kafka، حيث تتولى مكتبة العميل فك الضغط تلقائيًا وبشفافية، يرسل Kinesis بايتات خام — ويتولى ClickPipes هذه المهمة نيابةً عنك من دون الحاجة إلى أي إعدادات.
@@ -109,11 +110,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="supported-data-types">
-  ## أنواع البيانات المدعومة
+  ## أنواع البيانات المدعومة {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### دعم الأنواع القياسية
+  ### دعم الأنواع القياسية {#standard-types-support}
 </div>
 
 تدعم ClickPipes حاليًا أنواع البيانات التالية في ClickHouse:
@@ -136,7 +137,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * أنواع SimpleAggregateFunction (لوجهات AggregatingMergeTree أو SummingMergeTree)
 
 <div id="variant-type-support">
-  ### دعم النوع Variant
+  ### دعم النوع Variant {#variant-type-support}
 </div>
 
 يمكنك تحديد نوع Variant يدويًا (مثل `Variant(String, Int64, DateTime)`) لأي حقل JSON
@@ -144,14 +145,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في تعريف Variant — على سبيل المثال، `Variant(Int64, UInt32)` غير مدعوم.
 
 <div id="json-type-support">
-  ### دعم نوع JSON
+  ### دعم نوع JSON {#json-type-support}
 </div>
 
 يمكن إسناد حقول JSON التي تكون دائمًا كائنات JSON إلى عمود وجهة من نوع JSON. سيتعين عليك تغيير عمود
 الوجهة يدويًا إلى نوع JSON المطلوب، بما في ذلك أي مسارات ثابتة أو متجاهلة.
 
 <div id="kinesis-virtual-columns">
-  ## الأعمدة الافتراضية لـ Kinesis
+  ## الأعمدة الافتراضية لـ Kinesis {#kinesis-virtual-columns}
 </div>
 
 الأعمدة الافتراضية التالية مدعومة لتدفق Kinesis. عند إنشاء جدول وجهة جديد، يمكن إضافة الأعمدة الافتراضية باستخدام الزر `Add Column`.
@@ -168,18 +169,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لاحق). بالنسبة إلى مثل هذه الـ pipes، قد يؤدي حذف جميع الأعمدة &quot;غير الافتراضية&quot; إلى تحسين أداء ClickPipes.
 
 <div id="limitations">
-  ## القيود
+  ## القيود {#limitations}
 </div>
 
 * [DEFAULT](/ar/reference/statements/create/table#default) غير مدعوم.
 * يقتصر حجم كل رسالة افتراضيًا على 16MB (غير مضغوط) عند التشغيل بأصغر حجم نسخة متماثلة ‏(XS)، وعلى 32MB (غير مضوط) مع النسخ المتماثلة الأكبر.  وستُرفض الرسائل التي تتجاوز هذا الحد مع ظهور خطأ.  إذا كنت بحاجة إلى رسائل أكبر، يُرجى التواصل مع فريق الدعم.
 
 <div id="performance">
-  ## الأداء
+  ## الأداء {#performance}
 </div>
 
 <div id="batching">
-  ### التجميع على دفعات
+  ### التجميع على دفعات {#batching}
 </div>
 
 تُدرِج ClickPipes البيانات في ClickHouse على دفعات. يهدف ذلك إلى تجنّب إنشاء عدد كبير جدًا من الأجزاء في قاعدة البيانات، ما قد يؤدي إلى مشكلات في أداء العنقود.
@@ -190,7 +191,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * عندما تظل الدفعة مفتوحة للمدة القصوى (5 ثوانٍ)
 
 <div id="latency">
-  ### زمن الاستجابة
+  ### زمن الاستجابة {#latency}
 </div>
 
 يعتمد زمن الاستجابة (المُعرَّف بأنه الوقت بين إرسال رسالة Kinesis إلى التدفق وإتاحة الرسالة في ClickHouse) على عدد من العوامل (مثل زمن استجابة Kinesis، وزمن استجابة الشبكة، وحجم الرسالة/تنسيقها). كما أن [التجميع على دفعات](#batching) الموضَّح في القسم أعلاه سيؤثر أيضًا في زمن الاستجابة. نوصي دائمًا باختبار حالة الاستخدام الخاصة بك لفهم زمن الاستجابة المتوقع.
@@ -198,19 +199,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 إذا كانت لديك متطلبات محددة لزمن استجابة منخفض، يُرجى [التواصل معنا](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="active-shards">
-  ### الشظايا النشطة
+  ### الشظايا النشطة {#active-shards}
 </div>
 
-نوصي بشدة بحصر عدد الشظايا النشطة المتزامنة بما يتوافق مع متطلبات الإنتاجية لديك. بالنسبة إلى تدفق Kinesis من نوع &quot;On Demand&quot;، ستحدّد AWS تلقائيًا عددًا مطابقًا من الشظايا بناءً على الإنتاجية،
-أما بالنسبة إلى التدفقات من نوع &quot;Provisioned&quot;، فقد يؤدي تخصيص عدد كبير جدًا من الشظايا إلى زيادة زمن الاستجابة كما هو موضح أدناه، فضلًا عن ارتفاع التكاليف لأن تسعير Kinesis لهذه التدفقات يُحتسب على أساس &quot;لكل shard&quot;.
-
-إذا كان التطبيق المُنتِج يكتب باستمرار إلى عدد كبير من الشظايا النشطة، فقد يتسبب ذلك في زمن الاستجابة مرتفع إذا لم يكن الـ pipe لديك موسّعًا بالقدر الكافي لمعالجة تلك الشظايا بكفاءة. واستنادًا إلى حدود الإنتاجية في Kinesis،
-تخصّص ClickPipes عددًا محددًا من &quot;workers&quot; لكل نسخة متماثلة لقراءة بيانات الشظايا. على سبيل المثال، عند أصغر حجم، سيكون لدى نسخة متماثلة في ClickPipes 4 من سلاسل التنفيذ العاملة هذه. وإذا كان التطبيق المُنتِج يكتب
-إلى أكثر من 4 شظايا في الوقت نفسه، فلن تُعالَج البيانات من الشظايا &quot;الإضافية&quot; حتى تتوفر سلسلة تنفيذ عاملة. وعلى وجه الخصوص، إذا كان الـ pipe يستخدم &quot;enhanced fanout&quot;، فستشترك كل سلسلة تنفيذ عاملة في
-شظية واحدة لمدة 5 دقائق، ولن تكون متاحة لقراءة أي شظية أخرى خلال تلك المدة. وقد يؤدي ذلك إلى &quot;قفزات&quot; في زمن الاستجابة بمضاعفات 5 دقائق.
+قد يؤدي وجود عدد كبير من الشظايا النشطة إلى خفض إنتاجية ClickPipe إذا لم يكن الـ ClickPipe [موسّعًا](#scaling) بالقدر الكافي للتعامل معها.
 
 <div id="scaling">
-  ### التوسّع
+  ### التوسّع {#scaling}
 </div>
 
 صُمِّم ClickPipes for Kinesis ليدعم التوسّع أفقيًا وعموديًا. وبشكلٍ افتراضي، ننشئ مجموعة مستهلكين تضم مستهلكًا واحدًا. ويمكن تهيئة ذلك أثناء إنشاء ClickPipe، أو في أي وقت لاحق ضمن **الإعدادات** -&gt; **الإعدادات المتقدمة** -&gt; **التوسّع**.
@@ -222,8 +217,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 فإذا تعطّل مستهلك أو البنية التحتية الأساسية التابعة له،
 فسيُعيد ClickPipe تشغيل المستهلك تلقائيًا ويواصل معالجة الرسائل.
 
-<div id="authentication">
-  ## المصادقة
-</div>
+## المصادقة {#authentication}
 
 للوصول إلى تدفقات Kinesis من Amazon، يمكنك استخدام [بيانات اعتماد IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) أو [دور IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). ولمزيد من التفاصيل حول كيفية إعداد دور IAM، يمكنك [الرجوع إلى هذا الدليل](/ar/integrations/clickpipes/kinesis/auth) للاطلاع على معلومات حول كيفية إعداد دور متوافق مع ClickHouse Cloud

@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="prefer_column_name_to_alias">
-  ## prefer_column_name_to_alias
-</div>
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,6 +24,22 @@ Valores posibles:
 
 * 0 — El nombre de la columna se sustituye por el alias.
 * 1 — El nombre de la columna no se sustituye por el alias.
+
+Si el nombre de la columna es ambiguo entre las tablas unidas mediante join y existe un alias con el mismo nombre, se utiliza el alias:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+Aquí `id` en `id AS x` es una columna tanto de `t1` como de `t3`, por lo que se resuelve al alias `t1.id + 10`.
 
 **Ejemplo**
 
@@ -60,9 +74,7 @@ Resultado:
 └────────┴─────────────┘
 ```
 
-<div id="prefer_external_sort_block_bytes">
-  ## prefer_external_sort_block_bytes
-</div>
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -70,9 +82,7 @@ Resultado:
 
 Da preferencia al número máximo de bytes por bloque para la ordenación externa; reduce el uso de memoria durante la fusión.
 
-<div id="prefer_global_in_and_join">
-  ## prefer_global_in_and_join
-</div>
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +105,7 @@ Otro caso de uso de `prefer_global_in_and_join` es acceder a tablas creadas por
 
 * [Subconsultas distribuidas](/es/reference/statements/in#distributed-subqueries) para obtener más información sobre cómo usar `GLOBAL IN`/`GLOBAL JOIN`
 
-<div id="prefer_localhost_replica">
-  ## prefer_localhost_replica
-</div>
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -114,9 +122,7 @@ Valores posibles:
   Si se usa en un clúster con un solo segmento y varias réplicas, desactivar este SETTING tendrá efectos negativos.
 </Note>
 
-<div id="prefer_warmed_unmerged_parts_seconds">
-  ## prefer_warmed_unmerged_parts_seconds
-</div>
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

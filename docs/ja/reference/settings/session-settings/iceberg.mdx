@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="iceberg_delete_data_on_drop">
-  ## iceberg_delete_data_on_drop
-</div>
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,25 +22,35 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 drop 時に Iceberg のすべてのファイルを削除するかどうか。
 
-<div id="iceberg_delete_manifest_decode_concurrency">
-  ## iceberg_delete_manifest_decode_concurrency
-</div>
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "従来はハードコードされていた、Iceberg データマニフェストのデコードタスクとクエリの間のキュー容量に対する新しい設定。"}]}]} />
+
+Iceberg データマニフェストのデコードタスクとクエリの間のキュー容量を、データファイルエントリ数で指定します。
+
+キューが満杯になり、クエリ側が消費していない場合、デコードタスクは一時停止します。そのため、この設定は先読み量の上限にもなります。
+
+ゼロより大きい値を指定する必要があります。
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**別名**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "最初の行を読み取る前に同時にデコードする Iceberg 削除マニフェストファイル数の上限を指定する新しい設定。26.8 より前は、一度に 1 つのマニフェストをデコードしつつ、次のマニフェストの fetch をすでに開始していました。そのため、従来の動作に最も近い値は `2` です。従来は、最初の行が返されるまでのクリティカルパスに、両方のオブジェクトストレージ往復の合計時間が含まれていました。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "削除マニフェストとデータマニフェストのいずれについても、Iceberg のマニフェストファイルを同時実行でデコードする数を制限する新しい設定です。`iceberg_delete_manifest_decode_concurrency`（別名として維持）を置き換えます。`2` は 26.9 より前のデータパスにほぼ相当します。当時は次のマニフェストの fetch を転送中のままにしつつ、マニフェストを 1 つずつデコードしていました。そのため `compatibility` が 26.8 以下の場合、削除マニフェストのデコードもリリース時の既定値 4 ではなく 2 で実行され、削除デコードの並列性が多少犠牲になる代わりに、以前のデータパスにおけるメモリ使用量の範囲が維持されます。"}]}]} />
 
-データファイルを読み取る前のクエリ実行中に、同時にデコードする Iceberg 削除マニフェストファイルの最大数。
+テーブルの読み取り中に同時実行でデコードされる Iceberg マニフェストファイルの最大数です。
 
-データファイルを読み取る前にすべての削除マニフェストをデコードする必要があるため、この処理は最初の行が返されるまでのクリティカルパスに含まれます。一度に複数をデコードすることで、オブジェクトストレージへの往復と行ごとのプルーニング処理を並行して実行できます。
+削除マニフェストは、データファイルが 1 つでも読み取られる前にすべてデコードされます。データマニフェストは、クエリ対象のデータファイル一覧が生成される間にデコードされ、クエリがデコード済みのエントリを消費するのに合わせて新たなものがデコードされます。複数のマニフェストを同時にデコードすることで、object storage へのラウンドトリップとエントリごとの pruning 処理を重ね合わせることができます。
 
-Iceberg メタデータファイルの cache が無効または満杯の場合、値を大きくするとクエリ初期化時のピークメモリ使用量が増加します。処理中の各マニフェストが、それぞれデコード済みの内容を保持するためです。
+Iceberg metadata files cache が無効、または満杯の場合、転送中の各マニフェストがそれぞれデコード済みの内容を保持するため、値を大きくするとピークメモリが増加します。
 
-ゼロより大きい値を指定する必要があります。`1` では、マニフェストを一度に 1 つずつデコードします。
+ゼロより大きい値である必要があります。`1` の場合はマニフェストを 1 つずつデコードします。
 
-<div id="iceberg_manifest_min_count_to_compact">
-  ## iceberg_manifest_min_count_to_compact
-</div>
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -54,9 +62,7 @@ OPTIMIZE TABLE ... MANIFEST によるマニフェストのみの コンパクシ
 現在のマニフェストファイル数がこのしきい値以下の場合、コンパクション はスキップされます。
 allow&#95;experimental&#95;iceberg&#95;compaction を有効にする必要があります。
 
-<div id="iceberg_max_number_datafiles_to_compact">
-  ## iceberg_max_number_datafiles_to_compact
-</div>
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,9 +70,7 @@ allow&#95;experimental&#95;iceberg&#95;compaction を有効にする必要があ
 
 Iceberg における コンパクション data files のしきい値。
 
-<div id="iceberg_orphan_files_older_than_seconds">
-  ## iceberg_orphan_files_older_than_seconds
-</div>
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -76,9 +80,7 @@ Iceberg における コンパクション data files のしきい値。
 
 Icebergテーブルで孤立ファイルを削除する際の、デフォルトの経過時間しきい値 (秒) です。これより新しいファイルは孤立ファイルと見なされません。`remove_orphan_files()` プロシージャ呼び出しで `older_than` 引数が省略された場合に使用されます。デフォルトは259200 (3日) です。
 
-<div id="iceberg_snapshot_id">
-  ## iceberg_snapshot_id
-</div>
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -86,9 +88,7 @@ Icebergテーブルで孤立ファイルを削除する際の、デフォルト�
 
 特定のスナップショット ID を使用して Iceberg テーブルをクエリします。
 
-<div id="iceberg_timestamp_ms">
-  ## iceberg_timestamp_ms
-</div>
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

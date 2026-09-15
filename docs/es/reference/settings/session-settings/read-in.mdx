@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="read_in_order_two_level_merge_threshold">
-  ## read_in_order_two_level_merge_threshold
-</div>
+## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Número mínimo de partes que se deben leer para ejecutar el paso de fusión preliminar durante la lectura multihilo en el orden de la clave primaria.
 
-<div id="read_in_order_use_buffering">
-  ## read_in_order_use_buffering
-</div>
+## read_in_order_use_buffering {#read_in_order_use_buffering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -31,9 +27,7 @@ Número mínimo de partes que se deben leer para ejecutar el paso de fusión pre
 
 Usa búfer antes de fusionar al leer en orden de la clave primaria. Aumenta el paralelismo de la ejecución de consultas
 
-<div id="read_in_order_use_virtual_row">
-  ## read_in_order_use_virtual_row
-</div>
+## read_in_order_use_virtual_row {#read_in_order_use_virtual_row}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,9 +35,7 @@ Usa búfer antes de fusionar al leer en orden de la clave primaria. Aumenta el p
 
 Usa una fila virtual al leer siguiendo el orden de la clave primaria o de su función monótona. Resulta útil al buscar en múltiples partes, ya que solo se leen las partes que pueden contribuir realmente al resultado, además de una ventana de lectura anticipada limitada de como máximo `max_threads` partes que mantiene las lecturas en paralelo.
 
-<div id="read_in_order_use_virtual_row_per_block">
-  ## read_in_order_use_virtual_row_per_block
-</div>
+## read_in_order_use_virtual_row_per_block {#read_in_order_use_virtual_row_per_block}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

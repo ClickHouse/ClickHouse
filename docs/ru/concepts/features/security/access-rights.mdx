@@ -37,9 +37,7 @@ ClickHouse поддерживает управление доступом на �
 
 Чтобы увидеть всех пользователей, роли, профили и т. д., а также все назначенные им привилегии, используйте оператор [`SHOW ACCESS`](/ru/reference/statements/show#show-access).
 
-<div id="access-control-usage">
-  ## Обзор
-</div>
+## Обзор {#access-control-usage}
 
 По умолчанию сервер ClickHouse предоставляет учётную запись `default`, для которой нельзя использовать систему управления доступом и учётными записями на основе SQL, но при этом у неё есть все права и разрешения. Учётная запись `default` используется во всех случаях, когда имя пользователя не указано, например при входе из клиента или в распределённых запросах. При обработке распределённых запросов учётная запись `default` используется, если в конфигурации сервера или кластера не указаны свойства [user and password](/ru/reference/engines/table-engines/special/distributed).
 
@@ -49,17 +47,13 @@ ClickHouse поддерживает управление доступом на �
 2. Войдите в учётную запись `default` и создайте всех необходимых пользователей. Не забудьте создать учётную запись администратора (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
 3. [Ограничьте разрешения](/ru/concepts/features/configuration/settings/permissions-for-queries) для пользователя `default` и отключите для него систему управления доступом и учётными записями на основе SQL.
 
-<div id="access-control-properties">
-  ### Свойства текущего решения
-</div>
+### Свойства текущего решения {#access-control-properties}
 
 * Вы можете выдавать разрешения на базы данных и таблицы, даже если они не существуют.
 * Если таблица удалена, все привилегии, связанные с этой таблицей, не отзываются. Это означает, что даже если позже вы создадите новую таблицу с тем же именем, все привилегии останутся действительными. Чтобы отозвать привилегии, связанные с удалённой таблицей, нужно выполнить, например, запрос `REVOKE ALL PRIVILEGES ON db.table FROM ALL`.
 * Для привилегий нет настроек времени действия.
 
-<div id="user-account-management">
-  ### Учетная запись пользователя
-</div>
+### Учетная запись пользователя {#user-account-management}
 
 Учетная запись пользователя — это объект управления доступом, который позволяет аутентифицировать пользователя в ClickHouse. Учетная запись пользователя содержит:
 
@@ -80,9 +74,7 @@ ClickHouse поддерживает управление доступом на �
 * [SHOW CREATE USER](/ru/reference/statements/show#show-create-user)
 * [SHOW USERS](/ru/reference/statements/show#show-users)
 
-<div id="access-control-settings-applying">
-  ### Применение настроек
-</div>
+### Применение настроек {#access-control-settings-applying}
 
 Настройки можно задавать на разных уровнях: для учетной записи пользователя, в назначенных ей ролях и в профилях настроек. При входе пользователя в систему, если настройка задана для разных объектов управления доступом, ее значение и constraints применяются следующим образом (от более высокого приоритета к более низкому):
 
@@ -91,9 +83,7 @@ ClickHouse поддерживает управление доступом на �
 3. Настройки из профилей настроек, назначенных пользователю или его ролям по умолчанию. Если настройка задана в нескольких профилях, порядок ее применения не определен.
 4. Настройки, применяемые ко всему server по умолчанию или из [профиля по умолчанию](/ru/reference/settings/server-settings/settings/default#default_profile).
 
-<div id="role-management">
-  ### Роль
-</div>
+### Роль {#role-management}
 
 Роль — это контейнер для сущностей доступа, которые можно предоставить учётной записи пользователя.
 
@@ -115,9 +105,7 @@ ClickHouse поддерживает управление доступом на �
 
 Привилегии можно предоставить роли с помощью запроса [GRANT](/ru/reference/statements/grant). Чтобы отозвать привилегии у роли, ClickHouse предоставляет запрос [REVOKE](/ru/reference/statements/revoke).
 
-<div id="row-policy-management">
-  #### ROW POLICY
-</div>
+#### ROW POLICY {#row-policy-management}
 
 ROW POLICY — это фильтр, определяющий, какие строки доступны пользователю или роли. ROW POLICY содержит фильтры для одной конкретной таблицы, а также список ролей и/или пользователей, к которым должна применяться эта ROW POLICY.
 
@@ -135,9 +123,7 @@ ROW POLICY применяется, когда данные таблицы чит
 * [SHOW CREATE ROW POLICY](/ru/reference/statements/show#show-create-row-policy)
 * [SHOW POLICIES](/ru/reference/statements/show#show-policies)
 
-<div id="settings-profiles-management">
-  ### Профиль настроек
-</div>
+### Профиль настроек {#settings-profiles-management}
 
 Профиль настроек — это набор [настроек](/ru/reference/settings/index). Профиль настроек содержит настройки и ограничения, а также список ролей и/или пользователей, для которых применяется этот профиль.
 
@@ -149,9 +135,7 @@ ROW POLICY применяется, когда данные таблицы чит
 * [SHOW CREATE SETTINGS PROFILE](/ru/reference/statements/show#show-create-settings-profile)
 * [SHOW PROFILES](/ru/reference/statements/show#show-profiles)
 
-<div id="quotas-management">
-  ### Квота
-</div>
+### Квота {#quotas-management}
 
 Квота ограничивает использование ресурсов. См. [Квоты](/ru/concepts/features/configuration/server-config/quotas).
 
@@ -166,9 +150,7 @@ ROW POLICY применяется, когда данные таблицы чит
 * [SHOW QUOTA](/ru/reference/statements/show#show-quota)
 * [SHOW QUOTAS](/ru/reference/statements/show#show-quotas)
 
-<div id="enabling-access-control">
-  ### Включение системы управления доступом и учётными записями на основе SQL
-</div>
+### Включение системы управления доступом и учётными записями на основе SQL {#enabling-access-control}
 
 * Настройте каталог для хранения конфигурации.
 
@@ -176,11 +158,18 @@ ROW POLICY применяется, когда данные таблицы чит
 
 * Включите систему управления доступом и учётными записями на основе SQL как минимум для одной учётной записи пользователя.
 
-  По умолчанию система управления доступом и учётными записями на основе SQL отключена для всех пользователей. Необходимо настроить как минимум одного пользователя в файле конфигурации `users.xml` и установить для настроек [`access_management`](/ru/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` и `show_named_collections_secrets` значение 1.
+  Файл конфигурации `users.xml`, поставляемый вместе с ClickHouse, включает систему управления доступом и учётными записями на основе SQL для пользователя `default`, устанавливая значение 1 для настроек [`access_management`](/ru/concepts/features/configuration/settings/settings-users#access_management-user-setting) и [`named_collection_control`](/ru/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting). Для всех остальных пользователей обе настройки по умолчанию имеют значение 0, поэтому их необходимо задавать явно.
 
-<div id="defining-sql-users-and-roles">
-  ## Определение SQL-пользователей и ролей
-</div>
+  Настройка [`show_named_collections_secrets`](/ru/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) по умолчанию имеет значение 0 даже для пользователя `default`, поскольку возможность управлять named collection не означает возможности прочитать уже сохранённые в них учётные данные. Пользователь может предоставлять только те привилегии, которыми обладает сам, поэтому, пока эта настройка равна 0, пользователь не имеет полного набора привилегий, и запрос вида `GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION` будет отклонён:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  Установите все три настройки в 1, чтобы сделать пользователя полноценным администратором.
+
+## Определение SQL-пользователей и ролей {#defining-sql-users-and-roles}
 
 <Tip>
   Если вы работаете в ClickHouse Cloud, см. [Управление доступом в Cloud](/ru/products/cloud/reference/security/console-roles).
@@ -188,17 +177,19 @@ ROW POLICY применяется, когда данные таблицы чит
 
 В этой статье рассматриваются основы определения SQL-пользователей и ролей, а также применения этих привилегий и разрешений к базам данных, таблицам, строкам и столбцам.
 
-<div id="enabling-sql-user-mode">
-  ### Включение режима SQL-пользователей
-</div>
+### Включение режима SQL-пользователей {#enabling-sql-user-mode}
 
 1. Включите режим SQL-пользователей в файле `users.xml` в секции пользователя `<default>`:
+
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <show_named_collections>1</show_named_collections>
+   <!-- Необходимо, чтобы сделать пользователя полноценным администратором,
+        иначе приведенная ниже команда `GRANT ALL ... WITH GRANT OPTION` будет отклонена. -->
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
+
+   Первые две настройки уже включены для пользователя `default` в файле `users.xml`, который поставляется вместе с ClickHouse; параметр `show_named_collections_secrets` там закомментирован, и его необходимо раскомментировать.
 
 <Note>
   Пользователь `default` — единственный пользователь, который создается при новой установке, и именно эта учетная запись по умолчанию используется для межузлового взаимодействия.
@@ -213,9 +204,7 @@ ROW POLICY применяется, когда данные таблицы чит
    clickhouse-client --user default --password <password>
    ```
 
-<div id="defining-users">
-  ### Создание пользователей
-</div>
+### Создание пользователей {#defining-users}
 
 1. Создайте учетную запись администратора SQL:
    ```sql
@@ -226,9 +215,7 @@ ROW POLICY применяется, когда данные таблицы чит
    GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
    ```
 
-<div id="alter-permissions">
-  ## Разрешения ALTER
-</div>
+## Разрешения ALTER {#alter-permissions}
 
 Эта статья поможет вам лучше понять, как задавать разрешения и как они работают при использовании команд `ALTER` привилегированными пользователями.
 

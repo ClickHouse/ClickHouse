@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="input_format_allow_errors_num">
-  ## input_format_allow_errors_num
-</div>
+## input_format_allow_errors_num {#input_format_allow_errors_num}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -29,9 +27,7 @@ Si se produce un error al leer filas, pero el contador de errores sigue siendo i
 
 Si se superan tanto `input_format_allow_errors_num` como `input_format_allow_errors_ratio`, ClickHouse lanza una excepción.
 
-<div id="input_format_allow_errors_ratio">
-  ## input_format_allow_errors_ratio
-</div>
+## input_format_allow_errors_ratio {#input_format_allow_errors_ratio}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -46,9 +42,7 @@ Si se produce un error al leer filas, pero el contador de errores sigue siendo i
 
 Si se superan tanto `input_format_allow_errors_num` como `input_format_allow_errors_ratio`, ClickHouse lanza una excepción.
 
-<div id="input_format_allow_seeks">
-  ## input_format_allow_seeks
-</div>
+## input_format_allow_seeks {#input_format_allow_seeks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +53,7 @@ Cuando está deshabilitado, o si el origen no admite reposicionamientos (por eje
 algunos lectores pueden recurrir a cargar el archivo completo en memoria.
 Habilitado de forma predeterminada.
 
-<div id="input_format_arrow_allow_missing_columns">
-  ## input_format_arrow_allow_missing_columns
-</div>
+## input_format_arrow_allow_missing_columns {#input_format_arrow_allow_missing_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -69,41 +61,31 @@ Habilitado de forma predeterminada.
 
 Permite columnas ausentes al leer formatos de entrada Arrow
 
-<div id="input_format_arrow_case_insensitive_column_matching">
-  ## input_format_arrow_case_insensitive_column_matching
-</div>
+## input_format_arrow_case_insensitive_column_matching {#input_format_arrow_case_insensitive_column_matching}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 No distingue entre mayúsculas y minúsculas al hacer coincidir las columnas de Arrow con las columnas de CH.
 
-<div id="input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference">
-  ## input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference
-</div>
+## input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference {#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omitir columnas con tipos no compatibles durante la inferencia de esquema para el formato Arrow
 
-<div id="input_format_avro_allow_missing_fields">
-  ## input_format_avro_allow_missing_fields
-</div>
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Para el formato Avro/AvroConfluent: cuando no se encuentra un campo en el esquema, use el valor predeterminado en lugar de generar un error
 
-<div id="input_format_avro_null_as_default">
-  ## input_format_avro_null_as_default
-</div>
+## input_format_avro_null_as_default {#input_format_avro_null_as_default}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Para el formato Avro/AvroConfluent: insertar el valor predeterminado en caso de NULL y columna no Nullable
 
-<div id="input_format_binary_decode_types_in_binary_format">
-  ## input_format_binary_decode_types_in_binary_format
-</div>
+## input_format_binary_decode_types_in_binary_format {#input_format_binary_decode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -111,9 +93,7 @@ Para el formato Avro/AvroConfluent: insertar el valor predeterminado en caso de 
 
 Leer los tipos de datos en formato binario en lugar de los nombres de tipo en el formato de entrada RowBinaryWithNamesAndTypes
 
-<div id="input_format_binary_max_type_complexity">
-  ## input_format_binary_max_type_complexity
-</div>
+## input_format_binary_max_type_complexity {#input_format_binary_max_type_complexity}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -121,9 +101,7 @@ Leer los tipos de datos en formato binario en lugar de los nombres de tipo en el
 
 Número máximo de nodos de tipo al decodificar tipos binarios (no la profundidad, sino la cantidad total). `Map(String, UInt32)` = 3 nodos. Protege frente a entradas maliciosas. 0 = ilimitado.
 
-<div id="input_format_binary_read_json_as_string">
-  ## input_format_binary_read_json_as_string
-</div>
+## input_format_binary_read_json_as_string {#input_format_binary_read_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -131,25 +109,19 @@ Número máximo de nodos de tipo al decodificar tipos binarios (no la profundida
 
 Lee los valores del tipo de dato [JSON](/es/reference/data-types/newjson) como valores [String](/es/reference/data-types/string) JSON en el formato de entrada RowBinary.
 
-<div id="input_format_bson_skip_fields_with_unsupported_types_in_schema_inference">
-  ## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference
-</div>
+## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference {#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omite los campos con tipos no compatibles durante la inferencia de esquema para el formato BSON.
 
-<div id="input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference">
-  ## input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference
-</div>
+## input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference {#input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omite las columnas con tipos no compatibles durante la inferencia de esquema para el formato CapnProto
 
-<div id="input_format_column_name_matching_mode">
-  ## input_format_column_name_matching_mode
-</div>
+## input_format_column_name_matching_mode {#input_format_column_name_matching_mode}
 
 <SettingsInfoBlock type="InputFormatColumnMatchingCaseSensitivity" default_value="auto" />
 
@@ -162,9 +134,7 @@ Modos compatibles:
   * ignore&#95;case: coincidencia no sensible a mayúsculas y minúsculas
   * auto: primero intenta hacer coincidir de forma sensible a mayúsculas y minúsculas; si falla, intenta hacerlo de forma no sensible a mayúsculas y minúsculas.
 
-<div id="input_format_connection_handling">
-  ## input_format_connection_handling
-</div>
+## input_format_connection_handling {#input_format_connection_handling}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -176,41 +146,31 @@ Cuando esta opción está habilitada, si la conexión se cierra de forma inesper
   Al habilitar esta opción, se desactiva el análisis en paralelo y la deduplicación deja de ser posible
 </Note>
 
-<div id="input_format_csv_allow_cr_end_of_line">
-  ## input_format_csv_allow_cr_end_of_line
-</div>
+## input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Si se establece como true, se permitirá \r al final de la línea sin que esté seguido de
+Si se establece como true, se permitirá \r al final de la línea sin que esté seguido de \n
 
-<div id="input_format_csv_allow_variable_number_of_columns">
-  ## input_format_csv_allow_variable_number_of_columns
-</div>
+## input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignora las columnas adicionales en la entrada CSV (si el archivo tiene más columnas de las previstas) y trata los campos que faltan en la entrada CSV como valores predeterminados
 
-<div id="input_format_csv_allow_whitespace_or_tab_as_delimiter">
-  ## input_format_csv_allow_whitespace_or_tab_as_delimiter
-</div>
+## input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite usar espacios y tabuladores (\t) como delimitador de campos en las cadenas CSV
 
-<div id="input_format_csv_arrays_as_nested_csv">
-  ## input_format_csv_arrays_as_nested_csv
-</div>
+## input_format_csv_arrays_as_nested_csv {#input_format_csv_arrays_as_nested_csv}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Al leer Array desde CSV, se espera que sus elementos se hayan serializado como CSV anidado y luego se hayan colocado en una cadena. Ejemplo: &quot;[&quot;&quot;Hello&quot;&quot;, &quot;&quot;world&quot;&quot;, &quot;&quot;42&quot;&quot;&quot;&quot; TV&quot;&quot;]&quot;. Se pueden omitir los corchetes alrededor del array.
 
-<div id="input_format_csv_deserialize_separate_columns_into_tuple">
-  ## input_format_csv_deserialize_separate_columns_into_tuple
-</div>
+## input_format_csv_deserialize_separate_columns_into_tuple {#input_format_csv_deserialize_separate_columns_into_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -222,9 +182,7 @@ Esto se aplica solo a `Tuple` simple. Un `Nullable(Tuple)` siempre se escribe co
 
 Como una `Tuple` simple ocupa entonces un campo por elemento, un `\N` en el campo de un elemento directo de nivel superior corresponde a ese elemento y no a toda la columna, por lo que [input&#95;format&#95;null&#95;as&#95;default](/es/reference/settings/formats/input-format#input_format_null_as_default) se aplica a ese elemento. Una fila que proporciona un único campo para toda la tupla carece de los elementos restantes y se rechaza en lugar de usar el valor predeterminado de la columna. Establezca esta configuración en `0` para volver a leer dicho campo como toda la columna. Un `\N` en el campo de un elemento de una `Tuple` anidada sigue leyéndose como todo ese elemento anidado.
 
-<div id="input_format_csv_detect_header">
-  ## input_format_csv_detect_header
-</div>
+## input_format_csv_detect_header {#input_format_csv_detect_header}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -232,25 +190,19 @@ Como una `Tuple` simple ocupa entonces un campo por elemento, un `\N` en el camp
 
 Detecta automáticamente el encabezado con nombres y tipos en formato CSV
 
-<div id="input_format_csv_empty_as_default">
-  ## input_format_csv_empty_as_default
-</div>
+## input_format_csv_empty_as_default {#input_format_csv_empty_as_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Considera los campos vacíos de la entrada CSV como valores predeterminados.
 
-<div id="input_format_csv_enum_as_number">
-  ## input_format_csv_enum_as_number
-</div>
+## input_format_csv_enum_as_number {#input_format_csv_enum_as_number}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Trata los valores enum insertados en formatos CSV como índices de enum
 
-<div id="input_format_csv_missing_nullable_as_empty_string">
-  ## input_format_csv_missing_nullable_as_empty_string
-</div>
+## input_format_csv_missing_nullable_as_empty_string {#input_format_csv_missing_nullable_as_empty_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -258,33 +210,25 @@ Trata los valores enum insertados en formatos CSV como índices de enum
 
 Controla cómo se lee `Nullable(String)` cuando hay un valor ausente en un CSV. Un valor ausente es un espacio vacío entre/antes/después de comas, no delimitado por comillas. Si esta configuración está habilitada, independientemente del valor de `input_format_csv_empty_as_default`, el valor ausente de `Nullable(String)` se interpretará como una `String` vacía, no como NULL.
 
-<div id="input_format_csv_skip_first_lines">
-  ## input_format_csv_skip_first_lines
-</div>
+## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Omitir el número especificado de líneas al comienzo de los datos en formato CSV
 
-<div id="input_format_csv_skip_trailing_empty_lines">
-  ## input_format_csv_skip_trailing_empty_lines
-</div>
+## input_format_csv_skip_trailing_empty_lines {#input_format_csv_skip_trailing_empty_lines}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omite las líneas vacías finales en formato CSV
 
-<div id="input_format_csv_trim_whitespaces">
-  ## input_format_csv_trim_whitespaces
-</div>
+## input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Elimina los espacios y tabulaciones (\t) al principio y al final de las cadenas CSV
 
-<div id="input_format_csv_try_infer_numbers_from_strings">
-  ## input_format_csv_try_infer_numbers_from_strings
-</div>
+## input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -293,9 +237,7 @@ Puede resultar útil si los datos CSV contienen números UInt64 entre comillas.
 
 Deshabilitado de forma predeterminada.
 
-<div id="input_format_csv_try_infer_strings_from_quoted_tuples">
-  ## input_format_csv_try_infer_strings_from_quoted_tuples
-</div>
+## input_format_csv_try_infer_strings_from_quoted_tuples {#input_format_csv_try_infer_strings_from_quoted_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -303,33 +245,25 @@ Deshabilitado de forma predeterminada.
 
 Interpreta las tuplas entrecomilladas en los datos de entrada como un valor de tipo String.
 
-<div id="input_format_csv_use_best_effort_in_schema_inference">
-  ## input_format_csv_use_best_effort_in_schema_inference
-</div>
+## input_format_csv_use_best_effort_in_schema_inference {#input_format_csv_use_best_effort_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Usa algunos ajustes y heurísticas para inferir el esquema del formato CSV
 
-<div id="input_format_csv_use_default_on_bad_values">
-  ## input_format_csv_use_default_on_bad_values
-</div>
+## input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite establecer el valor predeterminado de una columna cuando falla la deserialización de un campo CSV debido a un valor no válido
 
-<div id="input_format_custom_allow_variable_number_of_columns">
-  ## input_format_custom_allow_variable_number_of_columns
-</div>
+## input_format_custom_allow_variable_number_of_columns {#input_format_custom_allow_variable_number_of_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignorar las columnas adicionales en la entrada CustomSeparated (si el archivo tiene más columnas de las esperadas) y tratar los campos que faltan en la entrada CustomSeparated como valores predeterminados
 
-<div id="input_format_custom_detect_header">
-  ## input_format_custom_detect_header
-</div>
+## input_format_custom_detect_header {#input_format_custom_detect_header}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -337,17 +271,13 @@ Ignorar las columnas adicionales en la entrada CustomSeparated (si el archivo ti
 
 Detecta automáticamente el encabezado con nombres y tipos en el formato CustomSeparated
 
-<div id="input_format_custom_skip_trailing_empty_lines">
-  ## input_format_custom_skip_trailing_empty_lines
-</div>
+## input_format_custom_skip_trailing_empty_lines {#input_format_custom_skip_trailing_empty_lines}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omite las líneas vacías finales en el formato CustomSeparated
 
-<div id="input_format_defaults_for_omitted_fields">
-  ## input_format_defaults_for_omitted_fields
-</div>
+## input_format_defaults_for_omitted_fields {#input_format_defaults_for_omitted_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -364,9 +294,7 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-<div id="input_format_force_null_for_omitted_fields">
-  ## input_format_force_null_for_omitted_fields
-</div>
+## input_format_force_null_for_omitted_fields {#input_format_force_null_for_omitted_fields}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -374,9 +302,7 @@ Valores posibles:
 
 Forzar la inicialización de los campos omitidos con valores NULL
 
-<div id="input_format_geojson_unsupported_geometry_handling">
-  ## input_format_geojson_unsupported_geometry_handling
-</div>
+## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
@@ -391,9 +317,7 @@ Posibles valores:
 
 Esto solo se aplica cuando la columna `geometry` está materializada. Cuando no es una columna de salida solicitada, esa geometría se valida para comprobar que está bien formada, pero no activa este tratamiento.
 
-<div id="input_format_hive_text_allow_variable_number_of_columns">
-  ## input_format_hive_text_allow_variable_number_of_columns
-</div>
+## input_format_hive_text_allow_variable_number_of_columns {#input_format_hive_text_allow_variable_number_of_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -401,33 +325,25 @@ Esto solo se aplica cuando la columna `geometry` está materializada. Cuando no 
 
 Ignora las columnas adicionales en la entrada de Hive Text (si el archivo tiene más columnas de las esperadas) y trata los campos que faltan en la entrada de Hive Text como valores predeterminados
 
-<div id="input_format_hive_text_collection_items_delimiter">
-  ## input_format_hive_text_collection_items_delimiter
-</div>
+## input_format_hive_text_collection_items_delimiter {#input_format_hive_text_collection_items_delimiter}
 
 <SettingsInfoBlock type="Char" default_value="" />
 
 Delimitador entre los elementos de una colección (Array o Map) en Hive Text File
 
-<div id="input_format_hive_text_fields_delimiter">
-  ## input_format_hive_text_fields_delimiter
-</div>
+## input_format_hive_text_fields_delimiter {#input_format_hive_text_fields_delimiter}
 
 <SettingsInfoBlock type="Char" default_value="" />
 
 Delimitador entre los campos de Hive Text File
 
-<div id="input_format_hive_text_map_keys_delimiter">
-  ## input_format_hive_text_map_keys_delimiter
-</div>
+## input_format_hive_text_map_keys_delimiter {#input_format_hive_text_map_keys_delimiter}
 
 <SettingsInfoBlock type="Char" default_value="" />
 
 Delimitador entre cada par clave-valor de un mapa en Hive Text File
 
-<div id="input_format_import_nested_json">
-  ## input_format_import_nested_json
-</div>
+## input_format_import_nested_json {#input_format_import_nested_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -446,9 +362,7 @@ Consulte también:
 
 * [Uso de estructuras Nested](/es/guides/clickhouse/data-formats/json/formats#accessing-nested-json-objects) con el formato `JSONEachRow`.
 
-<div id="input_format_ipv4_default_on_conversion_error">
-  ## input_format_ipv4_default_on_conversion_error
-</div>
+## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -456,9 +370,7 @@ La deserialización de IPv4 usará valores predeterminados en lugar de lanzar un
 
 Deshabilitado de forma predeterminada.
 
-<div id="input_format_ipv6_default_on_conversion_error">
-  ## input_format_ipv6_default_on_conversion_error
-</div>
+## input_format_ipv6_default_on_conversion_error {#input_format_ipv6_default_on_conversion_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -466,9 +378,7 @@ La deserialización de IPV6 usará valores predeterminados en lugar de generar u
 
 Desactivado de forma predeterminada.
 
-<div id="input_format_json_compact_allow_variable_number_of_columns">
-  ## input_format_json_compact_allow_variable_number_of_columns
-</div>
+## input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -477,9 +387,7 @@ Ignora las columnas adicionales en las filas que tienen más columnas de las esp
 
 Deshabilitado de forma predeterminada.
 
-<div id="input_format_json_defaults_for_missing_elements_in_named_tuple">
-  ## input_format_json_defaults_for_missing_elements_in_named_tuple
-</div>
+## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -490,9 +398,7 @@ Esta configuración solo funciona cuando está habilitada la configuración `inp
 
 Habilitada de forma predeterminada.
 
-<div id="input_format_json_empty_as_default">
-  ## input_format_json_empty_as_default
-</div>
+## input_format_json_empty_as_default {#input_format_json_empty_as_default}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -505,9 +411,7 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-<div id="input_format_json_ignore_unknown_keys_in_named_tuple">
-  ## input_format_json_ignore_unknown_keys_in_named_tuple
-</div>
+## input_format_json_ignore_unknown_keys_in_named_tuple {#input_format_json_ignore_unknown_keys_in_named_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -517,9 +421,7 @@ Ignora las claves desconocidas en los objetos JSON para las tuplas con nombre.
 
 Habilitado de forma predeterminada.
 
-<div id="input_format_json_ignore_unnecessary_fields">
-  ## input_format_json_ignore_unnecessary_fields
-</div>
+## input_format_json_ignore_unnecessary_fields {#input_format_json_ignore_unnecessary_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -527,9 +429,7 @@ Habilitado de forma predeterminada.
 
 Ignora los campos innecesarios y no los analiza. Al habilitar esta opción, es posible que no se generen excepciones en cadenas JSON con formato no válido o con campos duplicados
 
-<div id="input_format_json_infer_array_of_dynamic_from_array_of_different_types">
-  ## input_format_json_infer_array_of_dynamic_from_array_of_different_types
-</div>
+## input_format_json_infer_array_of_dynamic_from_array_of_different_types {#input_format_json_infer_array_of_dynamic_from_array_of_different_types}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -563,9 +463,7 @@ DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
 
 Habilitado de forma predeterminada.
 
-<div id="input_format_json_infer_incomplete_types_as_strings">
-  ## input_format_json_infer_incomplete_types_as_strings
-</div>
+## input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -597,9 +495,7 @@ Resultado:
 
 Habilitado de forma predeterminada.
 
-<div id="input_format_json_map_as_array_of_tuples">
-  ## input_format_json_map_as_array_of_tuples
-</div>
+## input_format_json_map_as_array_of_tuples {#input_format_json_map_as_array_of_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -609,9 +505,7 @@ Deserializa las columnas Map como arrays JSON de tuplas.
 
 Desactivado de forma predeterminada.
 
-<div id="input_format_json_max_depth">
-  ## input_format_json_max_depth
-</div>
+## input_format_json_max_depth {#input_format_json_max_depth}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -619,9 +513,7 @@ Desactivado de forma predeterminada.
 
 Profundidad máxima de un campo en JSON. No es un límite estricto y no es necesario aplicarlo con exactitud.
 
-<div id="input_format_json_max_object_size">
-  ## input_format_json_max_object_size
-</div>
+## input_format_json_max_object_size {#input_format_json_max_object_size}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -629,9 +521,7 @@ Profundidad máxima de un campo en JSON. No es un límite estricto y no es neces
 
 Tamaño máximo permitido de un único objeto JSON, en bytes. Los objetos que superen este límite se rechazan, ya que probablemente estén malformados. Esto evita el agotamiento de memoria cuando se analiza un documento JSON malformado como un único objeto. Se aplica el mismo límite tanto en las rutas de análisis paralelas como en las no paralelas. Establézcalo en 0 para desactivar la comprobación.
 
-<div id="input_format_json_max_string_column_growth_step">
-  ## input_format_json_max_string_column_growth_step
-</div>
+## input_format_json_max_string_column_growth_step {#input_format_json_max_string_column_growth_step}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -639,9 +529,7 @@ Tamaño máximo permitido de un único objeto JSON, en bytes. Los objetos que su
 
 Al crear los búferes String internos de la columna JSON al analizar JSON desde una cadena, limite el crecimiento en potencias de dos a esta cantidad de bytes: cuando el tamaño reservado alcance este valor, el búfer crecerá en incrementos de este tamaño en lugar de duplicarse. Esto acota la sobreasignación en columnas JSON grandes. 0 significa ilimitado (solo duplicación).
 
-<div id="input_format_json_named_tuples_as_objects">
-  ## input_format_json_named_tuples_as_objects
-</div>
+## input_format_json_named_tuples_as_objects {#input_format_json_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -649,9 +537,7 @@ Interpreta las columnas de tuplas con nombre como objetos JSON.
 
 Activado de forma predeterminada.
 
-<div id="input_format_json_read_arrays_as_strings">
-  ## input_format_json_read_arrays_as_strings
-</div>
+## input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -676,9 +562,7 @@ Resultado:
 
 Activado por defecto.
 
-<div id="input_format_json_read_bools_as_numbers">
-  ## input_format_json_read_bools_as_numbers
-</div>
+## input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -686,9 +570,7 @@ Permite interpretar valores booleanos como números en formatos de entrada JSON.
 
 Habilitado de forma predeterminada.
 
-<div id="input_format_json_read_bools_as_strings">
-  ## input_format_json_read_bools_as_strings
-</div>
+## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -698,9 +580,7 @@ Permite interpretar booleanos como cadenas en formatos de entrada JSON.
 
 Habilitado de forma predeterminada.
 
-<div id="input_format_json_read_numbers_as_strings">
-  ## input_format_json_read_numbers_as_strings
-</div>
+## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -710,9 +590,7 @@ Permite interpretar números como cadenas en formatos de entrada JSON.
 
 Está habilitado de forma predeterminada.
 
-<div id="input_format_json_read_objects_as_strings">
-  ## input_format_json_read_objects_as_strings
-</div>
+## input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -739,9 +617,7 @@ Resultado:
 
 Activado de forma predeterminada.
 
-<div id="input_format_json_throw_on_bad_escape_sequence">
-  ## input_format_json_throw_on_bad_escape_sequence
-</div>
+## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -751,9 +627,7 @@ Genera una excepción si una cadena JSON contiene una secuencia de escape no vá
 
 Habilitado de forma predeterminada.
 
-<div id="input_format_json_try_infer_named_tuples_from_objects">
-  ## input_format_json_try_infer_named_tuples_from_objects
-</div>
+## input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -779,9 +653,7 @@ Resultado:
 
 Habilitado por defecto.
 
-<div id="input_format_json_try_infer_numbers_from_strings">
-  ## input_format_json_try_infer_numbers_from_strings
-</div>
+## input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -792,9 +664,7 @@ Puede resultar útil si los datos JSON contienen números UInt64 entre comillas.
 
 Deshabilitado de forma predeterminada.
 
-<div id="input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects">
-  ## input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
-</div>
+## input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects {#input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -802,9 +672,7 @@ Deshabilitado de forma predeterminada.
 
 Usa el tipo String en lugar de generar una excepción cuando hay rutas ambiguas en objetos JSON durante la inferencia de tuplas con nombre
 
-<div id="input_format_json_validate_types_from_metadata">
-  ## input_format_json_validate_types_from_metadata
-</div>
+## input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -813,9 +681,7 @@ los tipos indicados en los metadatos de los datos de entrada se compararán con 
 
 Está habilitado de forma predeterminada.
 
-<div id="input_format_max_block_size_bytes">
-  ## input_format_max_block_size_bytes
-</div>
+## input_format_max_block_size_bytes {#input_format_max_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -824,9 +690,7 @@ Está habilitado de forma predeterminada.
 Limita, en bytes, el tamaño de los bloques formados durante el análisis de datos en los formatos de entrada. Se utiliza en los formatos de entrada basados en filas cuando el bloque se forma en el lado de ClickHouse.
 0 significa que no hay límite en bytes.
 
-<div id="input_format_max_block_wait_ms">
-  ## input_format_max_block_wait_ms
-</div>
+## input_format_max_block_wait_ms {#input_format_max_block_wait_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -857,47 +721,35 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
       --min_insert_block_size_bytes 0
 ```
 
-<div id="input_format_max_bytes_to_read_for_schema_inference">
-  ## input_format_max_bytes_to_read_for_schema_inference
-</div>
+## input_format_max_bytes_to_read_for_schema_inference {#input_format_max_bytes_to_read_for_schema_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
 
 La cantidad máxima de datos, en bytes, que se leerá para la inferencia automática de esquema.
 
-<div id="input_format_max_rows_to_read_for_schema_inference">
-  ## input_format_max_rows_to_read_for_schema_inference
-</div>
+## input_format_max_rows_to_read_for_schema_inference {#input_format_max_rows_to_read_for_schema_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="25000" />
 
 El número máximo de filas de datos que se pueden leer para la inferencia automática de esquema.
 
-<div id="input_format_msgpack_number_of_columns">
-  ## input_format_msgpack_number_of_columns
-</div>
+## input_format_msgpack_number_of_columns {#input_format_msgpack_number_of_columns}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El número de columnas de los datos MsgPack insertados. Se utiliza para la inferencia automática de esquema a partir de los datos.
 
-<div id="input_format_mysql_dump_map_column_names">
-  ## input_format_mysql_dump_map_column_names
-</div>
+## input_format_mysql_dump_map_column_names {#input_format_mysql_dump_map_column_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Hace coincidir las columnas de la tabla en MySQL dump y las columnas de la tabla de ClickHouse por nombre
 
-<div id="input_format_mysql_dump_table_name">
-  ## input_format_mysql_dump_table_name
-</div>
+## input_format_mysql_dump_table_name {#input_format_mysql_dump_table_name}
 
 Nombre de la tabla del volcado de MySQL de la que se leerán los datos
 
-<div id="input_format_native_allow_types_conversion">
-  ## input_format_native_allow_types_conversion
-</div>
+## input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -905,9 +757,7 @@ Nombre de la tabla del volcado de MySQL de la que se leerán los datos
 
 Permitir la conversión de tipos de datos en el formato de entrada Native
 
-<div id="input_format_native_decode_types_in_binary_format">
-  ## input_format_native_decode_types_in_binary_format
-</div>
+## input_format_native_decode_types_in_binary_format {#input_format_native_decode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -915,9 +765,7 @@ Permitir la conversión de tipos de datos en el formato de entrada Native
 
 Lee los tipos de datos en formato binario en lugar de los nombres de tipo en el formato de entrada Native
 
-<div id="input_format_null_as_default">
-  ## input_format_null_as_default
-</div>
+## input_format_null_as_default {#input_format_null_as_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -935,9 +783,7 @@ Valores posibles:
 * 0 — Insertar `NULL` en una columna no Nullable provoca una excepción.
 * 1 — Los campos `NULL` se inicializan con los valores predeterminados de la columna.
 
-<div id="input_format_orc_allow_missing_columns">
-  ## input_format_orc_allow_missing_columns
-</div>
+## input_format_orc_allow_missing_columns {#input_format_orc_allow_missing_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -945,17 +791,13 @@ Valores posibles:
 
 Permite columnas ausentes al leer formatos de entrada ORC
 
-<div id="input_format_orc_case_insensitive_column_matching">
-  ## input_format_orc_case_insensitive_column_matching
-</div>
+## input_format_orc_case_insensitive_column_matching {#input_format_orc_case_insensitive_column_matching}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 No distingue entre mayúsculas y minúsculas al hacer coincidir las columnas ORC con las columnas de CH.
 
-<div id="input_format_orc_dictionary_as_low_cardinality">
-  ## input_format_orc_dictionary_as_low_cardinality
-</div>
+## input_format_orc_dictionary_as_low_cardinality {#input_format_orc_dictionary_as_low_cardinality}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -963,17 +805,13 @@ No distingue entre mayúsculas y minúsculas al hacer coincidir las columnas ORC
 
 Trata las columnas codificadas con diccionario ORC como columnas LowCardinality al leer archivos ORC.
 
-<div id="input_format_orc_filter_push_down">
-  ## input_format_orc_filter_push_down
-</div>
+## input_format_orc_filter_push_down {#input_format_orc_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Al leer archivos ORC, omite stripes o row groups completos en función de las expresiones WHERE/PREWHERE, las estadísticas mín./máx. o el bloom filter de los metadatos de ORC.
 
-<div id="input_format_orc_reader_time_zone_name">
-  ## input_format_orc_reader_time_zone_name
-</div>
+## input_format_orc_reader_time_zone_name {#input_format_orc_reader_time_zone_name}
 
 <SettingsInfoBlock type="String" default_value="GMT" />
 
@@ -981,25 +819,19 @@ Al leer archivos ORC, omite stripes o row groups completos en función de las ex
 
 El nombre de la zona horaria del lector de filas ORC; la zona horaria predeterminada del lector de filas ORC es GMT.
 
-<div id="input_format_orc_row_batch_size">
-  ## input_format_orc_row_batch_size
-</div>
+## input_format_orc_row_batch_size {#input_format_orc_row_batch_size}
 
 <SettingsInfoBlock type="Int64" default_value="100000" />
 
 Tamaño del lote al leer las stripes de ORC.
 
-<div id="input_format_orc_skip_columns_with_unsupported_types_in_schema_inference">
-  ## input_format_orc_skip_columns_with_unsupported_types_in_schema_inference
-</div>
+## input_format_orc_skip_columns_with_unsupported_types_in_schema_inference {#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omite las columnas con tipos no compatibles durante la inferencia de esquema para el formato ORC
 
-<div id="input_format_parallel_parsing">
-  ## input_format_parallel_parsing
-</div>
+## input_format_parallel_parsing {#input_format_parallel_parsing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1010,9 +842,7 @@ Valores posibles:
 * 1 — Habilitado.
 * 0 — Deshabilitado.
 
-<div id="input_format_parquet_allow_geoparquet_parser">
-  ## input_format_parquet_allow_geoparquet_parser
-</div>
+## input_format_parquet_allow_geoparquet_parser {#input_format_parquet_allow_geoparquet_parser}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1020,9 +850,7 @@ Valores posibles:
 
 Usa el analizador de columnas geo para convertir Array(UInt8) en tipos Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
 
-<div id="input_format_parquet_allow_missing_columns">
-  ## input_format_parquet_allow_missing_columns
-</div>
+## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1030,9 +858,7 @@ Usa el analizador de columnas geo para convertir Array(UInt8) en tipos Point/Mul
 
 Permitir columnas ausentes al leer formatos de entrada Parquet
 
-<div id="input_format_parquet_bloom_filter_push_down">
-  ## input_format_parquet_bloom_filter_push_down
-</div>
+## input_format_parquet_bloom_filter_push_down {#input_format_parquet_bloom_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1040,17 +866,13 @@ Permitir columnas ausentes al leer formatos de entrada Parquet
 
 Al leer archivos Parquet, se omiten grupos de filas completos en función de las expresiones WHERE y del filtro bloom en los metadatos de Parquet.
 
-<div id="input_format_parquet_case_insensitive_column_matching">
-  ## input_format_parquet_case_insensitive_column_matching
-</div>
+## input_format_parquet_case_insensitive_column_matching {#input_format_parquet_case_insensitive_column_matching}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 No distinguir entre mayúsculas y minúsculas al hacer coincidir las columnas de Parquet con las columnas de CH.
 
-<div id="input_format_parquet_dictionary_filter_push_down">
-  ## input_format_parquet_dictionary_filter_push_down
-</div>
+## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -1058,9 +880,7 @@ No distinguir entre mayúsculas y minúsculas al hacer coincidir las columnas de
 
 Al leer archivos Parquet (con el lector v3), omite grupos de filas completos según las expresiones WHERE/PREWHERE y el contenido de las páginas de diccionario cuando todas las páginas de datos de un fragmento de columna están codificadas mediante diccionario. El valor es el tamaño máximo, en bytes, de las páginas de diccionario al que se aplica esta optimización; establézcalo en 0 para deshabilitarla. Esta opción tiene prioridad sobre el filtro Bloom cuando ambos están disponibles.
 
-<div id="input_format_parquet_enable_json_parsing">
-  ## input_format_parquet_enable_json_parsing
-</div>
+## input_format_parquet_enable_json_parsing {#input_format_parquet_enable_json_parsing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1068,9 +888,7 @@ Al leer archivos Parquet (con el lector v3), omite grupos de filas completos seg
 
 Al leer archivos Parquet, interpretar las columnas JSON como columnas JSON de ClickHouse.
 
-<div id="input_format_parquet_enable_row_group_prefetch">
-  ## input_format_parquet_enable_row_group_prefetch
-</div>
+## input_format_parquet_enable_row_group_prefetch {#input_format_parquet_enable_row_group_prefetch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1078,25 +896,19 @@ Al leer archivos Parquet, interpretar las columnas JSON como columnas JSON de Cl
 
 Habilita la precarga de grupos de filas durante el análisis de Parquet. Actualmente, solo el análisis en un solo hilo admite la precarga.
 
-<div id="input_format_parquet_filter_push_down">
-  ## input_format_parquet_filter_push_down
-</div>
+## input_format_parquet_filter_push_down {#input_format_parquet_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Al leer archivos Parquet, se omiten grupos de filas completos según las expresiones WHERE/PREWHERE y las estadísticas mín./máx. en los metadatos de Parquet.
 
-<div id="input_format_parquet_local_file_min_bytes_for_seek">
-  ## input_format_parquet_local_file_min_bytes_for_seek
-</div>
+## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="8192" />
 
 Cantidad mínima de bytes necesaria para que una lectura local (archivo) haga seek, en lugar de leer con ignore, en el formato de entrada Parquet
 
-<div id="input_format_parquet_local_time_as_utc">
-  ## input_format_parquet_local_time_as_utc
-</div>
+## input_format_parquet_local_time_as_utc {#input_format_parquet_local_time_as_utc}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1104,9 +916,7 @@ Cantidad mínima de bytes necesaria para que una lectura local (archivo) haga se
 
 Determina el tipo de dato que usa la inferencia de esquema para los timestamps de Parquet con isAdjustedToUTC=false. Si es true: DateTime64(..., &#39;UTC&#39;); si es false: DateTime64(...). Ninguno de los dos comportamientos es del todo correcto, ya que ClickHouse no tiene un tipo de dato para la hora local según el reloj. Aunque resulte poco intuitivo, &#39;true&#39; probablemente sea la opción menos incorrecta, porque al dar formato al timestamp &#39;UTC&#39; como String se obtiene una representación de la hora local correcta.
 
-<div id="input_format_parquet_max_block_size">
-  ## input_format_parquet_max_block_size
-</div>
+## input_format_parquet_max_block_size {#input_format_parquet_max_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65409" />
 
@@ -1114,9 +924,7 @@ Determina el tipo de dato que usa la inferencia de esquema para los timestamps d
 
 Tamaño máximo del bloque para el lector de Parquet.
 
-<div id="input_format_parquet_memory_high_watermark">
-  ## input_format_parquet_memory_high_watermark
-</div>
+## input_format_parquet_memory_high_watermark {#input_format_parquet_memory_high_watermark}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 
@@ -1124,9 +932,7 @@ Tamaño máximo del bloque para el lector de Parquet.
 
 Límite aproximado de memoria para el lector de Parquet v3. Limita cuántos grupos de filas o columnas pueden leerse en paralelo. Al leer varios archivos en una sola consulta, el límite se aplica al uso total de memoria de todos esos archivos.
 
-<div id="input_format_parquet_memory_low_watermark">
-  ## input_format_parquet_memory_low_watermark
-</div>
+## input_format_parquet_memory_low_watermark {#input_format_parquet_memory_low_watermark}
 
 <SettingsInfoBlock type="UInt64" default_value="2097152" />
 
@@ -1134,9 +940,7 @@ Límite aproximado de memoria para el lector de Parquet v3. Limita cuántos grup
 
 Programa las prelecturas de forma más agresiva si el uso de memoria está por debajo del umbral. Puede ser útil, por ejemplo, si hay muchos filtros bloom pequeños que deben leerse a través de la red.
 
-<div id="input_format_parquet_page_filter_push_down">
-  ## input_format_parquet_page_filter_push_down
-</div>
+## input_format_parquet_page_filter_push_down {#input_format_parquet_page_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1144,9 +948,7 @@ Programa las prelecturas de forma más agresiva si el uso de memoria está por d
 
 Omite páginas usando los valores mín./máx. del índice de columna.
 
-<div id="input_format_parquet_prefer_block_bytes">
-  ## input_format_parquet_prefer_block_bytes
-</div>
+## input_format_parquet_prefer_block_bytes {#input_format_parquet_prefer_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -1154,9 +956,7 @@ Omite páginas usando los valores mín./máx. del índice de columna.
 
 Promedio de bytes por bloque generado por el lector de Parquet
 
-<div id="input_format_parquet_preserve_order">
-  ## input_format_parquet_preserve_order
-</div>
+## input_format_parquet_preserve_order {#input_format_parquet_preserve_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1164,17 +964,13 @@ Promedio de bytes por bloque generado por el lector de Parquet
 
 Evita reordenar las filas al leer archivos Parquet. No se recomienda, ya que el orden de las filas por lo general no está garantizado y otras partes del pipeline de consulta pueden alterarlo. Usa `ORDER BY _row_number` en su lugar.
 
-<div id="input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference">
-  ## input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference
-</div>
+## input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omitir las columnas con tipos no compatibles durante la inferencia del esquema para el formato Parquet
 
-<div id="input_format_parquet_spatial_filter_push_down">
-  ## input_format_parquet_spatial_filter_push_down
-</div>
+## input_format_parquet_spatial_filter_push_down {#input_format_parquet_spatial_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1182,9 +978,7 @@ Omitir las columnas con tipos no compatibles durante la inferencia del esquema p
 
 Al leer archivos GeoParquet, omite grupos de filas completos y, junto con `input_format_parquet_page_filter_push_down`, páginas individuales en función de los predicados espaciales de la cláusula WHERE y de las estadísticas del cuadro delimitador de la geometría (columnas `geospatial_statistics.bbox` o `covering.bbox`) en los metadatos de Parquet.
 
-<div id="input_format_parquet_use_offset_index">
-  ## input_format_parquet_use_offset_index
-</div>
+## input_format_parquet_use_offset_index {#input_format_parquet_use_offset_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1192,9 +986,7 @@ Al leer archivos GeoParquet, omite grupos de filas completos y, junto con `input
 
 Pequeño ajuste en la forma de leer páginas de un archivo Parquet cuando no se usa el filtrado de páginas.
 
-<div id="input_format_parquet_verify_checksums">
-  ## input_format_parquet_verify_checksums
-</div>
+## input_format_parquet_verify_checksums {#input_format_parquet_verify_checksums}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1202,17 +994,13 @@ Pequeño ajuste en la forma de leer páginas de un archivo Parquet cuando no se 
 
 Verifica las sumas de comprobación de las páginas al leer archivos Parquet.
 
-<div id="input_format_protobuf_flatten_google_wrappers">
-  ## input_format_protobuf_flatten_google_wrappers
-</div>
+## input_format_protobuf_flatten_google_wrappers {#input_format_protobuf_flatten_google_wrappers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Habilita el uso de las envolturas de Google para columnas normales no anidadas; por ejemplo, google.protobuf.StringValue &#39;str&#39; para la columna String &#39;str&#39;. En las columnas Nullable, las envolturas vacías se interpretan como valores predeterminados y las ausentes como NULL
 
-<div id="input_format_protobuf_oneof_presence">
-  ## input_format_protobuf_oneof_presence
-</div>
+## input_format_protobuf_oneof_presence {#input_format_protobuf_oneof_presence}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1220,17 +1008,13 @@ Habilita el uso de las envolturas de Google para columnas normales no anidadas; 
 
 Indica qué campo de Protobuf oneof se encontró estableciendo un valor enum en una columna especial
 
-<div id="input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference">
-  ## input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference
-</div>
+## input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference {#input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omitir los campos con tipos no compatibles durante la inferencia de esquema del formato Protobuf
 
-<div id="input_format_read_datetime_number_as_raw_value">
-  ## input_format_read_datetime_number_as_raw_value
-</div>
+## input_format_read_datetime_number_as_raw_value {#input_format_read_datetime_number_as_raw_value}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1255,15 +1039,11 @@ abarca todos los formatos que analizan campos con la regla de escaping `Quoted`:
 `Template`/`CustomSeparated`/`Regexp` configurados con escaping de campos `Quoted`). Los formatos separados por tabulaciones, CSV y otros
 formatos escapados/de texto completo no se ven afectados: en ellos, los números `DateTime64` grandes sin comillas se siguen interpretando como ticks.
 
-<div id="input_format_record_errors_file_path">
-  ## input_format_record_errors_file_path
-</div>
+## input_format_record_errors_file_path {#input_format_record_errors_file_path}
 
 Ruta del archivo que se utiliza para registrar errores al leer formatos de texto (CSV, TSV).
 
-<div id="input_format_skip_unknown_fields">
-  ## input_format_skip_unknown_fields
-</div>
+## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1287,9 +1067,7 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-<div id="input_format_try_infer_dates">
-  ## input_format_try_infer_dates
-</div>
+## input_format_try_infer_dates {#input_format_try_infer_dates}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1297,9 +1075,7 @@ Si está habilitada, ClickHouse intentará inferir el tipo `Date` a partir de ca
 
 Habilitada de forma predeterminada.
 
-<div id="input_format_try_infer_datetimes">
-  ## input_format_try_infer_datetimes
-</div>
+## input_format_try_infer_datetimes {#input_format_try_infer_datetimes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1307,9 +1083,7 @@ Si está habilitado, ClickHouse intentará inferir el tipo `DateTime64` a partir
 
 Habilitado de forma predeterminada.
 
-<div id="input_format_try_infer_datetimes_only_datetime64">
-  ## input_format_try_infer_datetimes_only_datetime64
-</div>
+## input_format_try_infer_datetimes_only_datetime64 {#input_format_try_infer_datetimes_only_datetime64}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1317,9 +1091,7 @@ Habilitado de forma predeterminada.
 
 Cuando input&#95;format&#95;try&#95;infer&#95;datetimes está habilitado, infiere solo tipos DateTime64, no DateTime
 
-<div id="input_format_try_infer_exponent_floats">
-  ## input_format_try_infer_exponent_floats
-</div>
+## input_format_try_infer_exponent_floats {#input_format_try_infer_exponent_floats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1327,9 +1099,7 @@ Cuando input&#95;format&#95;try&#95;infer&#95;datetimes está habilitado, infier
 
 Intenta inferir números de punto flotante en notación exponencial durante la inferencia del esquema en formatos de texto (excepto en JSON, donde los números con exponente siempre se infieren)
 
-<div id="input_format_try_infer_integers">
-  ## input_format_try_infer_integers
-</div>
+## input_format_try_infer_integers {#input_format_try_infer_integers}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1337,9 +1107,7 @@ Si está habilitado, ClickHouse intentará inferir enteros en lugar de números 
 
 Está habilitado de forma predeterminada.
 
-<div id="input_format_try_infer_variants">
-  ## input_format_try_infer_variants
-</div>
+## input_format_try_infer_variants {#input_format_try_infer_variants}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1352,17 +1120,13 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-<div id="input_format_tsv_allow_variable_number_of_columns">
-  ## input_format_tsv_allow_variable_number_of_columns
-</div>
+## input_format_tsv_allow_variable_number_of_columns {#input_format_tsv_allow_variable_number_of_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignora las columnas adicionales en la entrada TSV (si el archivo tiene más columnas de las esperadas) y trata los campos que faltan en la entrada TSV como valores predeterminados.
 
-<div id="input_format_tsv_crlf_end_of_line">
-  ## input_format_tsv_crlf_end_of_line
-</div>
+## input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1370,9 +1134,7 @@ Ignora las columnas adicionales en la entrada TSV (si el archivo tiene más colu
 
 Si se establece en true, la función file leerá el formato TSV con \r\n en lugar de \n.
 
-<div id="input_format_tsv_detect_header">
-  ## input_format_tsv_detect_header
-</div>
+## input_format_tsv_detect_header {#input_format_tsv_detect_header}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1380,73 +1142,55 @@ Si se establece en true, la función file leerá el formato TSV con \r\n en luga
 
 Detecta automáticamente el encabezado con nombres y tipos en formato TSV
 
-<div id="input_format_tsv_empty_as_default">
-  ## input_format_tsv_empty_as_default
-</div>
+## input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Trata los campos vacíos de la entrada TSV como valores predeterminados.
 
-<div id="input_format_tsv_enum_as_number">
-  ## input_format_tsv_enum_as_number
-</div>
+## input_format_tsv_enum_as_number {#input_format_tsv_enum_as_number}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Trata los valores de enum insertados en formatos TSV como índices de enum.
 
-<div id="input_format_tsv_skip_first_lines">
-  ## input_format_tsv_skip_first_lines
-</div>
+## input_format_tsv_skip_first_lines {#input_format_tsv_skip_first_lines}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Omite el número especificado de líneas al principio de los datos en formato TSV
 
-<div id="input_format_tsv_skip_trailing_empty_lines">
-  ## input_format_tsv_skip_trailing_empty_lines
-</div>
+## input_format_tsv_skip_trailing_empty_lines {#input_format_tsv_skip_trailing_empty_lines}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Omitir las líneas vacías al final en formato TSV
 
-<div id="input_format_tsv_use_best_effort_in_schema_inference">
-  ## input_format_tsv_use_best_effort_in_schema_inference
-</div>
+## input_format_tsv_use_best_effort_in_schema_inference {#input_format_tsv_use_best_effort_in_schema_inference}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Utiliza ciertos ajustes y heurísticas para inferir el esquema en el formato TSV
 
-<div id="input_format_values_accurate_types_of_literals">
-  ## input_format_values_accurate_types_of_literals
-</div>
+## input_format_values_accurate_types_of_literals {#input_format_values_accurate_types_of_literals}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Para el formato Values: al analizar e interpretar expresiones con Template, compruebe el tipo real del literal para evitar posibles problemas de desbordamiento y precisión.
 
-<div id="input_format_values_deduce_templates_of_expressions">
-  ## input_format_values_deduce_templates_of_expressions
-</div>
+## input_format_values_deduce_templates_of_expressions {#input_format_values_deduce_templates_of_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Para el formato Values: si el campo no puede analizarse con el analizador de streaming, se ejecuta el analizador de SQL, se deduce la plantilla de la expresión SQL, se intenta analizar todas las filas usando la plantilla y luego se interpreta la expresión para todas las filas.
 
-<div id="input_format_values_interpret_expressions">
-  ## input_format_values_interpret_expressions
-</div>
+## input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Para el formato Values: si el campo no puede analizarse con el analizador de streaming, ejecute el analizador de SQL e intente interpretarlo como una expresión SQL.
 
-<div id="input_format_with_names_use_header">
-  ## input_format_with_names_use_header
-</div>
+## input_format_with_names_use_header {#input_format_with_names_use_header}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1476,9 +1220,7 @@ Valores posibles:
 * 0 — Desactivado.
 * 1 — Activado.
 
-<div id="input_format_with_types_use_header">
-  ## input_format_with_types_use_header
-</div>
+## input_format_with_types_use_header {#input_format_with_types_use_header}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

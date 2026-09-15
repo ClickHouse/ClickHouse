@@ -14,9 +14,25 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشيفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="webassembly_udf_max_fuel">
-  ## webassembly_udf_max_fuel
-</div>
+## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "إعداد جديد يتحكم في نسبة الذاكرة الخطية لمثيل WebAssembly UDF التي يمكن أن يشغلها الإدخال المُسلسَل لاستدعاء واحد، ويتيح أيضًا تقسيم هذا الإدخال ديناميكيًا وفقًا لحجمه المُسلسَل؛ يؤدي ضبط `compatibility` على إصدار أقل من 26.9 إلى تعيينه إلى 0 واستعادة السلوك السابق، حيث كان `webassembly_udf_max_input_block_size = 0` يعني استدعاءً واحدًا لكل كتلة في خط المعالجة."}]}]} />
+
+نسبة الذاكرة الخطية لمثيل WebAssembly UDF التي يمكن أن يشغلها الإدخال المُسلسَل لاستدعاء واحد. يجب ألا تقل عن 0 وألا تزيد على 1؛ تترك القيمة الافتراضية النصف الآخر للبيئة الضيفة لاستخدامه كمجموعة عمل خاصة بها إلى جانب مخزن الإدخال المؤقت.
+
+الهامش المتبقي دون 1 هو ما يجعل التجميع في دفعات آمنًا: إذ تشترك بيانات البيئة الضيفة ومكدسها والمخصّص الخاص بها في تلك الذاكرة، وهي غير مرئية للمضيف. لا تترك نسبة قريبة من 1 شيئًا لها، لذا قد يفشل استدعاء بحجم محسوب بناءً عليها داخل مخصّص البيئة الضيفة.
+
+للقراءة فقط مع `ABI BUFFERED_V1`، ويحدد حجم الاستدعاءات فقط عندما تكون قيمة `webassembly_udf_max_input_block_size` تساوي 0؛ أما حجم الكتلة غير الصفري فيحدّ من عدد الصفوف لكل استدعاء بدلًا من ذلك.
+
+لا تُقسَّم الدفعة إلى أقل من صف واحد مطلقًا، لذا يُمرَّر الصف الذي يتجاوز حجمه المُسلسَل الميزانية بمفرده، بينما يفشل الصف الذي يتجاوز حجم الذاكرة الخطية للوحدة داخل مخصّص البيئة الضيفة.
+
+اضبط القيمة على 0 لترك الإدخال دون تقسيم: تُمرَّر كتلة خط المعالجة كاملةً في استدعاء واحد.
+
+## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
 
 <ExperimentalBadge />
 
@@ -26,9 +42,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 حدّ الوقود لكل عملية تنفيذ لمثيل WebAssembly UDF. تستهلك كل تعليمة في WebAssembly مقدارًا من الوقود. تُوسَّع القيمة بمعامل 1024 قبل تمريرها إلى بيئة التشغيل، لذا فإن `webassembly_udf_max_fuel = 1` يعادل تقريبًا 1024 وحدة وقود. اضبطها على 0 لإلغاء أي حدّ finite. لا ينطبق هذا إلا على الدوال التي تكون فيها القيمة `webassembly_udf_enable_fuel` الخاصة بكل دالة مضبوطة على true، وهو الإعداد الافتراضي.
 
-<div id="webassembly_udf_max_input_block_size">
-  ## webassembly_udf_max_input_block_size
-</div>
+## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
 
 <ExperimentalBadge />
 
@@ -36,11 +50,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد لتقييد حجم block الإدخال لدوال WebAssembly UDF."}]}]} />
 
-الحد الأقصى لعدد الصفوف التي تُمرَّر إلى دالة WebAssembly UDF في block واحد. اضبط القيمة على 0 لمعالجة جميع الصفوف دفعة واحدة.
+الحد الأقصى لعدد الصفوف التي تُمرَّر إلى دالة WebAssembly UDF في استدعاء واحد. القيمة غير الصفرية تحدّ من عدد الصفوف في كل استدعاء وتنطبق على كل ABI.
 
-<div id="webassembly_udf_max_instances">
-  ## webassembly_udf_max_instances
-</div>
+اضبط القيمة على 0 لتحديد حجم الاستدعاءات بحسب إدخالها المُسلسل بدلاً من ذلك. وينطبق ذلك على `ABI BUFFERED_V1` وحده، وهو ABI الوحيد الذي يُسلسل block إدخال كاملاً إلى ذاكرة البيئة الضيفة: إذ تُقسَّم الـ blocks الخاصة به بحيث يبقى إدخال الاستدعاء ضمن حدود `webassembly_udf_input_split_memory_ratio` من الذاكرة الخطية للوحدة. أما `ROW_DIRECT` فيمرّر وسائطه كقيم WebAssembly، و`ASSEMBLYSCRIPT` فيبني object واحداً لكل صف، لذا ليس لدى أيٍّ منهما إدخال مُسلسل يُحدَّد حجم الاستدعاء بحسبه، والقيمة 0 تُبقي كتلة خط المعالجة لديهما كاملة.
+
+## webassembly_udf_max_instances {#webassembly_udf_max_instances}
 
 <ExperimentalBadge />
 
@@ -50,9 +64,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 الحد الأقصى لعدد مثيلات WebAssembly UDF التي يمكن تشغيلها بالتوازي لكل دالة.
 
-<div id="webassembly_udf_max_memory">
-  ## webassembly_udf_max_memory
-</div>
+## webassembly_udf_max_memory {#webassembly_udf_max_memory}
 
 <ExperimentalBadge />
 

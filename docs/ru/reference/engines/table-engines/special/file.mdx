@@ -21,9 +21,7 @@ doc_type: 'reference'
   В настоящее время этот движок недоступен в ClickHouse Cloud; вместо этого используйте [табличную функцию S3](/ru/reference/functions/table-functions/s3).
 </Note>
 
-<div id="usage-in-clickhouse-server">
-  ## Использование в ClickHouse Server
-</div>
+## Использование в ClickHouse Server {#usage-in-clickhouse-server}
 
 ```sql
 File(Format)
@@ -44,9 +42,7 @@ ClickHouse не позволяет указывать путь в файлово
   Будьте осторожны с этой возможностью, поскольку ClickHouse не отслеживает внешние изменения таких файлов. Результат одновременной записи через ClickHouse и вне ClickHouse не определён.
 </Note>
 
-<div id="example">
-  ## Пример
-</div>
+## Пример {#example}
 
 **1.** Создайте таблицу `file_engine_table`:
 
@@ -77,11 +73,9 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-<div id="usage-in-clickhouse-local">
-  ## Использование в ClickHouse-local
-</div>
+## Использование в ClickHouse-local {#usage-in-clickhouse-local}
 
-В [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) движок File помимо `Format` принимает путь к файлу. Стандартные потоки ввода/вывода можно задавать числовыми или понятными человеку именами, например `0` или `stdin`, `1` или `stdout`. Сжатые файлы можно читать и записывать на основе дополнительного параметра движка или расширения файла (`gz`, `br` или `xz`).
+В [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) движок File помимо `Format` принимает путь к файлу. Стандартные потоки ввода/вывода можно задавать числовыми или понятными человеку именами, например `0` или `stdin`, `1` или `stdout`. Сжатые файлы можно читать и записывать на основе дополнительного параметра движка или расширения файла. Поддерживаются значения `none` (без сжатия), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` и `snappy`. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (по умолчанию `basic`).
 
 **Пример:**
 
@@ -89,9 +83,7 @@ SELECT * FROM file_engine_table
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-<div id="details-of-implementation">
-  ## Подробности реализации
-</div>
+## Подробности реализации {#details-of-implementation}
 
 * Несколько запросов `SELECT` могут выполняться одновременно, но запросы `INSERT` будут ждать друг друга.
 * Поддерживается создание нового файла с помощью запроса `INSERT`.
@@ -102,26 +94,20 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
   * Индексы
   * Репликация
 
-<div id="partition-by">
-  ## PARTITION BY
-</div>
+## PARTITION BY {#partition-by}
 
 `PARTITION BY` — необязательный параметр. Можно создавать отдельные файлы, разбивая данные на партиции по ключу партиционирования. В большинстве случаев ключ партиционирования не нужен, а если он всё же нужен, то, как правило, достаточно партиционирования не более детального, чем по месяцам. Партиционирование не ускоряет запросы (в отличие от выражения ORDER BY). Никогда не используйте слишком детальное партиционирование. Не разбивайте данные на партиции по идентификаторам или именам клиентов (вместо этого сделайте идентификатор или имя клиента первым столбцом в выражении ORDER BY).
 
 Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](/ru/reference/data-types/date). Имена партиций здесь имеют формат `"YYYYMM"`.
 
-<div id="virtual-columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#virtual-columns}
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
 * `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер неизвестен, значение — `NULL`.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 
-<div id="settings">
-  ## Настройки
-</div>
+## Настройки {#settings}
 
 * [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/ru/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists) - позволяет считывать пустые данные из несуществующего файла. По умолчанию отключено.
 * [engine&#95;file&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert) - позволяет усекать файл перед вставкой в него. По умолчанию отключено.

@@ -12,18 +12,14 @@ Permite realizar consultas `SELECT` e `INSERT` en una tabla de [Google BigQuery]
 
 La lectura utiliza la API REST de BigQuery (`tabledata.list`), por lo que solo se pueden leer tablas nativas; no se admiten vistas, vistas materializadas ni tablas externas. La escritura utiliza inserciones en streaming (`tabledata.insertAll`), lo que requiere tener habilitada la facturación en el proyecto.
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 bigquery(project, dataset, table[, access_token][, key = value, ...])
 bigquery(named_collection[, key = value, ...])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento      | Descripción                                                                                                                                                                              |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47,9 +43,7 @@ Los siguientes argumentos se pueden especificar en formato `key = value` (o como
 | `base_url`            | El endpoint de la API; de forma predeterminada, `https://bigquery.googleapis.com`. Puede cambiarse para pruebas y emuladores.                                                              |
 | `token_url`           | Sobrescritura del endpoint de token OAuth para pruebas y emuladores. De forma predeterminada, el `token_uri` de la clave de la cuenta de servicio o `https://oauth2.googleapis.com/token`. |
 
-<div id="authentication">
-  ## Autenticación
-</div>
+## Autenticación {#authentication}
 
 Debe proporcionarse exactamente un método de autenticación. BigQuery no permite el acceso anónimo, por lo que se requieren credenciales incluso para los conjuntos de datos públicos.
 
@@ -59,9 +53,7 @@ Debe proporcionarse exactamente un método de autenticación. BigQuery no permit
 
 Almacene las credenciales en una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) para evitar especificarlas en cada consulta. Una tabla permanente creada a partir de una colección con nombre (con el motor de tabla `BigQuery` o `CREATE TABLE ... AS bigquery(...)`) se registra como dependencia de la colección, por lo que `DROP NAMED COLLECTION` queda bloqueado mientras exista la tabla.
 
-<div id="data-type-mapping">
-  ## Correspondencia de tipos de datos
-</div>
+## Correspondencia de tipos de datos {#data-type-mapping}
 
 | Tipo de BigQuery      | Tipo de ClickHouse                                                                                                                                                                                   |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -88,7 +80,7 @@ Notas:
 
 * `DATETIME` de BigQuery no tiene zona horaria; se asigna a `DateTime64(6, 'UTC')` para que el valor mostrado no dependa de la zona horaria del servidor.
 * Un `RECORD` `NULLABLE` se asigna a `Nullable(Tuple(...))`, de modo que un `NULL` de todo el registro se conserva como `NULL` en lugar de reducirse a un `Tuple` de valores predeterminados. Un array `NULL` (o vacío) se convierte en un array vacío, porque `Array` no puede estar dentro de `Nullable` en ClickHouse. Un array de BigQuery no puede contener elementos `NULL` (`ARRAY<T>` equivale a `ARRAY<T NOT NULL>`), por lo que el tipo de elemento de un campo `REPEATED` no es `Nullable` (`Array(T)` o `Array(Tuple(...))` para un elemento `RECORD`); un elemento `NULL` en una respuesta de `tabledata.list` se rechaza como entrada malformada.
-* La lectura y escritura de columnas `Nullable(Tuple(...))` mediante la función de tabla `bigquery` funciona sin configuraciones adicionales. Para crear una tabla persistente con engine `BigQuery` que contenga una columna de este tipo (tanto si la estructura se infiere como si se declara explícitamente), se requiere la configuración `enable_nullable_tuple_type`, como para cualquier columna `Nullable(Tuple)`. Al declarar columnas explícitamente, un campo `RECORD` puede declararse como un `Tuple(...)` simple para evitar esta configuración, a costa de convertir un `NULL` de todo el registro en una tupla predeterminada; la única diferencia aceptada respecto al tipo inferido es eliminar el `Nullable` que envuelve el `Tuple` de un `RECORD`, y únicamente en ese mismo registro: la anulabilidad no puede trasladarse a un registro distinto, ya sea interno o externo.
+* Al declarar explícitamente las columnas de una tabla persistente con motor `BigQuery`, un campo `RECORD` puede declararse como un `Tuple(...)` simple en lugar del `Nullable(Tuple(...))` inferido, a costa de convertir un `NULL` de todo el registro en una tupla predeterminada; la única diferencia aceptada respecto al tipo inferido es eliminar el `Nullable` que envuelve el `Tuple` de un `RECORD`, y únicamente en ese mismo registro: la anulabilidad no puede trasladarse a un registro distinto, ya sea interno o externo.
 * `GEOGRAPHY` se asigna a [Geometry](/es/reference/data-types/geo#geometry). BigQuery transfiere un valor `GEOGRAPHY` como texto [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry), que se analiza como la alternativa correspondiente de `Geometry` (un `Variant` de `Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon` y `MultiPolygon`) durante la lectura y se serializa de nuevo como WKT durante la escritura. Una `GEOMETRYCOLLECTION` y una geometría vacía (como `POINT EMPTY`) no tienen equivalente en `Geometry`, por lo que leer una fila que contenga alguno de estos valores genera un error. Como `Variant` ya admite `NULL`, un campo `GEOGRAPHY` `NULLABLE` se asigna a `Geometry` y no a `Nullable(Geometry)`, y `NULL` sigue conservándose en el recorrido de ida y vuelta.
 * `JSON` se asigna a `String` en lugar del tipo de datos [JSON](/es/reference/data-types/newjson), porque el tipo `JSON` de ClickHouse solo acepta un objeto (`{...}`) en el nivel superior, mientras que un valor `JSON` de BigQuery puede ser cualquier valor JSON —un escalar, un array o `null`—, por lo que no se podría leer una tabla que contenga dichos valores. Además, `JSON` no puede envolverse en `Nullable`, por lo que un `NULL` de SQL en una columna `NULLABLE` no se conservaría. La correspondencia con `String` no pierde información; los objetos de nivel superior se pueden convertir con `CAST(value AS JSON)`.
 * Los valores `BIGNUMERIC` con más de 38 dígitos en la parte entera no caben en `Decimal(76, 38)` y generan un error.
@@ -96,9 +88,7 @@ Notas:
 * Las columnas `RANGE` son de solo lectura. `tabledata.insertAll` espera un valor `RANGE<T>` como un objeto estructurado `{start, end}`, que no se puede reconstruir a partir de la correspondencia con `String`, por lo que insertar en una columna `RANGE` genera un error.
 * Los valores `INT64` se envían a `tabledata.insertAll` como cadenas decimales, porque la API analiza los números JSON como valores de doble precisión y, de otro modo, corrompería los valores fuera de `[-2^53 + 1, 2^53 - 1]`.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 Lee un conjunto de datos público con un token de `gcloud`:
 
@@ -143,9 +133,7 @@ Use una colección con nombre:
 SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 ```
 
-<div id="limitations">
-  ## Limitaciones
-</div>
+## Limitaciones {#limitations}
 
 * Solo se pueden leer tablas nativas de BigQuery. Las vistas y las tablas externas requieren ejecutar un trabajo de consulta de BigQuery, algo que esta función no hace.
 * Las columnas `RANGE` se pueden leer (como `String`), pero no se pueden escribir: insertar en una columna `RANGE` genera un error.
@@ -159,9 +147,7 @@ SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 * Un `INSERT` grande se envía a `tabledata.insertAll` en lotes: como máximo 500 filas por solicitud, y también se divide para que cada solicitud se mantenga por debajo del límite de tamaño de solicitud de 10 MB de BigQuery (una sola fila que supere ese límite se rechaza con un error claro).
 * Las operaciones de escritura no son atómicas y una sola solicitud `tabledata.insertAll` puede completarse parcialmente: BigQuery puede confirmar algunas filas de una solicitud y rechazar otras con `insertErrors`. Además, las solicitudes se confirman de forma independiente, por lo que un lote posterior puede rechazarse después de que se hayan aceptado lotes anteriores. En ambos casos, la consulta informa de un error, pero las filas ya confirmadas permanecen en BigQuery. Para limitar los duplicados, cada fila se envía con un `insertId` estable derivado del id de consulta y de la posición ordinal de la fila en el flujo, que BigQuery utiliza para realizar una deduplicación de máximo esfuerzo dentro de su ventana de inserciones en streaming. Si un `query_id` supera el límite de 128 caracteres de BigQuery para `insertId`, se le aplica hash para obtener un prefijo de longitud fija que se mantiene estable para ese `query_id`. Dado que el `insertId` depende de la posición ordinal, la deduplicación solo es fiable cuando la reejecución produce las filas en el mismo orden: reintentar un lote a nivel de transporte siempre es seguro, y volver a ejecutar el mismo `INSERT` con el mismo `query_id` solo deduplica si presenta las filas en el mismo orden (por ejemplo, mediante una inserción de un solo hilo o un orden determinista; establezca `max_threads = 1` y `max_insert_threads = 1` para un `INSERT ... SELECT` paralelo cuyo orden de fragmentos podría cambiar entre intentos).
 
-<div id="related">
-  ## Relacionado
-</div>
+## Relacionado {#related}
 
 * [Motor de tabla `BigQuery`](/es/reference/engines/table-engines/integrations/bigquery)
 

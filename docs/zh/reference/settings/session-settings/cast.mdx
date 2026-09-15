@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="cast_ipv4_ipv6_default_on_conversion_error">
-  ## cast_ipv4_ipv6_default_on_conversion_error
-</div>
+## cast_ipv4_ipv6_default_on_conversion_error {#cast_ipv4_ipv6_default_on_conversion_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 发生转换错误时，转换为 IPv4 的 CAST 运算符、转换为 IPv6 类型的 CAST 运算符，以及 toIPv4、toIPv6 函数将返回默认值，而不是抛出异常。
 
-<div id="cast_keep_nullable">
-  ## cast_keep_nullable
-</div>
+## cast_keep_nullable {#cast_keep_nullable}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

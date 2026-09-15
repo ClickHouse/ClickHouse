@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Las consultas `SELECT` recuperan datos. De forma predeterminada, los datos solicitados se devuelven al cliente, pero, en combinación con [INSERT INTO](/es/reference/statements/insert-into), pueden dirigirse a otra tabla.
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 [WITH expr_list(subquery)]
@@ -30,6 +28,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
+[LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
 [SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
@@ -73,17 +72,13 @@ FROM table
 |> ORDER BY c DESC
 ```
 
-<div id="select-clause">
-  ## Cláusula SELECT
-</div>
+## Cláusula SELECT {#select-clause}
 
 Las [expresiones](/es/reference/syntax#expressions) especificadas en la cláusula `SELECT` se calculan una vez finalizadas todas las operaciones de las cláusulas descritas anteriormente. Estas expresiones funcionan como si se aplicaran a filas separadas del resultado. Si las expresiones de la cláusula `SELECT` contienen funciones de agregación, ClickHouse procesa las funciones de agregación y las expresiones utilizadas como sus argumentos durante la agregación [GROUP BY](/es/reference/statements/select/group-by).
 
 Si desea incluir todas las columnas en el resultado, utilice el símbolo de asterisco (`*`). Por ejemplo, `SELECT * FROM ...`.
 
-<div id="dynamic-column-selection">
-  ### Selección dinámica de columnas
-</div>
+### Selección dinámica de columnas {#dynamic-column-selection}
 
 La selección dinámica de columnas (también conocida como expresión COLUMNS) permite hacer coincidir algunas columnas de un resultado con una expresión regular [re2](https://en.wikipedia.org/wiki/RE2_\(software\)).
 
@@ -142,9 +137,7 @@ En este ejemplo, `COLUMNS('a')` devuelve dos columnas: `aa` y `ab`. `COLUMNS('c'
 
 Las columnas que coinciden con la expresión `COLUMNS` pueden tener distintos tipos de datos. Si `COLUMNS` no coincide con ninguna columna y es la única expresión de `SELECT`, ClickHouse genera una excepción.
 
-<div id="select-columns-with-like-or-ilike">
-  #### Seleccionar columnas con `LIKE` o `ILIKE`
-</div>
+#### Seleccionar columnas con `LIKE` o `ILIKE` {#select-columns-with-like-or-ilike}
 
 También puede seleccionar columnas haciendo que sus nombres coincidan con un patrón después de `*`, usando `LIKE`, sensible a mayúsculas y minúsculas, o `ILIKE`, que no distingue entre mayúsculas y minúsculas:
 
@@ -178,9 +171,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 └────┘
 ```
 
-<div id="asterisk">
-  ### Asterisco
-</div>
+### Asterisco {#asterisk}
 
 Se puede poner un asterisco en cualquier parte de una consulta en lugar de una expresión. Cuando se analiza la consulta, el asterisco se expande a una lista de todas las columnas de la tabla (excepto las columnas `MATERIALIZED` y `ALIAS`). Solo hay unos pocos casos en los que se justifica usar un asterisco:
 
@@ -192,29 +183,23 @@ Se puede poner un asterisco en cualquier parte de una consulta en lugar de una e
 
 En todos los demás casos, no recomendamos usar el asterisco, ya que solo aporta las desventajas de un SGBD columnar en lugar de sus ventajas. En otras palabras, no se recomienda usar el asterisco.
 
-<div id="extreme-values">
-  ### Valores extremos
-</div>
+### Valores extremos {#extreme-values}
 
-Además de los resultados, también puede obtener los valores mínimos y máximos de las columnas del resultado. Para ello, establezca la opción **extremes** en 1. Los valores mínimos y máximos se calculan para tipos numéricos, fechas y fechas con hora. Para las demás columnas, se muestran los valores predeterminados.
+Además de los resultados, también puede obtener los valores mínimos y máximos de las columnas del resultado. Para ello, establezca el **SETTING** **extremes** en 1. Los valores mínimos y máximos se calculan para tipos numéricos, fechas y fechas con hora. Para las demás columnas, se muestran los valores predeterminados.
 
 Se calculan dos filas adicionales: una con los mínimos y otra con los máximos. Estas dos filas adicionales se muestran en los [formatos](/es/reference/formats/index) `XML`, `JSON*`, `TabSeparated*`, `CSV*`, `Vertical`, `Template` y `Pretty*`, por separado del resto de las filas. No se muestran en otros formatos.
 
 En los formatos `JSON*` y `XML`, los valores extremos se muestran en un campo independiente llamado &#39;extremes&#39;. En los formatos `TabSeparated*`, `CSV*` y `Vertical`, la fila aparece después del resultado principal, y después de &#39;totals&#39; si está presente. Va precedida de una fila vacía (después de los demás datos). En los formatos `Pretty*`, la fila se muestra como una tabla independiente después del resultado principal, y después de `totals` si está presente. En el formato `Template`, los valores extremos se muestran según la plantilla especificada.
 
-Los valores extremos se calculan para las filas anteriores a `LIMIT`, pero posteriores a `LIMIT BY`. Sin embargo, al usar `LIMIT offset, size`, las filas anteriores a `offset` se incluyen en `extremes`. En las solicitudes de flujo, el resultado también puede incluir un pequeño número de filas que pasaron por `LIMIT`.
+Los valores extremos se calculan para las filas anteriores a `LIMIT`, pero posteriores a `LIMIT BY`. Sin embargo, al usar `LIMIT offset, size`, las filas anteriores a `offset` se incluyen en `extremes`. Un intervalo [`LIMIT ... AFTER ... UNTIL`](/es/reference/statements/select/limit#limit-after-until) se comporta aquí como `LIMIT`: los valores extremos se calculan sobre las filas leídas antes de aplicar el intervalo. En las solicitudes de flujo, el resultado también puede incluir un pequeño número de filas que pasaron por `LIMIT`.
 
-<div id="notes">
-  ### Notas
-</div>
+### Notas {#notes}
 
 Puede utilizar sinónimos (alias `AS`) en cualquier parte de una consulta.
 
 Las cláusulas `GROUP BY`, `ORDER BY` y `LIMIT BY` admiten argumentos posicionales. Para habilitarlos, active el ajuste [enable&#95;positional&#95;arguments](/es/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). Por ejemplo, `ORDER BY 1,2` ordenará las filas de la tabla primero por la primera columna y luego por la segunda.
 
-<div id="implementation-details">
-  ## Detalles de implementación
-</div>
+## Detalles de implementación {#implementation-details}
 
 Si la consulta omite las cláusulas `DISTINCT`, `GROUP BY` y `ORDER BY`, así como las subconsultas `IN` y `JOIN`, se procesará completamente en flujo, utilizando una cantidad O(1) de RAM. De lo contrario, podría consumir mucha RAM si no se especifican las restricciones adecuadas:
 
@@ -234,9 +219,7 @@ Si la consulta omite las cláusulas `DISTINCT`, `GROUP BY` y `ORDER BY`, así co
 
 Para obtener más información, consulte la sección &quot;Configuración&quot;. Es posible utilizar ordenación externa (guardando tablas temporales en disco) y agregación externa.
 
-<div id="select-modifiers">
-  ## Modificadores de SELECT
-</div>
+## Modificadores de SELECT {#select-modifiers}
 
 Puede utilizar los siguientes modificadores en las consultas `SELECT`.
 
@@ -246,9 +229,7 @@ Puede utilizar los siguientes modificadores en las consultas `SELECT`.
 | [`EXCEPT`](/es/reference/statements/select/except_modifier)   | Especifica los nombres de una o más columnas que se excluirán del resultado. Todos los nombres de columna coincidentes se omiten de la salida.                                                                                                                                                                                                                                                                      |
 | [`REPLACE`](/es/reference/statements/select/replace_modifier) | Especifica uno o más [alias de expresión](/es/reference/syntax#expression-aliases). Cada alias debe coincidir con un nombre de columna de la sentencia `SELECT *`. En la lista de columnas de salida, la columna que coincide con el alias se sustituye por la expresión de ese `REPLACE`. Este modificador no cambia los nombres ni el orden de las columnas. Sin embargo, puede cambiar el valor y el tipo de valor. |
 
-<div id="modifier-combinations">
-  ### Combinaciones de modificadores
-</div>
+### Combinaciones de modificadores {#modifier-combinations}
 
 Puedes usar cada modificador por separado o combinarlos.
 
@@ -278,9 +259,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 └─────────────────┴────────┘
 ```
 
-<div id="settings-in-select-query">
-  ## SETTINGS en la consulta SELECT
-</div>
+## SETTINGS en la consulta SELECT {#settings-in-select-query}
 
 Puede especificar la configuración necesaria directamente en la consulta `SELECT`. El valor de la configuración se aplica solo a esta consulta y se restablece al valor predeterminado o al valor anterior una vez ejecutada la consulta.
 

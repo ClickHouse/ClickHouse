@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="object_shared_data_buckets_for_compact_part">
-  ## object_shared_data_buckets_for_compact_part
-</div>
+## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 用于 compact parts 中 JSON 共享数据序列化的桶数量。与 `map_with_buckets` 和 `advanced` 共享数据序列化配合使用。
 允许的最大值为 256。
 
-<div id="object_shared_data_buckets_for_wide_part">
-  ## object_shared_data_buckets_for_wide_part
-</div>
+## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 用于 wide parts 中 JSON 共享数据序列化的桶数量。与 `map_with_buckets` 和 `advanced` 共享数据序列化配合使用。
 允许的最大值为 256。
 
-<div id="object_shared_data_serialization_version">
-  ## object_shared_data_serialization_version
-</div>
+## object_shared_data_serialization_version {#object_shared_data_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -55,9 +49,7 @@ JSON 数据类型内共享数据的序列化版本。
 `map_with_buckets` 和 `advanced` 序列化的桶数量由以下设置决定：
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part)。
 
-<div id="object_shared_data_serialization_version_for_zero_level_parts">
-  ## object_shared_data_serialization_version_for_zero_level_parts
-</div>
+## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 

@@ -32,6 +32,8 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 
 `ON CLUSTER` 子句允许在集群上创建配额，参见 [分布式 DDL](/zh/reference/statements/distributed-ddl)。
 
+`CREATE QUOTA` 需要 [CREATE QUOTA](/zh/reference/statements/grant#access-management) 权限。`OR REPLACE` 会丢弃同名的已有配额，包括其所应用的角色，因此还额外需要 [DROP QUOTA](/zh/reference/statements/grant#access-management) 权限。无论该配额是否已存在，都需要 `DROP QUOTA` 权限，因此无法借助该语句探知系统中存在哪些配额。
+
 **示例**
 
 将当前用户在 15 个月内的最大查询次数限制为 123 次：
@@ -60,9 +62,7 @@ CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO defa
 
 更多使用 xml 配置的示例 (ClickHouse Cloud 不支持) 可参见[配额指南](/zh/concepts/features/configuration/server-config/quotas)。
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[使用 ClickHouse 构建单页应用](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
 

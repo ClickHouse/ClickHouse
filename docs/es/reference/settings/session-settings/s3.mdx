@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="s3_base">
-  ## s3_base
-</div>
+## s3_base {#s3_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para especificar la URL base para resolver URL relativas en la función de tabla s3 y el motor de tabla S3."}]}]} />
 
@@ -27,17 +25,13 @@ Por ejemplo, si `s3_base` es `s3://clickhouse-public-datasets/`, `s3('hits_compa
 
 La URL base puede usar cualquier formato aceptado por la función de tabla `s3`, por ejemplo, `s3://bucket/`, `https://bucket.s3.amazonaws.com/` o `https://endpoint/bucket/`.
 
-<div id="s3_check_objects_after_upload">
-  ## s3_check_objects_after_upload
-</div>
+## s3_check_objects_after_upload {#s3_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Comprueba cada objeto cargado en S3 con una solicitud head para asegurarte de que la carga se haya completado correctamente
 
-<div id="s3_connect_timeout_ms">
-  ## s3_connect_timeout_ms
-</div>
+## s3_connect_timeout_ms {#s3_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -45,9 +39,7 @@ Comprueba cada objeto cargado en S3 con una solicitud head para asegurarte de qu
 
 Tiempo de espera de conexión al host para discos S3.
 
-<div id="s3_create_new_file_on_insert">
-  ## s3_create_new_file_on_insert
-</div>
+## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,17 +54,7 @@ Valores posibles:
 
 Consulta más detalles [aquí](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="s3_disable_checksum">
-  ## s3_disable_checksum
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-No calcule una suma de comprobación al enviar un archivo a S3. Esto acelera las escrituras al evitar un procesamiento excesivo del archivo. Por lo general, es seguro, ya que los datos de las tablas MergeTree de todos modos ya tienen suma de comprobación en ClickHouse y, cuando se accede a S3 mediante HTTPS, la capa TLS ya proporciona integridad durante la transferencia a través de la red. Aun así, las sumas de comprobación adicionales en S3 aportan una defensa en profundidad.
-
-<div id="s3_ignore_file_doesnt_exist">
-  ## s3_ignore_file_doesnt_exist
-</div>
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -85,25 +67,19 @@ Posibles valores:
 * 1 — `SELECT` devuelve un resultado vacío.
 * 0 — `SELECT` lanza una excepción.
 
-<div id="s3_list_object_keys_size">
-  ## s3_list_object_keys_size
-</div>
+## s3_list_object_keys_size {#s3_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Número máximo de archivos que la solicitud ListObject puede devolver en un lote
 
-<div id="s3_min_upload_part_size">
-  ## s3_min_upload_part_size
-</div>
+## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 El tamaño mínimo de la parte que se va a subir durante una carga multiparte a S3.
 
-<div id="s3_path_filter_limit">
-  ## s3_path_filter_limit
-</div>
+## s3_path_filter_limit {#s3_path_filter_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -112,17 +88,13 @@ El tamaño mínimo de la parte que se va a subir durante una carga multiparte a 
 Número máximo de valores de `_path` que pueden extraerse de los filtros de consulta para utilizarlos en la iteración de archivos
 en lugar del listado con glob. 0 significa que está deshabilitado.
 
-<div id="s3_request_timeout_ms">
-  ## s3_request_timeout_ms
-</div>
+## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
 Tiempo de espera de inactividad para enviar y recibir datos hacia/desde S3. Se produce un error si una única llamada TCP de lectura o escritura permanece bloqueada durante ese tiempo.
 
-<div id="s3_skip_empty_files">
-  ## s3_skip_empty_files
-</div>
+## s3_skip_empty_files {#s3_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,9 +107,7 @@ Valores posibles:
 * 0 — `SELECT` lanza una excepción si el archivo vacío no es compatible con el formato solicitado.
 * 1 — `SELECT` devuelve un resultado vacío para un archivo vacío.
 
-<div id="s3_slow_all_threads_after_network_error">
-  ## s3_slow_all_threads_after_network_error
-</div>
+## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -147,25 +117,19 @@ Cuando se establece en `true`, todos los hilos que ejecutan solicitudes a S3 hac
 después de que una sola solicitud a S3 encuentre un error de red reintentable, como un timeout de socket.
 Cuando se establece en `false`, cada hilo gestiona el backoff de las solicitudes a S3 de forma independiente de los demás.
 
-<div id="s3_strict_upload_part_size">
-  ## s3_strict_upload_part_size
-</div>
+## s3_strict_upload_part_size {#s3_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El tamaño exacto de la parte que se va a subir durante una carga multiparte en S3 (algunas implementaciones no admiten partes de tamaño variable).
 
-<div id="s3_throw_on_zero_files_match">
-  ## s3_throw_on_zero_files_match
-</div>
+## s3_throw_on_zero_files_match {#s3_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Genera un error cuando la solicitud ListObjects no encuentra ningún archivo
 
-<div id="s3_truncate_on_insert">
-  ## s3_truncate_on_insert
-</div>
+## s3_truncate_on_insert {#s3_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -178,9 +142,7 @@ Valores posibles:
 
 Consulta más detalles [aquí](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="s3_uri_style">
-  ## s3_uri_style
-</div>
+## s3_uri_style {#s3_uri_style}
 
 <SettingsInfoBlock type="S3UriStyle" default_value="auto" />
 
@@ -188,9 +150,7 @@ Consulta más detalles [aquí](/es/integrations/connectors/data-ingestion/AWS/in
 
 Fuerza el estilo del endpoint de S3. Valores posibles: auto, virtual&#95;hosted, path.
 
-<div id="s3_use_adaptive_timeouts">
-  ## s3_use_adaptive_timeouts
-</div>
+## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

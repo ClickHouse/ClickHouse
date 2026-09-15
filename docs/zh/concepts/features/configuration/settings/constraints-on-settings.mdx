@@ -6,15 +6,11 @@ title: '设置约束'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## 概述
-</div>
+## 概述 {#overview}
 
 在 ClickHouse 中，设置上的“约束”指的是可应用于设置的限制和规则。这些约束有助于维持数据库的稳定性、安全性以及行为的可预测性。
 
-<div id="defining-constraints">
-  ## 定义约束
-</div>
+## 定义约束 {#defining-constraints}
 
 可以在 `user.xml`
 配置文件的 `profiles` 部分中定义设置约束。这样可以禁止用户使用
@@ -60,9 +56,7 @@ doc_type: 'reference'
 如果用户试图违反这些约束，则会抛出异常，并且
 该设置保持不变。
 
-<div id="types-of-constraints">
-  ## 约束的类型
-</div>
+## 约束的类型 {#types-of-constraints}
 
 ClickHouse 支持以下几种约束：
 
@@ -93,9 +87,7 @@ ClickHouse 支持以下几种约束：
   ```
 </Note>
 
-<div id="multiple-constraint-profiles">
-  ## 多个约束 profile
-</div>
+## 多个约束 profile {#multiple-constraint-profiles}
 
 如果某个用户同时启用了多个 profile，则约束会合并。
 合并过程取决于 `settings_constraints_replace_previous`：
@@ -107,22 +99,13 @@ ClickHouse 支持以下几种约束：
   每种未设置的约束类型都会沿用前一个 profile 中的值，而每种
   已设置的约束类型都会替换为新 profile 中的值。
 
-<div id="read-only">
-  ## 只读模式
-</div>
+## 只读模式 {#read-only}
 
-只读模式通过 `readonly` 设置启用，不要将其与 `readonly` 约束类型
-混淆：
+只读模式由 `readonly` setting 启用，注意不要将其与 `readonly` CONSTRAINT 类型混淆。当 `readonly = 1` 时，原本会被拒绝修改的 setting，若有 `changeable_in_readonly` CONSTRAINT 允许，仍可被更改。该 setting 各取值的含义，请参阅
+[settings 参考](/zh/reference/settings/session-settings/other#readonly)；各取值分别允许哪些类别的查询，以及 HTTP interface 如何设置它，请参阅
+[查询权限](/zh/concepts/features/configuration/settings/permissions-for-queries#readonly)。
 
-* `readonly=0`：没有只读限制。
-* `readonly=1`：只允许执行读查询，且不能更改设置，
-  除非设置了 `changeable_in_readonly`。
-* `readonly=2`：只允许执行读查询，但可以更改设置，
-  `readonly` 设置本身除外。
-
-<div id="example-read-only">
-  ### 示例
-</div>
+### 示例 {#example-read-only}
 
 让 `users.xml` 包含以下内容：
 
@@ -165,9 +148,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   直到针对这些用户显式覆盖这些约束为止。
 </Note>
 
-<div id="constraints-on-merge-tree-settings">
-  ## MergeTree 设置的约束
-</div>
+## MergeTree 设置的约束 {#constraints-on-merge-tree-settings}
 
 可以为 [MergeTree 设置](/zh/reference/settings/merge-tree-settings)定义约束。
 这些约束会在创建使用 MergeTree 引擎的表时
@@ -176,9 +157,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 在 `<constraints>` 部分中引用时，
 MergeTree 设置名称必须添加 `merge_tree_` 前缀。
 
-<div id="example-read-only">
-  ### 示例
-</div>
+### 示例 {#example-mergetree}
 
 您可以禁止创建明确指定了 `storage_policy` 的新表
 

@@ -10,22 +10,20 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-<div id="resource-organization">
-  ## Организация ресурсов
-</div>
+## Организация ресурсов {#resource-organization}
 
 Организация ресурсов в ClickHouse Cloud похожа на [иерархию ресурсов BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). Ниже описаны основные различия на основе следующей диаграммы, на которой показана иерархия ресурсов ClickHouse Cloud:
 
 <Image img="/images/migrations/bigquery-1.webp" size="md" alt="Организация ресурсов" />
 
 <div id="organizations">
-  ### Организации
+  ### Организации {#organizations}
 </div>
 
 Как и в BigQuery, организации — это корневые узлы в иерархии ресурсов ClickHouse Cloud. Первый пользователь, которого вы создаёте в своей учётной записи ClickHouse Cloud, автоматически назначается в организацию, принадлежащую ему. Этот пользователь может приглашать в организацию других пользователей.
 
 <div id="bigquery-projects-vs-clickhouse-cloud-services">
-  ### Проекты BigQuery и сервисы ClickHouse Cloud
+  ### Проекты BigQuery и сервисы ClickHouse Cloud {#bigquery-projects-vs-clickhouse-cloud-services}
 </div>
 
 В организациях можно создавать сервисы, в определённой степени эквивалентные проектам BigQuery, поскольку данные, хранящиеся в ClickHouse Cloud, привязаны к сервису. В ClickHouse Cloud доступно [несколько типов сервисов](/ru/products/cloud/features/cloud-tiers). Каждый сервис ClickHouse Cloud развёртывается в определённом регионе и включает:
@@ -35,19 +33,19 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 3. Конечную точку (или несколько конечных точек, созданных через консоль ClickHouse Cloud) — URL сервиса, который используется для подключения к нему (например, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 
 <div id="bigquery-datasets-vs-clickhouse-cloud-databases">
-  ### Датасеты BigQuery и базы данных ClickHouse Cloud
+  ### Датасеты BigQuery и базы данных ClickHouse Cloud {#bigquery-datasets-vs-clickhouse-cloud-databases}
 </div>
 
 ClickHouse логически объединяет таблицы в базы данных. Как и датасеты BigQuery, базы данных ClickHouse — это логические контейнеры для организации табличных данных и управления доступом к ним.
 
 <div id="bigquery-folders">
-  ### Папки BigQuery
+  ### Папки BigQuery {#bigquery-folders}
 </div>
 
 В ClickHouse Cloud сейчас нет понятия, эквивалентного папкам BigQuery.
 
 <div id="bigquery-slot-reservations-and-quotas">
-  ### Резервирование Slot и квоты BigQuery
+  ### Резервирование Slot и квоты BigQuery {#bigquery-slot-reservations-and-quotas}
 </div>
 
 Как и в BigQuery с резервированием Slot, в ClickHouse Cloud можно [настроить вертикальное и горизонтальное автомасштабирование](/ru/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). Для вертикального автомасштабирования можно задать минимальный и максимальный размер оперативной памяти и число ядер CPU для вычислительных узлов сервиса. Затем сервис будет масштабироваться по мере необходимости в этих пределах. Эти настройки также доступны на этапе первоначального создания сервиса. Каждый вычислительный узел в сервисе имеет одинаковый размер. Изменить количество вычислительных узлов в сервисе можно с помощью [горизонтального масштабирования](/ru/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling).
@@ -59,13 +57,13 @@ ClickHouse отслеживает объемы выделения памяти �
 Наконец, планирование I/O позволяет ограничивать доступ к локальному и удаленному disk для классов рабочей нагрузки на основе максимальной пропускной способности, числа запросов в полете и политики.
 
 <div id="permissions">
-  ### Разрешения
+  ### Разрешения {#permissions}
 </div>
 
-В ClickHouse Cloud доступ пользователей контролируется в двух местах: через [консоль Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) и через [базу данных](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users). Доступ к консоли управляется через интерфейс [clickhouse.cloud](https://console.clickhouse.cloud). Доступ к базе данных управляется с помощью учетных записей пользователей базы данных и ролей. Кроме того, пользователям консоли можно назначать роли в базе данных, которые позволяют им взаимодействовать с базой данных через нашу [SQL-консоль](/ru/integrations/connectors/sql-clients/sql-console).
+В ClickHouse Cloud доступ пользователей контролируется в двух местах: через [консоль Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users) и через [базу данных](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users). Доступ к консоли управляется через интерфейс [clickhouse.cloud](https://console.clickhouse.cloud). Доступ к базе данных управляется с помощью учетных записей пользователей базы данных и ролей. Кроме того, пользователям консоли можно назначать роли в базе данных, которые позволяют им взаимодействовать с базой данных через нашу [SQL-консоль](/ru/integrations/connectors/sql-clients/sql-console).
 
 <div id="data-types">
-  ## Типы данных
+  ## Типы данных {#data-types}
 </div>
 
 ClickHouse предлагает более гибкий выбор точности для числовых типов. Например, BigQuery поддерживает числовые типы [`INT64`, `NUMERIC`, `BIGNUMERIC` and `FLOAT64`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types). В ClickHouse, в отличие от BigQuery, есть несколько вариантов точности для десятичных чисел, чисел с плавающей точкой и целых чисел. Эти типы данных позволяют оптимизировать хранение и расход памяти, что ускоряет выполнение запросов и снижает потребление ресурсов. Ниже приведено соответствие типов BigQuery и их эквивалентов в ClickHouse:
@@ -92,11 +90,11 @@ ClickHouse предлагает более гибкий выбор точнос�
 Если для типа ClickHouse доступно несколько вариантов, учитывайте фактический диапазон данных и выбирайте минимально необходимый. Также стоит использовать [подходящие кодеки](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) для дополнительного сжатия.
 
 <div id="query-acceleration-techniques">
-  ## Методы ускорения запросов
+  ## Методы ускорения запросов {#query-acceleration-techniques}
 </div>
 
 <div id="primary-and-foreign-keys-and-primary-index">
-  ### Первичные и внешние ключи и первичный индекс
+  ### Первичные и внешние ключи и первичный индекс {#primary-and-foreign-keys-and-primary-index}
 </div>
 
 В BigQuery таблица может иметь [ограничения первичного и внешних ключей](https://cloud.google.com/bigquery/docs/information-schema-table-constraints). Обычно первичные и внешние ключи используются в реляционных базах данных для обеспечения целостности данных. Значение первичного ключа обычно уникально для каждой строки и не равно `NULL`. Каждое значение внешнего ключа в строке должно присутствовать в столбце первичного ключа таблицы, на которую ссылается внешний ключ, либо быть `NULL`. В BigQuery эти ограничения не проверяются, однако оптимизатор запросов может использовать эту информацию для более эффективной оптимизации запросов.
@@ -104,7 +102,7 @@ ClickHouse предлагает более гибкий выбор точнос�
 В ClickHouse таблица также может иметь первичный ключ. Как и BigQuery, ClickHouse не обеспечивает уникальность значений в столбце первичного ключа таблицы. В отличие от BigQuery, данные таблицы хранятся на диске [упорядоченными](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) по столбцам первичного ключа. Оптимизатор запросов использует этот порядок сортировки, чтобы избежать повторной сортировки, минимизировать использование памяти для JOIN и обеспечивать досрочное завершение для секций LIMIT. В отличие от BigQuery, ClickHouse автоматически создает [первичный (разреженный) индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) на основе значений столбцов первичного ключа. Этот индекс используется для ускорения всех запросов, содержащих фильтры по столбцам первичного ключа. В настоящее время ClickHouse не поддерживает ограничения внешних ключей.
 
 <div id="secondary-indexes-only-available-in-clickhouse">
-  ## Вторичные индексы (доступны только в ClickHouse)
+  ## Вторичные индексы (доступны только в ClickHouse) {#secondary-indexes-only-available-in-clickhouse}
 </div>
 
 Помимо первичного индекса, создаваемого на основе значений столбцов первичного ключа таблицы, ClickHouse позволяет создавать вторичные индексы на столбцах, не входящих в первичный ключ. ClickHouse поддерживает несколько типов вторичных индексов, каждый из которых подходит для разных видов запросов:
@@ -119,25 +117,25 @@ ClickHouse предлагает более гибкий выбор точнос�
   * Помогает пропускать чтение частей данных, которые не попадают в указанный диапазон.
 
 <div id="search-indexes">
-  ## Поисковые индексы
+  ## Поисковые индексы {#search-indexes}
 </div>
 
 Как и [поисковые индексы](https://cloud.google.com/bigquery/docs/search-index) в BigQuery, [полнотекстовые индексы](/ru/reference/engines/table-engines/mergetree-family/textindexes) можно создавать для таблиц ClickHouse по столбцам со строковыми значениями.
 
 <div id="vector-indexes">
-  ## Векторные индексы
+  ## Векторные индексы {#vector-indexes}
 </div>
 
 BigQuery недавно представил [векторные индексы](https://cloud.google.com/bigquery/docs/vector-index) как возможность на этапе Pre-GA. Аналогично, в ClickHouse есть экспериментальная поддержка [индексов для ускорения](/ru/reference/engines/table-engines/mergetree-family/annindexes) сценариев векторного поиска.
 
 <div id="partitioning">
-  ## Партиционирование
+  ## Партиционирование {#partitioning}
 </div>
 
 Как и BigQuery, ClickHouse использует партиционирование таблиц, чтобы повысить производительность и упростить работу с большими таблицами, разбивая их на более мелкие и удобные части — партиции. Подробнее о партиционировании в ClickHouse читайте [здесь](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
 
 <div id="clustering">
-  ## Кластеризация
+  ## Кластеризация {#clustering}
 </div>
 
 При кластеризации BigQuery автоматически сортирует данные таблицы по значениям нескольких указанных столбцов и размещает их в блоках оптимального размера. Кластеризация повышает производительность запросов, позволяя BigQuery точнее оценивать стоимость их выполнения. Для кластеризованных столбцов запросы также позволяют избежать сканирования лишних данных.
@@ -145,13 +143,13 @@ BigQuery недавно представил [векторные индексы]
 В ClickHouse данные автоматически [кластеризуются на диске](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) на основе столбцов первичного ключа таблицы и логически организуются в блоки, которые запросы, использующие структуру первичного индекса, могут быстро находить или отсекать.
 
 <div id="materialized-views">
-  ## materialized views
+  ## materialized views {#materialized-views}
 </div>
 
 И BigQuery, и ClickHouse поддерживают materialized views — предварительно вычисленные результаты, формируемые на основе запроса преобразования к базовой таблице, что повышает производительность и эффективность.
 
 <div id="querying-materialized-views">
-  ## Запросы к materialized view
+  ## Запросы к materialized view {#querying-materialized-views}
 </div>
 
 Materialized view в BigQuery можно запрашивать напрямую или использовать через оптимизатор для обработки запросов к базовым таблицам. Если изменения в базовых таблицах могут сделать materialized view недействительным, данные считываются напрямую из базовых таблиц. Если изменения в базовых таблицах не приводят к недействительности materialized view, остальная часть данных считывается из materialized view, а из базовых таблиц считываются только изменения.
@@ -165,13 +163,13 @@ BigQuery периодически полностью обновляет material
 В ClickHouse materialized view обновляются инкрементально. Этот механизм обеспечивает высокую масштабируемость и низкие вычислительные затраты: materialized view с инкрементальным обновлением специально разработаны для сценариев, в которых базовые таблицы содержат миллиарды или триллионы строк. Вместо того чтобы повторно выполнять запросы к постоянно растущей базовой таблице для обновления materialized view, ClickHouse просто вычисляет частичный результат только по значениям вновь вставленных строк базовой таблицы. Затем этот частичный результат постепенно сливается в фоновом режиме с ранее вычисленным частичным результатом. Это существенно снижает вычислительные затраты по сравнению с повторным обновлением materialized view на основе всей базовой таблицы.
 
 <div id="transactions">
-  ## Транзакции
+  ## Транзакции {#transactions}
 </div>
 
 В отличие от ClickHouse, BigQuery поддерживает многооператорные транзакции в рамках одного запроса или нескольких запросов при использовании сеансов. Многооператорная транзакция позволяет выполнять мутации данных, например вставку или удаление строк в одной или нескольких таблицах, а затем либо зафиксировать изменения, либо атомарно откатить их. Многооператорные транзакции входят в [дорожную карту ClickHouse на 2024 год](https://github.com/ClickHouse/ClickHouse/issues/58392).
 
 <div id="aggregate-functions">
-  ## Агрегатные функции
+  ## Агрегатные функции {#aggregate-functions}
 </div>
 
 По сравнению с BigQuery, в ClickHouse доступно значительно больше встроенных агрегатных функций:
@@ -180,7 +178,7 @@ BigQuery периодически полностью обновляет material
 * В ClickHouse доступно более [150 готовых агрегатных функций](/ru/reference/functions/aggregate-functions/reference-index), а также мощные [комбинаторы агрегации](/ru/reference/functions/aggregate-functions/combinators), позволяющие [расширять](https://www.youtube.com/watch?v=7ApwD0cfAFI) поведение готовых агрегатных функций. Например, любую из этих 150+ готовых агрегатных функций можно применять к массивам вместо строк таблицы, просто добавив [суффикс -Array](/ru/reference/functions/aggregate-functions/combinators#-array). С [суффиксом -Map](/ru/reference/functions/aggregate-functions/combinators#-map) любую агрегатную функцию можно применять к данным типа Map. А с [суффиксом -ForEach](/ru/reference/functions/aggregate-functions/combinators#-foreach) любую агрегатную функцию можно применять к вложенным массивам.
 
 <div id="data-sources-and-file-formats">
-  ## Источники данных и форматы файлов
+  ## Источники данных и форматы файлов {#data-sources-and-file-formats}
 </div>
 
 По сравнению с BigQuery, ClickHouse поддерживает значительно больше форматов файлов и источников данных:
@@ -189,13 +187,13 @@ BigQuery периодически полностью обновляет material
 * BigQuery поддерживает 5 форматов файлов и 19 источников данных
 
 <div id="sql-language-features">
-  ## Возможности языка SQL
+  ## Возможности языка SQL {#sql-language-features}
 </div>
 
 ClickHouse предоставляет стандартный SQL со множеством расширений и улучшений, которые делают его удобнее для аналитических задач. Например, ClickHouse SQL [поддерживает лямбда-функции](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda) и функции высшего порядка, поэтому при применении преобразований не требуется разворачивать массивы. Это большое преимущество по сравнению с другими системами, такими как BigQuery.
 
 <div id="arrays">
-  ## Массивы
+  ## Массивы {#arrays}
 </div>
 
 По сравнению с BigQuery, где есть 8 функций для работы с массивами, в ClickHouse доступно более 80 [встроенных функций для работы с массивами](/ru/reference/functions/regular-functions/array-functions), которые позволяют элегантно и просто моделировать и решать широкий спектр задач.

@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="optimize_aggregators_of_group_by_keys">
-  ## optimize_aggregators_of_group_by_keys
-</div>
+## optimize_aggregators_of_group_by_keys {#optimize_aggregators_of_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 消除 SELECT 部分中对 GROUP BY 键使用的 min/max/any/anyLast 聚合函数
 
-<div id="optimize_append_index">
-  ## optimize_append_index
-</div>
+## optimize_append_index {#optimize_append_index}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,17 +29,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 * true, false
 
-<div id="optimize_arithmetic_operations_in_aggregate_functions">
-  ## optimize_arithmetic_operations_in_aggregate_functions
-</div>
+## optimize_arithmetic_operations_in_aggregate_functions {#optimize_arithmetic_operations_in_aggregate_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 将算术运算移到聚合函数之外
 
-<div id="optimize_const_name_size">
-  ## optimize_const_name_size
-</div>
+## optimize_const_name_size {#optimize_const_name_size}
 
 <SettingsInfoBlock type="Int64" default_value="256" />
 
@@ -57,9 +49,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 始终，
 * 负整数 - 从不。
 
-<div id="optimize_count_from_files">
-  ## optimize_count_from_files
-</div>
+## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,9 +60,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 禁用优化。
 * 1 — 启用优化。
 
-<div id="optimize_dictget_tuple_element">
-  ## optimize_dictget_tuple_element
-</div>
+## optimize_dictget_tuple_element {#optimize_dictget_tuple_element}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,17 +68,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 将 `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` 改写为 `dictGet('dict', 'b', key)`，以避免拉取不必要的字典属性。支持按位置 (`.1`、`.2`、...) 和按名称 (`.b`) 访问，也适用于 `dictGetOrDefault`，前提是默认参数为常量 Tuple 或由常量组成的 `tuple(...)`。
 
-<div id="optimize_distinct_in_order">
-  ## optimize_distinct_in_order
-</div>
+## optimize_distinct_in_order {#optimize_distinct_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果 DISTINCT 中的某些列构成排序前缀，则启用 DISTINCT 优化。例如，MergeTree 中 sorting key 的前缀，或 ORDER BY 语句中的前缀。
 
-<div id="optimize_distributed_group_by_sharding_key">
-  ## optimize_distributed_group_by_sharding_key
-</div>
+## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -126,9 +110,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
   目前它要求启用 `optimize_skip_unused_shards` (原因是未来某一天它可能会默认启用，而它只有在数据是通过 Distributed 表插入时才能正确工作，也就是说，数据必须按 `sharding_key` 分布) 。
 </Note>
 
-<div id="optimize_dry_run_check_part">
-  ## optimize_dry_run_check_part
-</div>
+## optimize_dry_run_check_part {#optimize_dry_run_check_part}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -136,9 +118,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用后，`OPTIMIZE ... DRY RUN` 会使用 `checkDataPart` 对生成的合并后分片进行校验。如果校验失败，则会抛出异常。
 
-<div id="optimize_empty_string_comparisons">
-  ## optimize_empty_string_comparisons
-</div>
+## optimize_empty_string_comparisons {#optimize_empty_string_comparisons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -146,9 +126,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 仅当 `col` 为 String 或 FixedString 类型时，才会将 `col = ''` 或 `'' = col` 之类的表达式转换为 `empty(col)`，并将 `col != ''` 或 `'' != col` 转换为 `notEmpty(col)`。
 
-<div id="optimize_extract_common_expressions">
-  ## optimize_extract_common_expressions
-</div>
+## optimize_extract_common_expressions {#optimize_extract_common_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -159,9 +137,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 简单筛选表达式中的索引
 * CROSS 到 INNER JOIN 的优化
 
-<div id="optimize_functions_to_subcolumns">
-  ## optimize_functions_to_subcolumns
-</div>
+## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -185,9 +161,7 @@ Possible values:
 * 0 — 禁用优化。
 * 1 — 启用优化。
 
-<div id="optimize_inverse_dictionary_lookup">
-  ## optimize_inverse_dictionary_lookup
-</div>
+## optimize_inverse_dictionary_lookup {#optimize_inverse_dictionary_lookup}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -195,17 +169,28 @@ Possible values:
 
 通过更快地查找预先计算出的可能键值集合，避免重复进行反向字典查找。
 
-<div id="optimize_multiif_to_if">
-  ## optimize_multiif_to_if
-</div>
+## optimize_multiif_to_if {#optimize_multiif_to_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 将仅包含一个条件的 `multiIf` 替换为 `if`。
 
-<div id="optimize_normalize_count_variants">
-  ## optimize_normalize_count_variants
-</div>
+## optimize_mutations_with_partition_pruning {#optimize_mutations_with_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置，可根据 WHERE 子句自动为变更裁剪分区"}]}]} />
+
+启用后，对于 `ReplicatedMergeTree` 家族的表，ClickHouse 会自动识别 `ALTER TABLE UPDATE`/`DELETE` 变更以及轻量级 `UPDATE`/`DELETE` 语句的 WHERE 子句中的分区键条件，并仅处理受影响的分区，而非全部分区。
+
+这种自动裁剪目前仅适用于复制表。对于非复制的 `MergeTree` 表，请使用显式的 `IN PARTITION` 子句将变更限制在特定分区上。
+
+可能的值：
+
+* 0 — 禁用。变更和轻量级更新会处理所有分区。
+* 1 — 启用。变更和轻量级更新仅处理与 WHERE 条件匹配的分区。
+
+## optimize_normalize_count_variants {#optimize_normalize_count_variants}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -213,9 +198,7 @@ Possible values:
 
 将语义上等价于 count() 的聚合函数重写为 count()。
 
-<div id="optimize_on_insert">
-  ## optimize_on_insert
-</div>
+## optimize_on_insert {#optimize_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -271,9 +254,7 @@ SELECT * FROM test2;
 
 请注意，此设置项会影响 [materialized view](/zh/reference/statements/create/view#materialized-view) 的行为。
 
-<div id="optimize_prewhere_after_pushdown">
-  ## optimize_prewhere_after_pushdown
-</div>
+## optimize_prewhere_after_pushdown {#optimize_prewhere_after_pushdown}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -284,9 +265,7 @@ SELECT * FROM test2;
 投影重写) 后，执行第二轮 `PREWHERE` 提升。若已存在 `PREWHERE`，新的
 过滤器会通过 `AND` 合并到其中，而不是保留为单独的过滤器步骤。
 
-<div id="optimize_qbit_distance_function_reads">
-  ## optimize_qbit_distance_function_reads
-</div>
+## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -294,9 +273,7 @@ SELECT * FROM test2;
 
 将 `QBit` 数据类型上的距离函数替换为等效函数，后者仅从存储中读取计算所需的列。
 
-<div id="optimize_read_in_order">
-  ## optimize_read_in_order
-</div>
+## optimize_read_in_order {#optimize_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -311,25 +288,32 @@ SELECT * FROM test2;
 
 * [ORDER BY 子句](/zh/reference/statements/select/order-by#optimization-of-data-reading)
 
-<div id="optimize_respect_aliases">
-  ## optimize_respect_aliases
-</div>
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置，用于在使用 `FINAL` 修饰符从 `ReplacingMergeTree` 表按 sorting key 逆序读取时启用按序读取（read-in-order）优化。"}]}]} />
+
+允许在带 `FINAL` 修饰符的 `SELECT` 查询中，从 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表按 sorting key 的逆序读取数据。仅在同时启用 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings/optimize#optimize_read_in_order) 时生效。
+
+可能的值：
+
+* 0 — 禁用带 `FINAL` 的逆序读取。
+* 1 — 启用带 `FINAL` 的逆序读取。
+
+## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果将其设置为 true，则会在 WHERE/GROUP BY/ORDER BY 中识别别名，这将有助于分区裁剪/次级索引/optimize&#95;aggregation&#95;in&#95;order/optimize&#95;read&#95;in&#95;order/optimize&#95;trivial&#95;count
 
-<div id="optimize_sorting_by_input_stream_properties">
-  ## optimize_sorting_by_input_stream_properties
-</div>
+## optimize_sorting_by_input_stream_properties {#optimize_sorting_by_input_stream_properties}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 根据输入流的排序属性优化排序
 
-<div id="optimize_substitute_columns">
-  ## optimize_substitute_columns
-</div>
+## optimize_substitute_columns {#optimize_substitute_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -339,9 +323,7 @@ SELECT * FROM test2;
 
 * true, false
 
-<div id="optimize_syntax_fuse_functions">
-  ## optimize_syntax_fuse_functions
-</div>
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -375,9 +357,7 @@ SELECT
 FROM default.fuse_tbl AS __table1
 ```
 
-<div id="optimize_throw_if_noop">
-  ## optimize_throw_if_noop
-</div>
+## optimize_throw_if_noop {#optimize_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -390,9 +370,7 @@ FROM default.fuse_tbl AS __table1
 * 1 — 启用抛出异常。
 * 0 — 禁用抛出异常。
 
-<div id="optimize_time_filter_with_preimage">
-  ## optimize_time_filter_with_preimage
-</div>
+## optimize_time_filter_with_preimage {#optimize_time_filter_with_preimage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -400,9 +378,7 @@ FROM default.fuse_tbl AS __table1
 
 通过将函数改写为无需转换的等效比较来优化 Date 和 日期时间 谓词 (例如 `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 
-<div id="optimize_truncate_order_by_after_group_by_keys">
-  ## optimize_truncate_order_by_after_group_by_keys
-</div>
+## optimize_truncate_order_by_after_group_by_keys {#optimize_truncate_order_by_after_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -410,17 +386,13 @@ FROM default.fuse_tbl AS __table1
 
 当 ORDER BY 前缀已覆盖所有 GROUP BY 键时，移除 ORDER BY 末尾的多余元素。
 
-<div id="optimize_uniq_to_count">
-  ## optimize_uniq_to_count
-</div>
+## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果子查询包含 distinct 或 GROUP BY 子句，则将 uniq 及其各种变体 (uniqUpTo 除外) 改写为 count。
 
-<div id="optimize_using_constraints">
-  ## optimize_using_constraints
-</div>
+## optimize_using_constraints {#optimize_using_constraints}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

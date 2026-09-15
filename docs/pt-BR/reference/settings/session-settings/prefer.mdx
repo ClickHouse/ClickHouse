@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudO
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="prefer_column_name_to_alias">
-  ## prefer_column_name_to_alias
-</div>
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,6 +24,22 @@ Possíveis valores:
 
 * 0 — O nome da coluna é substituído pelo alias.
 * 1 — O nome da coluna não é substituído pelo alias.
+
+Se o nome da coluna for ambíguo entre as tabelas unidas por join e existir um alias com o mesmo nome, o alias é utilizado:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+Aqui, `id` em `id AS x` é uma coluna tanto de `t1` quanto de `t3`, portanto é resolvido para o alias `t1.id + 10`.
 
 **Exemplo**
 
@@ -60,9 +74,7 @@ Resultado:
 └────────┴─────────────┘
 ```
 
-<div id="prefer_external_sort_block_bytes">
-  ## prefer_external_sort_block_bytes
-</div>
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -70,9 +82,7 @@ Resultado:
 
 Prioriza o número máximo de bytes por bloco na ordenação externa, reduzindo o uso de memória durante a mesclagem.
 
-<div id="prefer_global_in_and_join">
-  ## prefer_global_in_and_join
-</div>
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +105,7 @@ Outro caso de uso de `prefer_global_in_and_join` é acessar tabelas criadas por 
 
 * [Subconsultas distribuídas](/pt-BR/reference/statements/in#distributed-subqueries) para mais informações sobre como usar `GLOBAL IN`/`GLOBAL JOIN`
 
-<div id="prefer_localhost_replica">
-  ## prefer_localhost_replica
-</div>
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -114,9 +122,7 @@ Valores possíveis:
   Se ela for usada em um cluster com um único shard e várias réplicas, desativar esta configuração terá efeitos negativos.
 </Note>
 
-<div id="prefer_warmed_unmerged_parts_seconds">
-  ## prefer_warmed_unmerged_parts_seconds
-</div>
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

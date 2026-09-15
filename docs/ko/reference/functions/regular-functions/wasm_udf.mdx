@@ -140,9 +140,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 제공된 해시가 모듈 코드에서 계산된 SHA256과 일치하지 않으면 삽입이 실패합니다. S3 또는 HTTP 같은 외부 소스에서 모듈을 로드할 때 유용합니다.
 
-<div id="distribute-a-module-across-a-cluster">
-  ### 클러스터 전체에 모듈 배포
-</div>
+### 클러스터 전체에 모듈 배포 {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules`는 인스턴스별 table이므로 `INSERT`는 connection을 처리하는 레플리카에만 적용됩니다. `INSERT` 문에는 `ON CLUSTER` 형식이 없으므로, 이어서 `CREATE FUNCTION ... ON CLUSTER`를 실행하면 모듈이 없는 레플리카에서는 실패합니다:
 
@@ -287,7 +285,7 @@ WebAssembly는 부호 있는 인수와 부호 없는 인수를 구분하지 않�
 
 WASM 메모리를 통해 (역)직렬화하여 전체 블록을 한 번에 처리합니다. 모든 인수 및 반환 타입을 지원합니다.
 
-데이터는 WASM 메모리의 버퍼를 통해 교환됩니다. 버퍼는 데이터에 대한 포인터와 데이터 크기를 저장하는 8바이트 구조체이며, 리틀 엔디언 `u32` 값 2개로 구성됩니다. 버퍼는 데이터 자체가 아니라 이 구조체를 가리키는 포인터인 handle로 전달됩니다. 게스트 코드는 이러한 버퍼를 생성하고 제거하기 위한 2개의 함수를 내보내야 합니다.
+데이터는 WASM 메모리의 버퍼를 통해 교환됩니다. 버퍼는 데이터에 대한 포인터와 데이터 크기를 저장하는 8바이트 구조체이며, 리틀 엔디언 `u32` 값 2개로 구성됩니다. 버퍼는 데이터 자체가 아니라 이 구조체를 가리키는 포인터인 handle로 전달됩니다. 게스트 코드는 이러한 버퍼를 생성하고 제거하기 위한 2개의 함수를 내보내야 합니다. 크기가 0이 아닌 경우 데이터 포인터도 0이 아니어야 합니다. 양수 크기를 선언하면서 선형 메모리 오프셋 `0`을 가리키는 버퍼는 유효한 버퍼가 아니며, 게스트 코드는 이러한 버퍼를 생성해서는 안 됩니다. ClickHouse는 이러한 버퍼를 거부하고 `WASM_ERROR`와 함께 쿼리를 실패시킵니다.
 
 각 입력 블록에 대해 ClickHouse는 다음을 수행합니다.
 
@@ -297,7 +295,9 @@ WASM 메모리를 통해 (역)직렬화하여 전체 블록을 한 번에 처리
 4. 결과 버퍼를 읽습니다. 이 버퍼에는 동일한 포맷으로 직렬화된, 정확히 같은 수의 행을 포함하는 컬럼이 정확히 하나 있어야 합니다. `JSONEachRow`처럼 이름이 지정된 필드가 있는 포맷에서는 결과 컬럼의 이름이 `result`여야 합니다.
 5. 입력 버퍼(있는 경우)와 결과 버퍼 handle 모두에 대해 `clickhouse_destroy_buffer`를 호출합니다. 게스트 코드는 결과 버퍼를 직접 해제해서는 안 되며, 입력 handle을 결과로 반환해서도 안 됩니다. 그렇게 하면 버퍼가 두 번 제거됩니다.
 
-함수는 입력 블록마다 한 번 호출됩니다. 대규모 쿼리는 쿼리 파이프라인에 의해 여러 블록으로 분할되므로(`webassembly_udf_max_input_block_size` 설정으로 호출당 최대 행 수를 추가로 제한할 수 있음), 각 호출에서 전달되는 행 수는 전체 쿼리가 아니라 해당 블록의 크기입니다.
+함수는 입력 블록마다 한 번 호출됩니다. 대규모 쿼리는 쿼리 파이프라인에 의해 여러 블록으로 분할되므로, 각 호출에서 전달되는 행 수는 전체 쿼리가 아니라 해당 블록의 크기입니다.
+
+파이프라인 블록도 모듈의 선형 메모리에 비해 지나치게 클 수 있으므로 추가로 분할됩니다. 기본적으로 `webassembly_udf_input_split_memory_ratio`가 이를 동적으로 분할합니다. ClickHouse는 직렬화된 행을 측정하여 입력이 게스트 선형 메모리의 해당 비율을 넘어서기 전에 새 호출을 시작하므로, 행 수는 데이터에 따라 달라집니다. `webassembly_udf_max_input_block_size`가 0이 아니면 이를 대체하여 호출당 지정된 행 수의 고정 상한이 적용되며, 비율이 `0`이면 전체 블록을 한 번의 호출로 전달합니다. 호출은 결코 1개 행 미만으로 줄어들지 않으므로, 단일 행 자체가 모듈 메모리에 비해 너무 큰 경우에는 여전히 게스트 내부에서 실패합니다.
 
 <Note>
   버퍼 내부의 정확한 바이트는 선택한 포맷에 따라 결정되며, 게스트 코드는 이를 직접 디코딩하고 인코딩해야 합니다. 특히 `String` 값의 경우:
@@ -328,7 +328,7 @@ WASM 메모리를 통해 (역)직렬화하여 전체 블록을 한 번에 처리
 )
 ```
 
-freestanding C로 작성한 완전한 예시입니다. `str_reverse`는 `serialization_format = 'RowBinary'`를 사용해 각 입력 문자열의 바이트 순서를 뒤집습니다. 모듈 인스턴스는 여러 블록에서 재사용되므로 `clickhouse_destroy_buffer`가 실제로 메모리를 회수해야 합니다. 여기서는 모든 버퍼가 소멸되면 할당자가 재설정됩니다.
+freestanding C로 작성된 완전한 예시입니다. `str_reverse`는 `serialization_format = 'RowBinary'`를 사용하여 각 입력 문자열의 바이트를 뒤집습니다. 모듈 인스턴스는 여러 블록에 걸쳐 재사용되므로 `clickhouse_destroy_buffer`가 실제로 메모리를 회수해야 합니다. 여기서는 모든 버퍼가 소멸되면 할당자가 초기화됩니다.
 
 ```c
 #include <stdint.h>
@@ -534,7 +534,9 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 * `webassembly_udf_max_memory` — WebAssembly UDF 인스턴스당 바이트 단위의 메모리 한도입니다.
 
-* `webassembly_udf_max_input_block_size` — 단일 블록에서 WebAssembly UDF에 전달되는 최대 행 수입니다. 모든 행을 한 번에 처리하려면 0으로 설정합니다.
+* `webassembly_udf_max_input_block_size` — 모든 ABI에 대해, 단일 블록에서 WebAssembly UDF에 전달되는 최대 행 수입니다. 0으로 설정하면 `ABI BUFFERED_V1` 함수의 호출 크기를 `webassembly_udf_input_split_memory_ratio`가 결정하며, 다른 ABI는 파이프라인 블록 전체를 받습니다.
+
+* `webassembly_udf_input_split_memory_ratio` — 모듈이 시작 시점에 보유한다고 선언한 선형 메모리(페이지 없이 시작하는 모듈의 경우 메모리 상한) 중 한 번의 호출 입력이 차지할 수 있는 비율입니다. `webassembly_udf_max_input_block_size`가 0일 때 `ABI BUFFERED_V1` 함수의 블록을 분할하는 데 사용되며, 다른 ABI는 직렬화된 입력 블록을 전달하지 않으므로 이 설정을 무시합니다. 기본값: `0.5`로, 나머지 메모리는 게스트 자체의 작업 집합에 남겨둡니다 — 비율이 1에 가까우면 게스트의 할당자 내부에서 여전히 실패할 수 있습니다. 파이프라인 블록 전체를 한 번의 호출로 전달하려면 0으로 설정하거나 `compatibility`를 26.9 이전 버전으로 설정합니다. 값은 0 이상 1 이하여야 합니다.
 
 * `webassembly_udf_max_instances` — 함수별로 병렬 실행할 수 있는 WebAssembly UDF 인스턴스의 최대 개수입니다.
 

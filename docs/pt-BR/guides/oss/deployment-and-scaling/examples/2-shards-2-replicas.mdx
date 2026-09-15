@@ -30,7 +30,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
 <DedicatedKeeperServers />
 
 <div id="prerequisites">
-  ## Pré-requisitos
+  ## Pré-requisitos {#prerequisites}
 </div>
 
 * Você já configurou anteriormente um [servidor ClickHouse local](/pt-BR/get-started/setup/install)
@@ -171,7 +171,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
   </Step>
 
   <Step title="Configurar nós do ClickHouse" id="configure-clickhouse-servers">
-    ### Configuração do servidor
+    ### Configuração do servidor {#server-setup}
 
     Agora modifique cada arquivo de configuração vazio `config.xml` localizado em
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas que estão
@@ -257,7 +257,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
 
     Cada seção do arquivo de configuração acima é explicada com mais detalhes a seguir.
 
-    #### Rede e logging
+    #### Rede e logging {#networking}
 
     <ListenHost />
 
@@ -277,7 +277,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     Para mais informações sobre a configuração de logging, consulte os comentários incluídos no
     [arquivo de configuração](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) padrão do ClickHouse.
 
-    #### Configuração do cluster
+    #### Configuração do cluster {#cluster-config}
 
     A configuração do cluster é definida no bloco `<remote_servers>`.
     Aqui é definido o nome do cluster `cluster_2S_2R`.
@@ -326,7 +326,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     e serve como template para queries de DDL distribuído, que são queries executadas
     em todo o cluster usando a cláusula `ON CLUSTER`.
 
-    #### Configuração do Keeper
+    #### Configuração do Keeper {#keeper-config-explanation}
 
     A seção `<ZooKeeper>` informa ao ClickHouse onde o ClickHouse Keeper (ou ZooKeeper) está em execução.
     Como estamos usando um cluster do ClickHouse Keeper, cada `<node>` do cluster precisa ser especificado,
@@ -356,7 +356,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
       em ambientes de produção, recomendamos fortemente que o ClickHouse Keeper seja executado em servidores dedicados.
     </Note>
 
-    #### Configuração de macros
+    #### Configuração de macros {#macros-config-explanation}
 
     Além disso, a seção `<macros>` é usada para definir substituições de parâmetros para
     tabelas replicadas. Elas são listadas em `system.macros` e permitem o uso de substituições
@@ -369,7 +369,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     </macros>
     ```
 
-    ### Configuração de usuário
+    ### Configuração de usuário {#cluster-configuration}
 
     Agora modifique cada arquivo de configuração vazio `users.xml` localizado em
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` com o seguinte conteúdo:
@@ -387,7 +387,6 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -395,7 +394,6 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -425,7 +423,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
   <Step title="Configurar o ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     Em seguida, você vai configurar o ClickHouse Keeper, que é usado para coordenação.
 
-    ### Configuração do Keeper
+    ### Configuração do Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -744,9 +742,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
   </Step>
 </Steps>
 
-<div id="conclusion">
-  ## Conclusão
-</div>
+## Conclusão {#conclusion}
 
 A vantagem desta topologia de cluster com 2 shards e 2 réplicas é que ela oferece escalabilidade e tolerância a falhas.
 Os dados são distribuídos entre hosts separados, reduzindo os requisitos de armazenamento e E/S por nó, enquanto as consultas são processadas em paralelo nos dois shards para melhorar o desempenho e a eficiência de memória.

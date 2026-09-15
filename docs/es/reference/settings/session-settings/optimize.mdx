@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_aggregators_of_group_by_keys">
-  ## optimize_aggregators_of_group_by_keys
-</div>
+## optimize_aggregators_of_group_by_keys {#optimize_aggregators_of_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Elimina los agregadores min/max/any/anyLast de las claves de GROUP BY en la cláusula SELECT
 
-<div id="optimize_append_index">
-  ## optimize_append_index
-</div>
+## optimize_append_index {#optimize_append_index}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,17 +29,13 @@ Valores posibles:
 
 * true, false
 
-<div id="optimize_arithmetic_operations_in_aggregate_functions">
-  ## optimize_arithmetic_operations_in_aggregate_functions
-</div>
+## optimize_arithmetic_operations_in_aggregate_functions {#optimize_arithmetic_operations_in_aggregate_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Saca las operaciones aritméticas de las funciones de agregación
 
-<div id="optimize_const_name_size">
-  ## optimize_const_name_size
-</div>
+## optimize_const_name_size {#optimize_const_name_size}
 
 <SettingsInfoBlock type="Int64" default_value="256" />
 
@@ -57,9 +49,7 @@ Posibles valores:
 * 0 — siempre,
 * entero negativo - nunca.
 
-<div id="optimize_count_from_files">
-  ## optimize_count_from_files
-</div>
+## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,9 +60,7 @@ Valores posibles:
 * 0 — Optimización deshabilitada.
 * 1 — Optimización habilitada.
 
-<div id="optimize_dictget_tuple_element">
-  ## optimize_dictget_tuple_element
-</div>
+## optimize_dictget_tuple_element {#optimize_dictget_tuple_element}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,17 +68,13 @@ Valores posibles:
 
 Reescribe `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` como `dictGet('dict', 'b', key)` para evitar recuperar atributos del diccionario innecesarios. Admite acceso posicional (`.1`, `.2`, ...) y con nombre (`.b`), y también se aplica a `dictGetOrDefault` cuando el argumento por defecto es una tupla constante o un `tuple(...)` de constantes.
 
-<div id="optimize_distinct_in_order">
-  ## optimize_distinct_in_order
-</div>
+## optimize_distinct_in_order {#optimize_distinct_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Habilita la optimización de DISTINCT si algunas de sus columnas forman un prefijo de la ordenación. Por ejemplo, un prefijo de la clave de ordenación en MergeTree o de la instrucción ORDER BY
 
-<div id="optimize_distributed_group_by_sharding_key">
-  ## optimize_distributed_group_by_sharding_key
-</div>
+## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -126,9 +110,7 @@ Véase también:
   Actualmente requiere `optimize_skip_unused_shards` (la razón es que, en algún momento, podría habilitarse de forma predeterminada, y solo funcionará correctamente si los datos se insertaron a través de una tabla Distributed; es decir, si los datos se distribuyen según `sharding_key`).
 </Note>
 
-<div id="optimize_dry_run_check_part">
-  ## optimize_dry_run_check_part
-</div>
+## optimize_dry_run_check_part {#optimize_dry_run_check_part}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -136,9 +118,7 @@ Véase también:
 
 Si está habilitado, `OPTIMIZE ... DRY RUN` valida la parte fusionada resultante con `checkDataPart`. Si la comprobación falla, se lanza una excepción.
 
-<div id="optimize_empty_string_comparisons">
-  ## optimize_empty_string_comparisons
-</div>
+## optimize_empty_string_comparisons {#optimize_empty_string_comparisons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -147,9 +127,7 @@ Si está habilitado, `OPTIMIZE ... DRY RUN` valida la parte fusionada resultante
 Convierte expresiones como col = &#39;&#39; o &#39;&#39; = col en empty(col), y col != &#39;&#39; o &#39;&#39; != col en notEmpty(col),
 únicamente cuando col es de tipo String o FixedString.
 
-<div id="optimize_extract_common_expressions">
-  ## optimize_extract_common_expressions
-</div>
+## optimize_extract_common_expressions {#optimize_extract_common_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -160,9 +138,7 @@ Permite extraer expresiones comunes de las disyunciones en las expresiones WHERE
 * índices en expresiones de filtrado simples
 * la optimización de CROSS a INNER JOIN
 
-<div id="optimize_functions_to_subcolumns">
-  ## optimize_functions_to_subcolumns
-</div>
+## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -186,9 +162,7 @@ Valores posibles:
 * 0 — Optimización deshabilitada.
 * 1 — Optimización habilitada.
 
-<div id="optimize_inverse_dictionary_lookup">
-  ## optimize_inverse_dictionary_lookup
-</div>
+## optimize_inverse_dictionary_lookup {#optimize_inverse_dictionary_lookup}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -196,17 +170,28 @@ Valores posibles:
 
 Evita repetir la búsqueda inversa en diccionarios mediante búsquedas más rápidas en un conjunto precalculado de posibles valores de clave.
 
-<div id="optimize_multiif_to_if">
-  ## optimize_multiif_to_if
-</div>
+## optimize_multiif_to_if {#optimize_multiif_to_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Sustituye &#39;multiIf&#39; por &#39;if&#39; cuando solo haya una condición.
 
-<div id="optimize_normalize_count_variants">
-  ## optimize_normalize_count_variants
-</div>
+## optimize_mutations_with_partition_pruning {#optimize_mutations_with_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración para descartar automáticamente las particiones de las mutaciones según la cláusula WHERE"}]}]} />
+
+Cuando está habilitada, ClickHouse detecta automáticamente las condiciones de la clave de partición en la cláusula WHERE de las mutaciones `ALTER TABLE UPDATE`/`DELETE` y de las sentencias `UPDATE`/`DELETE` ligeras en tablas de la familia `ReplicatedMergeTree`, y procesa únicamente las particiones afectadas en lugar de todas las particiones.
+
+Actualmente, este descarte automático se aplica únicamente a tablas replicadas. En tablas `MergeTree` no replicadas, use una cláusula `IN PARTITION` explícita para limitar una mutación a particiones específicas.
+
+Valores posibles:
+
+* 0 — Deshabilitada. Las mutaciones y las actualizaciones ligeras procesarán todas las particiones.
+* 1 — Habilitada. Las mutaciones y las actualizaciones ligeras procesarán únicamente las particiones que cumplan la condición WHERE.
+
+## optimize_normalize_count_variants {#optimize_normalize_count_variants}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -214,9 +199,7 @@ Sustituye &#39;multiIf&#39; por &#39;if&#39; cuando solo haya una condición.
 
 Reescribe las funciones de agregación semánticamente equivalentes a count() como count().
 
-<div id="optimize_on_insert">
-  ## optimize_on_insert
-</div>
+## optimize_on_insert {#optimize_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -272,9 +255,7 @@ Resultado:
 
 Tenga en cuenta que esta configuración afecta al comportamiento de la [vista materializada](/es/reference/statements/create/view#materialized-view).
 
-<div id="optimize_prewhere_after_pushdown">
-  ## optimize_prewhere_after_pushdown
-</div>
+## optimize_prewhere_after_pushdown {#optimize_prewhere_after_pushdown}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -285,9 +266,7 @@ añadir filtros adicionales sobre un paso de lectura de `MergeTree` (p. ej., pus
 `JOIN`, reescrituras de proyección). Cuando ya existe un `PREWHERE`, el nuevo
 filtro se fusiona con él mediante `AND` en lugar de permanecer como un paso de filtro independiente.
 
-<div id="optimize_qbit_distance_function_reads">
-  ## optimize_qbit_distance_function_reads
-</div>
+## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -295,9 +274,7 @@ filtro se fusiona con él mediante `AND` en lugar de permanecer como un paso de 
 
 Sustituye las funciones de distancia del tipo de dato `QBit` por otras equivalentes que solo leen del almacenamiento las columnas necesarias para el cálculo.
 
-<div id="optimize_read_in_order">
-  ## optimize_read_in_order
-</div>
+## optimize_read_in_order {#optimize_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -312,25 +289,32 @@ Valores posibles:
 
 * [cláusula ORDER BY](/es/reference/statements/select/order-by#optimization-of-data-reading)
 
-<div id="optimize_respect_aliases">
-  ## optimize_respect_aliases
-</div>
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración que habilita la optimización de lectura en orden al leer en orden inverso de la clave de ordenación con el modificador `FINAL` en tablas `ReplacingMergeTree`."}]}]} />
+
+Habilita la lectura de datos en orden inverso de la clave de ordenación en consultas `SELECT` con el modificador `FINAL` en tablas [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree). Solo surte efecto si [optimize&#95;read&#95;in&#95;order](/es/reference/settings/session-settings/optimize#optimize_read_in_order) también está habilitado.
+
+Valores posibles:
+
+* 0 — Se deshabilita la lectura en orden inverso con `FINAL`.
+* 1 — Se habilita la lectura en orden inverso con `FINAL`.
+
+## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Si se establece en true, respetará los alias en WHERE/GROUP BY/ORDER BY, lo que ayudará con el descarte de particiones/índices secundarios/optimize&#95;aggregation&#95;in&#95;order/optimize&#95;read&#95;in&#95;order/optimize&#95;trivial&#95;count
 
-<div id="optimize_sorting_by_input_stream_properties">
-  ## optimize_sorting_by_input_stream_properties
-</div>
+## optimize_sorting_by_input_stream_properties {#optimize_sorting_by_input_stream_properties}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Optimiza la ordenación en función de las propiedades de ordenación del flujo de entrada
 
-<div id="optimize_substitute_columns">
-  ## optimize_substitute_columns
-</div>
+## optimize_substitute_columns {#optimize_substitute_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -340,9 +324,7 @@ Valores posibles:
 
 * true, false
 
-<div id="optimize_syntax_fuse_functions">
-  ## optimize_syntax_fuse_functions
-</div>
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -376,9 +358,7 @@ SELECT
 FROM default.fuse_tbl AS __table1
 ```
 
-<div id="optimize_throw_if_noop">
-  ## optimize_throw_if_noop
-</div>
+## optimize_throw_if_noop {#optimize_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -391,9 +371,7 @@ Valores posibles:
 * 1 — El lanzamiento de una excepción está habilitado.
 * 0 — El lanzamiento de una excepción está deshabilitado.
 
-<div id="optimize_time_filter_with_preimage">
-  ## optimize_time_filter_with_preimage
-</div>
+## optimize_time_filter_with_preimage {#optimize_time_filter_with_preimage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -401,9 +379,7 @@ Valores posibles:
 
 Optimiza los predicados de Date y DateTime convirtiendo las funciones en comparaciones equivalentes sin necesidad de conversiones (p. ej., `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 
-<div id="optimize_truncate_order_by_after_group_by_keys">
-  ## optimize_truncate_order_by_after_group_by_keys
-</div>
+## optimize_truncate_order_by_after_group_by_keys {#optimize_truncate_order_by_after_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -411,17 +387,13 @@ Optimiza los predicados de Date y DateTime convirtiendo las funciones en compara
 
 Eliminar los elementos finales de ORDER BY una vez que todas las claves de GROUP BY queden incluidas en el prefijo de ORDER BY.
 
-<div id="optimize_uniq_to_count">
-  ## optimize_uniq_to_count
-</div>
+## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Reescribe uniq y sus variantes (excepto uniqUpTo) como count si la subconsulta tiene DISTINCT o una cláusula GROUP BY.
 
-<div id="optimize_using_constraints">
-  ## optimize_using_constraints
-</div>
+## optimize_using_constraints {#optimize_using_constraints}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

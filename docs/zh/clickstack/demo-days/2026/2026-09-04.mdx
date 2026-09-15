@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-04
+title: '演示日 - 2026-09-04'
+sidebarTitle: '2026-09-04'
+description: '2026-09-04 的 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 新增的 仪表盘 过滤器类型 {#new-types-of-dashboard-filter}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VnlNxvcvg-g" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，仪表盘 过滤器只提供一种取值方式：查询值，即下拉选项来自 ClickHouse 中的某一列。现在打开过滤器与变量弹窗，还能看到另外两种类型可供选择。
+
+静态值允许你在创建过滤器时自行输入选项，例如环境过滤器可以直接列出 `dev`、`staging` 和 `prod`，背后无需任何查询。静态列表过滤器没有 `expression`，因此仅支持变量模式，无法转换为用于广播模式的 SQL 条件。
+
+PromQL 标记值则从 PromQL source 的 `<label>/values` 端点查询选项。你可以选择所需的标记，还能通过匹配器进一步收窄范围，而匹配器本身又可以引用其他变量。这样一来，过滤器之间就形成了依赖关系：选定某个环境后，下一个过滤器提供的 instances 会随之收窄，PromQL 图表也会同步筛选。
+
+这两种类型都可以作为变量暴露出来，也就是说过滤器的作用不止于 `WHERE` clause。在演示中，一个列出 `ServiceName` 和 `SeverityText` 的静态过滤器被用作 图表 的 group-by dimension，因此在下拉菜单中选择不同的值，即可任意组合地改变 图表 的分组方式。
+
+**相关 PR：** [#3017](https://github.com/hyperdxio/hyperdx/pull/3017) 为 schema 和 API 添加静态值列表过滤器，[#3022](https://github.com/hyperdxio/hyperdx/pull/3022) 渲染静态值列表过滤器输入框，[#3020](https://github.com/hyperdxio/hyperdx/pull/3020) 允许在 UI 中创建和编辑静态列表过滤器，[#3060](https://github.com/hyperdxio/hyperdx/pull/3060) 在 MCP 中支持静态自定义值过滤器，[#3053](https://github.com/hyperdxio/hyperdx/pull/3053) 支持基于 Prometheus 标记值的 仪表盘 过滤器，[#3072](https://github.com/hyperdxio/hyperdx/pull/3072) 为 PromQL 标记过滤器支持 autocomplete，[#3039](https://github.com/hyperdxio/hyperdx/pull/3039) 在 Prometheus 标记值端点上接受可选的时间边界，[#3079](https://github.com/hyperdxio/hyperdx/pull/3079) 在 PromQL 标记与值端点上支持 match[]，[#3080](https://github.com/hyperdxio/hyperdx/pull/3080) 在 PromQL 标记过滤器中支持 match[]，[#3083](https://github.com/hyperdxio/hyperdx/pull/3083) 对 PromQL 标记与值去重以避免 Mantine 崩溃，[#3005](https://github.com/hyperdxio/hyperdx/pull/3005) 关闭过滤器编辑器时对未保存的更改进行确认，[#3078](https://github.com/hyperdxio/hyperdx/pull/3078) 支持将 仪表盘 过滤器配置为必填，[#3093](https://github.com/hyperdxio/hyperdx/pull/3093) 可选地将 仪表盘 过滤器应用于卡片编辑器预览
+
+## PromQL 图表的自定义图例模板 {#custom-legend-templates-for-promql-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2rR_kRAEvWw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+正如 Vladimir 所指出的，PromQL 图例一直很难看懂。默认情况下，我们会显示指标名称，后面跟上返回的各 series 之间存在差异的所有标记；当查询返回大量 series 时，这就是一长串字符，必须点进去才能看明白。
+
+现在，图表的 Display Settings 支持配置图例模板。它是一个 Handlebars 模板，你可以只引用自己真正关心的标记，从而在图例和工具提示中得到简短的 series 名称。
+
+如果模板引用了不存在的标记，该引用会渲染为空白。如果结果为空，或在各 series 之间不唯一，我们会回退到完整的区分标记集合，因此不会出现两个无法区分的 series。
+
+**Related PRs:** [#3055](https://github.com/hyperdxio/hyperdx/pull/3055) support a custom template for PromQL series legends
+
+## 将相对日期范围保存为仪表盘默认值 {#saving-a-relative-date-range-as-a-dashboard-default}
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8KzwsEG-KSg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表盘现在可以将相对日期范围保存为默认值。设置好所需的时间范围，然后点击 &quot;Save Query and Filters as default&quot;，此后每次打开该仪表盘都会使用这一范围。
+
+相对范围正是其价值所在。保存&quot;最近 6 小时&quot;意味着无论何时打开仪表盘，看到的数据都是当下有效的，而不是被固定在一个很快就会过时的时间窗口上。你依然可以在仪表盘上随时切换范围，比如查看最近 7 天；离开页面后再回来，又会恢复到保存的默认值。
+
+**相关 PR：**[#3073](https://github.com/hyperdxio/hyperdx/pull/3073) 仪表盘可保存相对日期范围
+
+## 无需 saved search 或 仪表盘 卡片 的告警 {#alerts-without-a-saved-search-or-dashboard-tile}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wuK7geV7F94" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+以往，每条告警背后都必须有所依托：日志需要 saved search，指标需要 仪表盘 卡片。当你要迁移成千上万条 Grafana 告警时，这种方式根本无法扩展。
+
+内联告警取消了这一要求。Chart Explorer 的操作栏中新增了 **Create alert** 操作，你可以基于指标或事件构建图表，并直接对其设置告警，无需事先保存任何内容。你也可以在告警页面创建内联告警；如果明确不希望告警与 saved search 或仪表盘关联，就适合走这条路径。
+
+内联告警会在告警文档中持久化自己的 `chartConfig`，其形态与 仪表盘 卡片 存储的完全一致，因此它与 卡片 告警走的是同一条代码路径，而不是另起一套。它支持 `line`、`stacked_bar` 和 `number` 显示类型下的 builder 与 Raw SQL。目前尚不支持 PromQL。
+
+外部 API v2 和 MCP 的 `save_alert` 工具同样接受这种 `source: 'inline'` 形态，使用的 卡片 配置 dialect 与 v2 仪表盘一致，因此可以大规模以编程方式创建告警。路由层复用了 仪表盘 卡片 转换器，避免两侧实现逐渐分化。
+
+**相关 PR：** [#3010](https://github.com/hyperdxio/hyperdx/pull/3010) 支持在没有 saved search 或 仪表盘 卡片 的情况下创建告警 (backend) 、[#3069](https://github.com/hyperdxio/hyperdx/pull/3069) 用于创建和编辑内联图表告警的 UI、[#3043](https://github.com/hyperdxio/hyperdx/pull/3043) 在外部 API v2 和 MCP 中支持图表告警
+
+## 告警名称与标签 {#alert-names-and-tags}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/nIJGusSLBuk" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+告警现在可以拥有各自的名称和标签。仪表盘卡片或 saved search 上的告警表单新增了名称输入框和标签输入框；新建告警默认沿用对应图表或 saved search 的名称，并继承所在仪表盘或 saved search 的标签。
+
+告警页面显示的就是这些名称，搜索和过滤也依据它们进行。数据库中已有且未设置名称的告警，仍会从其引用的 saved search 或仪表盘中派生出名称。
+
+`team/tags` 端点返回的标签，现在除仪表盘和 saved searches 的标签外，还包含来自告警文档的标签。若非如此，仅被某个告警使用的标签在你为下一个告警打标签时就不会出现在建议中。
+
+这为告警页面的分页 (同时仍支持按标签搜索和过滤) 打下了基础：分页要求名称和标签直接存放在告警文档中，而不是与仪表盘和 saved search collections 做 join。分页功能目前尚未完成。
+
+**相关 PR：** [#3063](https://github.com/hyperdxio/hyperdx/pull/3063) 持久化告警级别的 displayName 和标签，[#3065](https://github.com/hyperdxio/hyperdx/pull/3065) 支持写入告警 displayName 和标签，[#3067](https://github.com/hyperdxio/hyperdx/pull/3067) 在 UI 中显示和编辑告警 displayName 和标签，[#3092](https://github.com/hyperdxio/hyperdx/pull/3092) 在标签 API 响应中包含告警标签，[#3029](https://github.com/hyperdxio/hyperdx/pull/3029) 回填告警名称和标签 (进行中)
+
+## Explore 原型 {#an-explore-prototype}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**这属于探索性工作，我们并未承诺一定会发布。**
+
+该原型是一个统一的 Explore 页面，可同时取代搜索页面和 Chart Explorer。它目前在 HyperDX 仓库中还是草案。它可能会取代这两个页面，也可能作为第三个页面与它们并存，当然也可能最终不了了之。
+
+它想要解决的痛点是在现有这两个页面之间来回切换。客户反馈说，把搜索中的问题带到 Chart Explorer 里很别扭：往往要重新选择数据源，并在另一侧重新搭一遍同样的查询。Explore 则把这一切收在同一个页面上，只在 events、patterns、deltas 和图表等视图之间切换，而不是让脚下的页面整个换掉。
+
+第二个主题是降低门槛，让不熟悉查询语言的用户也能上手。向表中添加列、排序以及选择 group-by 都通过下拉菜单完成，需要时仍可直接写 SQL。group-by 很能说明当前的短板：搜索页面上的直方图固定按 status code 分组，无法更改，因此想换一种分组方式的人只能转去 Chart Explorer。而在这里，你可以在 events 视图中设置 group-by，当小直方图不够用时切换到时间序列图或柱状图，把聚合方式改成 `p99` 之类，再把结果保存到仪表盘。
+
+过滤器栏是一个小型 query builder，把 Lucene 和 SQL 都封装了起来：选一个字段、选一个运算符、输入一个值；高级用户则可以使用完整的查询编辑器和 macros。至于到底该不该同时保留两种查询语言，也是目前尚待回答的问题之一。
+
+还有不少问题没有定论。目前还没有 PromQL；指标是否应该放在这个页面上，抑或这对单个页面要求过高，同样尚无结论。该原型聚焦于日志和链路追踪的使用体验。
+
+我们非常期待你的反馈。
+
+**相关 PR：** [#2985](https://github.com/hyperdxio/hyperdx/pull/2985) Explore as search-first visualization (prototype) (进行中)

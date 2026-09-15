@@ -4,15 +4,16 @@ slug: /cloud/reference/architecture
 title: 'Architecture de ClickHouse Cloud'
 description: 'Cette page décrit l’architecture de ClickHouse Cloud'
 keywords: ['ClickHouse Cloud', 'architecture cloud', 'séparation du stockage et du calcul']
-doc_type: 'référence'
+doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
+import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Architecture de Cloud" />
 
 <div id="storage-backed-by-object-store">
-  ## Stockage reposant sur un stockage objet
+  ## Stockage reposant sur un stockage objet {#storage-backed-by-object-store}
 </div>
 
 * Stockage quasiment illimité
@@ -20,7 +21,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 * Coût de stockage des données nettement inférieur, en particulier pour les données consultées moins fréquemment
 
 <div id="compute">
-  ## Ressources de calcul
+  ## Ressources de calcul {#compute}
 </div>
 
 * Mise à l’échelle et mise en veille automatiques : inutile de dimensionner à l’avance ou de surprovisionner pour les pics d’utilisation
@@ -28,30 +29,30 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 * Sécurisé et hautement disponible par défaut
 
 <div id="administration">
-  ## Administration
+  ## Administration {#administration}
 </div>
 
 * La configuration, la supervision, les sauvegardes et la facturation sont entièrement prises en charge.
 * Les contrôles des coûts sont activés par défaut et peuvent être ajustés dans la console Cloud.
 
 <div id="service-isolation">
-  ## Isolation du service
+  ## Isolation du service {#service-isolation}
 </div>
 
 <div id="network-isolation">
-  ### Isolation réseau
+  ### Isolation réseau {#network-isolation}
 </div>
 
 Tous les services sont isolés au niveau du réseau.
 
 <div id="compute-isolation">
-  ### Isolation des ressources de calcul
+  ### Isolation des ressources de calcul {#compute-isolation}
 </div>
 
 Tous les services sont déployés dans des pods distincts au sein de leurs espaces de noms Kubernetes respectifs, avec une isolation au niveau réseau.
 
 <div id="storage-isolation">
-  ### Isolation du stockage
+  ### Isolation du stockage {#storage-isolation}
 </div>
 
 Tous les services utilisent un sous-chemin distinct dans un bucket partagé (AWS, GCP) ou un conteneur de stockage partagé (Azure).
@@ -61,14 +62,22 @@ Pour AWS, l’accès au stockage est contrôlé via AWS IAM, et chaque IAM role 
 Pour GCP et Azure, les services bénéficient d’une isolation du stockage objet (tous les services disposent de leurs propres buckets ou de leur propre conteneur de stockage).
 
 <div id="compute-compute-separation">
-  ## Compute-compute separation
+  ## Compute-compute separation {#compute-compute-separation}
 </div>
 
 [Compute-compute separation](/fr/products/cloud/features/infrastructure/warehouses) vous permet de créer plusieurs groupes de nœuds de calcul, chacun disposant de sa propre URL de service, tout en utilisant le même stockage objet partagé. Cette fonctionnalité permet d’isoler les ressources de calcul selon différents cas d’usage, par exemple en séparant les lectures des écritures, tout en partageant les mêmes données. Elle permet également une utilisation plus efficace des ressources grâce à une mise à l’échelle indépendante des groupes de calcul selon les besoins.
 
-<div id="concurrency-limits">
-  ## Limites de concurrence
-</div>
+## Compute à la demande {#on-demand-compute}
+
+<PrivatePreviewBadge />
+
+Le compute à la demande affecte temporairement des **workers** issus d&#39;un pool géré par ClickHouse aux workloads pris en charge, via votre ClickHouse Cloud service existant. Votre service authentifie et coordonne la requête, tandis que les workers affectés exécutent l&#39;essentiel des opérations éligibles de parcours, de join et d&#39;aggregation en dehors du compute du service. Le pool est partagé entre les ClickHouse Cloud services, mais chaque worker ne dessert qu&#39;un seul service à la fois.
+
+Pendant la private preview, le compute à la demande ne prend en charge que les requêtes `SELECT` éligibles. La disponibilité est assurée au mieux, les performances varient et les SLO et SLA de ClickHouse Cloud ne s&#39;appliquent pas.
+
+[Terms of Service de la Private Preview](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
+
+## Limites de concurrence {#concurrency-limits}
 
 Il n’y a pas de limite au nombre de requêtes par seconde (QPS) dans votre service ClickHouse Cloud. Il existe toutefois une limite de 1000 requêtes simultanées par réplique. Le QPS dépend en pratique du temps d’exécution moyen des requêtes et du nombre de répliques de votre service.
 

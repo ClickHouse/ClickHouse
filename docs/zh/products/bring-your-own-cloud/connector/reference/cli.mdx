@@ -1,22 +1,22 @@
 ---
 title: '命令行客户端参考'
 sidebarTitle: '命令行客户端'
-description: 'clicklink clctl 命令参考：init、preflight、支持会话、网关 信任、审计和访问配置'
+description: 'clicklink clctl 命令参考：init、preflight、支持会话、gateway trust、审计和访问凭据预配'
 keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', 'CLI']
 doc_type: 'reference'
 ---
 
-连接器 以名为 `clicklink` 的单个二进制文件形式提供；可通过 `clicklink clctl` 运行相关命令。本页介绍安装和日常运维中使用的命令。对任意命令运行 `--help`，即可查看完整帮助文本。`troubleshoot` 和 `preflight` 子树中的 flags 还可通过 `CLCTL_*` 环境变量 (名称见各 flag 的帮助输出) 或 `~/.clicklink/clctl.yaml` 提供。
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="init">
-  ## clicklink clctl init
-</div>
+<PrivatePreviewBadge />
+
+连接器 以名为 `clicklink` 的单个二进制文件形式提供；可通过 `clicklink clctl` 运行相关命令。本页介绍安装和日常运维中使用的命令。对任意命令运行 `--help`，即可查看完整帮助文本。`troubleshoot` 和 `preflight` 子树中的 标志 还可通过 `CLCTL_*` 环境变量 (名称见各 标志 的帮助输出) 或 `~/.clicklink/clctl.yaml` 提供。
+
+## clicklink clctl init {#init}
 
 通过注册令牌、已保存的注册包或带外签名证书初始化连接器。一次调用即可暂存配置、配置 ClickHouse 访问权限、获取 mTLS 客户端证书、部署 (Helm 图表或 systemd 单元) 并验证运行状况。重复运行是安全的：配置和集群 UUID 会被保留，凭据会以原子方式覆盖；除非传入 `--force`，否则会复用现有客户端密钥。有关完整流程，请参阅[入门配置](/zh/products/bring-your-own-cloud/connector/onboarding)。
 
-<div id="init-entry-points">
-  ### 入口点
-</div>
+### 入口点 {#init-entry-points}
 
 三个入口点中必须且只能使用一个，彼此互斥。
 
@@ -26,9 +26,7 @@ doc_type: 'reference'
 | `--handoff <path>`     | 使用已保存的注册包进行引导。`handoff.yaml` 存在后，重新运行和恢复时都会使用此选项。                                                                                                                                                         |
 | `--signed-cert <path>` | 隔离网络流程的第 2 阶段：安装通过带外方式签名的客户端证书，并完成分阶段安装。还可使用 `--chain <path>` 同时替换 CA 证书链。                                                                                                                                |
 
-<div id="init-common-flags">
-  ### 通用标志
-</div>
+### 通用标志 {#init-common-flags}
 
 | 标志                          | 说明                                                                                                                             |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -41,18 +39,14 @@ doc_type: 'reference'
 | `--ch-user-suffix <suffix>` | 为已预配的 ClickHouse 用户名添加可选后缀 (`pcm_scraper` 变为 `pcm_scraper_<suffix>`) ，使第二个连接器部署可与第一个共享同一实例，且不会发生用户冲突。                  |
 | `--ch-admin-password-stdin` | 当 SQL 预配需要 ClickHouse 管理员密码时，从 stdin 读取；在 terminal 中运行时则会提示输入。                                                              |
 
-<div id="init-signing-flags">
-  ### 签名选项 (仅限阶段 1)
-</div>
+### 签名选项 (仅限阶段 1) {#init-signing-flags}
 
 | 标志                      | 描述                                                           |
 | ----------------------- | ------------------------------------------------------------ |
 | `--no-auto-sign`        | 仅限阶段 1：跳过通过注册端点自动签署 CSR，适用于隔离网络或带外签名流程。                      |
 | `--sign-endpoint <url>` | 覆盖注册签名端点 (默认值：通过在支持包端点中插入 `enroll` DNS 标签生成) 。必须为 HTTPS URL。 |
 
-<div id="init-kubernetes-flags">
-  ### 仅适用于 Kubernetes 的标志
-</div>
+### 仅适用于 Kubernetes 的标志 {#init-kubernetes-flags}
 
 仅可与 `--target helm` 一同使用。
 
@@ -68,9 +62,7 @@ doc_type: 'reference'
 | `--ch-pod <ref>`            | 用于 pod 内预配步骤的 ClickHouse pod (容器组) ，可指定名称或 `k=v` 标签选择器 (默认值：为每个实例的 Service 提供支持的一个运行中 pod) 。               |
 | `--api-private-ca`          | API 端点提供由注册包 CA 签发的证书：暂存 `api.tls.caFile`，使其指向已挂载的 CA 证书链，而非系统根证书。                                           |
 
-<div id="init-vm-flags">
-  ### 仅适用于 VM 的标志
-</div>
+### 仅适用于 VM 的标志 {#init-vm-flags}
 
 仅可与 `--target systemd` 配合使用。
 
@@ -79,9 +71,7 @@ doc_type: 'reference'
 | `--server <url>`     | 访问包所指向的 Kubernetes API server URL (默认使用此主机的 kubeconfig；否则会提示输入) 。                   |
 | `--ca-data <base64>` | 用于 `--server` 的 Base64 `certificate-authority-data` (默认使用此主机的 kubeconfig；否则会提示输入) 。 |
 
-<div id="init-flag-conflicts">
-  ### 标志冲突
-</div>
+### 标志冲突 {#init-flag-conflicts}
 
 * `--handoff`、`--enroll` 和 `--signed-cert` 互斥；必须且只能指定其中一个。
 * 仅 Kubernetes 适用的标志仅在指定 `--target helm` 时可用；使用 `--target helm` 时，不接受 `--server` 和 `--ca-data` (Helm 流程会读取工作站的 kubeconfig) 。
@@ -89,9 +79,7 @@ doc_type: 'reference'
 * `--operators` 与 `--no-gateway` 互斥。
 * 使用 `--skip-provision` 时，不接受 `--ch-pod`、`--ch-user-suffix`、`--server`、`--ca-data` 和 `--ch-admin-password-stdin` (不会执行任何预配) 。
 
-<div id="preflight">
-  ## clicklink clctl preflight
-</div>
+## clicklink clctl preflight {#preflight}
 
 运行按类别分组的连接器检查套件：配置、文件、网络、ClickHouse、systemd、访问、磁盘和脱敏。每项检查会报告通过、警告、失败或跳过。退出代码为 0 表示所有检查均已通过 (警告不造成阻塞) ；退出代码为 2 表示一项或多项检查失败。
 
@@ -110,9 +98,7 @@ doc_type: 'reference'
 
 `--k8s-*` 标志与远程通道标志互斥；请选择其中一个目标。
 
-<div id="troubleshoot-session">
-  ## clicklink clctl troubleshoot session
-</div>
+## clicklink clctl troubleshoot session {#troubleshoot-session}
 
 用于启用、禁用和检查支持会话：故障排除程序在此限定时间窗口内接受命令。当没有活动会话时，即使其 WebSocket 已连接，守护进程也会拒绝所有命令。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 
@@ -121,9 +107,7 @@ doc_type: 'reference'
 * **本地文件** (默认) ：在运行故障排除程序的主机上读取和写入会话状态文件 (默认为 `/var/lib/clicklink/session.json`) 。
 * **Gateway**：使用 `--gateway-url` 时，会从您的工作站获取 OIDC ID 令牌，并改为调用故障排除程序的会话网关。
 
-<div id="session-shared-flags">
-  ### 共享选项
-</div>
+### 共享选项 {#session-shared-flags}
 
 | 标志                         | 说明                                                                                       |
 | -------------------------- | ---------------------------------------------------------------------------------------- |
@@ -136,9 +120,7 @@ doc_type: 'reference'
 | `--token-file <path>`      | 包含预先生成的 OIDC ID 令牌的文件；该令牌将作为 Bearer 令牌使用，并绕过其他令牌提供商。                                     |
 | `--gateway-ca <path>`      | 用于验证网关证书的 CA bundle (自带证书) 。未设置时，使用通过 `gateway trust` 固定的证书；未固定证书的自签名网关会拒绝连接。            |
 
-<div id="session-enable">
-  ### 启用 session
-</div>
+### 启用 session {#session-enable}
 
 | 标志                 | 描述                                                                             |
 | ------------------ | ------------------------------------------------------------------------------ |
@@ -148,15 +130,11 @@ doc_type: 'reference'
 
 如果已有处于活动状态的 session，启用操作将失败；请先将其禁用，或等待其过期。
 
-<div id="session-disable">
-  ### 禁用 session
-</div>
+### 禁用 session {#session-disable}
 
 立即停用 session。未激活 session 时，此操作为空操作。
 
-<div id="session-status">
-  ### 会话状态
-</div>
+### 会话状态 {#session-status}
 
 显示会话是否处于活动状态、由谁启用及其到期时间。`--output` (`-o`) 可选择 `table` (默认) 或 `json`。
 
@@ -170,9 +148,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-<div id="gateway-trust">
-  ## clicklink clctl troubleshoot gateway trust
-</div>
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
 
 在 VM 上，session 网关使用自签名 TLS 证书。此命令会将证书的 SHA-256 指纹记录到 `~/.clicklink/clctl.yaml`，以便 `session` 命令验证该证书；若固定的指纹不再匹配，验证将失败并拒绝连接。可通过以下两种带外方式之一建立信任：
 
@@ -193,9 +169,7 @@ clicklink clctl troubleshoot gateway trust \
 
 在 Kubernetes 中，不使用固定方式：应通过具有 CA 签发证书的入口公开网关，或使用端口转发。
 
-<div id="audit-tail">
-  ## clicklink clctl troubleshoot audit tail
-</div>
+## clicklink clctl troubleshoot audit tail {#audit-tail}
 
 打印故障排除程序审计日志中的最后几条记录：采用以换行分隔的 JSON 格式，守护进程接受或阻止的每条命令各对应一条记录。该命令以只读方式打开日志，绝不会对其进行修改。
 
@@ -211,9 +185,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-<div id="access-provision">
-  ## 访问凭据预配
-</div>
+## 访问凭据预配 {#access-provision}
 
 `clicklink clctl scraper access provision` 和 `clicklink clctl troubleshoot access provision` 会创建组件每个实例的访问包；使用 `--force` 时会轮换该访问包。访问包包括只读 ClickHouse 用户及其授权，以及组件所使用的 Kubernetes ServiceAccount、RBAC 和令牌。`init` 会在安装期间内联执行此操作；独立命令则用于重新执行和轮换。
 
@@ -250,9 +222,7 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-<div id="channel-flags">
-  ## 远程通道标志
-</div>
+## 远程通道标志 {#channel-flags}
 
 `preflight`、`gateway trust` 和 `access provision` 接受一组通用标志，用于指定连接到 VM 目标的方式：
 

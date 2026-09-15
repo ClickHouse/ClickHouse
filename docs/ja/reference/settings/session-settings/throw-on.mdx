@@ -14,17 +14,13 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="throw_on_error_from_cache_on_write_operations">
-  ## throw_on_error_from_cache_on_write_operations
-</div>
+## throw_on_error_from_cache_on_write_operations {#throw_on_error_from_cache_on_write_operations}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 書き込み操作 (INSERT、マージ) のキャッシュ時には、キャッシュからのエラーを無視します
 
-<div id="throw_on_hive_partitioning_resolution_failure">
-  ## throw_on_hive_partitioning_resolution_failure
-</div>
+## throw_on_hive_partitioning_resolution_failure {#throw_on_hive_partitioning_resolution_failure}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -32,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 オブジェクトストレージテーブルでHive形式のパーティション化を検出する際にストレージを一覧表示できない場合、警告をログに記録する代わりに例外をスローします。無効にすると、クエリはHiveパーティションカラムなしで実行されるため、結果が変わる可能性があります。
 
-<div id="throw_on_max_partitions_per_insert_block">
-  ## throw_on_max_partitions_per_insert_block
-</div>
+## throw_on_max_partitions_per_insert_block {#throw_on_max_partitions_per_insert_block}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -49,9 +43,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
   [`max_partitions_per_insert_block`](/ja/reference/settings/session-settings/max-partitions#max_partitions_per_insert_block) を変更する際に、ユーザーへの影響を把握したい場合に役立ちます。
 </Tip>
 
-<div id="throw_on_unsupported_query_inside_transaction">
-  ## throw_on_unsupported_query_inside_transaction
-</div>
+## throw_on_unsupported_query_inside_transaction {#throw_on_unsupported_query_inside_transaction}
 
 <ExperimentalBadge />
 

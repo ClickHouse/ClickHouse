@@ -18,9 +18,7 @@ JDBCテーブル関数は、JDBCドライバー経由で接続されたテーブ
 このテーブル関数を使用するには、別途 [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) プログラムを実行しておく必要があります。
 Nullable 型をサポートしています (クエリ対象のリモートテーブルの DDL に基づきます) 。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -28,9 +26,7 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 外部データベース名の代わりに、スキーマを指定することもできます。
 

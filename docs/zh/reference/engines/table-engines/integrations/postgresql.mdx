@@ -18,9 +18,7 @@ PostgreSQL 引擎允许对存储在远程 PostgreSQL 服务器上的数据执行
   了解我们的 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务。它采用与计算资源物理同址的 NVMe 存储，相比使用 EBS 等网络附加存储的替代方案，对于磁盘受限型工作负载，性能最高可提升 10 倍，并且可让你通过 ClickPipes 中的 Postgres CDC 连接器将 Postgres 数据复制到 ClickHouse。
 </Tip>
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -76,9 +74,7 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-<div id="tls-ssl">
-  ### TLS/SSL
-</div>
+### TLS/SSL {#tls-ssl}
 
 TLS/SSL 参数会传递给 `libpq`，可将其设为命名集合的键或尾随键值参数：`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca` 或 `verify-full`) ，以及两种形式之一的证书和私钥。未设置时，将使用 `libpq` 的默认值 (`sslmode=prefer`) 。
 
@@ -110,47 +106,35 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 `PostgreSQL` 表引擎 (以及 [`postgresql`](/zh/reference/functions/table-functions/postgresql) 表函数) 使用的连接池可以通过 `SETTINGS` 子句按表配置。若未指定某项设置，则默认使用对应查询级别 `postgresql_*` 设置的值。
 
-<div id="postgresql-connection-pool-size">
-  ### `postgresql_connection_pool_size`
-</div>
+### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
 连接池大小 (如果所有连接都在使用中，查询将等待，直到有连接被释放) 。必须为非零值。
 
 默认值：`16`。
 
-<div id="postgresql-connection-pool-wait-timeout">
-  ### `postgresql_connection_pool_wait_timeout`
-</div>
+### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
 
 连接池为空时，push/pop 操作的超时时间，单位为毫秒。`0` 表示在连接池为空时会阻塞等待。
 
 默认值：`5000`。
 
-<div id="postgresql-connection-pool-retries">
-  ### `postgresql_connection_pool_retries`
-</div>
+### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
 
 连接池 push/pop 操作的重试次数。
 
 默认值：`2`。
 
-<div id="postgresql-connection-pool-auto-close-connection">
-  ### `postgresql_connection_pool_auto_close_connection`
-</div>
+### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
 
 在将连接返回到连接池之前，先关闭该连接。
 
 默认值：`false`。
 
-<div id="postgresql-connection-attempt-timeout">
-  ### `postgresql_connection_attempt_timeout`
-</div>
+### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
 
 单次连接到 PostgreSQL 端点时的连接超时时间，单位为秒。该值会作为连接 URL 的 `connect_timeout` 参数传递。
 
@@ -169,9 +153,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
-<div id="implementation-details">
-  ## 实现细节
-</div>
+## 实现细节 {#implementation-details}
 
 PostgreSQL 端的 `SELECT` 查询会在只读的 PostgreSQL 事务中以 `COPY (SELECT ...) TO STDOUT` 的形式运行，并在每次 `SELECT` 查询后提交。
 
@@ -179,9 +161,7 @@ PostgreSQL 端的 `SELECT` 查询会在只读的 PostgreSQL 事务中以 `COPY (
 
 所有 JOIN、聚合、排序、`IN [ array ]` 条件以及 `LIMIT` 采样约束，都只会在对 PostgreSQL 的查询结束后于 ClickHouse 中执行。
 
-<div id="passing-a-query">
-  ## 传递查询而不是表名
-</div>
+## 传递查询而不是表名 {#passing-a-query}
 
 `table` 参数可以不是表名，而是一个按原样传递给 PostgreSQL 的 `SELECT` 查询。表的结构会从查询结果中推断出来。该查询既可以写成子查询，也可以包装在 `query` 函数中：
 
@@ -195,7 +175,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   子查询形式 `(SELECT ...)` 会由 ClickHouse 解析，并在发送到服务器之前按 PostgreSQL 方言重新序列化 (包括 PostgreSQL 标识符引用和字符串字面量转义) 。因此，它必须是有效的 ClickHouse SQL。若要传递 ClickHouse 不会解析的 PostgreSQL 特有语法，请使用 `query('...')` 形式，其文本会原样发送到 PostgreSQL。
 
-  周围 ClickHouse 查询中的任何外层 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中，而是在拉取完整查询结果后由 ClickHouse 应用。要限制从 PostgreSQL 读取的数据，请将过滤器放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤器会直接抛出异常，而不是在本地应用。
+  周围 ClickHouse 查询中的任何外层 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中，而是在拉取完整查询结果后由 ClickHouse 应用。要限制从 PostgreSQL 读取的数据，请将过滤器放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，由于表列上的外层过滤器无法下推到传入的查询中，因此会直接抛出异常，而不是在本地应用。该检查涵盖顶层 `WHERE` 谓词以及顶层 `AND` 的每个合取项。此表列上的 `PREWHERE` 不属于该设置的适用范围：此表引擎不支持 `PREWHERE`，无论该设置如何，此类查询都会因 `ILLEGAL_PREWHERE` 被拒绝。使用 analyzer (默认设置) 时，仅会在过滤器本可下推的情况下执行检查：当此表是查询中唯一的表、位于 `INNER JOIN` 的任一侧，或位于外连接的保留侧 (`LEFT JOIN` 的左侧、`RIGHT JOIN` 的右侧) 时。在 `LEFT`/`RIGHT JOIN` 的非保留侧以及 `FULL JOIN` 的任一侧，均不会下推任何内容，也不会执行任何检查，因此即使在严格模式下，此表列上的过滤器也会在 JOIN 后于本地应用。在执行检查的位置，引用周围查询中其他已 JOIN 表的谓词不会被下推，也不会纳入检查；无论它只引用已 JOIN 的一侧，还是在一个非 `AND` 表达式 (例如 `OR`) 中将其与此表混合引用，都是如此。此类谓词会保留其通常的 ClickHouse 求值位置 (JOIN 后的 `WHERE`、JOIN 前的 `PREWHERE`) ，且不会被拒绝。使用旧版 analyzer (`enable_analyzer = 0`) 时，此作用域规则不适用：当此表是 JOIN 树中的第一个表时，会检查整个外层过滤器，包括已 JOIN 一侧的谓词；而已 JOIN 的右侧表不会被检查。
 </Note>
 
 PostgreSQL 端的 `INSERT` 查询会在 PostgreSQL 事务中以 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 的形式运行，并在每条 `INSERT` 语句后自动提交。
@@ -234,16 +214,11 @@ CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgre
     <where>id=10</where>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </postgresql>
-</source>
 ```
 
-<div id="usage-example">
-  ## 使用示例
-</div>
+## 使用示例 {#usage-example}
 
-<div id="table-in-postgresql">
-  ### PostgreSQL 中的表
-</div>
+### PostgreSQL 中的表 {#table-in-postgresql}
 
 ```text
 postgres=# CREATE TABLE "public"."test" (
@@ -266,9 +241,7 @@ int_id | int_nullable | float | str  | float_nullable
 (1 row)
 ```
 
-<div id="creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above">
-  ### 在 ClickHouse 中创建表，并连接到上面创建的 PostgreSQL 表
-</div>
+### 在 ClickHouse 中创建表，并连接到上面创建的 PostgreSQL 表 {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
 
 本示例使用 [PostgreSQL 表引擎](/zh/reference/engines/table-engines/integrations/postgresql) 将 ClickHouse 表连接到 PostgreSQL 表，并通过 PostgreSQL 数据库执行 SELECT 和 INSERT 语句：
 
@@ -282,9 +255,7 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query">
-  ### 使用 SELECT 查询将 PostgreSQL 表中的初始数据插入 ClickHouse 表
-</div>
+### 使用 SELECT 查询将 PostgreSQL 表中的初始数据插入 ClickHouse 表 {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
 [postgresql 表函数](/zh/reference/functions/table-functions/postgresql)可将数据从 PostgreSQL 复制到 ClickHouse，通常用于把查询或分析工作放在 ClickHouse 中执行而不是在 PostgreSQL 中执行，从而提升数据的查询性能；也可用于将数据从 PostgreSQL 迁移到 ClickHouse。由于我们要将数据从 PostgreSQL 复制到 ClickHouse，因此会在 ClickHouse 中使用一个 MergeTree 表引擎，并将其命名为 postgresql&#95;copy：
 
@@ -304,9 +275,7 @@ INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-incremental-data-from-postgresql-table-into-clickhouse-table">
-  ### 将 PostgreSQL 表中的增量数据插入到 ClickHouse 表
-</div>
+### 将 PostgreSQL 表中的增量数据插入到 ClickHouse 表 {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
 
 如果要在初次插入后，继续在 PostgreSQL 表与 ClickHouse 表之间进行持续同步，可以在 ClickHouse 中使用 WHERE 子句，只插入基于时间戳或唯一序列 ID 在 PostgreSQL 中新增的数据。
 
@@ -324,9 +293,7 @@ SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'p
 WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
-<div id="selecting-data-from-the-resulting-clickhouse-table">
-  ### 从生成的 ClickHouse 表中查询数据
-</div>
+### 从生成的 ClickHouse 表中查询数据 {#selecting-data-from-the-resulting-clickhouse-table}
 
 ```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
@@ -338,9 +305,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-<div id="using-non-default-schema">
-  ### 使用非默认 schema
-</div>
+### 使用非默认 schema {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -360,9 +325,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 * [`postgresql` 表函数](/zh/reference/functions/table-functions/postgresql)
 * [将 PostgreSQL 用作字典源](/zh/reference/statements/create/dictionary/sources/postgresql)
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[ClickHouse 与 PostgreSQL——数据世界里的天作之合——第 1 部分](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * 博客：[ClickHouse 与 PostgreSQL——数据世界里的天作之合——第 2 部分](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

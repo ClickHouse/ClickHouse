@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="iceberg_delete_data_on_drop">
-  ## iceberg_delete_data_on_drop
-</div>
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,25 +22,35 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Удалять ли все файлы Iceberg при drop.
 
-<div id="iceberg_delete_manifest_decode_concurrency">
-  ## iceberg_delete_manifest_decode_concurrency
-</div>
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "Новая настройка для ранее жёстко заданной ёмкости очереди между задачами декодирования манифеста данных Iceberg и запросом."}]}]} />
+
+Ёмкость очереди между задачами декодирования манифеста данных Iceberg и запросом, измеряемая в записях файлов данных.
+
+Задачи декодирования приостанавливаются, когда очередь заполнена, а запрос не читает из неё данные, поэтому эта настройка также ограничивает опережающее чтение.
+
+Значение должно быть больше нуля.
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**Псевдонимы**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "Новая настройка, ограничивающая число файлов манифеста удалений Iceberg, декодируемых параллельно до чтения первой строки. До версии 26.8 манифесты декодировались по одному, при этом получение следующего уже выполнялось, поэтому `2` наиболее близко соответствует прежнему поведению, при котором суммарное время обмена с объектным хранилищем находилось на критическом пути до чтения первой строки."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "Новая настройка, ограничивающая количество одновременно декодируемых Iceberg файлов манифеста — как delete-, так и манифестов данных. Она заменяет `iceberg_delete_manifest_decode_concurrency` (сохранён как псевдоним). Значение `2` примерно воспроизводит путь к данным до версии 26.9, где манифесты декодировались по одному, а fetch следующего уже был in-flight; поэтому при `compatibility` 26.8 или ниже декодирование delete-манифестов также выполняется с параллелизмом 2, а не со штатным значением по умолчанию 4 — это сохраняет прежний envelope потребления памяти на пути к данным ценой меньшего перекрытия при декодировании delete-манифестов."}]}]} />
 
-Максимальное количество файлов манифеста удалений Iceberg, декодируемых параллельно во время выполнения запроса до чтения любого файла данных.
+Максимальное количество Iceberg файлов манифеста, декодируемых одновременно при чтении таблицы.
 
-Все манифесты удалений должны быть декодированы до чтения любого файла данных, поэтому эта работа находится на критическом пути до возврата первой строки. Одновременное декодирование нескольких манифестов перекрывает как обмен с объектным хранилищем, так и отсечение данных на уровне строк.
+Все delete-манифесты декодируются до того, как будет прочитан хотя бы один файл данных; манифесты данных декодируются по ходу формирования списка файлов данных для запроса, причём новые декодируются только по мере того, как запрос обрабатывает уже декодированные entries. Одновременное декодирование нескольких манифестов позволяет совмещать round-trip к объектному хранилищу с работой по pruning для каждой entry.
 
-Более высокие значения увеличивают пиковое потребление памяти при инициализации запроса, если кеш файлов метаданных Iceberg отключён или заполнен, поскольку каждый обрабатываемый манифест хранит собственное декодированное содержимое.
+Более высокие значения увеличивают пиковое потребление памяти, если кеш Iceberg metadata files отключён или заполнен, поскольку каждый находящийся in-flight манифест хранит собственное декодированное содержимое.
 
-Значение должно быть больше нуля; `1` декодирует манифесты по одному.
+Значение должно быть больше нуля; при `1` манифесты декодируются по одному.
 
-<div id="iceberg_manifest_min_count_to_compact">
-  ## iceberg_manifest_min_count_to_compact
-</div>
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -54,9 +62,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Если текущее количество файлов манифеста меньше или равно этому порогу, компактация пропускается.
 Необходимо, чтобы был включен allow&#95;experimental&#95;iceberg&#95;compaction.
 
-<div id="iceberg_max_number_datafiles_to_compact">
-  ## iceberg_max_number_datafiles_to_compact
-</div>
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Пороговое значение для файлов данных, участвующих в компактации, в Iceberg.
 
-<div id="iceberg_orphan_files_older_than_seconds">
-  ## iceberg_orphan_files_older_than_seconds
-</div>
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -76,9 +80,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Пороговое значение возраста по умолчанию в секундах для удаления файлов-сирот в таблицах Iceberg. Файлы новее этого значения не считаются сиротами. Используется, если в вызове процедуры remove&#95;orphan&#95;files() опущен аргумент older&#95;than. Значение по умолчанию — 259200 (3 дня).
 
-<div id="iceberg_snapshot_id">
-  ## iceberg_snapshot_id
-</div>
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -86,9 +88,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Выполняет запрос к таблице Iceberg по указанному идентификатору снимка.
 
-<div id="iceberg_timestamp_ms">
-  ## iceberg_timestamp_ms
-</div>
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

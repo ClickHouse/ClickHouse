@@ -1,22 +1,22 @@
 ---
 title: 'مرجع CLI'
 sidebarTitle: 'CLI'
-description: 'مرجع لأوامر clicklink clctl: init وpreflight وجلسات الدعم وثقة البوابة والتدقيق وإتاحة الوصول'
+description: 'مرجع لأوامر clicklink clctl: init وpreflight وجلسات الدعم وgateway trust والتدقيق وتهيئة الوصول'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
 
-يُوزَّع الموصل كملف ثنائي واحد باسم `clicklink`، وتوجد الأوامر التي تشغّلها ضمن `clicklink clctl`. تغطي هذه الصفحة الأوامر المستخدمة أثناء التثبيت والتشغيل اليومي. شغّل أي أمر باستخدام `--help` لعرض نص المساعدة الكامل. يمكن أيضًا تمرير العلامات ضمن التفرعات الفرعية `troubleshoot` و`preflight` عبر متغيرات البيئة `CLCTL_*` (المذكورة في مخرجات المساعدة لكل علامة) أو عبر `~/.clicklink/clctl.yaml`.
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="init">
-  ## clicklink clctl init
-</div>
+<PrivatePreviewBadge />
+
+يُوزَّع الموصل كملف ثنائي واحد باسم `clicklink`، وتوجد الأوامر التي تشغّلها ضمن `clicklink clctl`. تغطي هذه الصفحة الأوامر المستخدمة أثناء التثبيت والتشغيل اليومي. شغّل أي أمر باستخدام `--help` لعرض نص المساعدة الكامل. يمكن أيضًا تمرير العلامات ضمن التفرعات الفرعية `troubleshoot` و`preflight` عبر متغيرات البيئة `CLCTL_*` (المذكورة في مخرجات المساعدة لكل علامة) أو عبر `~/.clicklink/clctl.yaml`.
+
+## clicklink clctl init {#init}
 
 يُهيّئ الموصل باستخدام رمز تسجيل، أو حزمة تسجيل محفوظة، أو شهادة موقّعة خارج النطاق. ينفّذ استدعاء واحد إعداد التكوين، ويوفّر الوصول إلى ClickHouse، ويحصل على شهادة عميل mTLS، وينشر المكوّنات (مخطط Helm أو وحدات systemd)، ويتحقق من سلامتها. إعادة التشغيل آمنة: يُحتفَظ بالتكوين ومعرّف UUID للمجموعة، وتُستبدل بيانات الاعتماد ذريًا، ويُعاد استخدام مفتاح العميل الحالي ما لم تمرّر `--force`. راجع [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding) للاطلاع على التدفق الكامل.
 
-<div id="init-entry-points">
-  ### نقاط الدخول
-</div>
+### نقاط الدخول {#init-entry-points}
 
 يلزم تحديد واحدة فقط من نقاط الدخول الثلاث؛ فهي متنافية فيما بينها.
 
@@ -26,9 +26,7 @@ doc_type: 'reference'
 | `--handoff <path>`     | يُجري Bootstrap من حزمة تسجيل محفوظة. تستخدم عمليات إعادة التشغيل والاسترداد هذا الخيار بعد إنشاء `handoff.yaml`.                                                                                                                                                                                                                                         |
 | `--signed-cert <path>` | المرحلة الثانية من تدفق البيئة المعزولة عن الشبكة: يثبّت شهادة عميل موقعة خارج النطاق ويكمل التثبيت المرحلي. ويمكن لـ `--chain <path>` استبدال سلسلة CA اختياريًا إلى جانبها.                                                                                                                                                                             |
 
-<div id="init-common-flags">
-  ### العلامات الشائعة
-</div>
+### العلامات الشائعة {#init-common-flags}
 
 | العلامة                     | الوصف                                                                                                                                                                                                   |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -41,18 +39,14 @@ doc_type: 'reference'
 | `--ch-user-suffix <suffix>` | لاحقة اختيارية لأسماء مستخدمي ClickHouse التي تم توفيرها (`pcm_scraper` يصبح `pcm_scraper_<suffix>`)، بحيث يمكن لنشر موصل ثانٍ مشاركة مثيل دون التعارض مع مستخدمي النشر الأول.                          |
 | `--ch-admin-password-stdin` | يقرأ كلمة مرور مسؤول ClickHouse من stdin عندما يتطلب توفير SQL كلمة مرور؛ أما عند التشغيل من طرفية، فتظهر مطالبة بإدخالها.                                                                              |
 
-<div id="init-signing-flags">
-  ### خيارات التوقيع (المرحلة 1 فقط)
-</div>
+### خيارات التوقيع (المرحلة 1 فقط) {#init-signing-flags}
 
 | العلامة                  | الوصف                                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `--no-auto-sign`        | للمرحلة فقط: يتخطى التوقيع التلقائي لـ CSR عبر نقطة نهاية التسجيل، لتدفقات التوقيع في البيئات المعزولة عن الشبكة أو خارج النطاق.     |
 | `--sign-endpoint <url>` | يتجاوز نقطة نهاية توقيع التسجيل (الافتراضي: تُشتق من نقطة نهاية الحزمة بإدراج تسمية DNS ‏`enroll`). يجب أن يكون عنوان URL عبر HTTPS. |
 
-<div id="init-kubernetes-flags">
-  ### العلامات الخاصة بـ Kubernetes
-</div>
+### العلامات الخاصة بـ Kubernetes {#init-kubernetes-flags}
 
 صالحة فقط مع `--target helm`.
 
@@ -68,9 +62,7 @@ doc_type: 'reference'
 | `--ch-pod <ref>`            | كبسولة ClickHouse لخطوات التجهيز داخل الـ كبسولة، كاسم أو محدِّد label بصيغة `k=v` (الافتراضي: كبسولة بحالة Running يدعم Service لكل مثيل).                                 |
 | `--api-private-ca`          | تعرض نقطة نهاية واجهة برمجة التطبيقات شهادة صادرة عن CA لحزمة التسجيل: تُجهِّز `api.tls.caFile` ليشير إلى سلسلة CA المُربطة بدلًا من جذور النظام.                  |
 
-<div id="init-vm-flags">
-  ### العلامات الخاصة بـ VM فقط
-</div>
+### العلامات الخاصة بـ VM فقط {#init-vm-flags}
 
 صالحة فقط مع `--target systemd`.
 
@@ -79,9 +71,7 @@ doc_type: 'reference'
 | `--server <url>`     | عنوان URL لخادم API في Kubernetes الذي تشير إليه حزم الوصول (الافتراضي: kubeconfig الخاص بهذا المضيف، وإلا فستتم المطالبة بإدخاله).    |
 | `--ca-data <base64>` | قيمة `certificate-authority-data` بترميز Base64 لـ `--server` (الافتراضي: kubeconfig الخاص بهذا المضيف، وإلا فستتم المطالبة بإدخالها). |
 
-<div id="init-flag-conflicts">
-  ### تعارضات الخيارات
-</div>
+### تعارضات الخيارات {#init-flag-conflicts}
 
 * الخيارات `--handoff` و`--enroll` و`--signed-cert` متنافية؛ ويجب تحديد واحد منها فقط.
 * تُرفض الخيارات الخاصة بـ Kubernetes ما لم يُستخدم `--target helm`؛ كما يُرفض `--server` و`--ca-data` عند استخدام `--target helm` (إذ يعتمد تدفق Helm على ملف kubeconfig لمحطة العمل).
@@ -89,9 +79,7 @@ doc_type: 'reference'
 * يتنافى `--operators` و`--no-gateway`.
 * يرفض `--skip-provision` الخيارات `--ch-pod` و`--ch-user-suffix` و`--server` و`--ca-data` و`--ch-admin-password-stdin` (إذ لا يتم توفير أي شيء).
 
-<div id="preflight">
-  ## clicklink clctl preflight
-</div>
+## clicklink clctl preflight {#preflight}
 
 يشغّل مجموعة فحوصات الموصل، المجمّعة حسب الفئات: الإعدادات، الملفات، الشبكة، ClickHouse، systemd، الوصول، القرص، وحجب المعلومات الحساسة. يُبلغ كل فحص عن إحدى الحالات التالية: نجاح أو تحذير أو فشل أو تخطٍّ. يشير رمز الخروج 0 إلى نجاح جميع الفحوصات (فالتحذيرات غير حاجبة)، بينما يشير رمز الخروج 2 إلى فشل فحص واحد أو أكثر.
 
@@ -110,9 +98,7 @@ doc_type: 'reference'
 
 علامات `--k8s-*` وعلامات القناة البعيدة متنافية؛ اختر هدفًا واحدًا.
 
-<div id="troubleshoot-session">
-  ## clicklink clctl troubleshoot session
-</div>
+## clicklink clctl troubleshoot session {#troubleshoot-session}
 
 يتيح تفعيل جلسة الدعم وتعطيلها وفحصها، وهي نافذة زمنية محددة يقبل خلالها troubleshooter الأوامر. عند عدم وجود جلسة نشطة، يرفض البرنامج الخفي جميع الأوامر حتى لو كان WebSocket متصلاً. راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -121,9 +107,7 @@ doc_type: 'reference'
 * **ملف محلي** (افتراضيًا): تقرأ ملف حالة الجلسة وتكتب إليه على المضيف الذي يعمل عليه troubleshooter (المسار الافتراضي: `/var/lib/clicklink/session.json`).
 * **بوابة**: باستخدام `--gateway-url`، يحصل على رمز مميز للهوية من OIDC ويستدعي بوابة جلسة troubleshooter بدلًا من ذلك من محطة العمل لديك.
 
-<div id="session-shared-flags">
-  ### الخيارات المشتركة
-</div>
+### الخيارات المشتركة {#session-shared-flags}
 
 | العلامة                     | الوصف                                                                                                                                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -136,9 +120,7 @@ doc_type: 'reference'
 | `--token-file <path>`      | ملف يحتوي على رمز معرّف OIDC مُنشأ مسبقًا، يُستخدم كرمز حامل ويتجاوز موفري الرموز الآخرين.                                                                                           |
 | `--gateway-ca <path>`      | حزمة CA للتحقق من شهادة البوابة (شهادة توفرها بنفسك). عند عدم تعيينه، تُستخدم شهادة مثبّتة عبر `gateway trust`؛ وتفشل البوابة ذات الشهادة الموقعة ذاتيًا ومن دون تثبيت بشكل آمن.     |
 
-<div id="session-enable">
-  ### تفعيل الجلسة
-</div>
+### تفعيل الجلسة {#session-enable}
 
 | العلامة            | الوصف                                                                                                                                                             |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -148,15 +130,11 @@ doc_type: 'reference'
 
 يفشل التفعيل إذا كانت هناك جلسة نشطة بالفعل؛ عطّلها أولًا أو انتظر انتهاء صلاحيتها.
 
-<div id="session-disable">
-  ### تعطيل الجلسة
-</div>
+### تعطيل الجلسة {#session-disable}
 
 يعطّل الجلسة فورًا. ولا يكون له أي تأثير إذا لم تكن هناك جلسة نشطة.
 
-<div id="session-status">
-  ### حالة الجلسة
-</div>
+### حالة الجلسة {#session-status}
 
 يوضح ما إذا كانت الجلسة نشطة، ومن فعّلها، ومتى تنتهي صلاحيتها. يحدد `--output` (`-o`) إما `table` (الخيار الافتراضي) أو `json`.
 
@@ -170,9 +148,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-<div id="gateway-trust">
-  ## clicklink clctl troubleshoot gateway trust
-</div>
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
 
 على جهاز افتراضي، تقدّم بوابة الجلسة شهادة TLS موقّعة ذاتيًا. يسجّل هذا الأمر بصمة SHA-256 للشهادة في `~/.clicklink/clctl.yaml` كي تتمكن أوامر `session` من التحقق منها؛ وإذا لم تعد البصمة المثبّتة مطابقة، يُرفض الاتصال. تُنشأ الثقة خارج النطاق بإحدى طريقتين:
 
@@ -193,9 +169,7 @@ clicklink clctl troubleshoot gateway trust \
 
 في Kubernetes، لا يُستخدم التثبيت: اعرض البوابة عبر مورد Ingress باستخدام شهادة صادرة عن جهة إصدار شهادات موثوقة (CA)، أو استخدم إعادة توجيه المنفذ.
 
-<div id="audit-tail">
-  ## clicklink clctl troubleshoot audit tail
-</div>
+## clicklink clctl troubleshoot audit tail {#audit-tail}
 
 يطبع أحدث الإدخالات في سجل تدقيق مستكشف الأخطاء ومصلحها: ‏JSON مفصول بأسطر جديدة، مع إدخال واحد لكل أمر قبله البرنامج الخفي أو حظره. يفتح الأمر السجل للقراءة فقط ولا يعدّله مطلقًا.
 
@@ -211,9 +185,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-<div id="access-provision">
-  ## تهيئة الوصول
-</div>
+## تهيئة الوصول {#access-provision}
 
 ينشئ الأمران `clicklink clctl scraper access provision` و`clicklink clctl troubleshoot access provision` حزمة وصول لكل مثيل من المكوّن، ويُدوّرانها عند استخدام `--force`. تشمل الحزمة مستخدم ClickHouse بصلاحية القراءة فقط وصلاحياته، بالإضافة إلى حساب خدمة Kubernetes وRBAC والرمز المميز الذي يستخدمه المكوّن. ينفّذ `init` ذلك مباشرةً أثناء التثبيت؛ أما الأوامر المستقلة فتُستخدم لإعادة التنفيذ وتدوير بيانات الاعتماد.
 
@@ -250,9 +222,7 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-<div id="channel-flags">
-  ## علامات القناة البعيدة
-</div>
+## علامات القناة البعيدة {#channel-flags}
 
 تقبل `preflight` و`gateway trust` و`access provision` مجموعة مشتركة من العلامات التي تحدد كيفية الوصول إلى جهاز VM الهدف:
 

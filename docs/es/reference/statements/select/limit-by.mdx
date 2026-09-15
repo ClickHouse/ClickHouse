@@ -18,14 +18,12 @@ ClickHouse admite las siguientes variantes de sintaxis:
 Durante el procesamiento de la consulta, ClickHouse selecciona los datos ordenados por la clave de ordenación. La clave de ordenación se establece explícitamente mediante una cláusula [ORDER BY](/es/reference/statements/select/order-by) o implícitamente como una propiedad del motor de la tabla (el orden de las filas solo se garantiza cuando se usa [ORDER BY](/es/reference/statements/select/order-by); de lo contrario, los bloques de filas no estarán ordenados debido al procesamiento multihilo). A continuación, ClickHouse aplica `LIMIT n BY expressions` y devuelve las primeras `n` filas para cada combinación distinta de `expressions`. Si se especifica `OFFSET`, para cada bloque de datos que pertenezca a una combinación distinta de `expressions`, ClickHouse omite `offset_value` filas desde el inicio del bloque y devuelve como resultado un máximo de `n` filas. Si `offset_value` es mayor que el número de filas del bloque de datos, ClickHouse no devuelve ninguna fila de ese bloque.
 
 <Note>
-  `LIMIT BY` no está relacionado con [LIMIT](/es/reference/statements/select/limit). Ambos pueden usarse en la misma consulta.
+  `LIMIT BY` no está relacionado con [LIMIT](/es/reference/statements/select/limit). Ambos pueden usarse en la misma consulta. Esto incluye la forma de intervalo [`LIMIT ... AFTER ... UNTIL`](/es/reference/statements/select/limit#limit-after-until), que se aplica entonces a las filas que conserva `LIMIT BY`.
 </Note>
 
 Si desea usar números de columna en lugar de nombres de columna en la cláusula `LIMIT BY`, habilite la configuración [enable&#95;positional&#95;arguments](/es/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 Tabla de ejemplo:
 
@@ -124,9 +122,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
 
 Para `id = 1`, se omite la primera fila (`10`); se devuelven las 2 últimas, `11` y `12`. Para `id = 2`, se omite la primera fila (`20`), por lo que solo queda `21`.
 
-<div id="limit-by-all">
-  ## LIMIT BY ALL
-</div>
+## LIMIT BY ALL {#limit-by-all}
 
 `LIMIT BY ALL` equivale a enumerar todas las expresiones del `SELECT` que no son funciones de agregación.
 
@@ -156,9 +152,7 @@ es lo mismo que
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
 ```
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples-limit-by-all}
 
 Tabla de ejemplo:
 

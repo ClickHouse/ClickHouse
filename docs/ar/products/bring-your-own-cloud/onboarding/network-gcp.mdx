@@ -2,7 +2,7 @@
 title: 'إعداد الشبكات الخاصة لـ BYOC على GCP'
 slug: /cloud/reference/byoc/onboarding/network-gcp
 sidebarTitle: 'إعداد الشبكات الخاصة على GCP'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'vpc peering', 'gcp', 'private service connect']
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'vpc peering', 'gcp', 'private service connect', 'PSC subnet', 'BYO-VPC']
 description: 'إعداد VPC Peering أو Private Service Connect لـ BYOC على GCP'
 doc_type: 'reference'
 ---
@@ -12,22 +12,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يدعم ClickHouse BYOC على GCP خيارين للاتصال الخاص، هما VPC Peering وPSC ‏(Private Service Connect).
 
 <div id="common-prerequisites">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#common-prerequisites}
 </div>
 
 الخطوات المشتركة اللازمة لكلٍّ من VPC peering وPSC.
 
-<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
-  ### فعّل موازن التحميل الخاص لـ ClickHouse BYOC
-</div>
+### فعّل موازن التحميل الخاص لـ ClickHouse BYOC {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 في وحدة تحكم ClickHouse Cloud، فعّل **موازن التحميل الخاص** للبنية التحتية لـ BYOC الخاصة بك.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC تفعيل موازن التحميل الخاص" border />
 
-<div id="gcp-vpc-peering">
-  ## إعداد VPC peering
-</div>
+## إعداد VPC peering {#gcp-vpc-peering}
 
 يُرجى الاطلاع على [ميزة GCP VPC peering](https://docs.cloud.google.com/vpc/docs/vpc-peering) والانتباه إلى قيود VPC peering (على سبيل المثال، لا يمكن أن تتداخل نطاقات IP للشبكات الفرعية بين شبكات VPC المترابطة). يستخدم ClickHouse BYOC موازن تحميل خاصًا لإتاحة الاتصال الشبكي عبر peering إلى خدمات ClickHouse.
 
@@ -67,9 +63,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="setup-psc">
-  ## إعداد PSC ‏(Private Service Connect)
-</div>
+## إعداد PSC ‏(Private Service Connect) {#setup-psc}
 
 يوفّر GCP PSC ‏(Private Service Connect) اتصالاً آمناً وخاصاً بخدمات ClickHouse BYOC دون الحاجة إلى VPC peering أو بوابات الإنترنت. تمرّ جميع حركة البيانات داخل شبكة GCP، مما يضمن عدم مرورها عبر الإنترنت العام مطلقاً.
 
@@ -77,6 +71,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تمكين الرابط الخاص في وحدة تحكم ClickHouse" id="step-1-enable-private-link">
     <Note>
       تأكد من تفعيل **موازن التحميل الخاص** كمتطلب مسبق.
+    </Note>
+
+    إذا كانت البنية التحتية لديك تعمل ضمن [customer-managed VPC (BYO-VPC)](/ar/cloud/reference/byoc/onboarding/customization-gcp)، فأنشئ شبكة فرعية NAT خاصة بـ Private Service Connect قبل تمكين الرابط الخاص. لا يمكن لـ ClickHouse Cloud إنشاء شبكات فرعية داخل VPC الخاص بك، ويخصّص GCP عنوان IP لـ NAT من هذه الشبكة الفرعية لكل اتصال PSC وارد.
+
+    أنشئ الشبكة الفرعية في نفس VPC والمنطقة الخاصين بالبنية التحتية، وفي المشروع المضيف إذا كنت تستخدم Shared VPC:
+
+    ```bash
+    gcloud compute networks subnets create <psc-subnet-name> \
+        --project=<vpc-project-id> \
+        --network=<vpc-network-name> \
+        --region=<region> \
+        --range=<cidr-range> \
+        --purpose=PRIVATE_SERVICE_CONNECT
+    ```
+
+    يجب ألا يقل `<cidr-range>` عن `/29`؛ راجع [إرشادات تحديد حجم الشبكة الفرعية لـ NAT](https://cloud.google.com/vpc/docs/about-vpc-hosted-services#subnet-capacity) من GCP عند تحديد الحجم بما يتناسب مع عدد الاتصالات المتوقع.
+
+    عند تمكين الرابط الخاص على بنية تحتية بنمط BYO-VPC، تطلب منك وحدة التحكم **اسم الشبكة الفرعية لـ PSC**. أدخل اسم الشبكة الفرعية التي أنشأتها.
+
+    <Note>
+      لا يمكن تغيير الشبكة الفرعية لـ PSC أثناء تمكين الرابط الخاص. للتبديل إلى شبكة فرعية أخرى، عطّل الرابط الخاص ثم مكّنه مجددًا بالاسم الجديد.
     </Note>
 
     <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="تمكين BYOC PrivateLink" />

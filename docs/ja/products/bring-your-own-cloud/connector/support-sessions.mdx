@@ -1,18 +1,19 @@
 ---
 title: 'サポートセッション'
 sidebarTitle: 'サポートセッション'
-description: 'ClickHouse Connector を介した ClickHouse サポートアクセスの有効化、範囲設定、監査、取り消し'
+description: 'ClickHouse Connector を介した ClickHouse Supportアクセスの有効化、範囲設定、監査、取り消し'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ja/components/Image.jsx";
+
+<PrivatePreviewBadge />
 
 サポートセッションでは、ClickHouse Connector を介して ClickHouse への一時的な診断アクセスを付与できます。このページでは、セッションの概要、有効化と無効化の方法、セッションが有効な間に ClickHouse のオペレーターが実行できる操作、およびその間に行われたすべての操作を監査する方法について説明します。
 
-<div id="what-a-support-session-is">
-  ## サポートセッションとは
-</div>
+## サポートセッションとは {#what-a-support-session-is}
 
 サポートセッションとは、トラブルシューターがClickHouse Support エンジニアからのコマンドを受け付ける、時間が限定された期間です。セッションがアクティブでない場合、アウトバウンドWebSocketが接続されていても、トラブルシューターはすべてのコマンドを拒否します。ほかに実行経路はありません。セッションなしで何かが実行されることはなく、ClickHouseがお客様に代わってセッションを開始することもできません。ClickHouseのコントロールプレーンがお客様の環境に接続することはありません。トラブルシューターがアウトバウンドチャネル経由で送信するものだけを受信し、そのチャネルがコマンドを伝送するのは、セッション状態によって許可されている場合のみです。
 
@@ -27,9 +28,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 オペレーターの許可リストを含むセッション方針は、`clicklink clctl init`の実行時に選択します。
 
-<div id="enabling-and-disabling-sessions">
-  ## セッションの有効化と無効化
-</div>
+## セッションの有効化と無効化 {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes">
@@ -80,24 +79,18 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Tab>
 </Tabs>
 
-<div id="session-expiry">
-  ## セッションの有効期限
-</div>
+## セッションの有効期限 {#session-expiry}
 
 セッションは自動的に期限切れになります。デフォルトの有効期間は4時間で、`session enable --duration` により最大24時間まで設定できます。セッションの期限が切れるか、`session disable` を実行した時点で、トラブルシューターはコマンドを受け付けなくなります。セッションの無効化は即時の失効手段です。再起動やClickHouseとの協調は必要ありません。
 
-<div id="operator-allowlist">
-  ## オペレーターの許可リスト
-</div>
+## オペレーターの許可リスト {#operator-allowlist}
 
 すべてのゲートウェイ呼び出しは、検証済みの OIDC トークンで証明されたメールアドレスと照合して、オペレーターの許可リストに基づき認可されます。クライアントが自身について申告した内容に基づいて認可されることはありません。
 
 * **Kubernetes:** values オーバーレイで `clctl.gateway.allowedOperators` を設定します。リストは ConfigMap にレンダリングされ、ゲートウェイは 30 秒ごとに再読み込みします。そのため、values を変更して `helm upgrade` を実行すると、ポッドを再起動せずに許可リストを更新できます。
 * **Linux VM:** 許可リストは `/etc/clicklink/allowed-operators.txt` にあり、指定したオペレーターのメールアドレスに基づいて `clicklink clctl init` により書き込まれます。
 
-<div id="what-operators-can-do">
-  ## セッション中にオペレーターが実行できる操作
-</div>
+## セッション中にオペレーターが実行できる操作 {#what-operators-can-do}
 
 セッションがアクティブな間、ClickHouse Support エンジニアは次の操作を実行できます。
 
@@ -106,9 +99,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 トラブルシューターの RBAC には `exec`、`delete`、`patch` 権限がないため、オペレーターはポッド内でシェルを開くことも、コネクタ経由で変更を加えることもできません。すべての権限付与と RBAC の一覧については、[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のリファレンスを参照してください。
 
-<div id="audit-log">
-  ## 監査ログ
-</div>
+## 監査ログ {#audit-log}
 
 すべてのゲートウェイ呼び出しとセッション中に実行されたすべてのコマンドは、1 行に 1 つの JSON オブジェクト (NDJSON) として `/var/log/clicklink/troubleshoot-audit.log` に追記されます。`submitted_by` フィールドには各エントリに対応するアイデンティティが記録され、その内容はエントリの発生元によって異なります。ゲートウェイ呼び出しには、検証済みトークンで証明されたメールアドレスが記録され、クライアントが指定した値が記録されることはありません。VM 上でローカルに行われたセッション変更には、操作を実行したホストユーザーが記録されます。セッション中に実行されたコマンドには、認証済みコマンドチャネルで渡される組織アイデンティティが記録されます。ゲートウェイによるセッション有効化のエントリは次のようになります。
 
@@ -139,15 +130,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 ログは環境内の通常のファイルです。他のホストログやコンテナーログと同様に、任意のSIEMに送信してください。
 
-<div id="redaction">
-  ## マスキング
-</div>
+## マスキング {#redaction}
 
 トラブルシューターが返すすべての情報は、環境外に送信される前にマスキングされます。組み込みパターンは、IPv4 および IPv6 アドレス、Bearer トークン、AWS アクセスキー、メールアドレス、JWT、SSH 秘密鍵、接続文字列に埋め込まれた認証情報を対象とします。これらは `/etc/clicklink/redaction-patterns.yaml` で拡張またはオーバーライドできます。組み込みパターンと同じ名前のエントリは、そのパターンを置き換えます。パターンファイルが無効な場合、デーモンは起動を拒否し、`clicklink clctl preflight` によって検証されるため、マスキング設定が壊れている場合はデータが黙って通過するのではなく、明示的に失敗します。
 
-<div id="related-pages">
-  ## 関連ページ
-</div>
+## 関連ページ {#related-pages}
 
 * [Architecture](/ja/products/bring-your-own-cloud/connector/architecture): コネクタが確立するすべての接続と、セッションを中心としたデータフロー。
 * [Configuration](/ja/products/bring-your-own-cloud/connector/configuration): ゲートウェイ、許可リスト、機密情報のマスキングに関する設定。

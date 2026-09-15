@@ -12,16 +12,14 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 Este guia mostra duas formas de gerenciar usuários do banco de dados: pelo console SQL e diretamente no banco de dados.
 
 <div id="sql-console-passwordless-authentication">
-  ### Autenticação sem senha no console SQL
+  ### Autenticação sem senha no console SQL {#sql-console-passwordless-authentication}
 </div>
 
 Os usuários do console SQL são criados para cada sessão e autenticados com certificados X.509 renovados automaticamente. O usuário é removido quando a sessão é encerrada. Ao gerar listas de acesso para auditorias, navegue até a aba Settings do serviço no Console e observe o acesso ao console SQL, além dos usuários do banco de dados existentes no banco de dados. Se funções personalizadas estiverem configuradas, o acesso do usuário será listado na função cujo nome termina com o nome de usuário dele.
 
-<div id="sql-console-users-and-roles">
-  ## Usuários e funções do console SQL
-</div>
+## Usuários e funções do console SQL {#sql-console-users-and-roles}
 
-As funções básicas do console SQL podem ser atribuídas a usuários com as permissões Service Read Only e Service Admin. Para mais informações, consulte [Gerenciar atribuições de funções do console SQL](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Este guia mostra como criar uma função personalizada para um usuário do console SQL.
+As funções básicas do console SQL podem ser atribuídas a usuários com as permissões Service Read Only e Service Admin. Para mais informações, consulte [Gerenciar usuários da Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). Este guia mostra como criar uma função personalizada para um usuário do console SQL.
 
 <Tip>
   Prefira [funções de banco de dados gerenciadas pela Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para gerenciar o acesso ao banco de dados pelo console. As funções `sql-console-role:<email>` não são compatíveis com a [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
@@ -57,11 +55,11 @@ Para criar uma função personalizada para um usuário do console SQL e atribuir
 </Steps>
 
 <div id="database-authentication">
-  ## Autenticação do banco de dados
+  ## Autenticação do banco de dados {#database-authentication}
 </div>
 
 <div id="database-user-id--password">
-  ### ID e senha do usuário do banco de dados
+  ### ID e senha do usuário do banco de dados {#database-user-id--password}
 </div>
 
 Use o método SHA256&#95;hash ao [criar contas de usuário](/pt-BR/reference/statements/create/user) para proteger as senhas. As senhas do banco de dados ClickHouse devem conter no mínimo 12 caracteres e atender aos requisitos de complexidade: letras maiúsculas, letras minúsculas, números e/ou caracteres especiais.
@@ -78,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### Usuário de banco de dados com autenticação SSH
+  ### Usuário de banco de dados com autenticação SSH {#database-ssh}
 </div>
 
 Para configurar a autenticação SSH para um usuário de banco de dados do ClickHouse Cloud.
@@ -90,9 +88,7 @@ Para configurar a autenticação SSH para um usuário de banco de dados do Click
 
 Para um passo a passo detalhado com exemplos, confira [Como se conectar ao ClickHouse Cloud usando chaves SSH](/pt-BR/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) na nossa Base de conhecimento.
 
-<div id="database-permissions">
-  ## Permissões de banco de dados
-</div>
+## Permissões de banco de dados {#database-permissions}
 
 Configure o seguinte nos serviços e bancos de dados usando a instrução SQL [GRANT](/pt-BR/reference/statements/grant).
 
@@ -110,7 +106,7 @@ A ilustração abaixo mostra as diferentes formas pelas quais um usuário pode r
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="Uma ilustração mostrando as diferentes formas pelas quais um usuário pode receber permissões" size="md" background="black" />
 
 <div id="initial-settings">
-  ### Configurações iniciais
+  ### Configurações iniciais {#initial-settings}
 </div>
 
 Os bancos de dados têm uma conta chamada `default`, adicionada automaticamente e à qual é concedida a `default`&#95;`role` quando o serviço é criado. O usuário que cria o serviço recebe a senha aleatória gerada automaticamente, atribuída à conta `default` no momento da criação do serviço. A senha não é exibida após a configuração inicial, mas pode ser alterada posteriormente por qualquer usuário com permissões de Service Admin no console. Essa conta, ou uma conta com privilégios de Service Admin no console, pode configurar usuários e funções adicionais do banco de dados a qualquer momento.
@@ -128,9 +124,7 @@ Recomendamos criar uma nova conta de usuário associada a uma pessoa e conceder 
 
 Você pode usar um gerador de hash SHA256 ou uma função de código, como `hashlib` em Python, para converter uma senha de 12+ caracteres com a complexidade adequada em uma string SHA256 e fornecê-la ao administrador do sistema como senha. Isso garante que o administrador não veja nem manipule senhas em texto simples.
 
-<div id="database-access-listings-with-sql-console-users">
-  ### Listagens de acesso ao banco de dados com usuários do console SQL
-</div>
+### Listagens de acesso ao banco de dados com usuários do console SQL {#database-access-listings-with-sql-console-users}
 
 O processo a seguir pode ser usado para gerar uma listagem completa de acesso no console SQL e nos bancos de dados da sua organização.
 
@@ -176,8 +170,6 @@ O processo a seguir pode ser usado para gerar uma listagem completa de acesso no
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## Usuários do Warehouse
-</div>
+## Usuários do Warehouse {#warehouse-users}
 
 Os usuários do Warehouse são compartilhados entre os serviços dentro do mesmo warehouse. Para mais informações, consulte os [controles de acesso do warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses#access-controls).

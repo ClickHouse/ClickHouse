@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Обзор'
+sidebarTitle: 'C#'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
 slug: /integrations/csharp
 description: 'Официальный клиент C# для подключения к ClickHouse.'
@@ -25,18 +25,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Оба API используют один и тот же базовый пул HTTP-соединений и могут применяться вместе в одном приложении.
 
-<div id="migration-guide">
-  ## Руководство по миграции
-</div>
+## Руководство по миграции {#migration-guide}
 
 1. Обновите файл `.csproj`: укажите новое имя пакета `ClickHouse.Driver` и [последнюю версию на NuGet](https://www.nuget.org/packages/ClickHouse.Driver).
 2. Замените в кодовой базе все упоминания `ClickHouse.Client` на `ClickHouse.Driver`.
 
 ***
 
-<div id="supported-net-versions">
-  ## Поддерживаемые версии .NET
-</div>
+## Поддерживаемые версии .NET {#supported-net-versions}
 
 `ClickHouse.Driver` поддерживает следующие версии .NET:
 
@@ -45,15 +41,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * .NET 9.0
 * .NET 10.0
 
-<div id="supported-clickhouse-versions">
-  ## Поддерживаемые версии ClickHouse
-</div>
+## Поддерживаемые версии ClickHouse {#supported-clickhouse-versions}
 
 Клиент официально поддерживает три последних релиза, а также два последних LTS-релиза.
 
-<div id="installation">
-  ## Установка
-</div>
+## Установка {#installation}
 
 Установите пакет из NuGet:
 
@@ -67,9 +59,7 @@ dotnet add package ClickHouse.Driver
 Install-Package ClickHouse.Driver
 ```
 
-<div id="quick-start">
-  ## Быстрый старт
-</div>
+## Быстрый старт {#quick-start}
 
 ```csharp
 using ClickHouse.Driver;
@@ -82,9 +72,7 @@ var version = await client.ExecuteScalarAsync("SELECT version()");
 Console.WriteLine(version);
 ```
 
-<div id="configuration">
-  ## Конфигурация
-</div>
+## Конфигурация {#configuration}
 
 Существует два способа настроить подключение к ClickHouse:
 
@@ -93,9 +81,7 @@ Console.WriteLine(version);
 
 Ниже приведён полный список всех настроек, их значений по умолчанию и того, как они влияют на работу.
 
-<div id="connection-settings">
-  ### Настройки подключения
-</div>
+### Настройки подключения {#connection-settings}
 
 | Свойство | Тип        | По умолчанию               | Ключ строки подключения | Описание                                                                                                     |
 | -------- | ---------- | -------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -108,26 +94,25 @@ Console.WriteLine(version);
 | Path     | `string`   | `null`                     | `Path`                  | URL-путь для сценариев с использованием обратного прокси (например, `/clickhouse`)                           |
 | Timeout  | `TimeSpan` | 2 минуты                   | `Timeout`               | Тайм-аут операции (в строке подключения хранится в секундах)                                                 |
 
-<div id="data-format-serialization">
-  ### Формат данных и сериализация
-</div>
+### Формат данных и сериализация {#data-format-serialization}
 
-| Свойство                | Тип                      | По умолчанию   | Ключ строки подключения   | Описание                                                                                                                                                                                                                                                                                                       |
-| ----------------------- | ------------------------ | -------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UseCompression          | `bool`                   | `true`         | `Compression`             | Включает gzip-сжатие при передаче данных                                                                                                                                                                                                                                                                       |
-| UseCustomDecimals       | `bool`                   | `true`         | `UseCustomDecimals`       | Использовать `ClickHouseDecimal` для чисел произвольной точности; если `false`, используется .NET `decimal` (предел — 128 бит)                                                                                                                                                                                 |
-| ReadStringsAsByteArrays | `bool`                   | `false`        | `ReadStringsAsByteArrays` | Читать столбцы `String` и `FixedString` как `byte[]` вместо `string`; полезно для бинарных данных                                                                                                                                                                                                              |
-| UseFormDataParameters   | `bool`                   | `false`        | `UseFormDataParameters`   | Отправлять параметры в виде form data, а не в строке запроса URL                                                                                                                                                                                                                                               |
-| ReadBufferSize          | `int`                    | `8192` (8 KiB) | `ReadBufferSize`          | Размер буфера в байтах, используемого для чтения HTTP-ответов на запросы. Увеличьте его, чтобы сократить число повторных заполнений буфера для больших результирующих наборов. Значения от 85 000 байт и выше выделяются в Large Object Heap, что может вызывать фрагментацию LOH и более длительные паузы GC. |
-| ParameterTypeResolver   | `IParameterTypeResolver` | `null`         | —                         | Пользовательский резолвер для сопоставления типов параметров в стиле `@`; см. [Пользовательское сопоставление типов параметров](#parameter-type-mapping)                                                                                                                                                       |
-| ParameterFormatter      | `IParameterFormatter`    | `null`         | —                         | Пользовательский форматтер для сериализации значений параметров; см. [Пользовательское форматирование значений параметров](#parameter-value-formatting)                                                                                                                                                        |
-| ReadValueConverter      | `IReadValueConverter`    | `null`         | —                         | Пользовательское преобразование, применяемое к значениям, возвращаемым средством чтения данных; см. [Пользовательское преобразование значений при чтении](#read-value-conversion)                                                                                                                                |
-| JsonReadMode            | `JsonReadMode`           | `Binary`       | `JsonReadMode`            | Как возвращаются данные JSON: `Binary` (возвращает `JsonObject`) или `String` (возвращает сырую JSON-строку)                                                                                                                                                                                                   |
-| JsonWriteMode           | `JsonWriteMode`          | `String`       | `JsonWriteMode`           | Как отправляются данные JSON: `String` (сериализует через `JsonSerializer`, принимает любые входные данные) или `Binary` (только зарегистрированные POCO с подсказками типов)                                                                                                                                  |
+| Свойство                | Тип                      | По умолчанию     | Ключ строки подключения   | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | ------------------------ | ---------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| UseCompression          | `bool`                   | `true`           | `Compression`             | Управляет сжатием на транспортном уровне в обоих направлениях для обычного запроса: просит сервер сжать ответ (`enable_http_compression`; кодек задаётся через `AcceptEncoding`, причём явное значение может запросить его даже при выключенной опции) **и** сжимает тело запроса с помощью gzip — за исключением режима `UseFormDataParameters`, чьё multipart-тело всегда отправляется без сжатия. Бинарные вставки это свойство не учитывают; они используют `InsertOptions.Compressor` — см. [Сжатие при вставке](#insert-compression) |
+| AcceptEncoding          | `string`                 | `null`           | `AcceptEncoding`          | Заголовок `Accept-Encoding`, отправляемый с каждым запросом; заменяет кодеки, которые драйвер объявляет по умолчанию (`zstd, lz4, gzip, deflate`). Всё, что вернёт сервер, декодируется прозрачно. См. [Распаковка ответа](#response-decompression)                                                                                                                                                                                                                                                                                        |
+| UseCustomDecimals       | `bool`                   | `true`           | `UseCustomDecimals`       | Использовать `ClickHouseDecimal` для чисел произвольной точности; если `false`, используется .NET `decimal` (предел — 128 бит)                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ReadStringsAsByteArrays | `bool`                   | `false`          | `ReadStringsAsByteArrays` | Читать столбцы `String` и `FixedString` как `byte[]` вместо `string`; полезно для бинарных данных                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| UseFormDataParameters   | `bool`                   | `false`          | `UseFormDataParameters`   | Отправлять параметры в виде form data, а не в строке запроса URL                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ReadBufferSize          | `int`                    | `65536` (64 KiB) | `ReadBufferSize`          | Размер буфера в байтах, используемого для чтения HTTP-ответов на запросы. Драйвер берёт буфер из общего пула и возвращает его при освобождении средства чтения, поэтому память не выделяется на каждый запрос. Увеличьте его, чтобы сократить число повторных заполнений буфера для больших результирующих наборов. Драйвер держит по одному буферу на каждое параллельно работающее средство чтения, поэтому потребление памяти растёт с размером буфера и числом параллельных средств чтения. См. [Буферы](#perf-buffers).               |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`           | —                         | Пользовательский резолвер для сопоставления типов параметров в стиле `@`; см. [Пользовательское сопоставление типов параметров](#parameter-type-mapping)                                                                                                                                                                                                                                                                                                                                                                                   |
+| ParameterFormatter      | `IParameterFormatter`    | `null`           | —                         | Пользовательский форматтер для сериализации значений параметров; см. [Пользовательское форматирование значений параметров](#parameter-value-formatting)                                                                                                                                                                                                                                                                                                                                                                                    |
+| ReadValueConverter      | `IReadValueConverter`    | `null`           | —                         | Пользовательское преобразование, применяемое к значениям, возвращаемым средством чтения данных; см. [Пользовательское преобразование значений при чтении](#read-value-conversion)                                                                                                                                                                                                                                                                                                                                                          |
+| JsonReadMode            | `JsonReadMode`           | `Binary`         | `JsonReadMode`            | Как возвращаются данные JSON: `Binary` (возвращает `JsonObject`) или `String` (возвращает сырую JSON-строку)                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| JsonWriteMode           | `JsonWriteMode`          | `String`         | `JsonWriteMode`           | Как отправляются данные JSON: `String` (сериализует через `JsonSerializer`, принимает любые входные данные) или `Binary` (только зарегистрированные POCO с подсказками типов)                                                                                                                                                                                                                                                                                                                                                              |
+| MapReadMode             | `MapReadMode`            | `Dictionary`     | `MapReadMode`             | Как возвращаются данные `Map(K, V)`: `Dictionary` (возвращает `Dictionary<K, V>`; при повторяющемся ключе сохраняется только последнее значение) или `KeyValuePairs` (возвращает `List<KeyValuePair<K, V>>`, сохраняя все пары). См. [Тип Map](#type-map-reading-map)                                                                                                                                                                                                                                                                      |
+| AllowDuplicateJsonKeys  | `bool`                   | `false`          | `AllowDuplicateJsonKeys`  | Как читать строку типа `JSON`, у которой пересекающиеся пути одновременно содержат значение. При `false` выбрасывается исключение, поскольку сохранение одного значения означает потерю другого; при `true` сохраняется то, которое идёт в строке последним. См. [Пересекающиеся пути](#type-map-reading-json)                                                                                                                                                                                                                             |
 
-<div id="session-management">
-  ### Управление сеансами
-</div>
+### Управление сеансами {#session-management}
 
 | Свойство   | Тип      | По умолчанию | Ключ строки подключения | Описание                                                                                                |
 | ---------- | -------- | ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -140,17 +125,13 @@ Console.WriteLine(version);
   Класс `ClickHouseConnection` обычно поддерживает параллельную работу (несколько потоков могут выполнять запросы одновременно). Однако при включении флага `UseSession` для одного подключения в любой момент времени будет доступен только один активный запрос (это ограничение на стороне сервера).
 </Note>
 
-<div id="security">
-  ### Безопасность
-</div>
+### Безопасность {#security}
 
 | Свойство                        | Тип    | По умолчанию | Ключ строки подключения | Описание                                                               |
 | ------------------------------- | ------ | ------------ | ----------------------- | ---------------------------------------------------------------------- |
 | SkipServerCertificateValidation | `bool` | `false`      | —                       | Пропустить проверку HTTPS-сертификата; **не использовать в продакшне** |
 
-<div id="http-client-configuration">
-  ### Конфигурация HTTP-клиента
-</div>
+### Конфигурация HTTP-клиента {#http-client-configuration}
 
 | Свойство          | Тип                  | По умолчанию | Ключ строки подключения | Описание                                                                   |
 | ----------------- | -------------------- | ------------ | ----------------------- | -------------------------------------------------------------------------- |
@@ -158,18 +139,14 @@ Console.WriteLine(version);
 | HttpClientFactory | `IHttpClientFactory` | `null`       | —                       | Пользовательская фабрика для создания экземпляров HttpClient               |
 | HttpClientName    | `string`             | `null`       | —                       | Имя, которое HttpClientFactory использует для создания конкретного клиента |
 
-<div id="logging-debugging">
-  ### Логирование и отладка
-</div>
+### Логирование и отладка {#logging-debugging}
 
 | Свойство        | Тип              | По умолчанию | Ключ строки подключения | Описание                                                                                                                  |
 | --------------- | ---------------- | ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | LoggerFactory   | `ILoggerFactory` | `null`       | —                       | Фабрика логгеров для диагностического логирования                                                                         |
 | EnableDebugMode | `bool`           | `false`      | —                       | Включает сетевую трассировку .NET (требуется LoggerFactory с уровнем Trace); **существенно влияет на производительность** |
 
-<div id="custom-settings-roles">
-  ### Пользовательские настройки и роли
-</div>
+### Пользовательские настройки и роли {#custom-settings-roles}
 
 | Property        | Type                                  | Default | Connection String Key | Description                                                                                     |
 | --------------- | ------------------------------------- | ------- | --------------------- | ----------------------------------------------------------------------------------------------- |
@@ -185,21 +162,15 @@ Console.WriteLine(version);
 
 ***
 
-<div id="connection-string-examples">
-  ### Примеры строк подключения
-</div>
+### Примеры строк подключения {#connection-string-examples}
 
-<div id="basic-connection">
-  #### Базовое подключение
-</div>
+#### Базовое подключение {#basic-connection}
 
 ```text
 Host=localhost;Port=8123;Username=default;Password=secret;Database=mydb
 ```
 
-<div id="with-custom-clickhouse-settings">
-  #### С пользовательскими настройками ClickHouse
-</div>
+#### С пользовательскими настройками ClickHouse {#with-custom-clickhouse-settings}
 
 ```text
 Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
@@ -207,27 +178,25 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 
 ***
 
-<div id="query-options">
-  ### QueryOptions
-</div>
+### QueryOptions {#query-options}
 
 `QueryOptions` позволяет переопределять настройки уровня клиента для отдельных запросов. Все свойства необязательны и переопределяют значения клиента по умолчанию только если они указаны.
 
-| Свойство              | Тип                           | Описание                                                                                                                                                                                                                                              |
-| --------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| QueryId               | `string`                      | Пользовательский идентификатор запроса для отслеживания в `system.query_log` или отмены                                                                                                                                                               |
-| Database              | `string`                      | Переопределяет базу данных по умолчанию для этого запроса                                                                                                                                                                                             |
-| Roles                 | `IReadOnlyList<string>`       | Переопределяет роли клиента для этого запроса                                                                                                                                                                                                         |
-| CustomSettings        | `IDictionary<string, object>` | Настройки сервера ClickHouse для этого запроса (например, `max_threads`)                                                                                                                                                                              |
-| CustomHeaders         | `IDictionary<string, string>` | Дополнительные HTTP-заголовки для этого запроса                                                                                                                                                                                                       |
-| UseSession            | `bool?`                       | Переопределяет поведение сеанса для этого запроса                                                                                                                                                                                                     |
-| SessionId             | `string`                      | Идентификатор сеанса для этого запроса (требуется `UseSession = true`)                                                                                                                                                                                |
-| BearerToken           | `string`                      | Переопределяет токен аутентификации для этого запроса                                                                                                                                                                                                 |
-| ParameterTypeResolver | `IParameterTypeResolver`      | Переопределяет резолвер уровня клиента для сопоставления типов параметров в стиле `@`; см. [Пользовательское сопоставление типов параметров](#parameter-type-mapping)                                                                                 |
-| ParameterFormatter    | `IParameterFormatter`         | Переопределяет форматтер уровня клиента для сериализации значений параметров в стиле `@`; см. [Пользовательское форматирование значений параметров](#parameter-value-formatting)                                                                      |
-| ReadValueConverter    | `IReadValueConverter`         | Переопределяет преобразование уровня клиента, применяемое к значениям, возвращаемым средством чтения данных; см. [Пользовательское преобразование значений при чтении](#read-value-conversion)                                                        |
-| MaxExecutionTime      | `TimeSpan?`                   | Тайм-аут запроса на стороне сервера (передаётся как настройка `max_execution_time`); сервер отменяет запрос при превышении                                                                                                                            |
-| AcceptEncoding        | `string`                      | Переопределяет заголовок `Accept-Encoding` для отдельного запроса (например, `"zstd"`, `"zstd, gzip;q=0.5"`); также принудительно задаёт `enable_http_compression=1` в URL. См. [Сжатие передачи для отдельного запроса](#per-query-accept-encoding). |
+| Свойство              | Тип                           | Описание                                                                                                                                                                                                                                                                                         |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| QueryId               | `string`                      | Пользовательский идентификатор запроса для отслеживания в `system.query_log` или отмены                                                                                                                                                                                                          |
+| Database              | `string`                      | Переопределяет базу данных по умолчанию для этого запроса                                                                                                                                                                                                                                        |
+| Roles                 | `IReadOnlyList<string>`       | Переопределяет роли клиента для этого запроса                                                                                                                                                                                                                                                    |
+| CustomSettings        | `IDictionary<string, object>` | Настройки сервера ClickHouse для этого запроса (например, `max_threads`)                                                                                                                                                                                                                         |
+| CustomHeaders         | `IDictionary<string, string>` | Дополнительные HTTP-заголовки для этого запроса                                                                                                                                                                                                                                                  |
+| UseSession            | `bool?`                       | Переопределяет поведение сеанса для этого запроса                                                                                                                                                                                                                                                |
+| SessionId             | `string`                      | Идентификатор сеанса для этого запроса (требуется `UseSession = true`)                                                                                                                                                                                                                           |
+| BearerToken           | `string`                      | Переопределяет токен аутентификации для этого запроса                                                                                                                                                                                                                                            |
+| ParameterTypeResolver | `IParameterTypeResolver`      | Переопределяет резолвер уровня клиента для сопоставления типов параметров в стиле `@`; см. [Пользовательское сопоставление типов параметров](#parameter-type-mapping)                                                                                                                            |
+| ParameterFormatter    | `IParameterFormatter`         | Переопределяет форматтер уровня клиента для сериализации значений параметров в стиле `@`; см. [Пользовательское форматирование значений параметров](#parameter-value-formatting)                                                                                                                 |
+| ReadValueConverter    | `IReadValueConverter`         | Переопределяет преобразование уровня клиента, применяемое к значениям, возвращаемым средством чтения данных; см. [Пользовательское преобразование значений при чтении](#read-value-conversion)                                                                                                   |
+| MaxExecutionTime      | `TimeSpan?`                   | Тайм-аут запроса на стороне сервера (передаётся как настройка `max_execution_time`); сервер отменяет запрос при превышении                                                                                                                                                                       |
+| AcceptEncoding        | `string`                      | Переопределяет `Accept-Encoding` для отдельного запроса (например, `"br"`, `"identity"`), имеет приоритет над `ClickHouseClientSettings.AcceptEncoding`; также принудительно задаёт `enable_http_compression=1` в URL. См. [Сжатие передачи для отдельного запроса](#per-query-accept-encoding). |
 
 **Пример:**
 
@@ -253,19 +222,19 @@ var reader = await client.ExecuteReaderAsync(
 
 ***
 
-<div id="insert-options">
-  ### InsertOptions
-</div>
+### InsertOptions {#insert-options}
 
-`InsertOptions` дополняет `QueryOptions` настройками, специфичными для пакетных операций вставки через `InsertBinaryAsync`.
+`InsertOptions` дополняет `QueryOptions` настройками, специфичными для массовой вставки через `InsertBinaryAsync`.
 
-| Свойство               | Тип                                   | По умолчанию | Описание                                                                                      |
-| ---------------------- | ------------------------------------- | ------------ | --------------------------------------------------------------------------------------------- |
-| BatchSize              | `int`                                 | 100,000      | Количество строк в батче                                                                      |
-| MaxDegreeOfParallelism | `int`                                 | 1            | Количество параллельных загрузок батчей                                                       |
-| Format                 | `RowBinaryFormat`                     | `RowBinary`  | Бинарный формат: `RowBinary` или `RowBinaryWithDefaults`                                      |
-| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`       | Имя столбца → строка типа ClickHouse. Если задано, запрос для определения схемы пропускается.        |
-| UseSchemaCache         | `bool`                                | `false`      | Кэшировать полную схему таблицы для каждой пары (database, table) на всё время жизни клиента. |
+| Свойство               | Тип                                   | По умолчанию             | Описание                                                                                                                                                                             |
+| ---------------------- | ------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| BatchSize              | `int`                                 | 100,000                  | Количество строк в батче                                                                                                                                                             |
+| MaxDegreeOfParallelism | `int`                                 | 1                        | Количество параллельных загрузок батчей                                                                                                                                              |
+| Format                 | `RowBinaryFormat`                     | `RowBinary`              | Бинарный формат: `RowBinary` или `RowBinaryWithDefaults`                                                                                                                             |
+| Compressor             | `IClickHouseCompressor`               | `ZstdCompressor.Default` | Кодек, применяемый к телу вставки (`Content-Encoding`). При `null` данные отправляются без сжатия. См. [Сжатие при вставке](#insert-compression)                                     |
+| QueryPlacement         | `InsertQueryPlacement`                | `Body`                   | Куда отправляется оператор `INSERT INTO ... FORMAT ...`: `Body` (перед строками) или `Url` (в виде URL-параметра `query`). См. [Размещение запроса вставки](#insert-query-placement) |
+| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`                   | Имя столбца → строка типа ClickHouse. Если задано, запрос для определения схемы пропускается.                                                                                        |
+| UseSchemaCache         | `bool`                                | `false`                  | Кэшировать полную схему таблицы для каждой пары (database, table) на всё время жизни клиента.                                                                                        |
 
 Все свойства `QueryOptions` также доступны в `InsertOptions`.
 
@@ -287,9 +256,7 @@ long rowsInserted = await client.InsertBinaryAsync(
 );
 ```
 
-<div id="skip-schema-query">
-  #### Пропуск запроса для определения схемы
-</div>
+#### Пропуск запроса для определения схемы {#skip-schema-query}
 
 По умолчанию `InsertBinaryAsync` перед каждой вставкой отправляет запрос `SELECT ... WHERE 1=0`, чтобы определить типы столбцов. В сценариях с высокой пропускной способностью эти накладные расходы можно исключить двумя способами:
 
@@ -331,15 +298,11 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
   * Кэш привязан к экземпляру `ClickHouseClient`, а в качестве ключа используются (database, table). Разные подмножества столбцов одной и той же таблицы используют одну общую кэшированную схему.
 </Note>
 
-<div id="clickhouse-client">
-  ## ClickHouseClient
-</div>
+## ClickHouseClient {#clickhouse-client}
 
 `ClickHouseClient` — рекомендуемый API для работы с ClickHouse. Он потокобезопасен, рассчитан на использование как singleton и самостоятельно управляет пулом HTTP-соединений.
 
-<div id="creating-a-client">
-  ### Создание клиента
-</div>
+### Создание клиента {#creating-a-client}
 
 Создайте `ClickHouseClient` с помощью строки подключения или объекта `ClickHouseClientSettings`. Доступные параметры см. в разделе [Конфигурация](#configuration).
 
@@ -380,13 +343,11 @@ using var client = new ClickHouseClient(settings);
 Для сценариев с инъекцией зависимостей используйте `IHttpClientFactory`:
 
 ```csharp
-// In your DI configuration
+// In your DI configuration. No AutomaticDecompression needed — the driver decodes
+// compressed responses itself, and a mask here would widen its Accept-Encoding.
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-{
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
 // Create client with factory
@@ -400,9 +361,7 @@ var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
 
 ***
 
-<div id="executing-queries">
-  ### Выполнение запросов
-</div>
+### Выполнение запросов {#executing-queries}
 
 Используйте `ExecuteNonQueryAsync` для команд, которые не возвращают результатов:
 
@@ -428,13 +387,9 @@ Console.WriteLine($"Версия сервера: {version}");
 
 ***
 
-<div id="inserting-data">
-  ### Вставка данных
-</div>
+### Вставка данных {#inserting-data}
 
-<div id="parameterized-inserts">
-  #### Параметризованные вставки
-</div>
+#### Параметризованные вставки {#parameterized-inserts}
 
 Для вставки данных с помощью параметризованных запросов используйте `ExecuteNonQueryAsync`. Типы параметров должны быть указаны в SQL с использованием синтаксиса `{name:Type}`:
 
@@ -454,9 +409,7 @@ await client.ExecuteNonQueryAsync(
 
 ***
 
-<div id="bulk-insert">
-  #### Массовая вставка
-</div>
+#### Массовая вставка {#bulk-insert}
 
 Используйте `InsertBinaryAsync` для эффективной вставки большого количества строк. Метод передает данные в потоковом режиме в нативном бинарном формате строк ClickHouse, поддерживает параллельную загрузку батчей и позволяет избежать ошибок &quot;URL too long&quot;, которые могут возникать при параметризованных запросах.
 
@@ -488,9 +441,7 @@ var options = new InsertOptions
   * Используйте `RowBinaryFormat.RowBinaryWithDefaults` в `InsertOptions.Format`, если хотите, чтобы сервер применял значения DEFAULT для столбцов, которые не были переданы.
 </Note>
 
-<div id="poco-insert">
-  #### Вставка POCO
-</div>
+#### Вставка POCO {#poco-insert}
 
 Вместо создания массивов `object[]` можно напрямую вставлять строго типизированные объекты POCO. Зарегистрируйте тип один раз, а затем передайте `IEnumerable<T>`:
 
@@ -554,17 +505,26 @@ public class Event
   Если в `InsertOptions` задан `ColumnTypes`, он имеет приоритет над атрибутами POCO.
 </Note>
 
-<div id="poco-insert-schema-evolution">
-  #### Эволюция схемы
-</div>
+#### Эволюция схемы {#poco-insert-schema-evolution}
 
 Вставка POCO работает без проблем, если после регистрации типа в целевую таблицу добавляются новые столбцы. Поскольку драйвер вставляет только те столбцы, которые сопоставлены с POCO, все новые столбцы с `DEFAULT` (или другими выражениями по умолчанию) сервер заполняет автоматически. Никаких изменений в коде или повторной регистрации не требуется.
 
+#### Размещение запроса вставки {#insert-query-placement}
+
+Бинарная вставка записывает оператор `INSERT INTO ... FORMAT ...` в первой строке тела запроса, перед строками данных. Тело по умолчанию сжимается, поэтому механизмы маршрутизации и логирования, которые анализируют только URL, этот оператор не увидят. Задайте для `InsertOptions.QueryPlacement` значение `InsertQueryPlacement.Url`, чтобы оператор передавался в URL-параметре `query`, а в теле оставались только строки данных:
+
+```csharp
+var options = new InsertOptions { QueryPlacement = InsertQueryPlacement.Url };
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+Используйте этот режим, когда proxy, load balancer или gateway маршрутизирует запросы по параметру `query` или анализирует его, либо когда нужно, чтобы оператор попадал в журналы доступа и инструменты обсервабилити. Режим включается явно, поскольку оператор при этом учитывается в длине URL. Фактическое ограничение определяется наименьшим из тех, что накладывают .NET runtime, посредник и server. В .NET 6 — .NET 9 `System.Uri` ограничивает полный закодированный URI запроса 65 519 символами; при превышении этого предела driver генерирует исключение `InvalidOperationException`, которое подсказывает вернуться к `InsertQueryPlacement.Body`. В ClickHouse параметр `http_max_uri_size` по умолчанию равен 1 МиБ, однако посредник может устанавливать более низкий предел. В режиме body на оператор и строки такое ограничение длины URL не распространяется; прочие параметры запроса по-прежнему могут присутствовать в URL.
+
+Эта настройка не зависит от `Compressor`: тело кодируется одинаково в обоих режимах.
+
 ***
 
-<div id="reading-data">
-  ### Чтение данных
-</div>
+### Чтение данных {#reading-data}
 
 Используйте `ExecuteReaderAsync` для выполнения SELECT-запросов. Возвращаемый `ClickHouseDataReader` предоставляет типизированный доступ к столбцам результата с помощью таких методов, как `GetInt64()`, `GetString()` и `GetFieldValue<T>()`.
 
@@ -587,9 +547,7 @@ while (reader.Read())
 }
 ```
 
-<div id="poco-read">
-  #### Чтение в POCO
-</div>
+#### Чтение в POCO {#poco-read}
 
 Вместо чтения столбцов по индексу или имени можно направлять результаты запроса напрямую в собственные классы. Один раз зарегистрируйте тип в клиенте, а затем используйте `QueryAsync<T>`:
 
@@ -617,9 +575,7 @@ await foreach (var reading in client.QueryAsync<SensorReading>(
 }
 ```
 
-<div id="poco-read-registration">
-  ##### Регистрация
-</div>
+##### Регистрация {#poco-read-registration}
 
 `RegisterPocoType<T>()` настраивает сопоставления как для вставки, так и для чтения, и заранее проверяет оба. `RegisterBinaryInsertType<T>()` не изменился и по-прежнему используется только для вставки в целях обратной совместимости.
 
@@ -628,17 +584,56 @@ await foreach (var reading in client.QueryAsync<SensorReading>(
 * Публичный конструктор без параметров.
 * Как минимум одно публичное свойство с публичным сеттером, не являющимся `init`. Свойства `required` поддерживаются.
 
-<div id="poco-read-column-matching">
-  ##### Сопоставление столбцов
-</div>
+##### Сопоставление столбцов {#poco-read-column-matching}
 
-Сопоставление столбцов чувствительно к регистру. Если в результате отсутствуют столбцы, свойства сохраняют значения по умолчанию; лишние столбцы в результате игнорируются.
+Сопоставление столбцов выполняется с учётом регистра. Если в результате отсутствуют столбцы, свойства сохраняют значения по умолчанию; лишние столбцы в результате игнорируются.
 
-Автоматические преобразования отсутствуют, а несоответствие типов вызывает `InvalidOperationException`.
+Драйвер не расширяет и не сужает значения. За исключением альтернативных представлений, перечисленных ниже,
+тип столбца во фреймворке должен быть присваиваемым типу свойства, а несоответствие вызывает
+`InvalidOperationException`. Поэтому свойство типа `object` принимает любой столбец.
 
-<div id="poco-read-mapto">
-  ##### Материализация одной строки
-</div>
+##### Поддерживаемые типы свойств {#poco-read-types}
+
+`QueryAsync<T>` считывает каждый из этих столбцов напрямую в соответствующее свойство:
+
+| Столбец ClickHouse                      | Тип(ы) свойства                                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `Int8`/`Int16`/`Int32`/`Int64`          | `sbyte`/`short`/`int`/`long`                                                                   |
+| `UInt8`/`UInt16`/`UInt32`/`UInt64`      | `byte`/`ushort`/`uint`/`ulong`                                                                 |
+| `Int128`/`UInt128`                      | `BigInteger` либо встроенные `System.Int128`/`System.UInt128` в .NET 8 и более поздних версиях |
+| `Int256`/`UInt256`                      | `BigInteger`                                                                                   |
+| `Float32`/`Float64`/`BFloat16`          | `float`/`double`/`float`                                                                       |
+| `Bool`                                  | `bool`                                                                                         |
+| `Decimal`                               | `decimal` или `ClickHouseDecimal`                                                              |
+| `Date`/`Date32`/`DateTime`/`DateTime64` | `DateTime`, `DateTimeOffset` или `DateOnly`                                                    |
+| `Time`/`Time64`                         | `TimeSpan`                                                                                     |
+| `UUID`                                  | `Guid`                                                                                         |
+| `IPv4`/`IPv6`                           | `IPAddress`                                                                                    |
+| `Enum8`/`Enum16`                        | `string` (метка) или `int` (порядковый номер в бинарном представлении)                         |
+| `String`/`FixedString`                  | `string` или `byte[]`                                                                          |
+
+Каждая строка также допускает nullable-форму своего типа свойства (`long?`, `DateOnly?` и так далее)
+независимо от того, объявлен ли столбец как `Nullable(...)`. Свойство значимого типа, не допускающего NULL, для столбца
+`Nullable(T)` принимается при регистрации, но генерирует исключение при поступлении NULL.
+
+Обёртки вроде `LowCardinality(T)`, `SimpleAggregateFunction(f, T)` и `Object(T)` отображаются точно так же, как `T`.
+
+Составные столбцы также поддерживаются и используют тип фреймворка, указанный в
+[справочнике типов при чтении](#clickhouse-native-type-map-reading): `Array(T)` — в `T[]`, `Tuple(...)`
+— в `System.Tuple<...>`, `Nested(...)` — в `Tuple<...>[]`, `JSON` — в `JsonObject` (или `string`
+при [`JsonReadMode=String`](#type-map-reading-json)), а `Variant`/`Dynamic` — в `object`.
+
+Столбец `Map(K, V)` — особый случай: свойство `List<KeyValuePair<K, V>>` или `KeyValuePair<K, V>[]`
+читается по пути без упаковки и сохраняет порядок передачи, а также любые повторяющиеся ключи, в любом
+режиме [`MapReadMode`](#type-map-reading-map). Свойство `Dictionary<K, V>` работает только в режиме
+по умолчанию. Типы ключа и значения должны совпадать в точности, поэтому
+для `Map(String, Nullable(Int32))` требуется `KeyValuePair<string, int?>`.
+
+Если для столбца доступно несколько типов свойства (столбец `DateTime` — как `DateTime`,
+`DateTimeOffset` или `DateOnly`, столбец `String` — как `string` или `byte[]`), представление определяется объявленным типом свойства. Эти альтернативные представления
+относятся к пути POCO, поэтому они доступны в `QueryAsync<T>` и отсутствуют в `MapTo<T>`.
+
+##### Материализация одной строки {#poco-read-mapto}
 
 При ручном переборе через reader используйте `ClickHouseDataReader.MapTo<T>()`, чтобы материализовать текущую строку в зарегистрированный объект POCO, не продвигая reader дальше:
 
@@ -652,17 +647,27 @@ while (reader.Read())
 }
 ```
 
-<div id="poco-read-diagnostics">
-  ##### Диагностика регистрации
-</div>
+Используйте `MapTo<T>`, когда цикл чтения нужно вести самостоятельно — например, чтобы сочетать
+прямой доступ к столбцам с материализацией в POCO. Метод читает строку через упакованные значения reader,
+поэтому не предоставляет альтернативные типы свойств, описанные выше, и выделяет больше памяти, чем
+`QueryAsync<T>`. Если вам нужны только строки, предпочтительнее `QueryAsync<T>`; цифры приведены в разделе
+[выбор способа материализации](#perf-read-path).
+
+##### Конвертеры значений при чтении {#poco-read-converters}
+
+[Конвертер значений при чтении](#read-value-conversion), заданный на уровне client или для отдельного запроса, применяется к обоим путям и
+не отключает чтение без упаковки. Driver преобразует каждый столбец той перегрузкой, которая соответствует способу
+чтения этого столбца: типизированной `ConvertValue<T>` — для столбца, прочитанного без упаковки,
+и упакованной `ConvertValue` — для составного столбца. Реализуйте обе перегрузки
+согласованно, иначе один и тот же столбец будет давать разные результаты на разных путях.
+
+##### Диагностика регистрации {#poco-read-diagnostics}
 
 Если настроен `LoggerFactory`, `RegisterPocoType<T>()` и `RegisterBinaryInsertType<T>()` выводят сообщение журнала уровня `Debug` (категория `ClickHouse.Driver.Client`) со списком того, какие свойства сопоставлены с какими столбцами, а также какие были пропущены и почему. См. [Логирование и диагностика](#logging-and-diagnostics).
 
 ***
 
-<div id="sql-parameters">
-  ### Параметры SQL
-</div>
+### Параметры SQL {#sql-parameters}
 
 В ClickHouse стандартный формат параметров в SQL-запросах — `{parameter_name:DataType}`.
 
@@ -684,9 +689,24 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
   SQL-параметры &#39;bind&#39; передаются как параметры HTTP-запроса в URI, поэтому их слишком большое количество может привести к исключению &quot;URL too long&quot;. Чтобы избежать этого ограничения при массовой вставке данных, используйте `InsertBinaryAsync`.
 </Note>
 
-<div id="identifier-parameters">
-  #### Параметры `Identifier`
-</div>
+#### Плейсхолдеры `@name` в стиле ADO {#at-style-placeholders}
+
+Драйвер также принимает плейсхолдеры `@name`, которые генерируют ORM вроде Dapper. Это удобство
+на стороне клиента: перед отправкой запроса каждый из них переписывается в
+`{name:ResolvedType}`, так что сервер никогда не видит `@`. О том, как выбирается тип, см.
+[разрешение типов](#parameter-type-mapping). Там, где это возможно, используйте явную
+форму `{name:Type}`.
+
+`@name`, для которого нет соответствующего параметра, остаётся без изменений — его отклонит сервер. Сопоставление
+чувствительно к регистру, поэтому `@ID` не привяжет параметр с именем `id`.
+
+<Note>
+  Чтобы отключить переписывание, установите переключатель AppContext `ClickHouse.Driver.DisableReplacingParameters`
+  до первого использования драйвера. Прекращается только переписывание текста; параметры по-прежнему отправляются, поэтому
+  запросы, написанные с использованием нативного синтаксиса `{name:Type}`, продолжают работать.
+</Note>
+
+#### Параметры `Identifier` {#identifier-parameters}
 
 Тип параметра `Identifier` позволяет безопасно подставлять имя базы данных, таблицы или столбца вместо строкового литерала в кавычках. Используйте его с помощью синтаксиса `{name:Identifier}` в SQL или задав `ClickHouseDbParameter.ClickHouseType = "Identifier"`:
 
@@ -708,9 +728,7 @@ var reader = await client.ExecuteReaderAsync("SELECT {col:Identifier} FROM t", p
 
 ***
 
-<div id="query-id">
-  ### Query ID
-</div>
+### Query ID {#query-id}
 
 Каждому запросу назначается уникальный `query_id`, который можно использовать, чтобы получить данные из таблицы `system.query_log` или отменить долго выполняющиеся запросы. Вы можете указать собственный идентификатор запроса через `QueryOptions`:
 
@@ -733,9 +751,7 @@ var reader = await client.ExecuteReaderAsync(
 
 ***
 
-<div id="parameter-type-mapping">
-  ### Пользовательское сопоставление типов параметров
-</div>
+### Пользовательское сопоставление типов параметров {#parameter-type-mapping}
 
 При использовании параметров в стиле `@` (например, `WHERE id = @id`) драйвер автоматически определяет тип ClickHouse по типу значения .NET. Например, `int` сопоставляется с `Int32`.
 
@@ -804,9 +820,7 @@ Resolver также работает с путём ADO.NET `ClickHouseConnection
 
 ***
 
-<div id="parameter-value-formatting">
-  ### Пользовательское форматирование значений параметров
-</div>
+### Пользовательское форматирование значений параметров {#parameter-value-formatting}
 
 `IParameterFormatter` — это хук, который определяет, как сериализуются значения параметров. Используйте его, если встроенное форматирование (например, точность для DateTime, локаль для decimal, экранирование строк, представление чисел) не соответствует тому, что ожидают ваша схема или последующие инструменты.
 
@@ -865,9 +879,7 @@ public class FixedDecimalFormatter : IParameterFormatter
 
 ***
 
-<div id="read-value-conversion">
-  ### Пользовательское преобразование значений при чтении
-</div>
+### Пользовательское преобразование значений при чтении {#read-value-conversion}
 
 `IReadValueConverter` позволяет преобразовывать значения, возвращаемые средством чтения данных после десериализации, не меняя их CLR-тип. Типичные сценарии использования: установка `DateTime.Kind = Utc` для столбца `DateTime` без часового пояса, обрезка или нормализация строк, а также постобработка JSON-столбца перед передачей в прикладной код.
 
@@ -898,16 +910,16 @@ using var client = new ClickHouseClient(settings);
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickhouseType)
+    public object ConvertValue(object value, string columnName, string clickHouseType)
     {
-        if (value is DateTime dt && clickhouseType == "DateTime")
+        if (value is DateTime dt && clickHouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
@@ -922,13 +934,27 @@ public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 
 Конвертер вызывается один раз для каждого столбца и получает всё десериализованное значение ячейки целиком; он **не** выполняет рекурсивную обработку составных контейнеров. Для столбца `Array(Int32)` передаваемым значением будет `int[]`; для `Tuple(Int32, String)` — `ITuple`.
 
+**Какая перегрузка выполняется:**
+
+Обе перегрузки должны быть согласованы, поскольку то, какую из них вызовет драйвер, зависит от того, как вызывающая сторона прочитала
+столбец:
+
+* `ConvertValue<T>` — типизированные аксессоры `GetByte`, `GetSByte`, `GetInt16`/`32`/`64`,
+  `GetUInt16`/`32`/`64`, `GetFloat`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetIPAddress`,
+  `GetBigInteger` и `GetFieldValue<T>`, а также каждый столбец без упаковки на
+  [пути чтения POCO](#poco-read-converters).
+* `ConvertValue` (boxed) — `GetValue`, `GetValues`, индексаторы, `GetChar`, `GetTuple`, а также
+  пути с приведением типов в `GetBoolean`, `GetDecimal` и `GetString`.
+
+`IsDBNull` не запускает конвертер вовсе: он считывает флаг null напрямую, поэтому конвертер никак не может
+повлиять на то, считается ли значение null. `TryGetEnumOrdinal` также обходит его — см.
+[чтение порядкового номера enum](#ado-net-reader-enum-ordinal).
+
 Конвертер работает с ADO.NET-путём `ClickHouseConnection` — настройки наследуются соединениями, созданными из клиента.
 
 ***
 
-<div id="raw-streaming">
-  ### Прямая потоковая передача
-</div>
+### Прямая потоковая передача {#raw-streaming}
 
 Используйте `ExecuteRawResultAsync`, чтобы напрямую передавать результаты запроса в указанном формате, минуя средство чтения данных. Это удобно для экспорта данных в файлы или передачи в другие системы:
 
@@ -946,11 +972,9 @@ var json = await reader.ReadToEndAsync();
 
 ***
 
-<div id="per-query-accept-encoding">
-  ### Сжатие передачи для отдельного запроса
-</div>
+### Сжатие передачи для отдельного запроса {#per-query-accept-encoding}
 
-По умолчанию клиент согласовывает `gzip, deflate`, когда `Compression=true` (значение по умолчанию в строке подключения), а HTTP-клиент прозрачно распаковывает поток.
+По умолчанию клиент согласовывает `zstd, lz4, gzip, deflate`, когда `Compression=true` (значение по умолчанию в строке подключения), и сам прозрачно декодирует поток.
 
 Для экспорта в исходном формате (например, Parquet, Arrow, Native) может потребоваться согласовать другой кодек (например, `zstd` или `lz4`), чтобы снизить нагрузку на CPU в обмен на пропускную способность, не меняя настройку для всего соединения. `QueryOptions.AcceptEncoding` и `ClickHouseCommand.AcceptEncoding` задают HTTP-заголовок `Accept-Encoding` для одного запроса, заменяя любое значение по умолчанию, и принудительно устанавливают `enable_http_compression=1` в URL (ClickHouse требует этого, чтобы учитывать `Accept-Encoding`).
 
@@ -963,66 +987,312 @@ using var result = await client.ExecuteRawResultAsync(
 await using var body = await result.ReadAsStreamAsync();
 ```
 
-<div id="per-query-accept-encoding-httpclient">
-  #### Конфигурация HttpClient
-</div>
+#### Настройка HttpClient {#per-query-accept-encoding-httpclient}
 
-`HttpClient`, который драйвер создает по умолчанию, имеет `AutomaticDecompression = GZip | Deflate`, поэтому данные, сжатые этими алгоритмами, распаковываются автоматически, а `Content-Encoding` удаляется из ответа. Для обычных запросов это именно то, что нужно, но не если вы хотите сами обрабатывать исходные сжатые данные.
-
-В таком случае передайте в ClickHouseClient `HttpClient` или `HttpClientFactory` с `AutomaticDecompression = DecompressionMethods.None`
+Настраивать ничего не нужно: в `HttpClient`, который создаёт драйвер, параметр `AutomaticDecompression` остаётся равным `DecompressionMethods.None`, а декодированием ответов занимается сам драйвер, поэтому `Content-Encoding` никогда не удаляется незаметно для вас, и необработанное тело ответа доходит до вас ровно в том виде, в каком его отправил сервер.
 
 <Warning>
-  Если `AcceptEncoding` запрашивает кодек, который настроенный `HttpClient` не может распаковать автоматически, безопасно использовать только `ExecuteRawResultAsync`. Вызов `ExecuteReaderAsync`, `ExecuteScalarAsync` или `ExecuteNonQueryAsync` по тому же пути запроса попытается разобрать сжатые байты как обычный формат результата и вернет некорректные данные.
+  Если вы передаёте собственный `HttpClient`, также оставьте `AutomaticDecompression` выключенным. Это настройка не только для стороны ответа: при отправке обработчик **добавляет в исходящий `Accept-Encoding` каждый алгоритм из своей маски, которого там нет**. Поэтому обработчик с `GZip | Deflate` превращает явно заданный `AcceptEncoding = "lz4"` в `lz4, gzip, deflate`, а явный `"identity"` — в `identity, gzip, deflate` на уровне передачи. А поскольку ClickHouse разрешает этот заголовок по собственному фиксированному приоритету кодеков (игнорируя порядок и q-значения), он может ответить кодеком, который вы не запрашивали, — а обработчик затем декодирует его и удалит заголовок, так что вы даже не увидите, что это произошло. Если маска выключена, отправляется ровно то, что вы задали.
 </Warning>
 
-<div id="per-query-accept-encoding-errors">
-  #### Тела ошибок
-</div>
+<Warning>
+  Если в `AcceptEncoding` запрошен кодек, который драйвер не умеет декодировать (`snappy`), безопасен только `ExecuteRawResultAsync`. `ExecuteReaderAsync`, `ExecuteScalarAsync` и `ExecuteNonQueryAsync` завершатся с `NotSupportedException` с указанием кодека (ранее они разбирали сжатые байты как формат результата и выдавали мусор).
+</Warning>
 
-Когда сервер отвечает кодом 4xx/5xx и задан параметр `enable_http_compression=1`, он сжимает тело ошибки тем же кодеком, который использовал бы для успешного ответа. Драйвер распаковывает такие ответы для кодеков, входящих в BCL (`gzip`, `deflate`, `br`/`brotli`), поэтому сообщение, передаваемое в `ClickHouseServerException`, остаётся читаемым. Для кодеков, которые он не может декодировать (`zstd`, `lz4`, …), драйвер возвращает сообщение-заполнитель, в котором указан кодек и дана ссылка на `system.query_log`, где можно найти исходный текст ошибки.
+#### Тела ошибок {#per-query-accept-encoding-errors}
+
+Когда сервер отвечает кодом 4xx/5xx и задан параметр `enable_http_compression=1`, он сжимает тело ошибки тем же кодеком, который использовал бы для успешного ответа. Драйвер декодирует такие ответы для всех поддерживаемых кодеков (`lz4`, `zstd`, `gzip`, `deflate`, `br`/`brotli`), поэтому сообщение, передаваемое в `ClickHouseServerException`, остаётся читаемым. Для всего остального (`snappy`, …) он возвращает сообщение-заполнитель, в котором указан кодек и дана ссылка на `system.query_log`, где можно найти исходный текст ошибки.
 
 ***
 
-<div id="raw-stream-insert">
-  ### Вставка из необработанного потока
+### Распаковка ответа {#response-decompression}
+
+`Accept-Encoding` лишь просит сервер сжать ответ — декодировать его всё равно кто-то должен. Драйвер делает это сам, ориентируясь на `Content-Encoding` ответа, поэтому все обычные API чтения (`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, Dapper, EF Core, linq2db) работают со сжатым ответом без какой-либо настройки. Поддерживается декодирование `lz4`, `zstd`, `gzip`, `deflate` и `br`; `snappy` не поддерживается.
+
+По умолчанию драйвер объявляет **`zstd, lz4, gzip, deflate`**, и ClickHouse отвечает в `zstd`. Чтобы выбрать другой вариант, задайте `Accept-Encoding` самостоятельно — для всего клиента:
+
+```csharp
+using var client = new ClickHouseClient(new ClickHouseClientSettings("Host=localhost")
+{
+    AcceptEncoding = "br",      // decodable, but not advertised by default
+});
+```
+
+для каждого запроса, и она имеет старшинство:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "identity" });   // opt this query out
+```
+
+или в строке подключения — для пользователей ORM, которые никогда не обращаются к `ClickHouseClientSettings`:
+
+```text
+Host=localhost;AcceptEncoding=br, gzip
+```
+
+Установка этого значения также принудительно добавляет `enable_http_compression=1` в URL — без этого ClickHouse вообще не учитывает заголовок. Это происходит и тогда, когда `UseCompression` равно `false`, поскольку явное указание кодека воспринимается как запрос сжатия. Если значение не задано, при `UseCompression=false` заголовок `Accept-Encoding` не отправляется вовсе.
+
+`Accept-Encoding` можно задать в четырёх местах. Побеждает первое из них, в котором назван кодек:
+
+1. `QueryOptions.AcceptEncoding` (или `ClickHouseCommand.AcceptEncoding`)
+2. `CustomHeaders["Accept-Encoding"]` на уровне запроса
+3. `CustomHeaders["Accept-Encoding"]` на уровне клиента
+4. `ClickHouseClientSettings.AcceptEncoding` или ключевое слово строки подключения `AcceptEncoding`
+
+Если кодек не назван ни в одном из них, драйвер отправляет свой список по умолчанию. Значение, в котором не назван ни один кодек (null, пустая строка,
+пробелы или только запятые), считается незаданным, и обработка переходит к следующему месту. Чтобы отключить сжатие, используйте `identity`.
+
+**Кодек выбирает сервер, а не клиент.** ClickHouse ищет в `Accept-Encoding` токены в собственном фиксированном порядке предпочтения — `zstd` &gt; `br` &gt; `lz4` &gt; `snappy` &gt; `gzip` &gt; `deflate` — и игнорирует как порядок их перечисления, так и любые q-значения. Таким образом, этот заголовок сообщает о поддерживаемых возможностях, а не выдвигает требование, и единственный способ повлиять на выбор — исключить часть токенов. Список по умолчанию включает `zstd`, поэтому обычный запрос получает ответ, сжатый zstd; остальные токены служат резервным вариантом. `br` поддерживается при декодировании, но по умолчанию не объявляется.
+
+Соотношение кодеков по размеру полезной нагрузки, нагрузке на CPU сервера и клиента зависит от ваших данных, канала связи и серверного параметра `http_zlib_compression_level` (значение по умолчанию в поставке: 3) — см. [Настройка сжатия](#tuning-compression).
+
+* **`http_zlib_compression_level`.** Этот параметр применяется ко всем HTTP-кодекам, значение по умолчанию — 3. Его следует подбирать исходя из ваших данных, скорости канала и потребления CPU.
+* **Клиент, ограниченный CPU, на быстром канале.** Драйвер декодирует тело ответа в вызывающем потоке, поэтому, когда сеть не является узким местом, ограничивающим фактором может стать скорость декодирования на стороне клиента.
+
+Запрашивайте другой кодек — для отдельного запроса или для всего клиента — в любом из этих случаев:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "lz4" });   // decode this one with lz4 instead
+```
+
+Поскольку решение принимается на основе ответа, тело декодируется всякий раз, когда на это указывает его `Content-Encoding`, независимо от того, что было запрошено: при отсутствии заголовка или значении `identity` тело передаётся без изменений, поддерживаемый кодек декодируется, а всё остальное приводит к ошибке с указанием этого кодека. Риска двойного декодирования нет: если `AutomaticDecompression` у обработчика, предоставленного вызывающей стороной, уже декодировал тело, он также удаляет `Content-Encoding`, поэтому драйвер видит незашифрованные данные и не трогает их.
+
+**Raw-результаты не объявляют кодек.** `ExecuteRawResultAsync` (а также публичные `PostStreamAsync` / `InsertRawStreamAsync`) отдают вам тело ответа дословно, поэтому, если вы сами не укажете кодек, они вообще не запрашивают никакого сжатия — драйвер такое тело не декодирует, и предложить кодек здесь означало бы незаметно превратить экспорт в сжатый файл. Отсюда простое правило, не зависящее от настроек конкретного `HttpClient`: **дословное тело приходит ровно в том виде, в каком его отправил сервер, а сервер отправляет незашифрованный текст, если вы не запросили кодек.** Запросить его (для всего клиента или для отдельного запроса) — это и есть способ намеренно выгрузить сжатые байты.
+
+Явно заданный `AcceptEncoding` (на любом из уровней) по-прежнему применяется к raw-запросам, а `ClickHouseRawResult.ReadDecompressedStreamAsync()` декодирует результат, когда вам это нужно; `ReadAsStreamAsync`, `ReadAsByteArrayAsync`, `ReadAsStringAsync` и `CopyToAsync` всегда возвращают байты ровно в том виде, в каком они пришли.
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT JSONEachRow",
+    options: new QueryOptions { AcceptEncoding = "lz4" });
+
+Console.WriteLine(result.ContentEncoding); // "lz4"
+
+await using var body = await result.ReadDecompressedStreamAsync();
+using var bodyReader = new StreamReader(body);
+var json = await bodyReader.ReadToEndAsync();
+```
+
+Прочитайте возвращённый поток до конца, прежде чем он выйдет из области видимости, как показано выше. Если ответ *сжат*, вы получаете декодер, созданный с `leaveOpen`, поэтому его освобождение оставляет ответ нетронутым; если же ответ **не** сжат, вы получаете сам поток HTTP-содержимого, и его освобождение завершает тело ответа. В любом случае `ClickHouseRawResult` владеет ответом — не обращайтесь к другим его членам для чтения после того, как поток был освобождён. Освобождение `ClickHouseRawResult` обязательно всегда и само по себе достаточно: оно освобождает и ответ, и любой вставленный здесь декодер (декодеры удерживают буферы из пула). Поэтому `await using` выше необязателен, но его можно безопасно оставить. Повторные последовательные вызовы возвращают тот же самый поток; тип небезопасен для параллельного использования.
+
+Готовый к запуску пример см. в [Select&#95;007&#95;ResponseCompression.cs](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/Select/Select_007_ResponseCompression.cs).
+
+#### Сжатие вставок (запросов) {#insert-compression}
+
+Zstd — кодек по умолчанию для вставок: `InsertOptions.Compressor` изначально имеет значение `ZstdCompressor.Default`,
+то есть zstd с уровнем сжатия 3. Задайте другой компрессор, чтобы изменить кодек, или `null`, чтобы отправлять
+тело без сжатия.
+
+```csharp
+var options = new InsertOptions { Compressor = GZipCompressor.Default };  // Content-Encoding: gzip
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+В состав драйвера входят четыре кодека. У каждого есть экземпляр `Default`, а также конструктор, принимающий уровень
+и размер буфера записи:
+
+| Компрессор         | `Content-Encoding` | Конструктор                                                                    | `Default`       |
+| ------------------ | ------------------ | ------------------------------------------------------------------------------ | --------------- |
+| `ZstdCompressor`   | `zstd`             | `(int level = 3, int bufferSize = 262144)`                                     | уровень 3       |
+| `Lz4Compressor`    | `lz4`              | `(Lz4Level level = Lz4Level.Fast, int bufferSize = 262144)`                    | `Lz4Level.Fast` |
+| `GZipCompressor`   | `gzip`             | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest`       |
+| `BrotliCompressor` | `br`               | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest`       |
+
+```csharp
+var options = new InsertOptions { Compressor = new ZstdCompressor(level: 1) };
+```
+
+<Note>
+  *Переиспользуйте инстансы компрессоров.* Каждый `Default` — это один общий инстанс, и все четыре компрессора
+  безопасно использовать одновременно из нескольких потоков — именно это и происходит, когда
+  `InsertOptions.MaxDegreeOfParallelism` больше 1, поскольку одна вставка использует один компрессор на каждый
+  батч. Ни один из них не реализует `IDisposable`. Создайте собственный инстанс один раз и переиспользуйте его
+  так же, как используется `Default`.
+</Note>
+
+##### Пользовательский кодек {#custom-compressor}
+
+Интерфейс `IClickHouseCompressor` является публичным, и в его реализации нужно определить всего два члена:
+
+```csharp
+public sealed class MyCompressor : IClickHouseCompressor
+{
+    public string ContentEncoding => "my-codec";
+
+    public Stream Compress(Stream destination, bool leaveOpen) => /* a compressing write stream */;
+}
+```
+
+Сервер должен принимать указанный вами `Content-Encoding`. Остальные члены —
+`Decompress`, `MethodByte`, `MaxEncodedLength`, `Encode` и `Decode` — имеют реализации по умолчанию,
+которые генерируют исключение `NotSupportedException`, поэтому переопределяйте только те, что нужны вашему кодеку.
+Реализуйте `Decompress`, чтобы не только сжимать запросы, но и декодировать тела ответов, и генерируйте
+`InvalidDataException` из возвращаемого им потока, если тело повреждено или имеет неверный формат.
+
+`InsertOptions.Compressor` управляет только бинарной вставкой. Остальные тела запросов драйвера сжимаются по другим правилам, и ни одно из них через него не проходит:
+
+* **Любой запрос с SQL-текстом** (`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, `ExecuteRawResultAsync`, слой ADO.NET) отправляет свой оператор с `Content-Encoding: gzip`, если `UseCompression` равно `true` — то есть по умолчанию. Кодек не настраивается: `AcceptEncoding` влияет только на ответ, так что выбор здесь — gzip или ничего. При `Compression=false` оператор отправляется в открытом виде. Команды невелики, поэтому об этом редко стоит задумываться — но это полезно знать, когда вы наблюдаете за запросами через proxy или в перехвате пакетов.
+* **Multipart-тело** — запрос, параметры которого отправляются как form data (`UseFormDataParameters=true`) — всегда отправляется без сжатия, независимо от значения `UseCompression`.
+* **Raw-загрузка** (`InsertRawStreamAsync`, `PostStreamAsync`) использует собственный флаг для каждого вызова и не учитывает ни `UseCompression`, ни `InsertOptions.Compressor`: gzip, если флаг установлен, и без сжатия в противном случае. Обратите внимание, что параметр `useCompression` у `InsertRawStreamAsync` по умолчанию равен `true`, поэтому raw-загрузка сжимается gzip, если не передать `false` — даже при `Compression=false` на клиенте.
+
+***
+
+### Настройка сжатия {#tuning-compression}
+
+Сжатие меняет ресурсы CPU на объём передаваемых байт. Окажется ли такой размен выгодным, почти полностью зависит от того, насколько быстр ваш
+канал по сравнению со скоростью работы кодека. Единой настройки, подходящей
+всем, не существует.
+
+<div id="the-one-number-that-decides-it">
+  #### Одно число, которое всё решает
 </div>
 
-Используйте `InsertRawStreamAsync`, чтобы вставлять данные напрямую из файловых потоков или потоков в памяти в таких форматах, как CSV, JSON, Parquet, или в любом [поддерживаемом формате ClickHouse](/ru/reference/formats/index).
+Сжатие оправдано до тех пор, пока кодек работает быстрее сети.
+
+На пути чтения этот порог ниже, чем принято считать, поскольку ClickHouse сжимает
+HTTP-ответы в один поток в выходном буфере. По измерениям на сервисе ClickHouse Cloud с 16 vCPU
+(`hits`, RowBinary, уровень 3) сервер выдаёт сжатый вывод со скоростью примерно 100-200 МБ/с.
+
+Поэтому для большого результата и при условии, что одновременно обрабатывается один запрос, сжатие перестаёт окупаться где-то в районе 100 МБ/с. Один HTTPS-поток
+внутри одного облачного региона обычно превышает это значение, тогда как всё, что идёт через публичный интернет, VPN или границу региона, как правило, остаётся ниже.
+
+Путь вставки допускает сжатие при более высоких скоростях канала, поскольку ваш клиент сжимает данные на отдельном ядре и обычно работает быстрее, чем сжатие ответа на сервере.
+
+<div id="rough-guide-by-deployment">
+  #### Ориентировочные рекомендации по вариантам развертывания
+</div>
+
+| Где работает клиент                          | Типичная пропускная способность | Чтения               | Вставки                                |
+| -------------------------------------------- | ------------------------------- | -------------------- | -------------------------------------- |
+| Тот же хост / loopback                       | &gt; 500 МБ/с                   | `identity`           | `lz4` — самый быстрый, либо без сжатия |
+| Тот же регион, то же облако                  | ~100–500 МБ/с                   | `identity` или `lz4` | `zstd:1`                               |
+| Межрегиональное подключение, то же облако    | ~10–100 МБ/с                    | `zstd`               | `zstd:3`                               |
+| Интернет / VPN / другое облако               | &lt; 25 МБ/с                    | `zstd`               | `zstd:3`                               |
+| Тарифицируемый или сильно ограниченный канал | &lt; 5 МБ/с                     | `zstd`               | `zstd:5`+ или `br`                     |
+
+Три момента, которые эта таблица не учитывает:
+
+* **Стоимость исходящего трафика:** если передача данных тарифицируется, байты стоят денег, а не только времени, и это
+  склоняет к более высокой степени сжатия независимо от скорости канала.
+* **Небольшие результаты:** всё сказанное выше относится к большим полезным нагрузкам. Для небольших ответов кодек почти
+  не имеет значения — определяющими становятся накладные расходы на каждый запрос.
+* **Параллельные вставки поднимают пороговые значения для вставок.** Все приведенные выше показатели пропускной способности относятся к *одному* потоку. Значение `InsertOptions.MaxDegreeOfParallelism` по умолчанию равно `1`, но при его увеличении батчи сжимаются параллельно, поэтому совокупная скорость кодирования на стороне клиента растет примерно пропорционально числу выделенных ядер. Поэтому на быстром канале параллельную вставку по-прежнему выгодно
+  сжимать даже на тех скоростях, при которых однопоточная вставка уже не выигрывает от сжатия. Считайте строки таблицы, относящиеся к вставкам, *нижней границей*: если вы уже формируете батчи параллельно, проведите повторные измерения, прежде чем делать вывод, что ваш канал слишком быстр для сжатия.
+
+Путь чтения распараллеливается только между несколькими запросами.
+
+<div id="choosing-a-codec">
+  #### Выбор кодека
+</div>
+
+| Кодек  | Коэффициент                     | Когда использовать                                                                                                                                                                                                                  | На что обратить внимание                                                                                                                                                                                                                                                                                                                                                           |
+| ------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lz4`  | самый низкий                    | Быстрые каналы; CPU в большем дефиците, чем пропускная способность. С большим отрывом самый дешёвый в декодировании и самый быстрый на небольших результатах — именно его стоит указывать, когда нужно уйти от zstd по умолчанию.   | В нём **нет энтропийного кодировщика**, поэтому на данных с перекосом, но без повторов (например, длинные последовательности числового текста) его коэффициент заметно уступает всем остальным. Кроме того, он сильнее всех страдает от повышения `http_zlib_compression_level`: переход с уровня 1 на 3 обходится ему примерно в 2,7× по CPU ради выигрыша примерно в 29% объёма. |
+| `zstd` | высокий                         | Универсальный выбор всегда, когда в деле участвует реальная сеть. Лучшее соотношение коэффициента и затрат CPU в значимом диапазоне, а на уровне 3 он обходит `lz4` и по числу байт, *и* по CPU сервера, *и* по времени выполнения. | дороже `lz4` при **декодировании** — по нашим измерениям в 1,6 раза на уровне 3, хотя на уровне 1 они сопоставимы — и драйвер декодирует в вашем вызывающем потоке. Именно при `http_zlib_compression_level=1` он расходует немного *больше* CPU сервера, чем `lz4`.                                                                                                               |
+| `gzip` | средний                         | Совместимость — его понимают все прокси и шлюзы.                                                                                                                                                                                    | По нашим измерениям проигрывает и `lz4`, и `zstd` по всем параметрам: объём больше, чем у `zstd`, при этом кодирование обходится в несколько раз дороже по CPU, а декодирование — в 5–9 раз. Выбирайте его ради совместимости, а не производительности.                                                                                                                            |
+| `br`   | самый высокий на низких уровнях | Пропускная способность действительно является узким местом, и вы готовы платить за неё процессорным временем.                                                                                                                       | Резко сдаёт на более высоких уровнях — при `http_zlib_compression_level=6` мы намеряли расход CPU сервера в 3–4 раза выше, чем у `zstd`. По умолчанию не анонсируется, поскольку опережает все запасные токены в списке по умолчанию.                                                                                                                                              |
+
+<div id="levels">
+  #### Levels
+</div>
+
+Сжатие ответов управляется одной настройкой сервера — `http_zlib_compression_level`, которая применяется к *каждому* HTTP-кодеку, а не только к zlib. Значение по умолчанию — 3.
+
+Не трогайте её без измеренных оснований. Выше значения по умолчанию выигрыш в размере минимален, а расход CPU велик (для `zstd` переход с 3 на 6 примерно удваивает нагрузку на CPU сервера ради ~14% экономии байтов), а `br` ведёт себя патологически. Ниже, на уровне 1, картина действительно меняется: `lz4` становится намного дешевле, а `zstd` теряет своё преимущество по CPU перед ним. При необходимости задавайте её на уровне запроса:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions
+    {
+        AcceptEncoding = "zstd",
+        CustomSettings = new Dictionary<string, object> { ["http_zlib_compression_level"] = 1 },
+    });
+```
+
+<div id="measuring-your-own-crossover">
+  #### Измерение собственной точки перехода
+</div>
+
+Быстрее всего подобрать оптимальный кодек и уровень сжатия можно, замерив время выполнения одного и того же запроса на нескольких кодеках и сравнив результаты.
+
+```csharp
+foreach (var codec in new[] { "identity", "lz4", "zstd" })
+{
+    var sw = Stopwatch.StartNew();
+    using var reader = await client.ExecuteReaderAsync(
+        "SELECT ... FROM big_table",
+        options: new QueryOptions { AcceptEncoding = codec });
+    while (await reader.ReadAsync()) { }
+    Console.WriteLine($"{codec,-9} {sw.ElapsedMilliseconds} ms");
+}
+```
+
+Чтобы увидеть ту же картину со стороны сервера, прочитайте `ProfileEvents` из `system.query_log` — задайте
+`QueryOptions.QueryId`, чтобы найти нужную строку:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+Одна ловушка, если вы решите провести бенчмарк самостоятельно: сам по себе `LIMIT n` без `ORDER BY` возвращает *разные строки
+при каждом запуске*, поэтому в каждом повторе сжимаются разные данные, а соотношения превращаются в шум. Сравнивайте
+на фиксированном результирующем наборе.
+
+***
+
+### Вставка из сырого потока {#raw-stream-insert}
+
+Используйте `InsertRawStreamAsync` для вставки данных напрямую из файловых потоков или потоков в памяти в таких форматах, как CSV, JSON, Parquet или любой другой [поддерживаемый формат ClickHouse](/ru/reference/formats/index).
 
 **Вставка из CSV-файла:**
 
 ```csharp
-await using var fileStream = File.OpenRead("data.csv");
-
 using var response = await client.InsertRawStreamAsync(
     table: "my_table",
-    stream: fileStream,
+    stream: File.OpenRead("data.csv"),
     format: "CSV",
     columns: ["id", "product", "price"] // Optional: specify columns
 );
 ```
 
+<Warning>
+  *Драйвер берёт владение потоком на себя.* `InsertRawStreamAsync` и `PostStreamAsync` освобождают
+  переданный вами поток по завершении запроса — независимо от того, завершился он успешно или с ошибкой. Не освобождайте его
+  самостоятельно и не используйте повторно — именно поэтому в примере выше
+  `FileStream` не обёрнут в `using`.
+
+  Ваш собственный `using` сработает уже после того, как драйвер освободил поток. Для `FileStream` или
+  `MemoryStream` такой повторный вызов безвреден, но для потока, чей `Dispose` возвращает буфер в пул
+  или уменьшает счётчик ссылок, ресурс будет освобождён дважды.
+
+  Владение переходит только после того, как аргументы приняты: если вызов генерирует `ArgumentException` или
+  `ArgumentNullException` из-за отсутствующей таблицы, потока или формата, поток по-прежнему принадлежит вам.
+</Warning>
+
 <Note>
-  Параметры, управляющие поведением ингестии данных, см. в [документации по настройкам форматов](/ru/reference/settings/formats).
+  Опции управления поведением ингестии данных см. в [документации по настройкам форматов](/ru/reference/settings/formats).
 </Note>
 
 ***
 
-<div id="more-examples">
-  ### Дополнительные примеры
-</div>
+### Дополнительные примеры {#more-examples}
 
 Дополнительные практические примеры использования см. в каталоге [examples](https://github.com/ClickHouse/clickhouse-cs/tree/main/examples) репозитория GitHub.
 
-<div id="ado-net">
-  ## ADO.NET
-</div>
+## ADO.NET {#ado-net}
 
 Библиотека предоставляет полную поддержку ADO.NET через `ClickHouseConnection`, `ClickHouseCommand` и `ClickHouseDataReader`. Этот API необходим для интеграции с ORM (Dapper, Linq2db), а также в случаях, когда нужны стандартные абстракции базы данных .NET.
 
-<div id="ado-net-datasource">
-  ### Управление жизненным циклом с ClickHouseDataSource
-</div>
+### Управление жизненным циклом с ClickHouseDataSource {#ado-net-datasource}
 
 **Всегда создавайте соединения через `ClickHouseDataSource`**, чтобы обеспечить корректное управление жизненным циклом и использование пула соединений. DataSource внутренне использует один `ClickHouseClient`, и все соединения совместно используют его пул HTTP-соединений.
 
@@ -1082,9 +1352,7 @@ public class MyService
 
 ***
 
-<div id="ado-net-command">
-  ### Использование ClickHouseCommand
-</div>
+### Использование ClickHouseCommand {#ado-net-command}
 
 Создавайте команды на основе соединения для выполнения SQL:
 
@@ -1111,9 +1379,7 @@ while (reader.Read())
 
 ***
 
-<div id="ado-net-reader">
-  ### Использование `ClickHouseDataReader`
-</div>
+### Использование `ClickHouseDataReader` {#ado-net-reader}
 
 `ClickHouseDataReader` обеспечивает типизированный доступ к результатам запроса:
 
@@ -1140,13 +1406,28 @@ while (reader.Read())
 }
 ```
 
-<div id="best-practices">
-  ## Рекомендации
-</div>
+#### Чтение порядкового номера enum {#ado-net-reader-enum-ordinal}
 
-<div id="best-practices-connection-lifetime">
-  ### Время жизни соединений и пул соединений
-</div>
+Столбец `Enum8` или `Enum16` материализуется как его метка: `GetFieldType` возвращает `string`, а
+`GetString`, `GetValue` и `GetFieldValue<string>` — саму метку. Числовые аксессоры
+для столбца enum генерируют исключение `InvalidCastException`, поскольку хранимое значение является строкой.
+
+Чтобы получить число, стоящее за меткой, используйте `TryGetEnumOrdinal`:
+
+```csharp
+if (reader.TryGetEnumOrdinal(ordinal, out int value))
+    Console.WriteLine(value);   // e.g. 1 for 'Active' in Enum8('Active' = 1)
+```
+
+Метод возвращает `true` и задаёт `value` для столбца типа `Enum8`/`Enum16`, а также для столбца
+`Nullable(Enum...)`, ячейка которого не равна NULL. Он возвращает `false`, а `value` устанавливается в `0`,
+если ячейка содержит NULL или если столбец не является перечислением. Порядковый номер — это
+знаковое значение, полученное из сетевого представления данных, поэтому оно может быть отрицательным, а порядковый номер `Enum16` может
+не помещаться в один байт.
+
+## Рекомендации {#best-practices}
+
+### Время жизни соединений и пул соединений {#best-practices-connection-lifetime}
 
 `ClickHouse.Driver` использует `System.Net.Http.HttpClient` внутри. У `HttpClient` есть отдельный пул соединений для каждой конечной точки. В результате:
 
@@ -1172,9 +1453,7 @@ while (reader.Read())
 
 ***
 
-<div id="best-practice-datetime">
-  ### Обработка DateTime
-</div>
+### Обработка DateTime {#best-practice-datetime}
 
 1. **По возможности используйте UTC.** Храните временные метки в столбцах `DateTime('UTC')` и используйте `DateTimeKind.Utc` в коде. Это устраняет неоднозначность, связанную с часовыми поясами.
 
@@ -1193,9 +1472,7 @@ while (reader.Read())
 
 ***
 
-<div id="async-inserts">
-  ### Асинхронные вставки
-</div>
+### Асинхронные вставки {#async-inserts}
 
 [Асинхронные вставки](/ru/concepts/features/operations/insert/asyncinserts) переносят ответственность за батчинг с клиента на сервер. Вместо батчинга на стороне клиента сервер буферизует входящие данные и сбрасывает их в хранилище при достижении настраиваемых пороговых значений. Это особенно полезно в сценариях с высоким параллелизмом, например для рабочих нагрузок обсервабилити, где множество агентов отправляют небольшие полезные нагрузки.
 
@@ -1232,9 +1509,7 @@ settings.CustomSettings["wait_for_async_insert"] = 1; // Рекомендует�
 
 ***
 
-<div id="best-practices-sessions">
-  ### Сеансы
-</div>
+### Сеансы {#best-practices-sessions}
 
 Включайте сеансы только при необходимости использовать возможности сервера с сохранением состояния, например:
 
@@ -1249,7 +1524,7 @@ var settings = new ClickHouseClientSettings
 {
     Host = "localhost",
     UseSession = true,
-    SessionId = "my-session", // Необязательно — будет сгенерирован автоматически, если не указан
+    SessionId = "my-session", // Optional -- will be auto-generated if not provided
 };
 
 using var client = new ClickHouseClient(settings);
@@ -1285,19 +1560,15 @@ await using var cmd3 = connection.CreateCommand("SELECT * FROM users WHERE id IN
 await using var reader = await cmd3.ExecuteReaderAsync();
 ```
 
-<div id="supported-data-types">
-  ## Поддерживаемые типы данных
-</div>
+***
+
+## Поддерживаемые типы данных {#supported-data-types}
 
 `ClickHouse.Driver` поддерживает все типы данных ClickHouse. В таблицах ниже показано соответствие между типами ClickHouse и встроенными типами .NET при чтении данных из базы данных.
 
-<div id="clickhouse-native-type-map-reading">
-  ### Сопоставление типов: чтение из ClickHouse
-</div>
+### Сопоставление типов: чтение из ClickHouse {#clickhouse-native-type-map-reading}
 
-<div id="type-map-reading-integer">
-  #### Целочисленные типы
-</div>
+#### Целочисленные типы {#type-map-reading-integer}
 
 | Тип ClickHouse | Тип .NET     |
 | -------------- | ------------ |
@@ -1316,9 +1587,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-floating-points">
-  #### Типы чисел с плавающей точкой
-</div>
+#### Типы чисел с плавающей точкой {#type-map-reading-floating-points}
 
 | Тип ClickHouse | Тип .NET |
 | -------------- | -------- |
@@ -1328,9 +1597,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-decimal">
-  #### Десятичные типы
-</div>
+#### Десятичные типы {#type-map-reading-decimal}
 
 | Тип ClickHouse | Тип .NET                        |
 | -------------- | ------------------------------- |
@@ -1346,9 +1613,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-boolean">
-  #### Логический тип
-</div>
+#### Логический тип {#type-map-reading-boolean}
 
 | Тип ClickHouse | Тип .NET |
 | -------------- | -------- |
@@ -1356,9 +1621,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-strings">
-  #### Строковые типы
-</div>
+#### Строковые типы {#type-map-reading-strings}
 
 | Тип ClickHouse | Тип .NET |
 | -------------- | -------- |
@@ -1367,13 +1630,15 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 <Note>
   По умолчанию столбцы `String` и `FixedString(N)` возвращаются как `string`. Установите `ReadStringsAsByteArrays=true` в строке подключения, чтобы вместо этого считывать их как `byte[]`. Это полезно при хранении бинарных данных, которые могут быть не в корректной кодировке UTF-8.
+
+  Эта настройка распространяется и на строки, вложенные в другие типы, поэтому `Array(String)` считывается как `byte[][]`,
+  а `Map(String, String)` — как `Dictionary<byte[], byte[]>`, включая ключи. Единственное исключение —
+  `JSON`-столбец, строковые листья которого всегда представлены текстом; см. [JSON type](#type-map-reading-json).
 </Note>
 
 ***
 
-<div id="type-map-reading-datetime">
-  #### Типы даты и времени
-</div>
+#### Типы даты и времени {#type-map-reading-datetime}
 
 | Тип ClickHouse | Тип .NET   |
 | -------------- | ---------- |
@@ -1415,9 +1680,7 @@ var dto = reader.GetDateTimeOffset(0); // 2024-06-15 14:30:00 +02:00 (CEST)
 
 ***
 
-<div id="type-map-reading-json">
-  #### Тип JSON
-</div>
+#### Тип JSON {#type-map-reading-json}
 
 | Тип ClickHouse | Тип .NET     | Примечания                           |
 | -------------- | ------------ | ------------------------------------ |
@@ -1431,21 +1694,133 @@ var dto = reader.GetDateTimeOffset(0); // 2024-06-15 14:30:00 +02:00 (CEST)
 * **`String`**: Возвращает исходный JSON в виде `string`. Сохраняет точное представление JSON из ClickHouse, что полезно, когда JSON нужно передать дальше без парсинга или если вы хотите самостоятельно выполнять десериализацию.
 
 ```csharp
-// Настройка строкового режима через параметры
+// Configure string mode via settings
 var settings = new ClickHouseClientSettings("Host=localhost")
 {
     JsonReadMode = JsonReadMode.String
 };
 
-// Или через строку подключения
+// Or via connection string
 // "Host=localhost;JsonReadMode=String"
+```
+
+`None` — третий режим. Данные читаются точно так же, как в `Binary`, но настройка сервера не отправляется вместе с запросом — используйте его для подключений, которым не разрешено её задавать.
+
+##### Типизированные пути и null-значения {#type-map-reading-json-nulls}
+
+Путь, объявленный в типе столбца, — это **typed path**; любой другой путь в документе — это
+**dynamic path**. Различия между ними проявляются, когда значение равно null.
+
+Typed path всегда присутствует в `JsonObject`. Будучи объявленным как `Nullable(T)` или `Dynamic`, он возвращается
+как JSON null и в случае, когда сохранённое значение равно null, и в случае, когда в документе такого пути нет, — эти
+два случая неразличимы:
+
+```csharp
+// Column type JSON(x Nullable(Int64))
+// stored '{"x":null}'  ->  {"x":null}
+// stored '{}'          ->  {"x":null}
+```
+
+Если path объявлен с типом, не допускающим NULL, то при его отсутствии подставляется значение по умолчанию для этого типа: `JSON(x String)`
+даёт `{"x":""}`, а `JSON(x Int64)` — `{"x":0}`.
+
+Динамический path со значением null полностью удаляется из объекта, поэтому `ContainsKey` возвращает для него false. Чтение `{"x":null}` из обычного столбца `JSON` даёт `{}`.
+
+Вложенные typed paths создают свои parents, поэтому `JSON(a.b Nullable(Int64))` даёт `{"a":{"b":null}}`
+даже для пустого документа.
+
+<Note>
+  Именно так это отображает сам server, поэтому режимы `Binary` и `String` теперь согласованы. До версии 1.4.0
+  typed path со значением null удалялся из `JsonObject`, из-за чего `{"x":null}` считывался как
+  `{}`, а для вложенного path вида `JSON(a.b Nullable(Int64))` исчезало всё поддерево `a`.
+</Note>
+
+##### Строки внутри JSON-столбца {#type-map-reading-json-strings}
+
+Строковые листья внутри столбца `JSON` всегда возвращаются как текст, независимо от значения
+`ReadStringsAsByteArrays` — у `JsonValue` нет формы массива байтов, поэтому `byte[]` отображался бы
+в base64. Это справедливо для `String`, `FixedString`, а также для них же, обёрнутых в
+`LowCardinality`, `Nullable` или `SimpleAggregateFunction`, и для строк внутри `Array` и `Map`,
+включая ключи map.
+
+<Note>
+  Массив байтов, тип которого JSON-считыватель определить не может, всё же отображается в base64:
+  типизированный путь `Variant` или `Dynamic` содержит значение, тип которого известен только для каждой отдельной строки, поэтому строка
+  под `Variant(Array(UInt8), String)` возвращается закодированной в base64. Это одинаково при обоих значениях настройки.
+
+  Тип ключа JSON-map, отличный от строго `String` — например, `Map(LowCardinality(String), String)` —
+  приводит к `NotSupportedException`.
+</Note>
+
+<div id="overlapping-paths">
+  ##### Пересекающиеся пути
+</div>
+
+ClickHouse допускает столбец, в котором путь объявлен одновременно и как значение, и как родитель другого
+пути, например `JSON(a Int64, a.b Int64)`. Оба пути присутствуют в каждой строке, поэтому сервер
+формирует строку с дублирующимся ключом: `{"a":0,"a":{"b":7}}`. Объект `JsonObject` не может хранить два значения
+для одного ключа, поэтому `JsonReadMode.Binary` генерирует исключение `SerializationException` с указанием обоих путей. То
+же самое происходит, когда значением является `Map`, как в случае `JSON(a Map(String, Int64))`, прочитанного из строки, в
+которой также есть динамический `a.b`.
+
+Это относится только к случаям, когда в данной строке значение есть у обеих сторон. Сторона, в которой ничего нет — null,
+пустой объект или поддерево, все значения которого равны null, — уступает стороне с данными,
+независимо от того, какой из двух путей сервер отправит первым. Поэтому пересечение, объявленное с типами `Nullable`, заполняет по одной стороне на строку и читается без
+ошибок: `JSON(a Nullable(Int64), a.b Nullable(Int64))` даёт `{"a":5}` и `{"a":{"b":7}}`, как и
+ожидается.
+
+Читайте такой столбец в режиме `JsonReadMode.String`, чтобы получить JSON-текст сервера без изменений, включая дублирующийся
+ключ.
+
+Задайте `AllowDuplicateJsonKeys`, чтобы столбец по-прежнему читался как `JsonObject`, а не приводил к исключению. В этом случае
+драйвер сохраняет то из двух значений, которое идёт в строке последним, и отбрасывает второе, поэтому
+результат получается с потерями: `JSON(a Int64, a.b Int64)`, содержащий `{"a.b":7}`, читается как `{"a":0}`. Путь, у которого
+есть значение и родитель которого содержит скаляр или массив, всё равно приводит к исключению, поскольку поддерево нельзя
+разместить ни под тем, ни под другим.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    AllowDuplicateJsonKeys = true
+};
+
+// Or via connection string
+// "Host=localhost;AllowDuplicateJsonKeys=true"
 ```
 
 ***
 
-<div id="type-map-reading-other">
-  #### Другие типы
-</div>
+#### Map type {#type-map-reading-map}
+
+| ClickHouse Type | .NET Type                  | Notes                                   |
+| --------------- | -------------------------- | --------------------------------------- |
+| Map(K, V)       | `Dictionary<K, V>`         | По умолчанию (`MapReadMode=Dictionary`) |
+| Map(K, V)       | `List<KeyValuePair<K, V>>` | При `MapReadMode=KeyValuePairs`         |
+
+Тип `Map(K, V)` в ClickHouse физически представляет собой `Array(Tuple(K, V))` и может содержать несколько записей с одним и тем же ключом. `Dictionary` этого не допускает, поэтому в режиме по умолчанию для повторяющегося ключа сохраняется только последнее значение, а предыдущие пары отбрасываются. Настройка `MapReadMode` задаёт используемое представление:
+
+* **`Dictionary` (по умолчанию)**: возвращает `Dictionary<K, V>`.
+
+* **`KeyValuePairs`**: возвращает `List<KeyValuePair<K, V>>` в том порядке, в котором пары были отправлены сервером, поэтому сохраняются все пары, включая записи с повторяющимися ключами.
+
+```csharp
+// Configure key-value-pair mode via settings
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    MapReadMode = MapReadMode.KeyValuePairs
+};
+
+// Or via connection string
+// "Host=localhost;MapReadMode=KeyValuePairs"
+```
+
+Режим определяет тип .NET-представления для столбца `Map`, поэтому он влияет и на `GetFieldValue<T>`, и на типы схемы, сообщаемые драйвером, и на сопоставление свойств POCO. Он действует везде, где map встречается в дереве типов столбца, включая `Array(Map(...))`, `Map(K, Map(...))`, `Tuple(..., Map(...))` и `Dynamic`.
+
+При записи в любом из режимов принимаются оба представления — см. [запись maps](#type-map-writing-other).
+
+***
+
+#### Другие типы {#type-map-reading-other}
 
 | Тип ClickHouse          | Тип .NET                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1456,7 +1831,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 | Dynamic                 | См. примечание                                                                                                                                                                                  |
 | Array(T)                | `T[]` (вложенный `Array(Array(T))` читается как ступенчатый `T[][]`; используйте `reader.GetFieldValue<T[,]>(ordinal)` для материализации прямоугольных данных в виде многомерного массива CLR) |
 | Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                                                                                                             |
-| Map(K, V)               | `Dictionary<K, V>`                                                                                                                                                                              |
+| Map(K, V)               | `Dictionary<K, V>` или `List<KeyValuePair<K, V>>` при `MapReadMode=KeyValuePairs` — см. [Map type](#type-map-reading-map)                                                                       |
 | Nullable(T)             | `T?`                                                                                                                                                                                            |
 | Enum8                   | `string`                                                                                                                                                                                        |
 | Enum16                  | `string`                                                                                                                                                                                        |
@@ -1472,9 +1847,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-geometry">
-  #### Геометрические типы
-</div>
+#### Геометрические типы {#type-map-reading-geometry}
 
 | Тип ClickHouse  | Тип .NET                  |
 | --------------- | ------------------------- |
@@ -1492,15 +1865,11 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="clickhouse-native-type-map-writing">
-  ### Сопоставление типов: запись в ClickHouse
-</div>
+### Сопоставление типов: запись в ClickHouse {#clickhouse-native-type-map-writing}
 
 При вставке данных драйвер преобразует типы .NET в соответствующие типы ClickHouse. В таблицах ниже показано, какие типы .NET допускаются для каждого типа столбца ClickHouse.
 
-<div id="type-map-reading-integer">
-  #### Целочисленные типы
-</div>
+#### Целочисленные типы {#type-map-writing-integer}
 
 | Тип ClickHouse | Допустимые типы .NET                                                                                                     | Примечания |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------- |
@@ -1519,9 +1888,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-writing-floating-point">
-  #### Типы с плавающей точкой
-</div>
+#### Типы с плавающей точкой {#type-map-writing-floating-point}
 
 | Тип ClickHouse | Допустимые типы .NET                                    | Примечания                                                        |
 | -------------- | ------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -1531,9 +1898,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-boolean">
-  #### Логический тип
-</div>
+#### Логический тип {#type-map-writing-boolean}
 
 | Тип ClickHouse | Допустимые типы .NET | Примечания |
 | -------------- | -------------------- | ---------- |
@@ -1541,9 +1906,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-strings">
-  #### Строковые типы
-</div>
+#### Строковые типы {#type-map-writing-strings}
 
 | Тип ClickHouse | Допустимые типы .NET                                 | Примечания                                                                                    |
 | -------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -1552,19 +1915,17 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-datetime">
-  #### Типы даты и времени
-</div>
+#### Типы даты и времени {#type-map-writing-datetime}
 
-| Тип ClickHouse | Допустимые типы .NET                                              | Примечания                                                                                       |
-| -------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Date           | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime           | Преобразуется в дни Unix как UInt16; поддерживаемый диапазон `[1970-01-01, 2149-06-06]`          |
-| Date32         | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime           | Преобразуется в дни Unix как Int32; поддерживаемый диапазон `[1900-01-01, 2299-12-31]`           |
-| DateTime       | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime           | Подробности см. ниже; поддерживаемый диапазон `[1970-01-01, 2106-02-07 06:28:15]` UTC            |
-| DateTime32     | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime           | То же, что и DateTime                                                                            |
-| DateTime64     | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime           | Точность зависит от параметра Scale                                                              |
-| Time           | `TimeSpan`, `int`                                                 | Ограничивается диапазоном ±999:59:59; `int` интерпретируется как секунды                         |
-| Time64         | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | Строка разбирается как `[-]HHH:MM:SS[.fraction]`; ограничивается диапазоном ±999:59:59.999999999 |
+| Тип ClickHouse | Допустимые типы .NET                                                          | Примечания                                                                                       |
+| -------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Date           | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime                       | Преобразуется в дни Unix как UInt16; поддерживаемый диапазон `[1970-01-01, 2149-06-06]`          |
+| Date32         | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime                       | Преобразуется в дни Unix как Int32; поддерживаемый диапазон `[1900-01-01, 2299-12-31]`           |
+| DateTime       | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime                       | Подробности см. ниже; поддерживаемый диапазон `[1970-01-01, 2106-02-07 06:28:15]` UTC            |
+| DateTime32     | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime                       | То же, что и DateTime                                                                            |
+| DateTime64     | `DateTime`, `DateTimeOffset`, `DateOnly`, типы NodaTime                       | Точность зависит от параметра Scale                                                              |
+| Time           | `TimeSpan`, `TimeOnly`, `int`                                                 | Ограничивается диапазоном ±999:59:59; `int` интерпретируется как секунды                         |
+| Time64         | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | Строка разбирается как `[-]HHH:MM:SS[.fraction]`; ограничивается диапазоном ±999:59:59.999999999 |
 
 <Note>
   **Значения вне диапазона**
@@ -1601,9 +1962,7 @@ var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
 
 **Рекомендация:** для максимально простого и предсказуемого поведения используйте `DateTimeKind.Utc` или `DateTimeOffset` во всех операциях с DateTime. Это гарантирует, что ваш код будет работать одинаково независимо от часового пояса сервера, клиента или столбца.
 
-<div id="datetime-http-param-vs-bulkcopy">
-  #### HTTP-параметры vs пакетная загрузка
-</div>
+#### HTTP-параметры vs пакетная загрузка {#datetime-http-param-vs-bulkcopy}
 
 При записи значений DateTime с `Unspecified` есть важное различие между привязкой HTTP-параметров и пакетной загрузкой:
 
@@ -1632,9 +1991,7 @@ command.AddParameter("dt", myDateTime);
 
 ***
 
-<div id="type-map-reading-decimal">
-  #### Десятичные типы
-</div>
+#### Десятичные типы {#type-map-writing-decimal}
 
 | Тип ClickHouse | Допустимые типы .NET                                                           | Примечания                                           |
 | -------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------- |
@@ -1646,9 +2003,7 @@ command.AddParameter("dt", myDateTime);
 
 ***
 
-<div id="type-map-reading-json">
-  #### Тип JSON
-</div>
+#### Тип JSON {#type-map-writing-json}
 
 | Тип ClickHouse | Допустимые типы .NET                             | Примечания                                     |
 | -------------- | ------------------------------------------------ | ---------------------------------------------- |
@@ -1685,15 +2040,11 @@ using var client = new ClickHouseClient(settings);
 client.RegisterJsonSerializationType<MyPocoType>();
 ```
 
-<div id="json-typed-columns">
-  ##### Типизированные JSON-столбцы
-</div>
+##### Типизированные JSON-столбцы {#json-typed-columns}
 
 Когда у JSON-столбца есть подсказки типа (например, `JSON(id UInt64, price Decimal128(2))`), драйвер использует их для сериализации значений с полным сохранением точности типов. Это позволяет сохранить точность для таких типов, как `UInt64`, `Decimal`, `UUID` и `DateTime64`, которая иначе могла бы теряться при сериализации в обычный JSON.
 
-<div id="json-poco-serialization">
-  ##### Сериализация POCO
-</div>
+##### Сериализация POCO {#json-poco-serialization}
 
 POCO можно записывать в JSON-столбцы двумя способами в зависимости от `JsonWriteMode`:
 
@@ -1754,34 +2105,30 @@ await client.InsertBinaryAsync(
 
 ***
 
-<div id="type-map-reading-other">
-  #### Другие типы
-</div>
+#### Другие типы {#type-map-writing-other}
 
-| Тип ClickHouse          | Допустимые типы .NET                            | Примечания                                                                                                                                                                                                                                                                                   |
-| ----------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UUID                    | `Guid`, `string`                                | Строка преобразуется в `Guid`                                                                                                                                                                                                                                                                |
-| IPv4                    | `IPAddress`, `string`                           | Должен быть IPv4; строка разбирается с помощью `IPAddress.Parse()`                                                                                                                                                                                                                           |
-| IPv6                    | `IPAddress`, `string`                           | Должен быть IPv6; строка разбирается с помощью `IPAddress.Parse()`                                                                                                                                                                                                                           |
-| Nothing                 | Any                                             | Ничего не записывает (no-op)                                                                                                                                                                                                                                                                 |
-| Dynamic                 | —                                               | **Не поддерживается** (генерирует `NotImplementedException`)                                                                                                                                                                                                                                 |
-| Array(T)                | `IList`, `null`                                 | При `null` записывается пустой массив. Для вложенных типов (`Array(Array(T))` и глубже) поддерживаются как ступенчатые массивы (`T[][]`, `List<List<T>>`), так и прямоугольные многомерные массивы CLR (`T[,]`, `T[,,]`, …); ранг CLR должен соответствовать глубине вложенности ClickHouse. |
-| Tuple(T1, T2, ...)      | `ITuple`, `IList`                               | Число элементов должно соответствовать арности кортежа. Для случаев с более чем 7 элементами см. [оговорку о ValueTuple](#valuetuple-caveat).                                                                                                                                                |
-| Map(K, V)               | `IDictionary`                                   |                                                                                                                                                                                                                                                                                              |
-| Nullable(T)             | `null`, `DBNull`, или типы, допустимые для T    | Перед значением записывается байт флага null                                                                                                                                                                                                                                                 |
-| Enum8                   | `string`, `sbyte`, числовые типы                | Для строки выполняется поиск в словаре enum                                                                                                                                                                                                                                                  |
-| Enum16                  | `string`, `short`, числовые типы                | Для строки выполняется поиск в словаре enum                                                                                                                                                                                                                                                  |
-| LowCardinality(T)       | Типы, допустимые для T                          | Обработка делегируется базовому типу                                                                                                                                                                                                                                                         |
-| SimpleAggregateFunction | Типы, допустимые для базового типа              | Обработка делегируется базовому типу                                                                                                                                                                                                                                                         |
-| Nested(...)             | `IList` из кортежей                             | Число элементов должно соответствовать числу полей                                                                                                                                                                                                                                           |
-| Variant(T1, T2, ...)    | Значение, соответствующее одному из T1, T2, ... | Генерирует `ArgumentException`, если не найдено совпадение ни с одним типом                                                                                                                                                                                                                  |
-| QBit(T, dim)            | `IList`                                         | Обработка делегируется `Array`; размерность используется только как метаданные                                                                                                                                                                                                               |
+| Тип ClickHouse          | Допустимые типы .NET                             | Примечания                                                                                                                                                                                                                                                                                   |
+| ----------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                                 | Строка преобразуется в `Guid`                                                                                                                                                                                                                                                                |
+| IPv4                    | `IPAddress`, `string`                            | Должен быть IPv4; строка разбирается с помощью `IPAddress.Parse()`                                                                                                                                                                                                                           |
+| IPv6                    | `IPAddress`, `string`                            | Должен быть IPv6; строка разбирается с помощью `IPAddress.Parse()`                                                                                                                                                                                                                           |
+| Nothing                 | Any                                              | Ничего не записывает (no-op)                                                                                                                                                                                                                                                                 |
+| Dynamic                 | —                                                | **Не поддерживается** (генерирует `NotImplementedException`)                                                                                                                                                                                                                                 |
+| Array(T)                | `IList`, `null`                                  | При `null` записывается пустой массив. Для вложенных типов (`Array(Array(T))` и глубже) поддерживаются как ступенчатые массивы (`T[][]`, `List<List<T>>`), так и прямоугольные многомерные массивы CLR (`T[,]`, `T[,,]`, …); ранг CLR должен соответствовать глубине вложенности ClickHouse. |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                                | Число элементов должно соответствовать арности кортежа. Для случаев с более чем 7 элементами см. [оговорку о ValueTuple](#valuetuple-caveat).                                                                                                                                                |
+| Map(K, V)               | `IDictionary`, `IEnumerable<KeyValuePair<K, V>>` | Последовательность пар (например, `List<KeyValuePair<K, V>>`, получаемый при `MapReadMode=KeyValuePairs`) допускается в любом режиме чтения и может содержать повторяющиеся ключи. Применимо к бинарным вставкам и к параметрам запроса                                                      |
+| Nullable(T)             | `null`, `DBNull`, или типы, допустимые для T     | Перед значением записывается байт флага null                                                                                                                                                                                                                                                 |
+| Enum8                   | `string`, `sbyte`, числовые типы                 | Для строки выполняется поиск в словаре enum                                                                                                                                                                                                                                                  |
+| Enum16                  | `string`, `short`, числовые типы                 | Для строки выполняется поиск в словаре enum                                                                                                                                                                                                                                                  |
+| LowCardinality(T)       | Типы, допустимые для T                           | Обработка делегируется базовому типу                                                                                                                                                                                                                                                         |
+| SimpleAggregateFunction | Типы, допустимые для базового типа               | Обработка делегируется базовому типу                                                                                                                                                                                                                                                         |
+| Nested(...)             | `IList` из кортежей                              | Число элементов должно соответствовать числу полей                                                                                                                                                                                                                                           |
+| Variant(T1, T2, ...)    | Значение, соответствующее одному из T1, T2, ...  | Генерирует `ArgumentException`, если не найдено совпадение ни с одним типом                                                                                                                                                                                                                  |
+| QBit(T, dim)            | `IList`                                          | Обработка делегируется `Array`; размерность используется только как метаданные                                                                                                                                                                                                               |
 
 ***
 
-<div id="type-map-reading-geometry">
-  #### Геометрические типы
-</div>
+#### Геометрические типы {#type-map-writing-geometry}
 
 | Тип ClickHouse  | Допустимые типы .NET                                   | Примечания                        |
 | --------------- | ------------------------------------------------------ | --------------------------------- |
@@ -1795,9 +2142,7 @@ await client.InsertBinaryAsync(
 
 ***
 
-<div id="type-map-writing-not-supported">
-  #### Не поддерживается при записи
-</div>
+#### Не поддерживается при записи {#type-map-writing-not-supported}
 
 | Тип ClickHouse    | Примечания                             |
 | ----------------- | -------------------------------------- |
@@ -1806,9 +2151,7 @@ await client.InsertBinaryAsync(
 
 ***
 
-<div id="nested-type-handling">
-  ### Обработка вложенных типов
-</div>
+### Обработка вложенных типов {#nested-type-handling}
 
 Вложенные типы ClickHouse (`Nested(...)`) можно читать и записывать как массивы.
 
@@ -1830,15 +2173,11 @@ await client.InsertBinaryAsync(
 );
 ```
 
-<div id="logging-and-diagnostics">
-  ## Логирование и диагностика
-</div>
+## Логирование и диагностика {#logging-and-diagnostics}
 
 Клиент ClickHouse для .NET интегрируется с абстракциями `Microsoft.Extensions.Logging` и предоставляет легковесное логирование, которое можно включить при необходимости. Когда оно включено, драйвер выводит структурированные сообщения о событиях жизненного цикла соединения, выполнении команд, транспортных операциях и операциях массовой вставки. Логирование полностью опционально — приложения, в которых не настроен логгер, продолжают работать без дополнительной нагрузки.
 
-<div id="logging-quick-start">
-  ### Быстрый старт
-</div>
+### Быстрый старт {#logging-quick-start}
 
 ```csharp
 using ClickHouse.Driver;
@@ -1859,9 +2198,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-appsettings-config">
-  #### Использование appsettings.json
-</div>
+#### Использование appsettings.json {#logging-appsettings-config}
 
 Вы можете настроить уровни логирования с помощью стандартной конфигурации .NET:
 
@@ -1890,9 +2227,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-inmemory-config">
-  #### Использование конфигурации в памяти
-</div>
+#### Использование конфигурации в памяти {#logging-inmemory-config}
 
 Вы также можете настроить в коде уровень детализации журналирования по категориям:
 
@@ -1927,9 +2262,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-categories">
-  ### Категории и источники
-</div>
+### Категории и источники {#logging-categories}
 
 Драйвер использует отдельные категории, чтобы можно было тонко настраивать уровни логирования для каждого компонента:
 
@@ -1941,9 +2274,7 @@ using var client = new ClickHouseClient(settings);
 | `ClickHouse.Driver.Client`     | `ClickHouseClient`     | Бинарная вставка, запросы и другие операции                                                                                |
 | `ClickHouse.Driver.NetTrace`   | `TraceHelper`          | Сетевая трассировка, только при включенном режиме отладки                                                                  |
 
-<div id="logging-config-example">
-  #### Пример: Диагностика проблем с подключением
-</div>
+#### Пример: Диагностика проблем с подключением {#logging-config-example}
 
 ```json
 {
@@ -1966,9 +2297,7 @@ using var client = new ClickHouseClient(settings);
 * События открытия и закрытия соединения
 * Отслеживание идентификатора сеанса
 
-<div id="logging-debugmode">
-  ### Режим отладки: сетевая трассировка и диагностика
-</div>
+### Режим отладки: сетевая трассировка и диагностика {#logging-debugmode}
 
 Чтобы упростить диагностику сетевых проблем, библиотека драйвера содержит вспомогательный механизм, который включает низкоуровневую трассировку внутренних механизмов сетевой подсистемы .NET. Чтобы включить его, необходимо передать LoggerFactory с установленным уровнем Trace и задать EnableDebugMode = true (или включить его вручную через класс `ClickHouse.Driver.Diagnostic.TraceHelper`). События будут записываться в категорию `ClickHouse.Driver.NetTrace`. Предупреждение: это приведет к созданию чрезвычайно подробных журналов и повлияет на производительность. Включать режим отладки в продакшн не рекомендуется.
 
@@ -1987,15 +2316,11 @@ var settings = new ClickHouseClientSettings()
 };
 ```
 
-<div id="opentelemetry">
-  ## OpenTelemetry
-</div>
+## OpenTelemetry {#opentelemetry}
 
 Драйвер поддерживает встроенную распределённую трассировку OpenTelemetry через API .NET [`System.Diagnostics.Activity`](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/distributed-tracing). При включении драйвер создаёт спаны для операций с базой данных, которые можно экспортировать в системы обсервабилити, такие как Jaeger или сам ClickHouse (через [OpenTelemetry Collector](/ru/guides/use-cases/observability/build-your-own/integrating-opentelemetry)).
 
-<div id="opentelemetry-enabling">
-  ### Включение трассировки
-</div>
+### Включение трассировки {#opentelemetry-enabling}
 
 В приложениях ASP.NET Core добавьте `ActivitySource` драйвера ClickHouse в конфигурацию OpenTelemetry:
 
@@ -2019,9 +2344,7 @@ var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .Build();
 ```
 
-<div id="opentelemetry-attributes">
-  ### Атрибуты спана
-</div>
+### Атрибуты спана {#opentelemetry-attributes}
 
 Каждый спан включает стандартные атрибуты OpenTelemetry для базы данных, а также специфичную для ClickHouse статистику запросов, которую можно использовать для отладки.
 
@@ -2037,9 +2360,7 @@ var tracerProvider = Sdk.CreateTracerProviderBuilder()
 | `db.clickhouse.written_bytes` | Байты, записанные запросом                         |
 | `db.clickhouse.elapsed_ns`    | Время выполнения на стороне сервера в наносекундах |
 
-<div id="opentelemetry-configuration">
-  ### Параметры конфигурации
-</div>
+### Параметры конфигурации {#opentelemetry-configuration}
 
 Настройте поведение трассировки с помощью `ClickHouseDiagnosticsOptions`:
 
@@ -2057,15 +2378,11 @@ ClickHouseDiagnosticsOptions.StatementMaxLength = 500;
   Включение `IncludeSqlInActivityTags` может привести к раскрытию конфиденциальных данных в трассировках. Используйте с осторожностью в продакшн-средах.
 </Warning>
 
-<div id="tls-configuration">
-  ## Настройка TLS
-</div>
+## Настройка TLS {#tls-configuration}
 
 При подключении к ClickHouse по HTTPS поведение TLS/SSL можно настроить несколькими способами.
 
-<div id="custom-certificate-validation">
-  ### Пользовательская проверка сертификатов
-</div>
+### Пользовательская проверка сертификатов {#custom-certificate-validation}
 
 Для продакшн-окружений, в которых требуется пользовательская логика проверки сертификатов, передайте собственный `HttpClient` с настроенным обработчиком `ServerCertificateCustomValidationCallback`:
 
@@ -2076,20 +2393,18 @@ using ClickHouse.Driver;
 
 var handler = new HttpClientHandler
 {
-    // Обязательно, если сжатие включено (по умолчанию)
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-
+    // No AutomaticDecompression needed: the driver decodes compressed responses itself.
     ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) =>
     {
-        // Пример: принять сертификат с определённым отпечатком
+        // Example: Accept a specific certificate thumbprint
         if (cert?.Thumbprint == "YOUR_EXPECTED_THUMBPRINT")
             return true;
 
-        // Пример: принять сертификаты от определённого издателя
+        // Example: Accept certificates from a specific issuer
         if (cert?.Issuer.Contains("YourOrganization") == true)
             return true;
 
-        // По умолчанию: использовать стандартную проверку
+        // Default: Use standard validation
         return sslPolicyErrors == SslPolicyErrors.None;
     },
 };
@@ -2109,13 +2424,185 @@ using var client = new ClickHouseClient(settings);
 <Note>
   Важные моменты при использовании пользовательского HttpClient
 
-  * **Автоматическая декомпрессия**: Нужно включить `AutomaticDecompression`, если сжатие не отключено (по умолчанию сжатие включено).
+  * **Автоматическая декомпрессия**: оставьте `AutomaticDecompression` выключенным. Драйвер сам декодирует сжатые ответы, поэтому она не нужна — и её включение играет против вас на стороне запроса: при отправке обработчик *дополнительно добавляет* каждый алгоритм из своей маски в исходящий заголовок `Accept-Encoding`, расширяя набор, объявленный драйвером, так что ClickHouse может ответить кодеком, который вы не запрашивали. См. [Декомпрессия ответа](#response-decompression).
   * **Тайм-аут простоя**: Установите `PooledConnectionIdleTimeout` меньше значения `keep_alive_timeout` сервера (10 секунд для ClickHouse Cloud), чтобы избежать ошибок подключения из-за полуоткрытых соединений.
 </Note>
 
-<div id="orm-support">
-  ## Поддержка ORM
-</div>
+## Настройка производительности {#performance-tuning}
+
+В этом разделе описывается, как добиться оптимальной производительности при работе с клиентом, а также какие параметры можно настроить, чтобы клиент работал эффективно в вашем конкретном сценарии использования.
+
+### Кратко {#perf-at-a-glance}
+
+| Если вы | Сделайте так |
+|---|---|---|
+| Читаете строки в POCO | Используйте [`QueryAsync<T>`](#perf-read-path), а не `MapTo<T>` |
+| Выполняете крупные вставки | Увеличьте [`InsertOptions.BatchSize`](#perf-insert-batching) |
+| Запускаете консольное или воркер-приложение с интенсивными вставками | Включите [Server GC](#perf-gc) |
+| Читаете большие результаты по сети | Оставьте сжатие ответов включённым (как по умолчанию) |
+| Вставляете данные по быстрому каналу | Попробуйте [`InsertOptions.Compressor = null`](#perf-compression) |
+| Много раз вставляете в одну и ту же таблицу | Используйте [`UseSchemaCache` или `ColumnTypes`](#skip-schema-query) |
+| Читаете очень большие результаты | Увеличьте [`ReadBufferSize`](#perf-buffers) |
+
+***
+
+### Чтение: выбор пути материализации {#perf-read-path}
+
+Получить строку из результата можно тремя способами, и обходятся они по-разному. Некоторые из путей упаковывают значения, что увеличивает число выделений памяти и снижает производительность.
+
+| Способ чтения                                                                                                       | Упаковка каждого значения | Примечания                                                                      |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------- |
+| `QueryAsync<T>`                                                                                                     | **Нет**                   | Читает из потока напрямую в ваши свойства. Быстрый путь.                        |
+| Типизированные аксессоры reader (`GetInt32`, `GetInt64`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetFieldValue<T>`) | **Нет**                   | Чтение без упаковки из типизированного хранилища значений.                      |
+| `MapTo<T>`                                                                                                          | Да                        | Сначала материализует строку, затем копирует из неё значения.                   |
+| `GetValue` и `GetValues`                                                                                            | Да                        | Они возвращают `object`, поэтому при обращении значение приходится упаковывать. |
+
+Для чтения 1 000 000 строк по 105 столбцам набора данных *hits*:
+
+| API             | Выделено памяти |
+| --------------- | --------------: |
+| `QueryAsync<T>` |    **1 372 МБ** |
+| `MapTo<T>`      |        3 133 МБ |
+
+```csharp
+// Fast path: register the type once, then stream rows directly into it.
+client.RegisterPocoType<HitRow>();
+
+await foreach (var row in client.QueryAsync<HitRow>("SELECT * FROM hits"))
+    Process(row);
+```
+
+<Note>
+  *ORM получают быстрый путь, когда используют типизированные аксессоры.* linq2db регистрирует `GetInt64`,
+  `GetDouble` и `GetDateTime` для каждого столбца, поэтому чтение выполняется без упаковки. Код, который читает через
+  `GetValue` (включая результат типа `dynamic` из Dapper), упаковывает каждое значение. Если запрос ORM выполняется часто
+  и читает через `GetValue`, используйте для него `QueryAsync<T>`.
+</Note>
+
+***
+
+### Вставка: размер батча и параллелизм {#perf-insert-batching}
+
+Размер батча — главный фактор, влияющий на пропускную способность вставки. Значение `InsertOptions.BatchSize` по умолчанию — 100 000 строк.
+
+**Используйте большие батчи.** При вставке 1 000 000 строк увеличение размера батча с 10 000 до 100 000 строк дало:
+
+| Вставка    | 10 000 строк на батч | 100 000 строк на батч |      |
+| ---------- | -------------------: | --------------------: | ---: |
+| POCO       |            15 308 мс |              7 853 мс | −49% |
+| `object[]` |            17 027 мс |             10 671 мс | −37% |
+
+Если размером батча управлять нельзя (например, когда множество мелких producer&#39;ов отправляют строки независимо друг от друга), используйте [async inserts](#async-inserts) и доверьте батчинг серверу.
+
+**Параллельная отправка.** Значение `InsertOptions.MaxDegreeOfParallelism` по умолчанию равно `1`. Увеличьте его, чтобы отправлять батчи одновременно. Наибольший эффект это даёт при включённом сжатии, поскольку каждый батч сжимается в собственном потоке. Сеансы с параллельными вставками не работают: либо отключите сеансы, либо оставьте `MaxDegreeOfParallelism = 1`.
+
+**Уберите schema probe.** Каждый вызов `InsertBinaryAsync` сначала отправляет запрос `SELECT ... WHERE 1=0`, чтобы определить типы столбцов. См. [Пропуск запроса schema probe](#skip-schema-query) — это позволит исключить лишний обмен с сервером с помощью `ColumnTypes` или `UseSchemaCache`.
+
+<Note>
+  Путь вставки без упаковки значений применяется к формату `RowBinary`, используемому по умолчанию. `RowBinaryWithDefaults` вынужден проверять каждое значение на наличие маркера `DBDefault`, поэтому для него сохраняется более медленный путь.
+</Note>
+
+***
+
+### Сжатие: два направления передачи ведут себя по-разному {#perf-compression}
+
+Сжатие меняет CPU на байты. Выгоден ли такой обмен, зависит от направления передачи, пропускной способности соединения с сервером ClickHouse, от того, насколько хорошо ваши данные поддаются выбранному алгоритму сжатия, а также от того, платите ли вы за каждый переданный байт.
+
+**Чтение:** оставьте сжатие включённым, если только сервер не работает на той же машине. Это поведение по умолчанию. По сравнению с передачей без сжатия `zstd` на уровне 1 дал:
+
+| От клиента к серверу   | Эффект сжатия   |
+| ---------------------- | --------------- |
+| Тот же хост (loopback) | Потеря 8%       |
+| Тот же облачный регион | **Выигрыш 16%** |
+| Соседний регион        | **Выигрыш 33%** |
+
+**Вставки:** сначала измерьте, потом включайте сжатие. Экономия может оказаться недостаточной, чтобы оправдать его включение. Учитывайте также, что распаковка создаёт дополнительную нагрузку на сервер: для Zstd и LZ4 она умеренная, но для других алгоритмов (например, Brotli) может быть высокой.
+
+Чтобы отключить сжатие при вставке:
+
+```csharp
+var options = new InsertOptions { Compressor = null };
+await client.InsertBinaryAsync("my_table", columns, rows, options);
+```
+
+О выборе кодека, уровнях сжатия и о том, как найти собственную точку перехода, см. раздел
+[Настройка сжатия](#tuning-compression).
+
+***
+
+### Буферы {#perf-buffers}
+
+`ReadBufferSize` задаёт размер буфера, в который считываются HTTP-ответы. Значение по умолчанию — 64 КиБ.
+
+Драйвер берёт этот буфер из общего пула и возвращает обратно при освобождении reader, поэтому память не выделяется заново для каждого запроса. Увеличьте размер буфера, чтобы сократить число его перезаполнений при больших результатах. Драйвер удерживает по одному буферу на каждый одновременно открытый reader, поэтому потребление памяти растёт вместе с размером буфера и числом параллельных reader.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost") { ReadBufferSize = 256 * 1024 };
+```
+
+<Warning>
+  *Всегда освобождайте reader&#39;ы.* При освобождении reader возвращает свой буфер в пул и закрывает
+  HTTP-соединение. Если же оставить reader без освобождения, буфер в пул не вернётся, а HTTP-соединение
+  может остаться недоступным; обычная сборка мусора не заменяет явное освобождение.
+</Warning>
+
+***
+
+### Среда выполнения и сборка мусора {#perf-gc}
+
+**Включайте Server GC для приложений с интенсивной вставкой данных.** При одном и том же коде и одинаковом
+количестве выделенных байтов Workstation GC работал на вставках до 97% медленнее, чем Server GC.
+
+```xml
+<PropertyGroup>
+  <ServerGarbageCollection>true</ServerGarbageCollection>
+</PropertyGroup>
+```
+
+В проектах ASP.NET Core это уже настроено. В консольных приложениях, воркер-сервисах и большинстве контейнерных образов — нет.
+
+Причина в размере бюджета поколения 0. Workstation GC использует небольшой бюджет, поэтому короткоживущие буферы, создаваемые при вставке, не успевают освободиться в поколении 0. Вместо этого они переходят в поколение 1, что усиливает продвижение объектов и приводит к значительно большему объёму работы с поколением 2. В одном из сценариев вставки число сборок поколения 2 на каждые 1 000 операций составило 4 000 с Server GC и 73 000 с Workstation GC.
+
+<Note>
+  Server GC — это настройка пропускной способности, а не задержки. В тех же измерениях Server GC суммарно провёл в паузах менее половины времени, но отдельные паузы были длиннее (95-й перцентиль — 114,6 мс против 61,9 мс). Если ваш сервис чувствителен к задержкам в хвосте распределения, измерьте оба режима, прежде чем делать выбор.
+</Note>
+
+***
+
+### Задержка: переиспользуйте соединения {#perf-latency}
+
+Установление нового TCP-соединения и выполнение TLS-рукопожатия занимает значительное время.
+Переиспользование соединений существенно снизит задержку ваших запросов.
+
+* Не создавайте отдельный клиент для каждого запроса. Каждый новый клиент со своим `HttpClient` создаёт новый
+  пул соединений и снова тратит время на рукопожатие. Используйте один `ClickHouseClient` на всё время жизни приложения. Он потокобезопасен и рассчитан на
+  использование в качестве singleton.
+* Для ADO.NET и ORM используйте `ClickHouseDataSource`, чтобы все подключения использовали общий пул.
+
+Полный набор рекомендуемых подходов см. в разделе
+[Время жизни подключения и пулинг](#best-practices-connection-lifetime).
+
+***
+
+### Измеряйте сами {#perf-measuring}
+
+Во многих случаях производительность зависит от структуры ваших данных, скорости соединения с сервером,
+от того, готовы ли вы разменять CPU клиента на CPU сервера (или наоборот), от ограничений вашего оборудования и т. д.
+Поэтому рекомендуется измерять производительность самостоятельно, на своих данных и в своём окружении.
+
+Чтобы увидеть, какую часть работы выполняет сервер, задайте `QueryOptions.QueryId` и прочитайте счётчики:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+***
+
+## Поддержка ORM {#orm-support}
 
 Для ORM требуется API ADO.NET (`ClickHouseConnection`). Чтобы корректно управлять временем жизни подключения, создавайте подключения через `ClickHouseDataSource`:
 
@@ -2128,9 +2615,7 @@ await using var connection = await dataSource.OpenConnectionAsync();
 // Передать подключение в вашу ORM...
 ```
 
-<div id="orm-support-dapper">
-  ### Dapper
-</div>
+### Dapper {#orm-support-dapper}
 
 `ClickHouse.Driver` работает с Dapper. Драйвер автоматически преобразует синтаксис Dapper `@parameter` в нативный для ClickHouse синтаксис `{parameter:Type}`, при этом типы выводятся автоматически на основе значений .NET.
 
@@ -2143,9 +2628,7 @@ services.AddSingleton(dataSource); // Зарегистрировать как si
 using var connection = dataSource.CreateConnection();
 ```
 
-<div id="dapper-parameter-passing">
-  #### Способы передачи параметров
-</div>
+#### Способы передачи параметров {#dapper-parameter-passing}
 
 Поддерживаются все стандартные способы передачи параметров в Dapper:
 
@@ -2190,9 +2673,7 @@ var rows = await connection.QueryAsync<User>(
     "SELECT id, name FROM users WHERE id = @Id", dynParams);
 ```
 
-<div id="dapper-pocos">
-  #### Запросы в объекты POCO
-</div>
+#### Запросы в объекты POCO {#dapper-pocos}
 
 Dapper сопоставляет столбцы со свойствами по имени (регистронезависимо):
 
@@ -2211,9 +2692,7 @@ var users = (await connection.QueryAsync<User>("SELECT id, name, balance FROM us
 var row = (await connection.QueryAsync<User>("SELECT 1 as id, 'hello' as name, 2.5 as balance")).Single();
 ```
 
-<div id="dapper-clickhouse-param-syntax">
-  #### Собственный синтаксис параметров ClickHouse
-</div>
+#### Собственный синтаксис параметров ClickHouse {#dapper-clickhouse-param-syntax}
 
 Если вам нужен явный контроль над типами, используйте непосредственно в SQL синтаксис ClickHouse `{param:Type}`, а значения параметров передавайте через `Dictionary<string, object>`. Не используйте синтаксис `@param` и синтаксис `{param:Type}` одновременно для одного и того же параметра.
 
@@ -2222,9 +2701,7 @@ var parameters = new Dictionary<string, object> { { "value", 42 } };
 var result = await connection.QueryAsync<int>("SELECT {value:Int32}", parameters);
 ```
 
-<div id="dapper-where-in">
-  #### WHERE IN
-</div>
+#### WHERE IN {#dapper-where-in}
 
 **Встроенное в Dapper раскрытие IN работает:**
 
@@ -2245,9 +2722,7 @@ var rows = await connection.QueryAsync<User>(
     parameters);
 ```
 
-<div id="dapper-type-handlers">
-  #### Пользовательские обработчики типов
-</div>
+#### Пользовательские обработчики типов {#dapper-type-handlers}
 
 Для некоторых типов ClickHouse, например `ITuple`, `BigInteger` и `ClickHouseDecimal`, необходимо зарегистрировать обработчики при запуске:
 
@@ -2264,9 +2739,7 @@ SqlMapper.AddTypeHandler(new IpAddressHandler());
 
 См. [пример Dapper](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/ORM/ORM_001_Dapper.cs), где показана реализация обработчика типов.
 
-<div id="dapper-contrib">
-  #### Dapper.Contrib
-</div>
+#### Dapper.Contrib {#dapper-contrib}
 
 `GetAll<T>()` и `Get<T>(id)` работают. `Insert<T>()` не работает — этот метод генерирует синтаксис SQL Server (`SCOPE_IDENTITY`, `[]`). Вместо него рекомендуется использовать нативный метод `InsertBinaryAsync` клиента `ClickHouseClient`.
 
@@ -2280,9 +2753,7 @@ var one = await connection.GetAsync<UserRecord>(1);
 
 Имена свойств должны в точности совпадать с именами столбцов ClickHouse (с учетом регистра).
 
-<div id="dapper-limitations">
-  #### Ограничения
-</div>
+#### Ограничения {#dapper-limitations}
 
 | Что                          | Статус            | Подробности                                                                        |
 | ---------------------------- | ----------------- | ---------------------------------------------------------------------------------- |
@@ -2293,9 +2764,7 @@ var one = await connection.GetAsync<UserRecord>(1);
 | `Dapper.Contrib.Insert<T>()` | Не поддерживается | Генерирует синтаксис, специфичный для SQL Server                                   |
 | Тип `Nothing`                | Не поддерживается | В .NET нет осмысленного представления                                              |
 
-<div id="orm-support-linq2db">
-  ### Linq2db
-</div>
+### Linq2db {#orm-support-linq2db}
 
 Этот драйвер совместим с [linq2db](https://github.com/linq2db/linq2db) — легковесным ORM и LINQ-провайдером для .NET. Подробную документацию см. на сайте проекта.
 
@@ -2355,9 +2824,7 @@ var options = new BulkCopyOptions
 await table.BulkCopyAsync(options, products);
 ```
 
-<div id="orm-support-ef-core">
-  ### Entity Framework Core
-</div>
+### Entity Framework Core {#orm-support-ef-core}
 
 Официальный провайдер Entity Framework Core для ClickHouse. Сопоставляйте классы C# с таблицами ClickHouse, выполняйте запросы с помощью LINQ и добавляйте данные через `SaveChanges` — всё это в привычных шаблонах EF Core.
 
@@ -2368,9 +2835,7 @@ await table.BulkCopyAsync(options, products);
   Этот провайдер активно развивается. Текущая версия поддерживает LINQ-запросы (включая JOIN, подзапросы и операции над множествами), `INSERT` через `SaveChanges` / `BulkInsertAsync`, миграции с полной поддержкой DDL (CREATE / ALTER / DROP), а также настройку движка таблицы ClickHouse. `UPDATE` / `DELETE` не поддерживаются.
 </Note>
 
-<div id="ef-core-installation">
-  #### Установка
-</div>
+#### Установка {#ef-core-installation}
 
 ```bash
 dotnet add package ClickHouse.EntityFrameworkCore
@@ -2378,9 +2843,7 @@ dotnet add package ClickHouse.EntityFrameworkCore
 
 Необходимы .NET 10.0 и EF Core 10.
 
-<div id="ef-core-quick-start">
-  #### Быстрый старт
-</div>
+#### Быстрый старт {#ef-core-quick-start}
 
 Определите сущность и `DbContext`, затем выполните запрос с помощью LINQ:
 
@@ -2415,9 +2878,7 @@ var topPages = await ctx.PageViews
     .ToListAsync();
 ```
 
-<div id="ef-core-types">
-  #### Поддерживаемые типы
-</div>
+#### Поддерживаемые типы {#ef-core-types}
 
 | Категория                    | Типы ClickHouse                                                                         | Типы CLR                                                                                                       |
 | ---------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -2443,9 +2904,7 @@ var topPages = await ctx.PageViews
 
 Используйте `ClickHouseDecimal` (из `ClickHouse.Driver.Numerics`) вместо `decimal`, если нужна полная точность столбцов `Decimal128`/`Decimal256`: `decimal` в .NET ограничен 28–29 значащими цифрами.
 
-<div id="ef-core-linq">
-  #### Поддерживаемые операции LINQ
-</div>
+#### Поддерживаемые операции LINQ {#ef-core-linq}
 
 **Запросы:** `Where`, `OrderBy`, `Take`, `Skip`, `Select`, `First`, `Single`, `Any`, `All`, `Count`, `Distinct`, `AsNoTracking`
 
@@ -2463,9 +2922,7 @@ var topPages = await ctx.PageViews
 
 **Математические функции:** стандартные методы `Math` и `MathF`, преобразуемые в эквивалентные функции ClickHouse — арифметические, логарифмические, тригонометрические и вспомогательные функции.
 
-<div id="ef-core-join-nulls">
-  ##### Семантика NULL в LEFT JOIN
-</div>
+##### Семантика NULL в LEFT JOIN {#ef-core-join-nulls}
 
 Провайдер автоматически добавляет `set_join_use_nulls=1` во все подключения, чтобы поведение JOIN соответствовало ожиданиям Entity Framework.
 
@@ -2477,11 +2934,9 @@ optionsBuilder.UseClickHouse(connectionString, o => o.DisableJoinNullSemantics()
 
 При включенном opt-out LEFT JOIN возвращает значения столбцов ClickHouse по умолчанию, и механизм определения навигации по null в EF больше не работает должным образом. Используйте явные сравнения с `0` / `""` вместо `== null`.
 
-<div id="ef-core-insert">
-  #### Вставка данных
-</div>
+#### Вставка данных {#ef-core-insert}
 
-`SaveChanges` использует нативный API драйвера `InsertBinaryAsync` — кодирование RowBinary со сжатием GZip, что гораздо эффективнее параметризованного SQL:
+`SaveChanges` использует нативный API драйвера `InsertBinaryAsync` — кодирование RowBinary со сжатым телом запроса, что гораздо эффективнее параметризованного SQL:
 
 ```csharp
 await using var ctx = new AnalyticsContext();
@@ -2505,11 +2960,9 @@ await ctx.SaveChangesAsync();
 optionsBuilder.UseClickHouse("Host=localhost", o => o.MaxBatchSize(5000));
 ```
 
-<div id="ef-core-bulk-insert">
-  #### Пакетная вставка
-</div>
+#### Пакетная вставка {#ef-core-bulk-insert}
 
-Для высоконагруженной вставки данных используйте `BulkInsertAsync` вместо `SaveChanges`. Это метод расширения для `DbContext`, который полностью обходит механизм отслеживания изменений EF Core, разрешение идентичности и управление состоянием — он напрямую вызывает `InsertBinaryAsync` драйвера с двоичным кодированием RowBinary и сжатием GZip.
+Для высоконагруженной вставки данных используйте `BulkInsertAsync` вместо `SaveChanges`. Это метод расширения для `DbContext`, который полностью обходит механизм отслеживания изменений EF Core, разрешение идентичности и управление состоянием — он напрямую вызывает `InsertBinaryAsync` драйвера с кодированием RowBinary и сжатым телом запроса.
 
 Поэтому он хорошо подходит для загрузки больших наборов данных, когда после вставки отслеживание сущностей не требуется:
 
@@ -2527,9 +2980,7 @@ long rowsInserted = await ctx.BulkInsertAsync(events);
 
 На вход можно передать любой `IEnumerable<T>` — сущности обрабатываются последовательно, без загрузки всех данных в память. Возвращаемое значение — количество вставленных строк. Сущности **не** прикрепляются к `DbContext` после вставки, поэтому перехода состояния `Added` → `Unchanged` не происходит.
 
-<div id="ef-core-enums">
-  #### Перечисления
-</div>
+#### Перечисления {#ef-core-enums}
 
 Столбцы ClickHouse `Enum8`/`Enum16` можно сопоставить со свойствами `string` или типами C# `enum`. При использовании перечислений C# провайдер автоматически преобразует значения перечисления в их строковое представление и обратно:
 
@@ -2548,9 +2999,7 @@ var active = await ctx.Users
     .ToListAsync();
 ```
 
-<div id="ef-core-value-converters">
-  #### Пользовательские преобразования типов
-</div>
+#### Пользовательские преобразования типов {#ef-core-value-converters}
 
 Система `ValueConverter` в EF Core позволяет сопоставлять пользовательские типы с типами, которые уже поддерживает провайдер. Сам провайдер ваш пользовательский тип не видит — EF Core выполняет преобразование на границе.
 
@@ -2609,9 +3058,7 @@ protected override void ConfigureConventions(ModelConfigurationBuilder configura
 }
 ```
 
-<div id="ef-core-column-types">
-  #### Аннотации типов столбцов
-</div>
+#### Аннотации типов столбцов {#ef-core-column-types}
 
 Для скалярных типов, таких как `string`, `int`, `DateTime` и т. д., провайдер автоматически определяет тип ClickHouse. Для параметризованных типов и типов-обёрток необходимо явно указать тип ClickHouse.
 
@@ -2656,9 +3103,7 @@ modelBuilder.Entity<SensorReading>(e =>
 
 Поддерживаются вложенные обёртки, такие как `Array(Nullable(Int32))` и `LowCardinality(Nullable(String))` — провайдер автоматически снимает обёртки `Nullable` и `LowCardinality` на каждом уровне вложенности.
 
-<div id="ef-core-variant-dynamic">
-  #### Столбцы Variant и Dynamic
-</div>
+#### Столбцы Variant и Dynamic {#ef-core-variant-dynamic}
 
 Столбцы ClickHouse `Variant(T1, T2, ...)` и `Dynamic` в .NET сопоставляются с `object`. Поскольку `object` — слишком общий тип для автоматического вывода типов, необходимо явно указать тип хранения через `.HasColumnType()`:
 
@@ -2677,9 +3122,7 @@ entity.Property(e => e.Payload).HasColumnType("Dynamic");
 
 При чтении значение автоматически десериализуется в соответствующий тип .NET на основе сохранённого дискриминатора (например, `string`, `ulong`, `ulong[]`).
 
-<div id="ef-core-json">
-  #### JSON-столбцы
-</div>
+#### JSON-столбцы {#ef-core-json}
 
 Провайдер поддерживает тип столбца `Json` в ClickHouse, сопоставляя его с `System.Text.Json.Nodes.JsonNode` (по умолчанию) или `string` (через автоматический `ValueConverter`):
 
@@ -2728,9 +3171,7 @@ entity.Property(e => e.Data).HasColumnType("Json");
   * **Точность целых чисел** — ClickHouse хранит все целые числа в JSON как `Int64`. При чтении через `JsonNode` используйте `GetValue<long>()`, а не `GetValue<int>()`.
 </Note>
 
-<div id="ef-core-engines">
-  #### Движки таблиц
-</div>
+#### Движки таблиц {#ef-core-engines}
 
 Настраивайте движки таблиц ClickHouse и специфичные для движка секции через fluent API `ToTable(name, t => ...)`. Если движок не настроен, провайдер по умолчанию использует `MergeTree`, а `ORDER BY` определяется на основе первичного ключа сущности.
 
@@ -2781,9 +3222,7 @@ modelBuilder.Entity<Event>()
 
 Стандартные индексы (без пропуска) молча игнорируются, поскольку в ClickHouse нет их аналога. Для уникальных индексов генерируется исключение, так как ClickHouse не поддерживает уникальность.
 
-<div id="ef-core-migrations">
-  #### Миграции
-</div>
+#### Миграции {#ef-core-migrations}
 
 Стандартный процесс миграций EF Core:
 
@@ -2805,9 +3244,7 @@ dotnet ef database update
 | `ALTER TABLE ADD INDEX` / `DROP INDEX` | Только индексы пропуска данных                                                                                      |
 | `CREATE DATABASE` / `DROP DATABASE`    | Через `EnsureCreated` / `EnsureDeleted` и миграции                                                                  |
 
-<div id="ef-core-limitations">
-  #### Ограничения миграций
-</div>
+#### Ограничения миграций {#ef-core-limitations}
 
 | Возможность                                                   | Причина                                                                                                                                                                              |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -2823,13 +3260,9 @@ dotnet ef database update
 * **Транзакции**: `BeginTransaction` — no-op. ClickHouse не поддерживает ACID-транзакции.
 * **Трансляцию запросов с JSON-путём**: `entity.Data["key"]` в LINQ не транслируется в SQL-синтаксис ClickHouse `data.key`. Фильтруйте по не-JSON-столбцам, а JSON анализируйте в памяти.
 
-<div id="limitations">
-  ## Ограничения
-</div>
+## Ограничения {#limitations}
 
-<div id="valuetuple-caveat">
-  ### Tuple из 8+ элементов с вложенным кортежем на последней позиции
-</div>
+### Tuple из 8+ элементов с вложенным кортежем на последней позиции {#valuetuple-caveat}
 
 Типы C# `ValueTuple`, содержащие более 7 элементов, используют схему вложенности, генерируемую компилятором: 8-й универсальный аргумент (`TRest`) сам является `ValueTuple`, содержащим оставшиеся элементы. Например, `(int, int, int, int, int, int, int, string, string)` компилируется в `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`.
 
@@ -2856,9 +3289,7 @@ Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create(Tuple.Create("a", "b")))
 
 ***
 
-<div id="aggregatefunction-columns">
-  ### Столбцы AggregateFunction
-</div>
+### Столбцы AggregateFunction {#aggregatefunction-columns}
 
 Столбцы типа `AggregateFunction(...)` нельзя запрашивать или напрямую вставлять в них данные.
 

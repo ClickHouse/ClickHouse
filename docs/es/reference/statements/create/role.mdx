@@ -18,9 +18,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
-<div id="managing-roles">
-  ## Administración de roles
-</div>
+`CREATE ROLE` requiere el privilegio [CREATE ROLE](/es/reference/statements/grant#access-management). `OR REPLACE` elimina un rol existente con el mismo nombre, junto con los privilegios que se le hayan concedido, por lo que además requiere el privilegio [DROP ROLE](/es/reference/statements/grant#access-management). El privilegio `DROP ROLE` es necesario para cada nombre indicado en la sentencia, exista o no ese rol, por lo que la sentencia no puede utilizarse para averiguar qué roles existen.
+
+## Administración de roles {#managing-roles}
 
 A un usuario se le pueden asignar varios roles. Los usuarios pueden activar sus roles asignados en combinaciones arbitrarias mediante la sentencia [SET ROLE](/es/reference/statements/set-role). El alcance final de los privilegios es la combinación de todos los privilegios de todos los roles activados. Si un usuario tiene privilegios otorgados directamente a su cuenta de usuario, estos también se combinan con los privilegios otorgados por los roles.
 
@@ -30,9 +30,7 @@ Para revocar un rol, use la sentencia [REVOKE](/es/reference/statements/revoke).
 
 Para eliminar un rol, use la sentencia [DROP ROLE](/es/reference/statements/drop#drop-role). El rol eliminado se revoca automáticamente de todos los usuarios y roles a los que se había asignado.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 ```sql
 CREATE ROLE accountant;

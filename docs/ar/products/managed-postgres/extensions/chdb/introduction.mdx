@@ -1,0 +1,285 @@
+---
+sidebarTitle: 'المقدمة'
+description: 'استيراد وتصدير البيانات من Postgres إلى مجموعة واسعة من تنسيقات البيانات ومخازن الكائنات.'
+slug: '/cloud/managed-postgres/extensions/chdb'
+title: 'الوثائق المرجعية لامتداد chdb'
+doc_type: 'landing-page'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'امتداد', 'chdb', 'Parquet', 'CSV', 'TSV']
+---
+
+## المقدمة {#introduction}
+
+توفّر هذه المكتبة امتدادات PostgreSQL لتنفيذ استعلامات [chDB] داخل Postgres، ولنسخ البيانات من وإلى مجموعة متنوعة من التنسيقات ومخازن الكائنات.
+
+### امتداد chdb {#chdb-extension}
+
+يُشغّل امتداد `chdb` استعلامات [chDB]. وتُنفّذ الدالة `chdb_query()` استعلامًا
+واحدًا. على سبيل المثال، هذا الاستعلام:
+
+```sql
+SELECT * FROM chdb_query($$
+  SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv')
+$$) AS (id int, months int, days int);
+```
+
+المخرجات:
+
+```
+ id | months | days
+----+--------+------
+  1 |      2 |    3
+  3 |      2 |    1
+  4 |      5 |    6
+(3 rows)
+```
+
+راجع [وثائق chdb](/ar/products/managed-postgres/extensions/chdb/chdb)
+لمزيد من التفاصيل.
+
+### وحدة chdb_hook {#chdb_hook-module}
+
+ترتبط وحدة `chdb_hook` بأمر [COPY] عبر خطاف لنسخ البيانات من أو إلى S3 أو GCS أو Azure Blob أو ملف أو عنوان URL عبر http. يحمّل هذا المثال السجلات من
+عدة ملفات CSV على S3 بأمر [COPY] واحد:
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+LOAD 'chdb_hook';
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+```
+
+بعد ذلك، يحتوي جدول `times` على السجلات الواردة من كل ملف تم تحميله:
+
+```pgsql
+# SELECT * FROM times;
+ id | months | days
+----+--------+------
+  1 |      2 |    3
+  3 |      2 |    1
+  4 |      5 |    6
+  1 |      2 |    3
+  3 |      2 |    1
+  4 |      5 |    6
+  1 |      2 |    3
+  3 |      2 |    1
+  4 |      5 |    6
+  1 |      2 |    3
+  3 |      2 |    1
+  4 |      5 |    6
+  1 |      2 |    3
+  3 |      2 |    1
+  4 |      5 |    6
+  1 |      2 |    3
+  3 |      2 |    1
+  4 |      5 |    6
+(18 rows)
+```
+
+يمكن أيضًا لعبارة [CREATE TABLE] أن تستمد أعمدتها وتُحمّل صفوفها من عنوان
+URL كهذا:
+
+```sql
+CREATE TABLE reviews () WITH (
+    copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+راجع [توثيق chdb&#95;hook](/ar/products/managed-postgres/extensions/chdb/chdb_hook)
+لمزيد من التفاصيل.
+
+## قياس أداء التنسيقات {#benchmarking-formats}
+
+يقارن [benchmark] أداء `COPY` في [chdb&#95;hook] بأداء
+[aws&#95;s3] و[pg&#95;duckdb] و[pg&#95;lake] لنحو مليون صف من [NYC Taxi dataset] بمجموعة
+متنوعة من التنسيقات.
+
+![قياس أداء بيانات سيارات الأجرة في نيويورك](/products/managed-postgres/extensions/chdb/taxi-bench.png)
+
+من بين الامتدادات الأربعة، يقدّم [chdb] الأداء الأكثر ثباتًا.
+أما [pg&#95;duckdb] و[pg&#95;lake]، وكلاهما يعتمد على [DuckDB]، فيستغرقان ما يقارب ضعفين إلى ثلاثة أضعاف
+الوقت لاستيراد البيانات من CSV وJSON وParquet. ولا يقترب من أداء
+[chdb&#95;hook] سوى [aws&#95;s3]، لكنه يدعم مجموعة أضيق بكثير من تنسيقات
+البيانات:
+
+| الامتداد      | الضغط                                | تنسيقات البيانات                                                                                                              |
+| ------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| aws&#95;s3    | لا يوجد                              | Text (TSV), CSV, Postgres Binary                                                                                              |
+| pg&#95;lake   | gzip, zstd, snappy (Parquet فقط)     | CSV, JSON, Parquet                                                                                                            |
+| pg&#95;duckdb | gzip, zstd, snappy (Parquet فقط)     | CSV, JSON, Parquet                                                                                                            |
+| chdb          | gzip, zstd, lz4, bz2, snappy, brotli | TSV, CSV, JSON, BSON, Prometheus, Protobuf, Avro, Parquet, Arrow, XML, CapnProto, Markdown, MsgPack, ORC، و[المزيد][formats]! |
+
+وتُظهر قياسات الأداء الإضافية ثباتًا نسبيًا في الأداء عند
+استيراد [NYC Taxi dataset] بمجموعة متنوعة من التنسيقات:
+
+![قياس أداء الاستيراد](/products/managed-postgres/extensions/chdb/chdb-bench.png)
+
+يستخدم قياس الأداء تنسيق [JSONCompact] لضمان التوافق مع الامتدادات
+الأخرى؛ أما تنسيقات JSON الأخرى، مثل [JSONCompactEachRow]، فأداؤها أقرب
+إلى أداء التنسيقات الأخرى.
+
+## المعمارية {#architecture}
+
+يعتمد امتدادا chdb و chdb&#95;hook على عملية `chdb_helper` لتنفيذ استعلامات
+[chDB]. وتُبقي هذه العملية المساعدة استهلاك [chDB] للموارد منفصلًا
+عن عملية Postgres الرئيسية، وهي ميزة مفيدة في سير عمل لا يُستخدم إلا من حين لآخر
+مثل تحميل البيانات من data lake.
+
+```
+                  +-------------+
+                  |   helper    |
++----------+      |    app      |      +------+
+| Postgres |      | +---------+ |      | chDB |
+| Backend  |----->| |  chDB   | |----->| Data |
++----------+      | | Library | |      +------+
+                  | +---------+ |
+                  +-------------+
+```
+
+على خلاف worker الخلفي، لا يحتفظ المساعد بأي ذاكرة مشتركة خاصة بـ Postgres ولا تديره عملية postmaster. وهذا يعزل حالات الـ crash فلا تؤثر على Postgres. فالمساعد الذي يتوقف يؤدي إلى ظهور error في الـ backend الذي شغّله فقط، بينما تبقى بقية الـ sessions دون تأثر.
+
+<Important>
+  لكل استعلام، يتصل المساعد بـ database جديدة ومؤقتة من chdb على القرص لتنفيذه. ونتيجة لذلك، يعمل كل استعلام حاليًا في عزلة تامة عن جميع الـ الاستعلامات الأخرى. فلا تُنشئ table وتتوقع أن تستعلم عنها في استعلام لاحق.
+</Important>
+
+## التبعيات {#dependencies}
+
+يتطلب امتداد `chdb` إصدار PostgreSQL 15 أو أحدث، ومكتبة [chDB]
+بالإصدار v26.7.0 أو أحدث (المتوفرة حاليًا لنظامي Linux وmacOS فقط). وأبسط
+طريقة لتثبيتها هي باستخدام البرنامج النصي لـ shell من [lib.chdb.io]:
+
+```sh
+curl -sL https://lib.chdb.io | bash
+```
+
+لتضمين [chDB] عبر التجميع الساكن (static) في التطبيق المساعد، عيّن المتغيرات التالية
+قبل تشغيل أوامر `make` الخاصة بـ[التثبيت](#compile-from-source).
+
+```sh
+export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
+```
+
+سيقوم `Makefile` بتنزيل مكتبة `libchdb` الثابتة (static) وترجمتها داخل التطبيق.
+
+على Linux، يمكنك أيضاً جعل عملية التثبيت تنزّل مكتبة `libchdb` الديناميكية وتثبّتها، وذلك بتعيين `export BUNDLE_LIBCHDB=1` قبل تشغيل أوامر `make` الخاصة بـ [التثبيت](#compile-from-source).
+
+### البناء من المصدر {#compile-from-source}
+
+لبناء chdb، نفّذ ما يلي فقط:
+
+```sh
+make
+make installcheck
+make install
+```
+
+إذا واجهت خطأً مثل:
+
+```
+"Makefile", line 8: Need an operator
+```
+
+تحتاج إلى استخدام GNU make، والذي قد يكون مثبتًا بالفعل على نظامك باسم
+`gmake`:
+
+```sh
+gmake
+gmake install
+gmake installcheck
+```
+
+إذا واجهت خطأً مثل:
+
+```
+make: pg_config: Command not found
+```
+
+تأكد من أن `pg_config` مثبَّت ومتاح في مسار البحث (`PATH`) لديك. وإذا استخدمت نظام إدارة حزم مثل RPM لتثبيت PostgreSQL، فتأكد من تثبيت حزمة `-devel` أيضًا. وإذا لزم الأمر، حدِّد لعملية البناء مكان العثور عليه:
+
+```sh
+env PG_CONFIG=/path/to/pg_config make && make installcheck && make install
+```
+
+إذا واجهت خطأً مثل:
+
+```
+chdb_helper.c:22:10: fatal error: 'chdb.h' file not found
+```
+
+عليك إما تثبيت [chDB] أو إخبار المصرّف بمكان العثور عليه. فعلى سبيل المثال، إذا ثبّتته عبر البرنامج النصي لـ shell من [lib.chdb.io]، فأشِر إلى
+`/usr/local`:
+
+```sh
+make CFLAGS=-I/usr/local/include \
+     LDFLAGS=-L/usr/local/lib
+```
+
+إذا واجهت خطأً مثل:
+
+```
+ERROR:  must be owner of database regression
+```
+
+يجب تشغيل مجموعة الاختبارات باستخدام مستخدم فائق الصلاحيات، مثل المستخدم الافتراضي فائق الصلاحيات
+&quot;postgres&quot;:
+
+```sh
+make installcheck PGUSER=postgres
+```
+
+لتثبيت الامتداد في custom prefix على PostgreSQL 18 أو أحدث، مرّر
+الـ argument المسمى `prefix` إلى `install` (وليس إلى أي أهداف `make` أخرى):
+
+```sh
+make install prefix=/usr/local/extras
+```
+
+ثم تأكد من تضمين الـ prefix في [`postgresql.conf`
+parameters] التالية:
+
+```ini
+extension_control_path = '/usr/local/extras/postgresql/share:$system'
+dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
+```
+
+## المؤلفون {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## حقوق النشر {#copyright}
+
+حقوق النشر (c) 2026، ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB - قاعدة بيانات in-process سريعة وموثوقة وقابلة للتوسع"
+
+[COPY]: https://www.postgresql.org/docs/current/sql-copy.html "وثائق Postgres: COPY"
+
+[CREATE TABLE]: https://www.postgresql.org/docs/current/sql-createtable.html "وثائق Postgres: CREATE TABLE"
+
+[lib.chdb.io]: https://lib.chdb.io "curl -sL https://lib.chdb.io | bash"
+
+[`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
+
+[chdb_hook]: https://pgxn.org/dist/chdb/doc/chdb_hook.html "وثائق chdb_hook على PGXN"
+
+[aws_s3]: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PostgreSQL.S3Import.html "استيراد البيانات من Amazon S3 إلى DB instance من نوع RDS لـ PostgreSQL"
+
+[pg_duckdb]: https://github.com/duckdb/pg_duckdb "Postgres مدعوم بـ DuckDB للتطبيقات و analytics عالية الأداء"
+
+[pg_lake]: https://github.com/Snowflake-Labs/pg_lake "pg_lake: Postgres مع Iceberg وaccess إلى data lake"
+
+[formats]: https://clickhouse.com/docs/reference/formats/index "ClickHouse Docs: Formats for input and output data"
+
+[NYC Taxi dataset]: https://clickhouse.com/docs/get-started/quickstarts/tutorial "ClickHouse Docs: دليل عملي متقدم"
+
+[benchmark]: https://github.com/ClickHouse/pg_chdb/tree/main/dev/benchmark "Postgres Lake Copy Benchmark"
+
+[JSONCompact]: /reference/formats/JSON/JSONCompact "ClickHouse Docs: JSONCompact"
+
+[JSONCompactEachRow]: /reference/formats/JSON/JSONCompactEachRow "ClickHouse Docs: JSONCompactEachRow"
+
+[DuckDB]: https://duckdb.org "DuckDB: أداتك universal لمعالجة البيانات"

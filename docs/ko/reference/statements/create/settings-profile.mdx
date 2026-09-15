@@ -22,9 +22,9 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 `ON CLUSTER` 절을 사용하면 클러스터 전체에 설정 프로필을 생성할 수 있습니다. 자세한 내용은 [분산 DDL](/ko/reference/statements/distributed-ddl)을 참조하십시오.
 
-<div id="example">
-  ## 예시
-</div>
+`CREATE SETTINGS PROFILE`에는 [CREATE SETTINGS PROFILE](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `OR REPLACE`는 동일한 이름의 기존 프로필을 해당 프로필이 적용된 Role 정보까지 포함하여 폐기하므로, 추가로 [DROP SETTINGS PROFILE](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `DROP SETTINGS PROFILE` 권한은 프로필의 존재 여부와 관계없이 필요하므로, 이 SQL 문을 사용하여 어떤 프로필이 존재하는지 알아낼 수는 없습니다.
+
+## 예시 {#example}
 
 사용자를 생성하세요:
 

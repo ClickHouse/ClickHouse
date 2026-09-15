@@ -16,9 +16,7 @@ doc_type: 'reference'
 
 クラスター内に複数のレプリカがある場合は、代わりに [s3Cluster function](/ja/reference/functions/table-functions/s3Cluster) (GCS でも使用可能) を使うことで、挿入を並列化できます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method] [,partition_strategy])
@@ -32,9 +30,7 @@ gcs(named_collection[, option=value [,..]])
   エンドポイントと HMAC の詳細については、[Google の相互運用性に関するドキュメント](https://cloud.google.com/storage/docs/interoperability) を参照してください。
 </Tip>
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 | 引数                           | 説明                                                                                                                                                                                                                                                                                                                    |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,7 +39,7 @@ gcs(named_collection[, option=value [,..]])
 | `hmac_key` and `hmac_secret` | 指定した エンドポイント で使用する認証情報を指定するオプションです。省略可能です。                                                                                                                                                                                                                                                                            |
 | `format`                     | ファイルの [フォーマット](/ja/reference/formats/index) です。                                                                                                                                                                                                                                                                          |
 | `structure`                  | テーブルの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                                                                       |
-| `compression_method`         | この parameter は省略可能です。サポートされる値は `none`、`gzip` または `gz`、`brotli` または `br`、`xz` または `LZMA`、`zstd` または `zst` です。デフォルトでは、ファイル拡張子から圧縮方式を自動判別します。                                                                                                                                                                            |
+| `compression_method`         | この parameter は省略可能です。サポートされる値は `none`、`gzip` または `gz`、`deflate`、`brotli` または `br`、`xz` または `LZMA`、`zstd` または `zst`、`lz4`、`bz2`、`snappy` です。デフォルトでは、ファイル拡張子から圧縮方式を自動判別します。`snappy` では、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。                 |
 | `partition_strategy`         | 省略可能です。サポートされる値は `wildcard` または `hive` です。`wildcard` ではパスに `{_partition_id}` が必要です。明示的な戦略を指定しない場合、`{_partition_id}` を含むパスでは `wildcard` が使用されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` が使用され、それ以外ではパーティション方式は使用されません。 |
 
 <Info>
@@ -69,15 +65,11 @@ gcs(named_collection[, option=value [,..]])
 | `no_sign_request`             | デフォルトでは無効です。                                                                                                                                                                     |
 | `expiration_window_seconds`   | デフォルト値は 120 です。                                                                                                                                                                  |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定されたファイル内のデータの読み取りまたは書き込みに使用される、指定された構造のテーブル。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 GCSファイル `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz` から先頭2行を選択する例です。圧縮方式は `.gz` ファイル拡張子から自動的に検出されます:
 
@@ -109,9 +101,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="usage">
-  ## 使用例
-</div>
+## 使用例 {#usage}
 
 GCS 上に、次の URI を持つ複数のファイルがあるとします。
 
@@ -204,9 +194,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-<div id="partitioned-write">
-  ## パーティション単位での書き込み
-</div>
+## パーティション単位での書き込み {#partitioned-write}
 
 `GCS` テーブルへのデータ挿入時に `PARTITION BY` 式を指定すると、パーティション値ごとに個別のファイルが作成されます。データをファイルごとに分割することで、読み取り処理の効率向上につながります。
 
@@ -234,9 +222,7 @@ INSERT INTO TABLE FUNCTION
 
 その結果、データは異なる3つのバケット内の `my_bucket_1/file.csv`、`my_bucket_10/file.csv`、`my_bucket_20/file.csv` という3つのファイルに書き込まれます。
 
-<div id="related">
-  ## 関連
-</div>
+## 関連 {#related}
 
 * [S3 テーブル関数](/ja/reference/functions/table-functions/s3)
 * [S3 エンジン](/ja/reference/engines/table-engines/integrations/s3)

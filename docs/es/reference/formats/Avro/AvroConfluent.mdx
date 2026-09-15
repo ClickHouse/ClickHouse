@@ -17,9 +17,7 @@ import DataTypesMatching from '/snippets/es/data-types-matching.mdx';
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-<div id="description">
-  ## Descripción
-</div>
+## Descripción {#description}
 
 [Apache Avro](https://avro.apache.org/) es un formato de serialización orientado a filas que utiliza codificación binaria para procesar datos de forma eficiente. El formato `AvroConfluent` admite leer y escribir mensajes codificados en Avro mediante [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (o servicios compatibles con su API).
 
@@ -27,36 +25,28 @@ Cada mensaje utiliza el wire format de Confluent: un byte mágico (`0x00`), segu
 
 <a id="data-types-matching" />
 
-<div id="data-type-mapping">
-  ## Correspondencia de tipos de datos
-</div>
+## Correspondencia de tipos de datos {#data-type-mapping}
 
 <DataTypesMatching />
 
-<div id="format-settings">
-  ## Configuración del formato
-</div>
+## Configuración del formato {#format-settings}
 
 [//]: # "NOTA Esta configuración puede establecerse a nivel de sesión, pero no es habitual, y documentarlo de forma demasiado destacada puede resultar confuso para los usuarios."
 
-| Configuración                                    | Descripción                                                                                                                                                                                               | Predeterminado |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `input_format_avro_allow_missing_fields`         | Si se debe usar un valor predeterminado en lugar de generar un error cuando no se encuentra un campo en el esquema.                                                                                       | `0`            |
-| `input_format_avro_null_as_default`              | Si se debe usar un valor predeterminado en lugar de generar un error al insertar un valor `null` en una columna que no admite NULL.                                                                       | `0`            |
-| `format_avro_schema_registry_url`                | La URL de Confluent registro de esquemas. Para la autenticación básica, las credenciales codificadas en URL pueden incluirse directamente en la propia URL.                                                    |                |
-| `format_avro_schema_registry_connection_timeout` | Tiempo de espera de conexión, en segundos, para el cliente HTTP de registro de esquemas (se usa tanto para la obtención del esquema como para su registro). Debe ser mayor que 0 y menor que 600 (10 minutos). | `1`            |
-| `format_avro_schema_registry_send_timeout`       | Tiempo de espera de envío, en segundos, para el cliente HTTP de registro de esquemas. Debe ser mayor que 0 y menor que 600 (10 minutos).                                                                       | `1`            |
-| `format_avro_schema_registry_receive_timeout`    | Tiempo de espera de recepción, en segundos, para el cliente HTTP de registro de esquemas. Debe ser mayor que 0 y menor que 600 (10 minutos).                                                                   | `1`            |
-| `output_format_avro_confluent_subject`           | Para la salida: el nombre del subject con el que el esquema está registrado en registro de esquemas. Obligatorio al escribir.                                                                                  |                |
-| `output_format_avro_string_column_pattern`       | Para la salida: expresión regular de las columnas String que se serializarán como Avro `string` (el valor predeterminado es `bytes`).                                                                     |                |
+| Configuración                                    | Descripción                                                                                                                                                                                                                                | Predeterminado |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| `input_format_avro_allow_missing_fields`         | Si se debe usar un valor predeterminado en lugar de generar un error cuando no se encuentra un campo en el esquema.                                                                                                                        | `0`            |
+| `input_format_avro_null_as_default`              | Si se debe usar un valor predeterminado en lugar de generar un error al insertar un valor `null` en una columna que no admite NULL.                                                                                                        | `0`            |
+| `format_avro_schema_registry_url`                | La URL de Confluent Schema Registry. Para la autenticación básica, las credenciales codificadas en URL pueden incluirse directamente en la propia URL.                                                                                |                |
+| `format_avro_schema_registry_connection_timeout` | Tiempo de espera de conexión, en segundos, para el cliente HTTP de registro de esquemas (se usa tanto para la obtención del esquema como para su registro). Debe ser mayor que 0; un valor de 600 (10 minutos) o superior se reduce a 599. | `1`            |
+| `format_avro_schema_registry_send_timeout`       | Tiempo de espera de envío, en segundos, para el cliente HTTP de registro de esquemas. Debe ser mayor que 0; un valor de 600 (10 minutos) o superior se reduce a 599.                                                                       | `1`            |
+| `format_avro_schema_registry_receive_timeout`    | Tiempo de espera de recepción, en segundos, para el cliente HTTP de registro de esquemas. Debe ser mayor que 0; un valor de 600 (10 minutos) o superior se reduce a 599.                                                                   | `1`            |
+| `output_format_avro_confluent_subject`           | Para la salida: el nombre del subject con el que el esquema está registrado en registro de esquemas. Obligatorio al escribir.                                                                                                              |                |
+| `output_format_avro_string_column_pattern`       | Para la salida: expresión regular de las columnas String que se serializarán como Avro `string` (el valor predeterminado es `bytes`).                                                                                                      |                |
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
-<div id="reading-from-kafka">
-  ### Lectura desde Kafka
-</div>
+### Lectura desde Kafka {#reading-from-kafka}
 
 Para leer un topic de Kafka codificado en Avro mediante el [motor de tabla Kafka](/es/reference/engines/table-engines/integrations/kafka), utilice la configuración `format_avro_schema_registry_url` para indicar la URL del registro de esquemas.
 
@@ -77,9 +67,7 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-<div id="writing-to-kafka">
-  ### Escribir en Kafka
-</div>
+### Escribir en Kafka {#writing-to-kafka}
 
 Para escribir mensajes de AvroConfluent en un topic de Kafka, configure tanto la URL del registro de esquemas como el nombre del subject. El esquema se registra automáticamente en el registro con la primera escritura.
 
@@ -100,9 +88,7 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-<div id="using-basic-authentication">
-  #### Uso de la autenticación básica
-</div>
+#### Uso de la autenticación básica {#using-basic-authentication}
 
 Si tu registro de esquemas requiere autenticación básica (p. ej., si usas Confluent Cloud), puedes proporcionar credenciales codificadas en URL en el parámetro `format_avro_schema_registry_url`.
 
@@ -121,9 +107,7 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-<div id="troubleshooting">
-  ## Solución de problemas
-</div>
+## Solución de problemas {#troubleshooting}
 
 Para supervisar el progreso de la ingestión y depurar los errores del consumidor de Kafka, puedes consultar la [tabla del sistema `system.kafka_consumers`](/es/reference/system-tables/kafka_consumers). Si tu implementación tiene varias réplicas (p. ej., ClickHouse Cloud), debes usar la [función de tabla `clusterAllReplicas`](/es/reference/functions/table-functions/cluster).
 

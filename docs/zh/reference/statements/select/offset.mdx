@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+SQL 标准的 `OFFSET ... FETCH` 形式不能与 [`LIMIT ... AFTER ... UNTIL`](/zh/reference/statements/select/limit#limit-after-until) 范围形式组合使用。
+
 `offset_row_count` 或 `fetch_row_count` 的值可以是数值，也可以是字面常量。你可以省略 `fetch_row_count`；默认值为 1。
 
 `OFFSET` 指定在开始返回查询结果集中的行之前要跳过的行数。`OFFSET n` 会跳过结果中的前 `n` 行。
@@ -57,9 +59,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   实际偏移量还可能取决于 [offset](/zh/reference/settings/session-settings/other#offset) 设置。
 </Note>
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 输入表：
 

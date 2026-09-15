@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-28
+title: '데모 데이 - 2026-08-28'
+sidebarTitle: '2026-08-28'
+description: '2026-08-28 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## PromQL 및 Lucene의 대시보드 변수 {#dashboard-variables-in-promql-and-lucene}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/q5pP20p4nY4" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 대시보드 변수를 PromQL 차트에서도 사용할 수 있습니다. 변수 참조에 대한 자동 완성이 제공되며, 누락된 변수나 지원되지 않는 사용(예: macro 또는 따옴표가 필요한 참조)에 대해서는 경고가 표시됩니다. 기존 생성된 SQL 패널 옆에 생성된 PromQL 미리보기가 함께 표시되어, 현재 선택 항목이 치환된 쿼리를 확인할 수 있습니다.
+
+Lucene 변수는 이제 정확한 일치를 지원합니다. 이전에는 `ServiceName:$service`가 `ServiceName:("add" OR "cart")`로 확장되었습니다. 따옴표가 없는 Lucene 필드 일치는 substring 일치이므로, 결국 `ServiceName ILIKE '%add%' OR ServiceName ILIKE '%cart%'`가 됩니다. 즉, service를 두 개 선택했는데 네 개가 반환될 수 있었습니다.
+
+변수를 따옴표로 감싼 `ServiceName:"$service"`는 이제 `(ServiceName:"add" OR ServiceName:"cart")`로 확장되어 선택한 각 값과 정확히 일치합니다. 이는 변수를 사용하지 않는 따옴표 필드 일치의 기존 동작과 동일합니다. 자동 완성도 따옴표 형식을 제안합니다.
+
+차트 tooltip이나 table 행에서 검색 페이지로 drill-down할 때, 이제 페이지 이동 전에 변수와 macro가 먼저 확장됩니다. 검색 페이지는 변수를 인식하지 못하므로, 이전에는 `$service`를 그대로 전달하면 잘못된 결과가 나오거나 쿼리 오류가 발생했습니다. 선택 항목이 없는 macro는 `(1=1)`로 확장됩니다. 검색 페이지의 `WHERE` 입력란에서 다소 보기 좋지 않지만, 쿼리는 유효한 상태로 유지됩니다.
+
+filter 선택 항목은 이제 표현식이 아닌 변수 이름을 기준으로 관리됩니다. 서로 다른 source의 `ServiceName`처럼 동일한 표현식을 사용하는 두 filter가 더 이상 선택 항목을 공유하지 않습니다.
+
+Brandon의 제안에 따라, filter를 편집하는 중 Escape를 누르면 변경 사항을 취소하기 전에 확인을 요청합니다. 이전에는 tooltip을 닫으려다 편집 내용 전체를 잃을 수 있었습니다.
+
+대시보드 변수가 이번 주에 production에 적용되었습니다. 기능 toggle은 제거되었으며, 참조 형식과 macro에 대한 내용은 [공개 문서](https://clickhouse.com/docs/clickstack/features/dashboards/overview#dashboard-variables)에서 확인할 수 있습니다.
+
+**관련 PR:** [#2994](https://github.com/hyperdxio/hyperdx/pull/2994) PromQL 차트에서 변수 치환, [#2995](https://github.com/hyperdxio/hyperdx/pull/2995) PromQL 변수 자동 완성 추가, [#2997](https://github.com/hyperdxio/hyperdx/pull/2997) 유효하지 않은 PromQL 변수 사용에 대한 경고 표시, [#2998](https://github.com/hyperdxio/hyperdx/pull/2998) 생성된 PromQL 미리보기 추가, [#2987](https://github.com/hyperdxio/hyperdx/pull/2987) 정확 일치 Lucene 변수 참조 분배, [#3008](https://github.com/hyperdxio/hyperdx/pull/3008) drill-down으로 검색 페이지로 이동하기 전에 변수 확장, [#2963](https://github.com/hyperdxio/hyperdx/pull/2963) 변수 기준 대시보드 filter 값 허용, [#2964](https://github.com/hyperdxio/hyperdx/pull/2964) 변수 기준 filter 상태 저장 및 읽기, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) filter 편집기를 닫을 때 저장되지 않은 변경 사항 취소 전 확인, [#3009](https://github.com/hyperdxio/hyperdx/pull/3009) 대시보드 변수 기능 toggle 제거
+
+## 양방향 스팬 링크 {#span-links-in-both-directions}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tdK9JU6unoE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+스팬 링크는 이전부터 확인할 수 있었지만 consumer 쪽에서만 가능했습니다. 각 링크는 &quot;Open trace&quot; 동작으로만 표시되었고, producer 스팬에서 출발해 그 스팬으로 연결되는 스팬을 찾을 방법은 없었습니다. 한 사용자가 GitHub issue로 이 기능을 요청했습니다.
+
+이제 Span Links 섹션에 각 대상 스팬의 이름, service, duration, timestamp가 함께 표시됩니다. 덕분에 링크를 하나씩 열어보지 않고도 원하는 링크를 더 쉽게 고를 수 있습니다. 대상 스팬을 찾을 수 없을 때는 종전과 같이 &quot;Open trace&quot;가 폴백으로 제공됩니다.
+
+새로 추가된 &quot;Linked from&quot; 섹션에는 현재 스팬으로 연결되는 스팬 목록이 표시됩니다. 이제 consumer의 링크를 따라 producer로 이동한 뒤, 그곳에서 해당 consumer가 나열된 것을 확인할 수 있습니다.
+
+브레드크럼 경로에서 이전 스팬으로 가는 링크를 따라가면 해당 항목으로 되돌아가므로, 서로 연결된 두 스팬 사이를 오가더라도 중복 항목이 계속 쌓이지 않습니다. 두 스팬 사이에 다른 항목이 있으면 평소처럼 새 항목이 추가됩니다.
+
+역방향 lookup은 스팬 링크에 선택한 스팬 ID가 포함된 행을 찾은 뒤, 트레이스 ID가 일치하는지 확인합니다. 트레이스 ID lookup은 해당 컬럼의 블룸 필터 인덱스 덕분에 빠르지만, 역방향 lookup은 scan이 필요하므로 데모보다 규모가 큰 traces 테이블에서는 더 느릴 수 있습니다. 이 점이 문제가 된다면 코드 주석에 언급된 대로 링크 스팬 ID에 인덱스를 추가할 수 있습니다.
+
+**관련 PR:** [#3011](https://github.com/hyperdxio/hyperdx/pull/3011) 역방향 스팬 링크 추가, 스팬 링크 상세 정보 표시
+
+## 즉시 사용 가능한 LLM 관측성 {#llm-observability-out-of-the-box}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/m49DZ5cuI64" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이미 많은 팀이 LLM 및 코딩 에이전트 텔레메트리를 ClickStack으로 전송하고 있었지만, 이를 위한 전용 지원은 없었습니다. 대화 렌더링, 토큰 및 비용 추적, 모델 분석 기능이 모두 제공되지 않았습니다.
+
+이제 기존 ClickHouse, Kubernetes, 서비스 프리셋과 함께 LLM 대시보드가 제공됩니다. 토큰 사용량, 비용, 모델 호출, 도구 호출, 캐시 적중, 응답 시간을 다루며, 사용자 속성이 있는 경우 사용자별 분석도 제공합니다.
+
+고정된 스키마나 전용 테이블, 수집 시점 처리 없이 기존 트레이스와 로그를 쿼리 시점에 읽어 들입니다. 일반적인 규약, OpenLLMetry, OpenInference를 사용하는 텔레메트리를 지원하며, OpenAI 및 Anthropic SDK, Vercel AI SDK, LangChain, Claude Code, opencode에서 생성된 데이터도 여기에 포함됩니다. 이미 수집해 둔 텔레메트리에도 그대로 적용됩니다.
+
+지연 시간 뷰는 AI 관련 스팬을 상단에 배치하므로, 나머지 트레이스를 일일이 살펴보지 않고도 느린 모델 호출을 쉽게 찾을 수 있습니다.
+
+세션 뷰는 스팬을 대화 단위로 묶습니다. 세션을 열어 해당 스팬을 확인한 뒤 하나를 선택하면 기록된 프롬프트를 포함한 상세 정보를 볼 수 있습니다. 에이전트 실행을 디버깅할 때 유용하며, 동일한 세션 필터로 로그를 검색할 수도 있습니다.
+
+이 기능의 범위는 평가(evaluation)를 비롯해 훨씬 더 많은 기능을 지원하는 Langfuse 같은 전용 LLM 관측성 도구보다 의도적으로 좁게 설정되었습니다. ClickStack에 이미 존재하는 텔레메트리를 활용해 오류율, 비용, 토큰, 지연 시간 등 일반적인 모니터링 요구 사항을 충족합니다.
+
+**관련 PR:** [#2990](https://github.com/hyperdxio/hyperdx/pull/2990) LLM 관측성 대시보드, 스팬 대화 뷰, 세션
+
+## 차트 편집기에서 메트릭 탐색하기 {#browsing-metrics-in-the-chart-editor}
+
+*Demo by [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/TkFa6Zzq23o" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+지금까지는 메트릭을 하나 고르려면 종류별로 최대 3,000개에 달하는 이름이 나열된 1차원 목록을 검색해야 했습니다. 찾으려는 대상을 어느 정도 알고 있다면 자동 완성이 도움이 되지만, 목록을 훑어보며 탐색하고 싶다는 의견이 피드백을 통해 여러 차례 접수되었습니다.
+
+이제 메트릭 선택 항목 옆의 &quot;Browse metrics&quot; 컨트롤을 누르면 탐색기가 열리며, 왼쪽에는 카탈로그가, 오른쪽에는 선택한 메트릭의 세부 정보가 표시됩니다. 메트릭 이름은 점과 밑줄을 기준으로 분리되어 트리를 구성합니다. 하위 항목이 하나뿐인 세그먼트는 불필요한 클릭을 줄이기 위해 하나로 합쳐집니다. `Metric`, `Type`, `Unit` 컬럼은 모든 수준에서 정렬 상태를 유지합니다. 전체 카탈로그를 검색하거나 1차원 목록으로 전환할 수도 있습니다.
+
+이전에는 단위, 설명, 태그를 메트릭 선택 후에야 series 행 아래의 접힌 패널에서 확인할 수 있었습니다. 세부 정보 창에서는 선택 전에 이러한 정보를 확인할 수 있으므로, 배포 환경이 어떤 데이터를 내보내는지, 어떤 태그로 그룹화할 수 있는지 미리 파악할 수 있습니다. &quot;Use metric&quot;을 클릭하면 편집 중인 series에 선택한 메트릭이 적용됩니다.
+
+아직 안정화 단계이므로 당분간은 눈에 잘 띄지 않는 위치에 배치해 두었습니다.
+
+**관련 PR:** [#3000](https://github.com/hyperdxio/hyperdx/pull/3000) 차트 편집기에 Metrics Explorer 추가, [#3025](https://github.com/hyperdxio/hyperdx/pull/3025) 프라이머리 인덱스에서 메트릭 이름 스트리밍(진행 중), [#3054](https://github.com/hyperdxio/hyperdx/pull/3054) 메트릭 드롭다운 UX 개선
+
+## Grafana에서 raw SQL 쿼리의 로그 볼륨 {#log-volume-for-raw-sql-queries-in-grafana}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/uehh44q56yE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+예상보다 훨씬 많은 작업이 필요했던 작은 시각적 변경입니다.
+
+Grafana에서는 query builder로 작성한 로그 쿼리의 결과 위에 볼륨 histogram이 표시됩니다. 플러그인이 어떤 컬럼을 사용해야 하는지 알고 있기 때문입니다. 반면 SQL editor에서 실행한 동일한 쿼리에는 histogram이 표시되지 않았습니다. 플러그인이 사용자가 선택한 컬럼을 알 수 없었기 때문입니다. Explore에서는 그 대신 Grafana의 행 기반 histogram이 표시되었는데, 이는 쿼리의 `LIMIT`에 의해 제한되고 선택한 time range도 따르지 않았습니다.
+
+이제 플러그인은 뒤에 붙은 `ORDER BY`와 `LIMIT`을 제거하고, 작성한 SQL을 파생 테이블로 감싼 뒤 전체 time range에 대해 집계합니다. 여기서 `LIMIT` 제거가 중요합니다. 이를 그대로 두면 원래 쿼리가 반환한 행으로만 카운트가 제한되기 때문입니다.
+
+histogram은 SQL 필터를 반영하며, time range를 변경하면 함께 갱신됩니다. 직접 작성한 SQL은 물론, query builder에서 &quot;Edit as SQL&quot;로 연 쿼리에도 적용됩니다.
+
+query rewrite가 동작하지 않는 예외적인 경우가 여전히 남아 있을 수 있습니다.
+
+**관련 PR:** [grafana/clickhouse-datasource#2141](https://github.com/grafana/clickhouse-datasource/pull/2141) SQL editor 쿼리에 대한 로그 볼륨 표시 (open)
+
+## 알림 페이지의 알림 채널 {#notification-channels-on-the-alerts-pages}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Gr-QkVVWam8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+하나의 알림은 최대 10개의 웹훅에 알릴 수 있지만, 알림 목록과 상세 헤더에는 첫 번째 대상만, 그것도 실제 이름이 아니라 &quot;Webhook&quot;이라는 레이블로 표시되었습니다. 두 화면 모두 여전히 legacy 단일 채널 필드를 읽고 있었기 때문입니다.
+
+다중 대상 dispatch 자체는 정상적으로 동작했지만, 화면 표시만 보면 추가 채널이 저장되지 않은 것처럼 보였습니다.
+
+이제 목록과 상세 헤더에 구성된 모든 채널이 이름으로 표시됩니다. 웹훅과 incident.io 통합을 포함해 채널을 추가하고 제거하는 작업도 더 간편해졌습니다. 알림 시간이 대상별로 기록되므로 응답이 느린 통합을 파악할 수 있습니다.
+
+이제 구성된 채널에 직접 알림이 전송됩니다. 이전에는 채널이 웹훅 멘션으로 변환되어 메시지 body 뒤에 추가되었습니다. 이 때문에 알림이 누락될 수 있었습니다. body에 이미 이벤트당 cap에 도달할 만큼의 임시 멘션이 들어 있으면 알림에 구성된 채널은 건너뛰어졌습니다.
+
+컨트롤이 늘어나면서 페이지가 다소 복잡해졌습니다. 이제 내보내기와 Terraform을 포함한 행 actions는 하나의 메뉴로 묶였습니다.
+
+**관련 PR:** [#3001](https://github.com/hyperdxio/hyperdx/pull/3001) 알림 페이지에 모든 알림 대상 표시, [#2991](https://github.com/hyperdxio/hyperdx/pull/2991) 요약 줄에 모든 알림 채널 표시, [#2984](https://github.com/hyperdxio/hyperdx/pull/2984) 멘션 문자열을 거치지 않고 구성된 채널에 직접 알림 전송, [#2961](https://github.com/hyperdxio/hyperdx/pull/2961) 실패한 멘션이 알림 슬롯을 소비하지 않도록 수정, [#3003](https://github.com/hyperdxio/hyperdx/pull/3003) 알림 전송 시간을 각 대상별로 귀속, [#3002](https://github.com/hyperdxio/hyperdx/pull/3002) 알림 페이지의 모든 행에 동일한 후행 컨트롤 제공, [#3016](https://github.com/hyperdxio/hyperdx/pull/3016) 알림 상세 헤더를 공용 행 메뉴로 통합
+
+## 수만 개의 알림 렌더링 {#rendering-1000s-alerts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/P9BPD9yoElo" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+알림 평가는 동시 알림 16,000개 규모로 테스트되었으며 안정적으로 동작합니다. 다만 그 정도로 많은 알림이 있는 상태에서 알림 페이지를 열면 시스템이 다운되었습니다.
+
+이제 목록이 가상화되어 알림 16,000개를 렌더링할 수 있습니다. 모든 알림을 가져와 클라이언트 측에서 필터링하기 때문에 로딩은 여전히 느립니다. 이를 해결하기 위해 페이지네이션 작업을 진행 중입니다.
+
+이번 변경에는 MongoDB에 대량의 알림을 생성하고 정리하는 스크립트도 포함되어, 이러한 규모의 페이지를 로컬에서 더 쉽게 테스트할 수 있습니다.
+
+**관련 PR:** [#3012](https://github.com/hyperdxio/hyperdx/pull/3012) 알림 페이지 목록 가상화
+
+## API Key를 가리고 필요할 때만 표시하기 {#hiding-api-keys-behind-a-reveal}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/MNXABmTVEkE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+기존에는 자격 증명이 앱 전반에서 평문으로 표시되었습니다. Team Settings에는 수집 API key가 전체 그대로 표시되었고, MCP 설치 스니펫에는 개인 액세스 키가 명령어에 포함되어 있었습니다. 두 경우 모두 화면 공유나 스크린샷을 통해 쉽게 노출될 수 있었습니다.
+
+이제 키는 기본적으로 마스킹되며, 필요할 때 표시할 수 있는 컨트롤이 함께 제공됩니다. 공유 컴포넌트가 수집 키, 개인 액세스 키는 물론 커뮤니티에서 기여한 MCP 설치 스니펫까지 이를 일괄 처리합니다.
+
+복사할 때는 실제 값이 그대로 복사되므로, 키를 복사하려고 값을 표시할 필요가 없습니다. 동일한 변경 사항이 ClickStack Cloud onboarding에도 적용될 예정입니다.
+
+**관련 PR:** [#2988](https://github.com/hyperdxio/hyperdx/pull/2988) 공유 RevealSnippet을 사용해 API key 및 MCP 설치 스니펫의 시크릿 마스킹
+
+## 제품 내 릴리스 노트 {#release-notes-in-the-product}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/4vrzXy8JwZY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+도움말 메뉴의 &quot;What&#39;s new&quot; 패널은 PR별 변경 사항 집합을 기반으로 `feat:` 접두사가 붙은 항목만 추려서 보여주었습니다. 그 결과 v2.36.0에서는 대시보드 변수가 세 번이나 나열된 반면, 해당 릴리스의 주요 변경 사항이었던 수식과 알림 관련 작업은 빠졌습니다.
+
+이제는 릴리스 PR의 일부로 작성되고 검토되는 루트 `CHANGELOG.md`를 읽습니다. 또한 릴리스 생성기가 패널에 표시할 각 릴리스의 헤드라인을 제공합니다. 그 아래에는 호환되지 않는 변경 사항, 새 기능, 버그 수정 및 개선 사항이 표시되며, 변경 로그로 연결되는 링크도 함께 제공됩니다.
+
+읽지 않은 릴리스 노트가 있으면 도움말 버튼이 반짝이는데, 이는 JavaScript 없이 애니메이션 SVG로 구현했습니다.
+
+읽지 않음 추적 기능도 손을 봐야 했습니다. 애플리케이션의 build 버전을 사용했기 때문에, git short SHA나 CI build 번호가 포함된 배포에서는 새 릴리스가 없어도 배포할 때마다 반짝임 효과가 트리거되었습니다. 이제는 변경 로그에 기재된 최신 릴리스 버전을 사용합니다.
+
+릴리스 노트 포맷도 변경되고 있으므로, 앞으로 더 많은 내용이 이 패널에 표시될 것입니다.
+
+**관련 PR:** [#2993](https://github.com/hyperdxio/hyperdx/pull/2993) 생성된 릴리스 노트로 &quot;What&#39;s new&quot; 구성, [#3042](https://github.com/hyperdxio/hyperdx/pull/3042) What&#39;s new 반짝임을 build가 아닌 릴리스 기준으로 변경, [#3007](https://github.com/hyperdxio/hyperdx/pull/3007) 릴리스 마커 쿼리 실패 시 별도로 구분되는 경고 표시

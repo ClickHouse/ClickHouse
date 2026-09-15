@@ -30,7 +30,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 <DedicatedKeeperServers />
 
 <div id="pre-requisites">
-  ## 사전 준비 사항
+  ## 사전 준비 사항 {#pre-requisites}
 </div>
 
 * 이전에 [로컬 ClickHouse 서버](/ko/get-started/setup/install)를 설정해 본 적이 있습니다
@@ -139,7 +139,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
   </Step>
 
   <Step title="ClickHouse 노드 구성" id="configure-clickhouse-servers">
-    ### 서버 설정
+    ### 서버 설정 {#server-setup}
 
     이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`에 위치한 각 빈 설정 파일 `config.xml`을 수정하십시오. 아래에 강조 표시된 줄은 각 노드에 맞게 수정해야 합니다:
 
@@ -211,7 +211,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 
     위 설정 파일의 각 섹션에 대해서는 아래에서 자세히 설명합니다.
 
-    #### 네트워킹 및 로깅
+    #### 네트워킹 및 로깅 {#networking}
 
     <ListenHost />
 
@@ -229,7 +229,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 
     로깅 구성에 대한 자세한 내용은 기본 ClickHouse [설정 파일](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)에 포함된 주석을 참조하십시오.
 
-    #### 클러스터 구성
+    #### 클러스터 구성 {#cluster-configuration}
 
     클러스터 구성은 `<remote_servers>` 블록에서 설정합니다.
     여기서 클러스터 이름 `cluster_1S_2R`을 정의합니다.
@@ -261,7 +261,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-    #### Keeper 구성
+    #### Keeper 구성 {#keeper-config-explanation}
 
     `<ZooKeeper>` 섹션은 ClickHouse Keeper(또는 ZooKeeper)가 실행 중인 위치를 ClickHouse에 알려줍니다.
     ClickHouse Keeper 클러스터를 사용하는 경우, 클러스터의 각 `<node>`에 대해 `<host>` 및 `<port>` 태그를 사용하여 호스트명과 포트 번호를 지정해야 합니다.
@@ -290,7 +290,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
       프로덕션 환경에서는 ClickHouse Keeper를 전용 호스트에서 실행할 것을 강력히 권장합니다.
     </Note>
 
-    #### 매크로 구성
+    #### 매크로 구성 {#macros-config-explanation}
 
     또한 `<macros>` 섹션은 복제된 테이블에 대한 매개변수 치환을 정의하는 데 사용됩니다. 이 항목들은 `system.macros`에 나열되며, 쿼리에서 `{shard}` 및 `{replica}` 같은 치환 값을 사용할 수 있습니다.
 
@@ -306,7 +306,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
       클러스터 구성에 따라 각각 다르게 정의됩니다.
     </Note>
 
-    ### 사용자 구성
+    ### 사용자 구성 {#user-config}
 
     이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d`에 있는 빈 설정 파일 `users.xml`을 각각 다음과 같이 수정하십시오.
 
@@ -323,7 +323,6 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -331,7 +330,6 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -364,7 +362,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
   </Step>
 
   <Step title="ClickHouse Keeper 구성" id="configure-clickhouse-keeper-nodes">
-    ### Keeper 설정
+    ### Keeper 설정 {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -762,7 +760,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 </Steps>
 
 <div id="conclusion">
-  ## 결론
+  ## 결론 {#conclusion}
 </div>
 
 이 클러스터 토폴로지의 장점은 레플리카가 2개이므로

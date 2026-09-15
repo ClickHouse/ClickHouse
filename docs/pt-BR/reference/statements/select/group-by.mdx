@@ -20,9 +20,7 @@ Quando quiser agrupar dados na tabela por números de colunas em vez de nomes de
   Há outra forma de executar agregação em uma tabela. Se uma consulta contiver colunas da tabela apenas dentro de funções de agregação, a `cláusula GROUP BY` poderá ser omitida, e a agregação por um conjunto vazio de chaves será assumida. Essas consultas sempre retornam exatamente uma linha.
 </Note>
 
-<div id="null-processing">
-  ## Processamento de NULL
-</div>
+## Processamento de NULL {#null-processing}
 
 Para fins de agrupamento, o ClickHouse interpreta [NULL](/pt-BR/reference/syntax#null) como um valor, e `NULL==NULL`. Isso difere do processamento de `NULL` na maioria dos outros contextos.
 
@@ -54,9 +52,7 @@ Você pode ver que `GROUP BY` para `y = NULL` somou `x`, como se `NULL` fosse es
 
 Se você passar várias colunas para `GROUP BY`, o resultado trará todas as combinações dos valores selecionados, como se `NULL` fosse um valor específico.
 
-<div id="rollup-modifier">
-  ## Modificador ROLLUP
-</div>
+## Modificador ROLLUP {#rollup-modifier}
 
 O modificador `ROLLUP` é usado para calcular subtotais para as expressões-chave, com base na ordem em que elas aparecem na lista `GROUP BY`. As linhas de subtotais são adicionadas após a tabela de resultados.
 
@@ -127,9 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 * Configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/group-by#group_by_use_nulls) para compatibilidade com o padrão SQL.
 
-<div id="cube-modifier">
-  ## Modificador CUBE
-</div>
+## Modificador CUBE {#cube-modifier}
 
 O modificador `CUBE` é usado para calcular subtotais para todas as combinações das expressões-chave na lista `GROUP BY`. As linhas de subtotais são adicionadas após a tabela de resultados.
 
@@ -224,9 +218,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 * A configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/group-by#group_by_use_nulls) para compatibilidade com o padrão SQL.
 
-<div id="with-totals-modifier">
-  ## Modificador WITH TOTALS
-</div>
+## Modificador WITH TOTALS {#with-totals-modifier}
 
 Se o modificador `WITH TOTALS` for especificado, outra linha será calculada. Essa linha terá colunas-chave contendo valores padrão (zeros ou linhas vazias) e colunas de funções de agregação com os valores calculados considerando todas as linhas (os valores &quot;totais&quot;).
 
@@ -244,9 +236,7 @@ Essa linha extra só é produzida nos formatos `JSON*`, `TabSeparated*` e `Prett
 
 `WITH TOTALS` pode se comportar de maneiras diferentes quando [HAVING](/pt-BR/reference/statements/select/having) está presente. O comportamento depende da configuração `totals_mode`.
 
-<div id="configuring-totals-processing">
-  ### Configurando o processamento de totais
-</div>
+### Configurando o processamento de totais {#configuring-totals-processing}
 
 Por padrão, `totals_mode = 'before_having'`. Nesse caso, &#39;totals&#39; é calculado sobre todas as linhas, incluindo as que não passam por HAVING nem por `max_rows_to_group_by`.
 
@@ -264,9 +254,7 @@ Se `max_rows_to_group_by` e `group_by_overflow_mode = 'any'` não forem usados, 
 
 Você pode usar `WITH TOTALS` em subconsultas, incluindo subconsultas na cláusula [JOIN](/pt-BR/reference/statements/select/join) (nesse caso, os respectivos valores totais são combinados).
 
-<div id="group-by-all">
-  ## GROUP BY ALL
-</div>
+## GROUP BY ALL {#group-by-all}
 
 `GROUP BY ALL` equivale a listar todas as expressões selecionadas no `SELECT` que não são funções de agregação.
 
@@ -314,9 +302,7 @@ FROM t
 GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 ```
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 Exemplo:
 
@@ -343,9 +329,7 @@ GROUP BY domain
 
 Para cada valor distinto de chave encontrado, `GROUP BY` calcula um conjunto de valores de funções de agregação.
 
-<div id="grouping-sets-modifier">
-  ## modificador GROUPING SETS
-</div>
+## modificador GROUPING SETS {#grouping-sets-modifier}
 
 Este é o modificador mais geral.
 Esse modificador permite especificar manualmente vários conjuntos de chaves de agregação (grouping sets).
@@ -382,21 +366,15 @@ GROUPING SETS
 
 * A configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/group-by#group_by_use_nulls) para compatibilidade com o padrão SQL.
 
-<div id="implementation-details">
-  ## Detalhes da implementação
-</div>
+## Detalhes da implementação {#implementation-details}
 
 A agregação é uma das funcionalidades mais importantes de um SGBD orientado a colunas e, por isso, sua implementação é uma das partes mais otimizadas do ClickHouse. Por padrão, a agregação é feita na memória usando uma tabela hash. Ela tem mais de 40 especializações, escolhidas automaticamente de acordo com os tipos de dados da &quot;chave de agrupamento&quot;.
 
-<div id="group-by-optimization-depending-on-table-sorting-key">
-  ### Otimização de GROUP BY dependendo da chave de ordenação da tabela
-</div>
+### Otimização de GROUP BY dependendo da chave de ordenação da tabela {#group-by-optimization-depending-on-table-sorting-key}
 
 A agregação pode ser executada com mais eficiência se a tabela estiver ordenada por alguma chave e a expressão `GROUP BY` contiver pelo menos um prefixo da chave de ordenação ou funções injetivas. Nesse caso, quando uma nova chave é lida da tabela, o resultado intermediário da agregação pode ser finalizado e enviado ao cliente. Esse comportamento é ativado pela configuração [optimize&#95;aggregation&#95;in&#95;order](/pt-BR/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order). Essa otimização reduz o uso de memória durante a agregação, mas, em alguns casos, pode tornar a execução da consulta mais lenta.
 
-<div id="group-by-in-external-memory">
-  ### GROUP BY em memória externa
-</div>
+### GROUP BY em memória externa {#group-by-in-external-memory}
 
 Você pode ativar o despejo de dados temporários em disco para limitar o uso de memória durante o `GROUP BY`.
 A configuração [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) determina o limite de consumo de RAM para despejar dados temporários do `GROUP BY` no sistema de arquivos. Se for definida como 0 (o padrão), ela fica desabilitada.
@@ -412,6 +390,6 @@ Ao mesclar dados gravados em disco, bem como ao mesclar resultados de servidores
 
 Quando a agregação externa está habilitada, se houver menos de `max_bytes_before_external_group_by` de dados (ou seja, os dados não forem gravados em disco), a consulta será executada tão rapidamente quanto sem agregação externa. Se algum dado temporário for gravado em disco, o tempo de execução será várias vezes maior (aproximadamente três vezes).
 
-Se você tiver um [ORDER BY](/pt-BR/reference/statements/select/order-by) com um [LIMIT](/pt-BR/reference/statements/select/limit) após `GROUP BY`, a quantidade de RAM usada dependerá da quantidade de dados em `LIMIT`, e não na tabela inteira. Mas, se o `ORDER BY` não tiver `LIMIT`, não se esqueça de ativar a ordenação externa (`max_bytes_before_external_sort`).
+Se você tiver um [ORDER BY](/pt-BR/reference/statements/select/order-by) com um [LIMIT](/pt-BR/reference/statements/select/limit) após `GROUP BY`, a quantidade de RAM usada dependerá da quantidade de dados em `LIMIT`, e não na tabela inteira. Um intervalo [`LIMIT ... AFTER ... UNTIL`](/pt-BR/reference/statements/select/limit#limit-after-until) não proporciona essa economia, porque a ordenação não tem como saber quantas linhas o intervalo exigirá. Mas, se o `ORDER BY` não tiver `LIMIT`, não se esqueça de ativar a ordenação externa (`max_bytes_before_external_sort`).
 
 {/*AUTOGENERATED_END*/}

@@ -12,7 +12,7 @@ import SelfManaged from '/snippets/zh/_self_managed_only_no_roadmap.mdx';
 HTTP 服务器可用于验证 ClickHouse 用户身份。HTTP 身份验证目前只能作为现有用户的外部验证器使用，这些用户需在 `users.xml` 或本地访问控制配置中定义。目前支持使用 GET 方法的 [基础版](https://datatracker.ietf.org/doc/html/rfc7617) 身份验证方案。
 
 <div id="http-auth-server-definition">
-  ## HTTP 身份验证服务器定义
+  ## HTTP 身份验证服务器定义 {#http-auth-server-definition}
 </div>
 
 要定义 HTTP 身份验证服务器，必须在 `config.xml` 中添加 `http_authentication_servers` 部分。
@@ -64,9 +64,7 @@ HTTP 服务器可用于验证 ClickHouse 用户身份。HTTP 身份验证目前�
 
 本部分定义了哪些请求头会从客户端请求头转发到外部 HTTP 身份验证器。请注意，请求头会以不区分大小写的方式与配置中的请求头进行匹配，但转发时会保持原样，即不会被修改。
 
-<div id="enabling-http-auth-in-users-xml">
-  ### 在 `users.xml` 中启用 HTTP 身份验证
-</div>
+### 在 `users.xml` 中启用 HTTP 身份验证 {#enabling-http-auth-in-users-xml}
 
 要为用户启用 HTTP 身份验证，请在用户定义中指定 `http_authentication` 部分，而不是 `password` 或其他类似部分。
 
@@ -95,7 +93,7 @@ HTTP 服务器可用于验证 ClickHouse 用户身份。HTTP 身份验证目前�
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### 使用 SQL 启用 HTTP 身份验证
+  ### 使用 SQL 启用 HTTP 身份验证 {#enabling-http-auth-using-sql}
 </div>
 
 当 ClickHouse 启用[由 SQL 驱动的访问控制与账户管理](/zh/concepts/features/security/access-rights#access-control-usage)后，也可以使用 SQL 语句创建通过 HTTP 身份验证的用户。
@@ -111,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### 传递会话设置
+  ### 传递会话设置 {#passing-session-settings}
 </div>
 
 如果来自 HTTP 身份验证服务器的响应体采用 JSON 格式，并且包含 `settings` 子对象，ClickHouse 会尝试将其中的键值对解析为字符串值，并将其设为已通过身份验证用户当前会话的会话设置。如果解析失败，则会忽略该服务器返回的响应体。

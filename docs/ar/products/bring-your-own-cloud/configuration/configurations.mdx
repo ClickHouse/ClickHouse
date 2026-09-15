@@ -9,9 +9,7 @@ doc_type: 'مرجع'
 
 توضح هذه الصفحة خيارات تهيئة البنية التحتية المختلفة المتاحة لنشر BYOC لديك. وتتيح لك هذه التهيئات تخصيص موارد الشبكة والأمان والحوسبة بما يلائم متطلباتك المحددة.
 
-<div id="load-balancers">
-  ## موازنات التحميل
-</div>
+## موازنات التحميل {#load-balancers}
 
 تستخدم عمليات نشر BYOC **موازنات تحميل الشبكة (NLBs)** لإدارة الزيارات وتوجيهها إلى خدمات ClickHouse لديك. يمكنك الاختيار بين نقاط نهاية موازن التحميل *العامة* و*الخاصة* وفقًا لنموذج الشبكات المعتمد لديك.
 
@@ -34,9 +32,7 @@ doc_type: 'مرجع'
 
 يمكنك تمكين موازن التحميل الخاص لبنية BYOC التحتية لديك مباشرةً في ClickHouse Cloud console. ولإجراء تعديلات أخرى على نقاط النهاية (مثل إزالة موازن التحميل العام)، تواصل مع **ClickHouse Cloud Support**.
 
-<div id="private-load-balancer-security-group">
-  ### مجموعة الأمان لموازن التحميل الخاص على AWS
-</div>
+### مجموعة الأمان لموازن التحميل الخاص على AWS {#private-load-balancer-security-group}
 
 إذا اخترت استخدام موازن تحميل خاص لنشر BYOC، فيجب التأكد من تطبيق قواعد مجموعة الأمان المناسبة للسماح بالوصول من شبكاتك الخاصة المستهدفة (مثل شبكات VPC المقترنة). وبشكل افتراضي، لا تسمح مجموعة الأمان إلا بحركة المرور داخل الـ VPC.
 
@@ -52,25 +48,19 @@ doc_type: 'مرجع'
   يجب أن يُجري ClickHouse Support جميع التغييرات على مجموعات أمان موازنات التحميل الخاصة. وهذا يضمن اتساق التهيئة ويجنّب حدوث تعارضات داخل البيئة المُدارة بواسطة ClickHouse Cloud.
 </Note>
 
-<div id="privatelink-or-private-service-connect">
-  ## PrivateLink أو Private Service Connect أو Private Link
-</div>
+## PrivateLink أو Private Service Connect أو Private Link {#privatelink-or-private-service-connect}
 
 لتحقيق أقصى درجات عزل الشبكة والأمان، يمكن لعمليات النشر بنموذج BYOC استخدام **AWS PrivateLink** أو **GCP Private Service Connect** أو **Azure Private Link**. تتيح هذه الخيارات لتطبيقاتك الاتصال بخدمات ClickHouse Cloud عبر اتصال خاص، من دون الحاجة إلى VPC/VNet peering أو تعريض نقاط النهاية للإنترنت العام.
 
 للحصول على تعليمات إعداد خطوة بخطوة، راجع [دليل إعداد الشبكات الخاصة](/ar/products/bring-your-own-cloud/onboarding/network).
 
-<div id="k8s-api-private-connection">
-  ## اتصال خاص بواجهة Kubernetes API
-</div>
+## اتصال خاص بواجهة Kubernetes API {#k8s-api-private-connection}
 
-بشكل افتراضي، تكون نقطة نهاية خادم API لـ Kubernetes الخاصة بعنقود BYOC لديك متاحة عبر الإنترنت العام، لكن الوصول إليها يكون مقيّدًا عبر تصفية عناوين IP بحيث يُسمح فقط بعناوين IP الخاصة ببوابة ClickHouse NAT Gateway. ولمزيد من الأمان، يمكنك تقييد خادم API لـ Kubernetes بحيث لا يمكن الوصول إليه إلا عبر اتصالات الشبكة الخاصة.
+بشكل افتراضي، تكون نقطة نهاية خادم واجهة برمجة تطبيقات Kubernetes الخاصة بعنقود BYOC لديك متاحة عبر الإنترنت العام. في AWS، يكون الوصول مقيّدًا عبر تصفية عناوين IP بحيث يُسمح فقط بعناوين IP الخاصة ببوابة ClickHouse NAT Gateway؛ أما في GCP وAzure فيُضبط الوصول عبر IAM الخاص بالسحابة بدلًا من ذلك (انظر [تعريض خادم واجهة برمجة تطبيقات Kubernetes](/ar/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). ولمزيد من الأمان، يمكنك تقييد خادم واجهة برمجة تطبيقات Kubernetes بحيث لا يمكن الوصول إليه إلا عبر اتصالات الشبكة الخاصة.
 
 يتوفر خياران للاتصال الخاص:
 
-<div id="k8s-api-private-connection-tailscale">
-  ### Tailscale (default)
-</div>
+### Tailscale (default) {#k8s-api-private-connection-tailscale}
 
 عند تمكين نقطة نهاية خاصة لواجهة برمجة التطبيقات، تتصل خدمات الإدارة في ClickHouse بخادم Kubernetes API عبر شبكة Tailscale عديمة الثقة نفسها المستخدمة لأغراض استكشاف الأخطاء وإصلاحها. راجع [Tailscale Private Network](/ar/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) للاطلاع على تفاصيل آلية عمل هذا الاتصال.
 
@@ -78,9 +68,7 @@ doc_type: 'مرجع'
   إذا كنت تعتمد فقط على Tailscale للاتصال الخاص، فهناك احتمال أن يفقد ClickHouse Support إمكانية الوصول إلى بيئتك إذا أصبح وكيل Tailscale غير متاح. وقد يؤدي ذلك إلى تأخير استكشاف الأخطاء وإصلاحها أو إطالة أوقات استجابة الدعم.
 </Note>
 
-<div id="k8s-api-private-connection-vpc-lattice">
-  ### AWS VPC Lattice
-</div>
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
 <Info>
   إمكانية الاتصال عبر VPC Lattice متاحة حاليًا ضمن معاينة خاصة. تواصل مع ClickHouse Support لتمكينها لعملية النشر الخاصة بك.
@@ -95,15 +83,11 @@ doc_type: 'مرجع'
 
 **تواصل مع ClickHouse Support** لطلب تهيئة نقطة نهاية واجهة برمجة التطبيقات خاصة.
 
-<div id="node-groups">
-  ## مجموعات العُقد
-</div>
+## مجموعات العُقد {#node-groups}
 
 مجموعات عُقد Kubernetes هي مجموعات من مثيلات الحوسبة التي توفّر الموارد اللازمة لتشغيل خدمات ClickHouse الخاصة بك في نشر BYOC. وتدير ClickHouse Cloud مجموعات العُقد هذه، فتتولى تلقائيًا إعدادها وتوسيع نطاقها.
 
-<div id="default-configuration">
-  ### الإعداد الافتراضي
-</div>
+### الإعداد الافتراضي {#default-configuration}
 
 تُوفَّر مجموعات BYOC بنوعين أساسيين من مجموعات العُقد:
 
@@ -113,9 +97,7 @@ doc_type: 'مرجع'
 * **مجموعات عُقد أعباء العمل**
   تُخصَّص لأعباء بيانات ClickHouse، بما في ذلك الخوادم وخدمات Keeper. وبشكل افتراضي، تعمل عُقد أعباء العمل على مثيلات تستند إلى ARM، ما يوفّر توازنًا فعّالًا بين الأداء والتكلفة. ومع ذلك، يمكن أيضًا تهيئتها بملفات تعريف بديلة للمعالج/الذاكرة أو تحويلها إلى معمارية x86 عند الطلب.
 
-<div id="customizing-node-groups">
-  ### تخصيص مجموعات العُقد
-</div>
+### تخصيص مجموعات العُقد {#customizing-node-groups}
 
 هل تحتاج إلى موارد أو معمارية متخصصة؟ تتوفر التخصيصات التالية — تواصل مع ClickHouse Support لمناقشتها وتنفيذها:
 
@@ -132,9 +114,7 @@ doc_type: 'مرجع'
   يجب تنسيق جميع تغييرات تخصيص مجموعات العُقد والتهيئة عبر ClickHouse Support. وهذا يضمن التوافق والاستقرار والأداء الأمثل.
 </Note>
 
-<div id="auto-scaling">
-  ### التحجيم التلقائي
-</div>
+### التحجيم التلقائي {#auto-scaling}
 
 تتوسع مجموعات عُقد العنقود تلقائيًا عبر cluster autoscaler، استنادًا إلى ما يلي:
 

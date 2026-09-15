@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -18,7 +17,7 @@ ClickHouse는 JSON Web Token(JWT)을 사용해 사용자를 인증할 수 있습
 따라서 JWT 인증은 비밀번호 기반 또는 인증서 기반 방식과 본질적으로 다릅니다. `CREATE USER ... IDENTIFIED WITH jwt` 문은 존재하지 않으며, 이를 시도하면 예외가 발생합니다. JWT 사용자는 토큰 수명 주기에 따라 전적으로 관리됩니다.
 
 <div id="overview">
-  ## 개요
+  ## 개요 {#overview}
 </div>
 
 인증 흐름은 다음과 같이 진행됩니다.
@@ -30,11 +29,11 @@ ClickHouse는 JSON Web Token(JWT)을 사용해 사용자를 인증할 수 있습
 5. 토큰이 만료되면 백그라운드 가비지 컬렉션 작업이 해당 사용자를 제거합니다.
 
 <div id="token-claims">
-  ## 토큰 클레임
+  ## 토큰 클레임 {#token-claims}
 </div>
 
 <div id="required-claims">
-  ### 필수 클레임
+  ### 필수 클레임 {#required-claims}
 </div>
 
 ClickHouse에 제시되는 모든 JWT에는 다음 클레임이 포함되어야 합니다:
@@ -51,7 +50,7 @@ ClickHouse에 제시되는 모든 JWT에는 다음 클레임이 포함되어야 
 JWKS 기반 키 해상도를 사용하는 경우 `kid` (key ID) 헤더 클레임도 필요합니다.
 
 <div id="other-recognized-claims">
-  ### 기타 인식되는 클레임
+  ### 기타 인식되는 클레임 {#other-recognized-claims}
 </div>
 
 | Claim | 설명                                                                  |
@@ -60,7 +59,7 @@ JWKS 기반 키 해상도를 사용하는 경우 `kid` (key ID) 헤더 클레임
 | `jti` | 예약됨. tokens에는 허용되지만 현재는 검증하거나 사용하지 않습니다.                            |
 
 <div id="optional-claims">
-  ### 선택적 클레임
+  ### 선택적 클레임 {#optional-claims}
 </div>
 
 | 클레임                                                                                  | 기본 이름               | 설명                                                                                                       |
@@ -70,7 +69,7 @@ JWKS 기반 키 해상도를 사용하는 경우 `kid` (key ID) 헤더 클레임
 | IdP(Identity Provider)에서 다른 명명 규칙을 사용하는 경우 기본 클레임 이름을 사용자 지정 클레임 이름으로 다시 매핑할 수 있습니다. |                     |                                                                                                          |
 
 <div id="example-token-header-and-payload">
-  ### 토큰 헤더와 페이로드 예시
+  ### 토큰 헤더와 페이로드 예시 {#example-token-header-and-payload}
 </div>
 
 ```json
@@ -93,13 +92,13 @@ JWKS 기반 키 해상도를 사용하는 경우 `kid` (key ID) 헤더 클레임
 ```
 
 <div id="ephemeral-user-behavior">
-  ## 임시 사용자의 동작 방식
+  ## 임시 사용자의 동작 방식 {#ephemeral-user-behavior}
 </div>
 
 JWT 사용자는 일반적인 ClickHouse 사용자와 몇 가지 중요한 면에서 다릅니다.
 
 <div id="identity-and-naming">
-  ### 아이덴티티 및 명명
+  ### 아이덴티티 및 명명 {#identity-and-naming}
 </div>
 
 각 JWT 사용자는 `iss`, `sub`, `aud` 클레임에서 계산된 결정적 UUID를 받습니다. 이 UUID는 로그인할 때마다 **변하지 않습니다**. 서로 다른 토큰으로 여러 번 로그인하더라도 issuer, subject, audience가 같으면 항상 동일한 UUID를 받습니다.
@@ -115,7 +114,7 @@ JWT::<subject>::<claims_hash>
 `<claims_hash>` 부분은 `clickhouse:roles` 또는 `clickhouse:grants` 클레임이 변경될 때마다 달라집니다. 즉, 동일한 아이덴티티라도 역할이나 권한 부여 집합이 다르면 서로 다른 사용자 이름이 생성됩니다.
 
 <div id="access-rights">
-  ### 접근 권한
+  ### 접근 권한 {#access-rights}
 </div>
 
 유효한 접근 권한은 다음과 같이 계산됩니다:
@@ -127,13 +126,13 @@ effective_rights = permission_limit ∩ (token_grants ∪ token_roles)
 여기서 `permission_limit`은 상한으로 설정된 기준 역할(role) 또는 사용자가 보유한 접근 권한의 집합입니다. 토큰이 요청한 권한 중 이 한도를 초과하는 권한은 별도의 알림 없이 삭제됩니다.
 
 <div id="token-freshness">
-  ### 토큰 최신성
+  ### 토큰 최신성 {#token-freshness}
 </div>
 
 ClickHouse는 각 고정된 아이덴티티에 대해 가장 최근에 인증된 토큰의 `iat`(issued-at) 클레임을 추적합니다. 저장된 값과 같거나 그보다 이전인 `iat`를 가진 토큰이 제시되면, 서버는 클레임을 다시 평가하지 않고 기존 임시 사용자를 재사용합니다. 이렇게 하면 오래된 토큰이 사용자 권한을 낮추는 일을 방지할 수 있습니다.
 
 <div id="lifetime-and-garbage-collection">
-  ### 수명 및 가비지 컬렉션
+  ### 수명 및 가비지 컬렉션 {#lifetime-and-garbage-collection}
 </div>
 
 임시 사용자는 토큰이 처음 인증될 때 생성되며, `valid_until`(`exp`에서 파생됨)이 지나면 백그라운드 가비지 컬렉션 작업에 의해 제거됩니다. GC 인터벌은 `gc_interval` 매개변수(기본값: 5분)로 제어됩니다.
@@ -141,7 +140,7 @@ ClickHouse는 각 고정된 아이덴티티에 대해 가장 최근에 인증된
 GC가 다시 실행되기 전까지는 만료된 사용자가 `system.users`에 계속 표시될 수 있지만, 더 이상 인증되지는 않습니다.
 
 <div id="persistent-access-assignments">
-  ### 영구적인 액세스 할당
+  ### 영구적인 액세스 할당 {#persistent-access-assignments}
 </div>
 
 UUID가 고정되어 있으므로 SQL 문을 사용해 JWT 사용자에게 설정 프로필, 쿼터, 행 정책, 컬럼 마스킹 정책을 할당할 수 있습니다. 이러한 할당은 액세스 제어 저장소(디스크 또는 ZooKeeper)에 지속적으로 저장되며, 토큰이 만료되거나 다시 인증한 후에도 유지됩니다.
@@ -159,7 +158,7 @@ ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 `ALTER USER`는 JWT 사용자에 대해 직접 사용할 수 없으며, 이들은 읽기 전용입니다. 설정 프로필, 쿼터 또는 정책을 할당하려면 위에 나온 것처럼 `ALTER SETTINGS PROFILE`, `ALTER QUOTA` 또는 `ALTER ROW POLICY` SQL 문을 사용하십시오.
 
 <div id="differences-from-regular-users">
-  ## 일반 사용자와의 차이점
+  ## 일반 사용자와의 차이점 {#differences-from-regular-users}
 </div>
 
 | 기능                                    | JWT 사용자                                   | 일반 사용자                  |
@@ -179,7 +178,7 @@ ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 | 기본 역할                                 | 구성할 수 없음                                  | 구성 가능                   |
 
 <div id="sql-security-definer-views">
-  ## SQL SECURITY DEFINER 뷰
+  ## SQL SECURITY DEFINER 뷰 {#sql-security-definer-views}
 </div>
 
 임시 JWT 사용자가 `SQL SECURITY DEFINER`로 뷰를 생성하면 서버는 해당 뷰의 정의자로 사용할 영구적인 섀도 사용자 복사본을 자동으로 생성합니다. 이 섀도 사용자는 다음과 같습니다.
@@ -191,11 +190,11 @@ ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 이렇게 하면 임시 사용자의 토큰이 만료되고 원래 사용자가 가비지 컬렉션으로 제거된 후에도 뷰가 계속 동작합니다.
 
 <div id="client-usage">
-  ## 클라이언트 사용 방법
+  ## 클라이언트 사용 방법 {#client-usage}
 </div>
 
 <div id="passing-token-directly">
-  ### 토큰 직접 전달하기
+  ### 토큰 직접 전달하기 {#passing-token-directly}
 </div>
 
 미리 발급받은 토큰으로 인증하려면 `clickhouse-client`에서 `--jwt` 플래그를 사용하십시오:
@@ -209,7 +208,7 @@ clickhouse-client --host your-instance.clickhouse.cloud --secure --jwt '<your_jw
 </Note>
 
 <div id="http-interface">
-  ### HTTP 인터페이스
+  ### HTTP 인터페이스 {#http-interface}
 </div>
 
 토큰을 Bearer 토큰으로 `Authorization` 헤더에 전송합니다:
@@ -224,7 +223,7 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
 </Warning>
 
 <div id="oauth2-device-code-login">
-  ### OAuth2 디바이스 코드 로그인
+  ### OAuth2 디바이스 코드 로그인 {#oauth2-device-code-login}
 </div>
 
 `clickhouse-client`는 `--login` 플래그를 통해 대화형 OAuth2 디바이스 코드 인증 흐름을 지원합니다. ClickHouse Cloud endpoint의 경우, 클라이언트는 ClickHouse 전용 JWT를 얻기 위해 자동으로 토큰 교환을 수행합니다. 토큰은 세션 중 자동으로 갱신됩니다. 새 토큰을 받으면 클라이언트가 자동으로 재연결됩니다.
@@ -234,7 +233,7 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
 
 <div id="clickhouse-cloud-built-in">
-  ## ClickHouse Cloud 내장 JWT 인증자
+  ## ClickHouse Cloud 내장 JWT 인증자 {#clickhouse-cloud-built-in}
 </div>
 
 모든 ClickHouse Cloud 서비스에는 SQL 콘솔과 `clickhouse-client` `--login` 흐름에서 사용하는 사전 정의된 JWT 인증자가 기본으로 포함되어 있습니다. 이 인증자는 다음과 같이 구성됩니다.
@@ -250,16 +249,14 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 이 인증자를 사용하기 위해 별도로 구성할 것은 없습니다. 서비스가 생성될 때 자동으로 프로비저닝됩니다.
 
 <div id="enabling-jwt-authentication-for-your-service">
-  ## 서비스에 JWT 인증 활성화하기
+  ## 서비스에 JWT 인증 활성화하기 {#enabling-jwt-authentication-for-your-service}
 </div>
-
-<BetaBadge />
 
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="사용자 지정 IdP(Identity Provider)를 통한 JWT 인증" />
 
-기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있는 베타 기능입니다. **설정 → Security → JWT 인증**에서 Cloud Console을 통해 직접 구성할 수 있습니다. 단계별 지침은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을 참조하십시오. 각 IdP(Identity Provider)는 다음으로 정의됩니다.
+기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있습니다. **설정 → Security → JWT 인증**에서 Cloud Console을 통해 직접 구성할 수 있습니다. 단계별 지침은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을 참조하십시오. 각 IdP(Identity Provider)는 다음으로 정의됩니다.
 
 | 매개변수          | 설명                                                                                                                                                                                                                                                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -270,13 +267,13 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 | 역할 클레임(선택 사항) | 임시 사용자의 ClickHouse 역할을 포함하는 토큰 클레임의 이름입니다. 기본 클레임 이름인 `clickhouse:roles`을 사용하려면 비워 두십시오. 이 클레임에는 역할 이름으로 구성된 JSON 배열이 포함되어야 합니다(예: `["analyst", "reader"]`).                                                                                                                                                       |
 
 <div id="interserver-communication">
-  ## 서버 간 통신
+  ## 서버 간 통신 {#interserver-communication}
 </div>
 
 쿼리가 다른 세그먼트 또는 레플리카로 전달되면 JWT 토큰도 서버 간 프로토콜에 포함됩니다. 원격 노드는 토큰을 독립적으로 재인증한 뒤 자체 임시 사용자를 생성합니다.
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 * **접근 권한이 부여되지 않음:** 참조된 역할 또는 사용자에게 필요한 권한 부여가 없을 수 있습니다. `clickhouse:roles`에서 참조하는 역할이 실제로 존재하며, 적절한 권한 부여가 포함되어 있는지 확인하세요.

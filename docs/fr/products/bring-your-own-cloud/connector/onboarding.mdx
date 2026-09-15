@@ -6,13 +6,14 @@ keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Cette page vous guide depuis le token d’inscription jusqu’à un connecteur opérationnel et vérifié. Le connecteur s’installe sur l’une des deux cibles : un cluster Kubernetes (Helm) ou une VM Linux (systemd). L’inscription par token est le flux standard ; si votre environnement ne peut pas accéder directement aux points de terminaison ClickHouse, consultez [les installations isolées et en miroir](#air-gapped-and-mirrored-installs).
+<PrivatePreviewBadge />
 
-<div id="prerequisites">
-  ## Prérequis
-</div>
+Cette page vous guide depuis le token d’inscription jusqu’à un connecteur opérationnel et vérifié. Le connecteur s’installe sur l’une des deux cibles : un cluster Kubernetes (Helm) ou une VM Linux (systemd). L’inscription par token est le flux standard ; si votre environnement ne peut pas accéder directement aux points de terminaison ClickHouse, consultez [les installations isolées et mises en miroir](#air-gapped-and-mirrored-installs).
+
+## Prérequis {#prerequisites}
 
 Pour chaque installation :
 
@@ -40,9 +41,7 @@ Pour les installations sur VM Linux (systemd) :
   `--skip-provision` est le seul moyen de contourner l’exigence Kubernetes et ne s’applique qu’à la phase de préparation : il ignore le provisionnement des utilisateurs ClickHouse et, sur une VM, l’activation et la vérification de l’unité ; il ne produit donc pas à lui seul un connecteur opérationnel.
 </Note>
 
-<div id="install-and-enroll">
-  ## Installer et enregistrer
-</div>
+## Installer et enregistrer {#install-and-enroll}
 
 <Steps>
   <Step title="Obtenez l’endpoint et le jeton d’inscription de votre connecteur" id="get-endpoint-and-token">
@@ -153,9 +152,7 @@ Pour les installations sur VM Linux (systemd) :
   </Step>
 </Steps>
 
-<div id="air-gapped-and-mirrored-installs">
-  ## Installations en environnement isolé et avec miroir
-</div>
+## Installations en environnement isolé et avec miroir {#air-gapped-and-mirrored-installs}
 
 Deux composants indépendants peuvent être transférés hors bande, selon les ressources auxquelles votre environnement peut accéder.
 
@@ -167,9 +164,7 @@ Sur Kubernetes, `--chart` accepte un nom de chart résolu via `--chart-repo`, un
 
 Le programme d’installation fonctionne également depuis un miroir : hébergez les artefacts de version et `install.sh` sur votre propre miroir et indiquez-le avec `CLICKLINK_MIRROR_URL`.
 
-<div id="manual-download-and-verification">
-  ### Téléchargement et vérification manuels
-</div>
+### Téléchargement et vérification manuels {#manual-download-and-verification}
 
 Si vous préférez ne pas télécharger le programme d’installation via un pipe, récupérez et vérifiez vous-même la version. Le bloc détecte votre plateforme et votre architecture ; exécutez-le tel quel sur macOS ou Linux, amd64 ou arm64 :
 
@@ -207,9 +202,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 Sur une VM, extrayez l’archive tar et exécutez `sudo ./install.sh` depuis le répertoire extrait ; en plus de ses artefacts de version, cette commande effectue la même installation sur l’hôte que `--host`.
 
-<div id="if-something-fails">
-  ## En cas d’échec
-</div>
+## En cas d’échec {#if-something-fails}
 
 Relancez la même commande. `init` est idempotent : les réexécutions aboutissent au même état, conservent votre config existante et vos fichiers intermédiaires, et ignorent les tâches déjà terminées. Lorsqu’une étape échoue en cours d’exécution, la CLI affiche les commandes de récupération exactes correspondant à votre situation, que vous pouvez répéter sans risque.
 

@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 Permet d&#39;exécuter des requêtes `SELECT` et `INSERT` sur des données stockées sur un serveur PostgreSQL distant.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]} [, SETTINGS name=value, ...])
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument      | Description                                                                                                                                           |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,9 +33,7 @@ Les arguments peuvent également être transmis à l&#39;aide de [collections no
 
 Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être fournis sous forme de clés de collection nommée ou d’arguments clé-valeur ajoutés à la fin : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full` ; s’il n’est pas défini, la valeur par défaut `prefer` de `libpq` s’applique), ainsi que les certificats et la clé, sous l’une de deux formes. `sslrootcert` (certificat d’AC ou valeur spéciale `system`), `sslcert` (certificat client) et `sslkey` (clé privée du client) sont des chemins vers des fichiers locaux au serveur et ne peuvent être spécifiés que dans une collection nommée définie dans le fichier de configuration du serveur. `sslrootcert_pem`, `sslcert_pem` et `sslkey_pem` acceptent à la place le contenu littéral du fichier correspondant — par exemple, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — et sont masqués dans les journaux et les requêtes `SHOW`, comme un mot de passe.
 
-<div id="returned-value">
-  ## Valeur renvoyée
-</div>
+## Valeur renvoyée {#returned-value}
 
 Un objet de type table avec les mêmes colonnes que la table PostgreSQL d&#39;origine.
 
@@ -47,9 +41,7 @@ Un objet de type table avec les mêmes colonnes que la table PostgreSQL d&#39;or
   Dans la requête `INSERT`, pour distinguer la fonction de table `postgresql(...)` d&#39;un nom de table accompagné d&#39;une liste de noms de colonnes, vous devez utiliser les mots-clés `FUNCTION` ou `TABLE FUNCTION`. Voir les exemples ci-dessous.
 </Note>
 
-<div id="settings">
-  ## Paramètres
-</div>
+## Paramètres {#settings}
 
 Le pool de connexions utilisé par la fonction de table `postgresql` (ainsi que par le moteur de table [`PostgreSQL`](/fr/reference/engines/table-engines/integrations/postgresql)) peut être configuré à l’aide d’une clause `SETTINGS` en fin d’instruction. Lorsqu’un paramètre n’est pas spécifié, il prend par défaut la valeur du paramètre `postgresql_*` correspondant au niveau de la requête. Consultez la section [Paramètres](/fr/reference/engines/table-engines/integrations/postgresql#settings) du moteur de table pour obtenir la liste complète des paramètres `postgresql_connection_pool_*` et `postgresql_connection_attempt_timeout`, ainsi que leurs valeurs par défaut.
 
@@ -59,9 +51,7 @@ Exemple :
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password', SETTINGS postgresql_connection_pool_size = 32);
 ```
 
-<div id="implementation-details">
-  ## Détails d’implémentation
-</div>
+## Détails d’implémentation {#implementation-details}
 
 Les requêtes `SELECT` côté PostgreSQL s’exécutent sous la forme de `COPY (SELECT ...) TO STDOUT` à l’intérieur d’une transaction PostgreSQL en lecture seule, avec un commit après chaque requête `SELECT`.
 
@@ -69,9 +59,7 @@ Les clauses `WHERE` simples, telles que `=`, `!=`, `>`, `>=`, `<`, `<=` et `IN`,
 
 Toutes les jointures, agrégations, opérations de tri, conditions `IN [ array ]` et la contrainte d’échantillonnage `LIMIT` sont exécutées dans ClickHouse, uniquement une fois la requête PostgreSQL terminée.
 
-<div id="passing-a-query">
-  ## Passer une requête au lieu d’un nom de table
-</div>
+## Passer une requête au lieu d’un nom de table {#passing-a-query}
 
 Au lieu d’un nom de table, le troisième argument peut être une requête `SELECT` transmise telle quelle à PostgreSQL. La structure de la table résultante est inférée à partir du résultat de la requête. La requête peut être écrite soit comme une sous-requête, soit encapsulée dans la fonction `query` :
 
@@ -80,12 +68,12 @@ SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 
 SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-Cela est utile pour déléguer à PostgreSQL les jointures, les agrégations ou tout autre traitement. Une telle table est en lecture seule : les requêtes `INSERT` n’y sont pas autorisées. La même syntaxe est prise en charge par le moteur de table [`PostgreSQL`](/fr/reference/engines/table-engines/integrations/postgresql).
+Cela est utile pour déléguer à PostgreSQL les jointures, les agrégations ou tout autre traitement. Une telle table est en lecture seule : les requêtes `INSERT` n’y sont pas autorisées. La même syntaxe est prise en charge par le moteur de table [`PostgreSQL`](/fr/reference/engines/table-engines/integrations/postgresql).
 
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse puis re-sérialisée dans le dialecte PostgreSQL (quotage des identifiants PostgreSQL et échappement des littéraux de chaîne) avant d’être envoyée au serveur. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe spécifique à PostgreSQL que ClickHouse n’analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à PostgreSQL.
 
-  Toute clause externe `WHERE`, `LIMIT`, agrégation, etc. de la requête ClickHouse englobante n’est **pas** déléguée à la requête transmise — elle est appliquée dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis PostgreSQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être délégué est rejeté avec une exception au lieu d’être appliqué localement.
+  Toute clause externe `WHERE`, `LIMIT`, agrégation, etc. de la requête ClickHouse englobante n’est **pas** déléguée à la requête transmise — elle est appliquée dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis PostgreSQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe portant sur les colonnes de la fonction de table est rejeté avec une exception au lieu d’être appliqué localement, car il ne peut pas être injecté dans la requête transmise. La vérification couvre le prédicat `WHERE` de premier niveau ainsi que chaque conjonction d’un `AND` de premier niveau. Un `PREWHERE` sur les colonnes de cette table ne relève pas de ce paramètre : ce moteur de table ne prend pas en charge `PREWHERE`, et une telle requête est rejetée avec `ILLEGAL_PREWHERE` indépendamment du paramètre. Avec l’analyzer (comportement par défaut), la vérification n’a lieu que là où un filtre pourrait effectivement être délégué : lorsque cette table est la seule table de la requête, de part et d’autre d’un `INNER JOIN`, ou du côté préservé d’une jointure externe (le côté gauche d’un `LEFT JOIN`, le côté droit d’un `RIGHT JOIN`). Du côté non préservé d’un `LEFT`/`RIGHT JOIN` et de part et d’autre d’un `FULL JOIN`, rien n’est délégué et rien n’est vérifié : un filtre sur les colonnes de cette table est donc appliqué localement après la jointure, même en mode strict. Là où la vérification s’applique, un prédicat qui référence d’autres tables jointes dans la requête englobante n’est pas délégué et est exclu de la vérification, qu’il référence uniquement le côté joint ou qu’il le mélange avec cette table dans une même expression non-`AND` (par exemple un `OR`) ; un tel prédicat conserve son point d’évaluation habituel dans ClickHouse (`WHERE` après la jointure, `PREWHERE` avant) et n’est pas rejeté. Avec l’ancien analyzer (`enable_analyzer = 0`), ce cadrage ne s’applique pas : l’intégralité du filtre externe est vérifiée lorsque cette table est la première table de l’arbre de jointure, y compris un prédicat portant sur le côté joint, et une table jointe à droite n’est pas vérifiée.
 </Note>
 
 Les requêtes `INSERT` côté PostgreSQL s’exécutent sous la forme de `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` à l’intérieur d’une transaction PostgreSQL avec commit automatique après chaque instruction `INSERT`.
@@ -93,10 +81,10 @@ Les requêtes `INSERT` côté PostgreSQL s’exécutent sous la forme de `COPY "
 Les types Array de PostgreSQL sont convertis en tableaux ClickHouse.
 
 <Note>
-  Attention : dans PostgreSQL, une colonne de type tableau comme Integer[] peut contenir des tableaux de dimensions différentes selon les lignes, mais dans ClickHouse, seuls des tableaux multidimensionnels de même dimension sont autorisés dans toutes les lignes.
+  Attention : dans PostgreSQL, une colonne de type tableau comme Integer[] peut contenir des tableaux de dimensions différentes selon les lignes, mais dans ClickHouse, seuls des tableaux multidimensionnels de même dimension sont autorisés dans toutes les lignes.
 </Note>
 
-Prend en charge plusieurs répliques, qui doivent être séparées par `|`. Par exemple :
+Prend en charge plusieurs répliques, qui doivent être séparées par `|`. Par exemple :
 
 ```sql
 SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
@@ -110,9 +98,7 @@ SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database'
 
 Prend en charge la priorité des répliques pour la source de dictionnaire PostgreSQL. Plus le nombre dans la map est élevé, plus la priorité est faible. La priorité la plus élevée est `0`.
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Table dans PostgreSQL :
 
@@ -190,16 +176,12 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-<div id="related">
-  ## Voir aussi
-</div>
+## Voir aussi {#related}
 
 * [Le moteur de table PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql)
 * [Utiliser PostgreSQL comme source pour un dictionnaire](/fr/reference/statements/create/dictionary/sources/postgresql)
 
-<div id="replicating-or-migrating-postgres-data-with-peerdb">
-  ### Répliquer ou migrer des données Postgres avec PeerDB
-</div>
+### Répliquer ou migrer des données Postgres avec PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
 
 > En plus des fonctions de table, vous pouvez également utiliser [PeerDB](https://docs.peerdb.io/introduction) de ClickHouse pour mettre en place un pipeline de données continu de Postgres vers ClickHouse. PeerDB est un outil spécialement conçu pour répliquer des données de Postgres vers ClickHouse à l’aide de la capture de données modifiées (CDC).
 

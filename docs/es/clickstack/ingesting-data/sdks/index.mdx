@@ -4,8 +4,7 @@ description: 'SDKs de lenguaje para ClickStack - The ClickHouse Observability St
 title: 'SDKs de lenguaje'
 sidebarTitle: 'Resumen general'
 doc_type: 'guide'
-keywords: ['SDKs de ClickStack', 'SDKs de lenguaje de ClickStack', 'SDKs de OpenTelemetry para ClickStack', 'SDKs de instrumentación de aplicaciones
-', 'SDKs de recopilación de telemetría']
+keywords: ['SDKs de ClickStack', 'SDKs de lenguaje de ClickStack', 'SDKs de OpenTelemetry para ClickStack', 'SDKs de instrumentación de aplicaciones', 'SDKs de recopilación de telemetría']
 ---
 
 Los datos suelen enviarse a ClickStack a través del **OpenTelemetry Collector (OTel)**, ya sea directamente desde los SDKs de lenguaje o mediante un OpenTelemetry Collector intermedio que actúa como agente; por ejemplo, recopilando métricas y logs de infraestructura.
@@ -14,17 +13,13 @@ Los SDKs de lenguaje se encargan de recopilar telemetría desde dentro de su apl
 
 En los entornos basados en navegador, los SDKs también pueden encargarse de recopilar **datos de sesión**, incluidos eventos de la UI, clics y navegación, lo que permite reproducir las sesiones de los usuarios.
 
-<div id="how-it-works">
-  ## Cómo funciona
-</div>
+## Cómo funciona {#how-it-works}
 
 1. Tu aplicación usa un SDK de ClickStack (p. ej., Node.js, Python, Go). Estos SDKs se basan en los SDKs de OpenTelemetry, con funciones adicionales y mejoras de usabilidad.
 2. El SDK recopila y exporta trazas y logs mediante OTLP (HTTP o gRPC).
 3. El OpenTelemetry collector recibe la telemetría y la escribe en ClickHouse a través de los exportadores configurados.
 
-<div id="supported-languages">
-  ## Idiomas compatibles
-</div>
+## Idiomas compatibles {#supported-languages}
 
 <Info>
   **Compatibilidad con OpenTelemetry**
@@ -49,9 +44,7 @@ En los entornos basados en navegador, los SDKs también pueden encargarse de rec
 | React Native | Aplicaciones móviles de React Native                                       | [Documentación](/es/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Aplicaciones de Ruby on Rails y servicios web                              | [Documentación](/es/clickstack/ingesting-data/sdks/ruby)         |
 
-<div id="securing-api-key">
-  ## Protección mediante API key
-</div>
+## Protección mediante API key {#securing-api-key}
 
 <Info>
   **No es necesario para Managed ClickStack**
@@ -70,12 +63,10 @@ Esta API key la genera la UI de ClickStack (HyperDX) y está disponible en la ap
 Para la mayoría de los [SDKs de lenguaje](/es/clickstack/ingesting-data/sdks/index) y las bibliotecas de telemetría compatibles con OpenTelemetry, puedes simplemente configurar la variable de entorno `OTEL_EXPORTER_OTLP_ENDPOINT` en tu aplicación o especificarla durante la inicialización del SDK:
 
 ```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-<div id="kubernetes-integration">
-  ## Integración con Kubernetes
-</div>
+## Integración con Kubernetes {#kubernetes-integration}
 
 Todos los SDKs admiten la correlación automática con metadatos de Kubernetes (nombre del pod, espacio de nombres, etc.) cuando se ejecutan en un entorno de Kubernetes. Esto permite:
 

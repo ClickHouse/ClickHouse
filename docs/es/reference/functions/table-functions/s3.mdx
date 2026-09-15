@@ -20,9 +20,7 @@ Si tiene varias réplicas en su clúster, puede usar en su lugar la [función s3
 
 Al usar la `función de tabla S3` con [`INSERT INTO...SELECT`](/es/reference/statements/insert-into#inserting-the-results-of-select), los datos se leen y se insertan en streaming. Solo unos pocos bloques de datos permanecen en memoria mientras los bloques se leen continuamente desde S3 y se envían a la tabla de destino.
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -49,7 +47,7 @@ La función de tabla `s3` admite los siguientes parámetros simples:
 | `session_token`                       | Token de sesión que se usará con las claves indicadas. Opcional cuando se pasan claves.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `format`                              | El [formato](/es/reference/formats/index) del archivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `structure`                           | Estructura de la tabla. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `compression_method`                  | El parámetro es opcional. Valores admitidos: `none`, `gzip` o `gz`, `brotli` o `br`, `xz` o `LZMA`, `zstd` o `zst`. De forma predeterminada, el método de compresión se detecta automáticamente a partir de la extensión del archivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `compression_method`                  | El parámetro es opcional. Valores admitidos: `none`, `gzip` o `gz`, `deflate`, `brotli` o `br`, `xz` o `LZMA`, `zstd` o `zst`, `lz4`, `bz2`, `snappy`. De forma predeterminada, el método de compresión se detecta automáticamente a partir de la extensión del archivo. Para `snappy`, el formato de transmisión se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).                                                                                                                                                                                                                              |
 | `headers`                             | El parámetro es opcional. Permite pasar encabezados en la solicitud a S3. Deben pasarse en el formato `headers(key=value)`, por ejemplo, `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `partition_strategy`                  | El parámetro es opcional. Valores admitidos: `wildcard` o `hive`. `wildcard` requiere `{_partition_id}` en la ruta, que se reemplaza por la clave de partición. `hive` no permite comodines, asume que la ruta es la raíz de la tabla y genera directorios particionados al estilo Hive con Snowflake IDs como nombres de archivo y el formato de archivo como extensión. Sin una estrategia explícita, una ruta con `{_partition_id}` usa `wildcard`. Una ruta con otro glob no usa ninguna estrategia de partición e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de partición. |
 | `partition_columns_in_data_file`      | El parámetro es opcional. Solo se usa con la estrategia de partición `hive`. Indica a ClickHouse si debe esperar que las columnas de partición se escriban en el archivo de datos. El valor predeterminado es `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -59,7 +57,7 @@ La función de tabla `s3` admite los siguientes parámetros simples:
 <Info>
   **GCS**
 
-  La URL de GCS tiene este formato, ya que el endpoint de la API XML de Google es diferente del de la API JSON:
+  La URL de GCS tiene el siguiente formato, ya que el endpoint de la API XML de Google es diferente del de la API JSON:
 
   ```text
     https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
@@ -77,15 +75,11 @@ Los argumentos también se pueden pasar mediante [named collections](/es/concept
 | `no_sign_request`             | está deshabilitado de forma predeterminada.                                                                                                                                                                                                                        |
 | `expiration_window_seconds`   | el valor predeterminado es 120.                                                                                                                                                                                                                                    |
 
-<div id="returned-value">
-  ## Valor devuelto
-</div>
+## Valor devuelto {#returned-value}
 
 Una tabla con la estructura especificada para leer o escribir datos en el archivo indicado.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 Seleccionar las primeras 5 filas de la tabla del archivo S3 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv`:
 
@@ -140,20 +134,18 @@ LIMIT 5;
   ```
 </Note>
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Supongamos que tenemos varios archivos con los siguientes URIs en S3:
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 Cuenta el número de filas en archivos cuyos nombres terminan con números del 1 al 3:
 
@@ -212,27 +204,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-El glob ** puede utilizarse para el recorrido recursivo de directorios. Considere el siguiente ejemplo: recuperará todos los archivos del directorio `my-test-bucket-768` de forma recursiva:
+El glob `**` puede utilizarse para el recorrido recursivo de directorios. La siguiente consulta lee todos los archivos llamados `some_file_1.csv` dentro de `my-test-bucket-768`:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-Lo siguiente obtiene datos de todos los archivos `test-data.csv.gz` de cualquier carpeta dentro del directorio `my-test-bucket` de forma recursiva:
+Las llaves se pueden combinar con `**` para buscar varios nombres de archivo de forma recursiva:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-Nota. Es posible especificar mapeadores de URL personalizados en el archivo de configuración del servidor. Ejemplo:
+El mismo patrón recursivo también funciona con una URL `s3://`:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-La URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` se reemplazaría por `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
-
-Se puede añadir un mapeador personalizado en `config.xml`:
+Puede añadir un mapeador de URL personalizado en `config.xml`:
 
 ```xml
 <url_scheme_mappers>
@@ -259,13 +249,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-<div id="partitioned-write">
-  ## Escritura particionada
-</div>
+## Escritura particionada {#partitioned-write}
 
-<div id="partition-strategy">
-  ### Estrategia de partición
-</div>
+### Estrategia de partición {#partition-strategy}
 
 Compatible solo con consultas `INSERT`.
 
@@ -311,9 +297,7 @@ INSERT INTO TABLE FUNCTION
 
 Como resultado, los datos se escriben en tres archivos en distintos buckets: `my_bucket_1/file.csv`, `my_bucket_10/file.csv` y `my_bucket_20/file.csv`.
 
-<div id="accessing-public-buckets">
-  ## Acceso a buckets públicos
-</div>
+## Acceso a buckets públicos {#accessing-public-buckets}
 
 ClickHouse intenta obtener credenciales de muchos tipos de fuentes.
 A veces, esto puede causar problemas al acceder a algunos buckets públicos, lo que hace que el cliente devuelva el código de error `403`.
@@ -329,9 +313,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-<div id="using-s3-credentials-clickhouse-cloud">
-  ## Uso de credenciales de S3 (ClickHouse Cloud)
-</div>
+## Uso de credenciales de S3 (ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
 
 Para los buckets que no son públicos, los usuarios pueden proporcionar `aws_access_key_id` y `aws_secret_access_key` a la función. Por ejemplo:
 
@@ -357,9 +339,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 Puede encontrar más ejemplos [aquí](/es/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)
 
-<div id="working-with-archives">
-  ## Trabajo con archivos comprimidos
-</div>
+## Trabajo con archivos comprimidos {#working-with-archives}
 
 Supongamos que tenemos varios archivos comprimidos con las siguientes URI en S3:
 
@@ -385,24 +365,18 @@ FROM s3(
   Aunque se puede acceder a los archivos ZIP y TAR desde cualquier ubicación de almacenamiento compatible, los archivos 7Z solo pueden leerse desde el sistema de archivos local donde está instalado ClickHouse.
 </Note>
 
-<div id="inserting-data">
-  ## Inserción de datos
-</div>
+## Inserción de datos {#inserting-data}
 
 Tenga en cuenta que las filas solo se pueden insertar en archivos nuevos. No hay procesos de fusión ni operaciones de división de archivos. Una vez escrito un archivo, las inserciones posteriores fallarán. Consulte más detalles [aquí](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="virtual-columns">
-  ## Columnas virtuales
-</div>
+## Columnas virtuales {#virtual-columns}
 
 * `_path` — Ruta al archivo. Tipo: `LowCardinality(String)`. En caso de archivo comprimido, muestra la ruta con el formato: `"{path_to_archive}::{path_to_file_inside_archive}"`
 * `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`. En caso de archivo comprimido, muestra el nombre del archivo dentro del archivo comprimido.
 * `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño del archivo, el valor es `NULL`. En caso de archivo comprimido, muestra el tamaño sin comprimir del archivo dentro del archivo comprimido.
 * `_time` — Hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
 
-<div id="hive-style-partitioning">
-  ## configuración use_hive_partitioning
-</div>
+## configuración use_hive_partitioning {#hive-style-partitioning}
 
 Esta es una indicación para que ClickHouse interprete archivos particionados con estilo Hive durante la lectura. No tiene efecto en la escritura. Para que las lecturas y escrituras sean simétricas, use el argumento `partition_strategy`.
 
@@ -414,9 +388,7 @@ Cuando la configuración `use_hive_partitioning` se establece en 1, ClickHouse d
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="accessing-requester-pays-buckets">
-  ## Acceso a buckets con pago por solicitante
-</div>
+## Acceso a buckets con pago por solicitante {#accessing-requester-pays-buckets}
 
 Para acceder a un bucket con pago por solicitante, se debe enviar el encabezado `x-amz-request-payer = requester` en cualquier solicitud. Esto se logra pasando el parámetro `headers('x-amz-request-payer' = 'requester')` a la función s3. Por ejemplo:
 
@@ -434,9 +406,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-<div id="resolving-relative-urls">
-  ## Resolución de URL relativas
-</div>
+## Resolución de URL relativas {#resolving-relative-urls}
 
 La configuración [s3&#95;base](/es/reference/settings/session-settings/s3#s3_base) permite pasar una URL relativa a la función `s3`. Cuando se establece `s3_base` y el argumento de la función no incluye un esquema, se resuelve con respecto a la URL base de acuerdo con la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), siguiendo las mismas reglas que la configuración [url&#95;base](/es/reference/settings/session-settings/url#url_base) de la función [url](/es/reference/functions/table-functions/url#resolving-relative-urls). Las URL absolutas se pasan sin modificar.
 
@@ -449,18 +419,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-<div id="storage-settings">
-  ## Configuración de almacenamiento
-</div>
+## Configuración de almacenamiento {#storage-settings}
 
 * [s3&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings/s3#s3_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Está deshabilitado de forma predeterminada.
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato tiene un sufijo. Está deshabilitado de forma predeterminada.
 * [s3&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings/s3#s3_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Está habilitado de forma predeterminada.
 * [s3&#95;base](/es/reference/settings/session-settings/s3#s3_base) - URL base para resolver las URL relativas pasadas a la función `s3`. Vacía (deshabilitada) de forma predeterminada.
 
-<div id="nested-avro-schemas">
-  ## Esquemas Avro anidados
-</div>
+## Esquemas Avro anidados {#nested-avro-schemas}
 
 Al leer archivos Avro que contienen **registros anidados** cuya estructura varía entre archivos (por ejemplo, algunos archivos tienen un campo adicional dentro de un objeto anidado), ClickHouse puede devolver un error como este:
 
@@ -490,9 +456,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-<div id="related">
-  ## Relacionado
-</div>
+## Relacionado {#related}
 
 * [S3 engine](/es/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

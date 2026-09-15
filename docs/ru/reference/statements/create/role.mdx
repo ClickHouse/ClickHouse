@@ -18,9 +18,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
-<div id="managing-roles">
-  ## Управление ролями
-</div>
+`CREATE ROLE` требует привилегии [CREATE ROLE](/ru/reference/statements/grant#access-management). `OR REPLACE` удаляет существующую роль с тем же именем вместе с выданными ей привилегиями, поэтому дополнительно требуется привилегия [DROP ROLE](/ru/reference/statements/grant#access-management). Привилегия `DROP ROLE` требуется для каждого имени, указанного в операторе, независимо от того, существует ли уже такая роль, поэтому этот оператор нельзя использовать, чтобы узнать, какие роли существуют.
+
+## Управление ролями {#managing-roles}
 
 Пользователю можно назначить несколько ролей. Пользователи могут применять назначенные им роли в любых комбинациях с помощью оператора [SET ROLE](/ru/reference/statements/set-role). Итоговый набор привилегий представляет собой объединение всех привилегий всех применённых ролей. Если привилегии предоставлены пользователю напрямую, они также объединяются с привилегиями, предоставленными через роли.
 
@@ -30,9 +30,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 Чтобы удалить роль, используйте оператор [DROP ROLE](/ru/reference/statements/drop#drop-role). Удалённая роль автоматически отзывается у всех пользователей и ролей, которым она была назначена.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 ```sql
 CREATE ROLE accountant;

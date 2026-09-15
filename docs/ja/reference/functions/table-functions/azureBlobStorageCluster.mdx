@@ -11,17 +11,13 @@ doc_type: 'reference'
 指定されたクラスター内の多数のノードを使って、[Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) のファイルを並列に処理できます。イニシエーターでは、クラスター内のすべてのノードへの接続を確立し、S3 ファイルパス内のアスタリスクを展開して、各ファイルを動的に割り当てます。ワーカーノードでは、イニシエーターに次に処理するタスクを問い合わせて実行します。これを、すべてのタスクが完了するまで繰り返します。
 このテーブル関数は、[s3Cluster function](/ja/reference/functions/table-functions/s3Cluster) に似ています。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 | 引数                  | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -32,18 +28,14 @@ azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, con
 | `account_name`      | `storage_account_url` を使用する場合は、ここでアカウント名を指定できます                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `account_key`       | `storage_account_url` を使用する場合は、ここでアカウントキーを指定できます                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `format`            | ファイルの[フォーマット](/ja/reference/formats/index)です。                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `compression`       | サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。デフォルトでは、ファイル拡張子に基づいて圧縮を自動判定します (`auto` を設定した場合と同じです) 。                                                                                                                                                                                                                                                                                                                            |
+| `compression`       | サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、ファイル拡張子に基づいて圧縮を自動判定します (`auto` を設定した場合と同じです) 。`snappy` では、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定で選択されます (デフォルトは `basic`) 。                                                                                                                                                                |
 | `structure`         | テーブルの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                                                                                                                                                                                                   |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定されたファイル内のデータを読み書きするための、指定された構造を持つテーブル。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 [AzureBlobStorage](/ja/reference/engines/table-engines/integrations/azureBlobStorage) テーブルエンジンと同様に、ローカルで Azure Storage を開発する際には Azurite エミュレーターを使用できます。詳細は[こちら](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage)を参照してください。以下では、Azurite がホスト名 `azurite1` で利用可能であると仮定します。
 
@@ -56,15 +48,11 @@ SELECT count(*) FROM azureBlobStorageCluster(
         'auto', 'key UInt64')
 ```
 
-<div id="using-shared-access-signatures-sas-sas-tokens">
-  ## Shared Access Signatures (SAS) の使用
-</div>
+## Shared Access Signatures (SAS) の使用 {#using-shared-access-signatures-sas-sas-tokens}
 
 例については、[azureBlobStorage](/ja/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens)を参照してください。
 
-<div id="related">
-  ## 関連項目
-</div>
+## 関連項目 {#related}
 
 * [AzureBlobStorage エンジン](/ja/reference/engines/table-engines/integrations/azureBlobStorage)
 * [azureBlobStorage テーブル関数](/ja/reference/functions/table-functions/azureBlobStorage)

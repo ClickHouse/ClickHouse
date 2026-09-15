@@ -13,10 +13,6 @@ import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/Enterpris
 
 import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Autenticação JWT com provedor de identidade personalizado" />
@@ -30,7 +26,7 @@ O ClickHouse Cloud permite autenticar conexões com um serviço usando JSON Web 
 Você pode configurar esses provedores JWKS para cada serviço em **Settings → Security** no Cloud Console do ClickHouse.
 
 <div id="before-you-begin">
-  ## Antes de começar
+  ## Antes de começar {#before-you-begin}
 </div>
 
 Para configurar provedores JWT para um serviço, você precisa de:
@@ -44,9 +40,7 @@ Para configurar provedores JWT para um serviço, você precisa de:
   Provedores baseados em JWKS aceitam chaves **RSA** e, a partir da versão 26.8, chaves **EC** nas curvas P-256, P-384 e P-521. Um documento JWKS pode conter outros tipos de chave, mas deve haver pelo menos uma chave utilizável.
 </Note>
 
-<div id="how-it-works">
-  ## Como funciona
-</div>
+## Como funciona {#how-it-works}
 
 O cliente (seu provedor de identidade ou aplicação) gera um JWT e o assina com sua **chave privada**. O token deve seguir o [formato de token](/pt-BR/concepts/features/security/external-authenticators/jwt#token-claims) esperado. Em seguida, o ClickHouse o verifica usando as chaves **públicas** publicadas no URL do seu JWKS:
 
@@ -57,7 +51,7 @@ O cliente (seu provedor de identidade ou aplicação) gera um JWT e o assina com
 O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um provedor. Assim, um URL configurado incorretamente ou inacessível é rejeitado imediatamente.
 
 <div id="add-a-jwt-provider">
-  ## Adicionar um provedor JWT
+  ## Adicionar um provedor JWT {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -93,7 +87,7 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
 </Warning>
 
 <div id="limits">
-  ## Limites
+  ## Limites {#limits}
 </div>
 
 * No máximo **cinco** provedores JWT por serviço.
@@ -101,7 +95,7 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
 * A URL JWKS deve ser um endpoint HTTPS público. Endereços privados, internos ou de link local são rejeitados.
 
 <div id="related">
-  ## Conteúdo relacionado
+  ## Conteúdo relacionado {#related}
 </div>
 
 * [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt) — claims de tokens, usuários efêmeros e uso do cliente.

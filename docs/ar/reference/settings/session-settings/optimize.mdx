@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم إنشاؤها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_aggregators_of_group_by_keys">
-  ## optimize_aggregators_of_group_by_keys
-</div>
+## optimize_aggregators_of_group_by_keys {#optimize_aggregators_of_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 يزيل دوال التجميع min/max/any/anyLast لمفاتيح GROUP BY في قسم SELECT
 
-<div id="optimize_append_index">
-  ## optimize_append_index
-</div>
+## optimize_append_index {#optimize_append_index}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,17 +29,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * true, false
 
-<div id="optimize_arithmetic_operations_in_aggregate_functions">
-  ## optimize_arithmetic_operations_in_aggregate_functions
-</div>
+## optimize_arithmetic_operations_in_aggregate_functions {#optimize_arithmetic_operations_in_aggregate_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 نقل العمليات الحسابية خارج دوال التجميع
 
-<div id="optimize_const_name_size">
-  ## optimize_const_name_size
-</div>
+## optimize_const_name_size {#optimize_const_name_size}
 
 <SettingsInfoBlock type="Int64" default_value="256" />
 
@@ -57,9 +49,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — دائمًا،
 * عدد صحيح سالب - أبدًا.
 
-<div id="optimize_count_from_files">
-  ## optimize_count_from_files
-</div>
+## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,9 +60,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — التحسين معطّل.
 * 1 — التحسين مُمكّن.
 
-<div id="optimize_dictget_tuple_element">
-  ## optimize_dictget_tuple_element
-</div>
+## optimize_dictget_tuple_element {#optimize_dictget_tuple_element}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,17 +68,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 أعِد كتابة `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` إلى `dictGet('dict', 'b', key)` لتجنّب جلب سمات القاموس غير الضرورية. يدعم الوصول الموضعي (`.1`, `.2`, ...) والمُسمّى (`.b`)، ويَنطبق أيضًا على `dictGetOrDefault` عندما تكون وسيطة القيمة الافتراضية Tuple ثابتة أو `tuple(...)` مكوّنة من ثوابت.
 
-<div id="optimize_distinct_in_order">
-  ## optimize_distinct_in_order
-</div>
+## optimize_distinct_in_order {#optimize_distinct_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 فعِّل تحسين DISTINCT إذا كانت بعض الأعمدة فيه تُشكّل بادئة للفرز. على سبيل المثال، بادئة مفتاح الفرز في MergeTree أو في عبارة ORDER BY
 
-<div id="optimize_distributed_group_by_sharding_key">
-  ## optimize_distributed_group_by_sharding_key
-</div>
+## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -126,9 +110,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
   في الوقت الحالي، يتطلب هذا الخيار `optimize_skip_unused_shards` (والسبب هو أنه قد يُفعَّل افتراضيًا في المستقبل، ولن يعمل بشكل صحيح إلا إذا أُدرجت البيانات عبر جدول Distributed، أي إذا كانت البيانات موزعة وفقًا لـ `sharding_key`).
 </Note>
 
-<div id="optimize_dry_run_check_part">
-  ## optimize_dry_run_check_part
-</div>
+## optimize_dry_run_check_part {#optimize_dry_run_check_part}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -136,9 +118,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 عند التفعيل، يتحقق `OPTIMIZE ... DRY RUN` من الجزء المدمج الناتج باستخدام `checkDataPart`. وإذا أخفق التحقق، يُطلَق استثناء.
 
-<div id="optimize_empty_string_comparisons">
-  ## optimize_empty_string_comparisons
-</div>
+## optimize_empty_string_comparisons {#optimize_empty_string_comparisons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -147,9 +127,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 حوِّل تعبيرات مثل `col = ''` أو `'' = col` إلى `empty(col)`، و`col != ''` أو `'' != col` إلى `notEmpty(col)`،
 وذلك فقط عندما يكون `col` من النوع `String` أو `FixedString`.
 
-<div id="optimize_extract_common_expressions">
-  ## optimize_extract_common_expressions
-</div>
+## optimize_extract_common_expressions {#optimize_extract_common_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -160,9 +138,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * الفهارس في تعبيرات التصفية البسيطة
 * تحسين تحويل CROSS JOIN إلى INNER JOIN
 
-<div id="optimize_functions_to_subcolumns">
-  ## optimize_functions_to_subcolumns
-</div>
+## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -186,9 +162,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — التحسين معطّل.
 * 1 — التحسين مُمكَّن.
 
-<div id="optimize_inverse_dictionary_lookup">
-  ## optimize_inverse_dictionary_lookup
-</div>
+## optimize_inverse_dictionary_lookup {#optimize_inverse_dictionary_lookup}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -196,17 +170,28 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تجنّب تكرار البحث العكسي في القاموس من خلال إجراء عمليات بحث أسرع ضمن مجموعة محسوبة مسبقًا من قيم المفاتيح المحتملة.
 
-<div id="optimize_multiif_to_if">
-  ## optimize_multiif_to_if
-</div>
+## optimize_multiif_to_if {#optimize_multiif_to_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 استبدل &#39;multiIf&#39; بـ &#39;if&#39; عندما يحتوي على شرط واحد فقط.
 
-<div id="optimize_normalize_count_variants">
-  ## optimize_normalize_count_variants
-</div>
+## optimize_mutations_with_partition_pruning {#optimize_mutations_with_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لاستبعاد الأقسام تلقائيًا من عمليات التغيير استنادًا إلى عبارة WHERE"}]}]} />
+
+عند تفعيله، يكتشف ClickHouse تلقائيًا شروط مفتاح التقسيم في عبارة WHERE ضمن عمليات التغيير `ALTER TABLE UPDATE`/`DELETE` وعبارات `UPDATE`/`DELETE` خفيفة الوزن في جداول عائلة `ReplicatedMergeTree`، ولا يعالج إلا الأقسام المتأثرة بدلًا من جميع الأقسام.
+
+ينطبق هذا الاستبعاد التلقائي حاليًا على الجداول المُكرَّرة فقط. بالنسبة إلى جداول `MergeTree` غير المُكرَّرة، استخدم عبارة `IN PARTITION` صريحة لقصر عملية التغيير على أقسام محددة.
+
+القيم الممكنة:
+
+* 0 — معطّل. ستعالج عمليات التغيير والتحديثات خفيفة الوزن جميع الأقسام.
+* 1 — مفعّل. ستعالج عمليات التغيير والتحديثات خفيفة الوزن الأقسام التي تطابق شرط WHERE فقط.
+
+## optimize_normalize_count_variants {#optimize_normalize_count_variants}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -214,9 +199,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إعادة كتابة الدوال التجميعية المكافئة دلاليًا لـ count() إلى count().
 
-<div id="optimize_on_insert">
-  ## optimize_on_insert
-</div>
+## optimize_on_insert {#optimize_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -272,9 +255,7 @@ SELECT * FROM test2;
 
 لاحظ أن هذا الإعداد يؤثر في سلوك [العرض المادي](/ar/reference/statements/create/view#materialized-view).
 
-<div id="optimize_prewhere_after_pushdown">
-  ## optimize_prewhere_after_pushdown
-</div>
+## optimize_prewhere_after_pushdown {#optimize_prewhere_after_pushdown}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -285,9 +266,7 @@ SELECT * FROM test2;
 `JOIN` وإعادات كتابة الإسقاط). وعند وجود `PREWHERE` حالي مسبقًا، يُدمَج عامل
 التصفية الجديد فيه باستخدام `AND` بدلًا من أن يبقى كخطوة تصفية منفصلة.
 
-<div id="optimize_qbit_distance_function_reads">
-  ## optimize_qbit_distance_function_reads
-</div>
+## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -295,9 +274,7 @@ SELECT * FROM test2;
 
 يستبدل دوال المسافة على نوع البيانات `QBit` بما يكافئها من الدوال التي لا تقرأ من التخزين إلا الأعمدة اللازمة للحساب.
 
-<div id="optimize_read_in_order">
-  ## optimize_read_in_order
-</div>
+## optimize_read_in_order {#optimize_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -312,25 +289,32 @@ SELECT * FROM test2;
 
 * [عبارة ORDER BY](/ar/reference/statements/select/order-by#optimization-of-data-reading)
 
-<div id="optimize_respect_aliases">
-  ## optimize_respect_aliases
-</div>
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لتفعيل تحسين القراءة بالترتيب عند القراءة بترتيب عكسي لمفتاح الفرز مع المُعدِّل `FINAL` من جداول `ReplacingMergeTree`."}]}]} />
+
+يُفعِّل قراءة البيانات بالترتيب العكسي لمفتاح الفرز في استعلامات `SELECT` المستخدِمة للمُعدِّل `FINAL` من جداول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree). ولا يسري مفعوله إلا إذا كان [optimize&#95;read&#95;in&#95;order](/ar/reference/settings/session-settings/optimize#optimize_read_in_order) مُفعَّلًا أيضًا.
+
+القيم الممكنة:
+
+* 0 — القراءة بالترتيب العكسي مع `FINAL` مُعطَّلة.
+* 1 — القراءة بالترتيب العكسي مع `FINAL` مُفعَّلة.
+
+## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 إذا ضُبط هذا الإعداد على true، فستُراعى الأسماء المستعارة في WHERE/GROUP BY/ORDER BY، مما يساعد في استبعاد الأقسام/الفهارس الثانوية/optimize&#95;aggregation&#95;in&#95;order/optimize&#95;read&#95;in&#95;order/optimize&#95;trivial&#95;count
 
-<div id="optimize_sorting_by_input_stream_properties">
-  ## optimize_sorting_by_input_stream_properties
-</div>
+## optimize_sorting_by_input_stream_properties {#optimize_sorting_by_input_stream_properties}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 حسِّن الفرز استنادًا إلى خصائص فرز تدفق الإدخال
 
-<div id="optimize_substitute_columns">
-  ## optimize_substitute_columns
-</div>
+## optimize_substitute_columns {#optimize_substitute_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -340,9 +324,7 @@ SELECT * FROM test2;
 
 * true, false
 
-<div id="optimize_syntax_fuse_functions">
-  ## optimize_syntax_fuse_functions
-</div>
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -376,9 +358,7 @@ SELECT
 FROM default.fuse_tbl AS __table1
 ```
 
-<div id="optimize_throw_if_noop">
-  ## optimize_throw_if_noop
-</div>
+## optimize_throw_if_noop {#optimize_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -391,9 +371,7 @@ FROM default.fuse_tbl AS __table1
 * 1 — تم تمكين رفع استثناء.
 * 0 — تم تعطيل رفع استثناء.
 
-<div id="optimize_time_filter_with_preimage">
-  ## optimize_time_filter_with_preimage
-</div>
+## optimize_time_filter_with_preimage {#optimize_time_filter_with_preimage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -401,9 +379,7 @@ FROM default.fuse_tbl AS __table1
 
 يُحسِّن شروط Date وDateTime عبر تحويل الدوال إلى مقارنات مكافئة من دون تحويلات (على سبيل المثال: `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 
-<div id="optimize_truncate_order_by_after_group_by_keys">
-  ## optimize_truncate_order_by_after_group_by_keys
-</div>
+## optimize_truncate_order_by_after_group_by_keys {#optimize_truncate_order_by_after_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -411,17 +387,13 @@ FROM default.fuse_tbl AS __table1
 
 احذف عناصر ORDER BY الختامية بعد أن تغطي بادئة ORDER BY جميع مفاتيح GROUP BY.
 
-<div id="optimize_uniq_to_count">
-  ## optimize_uniq_to_count
-</div>
+## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 أعِد كتابة uniq وأشكاله (باستثناء uniqUpTo) إلى count إذا تضمّن الاستعلام الفرعي DISTINCT أو بند GROUP BY.
 
-<div id="optimize_using_constraints">
-  ## optimize_using_constraints
-</div>
+## optimize_using_constraints {#optimize_using_constraints}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

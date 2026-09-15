@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 ClickHouse에서 `TRUNCATE` SQL 문은 테이블이나 데이터베이스의 구조는 유지한 채 모든 데이터를 빠르게 제거할 때 사용됩니다.
 
-<div id="truncate-table">
-  ## TRUNCATE TABLE
-</div>
+## TRUNCATE TABLE {#truncate-table}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -32,7 +30,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정을 사용하면 비활성 레플리카가 `TRUNCATE` 쿼리를 실행할 때까지 대기할 시간을 초 단위로 지정할 수 있습니다.
 
 <Note>
-  `alter_sync`가 `2`로 설정되어 있고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
+  `alter_sync`가 `2`로 설정되어 있거나 `ReplicatedMergeTree`에서 `3`으로 설정되어 있고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
 </Note>
 
 다음 테이블 엔진에서는 `TRUNCATE TABLE` 쿼리가 **지원되지 않습니다**:
@@ -43,9 +41,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 * [`Buffer`](/ko/reference/engines/table-engines/special/buffer)
 * [`Null`](/ko/reference/engines/table-engines/special/null)
 
-<div id="truncate-all-tables">
-  ## 모든 테이블을 TRUNCATE
-</div>
+## 모든 테이블을 TRUNCATE {#truncate-all-tables}
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -63,9 +59,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 데이터베이스에 있는 모든 테이블의 모든 데이터를 제거합니다.
 
-<div id="truncate-database">
-  ## TRUNCATE DATABASE
-</div>
+## TRUNCATE DATABASE {#truncate-database}
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

@@ -28,9 +28,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 La cláusula `ON CLUSTER` permite crear usuarios en un clúster; consulte [Distributed DDL](/es/reference/statements/distributed-ddl).
 
-<div id="identification">
-  ## Identificación
-</div>
+`CREATE USER` requiere el privilegio [CREATE USER](/es/reference/statements/grant#access-management). `OR REPLACE` sobrescribe un usuario existente con el mismo nombre —sus métodos de autenticación, sus roles concedidos y su configuración—, por lo que además requiere el privilegio [DROP USER](/es/reference/statements/grant#access-management). El privilegio `DROP USER` es necesario para cada nombre indicado en la sentencia, exista o no ese usuario, de modo que la sentencia no puede utilizarse para averiguar qué usuarios existen.
+
+## Identificación {#identification}
 
 Hay varias formas de identificar a un usuario:
 
@@ -76,9 +76,7 @@ Los requisitos de complejidad de las contraseñas pueden editarse en [config.xml
   * Contener al menos 1 carácter especial
 </Note>
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 1. El siguiente nombre de usuario es `name1` y no requiere contraseña, lo que obviamente no ofrece mucha seguridad:
 
@@ -172,9 +170,7 @@ Notas:
 2. `no_password` no puede coexistir con otros métodos de autenticación por motivos de seguridad. Por lo tanto, solo puede especificar
    `no_password` si es el único método de autenticación en la consulta.
 
-<div id="user-host">
-  ## Host de usuario
-</div>
+## Host de usuario {#user-host}
 
 El host de usuario es el host desde el que se puede establecer una conexión con servidor ClickHouse. El host puede especificarse en la sección `HOST` de la consulta de las siguientes maneras:
 
@@ -195,9 +191,7 @@ Otra forma de especificar el host es usar la sintaxis `@` después del nombre de
   ClickHouse trata `user_name@'address'` como un nombre de usuario completo. Por lo tanto, técnicamente puede crear varios usuarios con el mismo `user_name` y distintas formas después de `@`. Sin embargo, no recomendamos hacerlo.
 </Tip>
 
-<div id="valid-until-clause">
-  ## Cláusula VALID UNTIL
-</div>
+## Cláusula VALID UNTIL {#valid-until-clause}
 
 Permite especificar la fecha de expiración y, opcionalmente, la hora de un método de autenticación. Acepta una cadena como parámetro. Se recomienda usar el formato de fecha y hora `YYYY-MM-DD [hh:mm:ss] [timezone]`, donde `[timezone]` debe ser un desplazamiento numérico como `+09:00` o uno de `UTC`, `GMT`, `Z`, `MSK`, `MSD`; las zonas IANA con nombre, como `Asia/Tokyo`, no se reconocen (consulte la nota a continuación). De forma predeterminada, este parámetro es igual a `'infinity'`. El intervalo de fechas límite aceptado va de `1900-01-01 00:00:00 UTC` a `9999-12-31 09:59:59 UTC` —el último instante que permanece dentro del año 9999 en todas las zonas horarias—, por lo que el instante almacenado nunca se trunca al representarse. Una fecha límite en el pasado significa que las credenciales ya han expirado. Las fechas límite anteriores a `1970-01-01 00:00:01 UTC` solo se aceptan como marcador de «ya expirado»: se canonicalizan al instante expirado mínimo, un segundo después de la época Unix (`1970-01-01 00:00:01 UTC`), por lo que `SHOW CREATE USER` muestra ese instante en lugar de la fecha límite especificada. Las fechas límite a partir de ese instante se almacenan exactamente.
 
@@ -221,9 +215,7 @@ Ejemplos:
   La cadena de fecha y hora se analiza mediante `parseDateTimeBestEffort`, que solo reconoce los tokens de zona horaria `UTC`, `GMT`, `Z`, `MSK`, `MSD` y desplazamientos numéricos como `+09:00` o `-05:00`. Las zonas horarias IANA con nombre, como `Asia/Tokyo` o `Europe/London`, no son compatibles, y un desplazamiento fijo no equivale a una zona IANA en regiones que aplican el horario de verano, por lo que debe calcular el desplazamiento correcto para la fecha específica que está codificando.
 </Note>
 
-<div id="valid-for-clause">
-  ## Cláusula VALID FOR
-</div>
+## Cláusula VALID FOR {#valid-for-clause}
 
 La cláusula `VALID FOR` es una abreviatura práctica de `VALID UNTIL`. En lugar de una fecha y hora absolutas, acepta un [intervalo](/es/reference/data-types/special-data-types/interval), y la fecha límite de expiración se calcula sumando ese intervalo a la hora actual en el momento en que se ejecuta la consulta. El resultado se almacena en formato `VALID UNTIL`, por lo que `SHOW CREATE USER` siempre muestra la fecha límite absoluta resultante. Puede usarse en cualquier lugar donde se pueda usar `VALID UNTIL` y sigue las mismas reglas de ubicación: antes de `IDENTIFIED` (o sin método de autenticación), es una fecha límite a nivel de usuario que se aplica a todos los métodos; después de un método de autenticación, se aplica solo a ese método. La fecha límite se almacena y se aplica con precisión de segundos, por lo que se rechazan los intervalos inferiores a un segundo (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`); la unidad más pequeña aceptada es `SECOND`. Se acepta un intervalo negativo para marcar las credenciales como ya expiradas; si la fecha límite resultante es anterior a `1970-01-01 00:00:01 UTC`, se canonicaliza a ese instante expirado mínimo, que es lo que posteriormente muestra `SHOW CREATE USER`, representado en la zona horaria del servidor o de la sesión, como se describe para [`VALID UNTIL`](#valid-until-clause).
 
@@ -235,9 +227,7 @@ Ejemplos:
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — la fecha límite a nivel de usuario se aplica a ambos métodos.
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — la fecha límite se aplica solo al método `bcrypt_password`; `plaintext_password` nunca expira.
 
-<div id="grants-clause">
-  ## Cláusula GRANTS
-</div>
+## Cláusula GRANTS {#grants-clause}
 
 Permite limitar los derechos de acceso disponibles para una sesión autenticada mediante un método de autenticación concreto. Acepta, entre paréntesis, una lista de privilegios con el mismo formato que la sentencia [GRANT](/es/reference/statements/grant). La cláusula se especifica después de un método de autenticación (después de su cláusula `VALID UNTIL`, si la tiene) y se aplica únicamente a ese método.
 
@@ -266,9 +256,7 @@ Cuando más de un método de autenticación acepta las mismas credenciales efect
 
 Esta combinación solo se comprueba entre los métodos de autenticación verificados localmente por el servidor, por la misma razón por la que la cláusula se rechaza en un método verificado externamente: volver a comprobar la credencial en ese caso requeriría realizar un sondeo adicional no seguro del sistema externo. Por tanto, si la misma credencial también es aceptada por un método verificado externamente (`ldap`, `kerberos`, `http`, `jwt`) para el mismo usuario, el `VALID UNTIL` de ese método no forma parte de la combinación, y una caducidad anterior configurada en él no acorta la sesión obtenida mediante el método verificado localmente.
 
-<div id="grantees-clause">
-  ## Cláusula GRANTEES
-</div>
+## Cláusula GRANTEES {#grantees-clause}
 
 Especifica los usuarios o roles que pueden recibir [privilegios](/es/reference/statements/grant#privileges) de este usuario, siempre que este usuario también tenga concedidos todos los permisos de acceso necesarios con [GRANT OPTION](/es/reference/statements/grant#granting-privilege-syntax). Opciones de la cláusula `GRANTEES`:
 
@@ -279,9 +267,7 @@ Especifica los usuarios o roles que pueden recibir [privilegios](/es/reference/s
 
 Puede excluir cualquier usuario o rol mediante la expresión `EXCEPT`. Por ejemplo, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. Esto significa que, si a `user1` se le han concedido algunos privilegios con `GRANT OPTION`, podrá conceder esos privilegios a cualquiera excepto a `user2`.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples-1}
 
 Cree la cuenta de usuario `mira` con la contraseña `qwerty`:
 
@@ -313,6 +299,18 @@ Cree la cuenta de usuario `john` y permítale conceder sus privilegios al usuari
 
 ```sql
 CREATE USER john GRANTEES jack;
+```
+
+Cree la cuenta de usuario `john` con una base de datos predeterminada:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` deja sin establecer la base de datos predeterminada. Para usar una base de datos llamada `NONE`, escriba su nombre entre backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
 ```
 
 Utilice un parámetro de consulta para crear la cuenta de usuario `john`:

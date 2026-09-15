@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 ClickHouse 支持公共表表达式 ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)) 、通用标量表达式和递归查询。
 
-<div id="common-table-expressions">
-  ## 公共表表达式
-</div>
+## 公共表表达式 {#common-table-expressions}
 
 公共表表达式表示命名子查询。
 在 `SELECT` 查询中，凡是允许使用表表达式的地方，都可以通过名称引用它们。
@@ -23,17 +21,13 @@ ClickHouse 支持公共表表达式 ([CTE](https://en.wikipedia.org/wiki/Hierarc
 
 请注意，CTE 并不保证在所有被调用的位置都产生相同的结果，因为每次使用时都会重新执行该查询。
 
-<div id="common-table-expressions-syntax">
-  ### 语法
-</div>
+### 语法 {#common-table-expressions-syntax}
 
 ```sql
 WITH <identifier> AS [MATERIALIZED] <subquery expression>
 ```
 
-<div id="common-table-expressions-example">
-  ### 示例
-</div>
+### 示例 {#common-table-expressions-example}
 
 以下是子查询被重新执行的一个示例：
 
@@ -55,9 +49,7 @@ WHERE num IN (SELECT num FROM cte_numbers)
 
 然而，由于我们引用了两次 `cte_numbers`，每次都会生成随机数，因此会看到不同的随机结果，例如 `280501, 392454, 261636, 196227` 等等...
 
-<div id="materialized-common-table-expressions">
-  ## 物化公共表表达式
-</div>
+## 物化公共表表达式 {#materialized-common-table-expressions}
 
 默认情况下，ClickHouse 会在每处引用时内联 CTE 的子查询，因此每次引用都会重新执行该子查询。
 添加 `MATERIALIZED` 关键字后，ClickHouse 会将 CTE 子查询**只执行一次**，并将结果存储在临时表中，后续所有引用都从该表读取。
@@ -66,20 +58,17 @@ WHERE num IN (SELECT num FROM cte_numbers)
 <Note>
   物化 CTE 是一项 **Experimental** 功能。
   它要求启用 [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer) 以及设置 `enable_materialized_cte`。
+  如果该设置被禁用，`MATERIALIZED` 关键字将被忽略：CTE 会像普通 CTE 一样在每处引用时被内联，并记录一条警告日志。
 </Note>
 
-<div id="common-table-expressions-syntax">
-  ### 语法
-</div>
+### 语法 {#materialized-common-table-expressions-syntax}
 
 ```sql
 WITH <identifier> AS MATERIALIZED (<subquery>)
 SELECT ...
 ```
 
-<div id="materialized-cte-when-to-use">
-  ### 何时使用
-</div>
+### 何时使用 {#materialized-cte-when-to-use}
 
 在以下情况下，物化 CTE 最有用：
 
@@ -93,9 +82,7 @@ SELECT ...
   如果物化 CTE 只被引用一次，ClickHouse 会自动将其内联回普通子查询，以避免不必要的开销。
 </Tip>
 
-<div id="common-table-expressions-example">
-  ### 示例
-</div>
+### 示例 {#materialized-common-table-expressions-examples}
 
 **示例 1：** 对物化 CTE 执行自连接
 
@@ -177,18 +164,14 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 └─────────┘
 ```
 
-<div id="materialized-cte-restrictions">
-  ### 限制
-</div>
+### 限制 {#materialized-cte-restrictions}
 
-* **需要启用 Experimental 设置**：必须启用设置 `enable_materialized_cte`。
+* **需要启用 Experimental 设置**：必须启用设置 `enable_materialized_cte`。如果该设置被禁用，`MATERIALIZED` 关键字将被忽略：该 CTE 会像普通 CTE 一样在每个引用处内联，并记录一条警告日志。
 * **需要启用 analyzer**：物化 CTE 仅在启用 [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer) (`enable_analyzer = 1`) 后才能使用。
 * **不支持与 `RECURSIVE` 一起使用**：不允许同时使用 `MATERIALIZED` 和 `RECURSIVE` 关键字，否则会引发 `UNSUPPORTED_METHOD` 异常。
 * **禁止使用关联 CTE**：物化 CTE 不能引用外层查询作用域中的列。
 
-<div id="common-scalar-expressions">
-  ## 通用标量表达式
-</div>
+## 通用标量表达式 {#common-scalar-expressions}
 
 ClickHouse 允许你在 `WITH` 子句中将任意标量 expression 声明为别名。
 通用标量表达式可以在查询中的任何位置引用。
@@ -199,17 +182,13 @@ ClickHouse 允许你在 `WITH` 子句中将任意标量 expression 声明为别�
   建议将 CSE 定义为 [lambda function](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (仅在启用 [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer) 时可用) ，并绑定所有用到的标识符，以获得更可预测的表达式标识符解析行为。
 </Note>
 
-<div id="common-table-expressions-syntax">
-  ### 语法
-</div>
+### 语法 {#common-scalar-expressions-syntax}
 
 ```sql
 WITH <expression> AS <identifier>
 ```
 
-<div id="common-table-expressions-example">
-  ### 示例
-</div>
+### 示例 {#common-scalar-expressions-examples}
 
 **示例 1：** 将常量表达式用作&quot;变量&quot;
 
@@ -320,9 +299,7 @@ FROM
 └──────────────────┘
 ```
 
-<div id="recursive-queries">
-  ## 递归查询
-</div>
+## 递归查询 {#recursive-queries}
 
 可选的 `RECURSIVE` 修饰符允许 WITH 查询引用其自身的输出。示例：
 
@@ -399,9 +376,7 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-<div id="search-order">
-  ### 搜索顺序
-</div>
+### 搜索顺序 {#search-order}
 
 为了生成深度优先顺序，我们为结果中的每一行计算一个由已访问行构成的数组：
 
@@ -455,9 +430,7 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-<div id="cycle-detection">
-  ### 循环检测
-</div>
+### 循环检测 {#cycle-detection}
 
 首先创建 graph 表：
 
@@ -540,9 +513,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-<div id="infinite-queries">
-  ### 无限查询
-</div>
+### 无限查询 {#infinite-queries}
 
 只要在外层查询中使用 `LIMIT`，也可以使用无限递归 CTE 查询：
 
@@ -563,9 +534,7 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 └─────────────┘
 ```
 
-<div id="trailing-comma">
-  ## 行尾逗号
-</div>
+## 行尾逗号 {#trailing-comma}
 
 `WITH` 子句中的最后一个元素后可以加逗号：
 

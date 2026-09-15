@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 MySQLエンジンを使用すると、リモートのMySQLサーバーに保存されているデータに対して、`SELECT` クエリや `INSERT` クエリを実行できます。
 
-<div id="creating-a-table">
-  ## テーブルを作成する
-</div>
+## テーブルを作成する {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -58,9 +56,7 @@ SETTINGS
 
 それ以外の条件と `LIMIT` サンプリング制約は、MySQL へのクエリが完了した後にのみ ClickHouse で実行されます。
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 MySQL への暗号化接続の認証情報は、名前付きコレクションのオプション (またはキー・バリュー引数) として渡されます。
 
@@ -86,9 +82,7 @@ MySQL への暗号化接続の認証情報は、名前付きコレクション�
 </named_collections>
 ```
 
-<div id="passing-a-query">
-  ## テーブル名の代わりにクエリを渡す
-</div>
+## テーブル名の代わりにクエリを渡す {#passing-a-query}
 
 テーブル名の代わりに、`table` 引数には MySQL にそのまま渡される `SELECT` クエリを指定できます。テーブルの構造はクエリの結果から推論されます。クエリは、サブクエリとして記述することも、`query` 関数でラップすることもできます。
 
@@ -102,7 +96,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse によって解析され、サーバーに送信される前に MySQL の SQL方言 (Identifier をバッククォートで囲む形式) で再シリアライズされます。したがって、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない MySQL 固有の構文を渡すには、`query('...')` 形式を使用してください。この場合、テキストはそのまま MySQL に送信されます。
 
-  外側の `WHERE`、`LIMIT`、集計など、周囲の ClickHouse クエリの要素は、渡されたクエリには**プッシュダウンされません**。これらは完全なクエリ結果を取得した後に ClickHouse で適用されます。MySQL から読み取るデータを制限するには、フィルタを渡すクエリ内に記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、プッシュダウンできない外側のフィルタはローカルで適用される代わりに、例外として拒否されます。
+  外側の `WHERE`、`LIMIT`、集計など、周囲の ClickHouse クエリの要素は、渡されたクエリには**プッシュダウンされません**。これらは完全なクエリ結果を取得した後に ClickHouse で適用されます。MySQL から読み取るデータを制限するには、フィルタを渡すクエリ内に記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、このテーブルのカラムに対する外側のフィルタは、渡されたクエリ内にプッシュできないため、ローカルで適用される代わりに例外として拒否されます。このチェックは、トップレベルの `WHERE` predicate と、トップレベルの `AND` の各項を対象とします。このテーブルのカラムに対する `PREWHERE` はこの設定の対象ではありません。このテーブルエンジンは `PREWHERE` をサポートしておらず、設定に関係なくそのようなクエリは `ILLEGAL_PREWHERE` で拒否されます。アナライザ (デフォルト) を使用する場合、チェックはフィルタをプッシュダウンできる可能性がある箇所でのみ実行されます。すなわち、このテーブルがクエリ内の唯一のテーブルである場合、`INNER JOIN` のいずれかの側にある場合、または外部結合の保持側 (`LEFT JOIN` の左側、`RIGHT JOIN` の右側) にある場合です。`LEFT`/`RIGHT JOIN` の非保持側および `FULL JOIN` のいずれの側でも、何もプッシュダウンされず、何もチェックされないため、このテーブルのカラムに対するフィルタは厳格モードであっても JOIN の後にローカルで適用されます。チェックが実行される箇所では、周囲のクエリで結合された他のテーブルを参照する predicate はプッシュダウンされず、チェックの対象から除外されます。これは、結合された側のみを参照する場合でも、1 つの非 `AND` 式 (たとえば `OR`) の中でこのテーブルと混在させている場合でも同様です。そのような predicate は通常の ClickHouse における評価タイミング (JOIN 後の `WHERE`、JOIN 前の `PREWHERE`) を維持し、拒否されません。古いアナライザ (`enable_analyzer = 0`) ではこのスコープ設定は適用されません。このテーブルが JOIN ツリーの最初のテーブルである場合は、結合された側の predicate も含めて外側のフィルタ全体がチェックされ、結合された右側のテーブルはチェックされません。
 </Note>
 
 `|` で列挙する必要がある複数のレプリカをサポートしています。例:
@@ -111,9 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 MySQLでテーブルを作成します。
 
@@ -178,15 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-<div id="mysql-settings">
-  ## 設定
-</div>
+## 設定 {#mysql-settings}
 
 既定の設定は接続の再利用すら行わないため、あまり効率的ではありません。これらの設定により、サーバーが 1 秒あたりに実行できるクエリ数を増やせます。
 
-<div id="connection-auto-close">
-  ### `connection_auto_close`
-</div>
+### `connection_auto_close` {#connection-auto-close}
 
 クエリの実行後に接続を自動的に閉じるようにします。つまり、接続の再利用を無効にします。
 
@@ -197,9 +185,7 @@ SELECT * FROM mysql_table
 
 デフォルト値: `1`。
 
-<div id="connection-max-tries">
-  ### `connection_max_tries`
-</div>
+### `connection_max_tries` {#connection-max-tries}
 
 フェイルオーバー対応のプールに対する再試行回数を設定します。
 
@@ -210,9 +196,7 @@ SELECT * FROM mysql_table
 
 デフォルト値: `3`。
 
-<div id="connection-pool-size">
-  ### `connection_pool_size`
-</div>
+### `connection_pool_size` {#connection-pool-size}
 
 接続プールのサイズです (すべての接続が使用中の場合、いずれかの接続が空くまでクエリは待機します) 。
 
@@ -222,9 +206,7 @@ SELECT * FROM mysql_table
 
 デフォルト値: `16`。
 
-<div id="connection-wait-timeout">
-  ### `connection_wait_timeout`
-</div>
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 空き接続を待機する際のタイムアウト (秒単位) です (すでに `connection_pool_size` 個の接続がアクティブな場合) 。0 の場合は待機しません。
 
@@ -234,9 +216,7 @@ SELECT * FROM mysql_table
 
 デフォルト値: `5`。
 
-<div id="connect-timeout">
-  ### `connect_timeout`
-</div>
+### `connect_timeout` {#connect-timeout}
 
 接続タイムアウト (秒単位) 。
 
@@ -246,9 +226,7 @@ SELECT * FROM mysql_table
 
 デフォルト値: `10`。
 
-<div id="read-write-timeout">
-  ### `read_write_timeout`
-</div>
+### `read_write_timeout` {#read-write-timeout}
 
 読み取り/書き込みのタイムアウト (秒) 。
 
@@ -258,9 +236,7 @@ SELECT * FROM mysql_table
 
 デフォルト値: `300`。
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 MySQLプロトコル接続で圧縮を有効にします。
 
@@ -289,9 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [mysql テーブル関数](/ja/reference/functions/table-functions/mysql)
 * [MySQL を Dictionary ソースとして使用する](/ja/reference/statements/create/dictionary/sources/mysql)

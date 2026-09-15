@@ -12,9 +12,7 @@ doc_type: 'reference'
 このエンジンは、Amazon S3、Azure、HDFS、またはローカルに保存された既存の Apache [Paimon](https://paimon.apache.org/) テーブルに対する読み取り専用インテグレーションを提供します。
 スナップショット読み取り、インクリメンタル読み取り、およびこのエンジンが提供する基本的なパーティションプルーニングをサポートしています。
 
-<div id="create-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#create-table}
 
 Paimon テーブルは、あらかじめストレージ内に存在している必要があることに注意してください。このコマンドでは、新しいテーブルを作成するための DDL パラメータは指定できません。
 `Paimon*` テーブルの作成は `allow_experimental_paimon_storage_engine` で制限されており (デフォルトでは無効) 、`CREATE TABLE` を実行する前にこれを有効にしてください。
@@ -35,18 +33,14 @@ CREATE TABLE paimon_table_local
     ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="engine-arguments">
-  ## エンジン引数
-</div>
+## エンジン引数 {#engine-arguments}
 
 引数の説明は、それぞれ `S3`、`AzureBlobStorage`、`HDFS`、`File` エンジンの引数の説明と同じです。
 `format` は、Paimon テーブル内のデータファイルのフォーマットを表します。
 
 エンジンパラメータは、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定できます
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example}
 
 ```sql
 CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -70,9 +64,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhou
 CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="capabilities">
-  ## 機能
-</div>
+## 機能 {#capabilities}
 
 * 最新のテーブルスナップショットからスナップショット読み取りを行います。
 * 有効化されている場合、コミット済みスナップショット ID に基づくインクリメンタル読み取りを行います。
@@ -80,9 +72,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * 設定されている場合、メタデータをバックグラウンドで任意に更新できます。
 * Atomic/Replicated データベースを使用している場合、テーブル UUID が安定するため、Keeper のパスで `{uuid}` マクロを使用できます。
 
-<div id="settings">
-  ## 設定
-</div>
+## 設定 {#settings}
 
 このエンジンは、対応するオブジェクトストレージエンジンと同じ設定を使用し、加えて Paimon 固有の設定もサポートします。
 
@@ -103,20 +93,16 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-  **`use_paimon_metadata_files_cache` のライフサイクル**
-
+<Note title="`use_paimon_metadata_files_cache` のライフサイクル">
   `use_paimon_metadata_files_cache` の適用方法は、Paimon テーブルへのアクセス方法によって異なります。
 
   * **Table functions** (例: `SELECT ... FROM paimonS3(...)`): cache の判定はクエリごとに評価されるため、`SELECT` で `SETTINGS use_paimon_metadata_files_cache = 1` を直接指定できます。
   * **永続テーブルエンジン** (`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal`、および `Paimon` エイリアス): cache の判定は、テーブルのメタデータが初期化される際に一度だけ固定され、不変の永続コンポーネントに保存されます。メタデータ更新パスでは、この設定は意図的に再読み込みされません。したがって、すでに初期化済みの永続テーブルに対する `SELECT` で `SETTINGS use_paimon_metadata_files_cache = 1` を指定しても効果はありません。以前に固定された判定が引き続き使用されます。これを変更するには、テーブルのメタデータが初期化される前に `use_paimon_metadata_files_cache` を設定するか、目的の値を指定してテーブルを `DROP` し、再度 `CREATE` してください。
 
   サーバーレベルの cache 容量 (`paimon_metadata_files_cache_size`) は固定されません。これは runtime 設定であり、`SYSTEM RELOAD CONFIG` によって変更でき、すでに初期化済みのテーブルに対しても即座に有効になります。
-</Info>
+</Note>
 
-<div id="incremental-read-examples">
-  ## インクリメンタル読み取りの例
-</div>
+## インクリメンタル読み取りの例 {#incremental-read-examples}
 
 Keeper の状態を使用したインクリメンタル読み取り:
 
@@ -129,9 +115,7 @@ SETTINGS
     paimon_replica_name = '{replica}';
 ```
 
-<div id="query-level-settings-for-incremental-read">
-  ### インクリメンタル読み取りのクエリレベル設定
-</div>
+### インクリメンタル読み取りのクエリレベル設定 {#query-level-settings-for-incremental-read}
 
 以下の設定は**クエリレベル**です (`CREATE TABLE` ではなく `SELECT ... SETTINGS` で指定します) 。インクリメンタル読み取りのクエリごとの動作を制御します。
 
@@ -154,9 +138,7 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
-<div id="paimon-to-mergetree-via-refresh-mv">
-  ## リフレッシャブルmaterialized view を介した Paimon から MergeTree への同期
-</div>
+## リフレッシャブルmaterialized view を介した Paimon から MergeTree への同期 {#paimon-to-mergetree-via-refresh-mv}
 
 `APPEND` モードのリフレッシャブルMaterialized Viewを使用すると、Paimon テーブルから MergeTree テーブルへデータを継続的に同期するエンドツーエンドのパイプラインを構築できます。各リフレッシュサイクルでは、Paimon から新しいインクリメンタルデータのみを読み取り、それを宛先テーブルに追記します。
 
@@ -221,9 +203,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
   バックグラウンドでの更新によってDDL操作がブロックされるのを防ぐため、削除する前にMVを停止してください。
 </Note>
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
 * インクリメンタル読み取りを行うには、Keeper (ZooKeeper) が設定されている必要があります。
 * インクリメンタル読み取りを行うには、`paimon_keeper_path` を設定し、テーブルごとに一意にする必要があります。
@@ -233,15 +213,11 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * インクリメンタル読み取りでは、Paimon ソースの過去データの削除は扱われません。アップストリームの Paimon データが削除または更新されても、ClickHouse の MergeTree 宛先テーブルにすでに書き込まれている対応する行は自動では削除されません。古くなったデータをクリーンアップするには、MergeTree テーブルに対して `ALTER TABLE ... DELETE` を手動で実行する必要があります。
 * 基になる Paimon テーブルが同じオブジェクトストレージパスで削除されて再作成された場合 (たとえば Flink や Spark 経由) 、対応する ClickHouse テーブルを `DROP` してから再度 `CREATE` する必要があります。ClickHouse は schema-0 の作成タイムスタンプを比較して再作成を検出し、エラーを返します。古くなった ClickHouse テーブルは、再作成されるまで使用できません。
 
-<div id="aliases">
-  ## 別名
-</div>
+## 別名 {#aliases}
 
 `Paimon` テーブルエンジンは、`disk` 設定からストレージバックエンドを自動検出し、それに応じて `PaimonS3`、`PaimonAzure`、または `PaimonLocal` に振り分けます。`disk` が指定されていない場合は、デフォルトで `PaimonS3` 実装が使用されます。
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — ファイルのパス。型: `LowCardinality(String)`.
 * `_file` — ファイル名。型: `LowCardinality(String)`.
@@ -249,9 +225,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 最終更新時刻が不明な場合、値は `NULL` です。
 * `_etag` — ファイルの etag。型: `LowCardinality(String)`. etag が不明な場合、値は `NULL` です。
 
-<div id="data-types-supported">
-  ## 対応しているデータ型
-</div>
+## 対応しているデータ型 {#data-types-supported}
 
 | Paimon データ型                       | ClickHouse データ型           |
 | --------------------------------- | ------------------------- |
@@ -273,9 +247,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
 
-<div id="partition-supported">
-  ## サポートされるパーティションキー
-</div>
+## サポートされるパーティションキー {#partition-supported}
 
 Paimon のパーティションキーでサポートされるデータ型:
 

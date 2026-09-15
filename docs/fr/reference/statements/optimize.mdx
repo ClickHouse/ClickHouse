@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 La requête `OPTIMIZE` est prise en charge pour la famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les [vues matérialisées](/fr/reference/statements/create/view#materialized-view)) ainsi que pour les moteurs [Buffer](/fr/reference/engines/table-engines/special/buffer). Les autres moteurs de table ne sont pas pris en charge.
 
-Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/replication), ClickHouse crée une tâche de fusion et attend son exécution sur toutes les répliques (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `2`) ou sur la réplique actuelle (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `1`).
+Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/replication), ClickHouse crée une tâche de fusion et attend son exécution sur toutes les répliques (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `2`, ou sur `3` pour `ReplicatedMergeTree`) ou sur la réplique actuelle (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `1`).
 
 * Si `OPTIMIZE` n’effectue pas de fusion pour quelque raison que ce soit, il n’en informe pas le client. Pour activer les notifications, utilisez le paramètre [optimize&#95;throw&#95;if&#95;noop](/fr/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * Si vous spécifiez un `PARTITION`, seule la partition indiquée est optimisée. [Comment définir l’expression de partition](/fr/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -36,12 +36,10 @@ Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedM
 Vous pouvez définir combien de temps (en secondes) attendre que les répliques inactives exécutent les requêtes `OPTIMIZE` à l’aide du paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Si `alter_sync` est défini sur `2` et que certaines répliques restent inactives au-delà du délai spécifié par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
+  Si `alter_sync` est défini sur `2`, ou sur `3` pour `ReplicatedMergeTree`, et que certaines répliques restent inactives au-delà du délai spécifié par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
 </Note>
 
-<div id="dry-run">
-  ## DRY RUN
-</div>
+## DRY RUN {#dry-run}
 
 La clause `DRY RUN` simule une fusion des parts spécifiées sans enregistrer le résultat. La part fusionnée est écrite dans un emplacement temporaire, validée, puis supprimée. Les parts d’origine et les données de la table restent inchangées.
 
@@ -90,9 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-<div id="by-expression">
-  ## Expression BY
-</div>
+## Expression BY {#by-expression}
 
 Si vous souhaitez effectuer une déduplication sur un ensemble personnalisé de colonnes plutôt que sur l’ensemble des colonnes, vous pouvez spécifier explicitement une liste de colonnes ou utiliser n’importe quelle combinaison d’expressions [`*`](/fr/reference/statements/select/index#asterisk), [`COLUMNS`](/fr/reference/statements/select/index#select-clause) ou [`EXCEPT`](/fr/reference/statements/select/except_modifier). La liste de colonnes, qu’elle soit explicitement écrite ou implicitement développée, doit inclure toutes les colonnes spécifiées dans l’expression d’ordonnancement des lignes (à la fois la clé primaire et la clé de tri), ainsi que dans l’expression de partitionnement (clé de partitionnement).
 
@@ -159,9 +155,7 @@ SELECT * FROM example;
 
 Tous les exemples suivants sont exécutés à partir de cet état, qui comporte 5 lignes.
 
-<div id="deduplicate">
-  #### `DEDUPLICATE`
-</div>
+#### `DEDUPLICATE` {#deduplicate}
 
 Lorsqu’aucune colonne de déduplication n’est spécifiée, elles sont toutes prises en compte. La ligne n’est supprimée que si toutes les valeurs de toutes les colonnes sont égales aux valeurs correspondantes de la ligne précédente :
 
@@ -186,9 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-">
-  #### `DEDUPLICATE BY *`
-</div>
+#### `DEDUPLICATE BY *` {#deduplicate-by-}
 
 Lorsque les colonnes sont spécifiées de manière implicite, la table est dédupliquée sur toutes les colonnes qui ne sont ni `ALIAS` ni `MATERIALIZED`. Dans la table ci-dessus, il s’agit des colonnes `primary_key`, `secondary_key`, `value` et `partition_key` :
 
@@ -213,9 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by--except">
-  #### `DEDUPLICATE BY * EXCEPT`
-</div>
+#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 
 Déduplique sur toutes les colonnes qui ne sont ni `ALIAS` ni `MATERIALIZED`, à l’exclusion explicite de `value` : les colonnes `primary_key`, `secondary_key` et `partition_key`.
 
@@ -239,9 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-list-of-columns">
-  #### `DEDUPLICATE BY <list of columns>`
-</div>
+#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
 
 Dédupliquez explicitement à l’aide des colonnes `primary_key`, `secondary_key` et `partition_key` :
 
@@ -265,9 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-columnsregex">
-  #### `DEDUPLICATE BY COLUMNS(<regex>)`
-</div>
+#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
 
 Dédupliquer selon toutes les colonnes correspondant à une expression régulière : les colonnes `primary_key`, `secondary_key` et `partition_key` :
 

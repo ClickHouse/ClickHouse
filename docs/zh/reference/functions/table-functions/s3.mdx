@@ -19,9 +19,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 使用 `s3 表函数` 配合 [`INSERT INTO...SELECT`](/zh/reference/statements/insert-into#inserting-the-results-of-select) 时，数据会以流式方式读取并插入。内存中只会保留少量数据块，同时这些块会持续从 S3 读取并写入目标表。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -48,7 +46,7 @@ s3(named_collection[, option=value [,..]])
 | `session_token`                         | 与给定密钥一起使用的会话令牌。传入密钥时，此参数可选。                                                                                                                                                                                                                                                                                                                    |
 | `format`                                | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                                                                                                             |
 | `structure`                             | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                                                                                                        |
-| `compression_method`                    | 此参数可选。支持的值包括：`none`、`gzip` 或 `gz`、`brotli` 或 `br`、`xz` 或 `LZMA`、`zstd` 或 `zst`。默认会根据文件扩展名自动检测压缩方法。                                                                                                                                                                                                                                             |
+| `compression_method`                    | 此参数可选。支持的值包括：`none`、`gzip` 或 `gz`、`deflate`、`brotli` 或 `br`、`xz` 或 `LZMA`、`zstd` 或 `zst`、`lz4`、`bz2`、`snappy`。默认会根据文件扩展名自动检测压缩方法。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置选择 (默认为 `basic`) 。                                                                                              |
 | `headers`                               | 此参数可选。允许在 S3 请求中传递请求头。格式为 `headers(key=value)`，例如 `headers('x-amz-request-payer' = 'requester')`。                                                                                                                                                                                                                                              |
 | `partition_strategy`                    | 此参数可选。支持的值为：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，其会被替换为分区键。`hive` 不允许使用通配符，假定该路径为表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名，以文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不包含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。 |
 | `partition_columns_in_data_file`        | 此参数可选。仅与 `hive` 分区策略配合使用。用于告知 ClickHouse 是否应预期分区列会写入数据文件。默认值为 `false`。                                                                                                                                                                                                                                                                         |
@@ -58,7 +56,7 @@ s3(named_collection[, option=value [,..]])
 <Info>
   **GCS**
 
-  GCS URL 的格式如下，因为 Google XML API 的端点不同于 JSON API：
+  GCS URL 的格式如下，因为 Google XML API 的端点与 JSON API 不同：
 
   ```text
     https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
@@ -76,15 +74,11 @@ s3(named_collection[, option=value [,..]])
 | `no_sign_request`             | 默认禁用。                                                                                                                                                               |
 | `expiration_window_seconds`   | 默认值为 120。                                                                                                                                                           |
 
-<div id="returned-value">
-  ## 返回值
-</div>
+## 返回值 {#returned-value}
 
 一个具有指定结构的表，用于从指定文件读取数据或向其中写入数据。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 从 S3 文件 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv` 对应的表中选择前 5 行：
 
@@ -139,20 +133,18 @@ LIMIT 5;
   ```
 </Note>
 
-<div id="usage">
-  ## 使用方法
-</div>
+## 使用方法 {#usage}
 
 假设我们在 S3 上有若干文件，URI 如下：
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 统计文件名以数字 1 到 3 结尾的文件中的行数：
 
@@ -211,27 +203,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-Glob ** 可用于递归遍历目录。以下示例将递归拉取 `my-test-bucket-768` 目录中的所有文件：
+`**` 通配符可用于递归遍历目录。以下查询会读取 `my-test-bucket-768` 下所有名为 `some_file_1.csv` 的文件：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-以下示例将递归获取 `my-test-bucket` 目录中任意子目录内所有 `test-data.csv.gz` 文件的数据：
+大括号可以与 `**` 结合使用，以递归匹配多个文件名：
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-注意：可以在服务器配置文件中指定自定义 URL 映射器。示例：
+同样的递归模式也适用于 `s3://` URL：
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` 将被替换为 `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
-
-可在 `config.xml` 中添加自定义 URL 映射器：
+您可以在 `config.xml` 中添加自定义 URL 映射器：
 
 ```xml
 <url_scheme_mappers>
@@ -258,13 +248,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-<div id="partitioned-write">
-  ## 分区写入
-</div>
+## 分区写入 {#partitioned-write}
 
-<div id="partition-strategy">
-  ### 分区策略
-</div>
+### 分区策略 {#partition-strategy}
 
 仅支持 `INSERT` 查询。
 
@@ -310,9 +296,7 @@ INSERT INTO TABLE FUNCTION
 
 因此，数据会分别写入不同存储桶中的三个文件：`my_bucket_1/file.csv`、`my_bucket_10/file.csv` 和 `my_bucket_20/file.csv`。
 
-<div id="accessing-public-buckets">
-  ## 访问公共桶
-</div>
+## 访问公共桶 {#accessing-public-buckets}
 
 ClickHouse 会尝试从多种不同类型的来源获取凭证。
 有时，访问某些公共桶时会因此出现问题，导致客户端返回 `403` 错误码。
@@ -328,9 +312,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-<div id="using-s3-credentials-clickhouse-cloud">
-  ## 使用 S3 凭证 (ClickHouse Cloud)
-</div>
+## 使用 S3 凭证 (ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
 
 对于非公开 桶，用户可以向该函数传入 `aws_access_key_id` 和 `aws_secret_access_key`。例如：
 
@@ -356,9 +338,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 更多示例可在[此处](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)查看
 
-<div id="working-with-archives">
-  ## 处理归档文件
-</div>
+## 处理归档文件 {#working-with-archives}
 
 假设我们在 S3 上有几个具有以下 URI 的归档文件：
 
@@ -384,24 +364,18 @@ FROM s3(
   ZIP 和 TAR 归档可从任何受支持的存储位置访问，而 7Z 归档只能从安装 ClickHouse 的本地文件系统读取。
 </Note>
 
-<div id="inserting-data">
-  ## 插入数据
-</div>
+## 插入数据 {#inserting-data}
 
 请注意，只能向新文件中插入数据行。不会执行合并周期或文件拆分操作。文件一旦写入，后续插入就会失败。更多详情请参见[此处](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)。
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。Type: `LowCardinality(String)`。如果是归档文件，则按以下格式显示路径：`"{path_to_archive}::{path_to_file_inside_archive}"`
 * `_file` — 文件名。Type: `LowCardinality(String)`。如果是归档文件，则显示归档内文件的名称。
 * `_size` — 文件大小 (以字节为单位) 。Type: `Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。如果是归档文件，则显示归档内文件的未压缩大小。
 * `_time` — 文件的最后修改时间。Type: `Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 
-<div id="hive-style-partitioning">
-  ## use_hive_partitioning 设置
-</div>
+## use_hive_partitioning 设置 {#hive-style-partitioning}
 
 这是向 ClickHouse 提供的一个提示，用于在读取时解析采用 Hive 风格分区的文件。它对写入没有影响。若要实现读写对称，请使用 `partition_strategy` 参数。
 
@@ -413,9 +387,7 @@ FROM s3(
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="accessing-requester-pays-buckets">
-  ## 访问请求方付费桶
-</div>
+## 访问请求方付费桶 {#accessing-requester-pays-buckets}
 
 要访问请求方付费桶，必须在所有请求中传递请求头 `x-amz-request-payer = requester`。这可以通过向 s3 函数传入参数 `headers('x-amz-request-payer' = 'requester')` 来实现。例如：
 
@@ -433,9 +405,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-<div id="resolving-relative-urls">
-  ## 解析相对 URL
-</div>
+## 解析相对 URL {#resolving-relative-urls}
 
 [s3&#95;base](/zh/reference/settings/session-settings/s3#s3_base) 设置允许向 `s3` 函数传递相对 URL。设置 `s3_base` 后，如果函数参数不包含方案，则会根据 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) 以基础 URL 为基准进行解析，规则与 [url](/zh/reference/functions/table-functions/url#resolving-relative-urls) 函数的 [url&#95;base](/zh/reference/settings/session-settings/url#url_base) 设置相同。绝对 URL 将保持不变并直接传递。
 
@@ -448,18 +418,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-<div id="storage-settings">
-  ## 存储设置
-</div>
+## 存储设置 {#storage-settings}
 
 * [s3&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_truncate_on_insert) - 允许在插入前先截断文件。默认禁用。
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - 如果 format 带有后缀，则允许在每次插入时创建新文件。默认禁用。
 * [s3&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/s3#s3_skip_empty_files) - 允许在读取时跳过空文件。默认启用。
 * [s3&#95;base](/zh/reference/settings/session-settings/s3#s3_base) - 用于解析传递给 `s3` 函数的相对 URL 的基础 URL。默认为空 (禁用) 。
 
-<div id="nested-avro-schemas">
-  ## 嵌套 Avro schema
-</div>
+## 嵌套 Avro schema {#nested-avro-schemas}
 
 读取包含**嵌套记录**且各文件之间存在差异的 Avro 文件时 (例如，某些文件在嵌套对象内多了一个额外字段) ，ClickHouse 可能会返回类似以下错误：
 
@@ -489,9 +455,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-<div id="related">
-  ## Related
-</div>
+## Related {#related}
 
 * [S3 engine](/zh/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

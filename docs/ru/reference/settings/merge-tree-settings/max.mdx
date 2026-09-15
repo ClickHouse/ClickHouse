@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="max_avg_part_size_for_too_many_parts">
-  ## max_avg_part_size_for_too_many_parts
-</div>
+## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -27,9 +25,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 одном сервере, если части успешно сливаются в более крупные части. Это
 не влияет на пороги для неактивных частей или общего количества частей.
 
-<div id="max_buckets_in_map">
-  ## max_buckets_in_map
-</div>
+## max_buckets_in_map {#max_buckets_in_map}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -39,17 +35,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Фактическое количество бакетов определяется настройкой [map&#95;buckets&#95;strategy](/ru/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
 Максимально допустимое значение — 256.
 
-<div id="max_cleanup_delay_period">
-  ## max_cleanup_delay_period
-</div>
+## max_cleanup_delay_period {#max_cleanup_delay_period}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 Максимальный интервал очистки старых журналов очереди, хешей блоков и частей.
 
-<div id="max_compress_block_size">
-  ## max_compress_block_size
-</div>
+## max_compress_block_size {#max_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -59,9 +51,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Значение, указанное при создании таблицы, переопределяет глобальное
 значение этого параметра.
 
-<div id="max_concurrent_queries">
-  ## max_concurrent_queries
-</div>
+## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -81,9 +71,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-<div id="max_digestion_size_per_segment">
-  ## max_digestion_size_per_segment
-</div>
+## max_digestion_size_per_segment {#max_digestion_size_per_segment}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -91,9 +79,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Устаревшая настройка, не имеет эффекта.
 
-<div id="max_file_name_length">
-  ## max_file_name_length
-</div>
+## max_file_name_length {#max_file_name_length}
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -103,9 +89,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 рекомендуется задавать его меньше максимальной длины имени файла (обычно 255
 байт), оставляя некоторый запас, чтобы избежать ошибок файловой системы.
 
-<div id="max_partitions_to_read">
-  ## max_partitions_to_read
-</div>
+## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -121,17 +105,83 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Эту настройку ограничения сложности запроса [max&#95;partitions&#95;to&#95;read](/ru/reference/settings/session-settings/max-partitions#max_partitions_to_read)
 также можно задать на уровне запроса / сеанса / профиля.
 
-<div id="max_projections">
-  ## max_projections
-</div>
+## max_projections {#max_projections}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 Максимальное количество проекций в MergeTree.
 
-<div id="max_uncompressed_bytes_in_patches">
-  ## max_uncompressed_bytes_in_patches
-</div>
+## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, ограничивающая суммарный объём сжатых байт по всем активным и неактивным частям данных таблицы."}]}]} />
+
+Если суммарный объём сжатых байт (размер на диске) по всем активным и неактивным
+частям данных таблицы превышает это значение, `INSERT` прерывается
+исключением `Table size limit exceeded`. Неактивные части также учитываются,
+поскольку цель этой настройки — ограничить использование диска. Обратите
+внимание, что неактивные части удаляются в фоновом режиме (см. настройку
+`old_parts_lifetime`), поэтому наблюдаемый размер со временем может
+уменьшаться. Ограничение проверяется в начале `INSERT` и при коммите новых
+частей данных в рабочий набор, включая результаты фоновых слияний и мутаций.
+Вставки, выполняемые materialized views, также проверяются. При
+репликационных загрузках ограничение не проверяется, из-за чего возможно состояние гонки,
+когда параллельные вставки в несколько реплик в сумме превышают ограничение. Коммит
+пустых частей данных разрешён всегда, поэтому данные можно удалить из
+таблицы, превысившей ограничение, например с помощью `TRUNCATE` или
+`ALTER TABLE ... DROP PARTITION`.
+
+Возможные значения:
+
+* Любое положительное целое число.
+* 0 — без ограничений.
+
+Настройка полезна для мультитенантных, временных и демонстрационных сервисов.
+
+## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, ограничивающая суммарный объём несжатых данных (в байтах) по всем активным и неактивным частям данных таблицы."}]}]} />
+
+То же, что и `max_table_size_bytes_compressed`, но ограничение применяется к
+суммарному объёму несжатых данных (в байтах) по всем активным и неактивным
+частям данных таблицы.
+
+Возможные значения:
+
+* Любое положительное целое число.
+* 0 — без ограничений.
+
+Полезно для мультитенантных, временных и демонстрационных сервисов.
+
+## max_table_size_rows {#max_table_size_rows}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для ограничения общего числа строк в активных частях данных таблицы."}]}]} />
+
+Если общее число строк в активных частях данных таблицы превышает это
+значение, `INSERT` прерывается с исключением `Table size limit exceeded`.
+Ограничение проверяется в начале `INSERT` и при коммите новых частей данных
+в рабочий набор, включая результаты фоновых слияний и мутаций (поэтому
+мутация, увеличивающая размер таблицы сверх лимита, будет повторяться, так
+и не завершившись). Вставки, выполняемые materialized views, также
+проверяются. При репликационных загрузках ограничение не проверяется, что
+допускает состояние гонки, когда параллельные вставки в несколько реплик
+совместно превышают лимит. Коммит пустых частей данных разрешён всегда,
+поэтому данные можно удалить из таблицы, превысившей лимит, например с
+помощью `TRUNCATE` или `ALTER TABLE ... DROP PARTITION`.
+
+Возможные значения:
+
+* Любое положительное целое число.
+* 0 — без ограничений.
+
+Полезно для мультитенантных, временных и демонстрационных сервисов.
+
+## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

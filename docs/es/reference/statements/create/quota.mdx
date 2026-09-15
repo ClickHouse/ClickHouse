@@ -32,6 +32,8 @@ Los parámetros `queries`, `query_selects`, `query_inserts`, `errors`, `result_r
 
 La cláusula `ON CLUSTER` permite crear cuotas en un clúster; consulte [Distributed DDL](/es/reference/statements/distributed-ddl).
 
+`CREATE QUOTA` requiere el privilegio [CREATE QUOTA](/es/reference/statements/grant#access-management). `OR REPLACE` descarta una QUOTA existente con el mismo nombre, incluidos los roles a los que se aplica, por lo que además requiere el privilegio [DROP QUOTA](/es/reference/statements/grant#access-management). El privilegio `DROP QUOTA` es necesario tanto si la QUOTA ya existe como si no, de modo que la sentencia no se puede usar para averiguar qué cuotas existen.
+
 **Ejemplos**
 
 Limite el número máximo de consultas del usuario actual a 123 consultas en un período de 15 meses:
@@ -60,9 +62,7 @@ CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO defa
 
 Puedes encontrar más ejemplos con la configuración XML (no compatible con ClickHouse Cloud) en la [guía de cuotas](/es/concepts/features/configuration/server-config/quotas).
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [Cómo crear aplicaciones de una sola página con ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
 

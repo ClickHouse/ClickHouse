@@ -2,9 +2,7 @@
 title: 소스 외부 서버 설정
 ---
 
-<div id="asynchronous_metric_log">
-  ## asynchronous_metric_log
-</div>
+## asynchronous_metric_log {#asynchronous_metric_log}
 
 ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
@@ -39,9 +37,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
 <SystemLogParameters />
 
-<div id="auth_use_forwarded_address">
-  ## auth_use_forwarded_address
-</div>
+## auth_use_forwarded_address {#auth_use_forwarded_address}
 
 프록시를 통해 연결된 클라이언트의 인증에 출발지 주소를 사용합니다.
 
@@ -51,9 +47,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
   전달된 주소는 쉽게 위조될 수 있으므로 이 설정은 각별한 주의를 기울여 사용해야 합니다. 이러한 인증을 허용하는 서버에는 직접 접근해서는 안 되며, 반드시 신뢰할 수 있는 프록시를 통해서만 접근해야 합니다.
 </Note>
 
-<div id="backups">
-  ## 백업
-</div>
+## 백업 {#backups}
 
 [`BACKUP` 및 `RESTORE`](/ko/concepts/features/backup-restore/overview) SQL 문을 실행할 때 사용하는 백업 관련 설정입니다.
 
@@ -109,9 +103,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 </backups>
 ```
 
-<div id="background_schedule_pool_log">
-  ## background_schedule_pool_log
-</div>
+## background_schedule_pool_log {#background_schedule_pool_log}
 
 다양한 백그라운드 풀을 통해 실행되는 모든 백그라운드 작업에 대한 정보를 포함합니다.
 
@@ -130,9 +122,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 </background_schedule_pool_log>
 ```
 
-<div id="bcrypt_workfactor">
-  ## bcrypt_workfactor
-</div>
+## bcrypt_workfactor {#bcrypt_workfactor}
 
 [Bcrypt 알고리즘](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/)을 사용하는 `bcrypt_password` 인증 유형의 작업 계수입니다.
 작업 계수는 해시를 계산하고 비밀번호를 검증하는 데 필요한 연산량과 시간을 결정합니다.
@@ -149,9 +139,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
   다른 인증 메서드를 고려하십시오.
 </Warning>
 
-<div id="table_engines_require_grant">
-  ## table_engines_require_grant
-</div>
+## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
 
@@ -163,9 +151,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
   기본적으로는 이전 버전과의 호환성을 위해 특정 테이블 엔진으로 테이블을 생성할 때 grant를 무시합니다. 하지만 이 설정을 `true`로 지정하면 이 동작을 변경할 수 있습니다.
 </Note>
 
-<div id="builtin_dictionaries_reload_interval">
-  ## builtin_dictionaries_reload_interval
-</div>
+## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
 
 내장 딕셔너리를 다시 로드하기 전까지의 인터벌(초)입니다.
 
@@ -177,9 +163,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-<div id="compression">
-  ## 압축
-</div>
+## 압축 {#compression}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진 테이블에 대한 데이터 압축 설정입니다.
 
@@ -215,10 +199,10 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 **조건이 충족될 때 수행되는 작업**:
 
 * 데이터 파트가 조건 집합과 일치하면 ClickHouse는 지정된 압축 방식을 사용합니다.
-* 데이터 파트가 여러 조건 집합과 일치하면 ClickHouse는 가장 먼저 일치한 조건 집합을 사용합니다.
+* 데이터 파트가 여러 조건 집합과 일치하면 ClickHouse는 가장 마지막에 일치한 조건 집합을 사용합니다(`<case>` 섹션은 순서대로 검사되며, 일치하는 섹션마다 이전 선택을 재정의합니다).
 
 <Note>
-  데이터 파트에 대해 충족되는 조건이 없으면 ClickHouse는 `lz4` 압축을 사용합니다.
+  데이터 파트에 대해 충족되는 조건이 없으면 ClickHouse는 크기를 고려한 기본 내장 설정을 사용합니다. 즉, 100MB 미만이면 `LZ4`, 그 이상이면 `ZSTD(3)`를 사용합니다. 위의 `min_part_size` 조건과 마찬가지로, 여기서의 크기는 데이터가 기록되기 전 코덱을 선택해야 하는 시점에 알려진 크기입니다. 즉, 새로 삽입된 파트의 경우 `0`이고, 머지나 뮤테이션의 경우 소스 파트의 크기입니다. 따라서 `TTL DELETE`나 축약 머지처럼 입력보다 결과가 작아지는 재작성은 입력 크기를 기준으로 분류되며, 임계값보다 작으면서도 `ZSTD(3)`로 압축된 파트가 생성될 수 있습니다.
 </Note>
 
 **예시**
@@ -229,14 +213,12 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```
 
-<div id="encryption">
-  ## 암호화
-</div>
+## 암호화 {#encryption}
 
 [암호화 코덱](/ko/reference/statements/create/table/codec#encryption-codecs)에서 사용할 키를 가져오는 명령을 설정합니다. 키(또는 여러 키)는 환경 변수에 지정하거나 설정 파일에서 설정해야 합니다.
 
@@ -318,9 +300,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
   위에서 언급한 모든 내용은 `aes_256_gcm_siv`에도 적용됩니다(단, 키는 32바이트 길이여야 합니다).
 </Note>
 
-<div id="error_log">
-  ## error_log
-</div>
+## error_log {#error_log}
 
 기본적으로 비활성화되어 있습니다.
 
@@ -355,9 +335,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 
 <SystemLogParameters />
 
-<div id="custom_settings_prefixes">
-  ## custom_settings_prefixes
-</div>
+## custom_settings_prefixes {#custom_settings_prefixes}
 
 [사용자 지정 설정](/ko/concepts/features/configuration/settings/settings-query-level#custom_settings)에 사용되는 프리픽스 목록입니다.
 프리픽스가 여러 개일 경우 쉼표로 구분하십시오.
@@ -372,9 +350,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 
 * [사용자 지정 설정](/ko/concepts/features/configuration/settings/settings-query-level#custom_settings)
 
-<div id="core_dump">
-  ## core_dump
-</div>
+## core_dump {#core_dump}
 
 코어 덤프 파일 크기에 대한 소프트 리밋을 설정합니다.
 
@@ -390,9 +366,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 </core_dump>
 ```
 
-<div id="default_profile">
-  ## default_profile
-</div>
+## default_profile {#default_profile}
 
 기본 설정 프로필입니다. 설정 프로필은 `user_config` 설정에 지정된 파일에 있습니다.
 
@@ -404,9 +378,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <default_profile>default</default_profile>
 ```
 
-<div id="dictionaries_config">
-  ## dictionaries_config
-</div>
+## dictionaries_config {#dictionaries_config}
 
 딕셔너리용 구성 파일의 경로입니다.
 
@@ -425,9 +397,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-<div id="user_defined_executable_functions_config">
-  ## user_defined_executable_functions_config
-</div>
+## user_defined_executable_functions_config {#user_defined_executable_functions_config}
 
 실행형 사용자 정의 함수용 구성 파일의 경로입니다.
 
@@ -446,9 +416,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-<div id="graphite">
-  ## graphite
-</div>
+## graphite {#graphite}
 
 [Graphite](https://github.com/graphite-project)로 데이터를 전송합니다.
 
@@ -482,9 +450,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 </graphite>
 ```
 
-<div id="graphite_rollup">
-  ## graphite_rollup
-</div>
+## graphite_rollup {#graphite_rollup}
 
 Graphite 데이터 축소를 위한 설정입니다.
 
@@ -512,9 +478,7 @@ Graphite 데이터 축소를 위한 설정입니다.
 </graphite_rollup_example>
 ```
 
-<div id="http_handlers">
-  ## http_handlers
-</div>
+## http_handlers {#http_handlers}
 
 사용자 지정 HTTP 핸들러를 사용할 수 있습니다.
 새 HTTP 핸들러를 추가하려면 새 `<rule>`을 추가하면 됩니다.
@@ -579,9 +543,7 @@ Graphite 데이터 축소를 위한 설정입니다.
 </http_handlers>
 ```
 
-<div id="http_server_default_response">
-  ## http_server_default_response
-</div>
+## http_server_default_response {#http_server_default_response}
 
 ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지입니다.
 기본값은 &quot;Ok.&quot;입니다(끝에 줄 바꿈 문자(line feed)가 포함됨).
@@ -598,9 +560,7 @@ ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지
 </http_server_default_response>
 ```
 
-<div id="http_options_response">
-  ## http_options_response
-</div>
+## http_options_response {#http_options_response}
 
 `OPTIONS` HTTP 요청의 응답에 헤더를 추가할 때 사용됩니다.
 `OPTIONS` 메서드는 CORS Preflight 요청을 보낼 때 사용됩니다.
@@ -630,9 +590,7 @@ ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지
 </http_options_response>
 ```
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 HSTS의 만료 기간(초)입니다.
 
@@ -646,9 +604,7 @@ HSTS의 만료 기간(초)입니다.
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-<div id="interserver_listen_host">
-  ## interserver_listen_host
-</div>
+## interserver_listen_host {#interserver_listen_host}
 
 ClickHouse 서버 간 데이터 교환을 허용할 호스트를 제한합니다.
 Keeper를 사용하는 경우, 동일한 제한이 서로 다른 Keeper 인스턴스 간 통신에도 적용됩니다.
@@ -670,9 +626,7 @@ Keeper를 사용하는 경우, 동일한 제한이 서로 다른 Keeper 인스�
 
 기본값:
 
-<div id="interserver_http_credentials">
-  ## interserver_http_credentials
-</div>
+## interserver_http_credentials {#interserver_http_credentials}
 
 [복제](/ko/reference/engines/table-engines/mergetree-family/replication) 중 다른 서버에 연결할 때 사용하는 사용자 이름과 비밀번호입니다. 또한 서버는 이러한 자격 증명을 사용하여 다른 레플리카를 인증합니다.
 따라서 `interserver_http_credentials`는 클러스터의 모든 레플리카에서 동일해야 합니다.
@@ -725,9 +679,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 
 새 자격 증명이 모든 레플리카에 적용되면 기존 자격 증명은 제거해도 됩니다.
 
-<div id="ldap_servers">
-  ## ldap_servers
-</div>
+## ldap_servers {#ldap_servers}
 
 여기에 LDAP server와 해당 연결 매개변수를 나열하면 다음과 같이 사용할 수 있습니다.
 
@@ -794,9 +746,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 </my_ad_server>
 ```
 
-<div id="listen_host">
-  ## listen_host
-</div>
+## listen_host {#listen_host}
 
 요청을 받을 수 있는 호스트를 제한합니다. 서버가 모든 호스트의 요청에 응답하게 하려면 `::`를 지정하십시오.
 
@@ -807,9 +757,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 <listen_host>127.0.0.1</listen_host>
 ```
 
-<div id="logger">
-  ## logger
-</div>
+## logger {#logger}
 
 로그 메시지의 위치와 포맷입니다.
 
@@ -1002,9 +950,7 @@ JSON 로깅 지원을 활성화하려면 다음 코드 조각을 사용하십시
 
 속성을 주석 처리하면 해당 로그 속성을 생략할 수 있습니다. 예를 들어 로그에 `query_id`가 출력되지 않도록 하려면 `<query_id>` 태그를 주석 처리하면 됩니다.
 
-<div id="send_crash_reports">
-  ## send_crash_reports
-</div>
+## send_crash_reports {#send_crash_reports}
 
 ClickHouse 코어 개발팀에 크래시 보고서를 전송하기 위한 설정입니다.
 
@@ -1026,9 +972,7 @@ ClickHouse 코어 개발팀에 크래시 보고서를 전송하기 위한 설정
 </send_crash_reports>
 ```
 
-<div id="ssh_server">
-  ## ssh_server
-</div>
+## ssh_server {#ssh_server}
 
 호스트 키의 공개 키 부분은 처음 연결할 때
 SSH 클라이언트 측의 known&#95;hosts 파일에 기록됩니다.
@@ -1046,9 +990,7 @@ SSH 클라이언트 측의 known&#95;hosts 파일에 기록됩니다.
 </ssh_server>
 ```
 
-<div id="tcp_ssh_port">
-  ## tcp_ssh_port
-</div>
+## tcp_ssh_port {#tcp_ssh_port}
 
 PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 쿼리를 실행할 수 있는 SSH 서버의 포트입니다.
 
@@ -1058,9 +1000,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-<div id="storage_configuration">
-  ## storage_configuration
-</div>
+## storage_configuration {#storage_configuration}
 
 스토리지를 여러 디스크로 구성할 수 있습니다.
 
@@ -1077,9 +1017,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 </storage_configuration>
 ```
 
-<div id="configuration-of-disks">
-  ### 디스크 구성
-</div>
+### 디스크 구성 {#configuration-of-disks}
 
 `disks` 구성은 다음 구조를 따릅니다:
 
@@ -1114,9 +1052,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
   디스크의 순서는 중요하지 않습니다.
 </Note>
 
-<div id="configuration-of-policies">
-  ### 정책 설정
-</div>
+### 정책 설정 {#configuration-of-policies}
 
 위의 하위 태그는 `policies`에 대해 다음 설정을 정의합니다.
 
@@ -1140,9 +1076,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 * *어떤* 볼륨에도 이 매개변수가 없으면 순서는 설정 파일에 기술된 순서에 따라 결정됩니다.
 * 볼륨의 우선순위는 동일할 수 없습니다.
 
-<div id="macros">
-  ## macros
-</div>
+## macros {#macros}
 
 복제된 테이블(Replicated Table)에 대한 매개변수 치환입니다.
 
@@ -1156,9 +1090,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 <macros incl="macros" optional="true" />
 ```
 
-<div id="replica_group_name">
-  ## replica_group_name
-</div>
+## replica_group_name {#replica_group_name}
 
 복제된 데이터베이스의 레플리카 그룹 이름입니다.
 
@@ -1173,9 +1105,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 <replica_group_name>backups</replica_group_name>
 ```
 
-<div id="max_session_timeout">
-  ## max_session_timeout
-</div>
+## max_session_timeout {#max_session_timeout}
 
 최대 세션 timeout 값이며, 단위는 초입니다.
 
@@ -1185,9 +1115,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-<div id="merge_tree">
-  ## merge_tree
-</div>
+## merge_tree {#merge_tree}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 세부 설정을 조정합니다.
 
@@ -1201,9 +1129,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 </merge_tree>
 ```
 
-<div id="metric_log">
-  ## metric_log
-</div>
+## metric_log {#metric_log}
 
 기본적으로는 비활성화되어 있습니다.
 
@@ -1238,9 +1164,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 
 <SystemLogParameters />
 
-<div id="replicated_merge_tree">
-  ## replicated_merge_tree
-</div>
+## replicated_merge_tree {#replicated_merge_tree}
 
 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 세부 조정을 위한 설정입니다. 이 설정이 더 높은 우선순위를 가집니다.
 
@@ -1254,9 +1178,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 </replicated_merge_tree>
 ```
 
-<div id="opentelemetry_span_log">
-  ## opentelemetry_span_log
-</div>
+## opentelemetry_span_log {#opentelemetry_span_log}
 
 [`opentelemetry_span_log`](/ko/reference/system-tables/opentelemetry_span_log) 시스템 테이블의 설정입니다.
 
@@ -1281,38 +1203,38 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 </opentelemetry_span_log>
 ```
 
-<div id="openSSL">
-  ## openSSL
-</div>
+## openSSL {#openSSL}
 
 SSL 클라이언트/서버 구성.
 
 SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 구성 옵션은 [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)에 설명되어 있습니다. 기본값은 [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp)에서 확인할 수 있습니다.
 
+`certificateFile`, `privateKeyFile`, `caConfig`가 참조하는 파일은 변경되거나 `SYSTEM RELOAD CONFIG`가 실행될 때 재시작 없이 다시 로드됩니다. 새 연결은 다시 로드된 인증서를 사용하며, 이미 맺어진 연결은 영향을 받지 않습니다.
+
 서버/클라이언트 설정 키:
 
-| 옵션                            | 설명                                                                                                                                                                                                                                                                                                                                         | 기본값                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `cacheSessions`               | 세션 캐싱을 활성화하거나 비활성화합니다. `sessionIdContext`와 함께 사용해야 합니다. 허용 값: `true`, `false`.                                                                                                                                                                                                                                                             | `false`                                                                                    |
-| `caConfig`                    | 신뢰할 수 있는 CA 인증서가 포함된 파일 또는 디렉터리의 경로입니다. 파일을 가리키는 경우 PEM 포맷이어야 하며 여러 CA 인증서를 포함할 수 있습니다. 디렉터리를 가리키는 경우 CA 인증서마다 .pem 파일이 하나씩 있어야 합니다. 파일 이름은 CA subject name hash value를 기준으로 조회됩니다. 자세한 내용은 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html)의 man 페이지를 참조하십시오. |                                                                                            |
-| `certificateFile`             | PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `privateKeyFile`에 인증서가 포함되어 있으면 생략할 수 있습니다.                                                                                                                                                                                                                                                                 |                                                                                            |
-| `cipherList`                  | OpenSSL에서 지원하는 암호화 방식입니다.                                                                                                                                                                                                                                                                                                                  | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
-| `disableProtocols`            | 사용이 허용되지 않는 프로토콜입니다.                                                                                                                                                                                                                                                                                                                       |                                                                                            |
-| `extendedVerification`        | 활성화하면 인증서의 CN 또는 SAN이 피어 호스트명과 일치하는지 확인합니다.                                                                                                                                                                                                                                                                                                | `false`                                                                                    |
-| `fips`                        | OpenSSL FIPS 모드를 활성화합니다. 라이브러리의 OpenSSL 버전이 FIPS를 지원하는 경우에만 지원됩니다.                                                                                                                                                                                                                                                                         | `false`                                                                                    |
-| `invalidCertificateHandler`   | 유효하지 않은 인증서를 검증하는 클래스(CertificateHandler의 하위 클래스)입니다. 예시: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                               | `RejectCertificateHandler`                                                                 |
-| `loadDefaultCAFile`           | OpenSSL의 내장 CA 인증서를 사용할지 여부입니다. ClickHouse는 내장 CA 인증서가 `/etc/ssl/cert.pem` 파일(또는 `/etc/ssl/certs` 디렉터리)에 있거나, 환경 변수 `SSL_CERT_FILE`(또는 `SSL_CERT_DIR`)로 지정된 파일(또는 디렉터리)에 있다고 가정합니다.                                                                                                                                                        | `true`                                                                                     |
-| `preferServerCiphers`         | 클라이언트가 우선하는 서버 암호군입니다.                                                                                                                                                                                                                                                                                                                     | `false`                                                                                    |
-| `privateKeyFile`              | PEM 인증서의 비밀 키가 포함된 파일의 경로입니다. 이 파일에는 key와 인증서가 함께 포함될 수 있습니다.                                                                                                                                                                                                                                                                              |                                                                                            |
-| `privateKeyPassphraseHandler` | private key에 접근할 때 필요한 패스프레이스를 요청하는 클래스(PrivateKeyPassphraseHandler의 하위 클래스)입니다. 예시: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                     | `KeyConsoleHandler`                                                                        |
-| `requireTLSv1`                | TLSv1 연결을 요구합니다. 허용값: `true`, `false`.                                                                                                                                                                                                                                                                                                     | `false`                                                                                    |
-| `requireTLSv1_1`              | TLSv1.1 연결이 필요합니다. 허용 값: `true`, `false`.                                                                                                                                                                                                                                                                                                  | `false`                                                                                    |
-| `requireTLSv1_2`              | TLSv1.2 연결이 필요합니다. 허용 값: `true`, `false`.                                                                                                                                                                                                                                                                                                  | `false`                                                                                    |
-| `sessionCacheSize`            | server가 캐시할 수 있는 최대 세션 수입니다. 값이 `0`이면 세션 수가 무제한임을 의미합니다.                                                                                                                                                                                                                                                                                   | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
-| `sessionIdContext`            | server가 생성하는 각 식별자에 덧붙이는 고유한 무작위 문자 집합입니다. 문자열 길이는 `SSL_MAX_SSL_SESSION_ID_LENGTH`를 초과할 수 없습니다. server가 세션을 캐시하는 경우와 클라이언트가 캐싱을 요청한 경우 모두에서 문제를 방지하는 데 도움이 되므로, 이 매개변수는 항상 지정하는 것이 좋습니다.                                                                                                                                                   | `$\{application.name\}`                                                                    |
-| `sessionTimeout`              | 서버에서 session을 캐싱하는 시간(단위: 시간)입니다.                                                                                                                                                                                                                                                                                                          | `2`                                                                                        |
-| `verificationDepth`           | 검증 chain의 최대 길이입니다. 인증서 chain 길이가 설정된 값을 초과하면 검증에 실패합니다.                                                                                                                                                                                                                                                                                   | `9`                                                                                        |
-| `verificationMode`            | 노드 인증서를 검증하는 메서드입니다. 자세한 내용은 [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 클래스 설명을 참조하십시오. 가능한 값: `none`, `relaxed`, `strict`, `once`.                                                                                                                                        | `relaxed`                                                                                  |
+| 옵션                            | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 기본값                                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cacheSessions`               | 세션 캐싱을 활성화하거나 비활성화합니다. `sessionIdContext`와 함께 사용해야 합니다. 허용 값: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                           | `false`                                                                                    |
+| `caConfig`                    | 신뢰할 수 있는 CA 인증서가 포함된 파일 또는 디렉터리의 경로입니다. 파일을 가리키는 경우 PEM 포맷이어야 하며 여러 CA 인증서를 포함할 수 있습니다. 디렉터리를 가리키는 경우 CA 인증서마다 .pem 파일이 하나씩 있어야 합니다. 파일 이름은 CA subject name hash value를 기준으로 조회됩니다. 자세한 내용은 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html)의 man 페이지를 참조하십시오. `certificateFile` 및 `privateKeyFile`과 마찬가지로, CA 인증서는 파일이 변경되거나 `SYSTEM RELOAD CONFIG`가 실행될 때 재시작 없이 다시 로드됩니다. |                                                                                            |
+| `certificateFile`             | PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `privateKeyFile`에 인증서가 포함되어 있으면 생략할 수 있습니다.                                                                                                                                                                                                                                                                                                                                                                               |                                                                                            |
+| `cipherList`                  | OpenSSL에서 지원하는 암호화 방식입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `disableProtocols`            | 사용이 허용되지 않는 프로토콜입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                     |                                                                                            |
+| `extendedVerification`        | 활성화하면 인증서의 CN 또는 SAN이 피어 호스트명과 일치하는지 확인합니다.                                                                                                                                                                                                                                                                                                                                                                                                              | `false`                                                                                    |
+| `fips`                        | OpenSSL FIPS 모드를 활성화합니다. 라이브러리의 OpenSSL 버전이 FIPS를 지원하는 경우에만 지원됩니다.                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
+| `invalidCertificateHandler`   | 유효하지 않은 인증서를 검증하는 클래스(CertificateHandler의 하위 클래스)입니다. 예시: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                                             | `RejectCertificateHandler`                                                                 |
+| `loadDefaultCAFile`           | OpenSSL의 내장 CA 인증서를 사용할지 여부입니다. ClickHouse는 내장 CA 인증서가 `/etc/ssl/cert.pem` 파일(또는 `/etc/ssl/certs` 디렉터리)에 있거나, 환경 변수 `SSL_CERT_FILE`(또는 `SSL_CERT_DIR`)로 지정된 파일(또는 디렉터리)에 있다고 가정합니다.                                                                                                                                                                                                                                                                      | `true`                                                                                     |
+| `preferServerCiphers`         | 클라이언트가 우선하는 서버 암호군입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                   | `false`                                                                                    |
+| `privateKeyFile`              | PEM 인증서의 비밀 키가 포함된 파일의 경로입니다. 이 파일에는 key와 인증서가 함께 포함될 수 있습니다.                                                                                                                                                                                                                                                                                                                                                                                            |                                                                                            |
+| `privateKeyPassphraseHandler` | private key에 접근할 때 필요한 패스프레이스를 요청하는 클래스(PrivateKeyPassphraseHandler의 하위 클래스)입니다. 예시: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                                   | `KeyConsoleHandler`                                                                        |
+| `requireTLSv1`                | TLSv1 연결을 요구합니다. 허용값: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                   | `false`                                                                                    |
+| `requireTLSv1_1`              | TLSv1.1 연결이 필요합니다. 허용 값: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                | `false`                                                                                    |
+| `requireTLSv1_2`              | TLSv1.2 연결이 필요합니다. 허용 값: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                | `false`                                                                                    |
+| `sessionCacheSize`            | server가 캐시할 수 있는 최대 세션 수입니다. 값이 `0`이면 세션 수가 무제한임을 의미합니다.                                                                                                                                                                                                                                                                                                                                                                                                 | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
+| `sessionIdContext`            | server가 생성하는 각 식별자에 덧붙이는 고유한 무작위 문자 집합입니다. 문자열 길이는 `SSL_MAX_SSL_SESSION_ID_LENGTH`를 초과할 수 없습니다. server가 세션을 캐시하는 경우와 클라이언트가 캐싱을 요청한 경우 모두에서 문제를 방지하는 데 도움이 되므로, 이 매개변수는 항상 지정하는 것이 좋습니다.                                                                                                                                                                                                                                                                 | `$\{application.name\}`                                                                    |
+| `sessionTimeout`              | 서버에서 session을 캐싱하는 시간(단위: 시간)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                        | `2`                                                                                        |
+| `verificationDepth`           | 검증 chain의 최대 길이입니다. 인증서 chain 길이가 설정된 값을 초과하면 검증에 실패합니다.                                                                                                                                                                                                                                                                                                                                                                                                 | `9`                                                                                        |
+| `verificationMode`            | 노드 인증서를 검증하는 메서드입니다. 자세한 내용은 [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 클래스 설명을 참조하십시오. 가능한 값: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                      | `relaxed`                                                                                  |
 
 **설정 예시:**
 
@@ -1344,9 +1266,7 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 </openSSL>
 ```
 
-<div id="part_log">
-  ## part_log
-</div>
+## part_log {#part_log}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)와 관련된 이벤트를 로깅합니다. 예를 들어 데이터 추가나 머지와 같은 작업입니다. 이 로그를 사용하면 머지 알고리즘을 시뮬레이션하고 그 특성을 비교할 수 있습니다. 또한 머지 과정을 시각화할 수도 있습니다.
 
@@ -1369,9 +1289,7 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 </part_log>
 ```
 
-<div id="processors_profile_log">
-  ## processors_profile_log
-</div>
+## processors_profile_log {#processors_profile_log}
 
 [`processors_profile_log`](/ko/reference/system-tables/processors_profile_log) 시스템 테이블에 대한 설정입니다.
 
@@ -1392,21 +1310,19 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 </processors_profile_log>
 ```
 
-<div id="prometheus">
-  ## prometheus
-</div>
+## prometheus {#prometheus}
 
 [Prometheus](https://prometheus.io)에서 스크래핑할 수 있도록 메트릭 데이터를 노출합니다.
 
 설정:
 
-* `endpoint` – prometheus server가 메트릭을 스크래핑할 HTTP endpoint입니다. &#39;/&#39;로 시작해야 합니다.
+* `endpoint` – prometheus 서버가 메트릭을 스크래핑할 HTTP endpoint입니다. &#39;/&#39;로 시작해야 합니다.
 * `port` – `endpoint`에 사용할 포트입니다.
 * `metrics` – [system.metrics](/ko/reference/system-tables/metrics) 테이블의 메트릭을 노출합니다.
 * `events` – [system.events](/ko/reference/system-tables/events) 테이블의 메트릭을 노출합니다.
-* `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출합니다.
-* `errors` - 마지막 server 재시작 이후 오류 코드별 오류 수를 노출합니다. 이 정보는 [system.errors](/ko/reference/system-tables/errors)에서도 확인할 수 있습니다.
-* `labels` – 노출되는 모든 메트릭에 추가되는 상수 레이블입니다. 각 하위 요소는 하나의 레이블을 정의합니다. 요소 이름은 레이블 이름이어야 하며(`[a-zA-Z_][a-zA-Z0-9_]*`와 일치해야 함), 요소 값은 레이블 값입니다. 레이블 값은 `from_env` 속성과 같은 표준 구성 치환을 지원합니다. 레이블 이름이 `__`로 시작하는 경우(Prometheus에서 예약됨) 또는 이 엔드포인트가 활성화된 섹션 중 하나에 이미 사용하는 레이블과 충돌하는 경우 거부됩니다. 그렇지 않으면 샘플에 동일한 레이블 이름이 두 번 포함됩니다. 따라서 예약된 집합은 엔드포인트에서 현재 노출하는 항목을 따릅니다. `histograms`가 활성화된 경우 `le`, `info`가 활성화된 경우 `ClickHouse_Info` 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), `histograms`/`dimensional_metrics`가 활성화된 경우 노출된 히스토그램 또는 차원 메트릭 패밀리에서 사용하는 모든 레이블(예: `group`, `direction`, `operation_type`)이 해당합니다. 이는 엔드포인트가 실제로 노출하는 항목에 따라 달라지므로, 한 엔드포인트에서는 유효한 이름이 다른 엔드포인트에서는 거부될 수 있습니다. 예를 들어 Keeper `keeper_metrics_only` 엔드포인트는 `keeper_*` 패밀리만 노출하므로 서버 패밀리에서만 사용되는 레이블은 여기에서 허용됩니다.
+* `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출합니다. 키-값 메트릭(CPU 코어, 블록 디바이스, 네트워크 인터페이스 또는 디스크별로 분류되는 메트릭)은 키당 하나의 샘플로 노출되며, 키는 레이블로 포함됩니다: `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"}`. [`asynchronous_metrics_key_values_mode`](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 서버 설정을 사용하면 대신 26.8 이전의 맹글링된 이름(`ClickHouseAsyncMetrics_BlockReadBytes_sda`)으로 또는 두 방식 모두로 노출할 수 있습니다.
+* `errors` - 마지막 서버 재시작 이후 오류 코드별 오류 수를 노출합니다. 이 정보는 [system.errors](/ko/reference/system-tables/errors)에서도 확인할 수 있습니다.
+* `labels` – 노출되는 모든 메트릭에 추가되는 상수 레이블입니다. 각 하위 요소는 하나의 레이블을 정의합니다. 요소 이름은 레이블 이름이어야 하며(`[a-zA-Z_][a-zA-Z0-9_]*`와 일치해야 함), 요소 값은 레이블 값입니다. 레이블 값은 `from_env` 속성과 같은 표준 구성 치환을 지원합니다. 레이블 이름이 `__`로 시작하는 경우(Prometheus에서 예약됨) 또는 이 엔드포인트가 활성화된 섹션 중 하나에 이미 사용하는 레이블과 충돌하는 경우 거부됩니다. 그렇지 않으면 샘플에 동일한 레이블 이름이 두 번 포함됩니다. 따라서 예약된 집합은 엔드포인트에서 현재 노출하는 항목을 따릅니다. `histograms`가 활성화된 경우 `le`, `info`가 활성화된 경우 `ClickHouse_Info` 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), `asynchronous_metrics`가 활성화되고 [`asynchronous_metrics_key_values_mode`](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 서버 설정에 따라 키-값 형식으로 게시되는 경우 키-값 비동기 메트릭의 키 레이블(`channel`, `cpu`, `device`, `disk`, `interface`, `mc`, `sensor`), `histograms`/`dimensional_metrics`가 활성화된 경우 노출된 히스토그램 또는 차원 메트릭 패밀리에서 사용하는 모든 레이블(예: `group`, `direction`, `operation_type`)이 해당합니다. 이는 엔드포인트가 실제로 노출하는 항목에 따라 달라지므로, 한 엔드포인트에서는 유효한 이름이 다른 엔드포인트에서는 거부될 수 있습니다. 예를 들어 Keeper `keeper_metrics_only` 엔드포인트는 `keeper_*` 패밀리만 노출하므로 서버 패밀리에서만 사용되는 레이블은 여기에서 허용됩니다. 상수 레이블은 구성을 로드할 때 `SYSTEM RELOAD CONFIG`를 포함하여 동일한 규칙으로 검증됩니다. 이러한 레이블을 추가하거나 키 레이블이 기록되도록 `asynchronous_metrics_key_values_mode`를 변경하여 상수 레이블이 충돌하게 만드는 다시 로드는 적용되기 전에 전체가 거부되므로 동일한 레이블이 두 번 노출되지 않습니다. 허용된 모드 변경은 메트릭을 노출하는 엔드포인트를 다시 생성하므로 새 형식과 동일한 구성의 레이블이 함께 게시됩니다.
 
 **예시**
 
@@ -1436,9 +1352,7 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 curl 127.0.0.1:9363/metrics
 ```
 
-<div id="query_log">
-  ## query_log
-</div>
+## query_log {#query_log}
 
 [log&#95;queries=1](/ko/reference/settings/session-settings/log-queries#log_queries) 설정으로 수신된 쿼리를 로깅하는 설정입니다.
 
@@ -1466,9 +1380,7 @@ curl 127.0.0.1:9363/metrics
 </query_log>
 ```
 
-<div id="query_metric_log">
-  ## query_metric_log
-</div>
+## query_metric_log {#query_metric_log}
 
 기본적으로 비활성화되어 있습니다.
 
@@ -1503,9 +1415,7 @@ curl 127.0.0.1:9363/metrics
 
 <SystemLogParameters />
 
-<div id="query_cache">
-  ## query_cache
-</div>
+## query_cache {#query_cache}
 
 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache) 구성입니다.
 
@@ -1534,9 +1444,7 @@ curl 127.0.0.1:9363/metrics
 </query_cache>
 ```
 
-<div id="query_thread_log">
-  ## query_thread_log
-</div>
+## query_thread_log {#query_thread_log}
 
 [log&#95;query&#95;threads=1](/ko/reference/settings/session-settings/log-query#log_query_threads) 설정을 사용해 수신한 쿼리의 스레드를 로깅하는 설정입니다.
 
@@ -1561,9 +1469,7 @@ curl 127.0.0.1:9363/metrics
 </query_thread_log>
 ```
 
-<div id="query_views_log">
-  ## query_views_log
-</div>
+## query_views_log {#query_views_log}
 
 [log&#95;query&#95;views=1](/ko/reference/settings/session-settings/log-query#log_query_views) 설정으로 수신된 쿼리에 따라 뷰(라이브, 구체화된 뷰 등)를 로깅하기 위한 설정입니다.
 
@@ -1588,9 +1494,7 @@ curl 127.0.0.1:9363/metrics
 </query_views_log>
 ```
 
-<div id="text_log">
-  ## text_log
-</div>
+## text_log {#text_log}
 
 텍스트 메시지를 기록하는 [text&#95;log](/ko/reference/system-tables/text_log) 시스템 테이블 설정입니다.
 
@@ -1621,9 +1525,7 @@ curl 127.0.0.1:9363/metrics
 </clickhouse>
 ```
 
-<div id="trace_log">
-  ## trace_log
-</div>
+## trace_log {#trace_log}
 
 [trace&#95;log](/ko/reference/system-tables/trace_log) 시스템 테이블의 동작 설정입니다.
 
@@ -1645,9 +1547,7 @@ curl 127.0.0.1:9363/metrics
 </trace_log>
 ```
 
-<div id="asynchronous_insert_log">
-  ## asynchronous_insert_log
-</div>
+## asynchronous_insert_log {#asynchronous_insert_log}
 
 async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/system-tables/asynchronous_insert_log) 시스템 테이블(system table)의 설정입니다.
 
@@ -1671,9 +1571,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </clickhouse>
 ```
 
-<div id="crash_log">
-  ## crash_log
-</div>
+## crash_log {#crash_log}
 
 [crash&#95;log](/ko/reference/system-tables/crash_log) 시스템 테이블에 대한 설정입니다.
 
@@ -1710,9 +1608,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </crash_log>
 ```
 
-<div id="create_union_system_log_tables">
-  ## create_union_system_log_tables
-</div>
+## create_union_system_log_tables {#create_union_system_log_tables}
 
 시스템 로그 테이블과 함께 `all_...` 테이블(`system.query_log`에는 `system.all_query_log`, `system.text_log`에는 `system.all_text_log` 등)을 생성하도록 요청합니다. 이러한 테이블은 해당 로그 테이블과 그 교체된 버전(`query_log_0`, `query_log_1`, ...) 및/또는 클러스터 내 모든 레플리카의 동일한 테이블을 통합하며, `clusterAllReplicas(default, merge(system, '^query_log'))` 같은 구문을 기억하지 않아도 한 번에 모두 쿼리할 수 있습니다.
 
@@ -1740,9 +1636,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </create_union_system_log_tables>
 ```
 
-<div id="custom_cached_disks_base_directory">
-  ## custom_cached_disks_base_directory
-</div>
+## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
 
 이 설정은 사용자 지정(SQL로 생성된) 캐시 디스크의 캐시 경로를 지정합니다.
 `custom_cached_disks_base_directory`는 사용자 지정 디스크에 대해 `filesystem_caches_path`(`filesystem_caches_path.xml`에 있음)보다 우선순위가 높으며,
@@ -1761,9 +1655,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 ```
 
-<div id="backup_log">
-  ## backup_log
-</div>
+## backup_log {#backup_log}
 
 `BACKUP` 및 `RESTORE` 작업 로깅을 위한 [backup&#95;log](/ko/reference/system-tables/backup_log) 시스템 테이블의 설정입니다.
 
@@ -1787,9 +1679,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </clickhouse>
 ```
 
-<div id="blob_storage_log">
-  ## blob_storage_log
-</div>
+## blob_storage_log {#blob_storage_log}
 
 [`blob_storage_log`](/ko/reference/system-tables/blob_storage_log) 시스템 테이블의 설정입니다.
 
@@ -1807,9 +1697,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </blob_storage_log>
 ```
 
-<div id="query_masking_rules">
-  ## query_masking_rules
-</div>
+## query_masking_rules {#query_masking_rules}
 
 정규식 기반 규칙으로, 쿼리는 물론 저장 전에 모든 로그 메시지에도 적용됩니다. 적용 대상은 server logs,
 [`system.query_log`](/ko/reference/system-tables/query_log), [`system.text_log`](/ko/reference/system-tables/text_log), [`system.processes`](/ko/reference/system-tables/processes) 테이블과 클라이언트로 전송되는 로그입니다. 이를 통해
@@ -1842,9 +1730,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 분산 쿼리의 경우 각 서버를 별도로 구성해야 합니다. 그렇지 않으면 다른
 노드로 전달되는 서브쿼리가 마스킹되지 않은 상태로 저장됩니다.
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블 엔진과 `cluster` 테이블 함수에서 사용하는 클러스터 구성입니다.
 
@@ -1862,9 +1748,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 * [클러스터 디스커버리](/ko/guides/oss/deployment-and-scaling/cluster-discovery)
 * [복제된 데이터베이스 엔진](/ko/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 URL 관련 스토리지 엔진과 테이블 함수에서 사용할 수 있도록 허용된 호스트 목록입니다.
 
@@ -1884,9 +1768,7 @@ URL 관련 스토리지 엔진과 테이블 함수에서 사용할 수 있도록
 </remote_url_allow_hosts>
 ```
 
-<div id="timezone">
-  ## 시간대
-</div>
+## 시간대 {#timezone}
 
 서버의 시간대입니다.
 
@@ -1904,9 +1786,7 @@ UTC 시간대 또는 지리적 위치에 대한 IANA 식별자(예: Africa/Abidj
 
 * [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)
 
-<div id="tcp_port">
-  ## tcp_port
-</div>
+## tcp_port {#tcp_port}
 
 TCP 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트입니다.
 
@@ -1916,9 +1796,7 @@ TCP 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트�
 <tcp_port>9000</tcp_port>
 ```
 
-<div id="tcp_port_secure">
-  ## tcp_port_secure
-</div>
+## tcp_port_secure {#tcp_port_secure}
 
 클라이언트와 안전하게 통신할 때 사용하는 TCP 포트입니다. [OpenSSL](#openSSL) 설정과 함께 사용하십시오.
 
@@ -1928,9 +1806,7 @@ TCP 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트�
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-<div id="mysql_port">
-  ## mysql_port
-</div>
+## mysql_port {#mysql_port}
 
 MySQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트입니다.
 
@@ -1945,9 +1821,7 @@ MySQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포�
 <mysql_port>9004</mysql_port>
 ```
 
-<div id="postgresql_port">
-  ## postgresql_port
-</div>
+## postgresql_port {#postgresql_port}
 
 PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트입니다.
 
@@ -1962,9 +1836,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 <postgresql_port>9005</postgresql_port>
 ```
 
-<div id="url_scheme_mappers">
-  ## url_scheme_mappers
-</div>
+## url_scheme_mappers {#url_scheme_mappers}
 
 축약형 또는 기호형 URL 프리픽스를 전체 URL로 변환하는 구성입니다.
 
@@ -1984,9 +1856,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </url_scheme_mappers>
 ```
 
-<div id="user_defined_path">
-  ## user_defined_path
-</div>
+## user_defined_path {#user_defined_path}
 
 사용자 정의 파일이 저장된 디렉터리입니다. SQL 사용자 정의 함수 [SQL 사용자 정의 함수](/ko/reference/functions/regular-functions/udf)에 사용됩니다.
 
@@ -1996,9 +1866,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
-<div id="users_config">
-  ## users_config
-</div>
+## users_config {#users_config}
 
 다음이 포함된 파일의 경로입니다.
 
@@ -2013,9 +1881,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 <users_config>users.xml</users_config>
 ```
 
-<div id="access_control_improvements">
-  ## access_control_improvements
-</div>
+## access_control_improvements {#access_control_improvements}
 
 액세스 제어 시스템의 선택적 개선 사항에 대한 설정입니다.
 
@@ -2045,9 +1911,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </access_control_improvements>
 ```
 
-<div id="s3queue_log">
-  ## s3queue_log
-</div>
+## s3queue_log {#s3queue_log}
 
 `s3queue_log` 시스템 테이블에 대한 설정입니다.
 
@@ -2064,9 +1928,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </s3queue_log>
 ```
 
-<div id="dead_letter_queue">
-  ## dead_letter_queue
-</div>
+## dead_letter_queue {#dead_letter_queue}
 
 &#39;dead&#95;letter&#95;queue&#39; 시스템 테이블에 대한 설정입니다.
 
@@ -2083,9 +1945,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </dead_letter_queue>
 ```
 
-<div id="zookeeper">
-  ## zookeeper
-</div>
+## zookeeper {#zookeeper}
 
 ClickHouse가 [ZooKeeper](http://zookeeper.apache.org/) 클러스터와 상호 작용할 수 있도록 하는 설정을 포함합니다. ClickHouse는 복제된 테이블(Replicated Table)을 사용할 때 레플리카의 메타데이터를 저장하기 위해 ZooKeeper를 사용합니다. 복제된 테이블을 사용하지 않는 경우 이 매개변수 섹션은 생략할 수 있습니다.
 
@@ -2148,9 +2008,7 @@ ClickHouse가 [ZooKeeper](http://zookeeper.apache.org/) 클러스터와 상호 �
 * [ZooKeeper 프로그래머 가이드](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 * [ClickHouse와 ZooKeeper 간의 보안 통신(선택 사항)](/ko/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
-<div id="use_minimalistic_part_header_in_zookeeper">
-  ## use_minimalistic_part_header_in_zookeeper
-</div>
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
 ZooKeeper에서 데이터 파트 헤더를 저장하는 방식입니다. 이 설정은 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/index) 계열에만 적용됩니다. 다음과 같이 지정할 수 있습니다.
 
@@ -2175,9 +2033,7 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
   이 설정으로 이미 저장된 데이터 파트 헤더는 이전의 비컴팩트 표현으로 복원할 수 없습니다.
 </Note>
 
-<div id="distributed_ddl">
-  ## distributed_ddl
-</div>
+## distributed_ddl {#distributed_ddl}
 
 클러스터에서 [분산 DDL 쿼리](/ko/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`)의 실행을 관리합니다.
 [ZooKeeper](/ko/reference/settings/server-settings/settings/zookeeper#zookeeper)가 활성화된 경우에만 동작합니다.
@@ -2221,9 +2077,7 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
 </distributed_ddl>
 ```
 
-<div id="access_control_path">
-  ## access_control_path
-</div>
+## access_control_path {#access_control_path}
 
 ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 저장하는 폴더 경로입니다.
 
@@ -2231,9 +2085,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 
 * [액세스 제어 및 계정 관리](/ko/concepts/features/security/access-rights#access-control-usage)
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 평문 비밀번호 타입(안전하지 않음)을 허용할지 여부를 설정합니다.
 
@@ -2243,9 +2095,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 보안상 안전하지 않은 no&#95;password 비밀번호 유형의 허용 여부를 설정합니다.
 
@@ -2255,9 +2105,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 &#39;IDENTIFIED WITH no&#95;password&#39;를 명시적으로 지정한 경우를 제외하고, 비밀번호 없이 사용자를 생성하는 것을 금지합니다.
 
@@ -2267,9 +2115,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="default_session_timeout">
-  ## default_session_timeout
-</div>
+## default_session_timeout {#default_session_timeout}
 
 기본 세션 타임아웃입니다. 단위는 초입니다.
 
@@ -2279,9 +2125,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <default_session_timeout>60</default_session_timeout>
 ```
 
-<div id="default_password_type">
-  ## default_password_type
-</div>
+## default_password_type {#default_password_type}
 
 `CREATE USER u IDENTIFIED BY 'p'`와 같은 쿼리에서 자동으로 설정할 비밀번호 유형을 지정합니다.
 
@@ -2301,9 +2145,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <default_password_type>sha256_password</default_password_type>
 ```
 
-<div id="user_directories">
-  ## user_directories
-</div>
+## user_directories {#user_directories}
 
 다음 설정을 포함하는 설정 파일의 섹션입니다:
 
@@ -2362,9 +2204,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 </ldap>
 ```
 
-<div id="top_level_domains_list">
-  ## top_level_domains_list
-</div>
+## top_level_domains_list {#top_level_domains_list}
 
 추가할 사용자 지정 최상위 도메인 목록을 정의합니다. 각 항목의 형식은 `<name>/path/to/file</name>`입니다.
 
@@ -2380,9 +2220,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 
 * 사용자 지정 TLD 목록 이름을 받아, 첫 번째 유의미한 하위 도메인까지의 최상위 하위 도메인을 포함한 도메인 부분을 반환하는 함수 [`cutToFirstSignificantSubdomainCustom`](/ko/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) 및 그 변형.
 
-<div id="proxy">
-  ## 프록시
-</div>
+## 프록시 {#proxy}
 
 현재 S3 스토리지, S3 테이블 함수, URL 함수에서 지원하는 HTTP 및 HTTPS 요청용 프록시 서버를 정의합니다.
 
@@ -2520,9 +2358,7 @@ ClickHouse는 요청 프로토콜에 대해 가장 우선순위가 높은 리졸
 환경 리졸버에 도달할 때까지 그다음으로 우선순위가 높은 리졸버 유형을 차례로 확인합니다.
 즉, 여러 리졸버 유형을 혼합해 사용할 수도 있습니다.
 
-<div id="disable_tunneling_for_https_requests_over_http_proxy">
-  ## disable_tunneling_for_https_requests_over_http_proxy
-</div>
+## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
 기본적으로 `HTTP` 프록시를 통해 `HTTPS` 요청을 보낼 때는 터널링(즉, `HTTP CONNECT`)을 사용합니다. 이 설정을 사용하면 이를 비활성화할 수 있습니다.
 
@@ -2552,9 +2388,7 @@ IP 주소, 도메인, 하위 도메인, 그리고 전체 우회를 위한 `'*'` 
 </proxy>
 ```
 
-<div id="workload_path">
-  ## workload_path
-</div>
+## workload_path {#workload_path}
 
 모든 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리의 저장 위치로 사용되는 디렉터리입니다. 기본적으로 server 작업 디렉터리 아래의 `/workload/` 폴더가 사용됩니다.
 
@@ -2571,9 +2405,7 @@ IP 주소, 도메인, 하위 도메인, 그리고 전체 우회를 위한 `'*'` 
 * [워크로드 계층 구조](/ko/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
 
-<div id="workload_zookeeper_path">
-  ## workload_zookeeper_path
-</div>
+## workload_zookeeper_path {#workload_zookeeper_path}
 
 모든 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리의 저장소로 사용되는 ZooKeeper 노드의 경로입니다. 일관성을 위해 모든 SQL 정의는 이 단일 znode의 값으로 저장됩니다. 기본적으로 ZooKeeper는 사용되지 않으며, 정의는 [디스크](#workload_path)에 저장됩니다.
 
@@ -2588,9 +2420,7 @@ IP 주소, 도메인, 하위 도메인, 그리고 전체 우회를 위한 `'*'` 
 * [워크로드 계층 구조](/ko/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;path](#workload_path)
 
-<div id="zookeeper_log">
-  ## zookeeper_log
-</div>
+## zookeeper_log {#zookeeper_log}
 
 [`zookeeper_log`](/ko/reference/system-tables/zookeeper_log) 시스템 테이블에 대한 설정입니다.
 

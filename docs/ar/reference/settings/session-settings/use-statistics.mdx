@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد وُلِّدت تلقائيًا من [الشيفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_statistics">
-  ## use_statistics
-</div>
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 /// يُفضَّل على &#39;allow&#95;statistics&#95;optimize&#39; اتساقًا مع &#39;use&#95;primary&#95;key&#39; و&#39;use&#95;skip&#95;indexes&#39;
 يسمح باستخدام الإحصاءات لتحسين الاستعلامات
 
-<div id="use_statistics_cache">
-  ## use_statistics_cache
-</div>
+## use_statistics_cache {#use_statistics_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,24 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 استخدم ذاكرة التخزين المؤقت للإحصاءات في الاستعلام لتجنّب العبء الإضافي الناتج عن تحميل إحصاءات جميع الأجزاء
 
-<div id="use_statistics_for_part_pruning">
-  ## use_statistics_for_part_pruning
-</div>
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد يتيح الإجابة عن تجميعات `min` و`max` و`count` التي لا تتضمن `GROUP BY` ولا عوامل تصفية، وذلك انطلاقاً من إحصاءات الأعمدة الخاصة بكل جزء للأجزاء التي جُسِّدت فيها هذه الإحصاءات، مع قراءة الأجزاء المتبقية فقط. previous_value=false بحيث يُبقي `compatibility` مع الإصدارات الأقدم من 26.9 هذا التحسين معطلاً ويستعيد الخطة السابقة."}]}]} />
+
+الإجابة عن تجميعات `min` و`max` و`count` انطلاقاً من إحصاءات الأعمدة الخاصة بكل جزء بدلاً من قراءة البيانات.
+
+عند التمكين، يُجاب عن استعلام بالشكل `SELECT min(column), max(column), count() FROM table` لا يتضمن `GROUP BY` ولا عوامل تصفية
+انطلاقاً من إحصاءات الأعمدة (مثل إحصاءات MinMax، انظر إعداد MergeTree المسمى `auto_statistics_types`)
+للأجزاء التي جُسِّدت فيها هذه الإحصاءات، ولا تُقرأ سوى الأجزاء المتبقية.
+
+القيم الممكنة:
+
+* 0 — معطل.
+* 1 — مُمكّن.
+
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

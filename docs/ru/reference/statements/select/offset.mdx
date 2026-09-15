@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+Формы `OFFSET ... FETCH` из стандарта SQL нельзя комбинировать с диапазонной формой [`LIMIT ... AFTER ... UNTIL`](/ru/reference/statements/select/limit#limit-after-until).
+
 Значение `offset_row_count` или `fetch_row_count` может быть числом или литеральной константой. `fetch_row_count` можно опустить; по умолчанию оно равно 1.
 
 `OFFSET` задает количество строк, которые нужно пропустить перед тем, как начать возвращать строки из результирующего набора запроса. `OFFSET n` пропускает первые `n` строк результата.
@@ -57,9 +59,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   Фактическое смещение также может зависеть от настройки [offset](/ru/reference/settings/session-settings/other#offset).
 </Note>
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Исходная таблица:
 
