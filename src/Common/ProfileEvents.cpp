@@ -137,6 +137,7 @@
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
     M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(DeltaLakeDeltaLogExistenceChecks, "Number of object-storage listings issued to check whether a DeltaLake `_delta_log` exists (e.g. during CREATE TABLE).", ValueType::Number) \
     M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
     M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \
     M(OneLakeAccessTokenRequestMicroseconds, "Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.", ValueType::Microseconds) \
@@ -1386,6 +1387,17 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanRemoteTasks, "Number of tasks dispatched to remote workers when executing a query with make_distributed_plan. A non-zero value means the query was actually executed distributedly.", ValueType::Number) \
     M(DistributedPlanLocalExecution, "Set to 1 when a make_distributed_plan query was executed in-process via the local executor (distributed_plan_execute_locally) instead of being dispatched to remote workers.", ValueType::Number) \
     M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
+    M(StreamingExchangeSendBytes, "Bytes written to the sockets of the streaming exchanges of a distributed query plan. `NetworkSendBytes` does not count them.", ValueType::Bytes) \
+    M(StreamingExchangeReceiveBytes, "Bytes read from the sockets of the streaming exchanges of a distributed query plan. `NetworkReceiveBytes` does not count them.", ValueType::Bytes) \
+    M(StreamingExchangePacketsSent, "Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. The packets of a send buffer are counted when the whole buffer is written; a buffer cut short because the receiver needed no more data counts none of its packets.", ValueType::Number) \
+    M(StreamingExchangePacketsReceived, "Data packets read from streaming exchanges, one per chunk plus one end-of-stream packet per stream.", ValueType::Number) \
+    M(StreamingExchangeSerializedBytes, "Bytes of the Native blocks in streaming exchange packets before compression, counted once per packet where it is serialized. Against `StreamingExchangeSendBytes` this gives the compression ratio of a shuffle or a gather; a broadcast sends every packet to each destination, so there `StreamingExchangeSendBytes` grows with the number of destinations.", ValueType::Bytes) \
+    M(StreamingExchangeSerializeMicroseconds, "Time spent serializing and compressing chunks into streaming exchange packets.", ValueType::Microseconds) \
+    M(StreamingExchangeDeserializeMicroseconds, "Time spent decompressing and deserializing streaming exchange packets into chunks.", ValueType::Microseconds) \
+    M(StreamingExchangeSendQueueFullMicroseconds, "Time a streaming exchange sink did not take chunks because its queue of packets waiting for the socket was full.", ValueType::Microseconds) \
+    M(StreamingExchangeReceiveWaitMicroseconds, "Time a streaming exchange source waited for the next bytes from its sender.", ValueType::Microseconds) \
+    M(StreamingExchangeConnectionWaitMicroseconds, "Time a streaming exchange sink waited for the receiving task to connect.", ValueType::Microseconds) \
+    M(StreamingExchangeEarlyCloses, "How many times a streaming exchange source told its sender to stop before the stream was read to the end, for example because a LIMIT was satisfied. A sender that was already gone is not counted.", ValueType::Number) \
     \
     M(SharedMergeTreeVirtualPartsUpdates, "Virtual parts update count", ValueType::Number) \
     M(SharedMergeTreeVirtualPartsUpdatesByLeader, "Virtual parts updates by leader", ValueType::Number) \
