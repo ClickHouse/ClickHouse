@@ -80,6 +80,41 @@ static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array of strings, got: {}", argument->formatForLogging());
 }
 
+/// The arguments of an optimization, in the same shapes as `extractParts` above accepts: an array
+/// literal wrapped in a `_CAST` with the analyzer, a bare `array(...)` call without it. Every element
+/// is evaluated on its own, so that a list of mixed types - which is what `buildAnalyzeIndexQuery`
+/// sends - keeps the type of each element instead of being coerced to one common type.
+static Array extractOptimizationArguments(const ASTPtr & argument, const ContextPtr & context)
+{
+    ASTPtr array = argument;
+    if (const auto * func = array->as<ASTFunction>())
+    {
+        if (func->name == "_CAST" && func->arguments && !func->arguments->children.empty()) /// _CAST([...], 'Array(String)')
+            array = func->arguments->children.at(0);
+        else if (func->name == "array" && func->arguments) /// array(ExpressionList)
+            array = func->arguments;
+        else
+            array = ASTPtr();
+    }
+
+    if (array)
+    {
+        if (const auto * literal = array->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Array)
+            return literal->value.safeGet<Array>();
+
+        if (const auto * expr_list = array->as<ASTExpressionList>())
+        {
+            Array result;
+            for (const auto & element : expr_list->children)
+                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value);
+            return result;
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Arguments of an optimization must be an array of its parameters, got: {}", argument->formatForLogging());
+}
+
 class TableFunctionMergeTreeAnalyzeIndexes : public ITableFunction
 {
 public:
@@ -208,8 +243,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
     auto optimization = checkAndGetLiteralArgument<String>(args[start_index++], "extra_optimization");
     if (optimization == "vector_search_index_analysis")
     {
-        auto cast_node = args[start_index++]->children.at(0);
-        auto vector_search_args = evaluateConstantExpressionAsLiteral(cast_node->children.at(0), context)->as<ASTLiteral &>().value.safeGet<Array>();
+        auto vector_search_args = extractOptimizationArguments(args[start_index++], context);
         if (vector_search_args.size() != 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "vector_search_index_analysis requires 6 arguments");
