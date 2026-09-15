@@ -36,3 +36,16 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 -
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT count(), sum(length(s)), uniqExact(s) FROM file('$FILE', Parquet)
 "
+
+# A record is kept whole, so a single `Array(String)` row holding more than 2 GiB has to be split
+# across pages anyway. Page indexes are on by default, which is what makes the writer prefer record
+# boundaries in the first place.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT arrayMap(i -> concat(toString(i), repeat('x', 1000000)), range(2200)) AS a
+    FROM numbers(1)
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), length(a), arraySum(x -> length(x), a), uniqExact(a) FROM file('$FILE', Parquet) GROUP BY a
+"
