@@ -31,7 +31,10 @@ SET enable_parallel_blocks_marshalling = 0;
 -- Two-level aggregation states in every producer, so the merge consumes several buckets per input.
 SET group_by_two_level_threshold = 10000;
 SET group_by_two_level_threshold_bytes = 1;
-SET max_threads = 16;
+-- Enough to flush a producer's two-level states in parallel. The producers the merge interleaves
+-- come from `distributed_plan_workers_num`, so a larger value here only multiplies the flaky
+-- check, which runs `nproc - 1` copies of this test with the thread fuzzer on.
+SET max_threads = 4;
 -- The promise is made from either setting; both are pinned because the runner randomizes them.
 SET distributed_aggregation_memory_efficient = 1;
 SET enable_memory_bound_merging_of_aggregation_results = 1;
