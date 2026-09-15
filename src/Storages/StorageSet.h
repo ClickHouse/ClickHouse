@@ -101,4 +101,9 @@ private:
     size_t getSize(ContextPtr) const override;
 };
 
+
+/// Taking a set table's contents for the right-hand side of `IN` reads all of its columns, exactly like
+/// the `IN (SELECT * FROM table)` spelling this is shorthand for, so it requires the same privilege.
+void checkAccessForSetTableOnRightOfIn(const ContextPtr & context, const IStorage & table, const StorageID & table_id);
+
 }
