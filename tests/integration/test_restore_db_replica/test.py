@@ -861,10 +861,15 @@ def test_restore_db_replica_waits_for_database_sync(
         digest_before_restore = zk.get(digest_path)[0]
         restore_thread.start()
 
-        # Latched, as in the test above. The digest is the condition that fires: an unguarded
-        # restore rewrites it to force recovery, and only then reaches the worker reset, where it
-        # blocks on the parked thread - so "did not finish" alone would pass unguarded too. The
-        # sync half keeps the arm honest, because a sync that stopped waiting holds no guard.
+        # Latched, as in the test above. The condition that fires is the restore reaching
+        # `restoreDatabaseInKeeper`, whose first step stops this replica's DDL worker and logs it,
+        # before any Keeper write: unguarded, that line appears at once and the restore then blocks
+        # joining the parked worker, so "did not finish" and an unchanged digest hold there too.
+        # The sync half keeps the arm honest, because a sync that stopped waiting holds no guard.
+        restore_stopped_the_worker = (
+            f"{{{restore_query_id}}} <Trace> DatabaseReplicated"
+            f" ({exclusive_database_name}): Stopping DDL worker"
+        )
         observed_running = False
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
@@ -877,6 +882,10 @@ def test_restore_db_replica_waits_for_database_sync(
                     "SYSTEM RESTORE DATABASE REPLICA finished while SYSTEM SYNC DATABASE REPLICA"
                     f" held the database guard: {restore_result}"
                 )
+            assert not node_1.contains_in_log(restore_stopped_the_worker), (
+                "SYSTEM RESTORE DATABASE REPLICA stopped this replica's DDL worker while SYSTEM"
+                " SYNC DATABASE REPLICA was still waiting on the database guard"
+            )
             assert zk.get(digest_path)[0] == digest_before_restore, (
                 "SYSTEM RESTORE DATABASE REPLICA rewrote this replica's digest in Keeper during"
                 " the window in which SYSTEM SYNC DATABASE REPLICA was waiting"
