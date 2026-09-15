@@ -81,7 +81,7 @@ void DistinctTransform::transform(Chunk & chunk)
     {
         distinct_set->prepareForInsert(chunk);
         const auto available = getMostStrictAvailableSystemMemory();
-        if (available && distinct_set->estimateGrowthMemory(chunk.getNumRows()) > *available)
+        if (available && distinct_set->estimateGrowthMemory(chunk) > *available)
         {
             distinct_set.reset();
             ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);

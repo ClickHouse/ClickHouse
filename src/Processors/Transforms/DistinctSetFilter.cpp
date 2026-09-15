@@ -421,6 +421,15 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
     UNREACHABLE();
 }
 
+ColumnRawPtrs DistinctSetFilter::getKeyColumns(const Columns & columns) const
+{
+    ColumnRawPtrs key_columns;
+    key_columns.reserve(key_columns_pos.size());
+    for (const auto pos : key_columns_pos)
+        key_columns.push_back(columns[pos].get());
+    return key_columns;
+}
+
 void DistinctSetFilter::initialize(const ColumnRawPtrs & key_columns)
 {
     data->init(SetVariants::chooseMethod(key_columns, key_sizes));
@@ -433,19 +442,12 @@ void DistinctSetFilter::prepareForInsert(Chunk & chunk)
 
     materializeChunk(chunk);
     if (data->empty())
-    {
-        ColumnRawPtrs key_columns;
-        key_columns.reserve(key_columns_pos.size());
-        for (const auto pos : key_columns_pos)
-            key_columns.push_back(chunk.getColumns()[pos].get());
-        initialize(key_columns);
-    }
+        initialize(getKeyColumns(chunk.getColumns()));
 }
 
-size_t DistinctSetFilter::estimateGrowthMemory(size_t additional_keys) const
+size_t DistinctSetFilter::estimateGrowthMemory(const Chunk & chunk) const
 {
-    chassert(!data->empty());
-    return data->estimateGrowthMemory(additional_keys);
+    return data->estimateGrowthMemory(getKeyColumns(chunk.getColumns()), chunk.getNumRows());
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
@@ -456,10 +458,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     const auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
-    for (auto pos : key_columns_pos)
-        column_ptrs.emplace_back(columns[pos].get());
+    auto column_ptrs = getKeyColumns(columns);
 
     /// The consumer skips rows with a `NULL` in any key component, so they carry no value downstream.
     /// Instead of pre-filtering the chunk, the `NULL` rows are masked out of the deduplication: they are

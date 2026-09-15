@@ -311,7 +311,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
         = input_chunk.allocatedBytes() + fingerprint_bytes + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
     if (const auto available = getMostStrictAvailableSystemMemory())
     {
-        const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk.getNumRows());
+        const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk);
         if (growth_memory && (spill_headroom_bytes > *available || growth_memory > *available - spill_headroom_bytes))
         {
             startSpilling(hashing);

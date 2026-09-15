@@ -149,9 +149,11 @@ public:
     /// Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
     void prepareForInsert(Chunk & chunk);
 
-    /// Estimates peak additional hash-table buffer memory for `additional_keys` new keys, excluding
-    /// arena growth. Requires an initialized set.
-    size_t estimateGrowthMemory(size_t additional_keys) const;
+    /// Estimates peak additional key-storage memory assuming every row in the prepared chunk is new.
+    /// Includes hash-table buffers and arena allocations for retained string values. Requires an
+    /// initialized set and columns normalized by `prepareForInsert`. Saturates at the maximum of `size_t`
+    /// when the bound is not representable.
+    size_t estimateGrowthMemory(const Chunk & chunk) const;
 
     /// Inserts unseen keys and retains their first rows, preserving chunk information.
     /// `max_rows_in_distinct` and `max_bytes_in_distinct` apply after insertion. `THROW` raises an
@@ -166,6 +168,7 @@ public:
     bool isLimitReached() const { return limit_reached; }
 
 private:
+    ColumnRawPtrs getKeyColumns(const Columns & columns) const;
     void initialize(const ColumnRawPtrs & key_columns);
 
     const ColumnNumbers key_columns_pos;

@@ -13,6 +13,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -752,10 +753,10 @@ TEST(DistinctSetFilterGrowth, PreparationAndGrowthEstimationDoNotInsertRows)
         filter.prepareForInsert(input);
 
         const size_t prepared_bytes = filter.getTotalByteCount();
-        const size_t growth_memory = filter.estimateGrowthMemory(input.getNumRows());
+        const size_t growth_memory = filter.estimateGrowthMemory(input);
         EXPECT_GT(growth_memory, 0);
-        EXPECT_EQ(filter.estimateGrowthMemory(input.getNumRows()), growth_memory);
-        EXPECT_EQ(filter.estimateGrowthMemory(0), 0);
+        EXPECT_EQ(filter.estimateGrowthMemory(input), growth_memory);
+        EXPECT_EQ(filter.estimateGrowthMemory(Chunk(input.cloneEmptyColumns(), 0)), 0);
         EXPECT_EQ(filter.getTotalByteCount(), prepared_bytes);
         EXPECT_EQ(filter.getTotalRowCount(), populated ? 4 : 0);
         EXPECT_EQ(input.getNumRows(), num_rows);
@@ -780,10 +781,11 @@ TEST(DistinctSetFilterGrowth, FixedTablesNeedNoGrowthMemory)
         Chunk input(Columns{std::move(column)}, 2);
         filter.prepareForInsert(input);
 
-        EXPECT_EQ(filter.estimateGrowthMemory(0), 0);
-        EXPECT_EQ(filter.estimateGrowthMemory(1048576), 0);
+        EXPECT_EQ(filter.estimateGrowthMemory(Chunk(input.cloneEmptyColumns(), 0)), 0);
+        Chunk large_input(Columns{input.getColumns().front()->cloneResized(1048576)}, 1048576);
+        EXPECT_EQ(filter.estimateGrowthMemory(large_input), 0);
         filter.filter(std::move(input));
-        EXPECT_EQ(filter.estimateGrowthMemory(1048576), 0);
+        EXPECT_EQ(filter.estimateGrowthMemory(large_input), 0);
     }
 }
 
@@ -823,6 +825,110 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesEveryInput)
                 EXPECT_EQ((*input.getColumns()[1])[row], (*payload)[row]);
             EXPECT_EQ(filter.getTotalRowCount(), populated ? 1 : 0);
             EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), num_rows - populated);
+        }
+    }
+}
+
+TEST(DistinctSetFilterGrowth, RetainedStringsGrowWithSpareTableCapacity)
+{
+    const DataTypes types{
+        std::make_shared<DataTypeString>(),
+        std::make_shared<DataTypeFixedString>(8192),
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
+    for (const auto & type : types)
+    {
+        for (const bool populated : {false, true})
+        {
+            SCOPED_TRACE(::testing::Message() << type->getName() << ", populated=" << populated);
+            const Block header = {
+                ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "payload"),
+                ColumnWithTypeAndName(type, "key")};
+            auto make_input = [&](const std::vector<String> & values)
+            {
+                auto keys = type->createColumn();
+                for (const auto & value : values)
+                    keys->insert(isArray(type) ? Field(Array{Field(value)}) : Field(value));
+                return Chunk(Columns{ColumnUInt64::create(values.size()), std::move(keys)}, values.size());
+            };
+            DistinctSetFilter filter(header, {"key"}, SizeLimits{});
+            if (populated)
+                filter.filter(make_input({"seed"}));
+
+            auto input = make_input({String(4096, 'a'), String(8192, 'b'), String(6144, 'c')});
+            filter.prepareForInsert(input);
+            const size_t before = filter.getTotalByteCount();
+            const auto estimate = filter.estimateGrowthMemory(input);
+            EXPECT_EQ(filter.estimateGrowthMemory(Chunk(input.cloneEmptyColumns(), 0)), 0);
+            EXPECT_EQ(filter.estimateGrowthMemory(input), estimate);
+            EXPECT_EQ(filter.getTotalByteCount(), before);
+            EXPECT_EQ(filter.getTotalRowCount(), populated ? 1 : 0);
+            if (isStringOrFixedString(type))
+                EXPECT_GT(estimate, 0);
+            else
+                EXPECT_EQ(estimate, 0);
+
+            EXPECT_EQ(filter.filter(input.clone()).getNumRows(), 3);
+            const size_t after = filter.getTotalByteCount();
+            EXPECT_GE(estimate, after - before);
+            if (isStringOrFixedString(type))
+                EXPECT_GT(after, before);
+            else
+                EXPECT_EQ(after, before);
+
+            EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), 0);
+            EXPECT_EQ(filter.getTotalByteCount(), after);
+        }
+    }
+}
+
+TEST(DistinctSetFilterGrowth, PreparationMaterializesRetainedStringKeys)
+{
+    const DataTypes types{std::make_shared<DataTypeString>(), std::make_shared<DataTypeFixedString>(8192)};
+    constexpr size_t num_rows = 3;
+    for (const auto & type : types)
+    {
+        const Block header = {
+            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "payload"),
+            ColumnWithTypeAndName(type, "key")};
+        auto mutable_value = type->createColumn();
+        mutable_value->insert(String(8192, 'x'));
+        const ColumnPtr value = std::move(mutable_value);
+        auto sparse = ColumnSparse::create(type->createColumn());
+        sparse->insertManyDefaults(num_rows - 1);
+        sparse->insert(String(8192, 'x'));
+        const Columns inputs{
+            ColumnConst::create(value, num_rows),
+            ColumnReplicated::create(value, ColumnUInt8::create(num_rows, UInt8(0))),
+            std::move(sparse)};
+        for (const auto & keys : inputs)
+        {
+            for (const bool populated : {false, true})
+            {
+                SCOPED_TRACE(::testing::Message() << type->getName() << ", " << keys->getName()
+                    << ", populated=" << populated);
+                DistinctSetFilter filter(header, {"key"}, SizeLimits{});
+                if (populated)
+                {
+                    auto seed = type->createColumn();
+                    seed->insert(String(8192, 's'));
+                    filter.filter(Chunk(Columns{ColumnUInt64::create(1), std::move(seed)}, 1));
+                }
+                Chunk input(Columns{ColumnUInt64::create(num_rows), keys}, num_rows);
+                filter.prepareForInsert(input);
+                ASSERT_EQ(input.getColumns()[1]->getName(), value->getName());
+                for (size_t row = 0; row < num_rows; ++row)
+                    EXPECT_EQ((*input.getColumns()[1])[row], (*keys)[row]);
+
+                const size_t before = filter.getTotalByteCount();
+                const size_t estimate = filter.estimateGrowthMemory(input);
+                EXPECT_EQ(filter.getTotalByteCount(), before);
+                EXPECT_EQ(filter.getTotalRowCount(), populated ? 1 : 0);
+                const size_t expected_rows = keys->isSparse() ? 2 : 1;
+                EXPECT_EQ(filter.filter(input.clone()).getNumRows(), expected_rows);
+                EXPECT_GE(estimate, filter.getTotalByteCount() - before);
+                EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), 0);
+            }
         }
     }
 }
