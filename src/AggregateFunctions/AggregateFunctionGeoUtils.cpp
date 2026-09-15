@@ -111,7 +111,8 @@ size_t appendPointRangeBatch(const ArrayRange & range, size_t & point_index, siz
 {
     const size_t count = std::min(max_points, range.end - point_index);
     const auto columns = getPointColumns(range.data);
-    out.reserve(out.size() + count);
+    /// Let `push_back` grow capacity geometrically across rows and components. Reserving the
+    /// exact size of each range would repeatedly copy the accumulated points for small carriers.
     const size_t batch_end = point_index + count;
     for (size_t i = point_index; i < batch_end; ++i)
         out.push_back(getPointFromColumns(columns, i));
