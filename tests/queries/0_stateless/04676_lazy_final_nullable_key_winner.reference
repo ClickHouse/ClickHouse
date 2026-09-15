@@ -1,0 +1,13 @@
+Nullable(UInt64)	1
+Nullable(String)	1
+LowCardinality(Nullable(String))	1
+NULL in second key component	1
+control: non-nullable key	1
+Nullable(Float64) with nan and NULL	1
+control: plain Float64 with nan	1
+control: nullable key without a NULL value	1
+control: Array(Nullable(UInt64))	1
+lazy FINAL is planned for a nullable key	1
+lazy FINAL executes for Nullable(UInt64) 1
+lazy FINAL executes for LowCardinality(Nullable(String)) 1
+lazy FINAL set holds the NULL key set_rows=2
