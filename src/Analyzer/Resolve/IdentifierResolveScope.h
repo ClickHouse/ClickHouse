@@ -235,6 +235,14 @@ struct IdentifierResolveScope
       */
     TableExpressionNodePtr expression_join_tree_node;
 
+    /** Whether a matcher may expand the columns of `expression_join_tree_node`.
+      * Set for an expression that is evaluated per row of that table expression (a row policy,
+      * `additional_table_filters`, `additional_result_filter`), where a matcher means the same as in
+      * the equivalent `WHERE`. Not set while resolving a constant expression (a `VALUES` field, an
+      * index analysis predicate): a matcher cannot produce a constant there and is rejected instead.
+      */
+    bool allow_matcher_from_expression_join_tree_node = false;
+
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
