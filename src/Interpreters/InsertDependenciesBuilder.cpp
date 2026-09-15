@@ -1551,6 +1551,15 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         {
             /// set root_view to `{}`/`StorageID::createEmpty()` and dependent_views[{}] to the init_table_id
             set_defaults_for_root_view({}, init_table_id);
+            const auto& insert_ctx = insert_contexts.find({});
+            if (insert_ctx != insert_contexts.end())
+            {
+                const auto& column_names = insert_ctx->second->getInsertionTableColumnNames();
+                if (column_names.has_value())
+                {
+                    init_context->getQueryContext()->addQueryAccessInfo(current, *column_names);
+                }
+            }
             output_headers[{}] = std::make_shared<const Block>(metadata->getSampleBlock());
             view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
             return true;
