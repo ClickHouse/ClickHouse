@@ -68,6 +68,11 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
+    /// Returns true if the table's data is excluded via EXCEPT DATA FROM TABLE.
+    /// Used by delegated storages (MaterializedView, TimeSeries, MaterializedPostgreSQL) to check
+    /// the OUTER table's exclusion state before delegating backupData() to inner/nested tables.
+    bool isTableDataExcluded(const QualifiedTableName & table_name) const;
+
 private:
     void calculateRootPathInBackup();
 
@@ -85,8 +90,10 @@ private:
         const std::optional<String> & table_name,
         bool throw_if_table_not_found,
         const std::optional<ASTs> & partitions,
+        bool exclude_table_data,
         bool all_tables,
-        const std::set<DatabaseAndTableName> & except_table_names);
+        const std::set<DatabaseAndTableName> & except_table_names,
+        const std::set<DatabaseAndTableName> & except_data_table_names);
 
     void gatherTablesMetadata();
     std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
@@ -153,13 +160,84 @@ private:
         struct TableParams
         {
             bool throw_if_table_not_found = false;
-            std::optional<ASTs> partitions;
+
+            /// One entry per single-table element (TABLE/DICTIONARY/VIEW/TEMPORARY TABLE) naming this table,
+            /// holding that element's own partition scope and whether it excluded the table's data.
+            ///
+            /// The elements are kept apart rather than merged for the same reason `AllTablesElement` keeps
+            /// wide elements apart: both questions asked of them are per element. Merging the partition
+            /// scopes let a later element erase what an earlier one asked for, and reducing the exclusions to
+            /// one boolean per table left no way to say which partitions an element wanted the data of.
+            struct SingleTableElement
+            {
+                /// Partitions this element asked for; no value means the whole table.
+                std::optional<ASTs> partitions;
+                /// This element carried EXCEPT DATA FROM TABLE, so it asks for none of the table's data.
+                bool except_data = false;
+            };
+            std::vector<SingleTableElement> elements;
+
+            /// Whether any element named partitions at all. Asked only to validate the query against table
+            /// engines that cannot back up partitions, which is a user error worth reporting even when the
+            /// data is excluded anyway.
+            bool anyElementNamedPartitions() const;
+
+            /// The partitions whose data reaches the backup: the union over the elements that ask for data,
+            /// or no value (meaning the whole table) as soon as one of those elements named no partitions.
+            /// An element asking for the table without EXCEPT DATA FROM TABLE is asking for its data, and
+            /// that request wins - we would rather back up data the user meant to exclude than silently drop
+            /// data they asked for.
+            std::optional<ASTs> partitionsWithData() const;
+
+            /// No element naming this table asks for any of its data.
+            bool isDataExcluded() const;
         };
 
+        /// Tables named explicitly by single-table elements of the BACKUP query.
         std::unordered_map<String, TableParams> tables;
 
-        bool all_tables = false;
-        std::unordered_set<String> except_table_names;
+        /// One entry per DATABASE or ALL element of the query covering this database, holding that element's
+        /// own EXCEPT TABLES and EXCEPT DATA FROM TABLE/TABLES names. Exclusions written on a single-table
+        /// element are not here: those are element-scoped and live in `tables[...].except_data`.
+        ///
+        /// The elements are kept apart rather than merged into one set of names because both questions asked
+        /// of them are per element: a table is selected when *any* element selects it, and its data is dropped
+        /// only when *every* element selecting it also excludes the data. Merging erases the elements that
+        /// asked for the table or its data, and theirs is the request that must win.
+        struct AllTablesElement
+        {
+            /// Names this element does not select at all, so it has no say about them or their data.
+            std::unordered_set<String> except_table_names;
+            /// Names this element selects but whose data it excludes.
+            std::unordered_set<String> except_data_table_names;
+        };
+        std::vector<AllTablesElement> all_tables_elements;
+
+        /// Whether at least one element of the query selects this table. Both the selection of tables in
+        /// `findTablesInDatabase` and `isTableDataExcluded` ask this, and they must agree: a table dropped
+        /// here is never enumerated, so no later decision about its data can bring it back.
+        bool isTableSelectedByAnyElement(const String & table_name) const;
+
+        /// Whether any element covers this table at all, before its own `EXCEPT TABLES` is applied. This is
+        /// the candidate set the inner-table classification runs over, and it is wider than the selection on
+        /// purpose: an inner table is recognised through the table which owns it, and an exclusion can name
+        /// that owner. `findTablesInDatabase` narrows to the selection once the classification is done.
+        bool isTableCoveredByAnyElement(const String & table_name) const;
+
+        /// Whether any element of the query named this table in its own EXCEPT DATA FROM TABLE/TABLES clause,
+        /// as opposed to merely covering it. Asked about a table which turned out to be an inner table, to
+        /// reject a clause written on it instead of silently ignoring the clause.
+        bool isTableNamedByExceptDataClause(const String & table_name) const;
+
+        /// The partitions of this table whose data reaches the backup, over *every* kind of element naming
+        /// it - the single-table elements in `tables` and the wide elements in `all_tables_elements` alike.
+        ///
+        /// Asked instead of `TableParams::partitionsWithData` because that one sees only the single-table
+        /// elements, while `isTableDataExcluded` already consults both. The two must agree about the same
+        /// table: whoever makes the data eligible for backup also decides how much of it is written, and
+        /// letting them disagree is what backed up a single partition of a table a DATABASE element had
+        /// asked for in full.
+        std::optional<ASTs> partitionsWithData(const String & table_name) const;
     };
 
     struct TableInfo
