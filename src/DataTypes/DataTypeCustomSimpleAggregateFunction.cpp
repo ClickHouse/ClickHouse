@@ -72,6 +72,15 @@ std::optional<Field> DataTypeCustomSimpleAggregateFunction::getDefault() const
     return std::nullopt;
 }
 
+bool DataTypeCustomSimpleAggregateFunction::useCustomNameForTypeIdentity() const
+{
+    if (argument_types.size() != 1)
+        return false;
+
+    const auto * custom_name = argument_types[0]->getCustomName();
+    return custom_name && custom_name->useCustomNameForTypeIdentity();
+}
+
 String DataTypeCustomSimpleAggregateFunction::getName() const
 {
     WriteBufferFromOwnString stream;
@@ -249,7 +258,7 @@ The following aggregate functions are supported:
 - [`groupUniqArrayArrayMap`](/reference/functions/aggregate-functions/combinators#-map)
 - [`sumMap` (`sumMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
 - [`minMap` (`minMappedArrays`)](/reference/functions/aggregate-functions/minMap)
-- [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/maxMap)
+- [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
 - [`timeSeriesGroupArray`](/reference/functions/aggregate-functions/timeSeriesGroupArray) (with a single argument of type `Array(Tuple(timestamp, value))`)
 
 <Note>
