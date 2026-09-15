@@ -68,7 +68,6 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsBool allow_geo_types_in_iceberg;
-    extern const SettingsBool iceberg_tolerate_conflicting_manifest_schemas;
 }
 
 namespace DB::FailPoints
@@ -1723,11 +1722,7 @@ bool RestCatalog::getTableMetadataImpl(
         const bool allow_geo_parser
             = getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value;
         auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
-        auto id = DB::IcebergMetadata::parseTableSchema(
-            metadata_object,
-            schema_processor,
-            log,
-            getContext()->getSettingsRef()[DB::Setting::iceberg_tolerate_conflicting_manifest_schemas]);
+        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);
     }

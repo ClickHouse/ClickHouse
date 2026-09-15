@@ -230,21 +230,6 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     return result;
 }
 
-PartitionSpecification parsePartitionSpecification(const Poco::JSON::Array::Ptr & partition_specification_json)
-{
-    PartitionSpecification result;
-    for (size_t i = 0; i != partition_specification_json->size(); ++i)
-    {
-        auto partition_specification_field = partition_specification_json->getObject(static_cast<UInt32>(i));
-        result.emplace_back(
-            partition_specification_field->getValue<Int32>(f_source_id),
-            partition_specification_field->getValue<String>(f_partition_transform),
-            partition_specification_field->getValue<String>(f_partition_name),
-            static_cast<Int32>(i));
-    }
-    return result;
-}
-
 namespace
 {
 

@@ -90,8 +90,7 @@ class IcebergSchemaProcessor
 public:
     /// Where a schema copy being registered comes from. metadata.json is the authoritative source;
     /// the 'schema' key of a manifest file header is only a snapshot of the table schema at the time
-    /// the manifest was written and loses any conflict with the metadata.json copy of the same
-    /// schema-id, whichever of the two was read first.
+    /// the manifest was written and may be ignored if it conflicts with the metadata.json copy.
     enum class SchemaSource
     {
         Metadata,
@@ -100,10 +99,6 @@ public:
 
     explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
 
-    /// `tolerate_conflicting_manifest_schemas` is the value of the setting of the same name in the
-    /// operation registering this copy. It governs every conflict this call runs into, including one
-    /// between a metadata.json copy registered now and a manifest header copy registered earlier by
-    /// another operation, so it has to be passed for metadata.json copies as well.
     void addIcebergTableSchema(
         Poco::JSON::Object::Ptr schema_ptr,
         SchemaSource source = SchemaSource::Metadata,
@@ -116,12 +111,6 @@ public:
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickHouseTableSchemaById(Int32 id) const;
-
-    /// False while `id` is bound to two different schemas by manifest file headers and no
-    /// metadata.json copy has settled which one is authoritative; every lookup of such an id throws.
-    /// Callers that only walk manifests (collecting file paths, e.g. `remove_orphan_files`) consult
-    /// this before deriving anything from the schema, so that the walk itself does not fail.
-    bool isSchemaSettled(Int32 id) const;
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
@@ -150,49 +139,8 @@ private:
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
-
-    /// The schema currently being converted by `addSchemaImpl`. Its per-field lookups are collected
-    /// here and merged into the maps above only after the whole schema has converted, so a malformed
-    /// schema that throws halfway leaves nothing behind in the shared processor.
-    struct PendingSchema
-    {
-        Int32 schema_id;
-        std::map<std::pair<Int32, Int32>, NameAndTypePair> types_by_source_ids;
-        std::map<std::pair<Int32, std::string>, Int32> ids_by_source_names;
-    };
-    std::optional<PendingSchema> pending_schema TSA_GUARDED_BY(mutex);
+    std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
-
-    /// Schema-ids whose registered copy was taken from a manifest file header and has not been
-    /// confirmed by metadata.json yet. Only the source is remembered, never the setting of the
-    /// operation that registered it: the processor is shared across queries, and each operation
-    /// decides under its own `iceberg_tolerate_conflicting_manifest_schemas` value whether a
-    /// conflict between such a copy and metadata.json replaces the copy or is an error. The
-    /// manifest-walking entrypoints (the `remove_orphan_files` and `expire_snapshots` commands,
-    /// mutation validation) reach a manifest file header on a table object whose shared processor
-    /// is still empty, so such a copy can be the first registration of its id.
-    std::unordered_set<Int32> manifest_only_schema_ids TSA_GUARDED_BY(mutex);
-
-    /// Manifest-only schema-ids whose registered copy was contradicted by another manifest file
-    /// header. Neither copy is authoritative, so the id has no usable schema until a metadata.json
-    /// copy settles the conflict: every lookup of such an id fails instead of answering with an
-    /// arbitrary first header, which could otherwise transform the files of the other manifest with
-    /// the wrong schema. A manifest walk that never consults the schema (e.g. collecting file paths)
-    /// is unaffected. Always a subset of `manifest_only_schema_ids`.
-    std::unordered_set<Int32> unsettled_manifest_schema_ids TSA_GUARDED_BY(mutex);
-
-    /// Throws `ICEBERG_SPECIFICATION_VIOLATION` if `schema_id` is in `unsettled_manifest_schema_ids`.
-    void assertSchemaIsSettled(Int32 schema_id) const TSA_REQUIRES_SHARED(mutex);
-
-    /// Registers `schema_ptr` under `schema_id`, first dropping a previously registered copy of the
-    /// same id when asked. The schema is fully validated and converted into temporaries before
-    /// anything is dropped or written, so a malformed schema leaves the processor exactly as it was:
-    /// the previous copy of the id stays registered, and no partial lookups of the bad copy survive
-    /// to be picked up by a later registration of the same id.
-    void addSchemaImpl(const Poco::JSON::Object::Ptr & schema_ptr, Int32 schema_id, bool replace_existing) TSA_REQUIRES(mutex);
-
-    /// Drops the schema registered for `schema_id` together with everything derived from it.
-    void dropSchemaImpl(Int32 schema_id) TSA_REQUIRES(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);

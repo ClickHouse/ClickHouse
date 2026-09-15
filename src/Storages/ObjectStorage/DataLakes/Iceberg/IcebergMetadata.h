@@ -99,13 +99,10 @@ public:
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
-    /// `tolerate_conflicting_manifest_schemas` is the current operation's value of the setting of the
-    /// same name; see `IcebergSchemaProcessor::addIcebergTableSchema`.
     static Int32 parseTableSchema(
         const Poco::JSON::Object::Ptr & metadata_object,
         Iceberg::IcebergSchemaProcessor & schema_processor,
-        LoggerPtr metadata_logger,
-        bool tolerate_conflicting_manifest_schemas);
+        LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
