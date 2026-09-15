@@ -827,9 +827,22 @@
                              each LDAP search.
                             Note, that the special characters must be escaped properly in XML.
                     attribute - attribute name whose values will be returned by the LDAP search. 'cn', by default.
+                            The special value 'dn' returns the DN of each found entry.
                     prefix - prefix, that will be expected to be in front of each string in the original list of strings returned by
                              the LDAP search. Prefix will be removed from the original strings and resulting strings will be treated
-                             as local role names. Empty, by default.
+                             as local role names. Compared case-sensitively. Empty, by default.
+                    rdn_attribute - if set, each value returned by the LDAP search is parsed as a DN and replaced by the value of its
+                             first RDN of this type (compared case-insensitively). E.g. 'cn' turns the Active Directory 'memberOf'
+                             value 'CN=clickhouse_admins,OU=Groups,DC=example,DC=com' into 'clickhouse_admins'. Values that are
+                             not DNs or have no such RDN are ignored. Requires a non-empty 'groups' list or a non-empty 'prefix'.
+                             Empty, by default.
+                    groups - optional allow-list of 'group' entries; when non-empty, values matching none of them are ignored.
+                             A plain name is compared case-insensitively with the value after 'rdn_attribute' extraction. A full DN
+                             (an entry containing '=', requires 'rdn_attribute') is compared with the raw value before extraction
+                             and pins the container, which is recommended for Active Directory because group CNs are unique only
+                             per container. The spelling configured here becomes the role name; 'prefix' is removed afterwards,
+                             so every entry (for a DN, its 'rdn_attribute' value) must start with the configured 'prefix'.
+                             Empty, duplicate, unparsable and prefix-less entries are rejected at startup.
              Example:
                 <ldap>
                     <server>my_ldap_server</server>
@@ -845,14 +858,19 @@
                         <prefix>clickhouse_</prefix>
                     </role_mapping>
                 </ldap>
-             Example (typical Active Directory with role mapping that relies on the detected user DN):
+             Example (typical Active Directory: roles from the user's own 'memberOf' attribute, relies on the detected user DN):
                 <ldap>
                     <server>my_ad_server</server>
                     <role_mapping>
-                        <base_dn>CN=Users,DC=example,DC=com</base_dn>
-                        <attribute>CN</attribute>
-                        <scope>subtree</scope>
-                        <search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+                        <base_dn>{user_dn}</base_dn>
+                        <scope>base</scope>
+                        <search_filter>(objectClass=*)</search_filter>
+                        <attribute>memberOf</attribute>
+                        <rdn_attribute>cn</rdn_attribute>
+                        <groups>
+                            <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
+                            <group>clickhouse_admins</group>
+                        </groups>
                         <prefix>clickhouse_</prefix>
                     </role_mapping>
                 </ldap>
