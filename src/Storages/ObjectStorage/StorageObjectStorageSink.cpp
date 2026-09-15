@@ -7,6 +7,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Storages/IPartitionStrategy.h>
 #include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
@@ -259,7 +260,13 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         /// A partitioned sink keeps no list of the objects it has written, so there is nothing to attribute
         /// the numbered keys of a previous insert to, and the removal is done only for a truncating insert
         /// that is split by size and therefore claims the whole sequence.
-        if (query_settings.truncate_on_insert)
+        ///
+        /// The `hive` strategy generates a fresh name for the first object of every insert, so an insert never
+        /// meets an object of a previous insert, and a truncating insert does not overwrite or delete anything,
+        /// with or without splitting: the numbered sequence of the new name cannot exist yet, and probing it
+        /// would only cost requests.
+        const bool names_are_generated = configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
+        if (query_settings.truncate_on_insert && !names_are_generated)
             removeStaleSplitObjectsByNumber(
                 *object_storage,
                 numbered_keys,
