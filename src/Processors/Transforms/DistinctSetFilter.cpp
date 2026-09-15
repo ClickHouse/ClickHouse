@@ -64,9 +64,13 @@ struct DistinctLowCardinalityFilter::DictionariesState
 
     struct LCDictState
     {
+        explicit LCDictState(size_t dictionary_size) : seen_indices(dictionary_size, UInt8{0})
+        {
+        }
+
         /// `seen_indices[idx] == 1` means dictionary index `idx` has been seen at least once for this
         /// dictionary identity.
-        PaddedPODArray<UInt8> seen_indices;
+        PODArray<UInt8> seen_indices;
 
         /// Number of dictionary indices we have seen at least once. When this
         /// reaches the dictionary size, any future row for the parent chunk cannot
@@ -111,21 +115,15 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
 
-    DictionariesState::LCDictionaryKey dict_key;
-    dict_key.hash = dictionary.getHash();
-    dict_key.size = dict_size;
+    const DictionariesState::LCDictionaryKey dict_key{dictionary.getHash(), dict_size};
 
-    auto & state = dictionaries_state->lc_dict_states[dict_key];
-
-    /// Size the bitmap to the current dictionary, retaining entries already observed.
+    /// The dictionary identity includes its size, so each bitmap is allocated once and never resized.
+    auto [it, inserted] = dictionaries_state->lc_dict_states.try_emplace(dict_key, dict_size);
+    auto & state = it->second;
+    chassert(state.seen_indices.size() == dict_size);
     chassert(state.seen_count <= dict_size);
-    if (state.seen_indices.size() != dict_size)
-    {
-        chassert(state.seen_indices.empty());
-        chassert(state.seen_count == 0);
-        state.seen_indices.resize_fill(dict_size);
+    if (inserted)
         total_byte_count += state.seen_indices.allocated_bytes();
-    }
 
     /// If we've already seen all dictionary indices for this dictionary, then no row in this chunk
     /// (and also other chunks with the same dictionary) can produce a new distinct value.
