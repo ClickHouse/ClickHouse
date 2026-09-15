@@ -2,6 +2,7 @@
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -63,10 +64,6 @@ public:
 
     String getName() const override;
 
-    /// The concrete data format resolved for this table (after schema/format inference).
-    /// Used by the unified `URL` engine to persist the delegate's inferred format.
-    String getFormatName() const { return configuration->format; }
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -82,15 +79,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         bool async_insert) override;
-
-    static SinkToStoragePtr createSink(
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const ObjectStoragePtr & object_storage,
-        const StorageID & storage_id,
-        const std::optional<FormatSettings> & format_settings,
-        const std::shared_ptr<DataLake::ICatalog> & catalog,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context);
 
     void truncate(
         const ASTPtr & query,
@@ -109,9 +97,6 @@ public:
     /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
     /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
     bool supportsOptimizationToSubcolumns() const override { return false; }
-    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
-    /// `t.x` on its own and prune on it.
-    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -136,8 +121,6 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
-
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
@@ -167,8 +150,6 @@ public:
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
-
-    std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;

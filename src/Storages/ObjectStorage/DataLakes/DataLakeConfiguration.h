@@ -21,7 +21,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatFactory.h>
 #include <optional>
 #include <memory>
 #include <mutex>
@@ -39,6 +38,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 
@@ -216,10 +216,7 @@ public:
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
-        {
-            validateLakeSchemaColumnNames(schema, DataLakeMetadata::name);
             return ColumnsDescription(std::move(schema));
-        }
         return std::nullopt;
     }
 
@@ -268,11 +265,8 @@ public:
     {
         auto metadata = getMetadata()->buildStorageMetadataFromState(state, context);
         if (metadata)
-        {
-            validateLakeSchemaColumnNames(metadata->getColumns().getAll(), DataLakeMetadata::name);
             LOG_TEST(log, "Built storage metadata from state with columns: {}",
                 metadata->getColumns().toString(/* include_comments */false));
-        }
         return metadata;
     }
 
@@ -347,17 +341,12 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        /// When the storage carries no format settings (table functions pass none),
-        /// derive them from the context. Substituting FormatSettings{} here (struct
-        /// defaults, e.g. `output_string_as_string = false`) made table-function
-        /// writes produce parquet without the `String` annotation, unreadable for
-        /// external Iceberg readers such as Spark.
         return getMetadata()->write(
             sample_block,
             table_id,
             object_storage,
             shared_from_this(),
-            format_settings.has_value() ? *format_settings : getFormatSettings(context),
+            format_settings.has_value() ? *format_settings : FormatSettings{},
             context,
             catalog);
     }
@@ -398,7 +387,7 @@ public:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
@@ -412,18 +401,6 @@ public:
 #else
         return false;
 #endif
-    }
-
-    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
-    {
-        return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
-    }
-
-    /// Data lakes never overwrite an existing data file in place: a new snapshot references new
-    /// files. This makes the lazy-materialization reread race-free regardless of the backend.
-    bool dataFilesAreImmutable() const override
-    {
-        return true;
     }
 
 private:
@@ -440,10 +417,9 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            const auto & table_path = this->getPathForRead().path;
-            if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
                 throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
     }
 
