@@ -32,7 +32,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
-    extern const SettingsBool allow_experimental_paimon_storage_engine;
+    extern const SettingsBool enable_paimon_storage_engine;
 }
 
 namespace DataLakeStorageSetting
@@ -1671,11 +1671,11 @@ void registerStoragePaimon(StorageFactory & factory)
     auto check_paimon_storage_engine_enabled = [](const StorageFactory::Arguments & args)
     {
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_paimon_storage_engine])
+            && !args.getLocalContext()->getSettingsRef()[Setting::enable_paimon_storage_engine])
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Paimon table engines are experimental. Set `allow_experimental_paimon_storage_engine` setting to enable them");
+                "Paimon table engines are experimental. Set `enable_paimon_storage_engine` setting to enable them");
         }
     };
 
@@ -1754,10 +1754,10 @@ It supports snapshot reads, incremental reads, and basic partition pruning provi
 ## Create table {#create-table}
 
 Note that the Paimon table must already exist in the storage, this command does not take DDL parameters to create a new table.
-Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine` (disabled by default), so enable it before running `CREATE TABLE`.
+Creating `Paimon*` tables is gated by `enable_paimon_storage_engine` (disabled by default), so enable it before running `CREATE TABLE`.
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
     ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
@@ -1815,7 +1815,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 
 This engine uses the same settings as the corresponding object storage engines and adds Paimon-specific settings:
 
-- `allow_experimental_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
+- `enable_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
 - `use_paimon_metadata_files_cache` — enables the Paimon metadata files cache (caches deserialized manifest lists and manifests). Set to `1` to enable, `0` to disable. Default: `0`. How this setting takes effect differs between table functions and persistent table engines — see the note below.
 - `paimon_incremental_read` — enable incremental read mode.
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
@@ -1825,7 +1825,7 @@ This engine uses the same settings as the corresponding object storage engines a
 Example (enable experimental Paimon engine and metadata files cache):
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 SET use_paimon_metadata_files_cache = 1;
 
 CREATE TABLE paimon_cached
@@ -1886,7 +1886,7 @@ You can build an end-to-end pipeline that continuously syncs data from a Paimon 
 The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the auto-detecting `Paimon` engine as appropriate for your storage backend:
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 -- Local storage
 CREATE TABLE paimon_mv_source
@@ -2049,7 +2049,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Amazon S3 or S3-compatible object storage. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonS3(url [, access_key_id, secret_access_key])",
             .related = {"Paimon"}});
 #endif
@@ -2096,7 +2096,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Microsoft Azure Blob Storage. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"Paimon"}});
 #endif
@@ -2121,7 +2121,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in HDFS. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonHDFS(uri)",
             .related = {"Paimon"}});
 #endif
@@ -2167,7 +2167,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored on the local filesystem. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonLocal(path)",
             .related = {"Paimon"}});
 }

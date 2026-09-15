@@ -2,7 +2,7 @@
 -- `Interval`, literal-only function parameter defaults, and rebinding a parameterless
 -- tabular function without parentheses.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- bin rounds an integer down, not toward zero --';
