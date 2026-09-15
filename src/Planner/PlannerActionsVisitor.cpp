@@ -1071,7 +1071,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
     }
 
-    auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), CompileExpressions::yes);
+    /// A lambda's `ExpressionActions` is built here, while planning, so its DAG is the very one that
+    /// gets serialized when this plan is shipped to another node. A JIT-compiled node cannot be
+    /// serialized: its `getName` is a dump of the compiled expression, not a name `FunctionFactory`
+    /// knows, and the receiving node fails with `UNKNOWN_FUNCTION and(UInt8, less(UInt64, 1000 :
+    /// UInt16))`. Leave the body uncompiled in a logical plan - the receiving node compiles it itself
+    /// when it rebuilds the lambda from the serialized plan, so nothing is lost.
+    auto compile_lambda_expression = planner_context->isLogicalPlan() ? CompileExpressions::no : CompileExpressions::yes;
+    auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), compile_lambda_expression);
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
