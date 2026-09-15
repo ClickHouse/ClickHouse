@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyRoundFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 
@@ -61,6 +62,9 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
+
+    if (isSortFunction(function_name))
+        return applySortFunction(function_node, std::move(arguments), context);
 
     if (isHistogramQuantile(function_name))
         return applyHistogramQuantile(function_node, std::move(arguments), context);
