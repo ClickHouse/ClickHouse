@@ -1,0 +1,70 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Keep every dividend six digits long. With result_scale = 70, divideDecimal
+         therefore passes a 76-digit vector to DecimalOpHelpers::divide on every row. -->
+    <create_query>
+        CREATE TABLE divide_decimal
+        (
+            value32 Decimal32(0),
+            value64 Decimal64(0),
+            value128 Decimal128(0),
+            value256 Decimal256(0),
+            divisor32 Decimal32(0)
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO divide_decimal
+        SELECT
+            toDecimal32(number, 0),
+            toDecimal64(number, 0),
+            toDecimal128(number, 0),
+            toDecimal256(number, 0),
+            toDecimal32(7, 0)
+        FROM numbers(50000, 100000)
+    </fill_query>
+
+    <!-- A small divisor keeps the quotient vector nearly as long as the input vector,
+         exposing the repeated result push_back allocation pattern. -->
+    <query>
+        SELECT divideDecimal(value256, toDecimal256(7, 0), 70)
+        FROM divide_decimal
+        FORMAT Null
+    </query>
+
+    <!-- Keep the same wide Decimal256 input but use a more typical result scale. -->
+    <query>
+        SELECT divideDecimal(value256, toDecimal256(7, 0), 40)
+        FROM divide_decimal
+        FORMAT Null
+    </query>
+
+    <!-- The helper is shared by every supported dividend width. -->
+    <query>
+        SELECT divideDecimal(value32, toDecimal32(7, 0), 70)
+        FROM divide_decimal
+        FORMAT Null
+    </query>
+    <query>
+        SELECT divideDecimal(value64, toDecimal32(7, 0), 70)
+        FROM divide_decimal
+        FORMAT Null
+    </query>
+    <query>
+        SELECT divideDecimal(value128, toDecimal32(7, 0), 70)
+        FROM divide_decimal
+        FORMAT Null
+    </query>
+
+    <!-- Also cover the vector-vector overload with the same small divisor. -->
+    <query>
+        SELECT divideDecimal(value256, divisor32, 70)
+        FROM divide_decimal
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS divide_decimal</drop_query>
+</test>
