@@ -1,0 +1,35 @@
+SELECT 1
+SELECT 1
+{"text":"SELECT 1\nFROM t"}
+SELECT 1 FROM t
+SELECT * FROM t LIMIT 5
+SELECT * FROM t LIMIT 20, 10
+SELECT * FROM t LIMIT 10
+SELECT 1 LIMIT 7, 5
+SELECT modify FROM t LIMIT 2
+SELECT oneline FROM t
+SELECT oneline
+SELECT 1 AS oneline
+1
+{"text":"SELECT 1 LIMIT 2 FORMAT TSV"}
+SELECT 1 FORMAT CSV
+SELECT 1 UNION ALL SELECT 2 FORMAT CSV
+SELECT * FROM t LIMIT {explain_text_size:UInt64}, {explain_text_size:UInt64}
+SELECT * FROM t LIMIT multiply({explain_text_size:UInt64}, 2), {explain_text_size:UInt64}
+SELECT 1 SETTINGS explain_text_unknown_setting = 1
+1
+1
+SELECT 1 LIMIT multiply({explain_text_new_size:UInt64}, 2), {explain_text_new_size:UInt64}
+SELECT 1 LIMIT {explain_text_size:UInt64}, {explain_text_size:UInt64}
+SELECT 1 LIMIT multiply({explain_text_size:UInt64}, 2), {explain_text_size:UInt64}
+{"text":"SELECT {explain_text_format:String}"}
+SELECT 1 SETTINGS max_threads = \'not-a-number\'
+SELECT 1 SETTINGS max_threads = {explain_text_threads:UInt64}
+SELECT 1
+SELECT 1 SETTINGS filter = \'0\'
+SELECT * FROM (SELECT 1 SETTINGS filter = \'0\')
+SELECT 1 SETTINGS filter = \'0\' UNION ALL SELECT 2
+SHOW TABLES
+1
+1
+validation complete

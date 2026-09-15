@@ -7,6 +7,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -78,7 +79,14 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     /// `settings_ast` is parsed by `ParserSetQuery`.
     settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
     if (settings_ast)
+    {
+        const auto & settings = settings_ast->as<const ASTSetQuery &>();
+        if (settings.is_standalone
+            || (settings.changes.empty() && settings.default_settings.empty() && settings.query_parameters.empty()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Output 'settings_ast' must be a non-empty settings clause during AST JSON deserialization");
         children.push_back(settings_ast);
+    }
 
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
@@ -200,6 +208,28 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
 bool ASTQueryWithOutput::hasOutputOptions() const
 {
     return out_file || format_ast || settings_ast || compression || compression_level;
+}
+
+void ASTQueryWithOutput::normalizeOutputOptions()
+{
+    auto is_output_option = [&](const ASTPtr & child)
+    {
+        return std::any_of(
+            output_option_members.begin(),
+            output_option_members.end(),
+            [&](auto member)
+            {
+                return (this->*member) && (this->*member).get() == child.get();
+            });
+    };
+
+    children.erase(std::remove_if(children.begin(), children.end(), is_output_option), children.end());
+
+    for (auto member : output_option_members)
+    {
+        if (this->*member)
+            children.push_back(this->*member);
+    }
 }
 
 }

@@ -137,6 +137,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
+    if (!parse_output_options)
+    {
+        node = std::move(query);
+        return true;
+    }
+
     /// FIXME: try to prettify this cast using `as<>()`
     auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);
 
@@ -248,21 +254,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     /// so that the tree hash is stable across a formatting roundtrip, regardless
     /// of the original clause order. The order is shared with `cloneOutputOptions`
     /// and `formatImpl` via `ASTQueryWithOutput::output_option_members`.
-    {
-        auto & ch = query_with_output.children;
-        auto is_output_option = [&](const ASTPtr & child)
-        {
-            return std::any_of(
-                ASTQueryWithOutput::output_option_members.begin(),
-                ASTQueryWithOutput::output_option_members.end(),
-                [&](auto member) { return (query_with_output.*member) && (query_with_output.*member).get() == child.get(); });
-        };
-
-        ch.erase(std::remove_if(ch.begin(), ch.end(), is_output_option), ch.end());
-        for (auto member : ASTQueryWithOutput::output_option_members)
-            if (query_with_output.*member)
-                ch.push_back(query_with_output.*member);
-    }
+    query_with_output.normalizeOutputOptions();
 
     node = std::move(query);
     return true;

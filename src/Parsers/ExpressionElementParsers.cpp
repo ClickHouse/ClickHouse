@@ -237,6 +237,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
 
+        if (explain_query.getKind() == ASTExplainQuery::FormattedQuery)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot be used in a subquery");
+
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
