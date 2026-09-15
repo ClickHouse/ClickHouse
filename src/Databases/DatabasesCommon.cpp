@@ -5,6 +5,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -553,6 +554,48 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
     return tables.contains(table_name);
 }
 
+StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::iterator it) const
+{
+    /// By value: the map slot is overwritten below, and the proxy is still needed after that.
+    StoragePtr proxy = it->second;
+    StoragePtr real_table = proxy->getLoadedLazyTable();
+    if (!real_table)
+        return proxy;
+
+    auto table_id = proxy->getStorageID();
+    /// A rename updates the proxy and the storage it stands for together, under this same mutex.
+    chassert(real_table->getStorageID() == table_id);
+
+    /// The UUID mapping has to be updated as well: `DatabaseCatalog::getTableImpl` answers a
+    /// StorageID that already carries a UUID straight from it, without asking the database.
+    if (table_id.hasUUID())
+        DatabaseCatalog::instance().updateUUIDMapping(
+            table_id.uuid, std::const_pointer_cast<IDatabase>(shared_from_this()), real_table);
+
+    /// A proxy and the storage it stands for are not counted the same way: `AttachedReplicatedTable`
+    /// is only counted for `StorageReplicatedMergeTree`.
+    if (!real_table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    {
+        for (auto metric : getAttachedCountersForStorage(proxy))
+            CurrentMetrics::sub(metric);
+        for (auto metric : getAttachedCountersForStorage(real_table))
+            CurrentMetrics::add(metric);
+    }
+
+    it->second = real_table;
+
+    /// `ActionLocksManager` keys the locks it holds by the storage they were taken on, so a
+    /// `SYSTEM STOP MERGES` issued while the table was still a proxy has to be re-keyed: the
+    /// matching `SYSTEM START MERGES` addresses the storage that just took the proxy's place, and
+    /// would otherwise not find the lock and never lift it.
+    getContext()->getActionLocksManager()->transfer(proxy.get(), real_table);
+
+    LOG_TRACE(log, "Replaced the proxy of lazily loaded table {} with the loaded {}",
+              table_id.getNameForLogs(), real_table->getName());
+
+    return real_table;
+}
+
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     waitTableStarted(table_name);
@@ -563,13 +606,18 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 {
     ensurePopulated();
     std::lock_guard lock(mutex);
+
     if (!filter_by_table_name)
+    {
+        for (auto it = tables.begin(); it != tables.end(); ++it)
+            replaceLoadedLazyTableUnlocked(it);
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+    }
 
     Tables filtered_tables;
-    for (const auto & [table_name, storage] : tables)
-        if (filter_by_table_name(table_name))
-            filtered_tables.emplace(table_name, storage);
+    for (auto it = tables.begin(); it != tables.end(); ++it)
+        if (filter_by_table_name(it->first))
+            filtered_tables.emplace(it->first, replaceLoadedLazyTableUnlocked(it));
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
 }
@@ -878,7 +926,7 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
 {
     auto it = tables.find(table_name);
     if (it != tables.end())
-        return it->second;
+        return replaceLoadedLazyTableUnlocked(it);
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
 }
@@ -935,14 +983,14 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_nam
         std::lock_guard lock(mutex);
         auto it = tables.find(table_name);
         if (it != tables.end())
-            return it->second;
+            return replaceLoadedLazyTableUnlocked(it);
     }
 
     ensurePopulated();
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())
-        return it->second;
+        return replaceLoadedLazyTableUnlocked(it);
     return {};
 }
 

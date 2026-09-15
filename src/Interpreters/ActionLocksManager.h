@@ -28,6 +28,11 @@ public:
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(const StoragePtr & table, StorageActionBlockType action_type);
 
+    /// Re-key every lock held for `from` onto `to`. Used when a lazily loaded table replaces the
+    /// proxy that stood for it: a `SYSTEM STOP ...` issued before the replacement was keyed by the
+    /// proxy, while the matching `SYSTEM START ...` addresses the storage that took its place.
+    void transfer(const IStorage * from, const StoragePtr & to);
+
     /// Removes all locks of non-existing tables
     void cleanExpired();
 
