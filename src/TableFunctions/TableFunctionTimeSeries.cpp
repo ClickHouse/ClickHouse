@@ -193,6 +193,8 @@ The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which i
 
     factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
+    /// Readonly: it only reads, and asks for SELECT on the TimeSeries table itself, so a PromQL read over a
+    /// Distributed table does not make CREATE TEMPORARY TABLE a hidden requirement of the cluster's user.
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
@@ -228,11 +230,11 @@ There is no specific order for returned data.
 ```sql
 SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(
-Evaluates a prometheus query using data from a TimeSeries table.
+Evaluates a prometheus query using data from a TimeSeries table, or from a Distributed table over per-shard TimeSeries tables (samples are then selected on every shard and the query is evaluated on the initiator).
 
 ## Syntax {#syntax}
 
@@ -244,8 +246,8 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 ## Arguments {#arguments}
 
-- `db_name` - The name of the database where a TimeSeries table is located.
-- `time_series_table` - The name of a TimeSeries table.
+- `db_name` - The name of the database where the table is located.
+- `time_series_table` - The name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `evaluation_time - The evaluation timestamp. To evaluate a query at the current time, use `now()` as `evaluation_time`.
 
@@ -309,7 +311,7 @@ SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
         {.description = R"DOCS_MD(
-Evaluates a prometheus query using data from a TimeSeries table over a range of evaluation times.
+Evaluates a prometheus query over a range of evaluation times, using data from a TimeSeries table or from a Distributed table over per-shard TimeSeries tables.
 
 ## Syntax {#syntax}
 
@@ -321,8 +323,8 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 ## Arguments {#arguments}
 
-- `db_name` - The name of the database where a TimeSeries table is located.
-- `time_series_table` - The name of a TimeSeries table.
+- `db_name` - The name of the database where the table is located.
+- `time_series_table` - The name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `start_time` - The start time of the evaluation range.
 - `end_time` - The end time of the evaluation range.

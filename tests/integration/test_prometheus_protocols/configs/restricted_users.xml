@@ -1,0 +1,42 @@
+<clickhouse>
+    <users>
+        <!-- INSERT only, no SELECT: the read surfaces must refuse this user before they disclose anything. -->
+        <prom_no_select>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT INSERT ON *.*</query>
+            </grants>
+        </prom_no_select>
+        <!-- SELECT only, no INSERT: remote write must refuse this user. -->
+        <prom_no_insert>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SELECT ON *.*</query>
+            </grants>
+        </prom_no_insert>
+        <!-- May read the wrapper, but not the cluster() call the PromQL read is rewritten to. -->
+        <prom_no_remote>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SELECT ON *.*</query>
+                <query>GRANT CREATE TEMPORARY TABLE ON *.*</query>
+            </grants>
+        </prom_no_remote>
+        <!-- May read the wrapper, but not call a table function that is not readonly. -->
+        <prom_no_temp_table>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SELECT ON *.*</query>
+                <query>GRANT READ ON REMOTE</query>
+            </grants>
+        </prom_no_temp_table>
+    </users>
+</clickhouse>
