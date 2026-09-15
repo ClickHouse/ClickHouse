@@ -393,8 +393,10 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"ReplicatedMergeTree", "TABLE"},
     {"ReplicatedReplacingMergeTree", "TABLE"},
     {"ReplicatedSummingMergeTree", "TABLE"},
+    {"ReplicatedVersionedCoalescingMergeTree", "TABLE"},
     {"ReplicatedVersionedCollapsingMergeTree", "TABLE"},
     {"SummingMergeTree", "TABLE"},
+    {"VersionedCoalescingMergeTree", "TABLE"},
     {"VersionedCollapsingMergeTree", "TABLE"},
     {"COSN", "TABLE"},
     {"SharedAggregatingMergeTree", "TABLE"},
@@ -406,6 +408,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"SharedReplacingMergeTree", "TABLE"},
     {"SharedSet", "TABLE"},
     {"SharedSummingMergeTree", "TABLE"},
+    {"SharedVersionedCoalescingMergeTree", "TABLE"},
     {"SharedVersionedCollapsingMergeTree", "TABLE"},
 
     // Special
