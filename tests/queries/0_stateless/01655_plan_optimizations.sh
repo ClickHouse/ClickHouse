@@ -90,7 +90,6 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s != 8 and y - 4 order by s, y
     settings enable_optimize_predicate_expression=0"
 
-echo "> filter is split, one part is filtered before ARRAY JOIN"
 $CLICKHOUSE_CLIENT --enable_analyzer=0  -q "
     explain actions = 1 select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)

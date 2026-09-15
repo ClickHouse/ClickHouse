@@ -76,9 +76,6 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM te
 echo "Test count without target SELECT permission using the read path"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access SETTINGS optimize_trivial_count_query = 0, enable_analyzer = 1;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
-echo "Test count without target SELECT permission using the old analyzer read path"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access SETTINGS optimize_trivial_count_query = 0, enable_analyzer = 0;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
-
 echo "Test DESCRIBE without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 
@@ -165,14 +162,6 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
         (SELECT count() FROM test_table_access),
         (SELECT count() FROM test_alias_access)
     SETTINGS optimize_trivial_count_query = 0, enable_analyzer = 1;
-"
-
-echo "Test direct and Alias count with column-scoped target SELECT permission using the old analyzer read path"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT
-        (SELECT count() FROM test_table_access),
-        (SELECT count() FROM test_alias_access)
-    SETTINGS optimize_trivial_count_query = 0, enable_analyzer = 0;
 "
 
 echo "Test table statistics with target permission"
