@@ -1,0 +1,10 @@
+update, on the fly
+1	0
+5	0
+update, materialized
+1	0
+5	0
+delete, on the fly
+5	1
+delete, materialized
+5	1
