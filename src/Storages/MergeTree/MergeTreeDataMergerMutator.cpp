@@ -448,7 +448,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     MergeTreeTransactionPtr txn,
     ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
-    const String & suffix)
+    const String & suffix,
+    bool force_sync)
 {
     if (future_part->isResultPatch())
     {
@@ -477,7 +478,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         &data,
         this,
         &merges_blocker,
-        &ttl_merges_blocker);
+        &ttl_merges_blocker,
+        force_sync);
 }
 
 MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
