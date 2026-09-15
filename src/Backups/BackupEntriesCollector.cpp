@@ -699,7 +699,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
                     {
                         supports_backup_partition = StorageFactory::instance().getStorageFeatures(engine_name).supports_backup_partition;
                     }
-                    catch (const Exception &)
+                    catch (const Exception &) // NOLINT(bugprone-empty-catch)
                     {
                         /// Unknown engine name - treat the same as "doesn't support partitions".
                     }
