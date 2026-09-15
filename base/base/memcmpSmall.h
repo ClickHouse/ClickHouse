@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <cstring>
 
 #include <base/MemorySanitizer.h>
 #include <base/simd.h>
@@ -20,6 +21,34 @@ inline int cmp(T a, T b)
     return 0;
 }
 
+inline unsigned __int128 loadBigEndian128(const void * p)
+{
+    uint64_t hi;
+    uint64_t lo;
+    std::memcpy(&hi, p, sizeof(hi));
+    std::memcpy(&lo, static_cast<const char *>(p) + sizeof(hi), sizeof(lo));
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        hi = std::byteswap(hi);
+        lo = std::byteswap(lo);
+    }
+    return static_cast<unsigned __int128>(hi) << 64 | lo;
+}
+
+}
+
+
+/** Compare memory regions of size 16 exactly.
+  * Comparing the operands as big-endian 128-bit integers is branchless (on x86-64: movbe, cmp, sbb, setcc),
+  * unlike locating the first differing byte with SIMD, which mispredicts when it is not predictable
+  * whether the values are equal.
+  */
+template <typename Char>
+inline int memcmp16(const Char * a, const Char * b)
+{
+    unsigned __int128 x = detail::loadBigEndian128(a);
+    unsigned __int128 y = detail::loadBigEndian128(b);
+    return (x > y) - (x < y);
 }
 
 
@@ -218,24 +247,6 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
             offset += std::countr_zero(mask);
             return detail::cmp(a[offset], b[offset]);
         }
-    }
-
-    return 0;
-}
-
-
-/** Variant when the size is 16 exactly.
-  */
-template <typename Char>
-inline int memcmp16(const Char * a, const Char * b)
-{
-    uint16_t mask = _mm_cmp_epi8_mask(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(a)), _mm_loadu_si128(reinterpret_cast<const __m128i *>(b)), _MM_CMPINT_NE);
-
-    if (mask)
-    {
-        auto offset = std::countr_zero(mask);
-        return detail::cmp(a[offset], b[offset]);
     }
 
     return 0;
@@ -475,25 +486,6 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 
 /** Variant when the size is 16 exactly.
   */
-template <typename Char>
-inline int memcmp16(const Char * a, const Char * b)
-{
-    uint16_t mask = static_cast<uint16_t>(_mm_movemask_epi8(
-        _mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(a)), _mm_loadu_si128(reinterpret_cast<const __m128i *>(b)))));
-    mask = static_cast<uint16_t>(~mask);
-
-    if (mask)
-    {
-        auto offset = std::countr_zero(mask);
-        return detail::cmp(a[offset], b[offset]);
-    }
-
-    return 0;
-}
-
-
-/** Variant when the size is 16 exactly.
-  */
 inline bool memequal16(const void * a, const void * b)
 {
     return 0xFFFF
@@ -696,20 +688,6 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
     return 0;
 }
 
-template <typename Char>
-inline int memcmp16(const Char * a, const Char * b)
-{
-    uint64_t mask = getNibbleMask(
-        vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(a)), vld1q_u8(reinterpret_cast<const unsigned char *>(b))));
-    mask = ~mask;
-    if (mask)
-    {
-        auto offset = std::countr_zero(mask) >> 2;
-        return detail::cmp(a[offset], b[offset]);
-    }
-    return 0;
-}
-
 inline bool memequal16(const void * a, const void * b)
 {
     return 0xFFFFFFFFFFFFFFFFull
@@ -804,12 +782,6 @@ template <typename Char>
 inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 {
     return memcmp(a, b, size);
-}
-
-template <typename Char>
-inline int memcmp16(const Char * a, const Char * b)
-{
-    return memcmp(a, b, 16);
 }
 
 inline bool memequal16(const void * a, const void * b)
