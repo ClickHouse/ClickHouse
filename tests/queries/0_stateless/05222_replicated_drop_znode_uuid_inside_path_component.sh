@@ -13,11 +13,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 UUID=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
 # The same literal path an `Ordinary` conversion with such a template would have stored.
-ZK_PREFIX="/clickhouse/tables/$CLICKHOUSE_DATABASE"
+ZK_PREFIX="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
 ZOOKEEPER_PATH="$ZK_PREFIX/pika${UUID}chu/s1"
 
 ${CLICKHOUSE_CLIENT} -n -q "
-    CREATE TABLE t_uuid_inside (x UInt64) ENGINE = ReplicatedMergeTree('$ZOOKEEPER_PATH', 'r1') ORDER BY x;
+    CREATE TABLE t_uuid_inside (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/pika${UUID}chu/s1', 'r1') ORDER BY x;
     INSERT INTO t_uuid_inside VALUES (1);
 
     -- A round trip through a plain re-attach resolves the path again from the literal, which is what a restart does.
@@ -32,4 +32,4 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_uuid_inside SYNC"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT 'parent_after_drop', count() FROM system.zookeeper WHERE path = '$ZK_PREFIX' AND name = 'pika${UUID}chu'"
 # The owned prefix ends with the component containing the UUID: the znode above it is left alone.
-${CLICKHOUSE_CLIENT} -q "SELECT 'grandparent_after_drop', count() FROM system.zookeeper WHERE path = '/clickhouse/tables' AND name = '$CLICKHOUSE_DATABASE'"
+${CLICKHOUSE_CLIENT} -q "SELECT 'grandparent_after_drop', count() FROM system.zookeeper WHERE path = '/clickhouse/tables' AND name = '$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX'"
