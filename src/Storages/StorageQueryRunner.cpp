@@ -930,6 +930,33 @@ static void validateColumns(const ColumnsDescription & columns)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A QueryRunner table requires the 'query String' column");
 }
 
+void validateQueryRunnerTarget(ASTStorage & storage_def, ContextPtr local_context, LoadingStrictnessLevel mode)
+{
+    QueryRunnerSettings settings;
+    settings.loadFromQuery(storage_def);
+
+    const String & cluster_name = settings[QueryRunnerSetting::cluster];
+    const ShardSelector shard_selector = parseShardSelector(settings[QueryRunnerSetting::shard]);
+
+    if (cluster_name.empty())
+    {
+        if (settings[QueryRunnerSetting::shard].changed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'shard' setting of the QueryRunner engine requires the 'cluster' setting");
+        return;
+    }
+
+    if (mode > LoadingStrictnessLevel::CREATE)
+        return;
+
+    local_context->checkAccess(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::REMOTE));
+    auto cluster = local_context->getCluster(cluster_name);
+    if (shard_selector.kind == ShardSelectorKind::Fixed && shard_selector.fixed_shard_num > cluster->getShardsInfo().size())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'shard' setting of the QueryRunner engine must be in the range [1, {}] for cluster '{}', got {}",
+            cluster->getShardsInfo().size(), cluster_name, shard_selector.fixed_shard_num);
+}
+
 void registerStorageQueryRunner(StorageFactory & factory);
 void registerStorageQueryRunner(StorageFactory & factory)
 {
@@ -949,24 +976,8 @@ void registerStorageQueryRunner(StorageFactory & factory)
         if (max_queue_size < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'max_queue_size' setting of the QueryRunner engine must be at least 1");
 
-        const String & cluster_name = settings[QueryRunnerSetting::cluster];
-        const ShardSelector shard_selector = parseShardSelector(settings[QueryRunnerSetting::shard]);
-
-        if (cluster_name.empty())
-        {
-            if (settings[QueryRunnerSetting::shard].changed)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'shard' setting of the QueryRunner engine requires the 'cluster' setting");
-        }
-        else if (args.mode <= LoadingStrictnessLevel::CREATE)
-        {
-            args.getLocalContext()->checkAccess(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::REMOTE));
-            auto cluster = args.getContext()->getCluster(cluster_name);
-            if (shard_selector.kind == ShardSelectorKind::Fixed && shard_selector.fixed_shard_num > cluster->getShardsInfo().size())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The 'shard' setting of the QueryRunner engine must be in the range [1, {}] for cluster '{}', got {}",
-                    cluster->getShardsInfo().size(), cluster_name, shard_selector.fixed_shard_num);
-        }
+        /// Shared with the `ON CLUSTER` initiator preflight, which never constructs the storage.
+        validateQueryRunnerTarget(*args.storage_def, args.getLocalContext(), args.mode);
 
         validateColumns(args.columns);
 
