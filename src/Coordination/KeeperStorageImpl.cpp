@@ -1587,6 +1587,12 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
+        /// `preprocess` puts the failure marker last and the caller rolls back everything before it,
+        /// so the marker is the only delta of a failed multi request. Anything else in the range is
+        /// a delta that no subrequest response would account for, so it cannot be dropped silently.
+        if (std::next(deltas.begin()) != deltas.end())
+            onStorageInconsistency("Unexpected deltas after the failure marker of a Multi request");
+
         const size_t subrequests_count = subrequests.size();
 
         for (size_t i = 0; i < subrequests_count; ++i)
