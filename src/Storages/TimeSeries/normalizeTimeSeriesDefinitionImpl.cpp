@@ -31,6 +31,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -80,7 +81,7 @@ namespace
     /// The RecentSamples target is optional: it's enabled by the `recent_samples_ttl_seconds` setting.
     constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
     }
 
     /// Whether the create query defines inner columns for the specified target.
@@ -131,8 +132,9 @@ namespace
     }
 
     /// Reads the declaration of the outer columns.
-    /// If the `time_series` column is found and it is declared with type `Array(Tuple(timestamp_type, scalar_type))`,
-    /// the function extracts `timestamp_type` and `scalar_type`.
+    /// If the column with samples is found and it is declared with type `Array(Tuple(timestamp_type, scalar_type))`,
+    /// the function extracts `timestamp_type` and `scalar_type`. Both names of the column, `samples` and `time_series`,
+    /// are accepted whatever the version of the table is: the column is regenerated under the name of the version afterwards.
     void readTypesFromOuterColumns(
         const ASTCreateQuery & query,
         DataTypePtr & timestamp_type, String & timestamp_src,
@@ -147,7 +149,7 @@ namespace
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
             const auto & name = column_declaration->name;
 
-            if (name == TimeSeriesColumnNames::TimeSeries && column_declaration->getType())
+            if ((name == TimeSeriesColumnNames::Samples || name == TimeSeriesColumnNames::TimeSeries) && column_declaration->getType())
             {
                 auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
                 const auto * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
@@ -155,10 +157,10 @@ namespace
                 if (!tuple_type || (tuple_type->getElements().size() != 2))
                     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
                         "{}: Column `{}` must have type Array(Tuple(timestamp, value)), got {}",
-                        table_id.getNameForLogs(), TimeSeriesColumnNames::TimeSeries, column_type->getName());
+                        table_id.getNameForLogs(), name, column_type->getName());
 
                 const auto & elems = tuple_type->getElements();
-                String source = "outer column `time_series`";
+                String source = fmt::format("outer column `{}`", name);
                 setOrCheckDataType(timestamp_type, timestamp_src, elems[0], source, "timestamp", table_id);
                 setOrCheckDataType(scalar_type, scalar_src, elems[1], source, "scalar", table_id);
             }
@@ -697,7 +699,7 @@ namespace
                 return false;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 if (has_default || codec)
                     return false;
@@ -867,7 +869,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 if (engine_name != "ReplacingMergeTree")
                     return;
@@ -1012,7 +1014,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 add_column_if_missing(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
                 add_column_if_missing(TimeSeriesColumnNames::Type, makeASTDataType("LowCardinality", makeASTDataType("String")));
@@ -1230,7 +1232,7 @@ namespace
                     break;
                 }
 
-                case ViewTarget::Metrics:
+                case ViewTarget::MetricFamilies:
                 {
                     add_column(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
                     add_column(TimeSeriesColumnNames::Type, makeASTDataType("String"));
@@ -1512,7 +1514,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 if (!inner_engine.engine)
                     set_engine("ReplacingMergeTree");
@@ -1661,7 +1663,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 check_column_is_string(TimeSeriesColumnNames::MetricFamilyName);
                 check_column_is_string(TimeSeriesColumnNames::Type);
@@ -1847,7 +1849,8 @@ namespace
     }
 
     /// Generates the canonical outer columns from the resolved types.
-    ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & scalar_type)
+    /// The name of the column with samples depends on the version of the table (see TimeSeriesVersion.h).
+    ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & scalar_type, UInt64 version)
     {
         ColumnsDescription result;
 
@@ -1861,7 +1864,7 @@ namespace
         add_column(TimeSeriesColumnNames::Tags,
                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()));
 
-        add_column(TimeSeriesColumnNames::TimeSeries,
+        add_column(TimeSeriesColumnNames::getOuterSamples(version),
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type})));
 
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
@@ -2064,10 +2067,12 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     /// Regenerate the columns of TimeSeries table from the resolved types.
     /// We can change the columns of TimeSeries table because these columns are designed to work
     /// as IO interface. They store no data, in fact the data is stored in target or inner columns.
+    /// The version is pinned at this point (see above), so the columns are generated the way that version does it.
     {
         auto new_columns_ast = make_intrusive<ASTColumns>();
         new_columns_ast->set(new_columns_ast->columns,
-            InterpreterCreateQuery::formatColumns(generateOuterColumns(resolved_types.timestamp_type, resolved_types.scalar_type)));
+            InterpreterCreateQuery::formatColumns(generateOuterColumns(
+                resolved_types.timestamp_type, resolved_types.scalar_type, getTimeSeriesSettingVersion(create_query))));
         const auto * old_columns = create_query.columns_list;
         if (!old_columns
             || !old_columns->columns
