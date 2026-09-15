@@ -14,12 +14,23 @@ public:
     /// way. We will have 80 pages with 4KB page size.
     static constexpr size_t default_stack_size = 320 * 1024; /// 64KB was not enough for tests
 
+    /// Address range a coroutine's frames may occupy: the allocation minus the guard page.
+    struct Bounds
+    {
+        const char * lowest = nullptr;
+        size_t size = 0;
+    };
+
     explicit CoroutineStack(size_t stack_size_ = default_stack_size);
 
-    boost::context::stack_context allocate() const;
+    boost::context::stack_context allocate();
     void deallocate(boost::context::stack_context & sctx) const;
+
+    /// Empty before the first `allocate`.
+    Bounds lastAllocatedBounds() const { return last_allocated_bounds; }
 
 private:
     const size_t stack_size;
     const size_t page_size;
+    Bounds last_allocated_bounds;
 };
