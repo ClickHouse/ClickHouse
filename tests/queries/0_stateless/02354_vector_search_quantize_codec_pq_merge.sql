@@ -4,6 +4,9 @@
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
+-- Lazy materialization is an analyzer-only plan optimization and the rewrite requires it, so under the old-analyzer CI
+-- config every check below would be satisfied by a plain exact scan.
+SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
@@ -34,6 +37,19 @@ OPTIMIZE TABLE quantize_pq_merge FINAL;
 SELECT 'parts_after', count() FROM system.parts WHERE database = currentDatabase() AND table = 'quantize_pq_merge' AND active;
 -- The merged part carries a single retrained codebook.
 SELECT 'codebooks_after', uniqExact(vec.product_quantization_codebook) FROM quantize_pq_merge;
+
+-- In-range control: the rewrite engages for this shape, so a decline reddens here instead of leaving the check below
+-- satisfied by an exact scan. `enable_parallel_replicas = 0` inline because the runner can inject parallel replicas,
+-- which disables the rewrite, and this file carries no `no-parallel-replicas` tag.
+SELECT 'rewrite_engages',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_pq_merge
+    ORDER BY L2Distance(vec, (SELECT vec FROM quantize_pq_merge WHERE id = 123)) ASC
+    LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 1000, enable_parallel_replicas = 0
+);
 
 -- The two-stage search reproduces the exact brute-force top-k against the retrained codebook (shortlist covers all rows).
 WITH (SELECT vec FROM quantize_pq_merge WHERE id = 123) AS ref

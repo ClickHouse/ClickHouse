@@ -36,19 +36,44 @@ DROP TABLE tab;
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
+-- The rewrite runs only where the lazy read it depends on is available, and `tests/clickhouse-test` randomizes
+-- `query_plan_optimize_lazy_materialization`. Without this pin the two queries below skip the rewrite entirely,
+-- the multiplication under test never runs, and both still pass on the exact scan.
+SET query_plan_optimize_lazy_materialization = 1;
 
 DROP TABLE IF EXISTS tab_quantized;
 
 CREATE TABLE tab_quantized(id Int32, vec Array(Float32) CODEC(Quantized('int8', 2))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab_quantized VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
 
--- The shortlist is clamped to query_plan_max_limit_for_lazy_materialization when it is set, and stays unbounded when it is 0.
+-- The shortlist size is computed before it is checked against query_plan_max_limit_for_lazy_materialization, so this
+-- LIMIT drives the multiplication in both cases: the rewrite declines because the shortlist cannot stay within the cap
+-- (first query), and applies because the cap is 0, i.e. unbounded (second query). Both return the exact result.
 WITH [0.0, 2.0] AS reference_vec
 SELECT id
 FROM tab_quantized
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 9223372036854775807
 SETTINGS max_limit_for_vector_search_queries = 9223372036854775807, vector_search_index_fetch_multiplier = 2.0, query_plan_max_limit_for_lazy_materialization = 10;
+
+-- The rewrite must actually run for the multiplication under test to happen, and both queries here are result-only: an
+-- exact scan returns the same rows. `enable_parallel_replicas = 0` inline because the runner can inject parallel
+-- replicas, which disables the rewrite, and this file stays in that config for its index-based half.
+SELECT 'quantized_rewrite_engages',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM tab_quantized
+    WHERE id > 0
+    ORDER BY L2Distance(vec, [0.0, 2.0])
+    LIMIT 9223372036854775807
+    SETTINGS max_limit_for_vector_search_queries = 9223372036854775807,
+             vector_search_index_fetch_multiplier = 2.0,
+             query_plan_max_limit_for_lazy_materialization = 0,
+             enable_parallel_replicas = 0
+);
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id

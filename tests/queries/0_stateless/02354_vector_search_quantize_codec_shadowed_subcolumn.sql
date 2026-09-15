@@ -10,6 +10,11 @@
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 SET enable_analyzer = 1;
+-- The rewrite runs only where the vector can be deferred to the shortlisted rows, and the test harness randomizes both
+-- settings that decide it. Unpinned, both arms below are satisfied by an exact scan and the shadow detection is never
+-- reached.
+SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
 DROP TABLE IF EXISTS quantize_shadow;
 -- The physical `vec.quantized` is a FixedString(12) - the same width as the `int8` code for 8 dims (8 + 4-byte norm),
