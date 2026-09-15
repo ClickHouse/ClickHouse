@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the ceiling belongs to the libdeflate decoder, and fast test builds with
+# ENABLE_LIBRARIES=0, so gzip goes through zlib, which never buffers a whole block
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
