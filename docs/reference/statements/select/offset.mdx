@@ -2,7 +2,7 @@
 description: 'Documentation for Offset'
 sidebarTitle: 'OFFSET'
 slug: /sql-reference/statements/select/offset
-title: 'OFFSET FETCH Clause'
+title: 'OFFSET FETCH'
 doc_type: 'reference'
 ---
 
@@ -16,6 +16,8 @@ doc_type: 'reference'
 -- MySQL/PostgreSQL style:
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
+
+The SQL standard `OFFSET ... FETCH` forms cannot be combined with the [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range form.
 
 The `offset_row_count` or `fetch_row_count` value can be a number or a literal constant. You can omit `fetch_row_count`; by default, it equals to 1.
 

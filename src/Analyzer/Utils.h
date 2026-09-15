@@ -174,6 +174,23 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// node is returned unchanged.
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
 
+/// Maps an `in`-family function name to its null-aware counterpart the way `transform_null_in` does
+/// (`in` -> `nullIn` and so on). Any other name is returned unchanged.
+std::string_view getNullInFunctionName(std::string_view function_name);
+
+/// Returns the name a pass must use when it creates an `in`-family function node after normal resolution,
+/// which is the name `resolveFunction` would have produced for it. With `transform_null_in` the resolver
+/// renames the `in` family, so a pass running later emits the un-renamed name, a remote shard or parallel
+/// replica renames it while re-analyzing the shipped AST, and the two sides then disagree about what the
+/// node is called (issue #112032). This is the same divergence `foldConstantCast` above exists for.
+/// Returns `std::nullopt` when the renaming would not preserve the node's meaning, in which case the caller
+/// must keep the expression it was going to replace: only `in` takes the default implementation for NULLs
+/// (`src/Functions/in.cpp`), which is what makes it propagate a NULL argument instead of comparing it and
+/// what makes its result `Nullable`. That adaptor examines the top-level argument type, so the two names
+/// agree in value and in type exactly when the left argument cannot itself be NULL.
+std::optional<String> getInFunctionNameForPassCreatedNode(
+    const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context);
+
 /// Resolves function node as ordinary function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
@@ -243,7 +260,25 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context);
 
 
-Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
+/// With `date_time_as_numbers`, a `DateTime` leaf becomes its raw Unix timestamp instead of local date-time
+/// text; valid only where the literal's declared type is re-applied to it.
+Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);
+
+/// True if a value of this type may contain a decimal-backed leaf (Decimal/Time64, or a Dynamic that
+/// can hold one) that needs the exact serialization provided by columnConstantToExactLiteralAST.
+bool typeMayContainDecimal(const IDataType & type);
+
+/// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
+/// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
+/// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
+/// DateTime text-parsing heuristics. Decimal-free values use the same representation as
+/// getFieldFromColumnForASTLiteral. `date_time_as_numbers` is forwarded to it.
+ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
+
+/// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
+/// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar
+/// Decimal/DateTime64/Time64 constant), avoiding a redundant identity cast in the serialized AST.
+ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name);
 
 /// Returns true if the subquery's projection matches the storage schema (column count and
 /// types). On mismatch: throws TYPE_MISMATCH when throw_on_mismatch is true, otherwise

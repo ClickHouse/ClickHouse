@@ -31,6 +31,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
@@ -42,6 +43,7 @@
 
 #include <climits>
 #include <filesystem>
+#include <functional>
 
 
 namespace CurrentMetrics
@@ -97,6 +99,11 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_sink_pause_before_push[];
 }
 
 namespace
@@ -155,11 +162,20 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
 }
 
 
-static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
+static void writeBlockConvert(
+    PushingPipelineExecutor & executor,
+    const Block & block,
+    size_t repeats,
+    LoggerPtr log,
+    const std::function<void()> & check_before_push = {})
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
+    {
+        if (check_before_push)
+            check_before_push();
         executor.push(adopted_block);
+    }
 }
 
 
@@ -338,6 +354,11 @@ void DistributedSink::waitForJobs()
 {
     pool->wait();
 
+    /// Neither the elapsed-time verdict below nor the job count says anything useful about an insert
+    /// that is being cancelled.
+    if (isCancelled())
+        return;
+
     if (insert_timeout)
     {
         if (static_cast<UInt64>(watch.elapsedSeconds()) > insert_timeout)
@@ -503,6 +524,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
             Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+            FailPointInjection::pauseFailPoint(FailPoints::distributed_sink_pause_before_push);
+            throwIfCancelled();
             job.executor->push(adopted_shard_block);
         }
         else // local
@@ -534,7 +557,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 job.executor->start();
             }
 
-            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
+            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log, [this] { throwIfCancelled(); });
         }
 
         job.blocks_written += 1;
@@ -699,19 +722,17 @@ void DistributedSink::onFinish()
 
 void DistributedSink::onCancel() noexcept
 {
-    std::lock_guard lock(execution_mutex);
-    if (pool && !pool->isFinished())
-    {
-        try
-        {
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
-        }
-    }
+    /// Never waits: `writeSync` holds `execution_mutex` across its own wait for the writing jobs, so
+    /// waiting here would make cancellation as slow as the insert it is meant to interrupt. This runs
+    /// at most once, so when the lock is contended it cancels nothing and the destructor does it.
+    std::unique_lock lock(execution_mutex, std::try_to_lock);
+    if (lock.owns_lock())
+        cancelExecutors();
+}
 
+
+void DistributedSink::cancelExecutors() noexcept
+{
     for (auto & shard_jobs : per_shard_jobs)
     {
         for (JobReplica & job : shard_jobs.replicas_jobs)
@@ -727,7 +748,23 @@ void DistributedSink::onCancel() noexcept
             }
         }
     }
+}
 
+
+void DistributedSink::throwIfCancelled()
+{
+    if (isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
+}
+
+
+DistributedSink::~DistributedSink()
+{
+    /// A cancelled insert reaches neither `onFinish` nor, when the lock is contended, `onCancel`. Doing
+    /// it here keeps every executor cancelled under `execution_mutex`, rather than leaving
+    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread.
+    std::lock_guard lock(execution_mutex);
+    cancelExecutors();
 }
 
 
