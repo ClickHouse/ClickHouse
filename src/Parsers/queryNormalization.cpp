@@ -3,6 +3,8 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
+#include <vector>
+
 
 namespace DB
 {
@@ -15,6 +17,8 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
     /// Coalesce a list of comma separated literals.
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
+
+    std::vector<char> pending_signs;
 
     while (true)
     {
@@ -30,6 +34,7 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
                 hash.update("\x00", 1);
             ++num_literals_in_sequence;
             prev_comma = false;
+            pending_signs.clear();
             continue;
         }
         if (token.type == TokenType::Comma)
@@ -40,6 +45,11 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
                 continue;
             }
         }
+        else if (prev_comma && (token.type == TokenType::Plus || token.type == TokenType::Minus))
+        {
+            pending_signs.push_back(token.type == TokenType::Plus ? '+' : '-');
+            continue;
+        }
         else
         {
             if (num_literals_in_sequence > 1)
@@ -47,6 +57,14 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
 
             if (prev_comma)
                 hash.update(",", 1);
+
+            for (size_t i = 0; i < pending_signs.size(); ++i)
+            {
+                if (i != 0)
+                    hash.update(" ", 1);
+                hash.update(&pending_signs[i], 1);
+            }
+            pending_signs.clear();
 
             num_literals_in_sequence = 0;
             prev_comma = false;
@@ -120,6 +138,7 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
     bool prev_whitespace = false;
+    std::vector<char> pending_signs;
 
     while (true)
     {
@@ -157,6 +176,7 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
             ++num_literals_in_sequence;
             prev_whitespace = false;
             prev_comma = false;
+            pending_signs.clear();
             continue;
         }
         if (token.type == TokenType::Comma)
@@ -168,7 +188,10 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
             }
         }
         else if (prev_comma && (token.type == TokenType::Plus || token.type == TokenType::Minus))
+        {
+            pending_signs.push_back(token.type == TokenType::Plus ? '+' : '-');
             continue;
+        }
         else
         {
             if (num_literals_in_sequence > 1)
@@ -182,6 +205,14 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 
             if (prev_whitespace)
                 res_data.push_back(' ');
+
+            for (size_t i = 0; i < pending_signs.size(); ++i)
+            {
+                if (i != 0)
+                    res_data.push_back(' ');
+                res_data.push_back(pending_signs[i]);
+            }
+            pending_signs.clear();
 
             num_literals_in_sequence = 0;
             prev_comma = false;
