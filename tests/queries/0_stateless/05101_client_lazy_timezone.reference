@@ -1,0 +1,16 @@
+Asia/Kolkata	1970-01-02 05:30:00	1970-01-02 05:30:00.125
+America/New_York	2020-06-30 20:00:00	2020-06-30 20:00:00.125
+UTC	1970-01-02 00:00:00	1970-01-02 00:00:00.125
+Asia/Kolkata	1970-01-02 05:30:00	1970-01-02 05:30:00.125
+1970-01-02 00:00:00	1970-01-02 05:30:00	1970-01-02 00:00:00.125	1970-01-02 05:30:00.125
+DateTime(\'Asia/Kolkata\')	DateTime64(3, \'Asia/Kolkata\')
+Invalid timezone rejected
+Invalid timezone rejected
+0	-1	-1001	-1	DateTime	DateTime64(0, \'UTC\')	DateTime64(3, \'America/New_York\')	DateTime64(9, \'UTC\')
+2147483647	0	-1	0	DateTime	DateTime64(0, \'UTC\')	DateTime64(3, \'America/New_York\')	DateTime64(9, \'UTC\')
+4294967294	1	999	1	DateTime	DateTime64(0, \'UTC\')	DateTime64(3, \'America/New_York\')	DateTime64(9, \'UTC\')
+0	-1	-1001	-1	DateTime(\'Asia/Kolkata\')	DateTime64(0, \'UTC\')	DateTime64(3, \'America/New_York\')	DateTime64(9, \'UTC\')
+2147483647	0	-1	0	DateTime(\'Asia/Kolkata\')	DateTime64(0, \'UTC\')	DateTime64(3, \'America/New_York\')	DateTime64(9, \'UTC\')
+4294967294	1	999	1	DateTime(\'Asia/Kolkata\')	DateTime64(0, \'UTC\')	DateTime64(3, \'America/New_York\')	DateTime64(9, \'UTC\')
+3	3	3	3	3	Array(DateTime(\'Asia/Kolkata\'))	Nullable(DateTime64(3, \'America/New_York\'))	Tuple(DateTime(\'Asia/Kolkata\'), DateTime64(9, \'UTC\'))	LowCardinality(DateTime(\'Asia/Kolkata\'))
+3	3	3	3	3	Array(DateTime(\'Asia/Kolkata\'))	Nullable(DateTime64(3, \'America/New_York\'))	Tuple(DateTime(\'Asia/Kolkata\'), DateTime64(9, \'UTC\'))	LowCardinality(DateTime(\'Asia/Kolkata\'))
