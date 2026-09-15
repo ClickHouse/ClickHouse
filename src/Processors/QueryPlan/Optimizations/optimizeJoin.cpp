@@ -476,6 +476,18 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
     }
 
+    /// A sub-join optimized on its own is a leaf of the parent graph but keeps its own two
+    /// children, so the single-child cutoff below drops it before the optimized-join case there.
+    /// Only the bound crosses: a point estimate here would also feed the parent's cost model.
+    if (const auto * sub_join_step = typeid_cast<const JoinStepLogical *>(step);
+        sub_join_step && sub_join_step->isOptimized() && node.children.size() != 1)
+    {
+        return RelationStats{
+            .estimated_rows_upper = sub_join_step->getResultRowsUpperBound(),
+            .table_name = sub_join_step->getReadableRelationName(),
+            .imprecise_estimate = sub_join_step->hasImpreciseEstimate()};
+    }
+
     if (node.children.size() != 1)
         return {};
 
@@ -1708,7 +1720,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            join_step->setOptimized(entry->estimated_rows, entry->estimated_rows_upper, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 

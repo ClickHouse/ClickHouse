@@ -161,6 +161,19 @@ SELECT 'degenerate-predicate leaf keeps orientation',
 
 DROP TABLE cross_04726;
 
+-- A join graph capped at two relations optimizes the inner join separately, so the filtered side
+-- reaches the outer join as a sub-join instead of a table. Its bound must survive that boundary.
+-- The first condition keeps the assertion non-vacuous if the fixture stops appearing at all.
+SELECT 'nested sub-join keeps orientation',
+        countIf(explain ILIKE '%dim\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = 'nowhere') AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+    SETTINGS query_plan_optimize_join_order_limit = 2
+) WHERE explain ILIKE '%Join:%';
+
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
 -- future change cannot keep the plan shape while losing the small build side at runtime.
 SELECT avg(val)
