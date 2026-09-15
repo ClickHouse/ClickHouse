@@ -41,7 +41,7 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t w
     size_t bytes = join->getTotalByteCount();
 
     if (!limits.softCheck(rows, bytes))
-        return switchJoin(worker_id);
+        return switchJoin();
 
     return true;
 }
@@ -58,7 +58,7 @@ void JoinSwitcher::onBuildPhaseFinish()
         assert_cast<HashJoin *>(join.get())->dropRightBlocksKeptForAnotherAlgorithm();
 }
 
-bool JoinSwitcher::switchJoin(size_t worker_id)
+bool JoinSwitcher::switchJoin()
 {
     HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
@@ -68,7 +68,7 @@ bool JoinSwitcher::switchJoin(size_t worker_id)
 
     bool success = true;
     for (const Block & saved_block : right_blocks)
-        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), worker_id, true);
+        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), /* worker_id = */ 0, true);
 
     switched = true;
     return success;
