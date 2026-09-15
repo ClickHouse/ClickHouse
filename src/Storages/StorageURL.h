@@ -212,6 +212,7 @@ public:
 
         String next();
         size_t size();
+        size_t sizeForStreams(size_t requested);
     private:
         class Impl;
         /// shared_ptr to have copy constructor
