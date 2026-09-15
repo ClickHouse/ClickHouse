@@ -14,6 +14,7 @@ from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika import SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -931,7 +932,14 @@ def main():
         def configure_log_export():
             if not info.is_local_run:
                 print("prepare log export config")
-                return CH.create_log_export_config()
+                # Without the credentials `setup_log_cluster.sh` creates no `_sender`
+                # table, so leaving the export unconfigured is a supported state.
+                try:
+                    return CH.create_log_export_config()
+                except SecretFetchFailed as e:
+                    print(f"WARNING: Failed to configure log export: {e}")
+                    info.add_workflow_warning(f"Failed to configure log export: {e}")
+                    return True
             else:
                 print("skip log export config for local run")
 
