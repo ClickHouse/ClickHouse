@@ -6,6 +6,7 @@
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Core/Defines.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -14,7 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SKIP_UNKNOWN_FIELD;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+/// Bound number of columns in header so user cannot reserve() arbitrarily large amount of memory
+static constexpr auto TOO_MANY_COLUMNS_MESSAGE = "Suspiciously many columns in RowBinary header: {}";
 
 template <bool with_defaults>
 BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
@@ -88,6 +93,8 @@ template <bool with_defaults>
 std::vector<String> BinaryFormatReader<with_defaults>::readNames()
 {
     readVarUInt(read_columns, *in);
+    if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, TOO_MANY_COLUMNS_MESSAGE, read_columns);
     return readHeaderRow();
 }
 
@@ -150,6 +157,8 @@ template <bool with_defaults>
 void BinaryFormatReader<with_defaults>::skipNames()
 {
     readVarUInt(read_columns, *in);
+    if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, TOO_MANY_COLUMNS_MESSAGE, read_columns);
     skipHeaderRow();
 }
 
@@ -160,6 +169,8 @@ void BinaryFormatReader<with_defaults>::skipTypes()
     {
         /// It's possible only when with_names = false and with_types = true
         readVarUInt(read_columns, *in);
+        if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, TOO_MANY_COLUMNS_MESSAGE, read_columns);
     }
 
     skipHeaderRow();
