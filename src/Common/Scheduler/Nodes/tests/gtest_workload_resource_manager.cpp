@@ -351,9 +351,9 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     }
 }
 
-// Multiple independent root workloads (a forest). A second root sharing a resource used to be
-// rejected ("The second root is not allowed"); now each root is its own tree and all roots of a
-// resource are combined under its single scheduler (a time-shared scheduler round-robins them).
+// Multiple root workloads (workloads created without a parent). A second parentless workload used
+// to be rejected ("The second root is not allowed"); now each becomes a child of the resource's
+// implicit anonymous root workload, so several SQL roots coexist and are scheduled among each other.
 TEST(SchedulerWorkloadResourceManager, MultipleRoots)
 {
     ResourceTest t;
@@ -2385,9 +2385,9 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
     }
 }
 
-// Multiple independent root workloads on a space-shared resource (MEMORY RESERVATION). A
-// space-shared scheduler holds a single child, so the forest roots are combined under one shared
-// FairAllocation multiplexer. Each root still enforces its own limit independently.
+// Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
+// becomes a child of the resource's implicit anonymous root workload (the scheduler's single child);
+// each still enforces its own limit independently.
 TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
 {
     ResourceTest t;

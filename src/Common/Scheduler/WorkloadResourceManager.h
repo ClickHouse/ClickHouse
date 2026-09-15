@@ -41,10 +41,12 @@ namespace DB
  * Let's consider how a single resource is implemented. Every workload is represented by corresponding WorkloadNode.
  * Every WorkloadNode manages its own subtree of ISchedulerNode objects (see details in WorkloadNode.h)
  * WorkloadNode for workload w/o children has a queue, which provide a ResourceLink for consumption.
- * A resource may have several root workloads (workloads without a parent) forming a forest of trees.
- * All roots are attached directly to the resource's single scheduler, which has its own thread and
- * processes the roots round-robin (both TimeSharedScheduler and SpaceSharedScheduler hold multiple
- * children). The scheduler itself never enforces a limit; trees are independent with their own limits.
+ * A resource may have several root workloads (workloads created without a parent). They are not
+ * attached to the scheduler directly; instead each resource has one implicit anonymous root workload
+ * that is the scheduler's single child, and every parentless workload is attached as a child of it.
+ * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
+ * fairness/priorities via the normal workload policy machinery. The implicit root has default
+ * (unlimited) settings, so a single-root hierarchy behaves exactly as before.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -55,7 +57,9 @@ namespace DB
  *
  *             root                - TimeSharedScheduler (with a thread and an EventQueue)
  *               |
- *              all                - WorkloadNode
+ *            __root__             - implicit anonymous root WorkloadNode (the scheduler's single child)
+ *               |
+ *              all                - WorkloadNode (has no explicit parent, so a child of the implicit root)
  *               |
  *            p0_fair              - FairPolicy (part of parent WorkloadNode internal structure)
  *            /     \
@@ -234,6 +238,21 @@ private:
                     std::static_pointer_cast<typename Node::Base>(result)
                 };
             };
+
+            // Create the implicit anonymous root workload as the scheduler's single child. Every
+            // workload without an explicit parent becomes a child of it (see createNode()), so the
+            // scheduler always has exactly one child and the otherwise-root workloads are scheduled
+            // with fairness/priorities by the normal workload policy machinery. Default (unlimited)
+            // settings mean a single-root hierarchy behaves exactly as before.
+            auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
+            implicit->basename = IMPLICIT_ROOT_NAME;
+            implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
+            auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
+            executeInSchedulerThread([&, this]
+            {
+                scheduler->attachChild(implicit_scheduler_node);
+                updateCurrentVersion();
+            });
         }
 
         // Type-erasure for time-shared vs. space-shared resources
@@ -248,9 +267,14 @@ private:
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
-        /// Root workloads of this resource (workloads with no parent). Multiple roots form a forest;
-        /// each is attached directly to the scheduler, which processes them round-robin.
-        std::unordered_map<String, WorkloadNodePtr> root_nodes;
+        /// Reserved basename of the implicit anonymous root workload (the scheduler's single child).
+        static constexpr const char * IMPLICIT_ROOT_NAME = "__root__";
+        /// Implicit anonymous root workload: the scheduler's single child. Every workload without an
+        /// explicit parent is attached as its child (see createNode()), so multiple SQL "root"
+        /// workloads form one hierarchy under it — scheduled with fairness/priorities by the normal
+        /// policy machinery instead of being multiple scheduler children. Default (unlimited)
+        /// settings, so a single-root hierarchy is unchanged.
+        WorkloadNodePtr implicit_root;
         VersionPtr current_version;
     };
 
