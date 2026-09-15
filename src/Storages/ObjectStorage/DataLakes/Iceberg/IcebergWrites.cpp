@@ -412,6 +412,28 @@ void setVersionedField(avro::GenericRecord & rec, const auto & value, const Stri
     }
 }
 
+void setVersionedFieldNull(avro::GenericRecord & rec, const String & field_name)
+{
+    size_t field_index = rec.fieldIndex(field_name);
+    const avro::NodePtr & field_schema = rec.schema()->leafAt(static_cast<UInt32>(field_index));
+
+    if (field_schema->type() != avro::AVRO_UNION)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest field '{}' is not optional, cannot write null into it", field_name);
+
+    avro::GenericUnion field(field_schema);
+    field.selectBranch(0);
+    rec.fieldAt(field_index) = avro::GenericDatum(field_schema, field);
+}
+
+template <typename T>
+void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value, const String & field_name)
+{
+    if (value)
+        setVersionedField(rec, *value, field_name);
+    else
+        setVersionedFieldNull(rec, field_name);
+}
+
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
 {
     Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
@@ -539,15 +561,17 @@ void generateManifestFile(
 
         if (version > 1)
         {
-            Int64 sequence_number = (entry_lineage && entry_lineage->sequence_number)
-                ? *entry_lineage->sequence_number
-                : user_defined_sequence_number.value_or(new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number));
+            /// An ADDED entry leaves the sequence numbers null and readers inherit them from the manifest list
+            /// (https://iceberg.apache.org/spec/#sequence-number-inheritance), so the manifest does not depend on the
+            /// committing snapshot. An EXISTING entry keeps the values of the snapshot that added the file.
+            std::optional<Int64> sequence_number = (entry_lineage && entry_lineage->sequence_number)
+                ? entry_lineage->sequence_number
+                : user_defined_sequence_number;
 
-            /// A manifest-only rewrite preserves the source entry's `file_sequence_number`, which can differ from the data
-            /// `sequence_number`; for a genuinely new file there is no lineage and it equals the data sequence number.
-            Int64 file_sequence_number = (entry_lineage && entry_lineage->file_sequence_number)
-                ? *entry_lineage->file_sequence_number
-                : sequence_number;
+            /// The file sequence number is always that of the committing snapshot, so a new file always inherits it.
+            std::optional<Int64> file_sequence_number = (entry_lineage && entry_lineage->file_sequence_number)
+                ? entry_lineage->file_sequence_number
+                : (entry_lineage ? sequence_number : std::optional<Int64>{});
 
             setVersionedField(manifest, sequence_number, Iceberg::f_sequence_number);
             setVersionedField(manifest, file_sequence_number, Iceberg::f_file_sequence_number);
