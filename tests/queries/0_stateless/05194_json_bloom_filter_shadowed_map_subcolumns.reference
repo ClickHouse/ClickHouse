@@ -1,0 +1,7 @@
+physical column	1
+physical column, no index	1
+physical column, IN	1
+typed JSON path	1
+typed JSON path, no index	1
+typed JSON path, IN	1
+genuine map key still prunes	1	1

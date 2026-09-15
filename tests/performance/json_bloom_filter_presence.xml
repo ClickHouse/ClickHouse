@@ -1,0 +1,18 @@
+<test>
+    <substitutions>
+        <substitution><name>budget</name><values><value>0</value><value>64</value></values></substitution>
+        <substitution><name>clustered</name><values><value>0</value><value>1</value></values></substitution>
+        <substitution><name>indexed</name><values><value>0</value><value>1</value></values></substitution>
+    </substitutions>
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_skip_indexes_on_data_read>0</use_skip_indexes_on_data_read>
+    </settings>
+    <create_query>CREATE TABLE json_bf_presence_{budget}_{clustered} (n UInt64, j JSON(max_dynamic_paths = {budget})) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity_bytes = 0</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_presence_{budget}_{clustered} ADD INDEX bf j TYPE jsonbf_v1() GRANULARITY 1</create_query>
+    <fill_query>INSERT INTO json_bf_presence_{budget}_{clustered} SELECT number, ('{{"id":' || toString(number) || ',"payload":"' || toString(cityHash64(number)) || '"' || if(if({clustered}, number &lt; 10000, number % 100 = 0), ',"x":"present"', '') || '}}')::JSON(max_dynamic_paths = {budget}) FROM numbers(1000000)</fill_query>
+    <query>SELECT count() FROM json_bf_presence_{budget}_{clustered} WHERE isNotNull(j.x) SETTINGS use_skip_indexes = {indexed}</query>
+    <query>SELECT sum(n) FROM json_bf_presence_{budget}_{clustered} WHERE isNotNull(j.x) SETTINGS use_skip_indexes = {indexed}</query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_presence_{budget}_{clustered}</drop_query>
+</test>

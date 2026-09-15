@@ -7,9 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "
+    SET enable_json_type = 1;
     DROP TABLE IF EXISTS t_hypo_types;
-    CREATE TABLE t_hypo_types (a UInt64, s String, v Array(Float32)) ENGINE = MergeTree ORDER BY a;
-    INSERT INTO t_hypo_types SELECT number, concat('value_', toString(number % 100)), [1, 2, 3] FROM numbers(10000);
+    CREATE TABLE t_hypo_types (a UInt64, s String, v Array(Float32), j JSON(key String)) ENGINE = MergeTree ORDER BY a;
+    INSERT INTO t_hypo_types SELECT number, concat('value_', toString(number % 100)) AS s, [1, 2, 3], toJSONString(map('key', s)) FROM numbers(10000);
 "
 
 # Each allowed type must reach the estimator and be modelled empirically, not just pass CREATE
@@ -28,6 +29,11 @@ ngrambf_v1(3, 256, 2, 0)
 tokenbf_v1(256, 2, 0)
 sparse_grams(3, 100, 512, 2, 0)
 EOF
+
+echo "jsonbf_v1: $($CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (j) TYPE jsonbf_v1 GRANULARITY 1;
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_types WHERE j.key = 'value_42';
+" 2>&1 | grep -E '^  (status|source):' | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//')"
 
 echo "--- types outside the allowlist are rejected, and the error names what is supported ---"
 # the client echoes the server message twice, so take the first match of each pattern

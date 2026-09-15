@@ -1,0 +1,38 @@
+1	Int64
+2	UInt64
+3	Float64
+4	Decimal(18, 2)
+5	String
+6	Int32
+7	Float32
+8	Decimal(38, 3)
+string	[1,2,3,4,5,6,7,8]
+string without index	[1,2,3,4,5,6,7,8]
+constant left	[1,2,3,4,5,6,7,8]
+typed decimal	[4]
+cast	[1,2,3,4,5,6,7,8]
+absent	0
+Granules: 0/8
+shared types	['Decimal(18, 2)','Decimal(38, 3)','Float32','Float64','Int32','Int64','String','UInt64']
+shared string	[1,2,3,4,5,6,7,8]
+shared string without index	[1,2,3,4,5,6,7,8]
+shared absent	0
+exact integer	[2]
+exact integer without index	[2]
+exact float	[1,3]
+exact float without index	[1,3]
+uint64 max	[4]
+uint64 max without index	[4]
+float above uint64	[5]
+float above uint64 without index	[5]
+int64 min	[6,7]
+int64 min without index	[6,7]
+zero	[8,9,10,11]
+zero without index	[8,9,10,11]
+nan	[]
+nan without index	[]
+infinity	[13]
+infinity without index	[13]
+negative infinity	[14]
+negative infinity without index	[14]
+typed int64 zero	[10]
