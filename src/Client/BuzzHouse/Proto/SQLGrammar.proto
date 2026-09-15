@@ -401,6 +401,7 @@ message ExprInType {
         ExprList tuple = 3;
         ExplainQuery sel = 4;
         bool empty_list = 5;
+        ExprSchemaTable tbl = 6;
     }
 }
 

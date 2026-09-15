@@ -1243,6 +1243,7 @@ CONV_FN(ExprInType, ein)
             ret += ")";
             break;
         case InType::kEmptyList: ret += ein.empty_list() ? "[]" : "()"; break;
+        case InType::kTbl: ExprSchemaTableToString(ret, ein.tbl()); break;
         default: ret += "1";
     }
 }

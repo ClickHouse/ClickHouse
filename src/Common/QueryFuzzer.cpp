@@ -4423,6 +4423,15 @@ ASTPtr QueryFuzzer::generatePredicate()
                                 next_condition = makeASTFunction(variant, expression_1, entry.second->clone());
                             break;
                         }
+                        const auto * table_expr = typeid_cast<ASTTableExpression *>(entry.second.get());
+                        if (table_expr && table_expr->database_and_table_name)
+                        {
+                            next_condition = makeASTFunction(
+                                in_variants[fuzz_rand() % in_variants.size()],
+                                expression_1,
+                                table_expr->database_and_table_name->clone());
+                            break;
+                        }
                     }
                 }
                 else if (nprob == 2)
