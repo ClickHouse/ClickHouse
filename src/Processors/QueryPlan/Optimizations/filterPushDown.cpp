@@ -744,7 +744,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         const auto & join_output_header = *join_header;
 
-        auto create_cast_name = [&](const String & replaced_name)
+        auto create_replacement_name = [&](const String & replaced_name)
         {
             String name = fmt::format("__filterpushdown_cast{}", replaced_name);
             int counter = 0;
@@ -768,14 +768,18 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (!replaced || !replaced->type->equals(*supertype))
                 return;
 
-            /// The side that already has the supertype is not cast by the JOIN either.
-            if (source.getType()->equals(*supertype))
+            /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
+            /// under its own name provided that name denotes a single type here: the JOIN republishes an
+            /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
+            const auto * source_in_output = join_output_header.findByName(source.getColumnName());
+            if (source.getType()->equals(*supertype)
+                && (!source_in_output || source_in_output->type->equals(*source.getType())))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
             }
 
-            auto name = create_cast_name(replaced_name);
+            auto name = create_replacement_name(replaced_name);
             equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, supertype, name);
             replacements.push_back({source, supertype, std::move(name)});
         };
@@ -960,7 +964,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// serialization to `String`, which never appear as a supertype cast - and the date-time
             /// overflow behavior is pinned by `createInternalCast` whether or not a context is given.
             required_actions.push_back(JoinActionRef::transform({replacement.source},
-                [&](ActionsDAG & dag, auto && args) { return &dag.addCast(*args.at(0), replacement.target_type, replacement.name, nullptr); }));
+                [&](ActionsDAG & dag, auto && args)
+                {
+                    /// A replacement renamed to keep its type unambiguous has nothing to convert.
+                    const auto & arg = *args.at(0);
+                    if (arg.result_type->equals(*replacement.target_type))
+                        return &dag.addAlias(arg, replacement.name);
+                    return &dag.addCast(arg, replacement.target_type, replacement.name, nullptr);
+                }));
         }
     };
 
