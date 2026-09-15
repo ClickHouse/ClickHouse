@@ -24,6 +24,7 @@
 #include <Common/typeid_cast.h>
 
 #include <map>
+#include <optional>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -53,17 +54,6 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
 /// reports `supportsDataflowStatisticsCollection`, so it is matched on its own terms - and for a plain
 /// `SELECT ... WHERE ...` it is the only node above the read, so peeling it would leave nothing to
 /// instrument but the reading step itself.
-///
-/// An `ExpressionStep` qualifies only when it is byte-transparent, i.e. a rename. Not every expression
-/// below the `Union` is one: the first-stage planner deliberately puts real computation there for
-/// queries that finish on the initiator - `Before WINDOW` for a window function, `Projection` and
-/// `Before ORDER BY` otherwise (see `Planner::buildQueryPlanIfNeeded`, and
-/// `PlannerExpressionAnalysis` where `before_window_actions` materializes the window arguments,
-/// partition keys and order keys). Those columns are part of what the replicas send, so peeling such a
-/// step lands on a node below the real boundary and undercounts the output. `Expression (Before WINDOW)`
-/// over a bare read normally hides this - expression merging folds it into the rename below it, and the
-/// read guard in the loop then stops on the merged step - but with `query_plan_merge_expressions = 0`
-/// the two stay separate and the partition key drops out of the estimate.
 ///
 /// `DelayedCreatingSetsStep` and `CreatingSetsStep` pass their rows through by construction.
 bool isPassThroughWrapper(const IQueryPlanStep & step)
@@ -116,11 +106,14 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                 /// rather than one of each kind - `Expression -> CreatingSets -> Expression` used to
                 /// leave the search stranded on the second `Expression`.
                 ///
-                /// On this branch, stop above the reading step: it records only input bytes, so
-                /// matching it leaves no estimate of what the replicas would send and the optimization
-                /// is skipped altogether. The last wrapper above it does record output bytes. The other
-                /// branch is peeled all the way down, since recognizing the read from the other
-                /// replicas is the whole point of looking through its wrappers.
+                /// Stop above the reading step: it records only input bytes, so landing on it leaves
+                /// no estimate of what the replicas would send and the optimization is skipped
+                /// altogether. The last wrapper above it does record output bytes.
+                ///
+                /// That guard is about what we instrument, and the branch reading from the other
+                /// replicas is never instrumented - it only has to be recognized, so that the `Union`
+                /// below is identified as the parallel-replicas pattern at all. So the guard lets the
+                /// loop step onto a `ReadFromParallelRemoteReplicas`, and only onto that.
                 while (node->children.size() == 1 && isPassThroughWrapper(*node->step)
                        && (!node->children.front()->children.empty()
                            || isReadFromOtherReplicas(*node->children.front()->step)))
@@ -183,43 +176,45 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
         auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
 
         /// A step that contributes nothing to the key adopts its child's key (see
-        /// `calculateHashTableCacheKeys`), so a chain of such steps - and the step below it - all
-        /// answer to the same hash. The hash map's order is unspecified, so walk the plan instead, and
-        /// pick from the chain deliberately rather than taking whatever comes first.
-        ///
-        /// Take the LOWEST node of the chain, because the numbers the chain shares are the ones its
-        /// bottom produces. Instrumenting a wrapper above it measures something else: an `Aggregating`
-        /// with a rename over it is such a chain (the rename preserves rows and byte layout, so it is
-        /// transparent), but the aggregation records the partial states replicas would ship, while the
-        /// rename above it sees the finalized values - `04100_autopr_input_bytes_estimation_aggregation_in_order`
-        /// catches this as an output estimate ~3x too small.
-        ///
-        /// The one exception is a chain that bottoms out in the reading step, which records only input
-        /// bytes: take the lowest wrapper above it, which does record output bytes. That mirrors
-        /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read that is a
-        /// whole chain on its own is still returned, so the caller's fail-close for it stays reachable.
+        /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
+        /// of that chain - the hash map's order is unspecified, so walk the plan for a stable answer -
+        /// and then walk down to its bottom, which is the node that actually produces the numbers the
+        /// chain shares. A wrapper above it measures something else: an `Aggregating` with a rename over
+        /// it is such a chain, and the aggregation records the partial states the replicas ship where
+        /// the rename above it already sees finalized values.
         const QueryPlan::Node * matched_node = nullptr;
-        const QueryPlan::Node * matched_leaf = nullptr;
         Stack traversal_stack;
+        const auto key_of = [&](const QueryPlan::Node & node) -> std::optional<UInt64>
+        {
+            if (auto hash_it = nopr_node_hashes.find(&node); hash_it != nopr_node_hashes.end())
+                return hash_it->second;
+            return {};
+        };
         traverseQueryPlan(
             traversal_stack,
             single_replica_plan_root,
-            NoOp{},
             [&](auto & frame_node)
             {
-                if (matched_node)
-                    return;
-                if (auto hash_it = nopr_node_hashes.find(&frame_node);
-                    hash_it == nopr_node_hashes.end() || hash_it->second != it->second)
-                    return;
-                if (frame_node.children.empty())
-                    matched_leaf = &frame_node;
-                else
+                if (!matched_node && key_of(frame_node) == it->second)
                     matched_node = &frame_node;
             });
 
-        if (!matched_node)
-            matched_node = matched_leaf;
+        if (matched_node)
+        {
+            const QueryPlan::Node * above = nullptr;
+            while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == it->second)
+            {
+                above = matched_node;
+                matched_node = matched_node->children.front();
+            }
+
+            /// The reading step records input bytes only, so where the chain bottoms out in one, take
+            /// the wrapper just above it instead - it does record output bytes. This mirrors
+            /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read with no
+            /// wrapper above it is returned as it is, so the caller's fail-close for it stays reachable.
+            if (matched_node->children.empty() && above)
+                matched_node = above;
+        }
 
         if (!matched_node)
         {

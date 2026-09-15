@@ -1,5 +1,4 @@
 #include <unordered_map>
-#include <unordered_set>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Analyzer/TableFunctionNode.h>
@@ -14,6 +13,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -23,6 +23,7 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 using namespace DB;
@@ -145,9 +146,13 @@ namespace QueryPlanOptimizations
 /// `PlannerExpressionAnalysis::analyzeProjection`). And forwarding one input twice is no better:
 /// `SELECT a AS x, a AS y` over `(a, b)` keeps two `String` columns in the header while what leaves the
 /// step is `a + a`, not `a + b`.
+///
+/// A forwarded column is an `INPUT` whether or not it happens to be constant - `ActionsDAG::addInput`
+/// never sets `node.column` - so a `COLUMN` output is always a constant this step materialized itself,
+/// which is the case to reject.
 static bool expressionPermutesInputs(const ActionsDAG & actions)
 {
-    std::unordered_set<const ActionsDAG::Node *> forwarded;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> forwarded;
     for (const auto * output : actions.getOutputs())
     {
         const auto * node = output;
@@ -400,7 +405,7 @@ void calculateHashTableCacheKeys(
         /// PREWHERE leaves an `Expression` in the `Filter`'s place, and expression merging has
         /// already run by then, so the plan is left with two neighbouring `Expression` steps that no
         /// plan built any other way carries. That step is a rename, hence row- and layout-preserving,
-        /// hence transparent here - and with the adoption below the automatic-parallel-replicas
+        /// hence transparent here - and with the adoption below the automatic parallel replicas
         /// decision can still find its counterpart in the other plan.
         ///
         /// A transforming step always has exactly one child, so the join branches above never reach
