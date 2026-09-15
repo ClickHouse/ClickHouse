@@ -367,6 +367,7 @@ bool analyzeProjectionCandidate(
     const StorageMetadataPtr & parent_metadata,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
@@ -401,6 +402,7 @@ bool analyzeProjectionCandidate(
         required_column_names,
         candidate.projection->metadata,
         projection_query_info,
+        top_k_filter_info,
         context,
         context->getSettingsRef()[Setting::max_threads]);
 
@@ -501,6 +503,7 @@ void filterPartsAndCollectProjectionCandidates(
         required_column_names,
         projection.metadata,
         projection_query_info,
+        reading.getTopKFilterInfo(),
         context,
         context->getSettingsRef()[Setting::max_threads],
         nullptr);

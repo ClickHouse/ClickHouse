@@ -21,7 +21,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 يحدّ من السرعة القصوى لتبادل البيانات عبر الشبكة، بالبايت في
 الثانية، لعمليات [الجلب](/ar/reference/engines/table-engines/mergetree-family/replication)
 في النسخ المتماثل. يُطبَّق هذا الإعداد على جدول معيّن، بخلاف
-الإعداد [`max_replicated_fetches_network_bandwidth_for_server`](/ar/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+الإعداد [`max_replicated_fetches_network_bandwidth_for_server`](/ar/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 الذي يُطبَّق على الخادم.
 
 يمكنك تقييد كلٍّ من شبكة الخادم والشبكة الخاصة بجدول معيّن، ولكن لتحقيق
@@ -89,9 +89,9 @@ replica غير نشطة. وتُعد replica غير النشطة مفقودة ع�
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 يحدّ من الحد الأقصى لسرعة تبادل البيانات عبر الشبكة، بالبايت في
-الثانية، لعمليات الإرسال [المكررة](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
+الثانية، لعمليات الإرسال [ذات النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
 ويُطبَّق هذا الإعداد على جدول معيّن، بخلاف
-إعداد [`max_replicated_sends_network_bandwidth_for_server`](/ar/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+إعداد [`max_replicated_sends_network_bandwidth_for_server`](/ar/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 الذي يُطبَّق على الخادم.
 
 يمكنك تقييد كلٍّ من شبكة الخادم والشبكة الخاصة بجدول معيّن، ولكن

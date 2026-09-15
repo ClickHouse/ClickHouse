@@ -78,7 +78,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     if (args.size() > max_args)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Table function '{}' requires at most four (or three if structure is missing) arguments: "
-                        " [structure, random_seed, max_string_length, max_array_length].", getName());
+                        "[structure, random_seed, max_string_length, max_array_length].", getName());
 
     if (first_argument_is_structure)
     {
@@ -185,7 +185,7 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | Maximum string length for all generated strings. Defaults to `10`.                              |
 | `max_array_length`  | Maximum elements for all generated arrays or maps. Defaults to `10`.                            |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with requested schema.
 

@@ -70,7 +70,7 @@ ClickHouse에서 데이터를 효율적으로 수집하려면 적절한 입력 �
 | [CustomSeparatedIgnoreSpacesWithNamesAndTypes](/ko/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpacesWithNamesAndTypes) | ✔  | ✗  |
 | [CustomSeparatedWithNames](/ko/reference/formats/CustomSeparated/CustomSeparatedWithNames)                                         | ✔  | ✔  |
 | [CustomSeparatedWithNamesAndTypes](/ko/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)                         | ✔  | ✔  |
-| [HiveText](/ko/reference/formats/HiveText)                                                                                         | ✔  | ✗  |
+| [HiveText](/ko/reference/formats/HiveText)                                                                                         | ✔  | ✔  |
 | [SQLInsert](/ko/reference/formats/SQLInsert)                                                                                       | ✗  | ✔  |
 | [Values](/ko/reference/formats/Values)                                                                                             | ✔  | ✔  |
 | [Vertical](/ko/reference/formats/Vertical)                                                                                         | ✗  | ✔  |
@@ -171,15 +171,15 @@ ClickHouse에서 데이터를 효율적으로 수집하려면 적절한 입력 �
 [batch mode](/ko/concepts/features/interfaces/client#batch-mode)에서 client를 사용하는 경우에는 보안상의 이유로 스키마 경로가 상대 경로여야 합니다.
 
 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)를 통해 데이터를 입력하거나 출력하는 경우, 포맷 스키마에 지정된 파일 이름은
-서버 구성의 [format&#95;schema&#95;path](/ko/reference/settings/server-settings/settings#format_schema_path)에서 지정한 디렉터리에
+서버 구성의 [format&#95;schema&#95;path](/ko/reference/settings/server-settings/settings/format#format_schema_path)에서 지정한 디렉터리에
 있어야 합니다.
 
 <div id="skippingerrors">
   ## 오류 건너뛰기
 </div>
 
-`CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated`, `Protobuf`와 같은 일부 포맷은 파싱 오류가 발생하면 손상된 행을 건너뛰고 다음 행의 시작부터 파싱을 계속할 수 있습니다. [input&#95;format&#95;allow&#95;errors&#95;num](/ko/reference/settings/formats#input_format_allow_errors_num) 및
-[input&#95;format&#95;allow&#95;errors&#95;ratio](/ko/reference/settings/formats#input_format_allow_errors_ratio) 설정을 참조하십시오.
+`CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated`, `Protobuf`와 같은 일부 포맷은 파싱 오류가 발생하면 손상된 행을 건너뛰고 다음 행의 시작부터 파싱을 계속할 수 있습니다. [input&#95;format&#95;allow&#95;errors&#95;num](/ko/reference/settings/formats/input-format#input_format_allow_errors_num) 및
+[input&#95;format&#95;allow&#95;errors&#95;ratio](/ko/reference/settings/formats/input-format#input_format_allow_errors_ratio) 설정을 참조하십시오.
 제한 사항:
 
 * 파싱 오류가 발생하면 `JSONEachRow`는 새 줄(또는 EOF)까지의 모든 데이터를 건너뛰므로, 오류 수를 올바르게 계산하려면 행이 `\n`으로 구분되어야 합니다.

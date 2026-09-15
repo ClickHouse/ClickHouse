@@ -95,6 +95,17 @@ struct Plan
     std::vector<PartitionPlan> partitions;
     IcebergHistory history;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_to_first_snapshot;
+    /// Original manifest-list entry lineage per manifest path: `added_snapshot_id` of the
+    /// snapshot that actually added the manifest. This is taken from the source manifest-list
+    /// entries rather than derived from retained history order, because the adding snapshot
+    /// may already be expired from table metadata while later snapshots still carry the
+    /// manifest forward. Sequence numbers are not preserved here: the rewrite renumbers the
+    /// history, so they are remapped onto the new numbering when the manifests are rewritten.
+    struct ManifestFileLineage
+    {
+        Int64 added_snapshot_id = 0;
+    };
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestFileLineage> manifest_file_lineage;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
@@ -199,7 +210,12 @@ static Plan getPlan(
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
-    if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
+    /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
+    /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
+    /// from createEmptyMetadataFile, which produces format_version 2, so a v3 table would be
+    /// silently downgraded and lose v3-only state such as row lineage (first_row_id /
+    /// next_row_id).
+    if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -225,6 +241,8 @@ static Plan getPlan(
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
+            if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
+                plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
@@ -244,19 +262,29 @@ static Plan getPlan(
                     plan.partitions.push_back({});
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
-                    data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
+                    data_file,
+                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
+                    0,
+                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
+                /// One DataFilePlan per source *data file*, keyed by the data file's own path.
+                /// Keying by the manifest path made every data file after the first in a
+                /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
+                /// file per manifest and the rest of the manifest's data silently disappeared
+                /// from the compacted table. The map still deduplicates the same data file
+                /// referenced from multiple snapshots' manifest lists.
+                const auto & data_file_path = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
+                if (!plan.path_to_data_file.contains(data_file_path))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .patched_path = plan.generator.generateDataFileName()});
-                    plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
+                    plan.path_to_data_file[data_file_path] = data_file_ptr;
                 }
                 else
                 {
-                    data_file_ptr = plan.path_to_data_file[manifest_file.manifest_file_path];
+                    data_file_ptr = plan.path_to_data_file[data_file_path];
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
@@ -595,8 +623,9 @@ static bool writeConsolidatedManifestFile(
     // Collect live data files from the current snapshot only; iterating older snapshots would resurrect deleted files.
     size_t total_data_files = 0;
     // Only data manifests are consolidated; delete-file manifests are carried forward unchanged so deleted rows do not reappear.
-    size_t num_data_manifests = 0;
     std::unordered_set<String> delete_manifest_paths;
+    /// The data manifests of the current snapshot, i.e. exactly the ones a rewrite would replace.
+    std::vector<IcebergPathFromMetadata> data_manifest_paths;
 
     auto current_manifest_list = getManifestList(
         object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
@@ -608,24 +637,8 @@ static bool writeConsolidatedManifestFile(
             delete_manifest_paths.insert(manifest_file.manifest_file_path.serialize());
             continue;
         }
-        ++num_data_manifests;
+        data_manifest_paths.push_back(manifest_file.manifest_file_path);
         const Int32 source_partition_spec_id = manifest_file.partition_spec_id;
-
-        /// A manifest-only rewrite cannot round-trip per-file `key_metadata` (data-file encryption keys), so reject rather than silently dropping it and making an encrypted table unreadable.
-        {
-            RelativePathWithMetadata key_metadata_object_info(persistent_table_components.path_resolver.resolve(manifest_file.manifest_file_path));
-            auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
-            AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), manifest_file.manifest_file_path, getFormatSettings(context));
-            if (key_metadata_deserializer.hasPath(c_data_file_key_metadata))
-            {
-                for (size_t row = 0; row < key_metadata_deserializer.rows(); ++row)
-                    if (!key_metadata_deserializer.getValueFromRowByName(row, c_data_file_key_metadata).isNull())
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
-                            "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
-            }
-        }
 
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
@@ -693,15 +706,47 @@ static bool writeConsolidatedManifestFile(
         }
     }
 
+    /// Not a single live data file was collected: every DATA manifest still listed by the current snapshot holds
+    /// only deleted entries (e.g. every row was deleted). There is nothing to consolidate, and a rewrite would ask
+    /// the Avro writer to close a manifest list that was never written to, dereferencing a null stream.
+    /// This is not the "unpartitioned table" case: `partition_key` always carries the source spec-id and schema-id,
+    /// so an unpartitioned table with live files still forms one group and is consolidated as before.
+    if (total_data_files == 0)
+    {
+        LOG_INFO(log, "No live data files in the current snapshot ({} data manifests hold only deleted entries); nothing to do",
+                 data_manifest_paths.size());
+        return true;
+    }
+
     /// Data manifests already optimally consolidated (at most one per partition): rewriting cannot reduce the count, so report success.
-    if (partitions_map.size() >= num_data_manifests)
+    if (partitions_map.size() >= data_manifest_paths.size())
     {
         LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} unique partitions); nothing to do",
-                 num_data_manifests, partitions_map.size());
+                 data_manifest_paths.size(), partitions_map.size());
         return true;
     }
 
     const auto & path_resolver = persistent_table_components.path_resolver;
+
+    /// A manifest-only rewrite cannot round-trip per-file `key_metadata` (data-file encryption keys), so reject
+    /// rather than silently dropping it and making an encrypted table unreadable. This is checked only here,
+    /// past the early returns above: those leave every manifest exactly as it is, so for a table that needs no
+    /// rewrite at all - in particular an emptied one, whose deleted-only manifests are never read again - there
+    /// is no encryption metadata to lose and reporting success must not turn into a hard error.
+    for (const auto & data_manifest_path : data_manifest_paths)
+    {
+        RelativePathWithMetadata key_metadata_object_info(path_resolver.resolve(data_manifest_path));
+        auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
+        AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), data_manifest_path, getFormatSettings(context));
+        if (!key_metadata_deserializer.hasPath(c_data_file_key_metadata))
+            continue;
+        for (size_t row = 0; row < key_metadata_deserializer.rows(); ++row)
+            if (!key_metadata_deserializer.getValueFromRowByName(row, c_data_file_key_metadata).isNull())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
+                    "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
+    }
 
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
@@ -724,7 +769,7 @@ static bool writeConsolidatedManifestFile(
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
     /// Parallel to consolidated_manifest_paths: existing (not added) file/row counts, since the referenced data files already exist.
-    std::vector<ManifestListEntryExistingCounts> existing_entry_counts;
+    std::vector<ManifestListEntryCounts> existing_entry_counts;
     /// Parallel to consolidated_manifest_paths: each manifest's partition spec-id.
     std::vector<Int64> entry_partition_spec_ids;
     /// Parallel to consolidated_manifest_paths: each manifest's partition fields (value + type), used to recompute the manifest-list `partitions` summary.
@@ -790,8 +835,11 @@ static bool writeConsolidatedManifestFile(
             for (const auto & lineage : pd.file_entry_lineage)
                 manifest_min_sequence_number = std::min(manifest_min_sequence_number, lineage.sequence_number.value_or(0));
 
-            existing_entry_counts.push_back(
-                {static_cast<Int64>(pd.file_paths.size()), manifest_existing_rows, manifest_min_sequence_number});
+            ManifestListEntryCounts consolidated_counts;
+            consolidated_counts.files_count = static_cast<Int64>(pd.file_paths.size());
+            consolidated_counts.rows_count = manifest_existing_rows;
+            consolidated_counts.min_sequence_number = manifest_min_sequence_number;
+            existing_entry_counts.push_back(consolidated_counts);
 
             /// Rewrite this manifest under the partition spec its source files used, not the default.
             const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
@@ -831,6 +879,7 @@ static bool writeConsolidatedManifestFile(
                 *buffer_manifest,
                 Iceberg::FileContentType::DATA,
                 /* user_defined_sequence_number */ std::nullopt,
+                /* user_defined_snapshot_id */ std::nullopt,
                 /* data_file_formats */ pd.file_formats,
                 /* per_file_statistics */ pd.file_statistics,
                 /* data_file_sort_order_ids */ pd.file_sort_order_ids,
@@ -927,8 +976,18 @@ static bool writeConsolidatedManifestFile(
     return true;
 }
 
-namespace
+bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update)
 {
+    /// Every declared added file and row must be accounted for as a position delete: the
+    /// breakdown counters are optional and read as 0 when absent, so their absence is not
+    /// evidence. One delete file with deleted rows but no file count is a position delete file.
+    return update.added_files == 0 && update.added_records == 0 && update.added_delete_files != 0
+        && (update.added_position_delete_files == update.added_delete_files
+            || (update.added_position_delete_files == 0 && update.added_position_deletes != 0
+                && update.added_delete_files == 1))
+        && update.added_equality_delete_files == 0 && update.added_equality_deletes == 0
+        && update.deleted_data_files == 0 && update.removed_records == 0 && update.removed_files_size == 0;
+}
 
 [[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const Iceberg::IcebergHistoryRecord & history_record)
 {
@@ -943,9 +1002,7 @@ namespace
         case SnapshotSummaryOperation::DELETE:
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
-            const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
-            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+            if (overwriteIsPositionDeleteOnly(summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>()))
                 return std::nullopt;
             [[fallthrough]];
         }
@@ -954,6 +1011,8 @@ namespace
     }
 };
 
+namespace
+{
 
 /// Current experimental compact implementation expects snapshots to be either appends or overwrites which has only position deletes
 /// Lets force this invariant
@@ -1030,6 +1089,9 @@ static void writeMetadataFiles(
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;
+    /// Per rewritten manifest: actual file/row counts of its content, written into the
+    /// manifest-list entries so that metadata row counts stay exact after compaction.
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestListEntryCounts> manifest_file_counts;
 
     {
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::unordered_set<Iceberg::IcebergPathFromMetadata>> grouped_by_manifest_files_result;
@@ -1083,8 +1145,22 @@ static void writeMetadataFiles(
 
             auto snapshot_id = plan.manifest_file_to_first_snapshot[manifest_entry->path];
             auto snapshot = snapshot_id_to_snapshot[snapshot_id];
+            /// Fail closed rather than skip: a live manifest can have no rewritten snapshot for
+            /// its first retained reference when that reference is a delete-only snapshot
+            /// (tryGetAppendUpdate skips those when generating new snapshots), e.g. after the
+            /// appending snapshot was expired and the manifest survives only through a later
+            /// delete-only overwrite. Skipping would silently drop the manifest from the
+            /// rewritten table -- and clearOldFiles would then delete its original files after
+            /// commit. Throwing here aborts OPTIMIZE before any metadata is committed and
+            /// before any original file is removed, leaving the table intact.
             if (!snapshot)
-                continue;
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg compaction does not support this table history: live manifest {} is first referenced "
+                    "by snapshot {} which produced no rewritten snapshot (e.g. a delete-only snapshot). "
+                    "The table is left unchanged.",
+                    manifest_entry->path.serialize(),
+                    snapshot_id);
 
             std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec(data_filenames.begin(), data_filenames.end());
             std::vector<UInt64> file_row_counts;
@@ -1102,6 +1178,49 @@ static void writeMetadataFiles(
                     file_byte_counts.push_back(0);
                 }
             }
+
+            /// The manifest's original lineage, taken from the source manifest-list entry: the
+            /// snapshot that actually added the manifest may already be expired from table
+            /// metadata, in which case `plan.manifest_file_to_first_snapshot` (first *retained*
+            /// snapshot referencing the manifest) would wrongly re-attribute it.
+            const auto manifest_lineage = plan.manifest_file_lineage[manifest_entry->path];
+
+            /// The rewritten history is renumbered by generateNextMetadata (sequence numbers
+            /// restart from 1), so the source sequence number must be remapped onto the new
+            /// numbering rather than copied verbatim: a stale higher value would make the
+            /// compacted files sort as *newer* than deletes committed after OPTIMIZE, and
+            /// those deletes would silently stop applying. Snapshot ids are preserved by the
+            /// rewrite, so the adding snapshot's new sequence number is used when that
+            /// snapshot is retained; when it has been expired, fall back to the first
+            /// retained snapshot referencing the manifest -- the earliest point in the
+            /// rewritten history where the manifest exists.
+            Int64 remapped_sequence_number = 0;
+            {
+                Poco::JSON::Object::Ptr sequence_source = snapshot;
+                if (auto it = snapshot_id_to_snapshot.find(manifest_lineage.added_snapshot_id);
+                    it != snapshot_id_to_snapshot.end() && it->second)
+                    sequence_source = it->second;
+                if (sequence_source->has(Iceberg::f_metadata_sequence_number))
+                    remapped_sequence_number = sequence_source->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+            }
+
+            /// Record the manifest's actual content counts and lineage for its manifest-list
+            /// entries. added_snapshot_id preserves which snapshot added the manifest, so
+            /// manifest lists of later snapshots that carry it forward do not claim they added
+            /// it; the sequence numbers use the remapped value, consistent with the entries
+            /// written into the regenerated manifest below.
+            {
+                Int64 manifest_rows = 0;
+                for (const auto rows : file_row_counts)
+                    manifest_rows += static_cast<Int64>(rows);
+                ManifestListEntryCounts counts;
+                counts.files_count = static_cast<Int64>(data_files_vec.size());
+                counts.rows_count = manifest_rows;
+                counts.min_sequence_number = remapped_sequence_number;
+                counts.added_snapshot_id = manifest_lineage.added_snapshot_id;
+                counts.added_sequence_number = remapped_sequence_number;
+                manifest_file_counts[manifest_entry->patched_path] = counts;
+            }
             generateManifestFile(
                 metadata_object,
                 partition_columns,
@@ -1117,7 +1236,12 @@ static void writeMetadataFiles(
                 partititon_spec,
                 partition_spec_id,
                 *buffer_manifest_entry,
-                Iceberg::FileContentType::DATA);
+                Iceberg::FileContentType::DATA,
+                /// Stamp the rewritten entries with the manifest's original adding snapshot and
+                /// the remapped sequence number, keeping the manifest file consistent with the
+                /// manifest-list entries written above and with the renumbered history.
+                /* user_defined_sequence_number */ remapped_sequence_number,
+                /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id);
 
             buffer_manifest_entry->finalize();
             auto manifest_bytes = buffer_manifest_entry->count();
@@ -1162,6 +1286,25 @@ static void writeMetadataFiles(
         {
             per_manifest_sizes.push_back(manifest_file_sizes[entry]);
         }
+        /// Pass the actual per-manifest counts: without them generateManifestList stamps the
+        /// snapshot summary's `added-records` into EVERY entry, so any consumer summing the
+        /// manifest-list row counts (including our own trivial count) would multiply the
+        /// table's row count by the number of manifests. Each manifest's entries are emitted
+        /// as ADDED in the snapshot that first added it, so its counts are reported as
+        /// added_* only in that snapshot's manifest list; manifest lists of later snapshots
+        /// carry the manifest forward and report the counts as existing_*, preserving the
+        /// original added_snapshot_id / sequence_number.
+        const Int64 list_snapshot_id = new_snapshots[i].snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        std::vector<ManifestListEntryCounts> entry_counts;
+        entry_counts.reserve(renamed_manifest_entries.size());
+        for (const auto & entry : renamed_manifest_entries)
+        {
+            ManifestListEntryCounts counts;
+            if (auto it = manifest_file_counts.find(entry); it != manifest_file_counts.end())
+                counts = it->second;
+            counts.counts_are_added = counts.added_snapshot_id.has_value() && *counts.added_snapshot_id == list_snapshot_id;
+            entry_counts.push_back(counts);
+        }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
             WriteMode::Rewrite,
@@ -1178,7 +1321,9 @@ static void writeMetadataFiles(
             per_manifest_sizes,
             *buffer_manifest_list,
             Iceberg::FileContentType::DATA,
-            false);
+            false,
+            /* per_entry_content_types */ {},
+            entry_counts);
         buffer_manifest_list->finalize();
     }
 
@@ -1236,8 +1381,10 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
+            catalog,
+            table_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
@@ -1245,8 +1392,7 @@ void compactIcebergManifests(
             log.get(),
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method,
-            /* force_fetch_latest_metadata */ true,
-            /* ignore_explicit_metadata_file_path */ true);
+            /* ignore_metadata_pointer_overrides */ true);
 
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,

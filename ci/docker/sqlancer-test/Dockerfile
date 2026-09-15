@@ -47,18 +47,24 @@ RUN wget -q https://archive.apache.org/dist/maven/maven-3/3.9.9/binaries/apache-
     && rm /tmp/maven.tar.gz
 ENV PATH="/opt/apache-maven-3.9.9/bin:${PATH}"
 
-# ClickHouse/sqlancer @ main after PR #4 (wrong-result oracle suite, 31 oracles,
-# recursive type system, client-v2/RowBinary transport).
-# https://github.com/ClickHouse/sqlancer/pull/4
+# The ClickHouse SQLancer provider, built from the default branch of
+# https://github.com/ClickHouse/sqlancer (`main`).
+#
+# This baked build is a warm cache, not the revision that gets fuzzed: the image
+# is rebuilt only when its digest - the contents of this directory - changes, so
+# a branch fetched here would freeze at whatever `main` was when this file was
+# last edited. `ci/jobs/sqlancer_job.sh` therefore re-clones and rebuilds `main`
+# at job start and falls back to this build if that fails. The clone keeps its
+# `.git` so both paths can report the commit that ran, and the maven repository
+# is kept (world-writable, under /sqlancer so the job's non-root user can extend
+# it) to make the job-time rebuild take ~1 minute instead of re-downloading every
+# dependency.
+ARG SQLANCER_REF=main
 RUN mkdir /sqlancer && \
-	wget -q -O- https://github.com/ClickHouse/sqlancer/archive/a62ea509ee53862b5dd37f452e8c2edce8038951.tar.gz | \
-	tar zx -C /sqlancer && \
-	mv /sqlancer/sqlancer-a62ea509ee53862b5dd37f452e8c2edce8038951 /sqlancer/sqlancer-main && \
-    find /sqlancer -type d -exec chmod 777 {} \; && \
-    find /sqlancer -type f -exec chmod 666 {} \; && \
+	git clone --depth 1 --branch ${SQLANCER_REF} https://github.com/ClickHouse/sqlancer /sqlancer/sqlancer-main && \
 	cd /sqlancer/sqlancer-main && \
-	mvn --no-transfer-progress package -Dmaven.test.skip=true -Djacoco.skip=true && \
-	rm -r /root/.m2
+	mvn --no-transfer-progress package -Dmaven.test.skip=true -Djacoco.skip=true -Dmaven.repo.local=/sqlancer/.m2 && \
+	chmod -R a+rwX /sqlancer
 
 # SQLancer++ (https://github.com/suyZhong/SQLancerPlusPlus): a generalised
 # successor to upstream SQLancer with a built-in ClickHouse engine in its

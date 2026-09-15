@@ -1,6 +1,8 @@
 #include <Planner/CollectTableExpressionData.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -315,11 +317,20 @@ public:
                     storage->getName(),
                     storage->getStorageID().getNameForLogs());
 
+            table_storage_snapshot
+                = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
             table_expression = std::move(column_source);
             table_supported_prewhere_columns = storage->supportedPrewhereColumns();
+            table_supported_prewhere_columns_include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
         }
 
-        if (table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName()))
+        /// The contract lists top-level names; a subcolumn is admitted through its origin column.
+        if (table_supported_prewhere_columns
+            && !prewhereSupportedColumnsContain(
+                *table_supported_prewhere_columns,
+                table_supported_prewhere_columns_include_subcolumns,
+                table_storage_snapshot->metadata->getColumns(),
+                column_node->getColumnName()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table expression {} does not support column {} in PREWHERE. In query {}",
                 table_expression->formatASTForErrorMessage(),
@@ -338,7 +349,9 @@ public:
 private:
     QueryTreeNodePtr query_node;
     QueryTreeNodePtr table_expression;
+    StorageSnapshotPtr table_storage_snapshot;
     std::optional<NameSet> table_supported_prewhere_columns;
+    bool table_supported_prewhere_columns_include_subcolumns = false;
 };
 
 void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)

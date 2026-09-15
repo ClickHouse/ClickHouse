@@ -178,14 +178,13 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         ostr << settings.nl_or_ws << indent_str << "STREAM";
 
         const auto & typed_stream_settings = stream_settings->as<ASTStreamSettings &>();
-        if (typed_stream_settings.settings.cursor_tree.has_value())
+        if (typed_stream_settings.hasTweaks())
         {
             ostr << ' ';
             stream_settings->format(ostr, settings, state, frame);
         }
     }
 }
-
 
 void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
 {
@@ -197,7 +196,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
     switch (locality)
     {
         case JoinLocality::Unspecified:
+            break;
         case JoinLocality::Local:
+            ostr << "LOCAL ";
             break;
         case JoinLocality::Global:
             ostr << "GLOBAL ";
@@ -643,6 +644,11 @@ void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTArrayJoin is missing required 'expression_list' child during AST JSON deserialization");
+    /// This path bypasses `ParserArrayJoin`, which rejects an empty list, so check emptiness here too.
+    if (child->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTArrayJoin has an empty 'expression_list' child during AST JSON deserialization "
+            "(ARRAY JOIN requires at least one expression)");
     expression_list = child;
     children.push_back(expression_list);
 }
