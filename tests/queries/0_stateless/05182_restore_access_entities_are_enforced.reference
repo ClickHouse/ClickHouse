@@ -1,0 +1,6 @@
+-- enforced when created by DDL
+3	2
+-- restored
+1
+-- enforced right after RESTORE, without SYSTEM RELOAD USERS
+3	2
