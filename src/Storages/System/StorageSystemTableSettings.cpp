@@ -220,11 +220,24 @@ protected:
 
                 StoragePtr table = tables_it.table();
                 /// A data lake table the hinted iterator could not resolve: ask for it directly, which throws the
-                /// catalog's error, or returns nothing for a table that is gone - what the plain iterator would have
-                /// done. Otherwise a table the catalog refuses to describe would silently lose its rows.
+                /// catalog's error, or returns nothing for a table that is gone. Otherwise a table the catalog refuses
+                /// to describe would silently lose its rows. The error gets the context the plain iterator gives it.
                 if (!table && databases_cursor.getDatabase()->isDatalakeCatalog()
                     && context->getSettingsRef()[Setting::database_datalake_require_metadata_access])
-                    table = databases_cursor.getDatabase()->tryGetTable(table_name, context);
+                {
+                    try
+                    {
+                        table = databases_cursor.getDatabase()->tryGetTable(table_name, context);
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage(
+                            "while fetching table metadata for existing table '{}'. If you want this error to be ignored, "
+                            "use database_datalake_require_metadata_access=0",
+                            table_name);
+                        throw;
+                    }
+                }
                 if (!table)
                     continue;
 

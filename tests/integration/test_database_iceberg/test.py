@@ -1665,26 +1665,51 @@ def test_table_settings_for_datalake_catalog(started_cluster):
 
     node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
     try:
-        assert "Injected metadata resolution failure" in node.query_and_get_error(
+        ## The error names the table and the setting that would let the query skip it, as a plain listing does.
+        for query in (
             f"SELECT count() FROM system.table_settings WHERE database = '{CATALOG_NAME}' "
-            f"{visible}, database_datalake_require_metadata_access = 1"
-        )
-        assert "Injected metadata resolution failure" in node.query_and_get_error(
+            f"{visible}, database_datalake_require_metadata_access = 1",
             f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
-            f"SETTINGS database_datalake_require_metadata_access = 1"
-        )
+            f"SETTINGS database_datalake_require_metadata_access = 1",
+        ):
+            error = node.query_and_get_error(query)
+            assert "Injected metadata resolution failure" in error, query
+            assert "database_datalake_require_metadata_access" in error, query
 
-        ## With the requirement off, the table is skipped, as the plain iterator skips it.
+        ## With the requirement off, the tables are skipped, as the plain iterator skips them - for one table and
+        ## for the whole database, where every table's metadata fails.
+        for condition in (f"AND table = '{full_name}'", ""):
+            assert (
+                node.query(
+                    f"SELECT count() FROM system.table_settings "
+                    f"WHERE database = '{CATALOG_NAME}' {condition} "
+                    f"{visible}, database_datalake_require_metadata_access = 0"
+                ).strip()
+                == "0"
+            ), condition
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    ## A table the catalog lists but no longer resolves is skipped without an error: looking it up again finds nothing.
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
+    try:
         assert (
             node.query(
                 f"SELECT count() FROM system.table_settings "
                 f"WHERE database = '{CATALOG_NAME}' AND table = '{full_name}' "
-                f"{visible}, database_datalake_require_metadata_access = 0"
+                f"{visible}, database_datalake_require_metadata_access = 1"
             ).strip()
             == "0"
         )
+        assert (
+            node.query(
+                f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
+                f"SETTINGS database_datalake_require_metadata_access = 1"
+            ).strip()
+            == ""
+        )
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_return_nullptr")
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 

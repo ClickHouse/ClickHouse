@@ -42,6 +42,10 @@ SELECT count() FROM system.table_settings WHERE database = currentDatabase();
 SELECT '-- naming one of its tables has to list the names, and reports that the server is unreachable';
 SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 't'; -- { serverError NO_REMOTE_SHARD_AVAILABLE }
 SHOW TABLE SETTINGS FROM t; -- { serverError NO_REMOTE_SHARD_AVAILABLE }
+-- Also with the visibility setting off: the statement enables it for the named database, and the server is still unreachable.
+SET show_remote_databases_in_system_tables = 0;
+SHOW TABLE SETTINGS FROM t; -- { serverError NO_REMOTE_SHARD_AVAILABLE }
+SET show_remote_databases_in_system_tables = 1;
 
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

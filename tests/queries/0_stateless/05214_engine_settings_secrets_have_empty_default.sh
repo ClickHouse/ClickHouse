@@ -7,8 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `system.engine_settings` and `system.merge_tree_settings` print `value` unmasked. That is safe only while
-# every secret engine setting has an empty default, and `MergeTree` and `Distributed`, which also read the
-# server configuration, have no secret settings. Nothing else enforces it, so check it here.
+# every secret engine setting has an empty default, and `MergeTree` and `Distributed` - the only engines whose
+# values there come from the server configuration - have no secret settings. Nothing else enforces it, so
+# check it here.
 #
 # The list of secret settings, shared by `SHOW CREATE TABLE` and `system.table_settings`, is not readable
 # from SQL, but `query_log` stores a query with those secrets masked. So one query assigns every engine
