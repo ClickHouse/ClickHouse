@@ -159,6 +159,54 @@ bool isNaNPartitionValue(const Field & field, DataTypePtr type)
     }
 }
 
+/// Whether every field of a partition tuple can be described truthfully in a manifest-list field
+/// summary. A summary saying `contains_null = false` with no bounds states that the field holds no
+/// orderable value at all, which makes a spec-compliant reader skip the entire manifest.
+bool canWritePartitionSummary(const std::vector<std::pair<Field, DataTypePtr>> & partition_summary)
+{
+    for (const auto & [partition_value, partition_type] : partition_summary)
+    {
+        if (partition_value.isNull() || isNaNPartitionValue(partition_value, partition_type))
+            continue;
+        if (!canDumpIcebergStats(partition_value, partition_type))
+            return false;
+    }
+    return true;
+}
+
+/// Whether a parent manifest-list entry's `partitions` summaries can be carried forward unchanged.
+/// Copying the empty-range claim above keeps a reader skipping that manifest forever. Fails closed,
+/// which is safe because `partitions` is optional: its absence only costs a reader an unskippable manifest.
+bool canCarryForwardPartitionSummaries(const avro::GenericDatum & partitions)
+{
+    if (partitions.type() == avro::AVRO_NULL)
+        return true;
+    if (partitions.type() != avro::AVRO_ARRAY)
+        return false;
+
+    for (const auto & summary_datum : partitions.value<avro::GenericArray>().value())
+    {
+        if (summary_datum.type() != avro::AVRO_RECORD)
+            return false;
+        const auto & summary = summary_datum.value<avro::GenericRecord>();
+
+        if (!summary.hasField(Iceberg::f_contains_null) || !summary.hasField(Iceberg::f_lower_bound)
+            || !summary.hasField(Iceberg::f_upper_bound))
+            return false;
+        if (summary.field(Iceberg::f_contains_null).type() != avro::AVRO_BOOL)
+            return false;
+        if (summary.field(Iceberg::f_contains_null).value<bool>())
+            continue;
+        if (summary.hasField(Iceberg::f_contains_nan) && summary.field(Iceberg::f_contains_nan).type() == avro::AVRO_BOOL
+            && summary.field(Iceberg::f_contains_nan).value<bool>())
+            continue;
+        if (summary.field(Iceberg::f_lower_bound).type() != avro::AVRO_BYTES
+            || summary.field(Iceberg::f_upper_bound).type() != avro::AVRO_BYTES)
+            return false;
+    }
+    return true;
+}
+
 template <typename T>
 std::vector<uint8_t> dumpValue(T value)
 {
@@ -788,6 +836,8 @@ void generateManifestList(
     {
         if (entry_partition_summaries.empty())
             return;
+        if (!canWritePartitionSummary(entry_partition_summaries[entry_idx]))
+            return;
 
         auto & partitions_field = entry.field(Iceberg::f_partitions);
         partitions_field.selectBranch(1);
@@ -808,7 +858,7 @@ void generateManifestList(
                     contains_nan.selectBranch(1);
                     contains_nan.value<bool>() = true;
                 }
-                else if (canDumpIcebergStats(partition_value, partition_type))
+                else
                 {
                     auto bound = dumpFieldToBytes(partition_value, partition_type);
                     auto & lower = summary_record.field(Iceberg::f_lower_bound);
@@ -818,7 +868,6 @@ void generateManifestList(
                     upper.selectBranch(1);
                     upper.value<std::vector<uint8_t>>() = bound;
                 }
-                /// else: a partition type whose bounds we cannot serialize (e.g. `Float`); leave the bounds null, matching the data-file statistics path.
             }
             summaries.value().push_back(summary_datum);
         }
@@ -897,7 +946,9 @@ void generateManifestList(
                         add_field_to_datum(Iceberg::f_added_files_count);
                         add_field_to_datum(Iceberg::f_existing_files_count);
                         add_field_to_datum(Iceberg::f_deleted_files_count);
-                        add_field_to_datum(Iceberg::f_partitions);
+                        if (old_entry.hasField(Iceberg::f_partitions)
+                            && canCarryForwardPartitionSummaries(old_entry.field(Iceberg::f_partitions)))
+                            new_entry.field(Iceberg::f_partitions) = old_entry.field(Iceberg::f_partitions);
                         add_field_to_datum(Iceberg::f_added_rows_count);
                         add_field_to_datum(Iceberg::f_existing_rows_count);
                         add_field_to_datum(Iceberg::f_deleted_rows_count);

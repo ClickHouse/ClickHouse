@@ -648,10 +648,10 @@ def test_optimize_manifest_files_dropped_partition_source_column_schema_header(
 def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_spark, storage_type):
     """
     OPTIMIZE TABLE ... MANIFEST on a bucket-partitioned table must recompute the manifest-list
-    partition summary for the bucket value. The `icebergBucket` transform resolves to ClickHouse
-    `UInt32`, which `getAvroType` maps to Avro `int`; the byte encoder must serialize that unsigned
-    type instead of throwing 'Can not dump such stats', otherwise a valid Iceberg bucket partition
-    cannot be compacted.
+    partition summary for the bucket value. Compaction takes the partition type from
+    `ChunkPartitioner::getResultTypes()`, which publishes the Iceberg `int` a `bucket[N]` field has;
+    the byte encoder must serialize it instead of throwing 'Can not dump such stats', otherwise a
+    valid Iceberg bucket partition cannot be compacted.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
