@@ -57,9 +57,7 @@ payloads = {
     # More paths than the reader pre-allocates (1000000), so the list grows while it is read and the
     # duplicate has to be found without holding views into the buffer that was reallocated away.
     'object_duplicate_path_after_realloc': block(
-        b'JSON(max_dynamic_paths=0)',
-        object_prefix(3, [('p%d' % i).encode() for i in range(1000049)] + [b'p0']),
-        rows=1),
+        b'JSON', object_prefix(3, [('p%d' % i).encode() for i in range(1000049)] + [b'p0']), rows=1),
 }
 
 for name, payload in payloads.items():
@@ -67,16 +65,39 @@ for name, payload in payloads.items():
         f.write(payload)
 EOF
 
-for name in object_v3 dynamic_v3 dynamic_duplicate_types dynamic_nothing_type \
-            object_duplicate_flattened_path object_duplicate_dynamic_path \
-            object_typed_path_collision_flattened object_typed_path_collision \
-            object_duplicate_path_after_realloc
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_json (j JSON) ENGINE = Memory;
+    CREATE TABLE t_json_typed (j JSON(x Int64)) ENGINE = Memory;
+    CREATE TABLE t_dynamic (j Dynamic) ENGINE = Memory;
+"
+
+# Inserted over HTTP: a clickhouse-local per block is what made this test time out under sanitizers.
+# Each block goes into the table whose type its header declares.
+for entry in "object_v3 t_json" \
+             "dynamic_v3 t_dynamic" \
+             "dynamic_duplicate_types t_dynamic" \
+             "dynamic_nothing_type t_dynamic" \
+             "object_duplicate_flattened_path t_json" \
+             "object_duplicate_dynamic_path t_json" \
+             "object_typed_path_collision_flattened t_json_typed" \
+             "object_typed_path_collision t_json_typed" \
+             "object_duplicate_path_after_realloc t_json"
 do
-    echo -n "$name: "
-    # Print the innermost exception: the outer one comes from schema inference and names the file.
-    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_DIR/$name.bin', Native)" 2>&1 \
+    # shellcheck disable=SC2086
+    set -- $entry
+    echo -n "$1: "
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+$2+FORMAT+Native" --data-binary "@$DATA_DIR/$1.bin" \
         | grep -oE "DB::Exception: [^(]*\((INCORRECT_DATA|LOGICAL_ERROR)\)" | tail -1 \
         | sed -E 's/DB::Exception: //'
 done
+
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() FROM t_json;
+    SELECT count() FROM t_json_typed;
+    SELECT count() FROM t_dynamic;
+    DROP TABLE t_json;
+    DROP TABLE t_json_typed;
+    DROP TABLE t_dynamic;
+"
 
 rm -rf "$DATA_DIR"

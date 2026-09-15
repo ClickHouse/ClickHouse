@@ -7,3 +7,6 @@ object_duplicate_dynamic_path: Duplicate path in the list of dynamic paths of an
 object_typed_path_collision_flattened: Path x of an Object column is stored as a dynamic path, but it is a typed path in the type of the column. (INCORRECT_DATA)
 object_typed_path_collision: Path x of an Object column is stored as a dynamic path, but it is a typed path in the type of the column. (INCORRECT_DATA)
 object_duplicate_path_after_realloc: Duplicate path p0 in the list of paths of a flattened Object column. (INCORRECT_DATA)
+0
+0
+0
