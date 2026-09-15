@@ -63,4 +63,10 @@ FROM largestTriangleTreeBucketsBucketSizeTest LIMIT 990, 10;
 
 SELECT largestTriangleThreeBuckets(1)(0, '1900-01-01 00:00:00'::DateTime64);
 
+-- The maximum DateTime64(9) tick rounds up to 2^63 when the aggregate state widens it to Float64; narrowing it back must saturate, not wrap.
+-- session_timezone is pinned in both queries because the result type drops the argument timezone, so rendering would follow the randomized session one.
+SELECT largestTriangleThreeBuckets(1)(fromUnixTimestamp64Nano(9223372036854775807, 'UTC'), 1) SETTINGS session_timezone = 'UTC';
+-- Control: a large tick that is exactly representable in Float64 must be returned unchanged.
+SELECT largestTriangleThreeBuckets(1)(fromUnixTimestamp64Nano(4611686018427387904, 'UTC'), 1) SETTINGS session_timezone = 'UTC';
+
 DROP TABLE largestTriangleTreeBucketsBucketSizeTest;
