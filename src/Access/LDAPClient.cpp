@@ -279,22 +279,31 @@ bool LDAPClient::openConnection(BindMode mode)
     handleError(ldap_set_option(handle, LDAP_OPT_KEEPCONN, LDAP_OPT_ON));
 #endif
 
+    /// The options below are extensions that not every libldap provides. When one is missing, the default behaviour
+    /// is left to the library as before, but a value that was configured explicitly is refused rather than ignored:
+    /// the operator asked for a bound that this build cannot enforce.
 #ifdef LDAP_OPT_TIMEOUT
     {
         ::timeval operation_timeout{};
-        operation_timeout.tv_sec = params.operation_timeout.count();
+        operation_timeout.tv_sec = params.operation_timeout.value_or(Params::default_operation_timeout).count();
         operation_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
     }
+#else
+    if (params.operation_timeout)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'operation_timeout' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_NETWORK_TIMEOUT
     {
         ::timeval network_timeout{};
-        network_timeout.tv_sec = params.network_timeout.count();
+        network_timeout.tv_sec = params.network_timeout.value_or(Params::default_network_timeout).count();
         network_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
     }
+#else
+    if (params.network_timeout)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'network_timeout' is not supported by this build of libldap");
 #endif
 
     {
@@ -322,6 +331,9 @@ bool LDAPClient::openConnection(BindMode mode)
         int value = toLDAPTLSProtocolVersion(*params.tls_maximum_protocol_version);
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MAX, &value));
     }
+#else
+    if (params.tls_maximum_protocol_version)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_maximum_protocol_version' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_REQUIRE_CERT
