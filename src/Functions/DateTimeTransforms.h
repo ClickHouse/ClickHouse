@@ -1181,10 +1181,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
 template <>
 struct ToStartOfInterval<IntervalKind::Kind::Day>
 {
-    static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
+    static Int64 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
-        /// Clamped: a Date past 2106-02-07 floors to a value beyond UInt32 seconds.
-        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days), 0, std::numeric_limits<UInt32>::max()));
+        return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
     }
     static Int64 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
