@@ -138,6 +138,7 @@ void TextSearchQuery::initializeHash()
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
+    StorageMetadataPtr metadata_snapshot_,
     const Block & index_sample_block,
     const std::optional<String> & normalized_index_column_name_,
     TokenizerPtr tokenizer_,
@@ -146,6 +147,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     bool has_positions_,
     NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , header(index_sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
@@ -1121,7 +1123,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    else if (tryMatchNodeToJSONIndex(
+            index_column_node, header, "JSONAllValues", getColumnsToMatchJSONSubcolumn(metadata_snapshot)))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -1995,7 +1998,8 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     auto output_column_name = outputs.front()->result_name;
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
-    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths");
+    auto json_info = tryMatchJSONSubcolumnToIndex(
+        required_column.name, header, "JSONAllPaths", getColumnsToMatchJSONSubcolumn(metadata_snapshot));
     if (!json_info)
         return false;
 
@@ -2033,7 +2037,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     {
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", getColumnsToMatchJSONSubcolumn(metadata_snapshot));
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
