@@ -832,12 +832,63 @@ public:
         return finalized;
     }
 
-    [[nodiscard]] static MutablePtr mutate(Ptr ptr)
+    /// Implementation detail of `mutate`: makes every sub-column of an already-mutable column
+    /// exclusively owned, and does it without ever leaving a sub-column slot empty.
+    /// A sub-column that is already exclusively owned is mutated in place - nothing is cloned,
+    /// so the walk stays free for the unshared case. A shared sub-column has to be copied
+    /// anyway, and the copy is built completely (including its own recursion) before it is
+    /// published into the slot, so an exception leaves the original sub-column tree untouched.
+    /// Nothing here holds an extra reference to a sub-column, so a shared sub-column is still
+    /// reported as shared and the ownership assertions still surface the sites we look for.
+    static void mutateSubcolumnsDeeply(IColumn & column)
     {
-        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
+        column.forEachMutableSubcolumn([](WrappedPtr & subcolumn)
+        {
+            if (std::as_const(subcolumn)->use_count() == 1)
+            {
+                mutateSubcolumnsDeeply(*subcolumn);
+            }
+            else
+            {
+                MutablePtr replacement = std::as_const(subcolumn)->shallowMutate();
+                mutateSubcolumnsDeeply(*replacement);
+                subcolumn = std::move(replacement);
+            }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            chassert(std::as_const(subcolumn)->use_count() == 1);
+            /// Verify sub-columns are also use_count=1. Use the recursive callback that takes
+            /// `const IColumn &` directly: passing a `WrappedPtr` to a callback for columns that
+            /// store children as `ColumnPtr` (e.g. `ColumnFunction::captured_columns`) would
+            /// construct a temporary `WrappedPtr` that itself holds a reference, making the
+            /// `use_count() == 1` check over-count by one.
+            std::as_const(subcolumn)->forEachSubcolumnRecursively([](const IColumn & sub)
+            {
+                chassert(sub.use_count() == 1);
+            });
+#endif
+        });
+    }
+
+    /// The rvalue overload leaves the source intact if anything throws. This is important for
+    /// owning slots: callers can move a slot into `mutate` without publishing a null slot when
+    /// allocation fails. The caller's slot is released only after the whole deep-ownership walk
+    /// has succeeded, and the walk itself never takes a sub-column out of its slot, so no part of
+    /// the source tree is null or half-built while a cloning step can still throw.
+    [[nodiscard]] static MutablePtr mutate(Ptr && ptr)
+    {
+        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2 for an exclusively owned source.
+        mutateSubcolumnsDeeply(*res);
+        /// Only now the source can be released: until this point an exception has to leave it valid.
+        /// Keeping it alive does not affect the sub-column counters, so it does not hide sharing.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
+    }
+
+    [[nodiscard]] static MutablePtr mutate(const Ptr & ptr)
+    {
+        Ptr copy = ptr;
+        return mutate(std::move(copy));
     }
 
     /// Checks if column has dynamic internal structure (like JSON or Dynamic).
