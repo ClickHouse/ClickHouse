@@ -752,7 +752,8 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
     constexpr size_t block_size = 1024;
 
     T best{};
-    size_t best_index = 0;
+    size_t best_block_begin = 0;
+    size_t best_block_end = 0;
     [[maybe_unused]] size_t first_nan = size;
     bool have_numeric_value = !std::is_floating_point_v<T>;
 
@@ -763,6 +764,7 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
         else
         {
             best = data[0];
+            best_block_end = std::min(block_size, size);
             have_numeric_value = true;
         }
     }
@@ -797,17 +799,20 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
 
         if (record)
         {
-            const size_t block_index = findFirstSelectedValue(
-                data + block_begin, block_end - block_begin, *block_extreme, use_simd);
-            chassert(block_index < block_end - block_begin);
             best = *block_extreme;
-            best_index = block_begin + block_index;
+            best_block_begin = block_begin;
+            best_block_end = block_end;
             have_numeric_value = true;
 
             if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>)
             {
                 if (block_end < size && unlikely(best == terminalValue<strategy, T>()))
-                    return best_index;
+                {
+                    const size_t block_index = findFirstSelectedValue(
+                        data + best_block_begin, best_block_end - best_block_begin, best, use_simd);
+                    chassert(block_index < best_block_end - best_block_begin);
+                    return best_block_begin + block_index;
+                }
             }
         }
     }
@@ -821,7 +826,10 @@ static size_t findIndexRecordBlocks(const T * data, size_t size, bool use_simd)
         }
     }
 
-    return best_index;
+    const size_t block_index = findFirstSelectedValue(
+        data + best_block_begin, best_block_end - best_block_begin, best, use_simd);
+    chassert(block_index < best_block_end - best_block_begin);
+    return best_block_begin + block_index;
 }
 
 template <ArrayMinMaxIndexStrategy strategy, typename Element>

@@ -13,7 +13,7 @@ SELECT arrayMinIndex(range(128)), arrayMaxIndex(range(128));
 SELECT arrayMinIndex(range(16384)), arrayMaxIndex(range(16384));
 SELECT arrayMinIndex(a), arrayMaxIndex(a)
 FROM (SELECT arrayJoin([range(128), arrayReverse(range(128)), range(64)]) AS a)
-ORDER BY length(a), arrayMax(a);
+ORDER BY length(a), arrayMax(a), arrayMinIndex(a);
 SELECT min(if(
     arrayMinIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n))) = if(n <= 2, 1, if(n = 3, 3, n - 1))
         AND arrayMaxIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n))) = 1,
@@ -35,6 +35,7 @@ SELECT arrayMinIndex([toInt8(-1), toInt8(-128), toInt8(-128), toInt8(0)]), array
 SELECT arrayMinIndex([toInt16(1), toInt16(-32768), toInt16(-32768), toInt16(0)]), arrayMaxIndex([toInt16(-1), toInt16(32767), toInt16(32767), toInt16(0)]);
 SELECT arrayMinIndex([toInt32(1), toInt32(-2147483648), toInt32(-2147483648), toInt32(0)]), arrayMaxIndex([toInt32(-1), toInt32(2147483647), toInt32(2147483647), toInt32(0)]);
 SELECT arrayMinIndex([toInt64(1), toInt64('-9223372036854775807'), toInt64('-9223372036854775807'), toInt64(0)]), arrayMaxIndex([toInt64(-1), toInt64('9223372036854775807'), toInt64('9223372036854775807'), toInt64(0)]);
+SELECT arrayMinIndex([toInt64('-9223372036854775808'), toInt64('-9223372036854775808'), toInt64(0)]), arrayMaxIndex([toInt64(0), toInt64('9223372036854775807'), toInt64('9223372036854775807')]);
 SELECT
     arrayMinIndex([toInt128(0), toInt128(-1), toInt128(-1), toInt128(1), toInt128(1)]),
     arrayMaxIndex([toInt128(0), toInt128(-1), toInt128(-1), toInt128(1), toInt128(1)]),
