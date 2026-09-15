@@ -1,0 +1,30 @@
+--- an output subcolumn with the ancestor in PREWHERE
+1	(10,6)
+3	(0,0)
+1	(10,6)
+3	(0,0)
+--- an output leaf with the ancestor in PREWHERE
+1	10
+3	0
+1	10
+3	0
+--- an output subcolumn without a predicate
+1	(10,6)
+3	(0,0)
+1	(10,6)
+3	(0,0)
+--- a tuple and its subcolumn in the output
+1	(3,(10,6))	(10,6)
+3	(7,(0,0))	(0,0)
+1	(3,(10,6))	(10,6)
+3	(7,(0,0))	(0,0)
+--- an output subcolumn with the ancestor in a row policy
+1	(10,6)
+3	(0,0)
+1	(10,6)
+3	(0,0)
+1	10
+3	0
+--- the state after a real merge
+1	3	(3,(10,6))
+3	0	(7,(0,0))
