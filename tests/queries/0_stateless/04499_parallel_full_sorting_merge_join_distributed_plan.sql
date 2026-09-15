@@ -39,7 +39,7 @@ SET enable_join_runtime_filters = 0;
 
 -- Distributed plan with `parallel_full_sorting_merge` must succeed (not throw SUPPORT_IS_DISABLED).
 SELECT count() FROM t_pfsmj_dp_left AS l JOIN t_pfsmj_dp_right AS r ON l.a = r.b
-SETTINGS make_distributed_plan = 1, join_algorithm = 'parallel_full_sorting_merge';
+SETTINGS make_distributed_plan = 1, join_algorithm = 'parallel_full_sorting_merge', distributed_plan_fallback_to_local_execution = 0;
 
 -- Single-node baseline for correctness.
 SELECT count() FROM t_pfsmj_dp_left AS l JOIN t_pfsmj_dp_right AS r ON l.a = r.b
