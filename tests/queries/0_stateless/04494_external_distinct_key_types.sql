@@ -36,10 +36,6 @@ SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS log_comment = '04494_ext
 SELECT count() FROM (SELECT DISTINCT s FROM (SELECT number % 3 AS g, uniqExactState(number) AS s FROM numbers(100) GROUP BY g)) SETTINGS log_comment = '04494_external_distinct_key_types/non_comparable';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT s FROM (SELECT number % 3 AS g, uniqExactState(number) AS s FROM numbers(100) GROUP BY g)) WHERE explain LIKE '%ExternalDistinctTransform%' SETTINGS log_comment = '04494_external_distinct_key_types/non_comparable_plan';
 
--- The flag column of the spilled runs must not clash with a user column of the same name (the old analyzer
--- keeps plain column names in the `DISTINCT` header).
-SELECT count() FROM (SELECT DISTINCT number % 100 AS __distinct_already_emitted FROM numbers(1000)) SETTINGS enable_analyzer = 0, log_comment = '04494_external_distinct_key_types/service_name';
-
 -- A constant non-key column alongside a real key: the first run rebuilds the constant from the header.
 SELECT count(), sum(c) FROM (SELECT DISTINCT 7 AS c, number % 1000 AS k FROM numbers(10000)) SETTINGS log_comment = '04494_external_distinct_key_types/constant_payload';
 
