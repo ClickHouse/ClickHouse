@@ -48,12 +48,12 @@ select toNullable(toTime64('00:00:01', 3)) in (253402207200000::Decimal64(0), 1)
 select toDateTime64('1970-01-01 00:00:01', 3, 'UTC') in (99999999999999999, -99999999999999999);
 
 select 'Primary key pruning with an impossible constant';
-drop table if exists t_05213;
-create table t_05213 (dt DateTime64(3, 'UTC'), t Time64(6)) engine = MergeTree order by (dt, t);
-insert into t_05213 values ('1970-01-01 00:00:01.000', '00:00:01.000000'), ('2000-01-01 00:00:00.000', '999:59:59.000000');
-select count() from t_05213 where dt in (99999999999999999);
-select count() from t_05213 where dt in (1, 99999999999999999);
-select count() from t_05213 where t in (253402207200000::Decimal64(0));
-select count() from t_05213 where t in (3599999, 253402207200000::Decimal64(0));
-select count() from t_05213 where (dt, t) in ((1, 1), (946684800, 253402207200000::Decimal64(0)));
-drop table t_05213;
+drop table if exists t_05218;
+create table t_05218 (dt DateTime64(3, 'UTC'), t Time64(6)) engine = MergeTree order by (dt, t);
+insert into t_05218 values ('1970-01-01 00:00:01.000', '00:00:01.000000'), ('2000-01-01 00:00:00.000', '999:59:59.000000');
+select count() from t_05218 where dt in (99999999999999999);
+select count() from t_05218 where dt in (1, 99999999999999999);
+select count() from t_05218 where t in (253402207200000::Decimal64(0));
+select count() from t_05218 where t in (3599999, 253402207200000::Decimal64(0));
+select count() from t_05218 where (dt, t) in ((1, 1), (946684800, 253402207200000::Decimal64(0)));
+drop table t_05218;
