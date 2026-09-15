@@ -1,0 +1,29 @@
+json guard, default settings
+6666
+json guard, both coordinates guarded
+6666
+json guard, allow_reorder_prewhere_conditions = 0
+6666
+json guard, query_plan_merge_filters = 0
+6666
+json guard, 90% of rows pass the guard
+9000
+json guard, 90% of rows pass the guard, query_plan_merge_filters = 0
+9000
+map guard, WHERE
+32666
+map guard, explicit PREWHERE
+32666
+map guard, WHERE, query_plan_merge_filters = 0
+32666
+mixed storage columns, explicit PREWHERE
+45000
+mixed storage columns, explicit PREWHERE, query_plan_merge_filters = 0
+45000
+nested conjunction, WHERE moved into an existing PREWHERE
+45000	3375000
+nested conjunction, WHERE moved into an existing PREWHERE, query_plan_merge_filters = 0
+45000	3375000
+non throwing map conditions are rewritten to subcolumns
+1
+1000
