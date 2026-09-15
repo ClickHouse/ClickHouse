@@ -50,6 +50,14 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    /// Metadata a table engine already knows from its own records, letting the read path skip the
+    /// `HeadObject` it would otherwise issue just to learn the object's size. Nothing by default, so
+    /// storages that do not override this keep issuing the request.
+    ///
+    /// Unlike `getFileSizeHint` above, which only feeds the progress indicator, this replaces the
+    /// object store's answer - so an override must only return what its metadata guarantees.
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest() const { return std::nullopt; }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 

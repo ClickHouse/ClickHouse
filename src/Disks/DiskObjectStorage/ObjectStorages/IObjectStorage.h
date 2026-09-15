@@ -148,6 +148,9 @@ struct ObjectMetadata
     /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
     /// same-size rewrite would collide and could serve stale cached data.
     bool etag_is_strong = true;
+    /// Whether the path alone identifies the contents, so a cache may key on it without an ETag.
+    /// Data lake data files are immutable, which `makeQueryConditionCacheKey` already relies on.
+    bool contents_identified_by_path = false;
     ObjectAttributes tags;
     ObjectAttributes attributes;
 
@@ -156,6 +159,18 @@ struct ObjectMetadata
     /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
+
+    /// The token used as a content cache key next to the object's path. An ETag when the cache
+    // content may be modified, an empty string when the path alone is a stabe identifier of the
+    // contents, and an empty option when there is no stable identifier and the cache must be skipped.
+    std::optional<std::string> getContentCacheToken() const
+    {
+        if (isEtagUsableAsCacheKey())
+            return etag;
+        if (contents_identified_by_path)
+            return "";
+        return std::nullopt;
+    }
 };
 
 struct DataLakeObjectMetadata;
