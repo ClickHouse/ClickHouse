@@ -1,0 +1,28 @@
+nondeterministic
+SELECT k
+FROM
+(
+    SELECT k
+    FROM t_wasm_legacy_pd
+)
+WHERE equals(modulo(wasm_legacy_pd_nondet(k), 2), 0)
+5
+deterministic
+SELECT k
+FROM
+(
+    SELECT k
+    FROM t_wasm_legacy_pd
+    WHERE equals(modulo(wasm_legacy_pd_det(k), 2), 0)
+)
+WHERE equals(modulo(wasm_legacy_pd_det(k), 2), 0)
+5
+executable
+SELECT k
+FROM
+(
+    SELECT k
+    FROM t_wasm_legacy_pd
+)
+WHERE equals(modulo(test_function(toUInt64(k), toUInt64(k)), 2), 0)
+10

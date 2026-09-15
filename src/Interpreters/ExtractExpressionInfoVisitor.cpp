@@ -1,6 +1,10 @@
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -46,7 +50,25 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     }
     else
     {
-        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.getContext());
+        /// User-defined functions are not registered in `FunctionFactory`, so they have to be resolved
+        /// through their own factories, the same way `ActionsVisitor` and `TreeOptimizer` do. Otherwise
+        /// a non-deterministic `EXECUTABLE` or `WASM` UDF looks like an unknown function here and is
+        /// treated as deterministic, so a predicate that calls it may be duplicated into a subquery and
+        /// evaluated twice per row.
+        FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(ast_function.name, data.getContext()); /// NOLINT(readability-static-accessed-through-instance)
+
+        if (!function)
+        {
+            auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(ast_function.name);
+            if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+            {
+                UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(data.getContext());
+                function = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(ast_function.name, data.getContext());
+            }
+        }
+
+        if (!function)
+            function = FunctionFactory::instance().tryGet(ast_function.name, data.getContext());
 
         /// Skip lambda, tuple and other special functions
         if (function)
