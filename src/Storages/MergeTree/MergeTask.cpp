@@ -1158,6 +1158,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             for (const auto & part : global_ctx->future_part->parts)
                 part->accumulateColumnSizes(local_merged_column_to_size);
 
+            /// `accumulateColumnSizes` is keyed by storage column name. After flatten, gathering
+            /// entries are `Tuple` leaves (`t.a`, ...) whose names are missing from that map, so
+            /// `ColumnSizeEstimator` would assign them 0 and Vertical progress would stall on
+            /// those units. `isSubcolumn` is the precise filter: ordinary gathering columns are
+            /// already covered above; this is a no-op unless flatten actually replaced a parent.
             for (const auto & column : global_ctx->gathering_columns)
             {
                 if (!column.isSubcolumn())

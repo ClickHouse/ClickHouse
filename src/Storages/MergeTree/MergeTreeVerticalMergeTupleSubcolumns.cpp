@@ -2,6 +2,8 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -11,6 +13,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -81,8 +84,21 @@ bool skipOrTextOrStatsPinsParent(
 
     if (auto column = metadata_snapshot->getColumns().tryGet(parent))
     {
-        if (!column->statistics.empty())
-            return true;
+        /// Skip indexes that need the parent as a whole are handled above. Statistics pin the
+        /// parent when building them requires the parent column in the gather pipeline:
+        /// Vertical flatten only produces leaf names (`t.a`), so `addBuildStatisticsStep` would
+        /// never see `t`. Implicit `basic` on a flattenable `Tuple` does not store min/max or
+        /// string length (only a type-default count), so it does not need the parent values.
+        for (const auto & [type, desc] : column->statistics.types_to_desc)
+        {
+            if (type != StatisticsType::Basic || !desc.is_implicit)
+                return true;
+            if (canStatisticsTrackMinMax(column->type))
+                return true;
+            const auto unwrapped = removeLowCardinalityAndNullable(removeNullable(column->type));
+            if (isStringOrFixedString(unwrapped))
+                return true;
+        }
     }
 
     return false;
