@@ -43,6 +43,7 @@ namespace FailPoints
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
+    extern const char plain_object_storage_pause_on_file_copy[];
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
@@ -56,6 +57,19 @@ MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataSto
 void MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::execute()
 {
     preconditions->runChecks(fs_tree);
+}
+
+MetadataStorageFromPlainObjectStoragePublishOperation::MetadataStorageFromPlainObjectStoragePublishOperation(
+    std::shared_ptr<FsSnapshot> fs_tree_,
+    FsMetadata & fs_)
+    : fs_tree(std::move(fs_tree_))
+    , fs(fs_)
+{
+}
+
+void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
+{
+    fs.applyJournal(fs_tree->getJournal());
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -451,6 +465,8 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const auto normalized_path_to = normalizePath(path_to);
     const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_on_file_copy);
 
     copy_attempted = true;
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
