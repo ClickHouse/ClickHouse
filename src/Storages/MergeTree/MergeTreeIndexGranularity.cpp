@@ -219,7 +219,8 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
 size_t MergeTreeIndexGranularity::getMarksCountForSkipIndex(size_t skip_index_granularity) const
 {
     size_t marks_count = getMarksCountWithoutFinal();
-    return (marks_count + skip_index_granularity - 1) / skip_index_granularity;
+    /// Round up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
+    return marks_count / skip_index_granularity + (marks_count % skip_index_granularity != 0);
 }
 
 }
