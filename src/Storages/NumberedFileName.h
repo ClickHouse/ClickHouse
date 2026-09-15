@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <string>
 
 namespace DB
@@ -20,5 +21,18 @@ std::string setSequenceNumberInFileName(const std::string & path, size_t sequenc
 /// in this scheme, the numbering continues from the next one, which allows to start the numbering
 /// from an arbitrary offset: for `data.5.Parquet` the next file is `data.6.Parquet`.
 size_t getStartSequenceNumber(const std::string & path, size_t default_number);
+
+/// The names of the files that an insert is written into when it is split into several files
+/// (see `*_split_on_write_by_size_bytes` and `*_create_new_file_on_insert`).
+struct NumberedFileNames
+{
+    /// Returns the name of the file with the given sequence number.
+    std::function<std::string(size_t)> getName;
+    /// The number to start the numbering from, see `getStartSequenceNumber`.
+    size_t start_sequence_number = 1;
+};
+
+/// The numbering of a plain path, with the number placed into its name: `data.Parquet` -> `data.1.Parquet`, `data.2.Parquet`, ...
+NumberedFileNames getNumberedFileNames(const std::string & path);
 
 }

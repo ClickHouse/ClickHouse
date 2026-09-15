@@ -116,6 +116,10 @@ public:
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
+    /// The keys of the objects of a partition when the data written into it is split into several objects,
+    /// see `IPartitionStrategy::getNumberedPathsForWrite`. `path_for_write` is what `getPathForWrite` has
+    /// returned for this partition.
+    NumberedFileNames getNumberedPathsForWrite(const std::string & partition_id, const std::string & path_for_write) const;
 
     void setPathForRead(const Path & path)
     {

@@ -697,6 +697,8 @@ If not zero, `INSERT` into an S3 engine table or into the [s3](/sql-reference/ta
 
 If the key of the first object already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next objects are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first object as well.
 
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc.
+
 The decision to start a new object is made after writing a block, so an object can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the object is taken into account, so for a compressed object it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
 
 If an object with the generated key already exists, the behavior is controlled by `s3_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused key is taken, otherwise an exception is thrown, and the objects written before that are left as is. If `s3_truncate_on_insert` is enabled, existing objects are overwritten instead.
@@ -723,6 +725,8 @@ If not zero, `INSERT` into an Azure Blob Storage engine table or into the [azure
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
 If the name of the first blob already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next blobs are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first blob as well.
+
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc.
 
 The decision to start a new blob is made after writing a block, so a blob can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the blob is taken into account, so for a compressed blob it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
 
@@ -872,6 +876,8 @@ If not zero, `INSERT` into an HDFS engine table or into the [hdfs](/sql-referenc
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
 If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc.
 
 The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
 
@@ -6551,6 +6557,8 @@ If not zero, `INSERT` into a [File](/engines/table-engines/special/file) engine 
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
 If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc.
 
 The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data, and for a file that already existed it also includes its initial size. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
 

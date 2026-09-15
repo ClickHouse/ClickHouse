@@ -238,11 +238,15 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
 
-    /// The objects written after the first one are named after the key of the partition: `data.1.tsv`, `data.2.tsv`, ...
-    const String key_for_splitting = file_path;
+    /// The objects written after the first one are numbered: `data.1.tsv`, `data.2.tsv`, ... The number is placed
+    /// into the path pattern rather than into the key of the partition, so that a partition id with a dot in it
+    /// cannot shift it - see `IPartitionStrategy::getNumberedPathsForWrite`. An insert that has to step aside from
+    /// an existing object into a numbered key continues the numbering from there.
+    const NumberedFileNames numbered_keys = configuration->getNumberedPathsForWrite(partition_id, file_path);
+    size_t sequence_number = numbered_keys.start_sequence_number;
 
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, file_path, getStartSequenceNumber(file_path, 1)))
+            *object_storage, *configuration, query_settings, file_path, numbered_keys, sequence_number))
     {
         file_path = *new_key;
     }
@@ -258,16 +262,13 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         if (query_settings.truncate_on_insert)
             removeStaleSplitObjectsByNumber(
                 *object_storage,
-                key_for_splitting,
-                getStartSequenceNumber(key_for_splitting, 1),
+                numbered_keys,
                 query_settings.create_new_file_on_insert,
                 getLogger("PartitionedStorageObjectStorageSink"));
 
-        get_next_path = [storage = object_storage, config = configuration, settings = query_settings,
-                         key = key_for_splitting,
-                         sequence_number = getStartSequenceNumber(key_for_splitting, 1)]() mutable -> String
+        get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number]() mutable -> String
         {
-            return getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number);
         };
     }
 

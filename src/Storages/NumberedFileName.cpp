@@ -59,4 +59,12 @@ size_t getStartSequenceNumber(const std::string & path, size_t default_number)
     return std::max(*number + 1, default_number);
 }
 
+NumberedFileNames getNumberedFileNames(const std::string & path)
+{
+    return {
+        .getName = [path](size_t sequence_number) { return setSequenceNumberInFileName(path, sequence_number); },
+        .start_sequence_number = getStartSequenceNumber(path, 1),
+    };
+}
+
 }

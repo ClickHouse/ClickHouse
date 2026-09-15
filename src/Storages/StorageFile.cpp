@@ -2765,11 +2765,11 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
 /// `sequence_number` is advanced past the returned name. If the generated name is already taken, either the number is
 /// skipped (when `engine_file_allow_create_multiple_files` is enabled) or an exception is thrown.
 static String getNextPathForSplittingBySize(
-    const String & path, size_t & sequence_number, bool truncate_on_insert, bool allow_create_multiple_files)
+    const NumberedFileNames & numbered_paths, size_t & sequence_number, bool truncate_on_insert, bool allow_create_multiple_files)
 {
     while (true)
     {
-        String new_path = setSequenceNumberInFileName(path, sequence_number);
+        String new_path = numbered_paths.getName(sequence_number);
         ++sequence_number;
 
         if (truncate_on_insert || !fs::exists(new_path))
@@ -2819,21 +2819,22 @@ static void removeStaleSplitFiles(const Strings & stale_paths, const std::functi
 
 /// The same for a table that does not know the names of the files of the previous insert - an `INSERT` into
 /// the `file` table function, or a table that was reloaded since then. The files are written with consecutive
-/// numbers, so the removal stops at the first missing number.
+/// numbers starting from `numbered_paths.start_sequence_number`, so the removal stops at the first missing number.
 ///
 /// Such numbered names are not attributed to a particular table - the engine keeps no metadata about the files
 /// it has written. The removal is done only when the numbered names are unambiguously overwritten by this insert
 /// anyway: a truncating insert that is split by size claims the whole numbered sequence of the path, while
 /// `engine_file_allow_create_multiple_files` lets an insert step over the names taken by someone else,
 /// and then it is not known which of the files belong to this table - nothing is deleted in that case.
-static void removeStaleSplitFilesByNumber(const String & path, size_t sequence_number, bool allow_create_multiple_files)
+static void removeStaleSplitFilesByNumber(const NumberedFileNames & numbered_paths, bool allow_create_multiple_files)
 {
     if (allow_create_multiple_files)
         return;
 
+    size_t sequence_number = numbered_paths.start_sequence_number;
     while (true)
     {
-        String stale_path = setSequenceNumberInFileName(path, sequence_number);
+        String stale_path = numbered_paths.getName(sequence_number);
         ++sequence_number;
 
         /// The sequence ends at the first name that does not exist. A failure to delete an existing file
@@ -3167,6 +3168,42 @@ public:
 
         const auto & settings = context->getSettingsRef();
         const size_t split_on_write_by_size_bytes = settings[Setting::engine_file_split_on_write_by_size_bytes];
+        const bool truncate_on_insert = settings[Setting::engine_file_truncate_on_insert];
+        const bool allow_create_multiple_files = settings[Setting::engine_file_allow_create_multiple_files];
+
+        /// The files after the first one are numbered: `data.1.tsv`, `data.2.tsv`, ... The number is placed into
+        /// the path pattern rather than into the path of the partition, so that a partition id with a dot in it
+        /// cannot shift it - see `IPartitionStrategy::getNumberedPathsForWrite`.
+        const NumberedFileNames numbered_paths = partition_strategy->getNumberedPathsForWrite(path, partition_id, filepath);
+        size_t sequence_number = numbered_paths.start_sequence_number;
+
+        /// The same handoff to a new file as in `StorageFile::write`: the data of a format that does not support
+        /// appending cannot be added to a non-empty file, and with `engine_file_allow_create_multiple_files`
+        /// the insert steps aside into the first free numbered name instead of failing. An insert split by size
+        /// then continues the numbering from there.
+        std::error_code error_code;
+        if (!truncate_on_insert
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
+            && fs::file_size(filepath, error_code) != 0 && !error_code)
+        {
+            if (!allow_create_multiple_files)
+                throw Exception(
+                    ErrorCodes::CANNOT_APPEND_TO_FILE,
+                    "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
+                    " You can enable truncate on insertion with the `engine_file_truncate_on_insert` setting,"
+                    " or you can configure ClickHouse to create a new file "
+                    "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
+                    filepath, format_name);
+
+            String new_path;
+            do
+            {
+                new_path = numbered_paths.getName(sequence_number);
+                ++sequence_number;
+            }
+            while (fs::exists(new_path));
+            filepath = new_path;
+        }
 
         StorageFileSink::GetNextPathCallback get_next_path;
         if (split_on_write_by_size_bytes)
@@ -3174,18 +3211,12 @@ public:
             /// A partitioned sink keeps no list of the files it has written, so there is nothing
             /// to attribute the numbered names of a previous insert to, and the removal is done only
             /// for a truncating insert that is split by size and therefore claims the whole sequence.
-            if (settings[Setting::engine_file_truncate_on_insert])
-                removeStaleSplitFilesByNumber(
-                    filepath,
-                    getStartSequenceNumber(filepath, 1),
-                    settings[Setting::engine_file_allow_create_multiple_files]);
+            if (truncate_on_insert)
+                removeStaleSplitFilesByNumber(numbered_paths, allow_create_multiple_files);
 
-            get_next_path = [partition_path = filepath,
-                             sequence_number = getStartSequenceNumber(filepath, 1),
-                             truncate_on_insert = settings[Setting::engine_file_truncate_on_insert].value,
-                             allow_create_multiple_files = settings[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
+            get_next_path = [numbered_paths, sequence_number, truncate_on_insert, allow_create_multiple_files]() mutable -> String
             {
-                return getNextPathForSplittingBySize(partition_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
+                return getNextPathForSplittingBySize(numbered_paths, sequence_number, truncate_on_insert, allow_create_multiple_files);
             };
         }
 
@@ -3283,6 +3314,12 @@ SinkToStoragePtr StorageFile::write(
     /// Whether the file this insert starts with is already a part of the table. A new file is registered
     /// in it only after it has been written - see `StorageFileSink::PublishPathCallback`.
     bool first_path_is_published = true;
+    /// When the data is split by size, the files after the first one are named `data.1.Parquet`, `data.2.Parquet`, ...
+    /// The numbering is derived per insert from the name of the file this insert starts with: the next files
+    /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
+    /// had to step aside from a non-empty file into a numbered one.
+    NumberedFileNames numbered_paths;
+    size_t sequence_number = 1;
     Strings current_paths = getPathsSnapshot();
     if (!current_paths.empty())
     {
@@ -3292,6 +3329,8 @@ SinkToStoragePtr StorageFile::write(
                             getStorageID().getNameForLogs());
 
         path = current_paths.front();
+        numbered_paths = getNumberedFileNames(path);
+        sequence_number = numbered_paths.start_sequence_number;
         fs::create_directories(fs::path(path).parent_path());
 
         std::error_code error_code;
@@ -3301,12 +3340,13 @@ SinkToStoragePtr StorageFile::write(
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
-                size_t index = getStartSequenceNumber(path, current_paths.size());
+                /// The table has already stepped aside `current_paths.size() - 1` times, so the search starts there.
+                sequence_number = std::max(sequence_number, current_paths.size());
                 String new_path;
                 do
                 {
-                    new_path = setSequenceNumberInFileName(path, index);
-                    ++index;
+                    new_path = numbered_paths.getName(sequence_number);
+                    ++sequence_number;
                 }
                 while (fs::exists(new_path));
                 path = new_path;
@@ -3323,7 +3363,6 @@ SinkToStoragePtr StorageFile::write(
         }
     }
 
-    /// When the data is split by size, the files after the first one are named `data.1.Parquet`, `data.2.Parquet`, ...
     /// The new files are added to the list of paths of the table, so that they are visible for reading.
     const size_t split_on_write_by_size_bytes = context->getSettingsRef()[Setting::engine_file_split_on_write_by_size_bytes];
 
@@ -3351,8 +3390,7 @@ SinkToStoragePtr StorageFile::write(
             /// The table has no numbered tail of its own to delete - it either never had one, or lost it
             /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
             removeStaleSplitFilesByNumber(
-                path,
-                getStartSequenceNumber(path, 1),
+                numbered_paths,
                 context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files]);
         }
     }
@@ -3361,14 +3399,11 @@ SinkToStoragePtr StorageFile::write(
     StorageFileSink::PublishPathCallback publish_path;
     if (split_on_write_by_size_bytes && !use_table_fd && !current_paths.empty())
     {
-        /// The numbering is derived per insert from the name of the file this insert starts with:
-        /// the next files continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
-        get_next_path = [first_path = path,
-                         sequence_number = getStartSequenceNumber(path, 1),
+        get_next_path = [numbered_paths, sequence_number,
                          truncate_on_insert = context->getSettingsRef()[Setting::engine_file_truncate_on_insert].value,
                          allow_create_multiple_files = context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
         {
-            return getNextPathForSplittingBySize(first_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
+            return getNextPathForSplittingBySize(numbered_paths, sequence_number, truncate_on_insert, allow_create_multiple_files);
         };
     }
 

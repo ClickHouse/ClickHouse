@@ -45,7 +45,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const String & key,
-    size_t sequence_number)
+    const NumberedFileNames & numbered_keys,
+    size_t & sequence_number)
 {
     if (settings.truncate_on_insert
         || !object_storage.exists(StoredObject(key)))
@@ -56,7 +57,7 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         String new_key;
         do
         {
-            new_key = setSequenceNumberInFileName(key, sequence_number);
+            new_key = numbered_keys.getName(sequence_number);
             ++sequence_number;
         }
         while (object_storage.exists(StoredObject(new_key)));
@@ -76,12 +77,12 @@ String getNextKeyForSplittingBySize(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
-    const String & key,
+    const NumberedFileNames & numbered_keys,
     size_t & sequence_number)
 {
     while (true)
     {
-        String new_key = setSequenceNumberInFileName(key, sequence_number);
+        String new_key = numbered_keys.getName(sequence_number);
         ++sequence_number;
 
         if (settings.truncate_on_insert || !object_storage.exists(StoredObject(new_key)))
@@ -120,17 +121,17 @@ void removeStaleSplitObjects(
 /// known which of the objects belong to this table - nothing is deleted in that case.
 void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
-    const String & key,
-    size_t sequence_number,
+    const NumberedFileNames & numbered_keys,
     bool create_new_file_on_insert,
     const LoggerPtr & log)
 {
     if (create_new_file_on_insert)
         return;
 
+    size_t sequence_number = numbered_keys.start_sequence_number;
     while (true)
     {
-        String stale_key = setSequenceNumberInFileName(key, sequence_number);
+        String stale_key = numbered_keys.getName(sequence_number);
         ++sequence_number;
 
         if (!object_storage.exists(StoredObject(stale_key)))

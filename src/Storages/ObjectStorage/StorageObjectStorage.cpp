@@ -869,8 +869,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
             /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
             removeStaleSplitObjectsByNumber(
                 *object_storage,
-                paths.front().path,
-                getStartSequenceNumber(paths.front().path, 1),
+                getNumberedFileNames(paths.front().path),
                 settings.create_new_file_on_insert,
                 log);
         }
@@ -883,26 +882,27 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// which is registered in the table only after the object has been written and committed, see below.
     String first_key = paths.front().path;
     bool first_key_is_published = true;
+    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
+    /// The numbering is derived per insert from the key of the object this insert starts with: the next objects
+    /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
+    /// had to step aside from an existing object into a numbered key.
+    const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
+    size_t sequence_number = numbered_keys.start_sequence_number;
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, first_key, getStartSequenceNumber(first_key, 1)))
+            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number))
     {
         first_key = *new_key;
         first_key_is_published = false;
     }
 
-    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
     /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
-    /// The numbering is derived per insert from the key of the object this insert starts with:
-    /// the next objects continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     StorageObjectStorageSink::PublishPathCallback publish_path;
     if (settings.split_on_write_by_size_bytes)
     {
-        get_next_path = [storage = object_storage, config = configuration, settings,
-                         key = first_key,
-                         sequence_number = getStartSequenceNumber(first_key, 1)]() mutable -> String
+        get_next_path = [storage = object_storage, config = configuration, settings, numbered_keys, sequence_number]() mutable -> String
         {
-            return getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number);
         };
     }
 
