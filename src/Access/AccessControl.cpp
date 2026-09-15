@@ -730,9 +730,12 @@ bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
     {
         std::lock_guard lock{access_entities_mutex};
-        if (isAnyFeatureTierRestricted(*this) && exists(id))
+        /// Validate against the entity as it is read here: `exists` alone would let a drop through
+        /// unchecked if the definition could not be read.
+        if (auto old_entity = isAnyFeatureTierRestricted(*this) ? tryRead(id) : nullptr)
         {
-            checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, nullptr}});
+            checkFeatureTierForPendingAccessEntities(
+                *this, PendingAccessEntities{{id, nullptr}}, PendingAccessEntities{{id, old_entity}});
             FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
         }
 
@@ -834,9 +837,12 @@ void AccessControl::checkFeatureTierForMoveUnlocked(
     const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
 {
     auto storages = getStorages();
+    auto source = getStorageByName(source_storage_name);
     for (const auto & id : ids)
     {
-        auto entity = tryRead(id);
+        /// Read from the storage the move reads from: an entity this instance cannot read there is one
+        /// the move itself will fail on.
+        auto entity = source->tryRead(id);
         if (!entity || entity->getType() != AccessEntityType::USER)
             continue;
 
