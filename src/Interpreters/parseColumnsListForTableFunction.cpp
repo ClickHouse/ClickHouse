@@ -1,4 +1,3 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -40,6 +39,19 @@ extern const int ILLEGAL_COLUMN;
 
 }
 
+namespace
+{
+
+bool isExperimentalTimeDecayAggregateFunctionName(const String & name)
+{
+    return name.starts_with("exponentialTimeDecayedSum")
+        || name.starts_with("exponentialTimeDecayedAvg")
+        || name.starts_with("exponentialTimeDecayedCount")
+        || name.starts_with("exponentialTimeDecayingFloat64");
+}
+
+}
+
 DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & settings)
     : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
@@ -72,8 +84,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
             if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
                 is_experimental_time_decay_type
-                    |= AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(
-                        aggregate_function_type->getFunctionName());
+                    |= isExperimentalTimeDecayAggregateFunctionName(aggregate_function_type->getFunctionName());
 
             if (is_experimental_time_decay_type)
                 throw Exception(
