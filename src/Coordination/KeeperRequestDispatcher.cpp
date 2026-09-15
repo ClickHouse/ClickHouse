@@ -820,7 +820,7 @@ void KeeperRequestDispatcher::dispatchThread()
                         ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount);
                         LOG_WARNING(
                             log,
-                            "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type is {}",
+                            "Processing requests refused because of max_memory_usage_soft_limit {}, the total tracked memory is {}, RSS is {}, request type is {}",
                             ReadableSize(keeper_context->getKeeperMemorySoftLimit()),
                             ReadableSize(total_memory_tracker.get()),
                             ReadableSize(total_memory_tracker.getRSS()),
