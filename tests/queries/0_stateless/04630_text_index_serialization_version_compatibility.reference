@@ -10,3 +10,6 @@
 positions file exists
 -- without the pin writes and merges keep working
 512
+-- a pfordelta index is writable and readable under the pin
+1024
+512

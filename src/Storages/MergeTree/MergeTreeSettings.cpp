@@ -718,7 +718,7 @@ Maximum number of processed tokens accumulated by a text index builder before fl
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
-Default posting list codec for text indexes.
+Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfordelta`.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(

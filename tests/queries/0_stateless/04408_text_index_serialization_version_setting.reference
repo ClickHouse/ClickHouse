@@ -24,6 +24,10 @@ v2_with_positions
 512
 -- a posting list codec index argument also overrides the v0_initial preference
 512
+-- the pfordelta codec also overrides the v0_initial preference, and combines with positions
+1024
+512
+512
 -- a phrase search index overrides an older version preference on CREATE
 512
 0

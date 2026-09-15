@@ -18,6 +18,8 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
             return std::make_unique<PostingListCodecNone>();
         case IPostingListCodec::Type::Bitpacking:
             return std::make_unique<PostingListCodecBitpacking>();
+        case IPostingListCodec::Type::PForDelta:
+            return std::make_unique<PostingListCodecPForDelta>();
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec type: {}", static_cast<int>(type));
@@ -30,6 +32,9 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
 
     if (codec_name == PostingListCodecBitpacking::getName())
         return createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+
+    if (codec_name == PostingListCodecPForDelta::getName())
+        return createPostingListCodec(IPostingListCodec::Type::PForDelta);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec: '{}' for index '{}'", codec_name, caller_name);
 }

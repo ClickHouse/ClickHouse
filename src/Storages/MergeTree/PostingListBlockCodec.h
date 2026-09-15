@@ -16,6 +16,7 @@ namespace DB
 /// Encodes / decodes ONE block (1..BLOCK_SIZE delta values) including any codec-specific framing.
 /// The surrounding segment / Index Section layout is identical across codecs; only the per-block payload differs:
 ///   - Bitpacking: [1 byte bits][bitpacked payload]
+///   - PForDelta:  [PFor block]
 class IPostingListBlockCodec
 {
 public:
