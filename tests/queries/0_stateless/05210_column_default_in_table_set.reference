@@ -1,0 +1,26 @@
+ALIAS in WHERE
+1
+ALIAS read
+1	1
+2	0
+ALIAS referenced from a subquery
+1
+mutation over the ALIAS carrier
+2
+DEFAULT on INSERT
+1	1
+2	0
+MATERIALIZED on INSERT
+1	1
+2	0
+ALIAS after the set grew
+2	1
+DEFAULT after the set grew
+1	1
+2	0
+MATERIALIZED after the set grew
+1	1
+2	0
+Set engine on the right
+1	1
+5	0

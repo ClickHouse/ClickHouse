@@ -126,6 +126,21 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
+/// Build and fill every deferred set that `collectSets` registered in `planner_context`.
+///
+/// Deferred sets - the right-hand side of an `IN` that is a subquery, a table or a table function -
+/// are normally built by a `CreatingSet` step that the planner puts in front of the query plan. An
+/// expression evaluated outside a query plan (a column `DEFAULT` applied to an insert block, for
+/// example) has no such step, so its sets would stay unfilled and `IN` would report "Not-ready Set
+/// is passed as the second argument". Run their subqueries right away instead.
+///
+/// Call this only once the actions over the expression are built. Planning a set subquery assigns
+/// unique aliases to the table expressions it reads, and that table expression node is the very
+/// `IN` right-hand side whose tree hash the set is keyed by, so a later `PlannerActionsVisitor`
+/// lookup would compute a different key and fail with "No set is registered for key". The regular
+/// planner path (`addBuildSubqueriesForSetsStepIfNeeded`) observes the same order.
+void buildPreparedSetsInplace(const PlannerContextPtr & planner_context, const ContextPtr & context);
+
 /// If the window frame is not set in sql, try to use the default frame from window function
 /// if it have any one. Otherwise return empty.
 /// If the window frame is set in sql, use it anyway.
