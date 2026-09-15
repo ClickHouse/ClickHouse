@@ -66,6 +66,15 @@ mar	300
 2	jan
 jan
 jan
+-- an enclosing WITH does not reach into the rewrite
+jan	10
+jan	100
+mar	30
+mar	300
+jan	10
+jan	100
+mar	30
+mar	300
 -- the clause survives formatting
 SELECT *\nFROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb))
 SELECT *\nFROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x, feb)) AS u

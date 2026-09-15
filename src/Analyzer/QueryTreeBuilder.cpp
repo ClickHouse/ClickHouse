@@ -908,9 +908,13 @@ namespace
 /// what the table's columns are - it only knows the ones the query named.
 ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression, const ASTUnpivot & unpivot)
 {
-    /// Two parallel arrays that ARRAY JOIN zips into one row per listed column.
-    static constexpr auto name_column_name = "__unpivot_name";
-    static constexpr auto value_column_name = "__unpivot_value";
+    /// Two parallel arrays that ARRAY JOIN zips into one row per listed column. They are named
+    /// after the columns the clause asks for rather than after anything of the rewrite's own: a
+    /// helper name of a fixed shape is an identifier a query can also bind, and with
+    /// `enable_scopes_for_with_statement = 0` an alias of that name in an enclosing WITH would be
+    /// what the subquery below reads instead of the array.
+    const String name_column_name = unpivot.name_name->as<ASTIdentifier &>().name();
+    const String value_column_name = unpivot.value_name->as<ASTIdentifier &>().name();
 
     const auto & columns = unpivot.columns->as<const ASTExpressionList &>();
     if (columns.children.empty())
@@ -951,9 +955,7 @@ ASTPtr buildUnpivotSubquery(const ASTTableExpression & table_expression, const A
     asterisk->children.push_back(transformers);
 
     auto name_column = make_intrusive<ASTIdentifier>(name_column_name);
-    name_column->setAlias(unpivot.name_name->as<ASTIdentifier &>().name());
     auto value_column = make_intrusive<ASTIdentifier>(value_column_name);
-    value_column->setAlias(unpivot.value_name->as<ASTIdentifier &>().name());
 
     auto projection = make_intrusive<ASTExpressionList>();
     projection->children.push_back(std::move(asterisk));

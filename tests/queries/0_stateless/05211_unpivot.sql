@@ -53,6 +53,15 @@ SELECT s.month, s.sales FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan
 SELECT s.empid, s.month FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan)) ORDER BY ALL;
 SELECT u.month FROM monthly_sales AS s UNPIVOT (sales FOR month IN (jan)) AS u ORDER BY ALL;
 
+SELECT '-- an enclosing WITH does not reach into the rewrite';
+-- The rewrite names its arrays after the columns the clause asks for, so there is no helper name of
+-- its own for an alias to bind to, under any value of the setting that scopes a WITH.
+WITH 'x' AS __unpivot_name, 1 AS __unpivot_value
+SELECT month, sales FROM monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL;
+WITH 'x' AS __unpivot_name, 1 AS __unpivot_value
+SELECT month, sales FROM monthly_sales UNPIVOT (sales FOR month IN (jan, mar)) ORDER BY ALL
+SETTINGS enable_scopes_for_with_statement = 0;
+
 SELECT '-- the clause survives formatting';
 SELECT formatQuery('SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb))');
 SELECT formatQuery('SELECT * FROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x, feb)) AS u');
