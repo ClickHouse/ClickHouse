@@ -29,7 +29,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         const DisksMap & /* map */,
         bool, bool) -> DiskPtr
     {
-        const bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        const bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
 
         std::unordered_map<Location, ObjectStoragePtr> object_storage_registry;
         std::unordered_map<Location, LocationInfo> cluster_registry;

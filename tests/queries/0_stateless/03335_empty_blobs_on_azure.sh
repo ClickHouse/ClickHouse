@@ -25,8 +25,6 @@ $CLICKHOUSE_CLIENT -m -q "
                 metadata_type = local,
                 object_storage_type = azure_blob_storage,
                 name = '${CONTAINER}',
-                path='/var/lib/clickhouse/disks/${CONTAINER}/tables',
-                container_name = '${CONTAINER}',
                 endpoint = 'http://localhost:10000/devstoreaccount1/${CONTAINER}/plain-tables',
                 account_name = 'devstoreaccount1',
                 account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');
