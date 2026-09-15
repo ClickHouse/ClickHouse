@@ -197,6 +197,7 @@ private:
         OutputChunk = 2,
         MaxOutputType = 3,
     };
+
     KeyOrderProvider keyOrderProviderFor(
         const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const;
 
