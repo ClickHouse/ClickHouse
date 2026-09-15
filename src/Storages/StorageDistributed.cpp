@@ -1374,11 +1374,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
         interpreter.buildQueryPlan(plan);
     }
 
-    /// An analysis-only plan that is never executed: it only yields the filter, so it is optimized as a
-    /// local plan whatever `make_distributed_plan` says (no distributed-plan decision is taken on it).
-    QueryPlanOptimizationSettings optimization_settings(context);
-    optimization_settings.make_distributed_plan = false;
-    plan.optimize(optimization_settings);
+    plan.optimize(QueryPlanOptimizationSettings(context));
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());

@@ -28,8 +28,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <ranges>
-#include <fmt/ranges.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -40,6 +38,8 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
+
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
