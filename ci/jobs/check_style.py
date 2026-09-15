@@ -668,6 +668,21 @@ def check_pylint():
     return out
 
 
+def check_system_table_documentation_pages():
+    # The system-table reference pages are generated from the structured `COMMENT` of each table.
+    # Generating them needs a `clickhouse` binary, which this job does not have, but the extraction
+    # from the C++ sources and the rewriting of a page are pure Python, and a page which was not
+    # regenerated after its source-owned comment changed is detected from the sources alone.
+    res, out, err = Shell.get_res_stdout_stderr(
+        "python3 ./ci/jobs/scripts/docs/autogenerate/test_system_table_pages.py"
+    )
+    if res == 0:
+        return ""
+    if err:
+        out += err
+    return out
+
+
 def check_ruff():
     # Configuration lives under [tool.ruff] in pyproject.toml.
     # --quiet suppresses the "All checks passed!" success message so the result
@@ -1523,6 +1538,14 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_embedded_doc_snippets,
+            )
+        )
+    testname = "system_table_documentation_pages"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_system_table_documentation_pages,
             )
         )
     testname = "ruff"
