@@ -400,8 +400,12 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # different value at every stack depth and each one takes a fresh entry in the stack depot,
     # which is never freed.
     #
-    # This covers the C, C++ and assembly objects. The Rust ones (`skim`, `delta-kernel`, `chdig`,
-    # `wasmtime`, ...) keep unsigned return addresses: `rustc` treats `-Zbranch-protection` as
+    # This covers what the compiler generates from the C and C++ sources, and nothing else.
+    # Hand-written assembly is assembled as written - the flag does not touch a `.s` input, which
+    # assembles to a byte-identical object with and without it - so `longjmp.s` and `syscall.s`
+    # under `base/glibc-compatibility/musl/aarch64` keep unsigned return addresses, as does
+    # everything in the prebuilt libraries we link. The Rust objects (`skim`, `delta-kernel`,
+    # `chdig`, `wasmtime`, ...) keep them too: `rustc` treats `-Zbranch-protection` as
     # ABI-affecting and refuses it outright while `std` comes precompiled without it ("mixing
     # `-Zbranch-protection` will cause an ABI mismatch"). Signing them needs either `std` built from
     # source with the same flag - non-sanitizer builds do not use `-Zbuild-std` - or an explicit
