@@ -14,12 +14,12 @@ SELECT arrayMinIndex(range(16384)), arrayMaxIndex(range(16384));
 SELECT arrayMinIndex(a), arrayMaxIndex(a)
 FROM (SELECT arrayJoin([range(128), arrayReverse(range(128)), range(64)]) AS a)
 ORDER BY length(a), arrayMax(a);
-SELECT
-    n,
-    arrayMinIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n))),
-    arrayMaxIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n)))
-FROM (SELECT arrayJoin([48, 49, 64, 65, 256, 257, 16383, 16384, 16385]) AS n)
-ORDER BY n;
+SELECT min(if(
+    arrayMinIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n))) = if(n <= 2, 1, if(n = 3, 3, n - 1))
+        AND arrayMaxIndex(arrayMap(i -> if(i < 2, 100, if(i >= n - 2, 0, 50)), range(n))) = 1,
+    1,
+    0))
+FROM (SELECT arrayJoin([48, 49, 64, 65, 256, 257, 16383, 16384, 16385]) AS n);
 SELECT arrayMinIndex(arrayMap(x -> nan, range(16384))), arrayMaxIndex(arrayMap(x -> nan, range(16384)));
 SELECT
     arrayMinIndex(arrayConcat(arrayMap(x -> nan, range(1024)), arrayMap(x -> toFloat64(x), range(15360)))),
@@ -61,9 +61,12 @@ SELECT
     arrayMinIndex(arrayMap(i -> if(i = n - 1, toInt64(-100000), toInt64(i)), range(n)))
 FROM (SELECT arrayJoin([1, 2, 3, 7, 8, 15, 16, 31, 32, 47, 48, 49, 63, 64, 65, 95, 96, 127, 128, 129, 191, 192, 255, 256, 257, 511, 512, 513, 1023, 1024, 2047, 2048, 4095, 4096, 8191, 8192, 16383, 16384, 16385, 32768]) AS n)
 ORDER BY n;
-SELECT n, arrayMinIndex(arrayMap(x -> nan, range(n))), arrayMaxIndex(arrayMap(x -> nan, range(n)))
-FROM (SELECT arrayJoin([16384, 16385, 32768, 32769, 65536]) AS n)
-ORDER BY n;
+SELECT min(if(
+    arrayMinIndex(arrayMap(x -> nan, range(n))) = 1
+        AND arrayMaxIndex(arrayMap(x -> nan, range(n))) = 1,
+    1,
+    0))
+FROM (SELECT arrayJoin([16384, 16385, 32768, 32769, 65536]) AS n);
 SELECT
     arrayMinIndex(arrayConcat(arrayMap(x -> toFloat64(x), range(1024)), arrayMap(x -> nan, range(1024)), arrayMap(x -> toFloat64(x), range(15360)))),
     arrayMaxIndex(arrayConcat(arrayMap(x -> toFloat64(x), range(1024)), arrayMap(x -> nan, range(1024)), arrayMap(x -> toFloat64(x), range(15360))));
@@ -77,18 +80,18 @@ SELECT
     arrayMaxIndex(arrayMap(x -> toUInt64(42), range(16384))),
     arrayMinIndex(arrayMap(x -> toFloat64(42), range(16384))),
     arrayMaxIndex(arrayMap(x -> toFloat64(42), range(16384)));
-SELECT
-    n,
-    arrayMaxIndex(arrayMap(i -> if(i = 0, toInt64(100000), toInt64(i)), range(n))),
-    arrayMaxIndex(arrayMap(i -> if(i = intDiv(n, 2), toInt64(100000), toInt64(i)), range(n))),
-    arrayMaxIndex(arrayMap(i -> if(i = n - 1, toInt64(100000), toInt64(i)), range(n))),
-    arrayMaxIndex(arrayMap(i -> if(i = intDiv(n * 3, 5), toInt64(100000), toInt64(i)), range(n))),
-    arrayMinIndex(arrayMap(i -> if(i = 0, toInt64(-100000), toInt64(i)), range(n))),
-    arrayMinIndex(arrayMap(i -> if(i = intDiv(n, 2), toInt64(-100000), toInt64(i)), range(n))),
-    arrayMinIndex(arrayMap(i -> if(i = n - 1, toInt64(-100000), toInt64(i)), range(n))),
-    arrayMinIndex(arrayMap(i -> if(i = intDiv(n * 3, 5), toInt64(-100000), toInt64(i)), range(n)))
-FROM (SELECT arrayJoin(range(1, 129)) AS n)
-ORDER BY n;
+SELECT min(if(
+    arrayMaxIndex(arrayMap(i -> if(i = 0, toInt64(100000), toInt64(i)), range(n))) = 1
+        AND arrayMaxIndex(arrayMap(i -> if(i = intDiv(n, 2), toInt64(100000), toInt64(i)), range(n))) = intDiv(n, 2) + 1
+        AND arrayMaxIndex(arrayMap(i -> if(i = n - 1, toInt64(100000), toInt64(i)), range(n))) = n
+        AND arrayMaxIndex(arrayMap(i -> if(i = intDiv(n * 3, 5), toInt64(100000), toInt64(i)), range(n))) = intDiv(n * 3, 5) + 1
+        AND arrayMinIndex(arrayMap(i -> if(i = 0, toInt64(-100000), toInt64(i)), range(n))) = 1
+        AND arrayMinIndex(arrayMap(i -> if(i = intDiv(n, 2), toInt64(-100000), toInt64(i)), range(n))) = intDiv(n, 2) + 1
+        AND arrayMinIndex(arrayMap(i -> if(i = n - 1, toInt64(-100000), toInt64(i)), range(n))) = n
+        AND arrayMinIndex(arrayMap(i -> if(i = intDiv(n * 3, 5), toInt64(-100000), toInt64(i)), range(n))) = intDiv(n * 3, 5) + 1,
+    1,
+    0))
+FROM (SELECT arrayJoin(range(1, 129)) AS n);
 SELECT
     arrayMinIndex(arrayMap(i -> if(i = 8192, toUInt8(0), toUInt8(i % 200 + 1)), range(16384))),
     arrayMaxIndex(arrayMap(i -> if(i = 8192, toUInt8(255), toUInt8(i % 200)), range(16384))),
