@@ -1,6 +1,10 @@
 services:
   minio1:
-    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    # Built from the GitHub release binary; minio/minio was deleted from Docker Hub (upstream #119999).
+    build:
+      context: ./minio
+      args:
+        MINIO_SERVER_VERSION: ${MINIO_SERVER_VERSION:-2024-09-13T20-26-02Z}
     volumes:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs
