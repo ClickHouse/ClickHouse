@@ -71,8 +71,9 @@ public:
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
 
-    /// Element type of the result array. It is `ValueType` for most functions, but e.g. the `ts_of_*` functions
-    /// return timestamps in seconds as `Float64` regardless of the value type.
+    /// Element type of the result array. Functions returning one of the samples as is (last, min, max) return `ValueType`,
+    /// the other functions calculate their results with double precision and return `Float64` even for `Float32` values
+    /// (the `ts_of_*` functions return timestamps in seconds).
     using ResultType = typename Traits::ResultType;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;

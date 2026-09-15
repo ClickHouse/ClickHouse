@@ -28,7 +28,7 @@ struct AggregateFunctionTimeseriesChangesTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -125,12 +125,12 @@ struct AggregateFunctionTimeseriesChangesTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.count == 0)
                 return std::nullopt;
-            return static_cast<ValueType>(combined.changes);
+            return static_cast<ResultType>(combined.changes);
         }
     };
 

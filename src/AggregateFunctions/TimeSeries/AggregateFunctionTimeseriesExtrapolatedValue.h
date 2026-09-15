@@ -29,7 +29,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -143,9 +143,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-        std::optional<ValueType> getResult(TimestampType grid_timestamp) const
+        std::optional<ResultType> getResult(TimestampType grid_timestamp) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
 
@@ -154,9 +152,9 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 return std::nullopt;
 
             const TimestampType first_timestamp = combined.first_timestamp;
-            const ValueType first_value = combined.first_value;
+            const Float64 first_value = static_cast<Float64>(combined.first_value);
             const TimestampType last_timestamp = combined.last_timestamp;
-            const ValueType last_value = combined.last_value;
+            const Float64 last_value = static_cast<Float64>(combined.last_value);
             const UInt64 total_count = combined.count;
             const Float64 total_resets = combined.resets;
 
@@ -215,9 +213,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
             value_difference *= factor;
 
-            return static_cast<ValueType>(value_difference);
+            return value_difference;
         }
-#pragma clang diagnostic pop
     };
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.

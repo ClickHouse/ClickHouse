@@ -26,7 +26,7 @@ struct AggregateFunctionTimeseriesInstantValueTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -63,28 +63,24 @@ struct AggregateFunctionTimeseriesInstantValueTraits
                 latest.filled = 1;
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
         {
             if (latest.filled < 2)
                 return std::nullopt;
 
             const TimestampType timestamp = latest.timestamps[0];
-            const ValueType value = latest.values[0];
+            const Float64 value = static_cast<Float64>(latest.values[0]);
             const TimestampType previous_timestamp = latest.timestamps[1];
-            const ValueType previous_value = latest.values[1];
+            const Float64 previous_value = static_cast<Float64>(latest.values[1]);
 
-            const ValueType time_difference = static_cast<ValueType>(timestamp - previous_timestamp);
+            const Float64 time_difference = static_cast<Float64>(timestamp - previous_timestamp);
             if (time_difference == 0)
                 return std::nullopt;
 
             /// Resets are taken into account for `irate` (counter) but not for `idelta` (gauge).
-            ValueType value_difference = (is_rate && value < previous_value) ? value : (value - previous_value);
-            ValueType result = value_difference;
+            Float64 result = (is_rate && value < previous_value) ? value : (value - previous_value);
             if constexpr (is_rate)
-            {
-                using TimestampScaleMultiplierType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, TimestampType>;
-                result = result * static_cast<TimestampScaleMultiplierType>(timestamp_scale_multiplier) / time_difference;
-            }
+                result = result * static_cast<Float64>(timestamp_scale_multiplier) / time_difference;
             return result;
         }
     };

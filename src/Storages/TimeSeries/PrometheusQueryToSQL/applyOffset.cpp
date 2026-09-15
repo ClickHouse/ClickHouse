@@ -51,40 +51,30 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group, timestamp + INTERVAL X, value
+                /// SELECT group, CAST(timestamp + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
                 /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-                ASTPtr new_timestamp;
-                if (isDateTime64(context.timestamp_data_type))
-                {
-                    /// timestamp + INTERVAL x MILLISECONDS
-                    chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
-                    /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    /// The interval functions do not accept Decimal arguments, so the literal must be
-                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
-                    /// scale >= timestamp_scale.
-                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
+                /// The interval functions don't accept Decimal arguments, so we choose the unit (milliseconds, microseconds
+                /// or nanoseconds) which is not longer than the tick of `result_timestamp_scale`, and pass an integer number of the units.
+                UInt32 result_scale = context.result_timestamp_scale;
+                chassert(result_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
+                UInt32 interval_scale = (result_scale + 2) / 3 * 3;
+                Int64 offset_in_interval_units = DecimalUtils::convertTo<Decimal64>(interval_scale, offset_value, result_scale).value;
 
-                    static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
-                    std::string_view to_interval_function = to_interval_functions[scale / 3];
+                static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
+                std::string_view to_interval_function = to_interval_functions[interval_scale / 3];
 
-                    new_timestamp = makeASTFunction(
+                /// The column `timestamp` of raw data has type `result_timestamp_type`, but adding an interval can change the scale
+                /// (for example, DateTime64(4) + INTERVAL 1 MICROSECOND is DateTime64(6)), so we cast the sum back.
+                ASTPtr new_timestamp = timeSeriesASTCast(
+                    makeASTFunction(
                         "plus",
                         make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
-                }
-                else
-                {
-                    /// timestamp + x
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        timeSeriesDurationToAST(offset_value, context.timestamp_data_type));
-                }
+                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
+                    context.result_timestamp_type);
 
                 new_timestamp->setAlias(ColumnNames::Timestamp);
                 builder.select_list.push_back(std::move(new_timestamp));
@@ -187,34 +177,8 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group,
-                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
-                ///        value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                auto new_timestamp = makeASTFunction(
-                    "arrayJoin",
-                    makeASTFunction(
-                        "timeSeriesRange",
-                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
-                return std::move(expression);
+                /// Can't get in here because RAW_DATA is used only for range vectors, and they are returned above as is.
+                throwUnexpectedStoreMethod(expression, context);
             }
         }
 

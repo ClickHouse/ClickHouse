@@ -19,6 +19,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/getPromQLResultTypes.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -109,10 +110,10 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     UInt64 time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
-    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type);
+    auto table_timestamp_type = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type).first;
 
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    UInt32 timestamp_scale = getPromQLResultTimestampScale(table_timestamp_type);
 
     PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
 
@@ -148,8 +149,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
-    evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
-    evaluation_settings.scalar_data_type = std::move(scalar_data_type);
+    evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
     evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;

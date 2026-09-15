@@ -1183,7 +1183,7 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
         {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesResampleToGridWithStaleness = {"Returns time series values re-sampled to the specified grid. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesResampleToGridWithStaleness = {"Returns time series values re-sampled to the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.", {"Array(Nullable(Float*))"}};
     FunctionDocumentation::Examples examples_timeSeriesResampleToGridWithStaleness = {
     {
         "Basic usage with individual timestamp-value pairs",
@@ -1280,7 +1280,7 @@ timeSeriesSumToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sample
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
         {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesSumToGrid = {"Returns the sum of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesSumToGrid = {"Returns the sum of values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesSumToGrid = {
     {
         "Basic usage with individual timestamp-value pairs",
@@ -1376,7 +1376,7 @@ timeSeriesAvgToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sample
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
         {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesAvgToGrid = {"Returns the average of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesAvgToGrid = {"Returns the average of values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesAvgToGrid = {
     {
         "Basic usage with individual timestamp-value pairs",
@@ -1472,7 +1472,7 @@ timeSeriesCountToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samp
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
         {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesCountToGrid = {"Returns the count of samples on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesCountToGrid = {"Returns the count of samples on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesCountToGrid = {
     {
         "Basic usage with individual timestamp-value pairs",

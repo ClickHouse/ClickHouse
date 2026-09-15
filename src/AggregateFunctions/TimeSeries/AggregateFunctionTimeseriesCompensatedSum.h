@@ -27,7 +27,7 @@ struct AggregateFunctionTimeseriesCompensatedSumTraits
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-    using ResultType = ValueType;
+    using ResultType = Float64;
 
     static String getName()
     {

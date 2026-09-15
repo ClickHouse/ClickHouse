@@ -112,7 +112,7 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
                 latest = Summary{};
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
         {
             if (!latest.has_value)
                 return std::nullopt;

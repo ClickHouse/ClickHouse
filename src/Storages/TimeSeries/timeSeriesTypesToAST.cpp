@@ -77,9 +77,9 @@ ASTPtr timeSeriesDurationToAST(Decimal64 duration, const DataTypePtr & timestamp
 }
 
 
-ASTPtr timeSeriesScalarToAST(Float64 value, const DataTypePtr & scalar_data_type)
+ASTPtr timeSeriesScalarToAST(Float64 value)
 {
-    return timeSeriesScalarASTCast(make_intrusive<ASTLiteral>(value), scalar_data_type);
+    return make_intrusive<ASTLiteral>(value);
 }
 
 
@@ -145,6 +145,12 @@ ASTPtr timeSeriesDurationASTCast(ASTPtr && ast, const DataTypePtr & timestamp_da
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Can't cast {} to the duration type for the timestamp type {}",
                         ast->formatForLogging(), timestamp_data_type->getName());
     }
+}
+
+
+ASTPtr timeSeriesASTCast(ASTPtr && ast, const DataTypePtr & data_type)
+{
+    return makeASTFunction("CAST", std::move(ast), make_intrusive<ASTLiteral>(data_type->getName()));
 }
 
 
