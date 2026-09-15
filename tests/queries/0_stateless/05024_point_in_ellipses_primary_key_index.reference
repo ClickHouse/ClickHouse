@@ -1,0 +1,40 @@
+3536
+3536
+Parts: 1/1
+Granules: 6/100
+0
+5325
+Parts: 1/1
+Granules: 52/100
+0
+Parts: 0/1
+Granules: 0/100
+0
+0
+0
+3536
+Parts: 1/1
+Granules: 6/100
+11
+96464
+3536
+0
+3536
+3536
+Condition: pointInEllipses(coord, [(-5000, -5000), (-5000, 5000), (5000, 5000), (5000, -5000), (-5000, -5000)])
+Parts: 1/1
+Granules: 6/100
+25001
+25001
+Condition: pointInPolygon(coord, [(0, 0), (0, 25000), (25000, 25000), (25000, 0), (0, 0)])
+Parts: 1/1
+Granules: 26/100
+25001
+25001
+25001
+25001
+Condition: pointInPolygon(p, [(0, 0), (0, 25000), (25000, 25000), (25000, 0), (0, 0)])
+Parts: 1/1
+Granules: 26/100
+25001
+3536
