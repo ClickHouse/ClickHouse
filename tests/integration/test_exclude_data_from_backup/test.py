@@ -1792,6 +1792,43 @@ def test_partition_scope_unsupported_engine_rejected_even_when_data_excluded():
     instance.query("DROP DATABASE partition_scope_unsupported_db")
 
 
+def test_partition_scope_unsupported_engine_rejected_for_refreshable_mv_target():
+    """The partition check must fire for a refreshable materialized view's target too.
+
+    `backup_data_from_refreshable_materialized_view_targets = 0` is a third way to leave a table's
+    data out of the backup, alongside `EXCEPT DATA FROM TABLE` and `structure_only` covered by the
+    test above - and it reaches the same `should_backup_data = false` outcome through separate
+    wiring: `BackupEntriesCollector::gatherTablesMetadata` recognises the materialized view's
+    REPLACE-refresh target from its create query and records it in `rmv_replace_target_ids`, which
+    `shouldBackupTableData` then checks. A bug in that recognition - the target never added, or added
+    under the wrong id - would leave `should_backup_data` true and the partition check would never
+    even ask, so the failure mode here is different from the other test's: not the check itself
+    firing on the wrong condition, but the check being skipped because this path's `should_backup_data
+    = false` never happened where it should have. Naming the view alongside its target is what makes
+    `gatherTablesMetadata` see the view's create query and populate `rmv_replace_target_ids` at all.
+    """
+    instance.query("DROP DATABASE IF EXISTS partition_scope_rmv_db")
+    instance.query("CREATE DATABASE partition_scope_rmv_db")
+    instance.query(
+        "CREATE TABLE partition_scope_rmv_db.log_target (id UInt64) ENGINE = Log"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW partition_scope_rmv_db.rmv REFRESH EVERY 1 HOUR "
+        "TO partition_scope_rmv_db.log_target AS SELECT number AS id FROM numbers(1)"
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE partition_scope_rmv_db.log_target PARTITION '1', "
+            f"TABLE partition_scope_rmv_db.rmv "
+            f"TO {new_backup_name()} "
+            f"SETTINGS backup_data_from_refreshable_materialized_view_targets = 0"
+        )
+    assert "doesn't support partitions" in str(exc_info.value), str(exc_info.value)
+
+    instance.query("DROP DATABASE partition_scope_rmv_db")
+
+
 def test_partition_scope_whole_table_element_wins_over_partitioned_element():
     """An element asking for the whole table must not be narrowed by a later partitioned element.
 
