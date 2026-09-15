@@ -35,6 +35,13 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context);
 /// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
+/// Transitive closure of `getColumnDependencies` over @updated_columns: a dependency that is not
+/// read-only is itself updated, so it pulls in its own dependencies. TTL targets are included.
+ColumnDependencies getAllColumnDependencies(
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & updated_columns,
+    const StorageInMemoryMetadata::HasDependencyCallback & has_dependency);
+
 /// Return false if the data isn't going to be changed by mutations.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
