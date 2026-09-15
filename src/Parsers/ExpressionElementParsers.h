@@ -566,6 +566,43 @@ protected:
   */
 std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected);
 
+/** A literal read as text by `parseLiteralAsText`, together with what the numbers in it look like.
+  * The shape says which target types read the text back as the value it stands for: an integer type
+  * does not read a fractional numeral, an unsigned one does not read a negative number, and none of
+  * them reads a quoted string.
+  */
+struct LiteralAsText
+{
+    String text;
+    /// Nothing in it is a string literal.
+    bool all_numbers = true;
+    /// Every number in it is written without a fractional part and without an exponent.
+    bool all_integers = true;
+    /// No number in it is negative.
+    bool all_non_negative = true;
+    /// It holds a `NULL`, which only a `Nullable` target reads back.
+    bool has_null = false;
+};
+
+/** Reads a literal - a number, or an array or a tuple of numbers, strings and `NULL`s - as text, leaving
+  * `pos` right after it. Casting the text with the target type is what makes `CAST` exact:
+  * `0.1::Decimal256(76)` keeps all 76 digits, instead of reading `0.1` as a `Float64` and rounding
+  * it on the way to the `Decimal`.
+  *
+  * Returns false, leaving `pos` where it was, if there is no such literal ahead, or if it holds a
+  * number written in a form that no type reads back - see `isPlainDecimalNumeral`.
+  */
+bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal);
+
+/** True if the type written as `type_text` reads `literal` back as the value it stands for, and more
+  * precisely than a numeric literal carries it. Only `Decimal` and the integers wider than 64 bits
+  * do: for every other type, reading the text is either no more precise or means something else
+  * entirely - `CAST(1 AS DateTime)` is one second past the epoch, while `'1'` as a `DateTime` is a
+  * calendar date. `outer_pos` is the position in the query the type came from, and only lends its
+  * recursion limits to parsing `type_text`.
+  */
+bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & literal, const IParser::Pos & outer_pos);
+
 /// `CAST(expr, 'type')`, the canonical form of every way of writing a cast.
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text);
 
