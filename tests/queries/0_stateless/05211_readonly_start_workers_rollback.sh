@@ -36,13 +36,15 @@ $CLICKHOUSE_CLIENT -q "SELECT countSubstrings(create_table_query, 'table_readonl
 # before the failure is torn down again, and the cleanup thread is stopped as on a 0 -> 1 toggle.
 $CLICKHOUSE_CLIENT -q "SELECT 'worker tasks after failed toggle: ' || toString(count()) FROM system.background_schedule_pool
     WHERE database = currentDatabase() AND table = 'readonly_start_rollback'
-      AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')"
+      AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')
+          AND log_name != 'BackgroundJobsAssignee:Streaming'"
 
 # A retry completes the transition: the table is writable and every worker runs.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE readonly_start_rollback MODIFY SETTING table_readonly = 0"
-$CLICKHOUSE_CLIENT -q "SELECT 'worker tasks after retried toggle: ' || toString(count() >= 3) FROM system.background_schedule_pool
+$CLICKHOUSE_CLIENT -q "SELECT 'worker tasks after retried toggle: ' || toString(count() >= 2) FROM system.background_schedule_pool
     WHERE database = currentDatabase() AND table = 'readonly_start_rollback'
-      AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')"
+      AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')
+          AND log_name != 'BackgroundJobsAssignee:Streaming'"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE readonly_start_rollback DELETE WHERE k = 0 SETTINGS mutations_sync = 0"
 
 done_in_background=0

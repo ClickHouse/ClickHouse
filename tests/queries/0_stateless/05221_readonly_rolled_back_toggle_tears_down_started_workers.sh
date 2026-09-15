@@ -10,13 +10,15 @@ set -e
 # Turning `table_readonly` back off starts the background workers before the metadata commit. When
 # the commit then fails, the rollback must restore the worker lifecycle the table had before the
 # ALTER, not only its settings: a table that was attached read-only has no `BackgroundJobsAssignee`
-# scheduling tasks, so none may be left waking up on the still read-only table after the failure.
+# scheduling tasks apart from the streaming one, which every table runs, so none may be left waking
+# up on the still read-only table after the failure.
 # The workers of a table that started writable and was made read-only later were already running
 # before the failed ALTER and stay as they were.
 
 assignees() {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.background_schedule_pool
-        WHERE database = currentDatabase() AND table = '$1' AND log_name LIKE 'BackgroundJobsAssignee:%'"
+        WHERE database = currentDatabase() AND table = '$1' AND log_name LIKE 'BackgroundJobsAssignee:%'
+          AND log_name != 'BackgroundJobsAssignee:Streaming'"
 }
 cleanup_threads() {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.background_schedule_pool

@@ -267,7 +267,10 @@ void StorageMergeTree::startup()
             enableBackgroundWorkers();
             startBackgroundWorkers();
         }
-        /// Statistics refresh only reads parts and must also run for read-only tables.
+        /// Statistics refresh and the streaming subscription enrichment only read parts and must also
+        /// run for read-only tables: without the streaming assignee, `triggerStreamingSubscriptionEnrichment`
+        /// is a no-op and a `STREAM BOUNDED` read on the table never receives its first snapshot.
+        background_streaming_assignee.start();
         startStatisticsCache();
     }
     catch (...)
@@ -544,10 +547,11 @@ void StorageMergeTree::alter(
                 setInMemoryMetadata(new_metadata);
             }
 
-            /// A table that started read-only has no background workers at all: `startup` skipped them.
-            /// `table_readonly` is documented to be toggleable back, so restore them here instead of
-            /// requiring a server restart. `isTableReadonly` stays true for a static storage, which
-            /// must never run them.
+            /// A table that started read-only has none of the background workers that modify data:
+            /// `startup` skipped them (only the statistics refresh and the streaming assignee, which
+            /// merely read, run on every table). `table_readonly` is documented to be toggleable back,
+            /// so restore them here instead of requiring a server restart. `isTableReadonly` stays
+            /// true for a static storage, which must never run them.
             ///
             /// The restart is exception-safe as a unit. Everything that can throw, i.e. allocating and
             /// enqueueing the scheduling tasks, happens here, before the metadata commit, inside the
@@ -4088,7 +4092,6 @@ void StorageMergeTree::startBackgroundWorkers(StartedBackgroundWorkers * started
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while starting background workers");
     });
 
-    started->streaming = background_streaming_assignee.start();
     if (areBackgroundMovesNeeded())
         started->moves = background_moves_assignee.start();
     startOutdatedAndUnexpectedDataPartsLoadingTask();
@@ -4103,8 +4106,6 @@ void StorageMergeTree::finishBackgroundWorkers(const StartedBackgroundWorkers & 
     {
         if (started.operations)
             background_operations_assignee.finish();
-        if (started.streaming)
-            background_streaming_assignee.finish();
         if (started.moves)
             background_moves_assignee.finish();
     }

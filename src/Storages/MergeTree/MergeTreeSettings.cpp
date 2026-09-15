@@ -2498,6 +2498,7 @@ writable table performs after start is suspended if it is still pending; the par
 again. Other operations already in progress, including the loading of a single part, may finish.
 
 The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
+Streaming reads (`SELECT ... STREAM`) keep working: the background job that serves their subscriptions only reads parts and runs on read-only tables as well.
 
 The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers
 that a read-only table never started are started at that point, so merges, mutations, moves, TTL, and cleanup resume without a server restart.

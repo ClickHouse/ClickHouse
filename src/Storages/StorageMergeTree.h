@@ -360,9 +360,11 @@ private:
     bool isTableReadonly() const;
     void assertNotReadonly() const;
 
-    /// Starts every background worker that a writable table runs. Called on startup of a writable
+    /// Starts every background worker that only a writable table runs. Called on startup of a writable
     /// table and again when `table_readonly` is turned back off, so that a table that was attached
     /// read-only regains merges, moves, cleanup, and outdated part loading without a restart.
+    /// The statistics refresh and the streaming assignee only read parts; `startup` starts them for
+    /// every table, read-only or not, so they are not part of this set.
     ///
     /// Starting allocates and enqueues the scheduling tasks, so it may throw. A started worker
     /// runs nothing while `background_workers_enabled` is unset, which lets the `table_readonly`
@@ -380,7 +382,6 @@ private:
     struct StartedBackgroundWorkers
     {
         bool operations = false;
-        bool streaming = false;
         bool moves = false;
     };
     void startBackgroundWorkers(StartedBackgroundWorkers * started = nullptr);

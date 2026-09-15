@@ -16,7 +16,8 @@ set -e
 worker_tasks() {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.background_schedule_pool
         WHERE database = currentDatabase() AND table = 'readonly_task_created'
-          AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')"
+          AND (log_name LIKE 'BackgroundJobsAssignee:%' OR log_name LIKE '%CleanupThread%')
+          AND log_name != 'BackgroundJobsAssignee:Streaming'"
 }
 
 $CLICKHOUSE_CLIENT --multiquery -q "
