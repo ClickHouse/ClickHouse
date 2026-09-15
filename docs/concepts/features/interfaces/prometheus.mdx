@@ -6,13 +6,17 @@ title: 'Prometheus HTTP API and PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge/>
+<PrivatePreviewBadge/>
 
 ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
 
 To expose ClickHouse's own metrics for a Prometheus server to scrape, see the [Prometheus metrics endpoint](/concepts/features/interfaces/prometheus-metrics).
+
+<Note>
+PromQL support in ClickHouse Cloud is in private preview. The `enable_time_series_table` setting and the Prometheus API endpoints are configured for the services that take part in the private preview, not for every ClickHouse Cloud service.
+</Note>
 
 ## Prerequisites {#prerequisites}
 

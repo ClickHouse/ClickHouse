@@ -804,12 +804,10 @@ void registerStorageTimeSeries(StorageFactory & factory)
     Documentation{
         .description = R"DOCS_MD(
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # TimeSeries table engine
 
 <PrivatePreviewBadge/>
-<CloudNotSupportedBadge/>
 
 A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels):
 
