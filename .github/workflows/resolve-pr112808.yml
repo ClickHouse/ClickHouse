@@ -27,7 +27,7 @@ jobs:
             src/Storages/MaterializedView/RefreshTask.h
             src/Storages/StorageMaterializedView.cpp
             src/Storages/StorageMaterializedView.h
-      - name: Merge upstream master and resolve conflicts
+      - name: Resolve upstream conflicts on the PR branch
         shell: bash
         run: |
           set -euo pipefail
@@ -41,9 +41,6 @@ jobs:
           merge_base=79305ee77d5b450e827ac16ea1126701c3b076f2
           git fetch --no-tags --filter=blob:none --depth=1 upstream "$merge_base"
 
-          # The compare API gives us the exact merge base, so full history is unnecessary. Create
-          # local ancestry stand-ins with the exact original trees and expose their one parent. Keep
-          # the merge-base itself shallow; no history before it is needed for this three-way merge.
           head_tree=$(git rev-parse "$head^{tree}")
           master_tree=$(git rev-parse "$master^{tree}")
           synthetic_head=$(printf 'synthetic branch ancestry\n' | git commit-tree "$head_tree" -p "$merge_base")
@@ -80,10 +77,30 @@ jobs:
           ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' "${expected[@]}"
           git diff --check
 
-          git commit -m 'Merge upstream master into RMV workload branch'
-          merged=$(git rev-parse HEAD)
-          mapfile -t parents < <(git cat-file -p "$merged" | sed -n 's/^parent //p')
-          test "${#parents[@]}" -eq 2
+          # Keep the correctly resolved file contents, but do not import 4,804 unrelated master
+          # commits (including workflow changes the Actions token is not allowed to push).
+          tar -cf /tmp/rmv-resolved.tar "${expected[@]}"
+          git merge --abort
+          if [[ -f .git/shallow ]]; then
+            printf '%s\n' "$head" >> .git/shallow
+            sort -u -o .git/shallow .git/shallow
+          fi
+          git replace -d "$head" "$master"
+          tar -xf /tmp/rmv-resolved.tar
+          git add "${expected[@]}"
+
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case " ${expected[*]} " in
+              *" $path "*) ;;
+              *) echo "Unexpected staged path: $path" >&2; exit 1 ;;
+            esac
+          done
+          git diff --cached --check
+          git commit -m 'Resolve RMV workload conflicts with upstream master'
+          resolved=$(git rev-parse HEAD)
+          mapfile -t parents < <(git cat-file -p "$resolved" | sed -n 's/^parent //p')
+          test "${#parents[@]}" -eq 1
           test "${parents[0]}" = "$head"
-          test "${parents[1]}" = "$master"
           git push origin HEAD:agent/refreshable-mv-workload
