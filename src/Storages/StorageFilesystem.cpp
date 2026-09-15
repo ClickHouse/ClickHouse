@@ -378,7 +378,11 @@ private:
             cheap_block.insert(ColumnWithTypeAndName(std::move(column), col_info.type, col_info.name));
         }
 
-        filter_expression->execute(cheap_block);
+        /// `allow_duplicates_in_input`: splitting a filter that contains `indexHint` clones the hint's
+        /// inner DAG, so the same cheap column can appear as two distinct `INPUT` nodes with one name,
+        /// while the block above holds each column exactly once. This is what
+        /// `filterBlockWithExpression` passes for the same reason.
+        filter_expression->execute(cheap_block, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
         const auto & result_name = filter_expression->getSampleBlock().getByPosition(
             filter_expression->getSampleBlock().columns() - 1).name;
