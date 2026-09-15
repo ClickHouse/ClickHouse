@@ -364,8 +364,8 @@ struct AdaptiveSetRuntimeFilterWithMinMax
 {
     static constexpr bool is_prebuilt = false;
 
-    AdaptiveSetRuntimeFilter adaptive_set_filter;
-    NumericMinMaxRuntimeFilterVariant minmax_filter;
+    AdaptiveSetRuntimeFilter adaptive;
+    NumericMinMaxRuntimeFilterVariant minmax;
 };
 
 /// Runtime filter that delegates probe to a function captured at publication time.
@@ -419,7 +419,7 @@ private:
     static DataTypePtr getTargetType(const FilterImpl & filter)
     {
         if constexpr (std::is_same_v<std::decay_t<FilterImpl>, AdaptiveWithMinMax>)
-            return filter.adaptive_set_filter.getTargetType();
+            return filter.adaptive.getTargetType();
         else
             return filter.getTargetType();
     }

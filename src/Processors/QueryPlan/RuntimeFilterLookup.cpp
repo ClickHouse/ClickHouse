@@ -1046,8 +1046,8 @@ void RuntimeFilter::insert(ColumnPtr values)
                 data.index_analysis.insert(*values);
                 if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
                 {
-                    filter.minmax_filter.insert(*values);
-                    filter.adaptive_set_filter.insert(std::move(values));
+                    filter.minmax.insert(*values);
+                    filter.adaptive.insert(std::move(values));
                 }
                 else
                 {
@@ -1069,7 +1069,7 @@ void RuntimeFilter::finishInsert()
         {
             using FilterType = std::decay_t<decltype(filter)>;
             if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
-                filter.adaptive_set_filter.finishInsert();
+                filter.adaptive.finishInsert();
             else
                 filter.finishInsert(evaluation_state);
         },
@@ -1096,7 +1096,7 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
                 return std::visit(
                     Overloaded{
                         [&](const Adaptive::ExactFilter &) -> ColumnPtr
-                        { return filter.adaptive_set_filter.find(values, rows_passed); },
+                        { return filter.adaptive.find(values, rows_passed); },
                         [&](const ApproximateSetRuntimeFilter &) -> ColumnPtr
                         {
                             return std::visit(
@@ -1105,19 +1105,19 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
                                     auto batch_filter = minmax_filter.makeBloomBatchFilter(*values.column);
                                     ApproximateSetRuntimeFilter::BatchFilterStats batch_filter_stats;
                                     auto adaptive_result
-                                        = filter.adaptive_set_filter.find(values, rows_passed, batch_filter, batch_filter_stats);
+                                        = filter.adaptive.find(values, rows_passed, batch_filter, batch_filter_stats);
                                     evaluation_state.recordMinMaxBatches(
                                         batch_filter_stats.batches_checked,
                                         batch_filter_stats.batches_pruned,
                                         batch_filter_stats.bloom_rows_avoided);
                                     return adaptive_result;
                                 },
-                                filter.minmax_filter.filter);
+                                filter.minmax.filter);
                         },
                         [&](const Adaptive::KeySetDropped &) -> ColumnPtr
-                        { return filter.minmax_filter.find(values, rows_passed); },
+                        { return filter.minmax.find(values, rows_passed); },
                     },
-                    filter.adaptive_set_filter.filter);
+                    filter.adaptive.filter);
             }
             else
             {
@@ -1159,8 +1159,8 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
             {
                 if constexpr (std::is_same_v<DestinationFilter, AdaptiveWithMinMax>)
                 {
-                    destination_filter.adaptive_set_filter.mergeFrom(source_filter.adaptive_set_filter);
-                    destination_filter.minmax_filter.mergeFrom(source_filter.minmax_filter);
+                    destination_filter.adaptive.mergeFrom(source_filter.adaptive);
+                    destination_filter.minmax.mergeFrom(source_filter.minmax);
                 }
                 else
                 {
@@ -1196,7 +1196,7 @@ ColumnPtr RuntimeFilter::getRecordedKeyValues() const
         {
             using FilterType = std::decay_t<decltype(filter)>;
             if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
-                return filter.adaptive_set_filter.getRecordedKeyValues();
+                return filter.adaptive.getRecordedKeyValues();
             else
                 return filter.getRecordedKeyValues();
         },
@@ -1240,7 +1240,7 @@ String RuntimeFilter::getModeForLogs() const
                         [](const ApproximateSetRuntimeFilter &) -> String { return "bloom_minmax"; },
                         [](const Adaptive::KeySetDropped &) -> String { return "minmax"; },
                     },
-                    filter.adaptive_set_filter.filter);
+                    filter.adaptive.filter);
             }
             else
             {
@@ -1266,9 +1266,9 @@ String RuntimeFilter::getExtraInfoForLogs() const
             if constexpr (std::is_same_v<FilterType, MinMax>)
                 return filter.describe();
             else if constexpr (std::is_same_v<FilterType, AdaptiveWithMinMax>)
-                return std::holds_alternative<Adaptive::ExactFilter>(filter.adaptive_set_filter.filter)
+                return std::holds_alternative<Adaptive::ExactFilter>(filter.adaptive.filter)
                     ? String{}
-                    : filter.minmax_filter.describe();
+                    : filter.minmax.describe();
             else
                 return {};
         },
