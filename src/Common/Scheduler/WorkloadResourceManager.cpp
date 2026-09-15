@@ -1,4 +1,6 @@
 #include <Common/Scheduler/WorkloadResourceManager.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
+#include <Common/Stopwatch.h>
 
 #include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
@@ -372,6 +374,16 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
 
 WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
     : settings(settings_)
+    // One context per classifier (i.e. per query), built from the query's scheduling settings; get()
+    // stamps it onto every link so the query-aware schedulers always have it.
+    , scheduling_context(std::make_shared<ResourceSchedulingContext>(
+          clock_gettime_ns(),
+          settings.weight,
+          settings.weight_lowering_factor,
+          settings.weight_lowering_age_seconds,
+          settings.weight_lowering_cpu_seconds,
+          settings.weight_lowering_io_bytes,
+          settings.priority))
 {
 }
 
@@ -435,7 +447,9 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
     std::unique_lock lock{mutex};
     if (auto iter = attachments.find(resource_name); iter != attachments.end())
     {
-        return iter->second.link;
+        ResourceLink link = iter->second.link;
+        link.scheduling_context = scheduling_context.get();
+        return link;
     }
     else
     {
@@ -463,6 +477,15 @@ void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, c
     std::unique_lock lock{mutex};
     chassert(!attachments.contains(resource->getName()));
     attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = node.getLink(), .settings = node.getSettings()};
+}
+
+void WorkloadResourceManager::Classifier::finalizeResourceStates()
+{
+    std::unique_lock lock{mutex};
+    scheduling_context->initResourceStates(attachments.size());
+    size_t index = 0;
+    for (auto & item : attachments)
+        item.second.link.scheduling_state = scheduling_context->resourceState(index++);
 }
 
 void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
@@ -523,6 +546,12 @@ ClassifierPtr WorkloadResourceManager::acquire(const String & workload_name, con
     // Rethrow exceptions if any
     for (auto & future : futures)
         future.get();
+
+    // All resources are attached now; size the per-resource scheduling state (one slot per attached
+    // leaf) and stamp each link with a direct pointer to its slot. Done on the acquiring
+    // (query-setup) thread, before the classifier is handed out, so the scheduler and enqueue hot
+    // paths only ever read an already-resolved pointer and never allocate.
+    classifier->finalizeResourceStates();
 
     return classifier;
 }

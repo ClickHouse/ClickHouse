@@ -7,6 +7,7 @@
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/setThreadName.h>
@@ -58,7 +59,7 @@ namespace DB
  *            /     \
  *    production     development   - WorkloadNode
  *        |               |
- *      queue           queue      - FifoQueue (part of parent WorkloadNode internal structure)
+ *      queue           queue      - RequestQueue (part of parent WorkloadNode internal structure)
  *
  * === UPDATING WORKLOADS ===
  * Workload may be created, updated or deleted.
@@ -112,7 +113,7 @@ namespace DB
  *  - all events are processed by specific scheduler thread
  *  - hierarchy-wide actions: requests dequeueing, activations propagation and nodes updates.
  *  - resource version control management
- * FifoQueue::mutex and SemaphoreContraint::mutex
+ * RequestQueue::mutex and SemaphoreContraint::mutex
  *  - serializes query and scheduler threads on specific node accesses
  *  - resource request processing: enqueueRequest(), dequeueRequest() and finishRequest()
  */
@@ -278,8 +279,16 @@ private:
         void attach(const ResourcePtr & resource, const VersionPtr & version, IWorkloadNode & node);
         void detach(const ResourcePtr & resource);
 
+        /// Size the per-resource scheduling state (one slot per attached leaf) and stamp each link
+        /// with a pointer to its slot. Called once by `acquire()` after all attaches complete, on
+        /// the query-setup thread, before the classifier is handed out — so the hot paths only ever
+        /// read an already-resolved `ResourceLink::scheduling_state`, never allocate.
+        void finalizeResourceStates();
+
     private:
         const ClassifierSettings settings;
+        /// Per-query scheduling context, stamped by get() onto every link this classifier hands out.
+        const ResourceSchedulingContextPtr scheduling_context;
         WorkloadResourceManager * resource_manager{};
         mutable std::mutex mutex;
         struct Attachment

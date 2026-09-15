@@ -2,6 +2,7 @@
 
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Priority.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -19,6 +20,15 @@ using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
 struct ClassifierSettings
 {
     bool throw_on_unknown_workload = false;
+
+    /// Per-query scheduling parameters the classifier builds its `ResourceSchedulingContext` from
+    /// (defaults describe a query that set nothing).
+    float weight = 1.0f;
+    float weight_lowering_factor = 1.0f;
+    float weight_lowering_age_seconds = 0.0f;
+    float weight_lowering_cpu_seconds = 0.0f;
+    float weight_lowering_io_bytes = 0.0f;
+    Priority priority;
 };
 
 /*

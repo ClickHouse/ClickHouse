@@ -43,6 +43,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"weight", 1.0, 1.0, "New query setting: base scheduling weight of a query within its workload, used by the `fair` workload scheduler."},
+            {"weight_lowering_factor", 1.0, 1.0, "New query setting: factor applied to a query's weight once it crosses a weight-lowering threshold in the `fair` workload scheduler."},
+            {"weight_lowering_age_seconds", 0, 0, "New query setting: wall-clock age threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"weight_lowering_cpu_seconds", 0, 0, "New query setting: attained CPU-seconds threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"weight_lowering_io_bytes", 0, 0, "New query setting: attained IO-bytes threshold after which a query's weight is lowered in the `fair` workload scheduler."},
+            {"workload_priority", 0, 0, "New query setting: scheduling priority of a query within its workload, used by the `priority` workload scheduler."},
             {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
             {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
             {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
