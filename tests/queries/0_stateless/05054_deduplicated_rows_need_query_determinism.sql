@@ -55,11 +55,15 @@ FROM (SELECT i128 FROM t_rep ARRAY JOIN arr LIMIT 100) SETTINGS enable_lazy_colu
 SELECT 'runningDifferenceStartingWithFirstValue', groupArray(runningDifferenceStartingWithFirstValue(i128))
 FROM (SELECT i128 FROM t_rep ARRAY JOIN arr LIMIT 100) SETTINGS enable_lazy_columns_replication = 0;
 
--- Control: a function with no argument cannot be affected, and documents the boundary.
-SELECT 'control rowNumberInBlock', groupArray(n)
-FROM (SELECT rowNumberInBlock() AS n FROM t_rep ARRAY JOIN arr LIMIT 100) SETTINGS enable_lazy_columns_replication = 1;
-SELECT 'control rowNumberInBlock', groupArray(n)
-FROM (SELECT rowNumberInBlock() AS n FROM t_rep ARRAY JOIN arr LIMIT 100) SETTINGS enable_lazy_columns_replication = 0;
+-- Control: a function with no argument has nothing to compress, so the two representations must
+-- agree, and that agreement is the assertion. The sequence itself is not pinned: rowNumberInBlock
+-- reports a position within a block, so a literal here would pin the plan's block layout instead.
+SELECT 'control rowNumberInBlock', arm_lazy = arm_eager, length(arm_lazy) = 4
+FROM (SELECT
+    (SELECT groupArray(n) FROM (SELECT rowNumberInBlock() AS n FROM t_rep ARRAY JOIN arr LIMIT 100)
+        SETTINGS enable_lazy_columns_replication = 1) AS arm_lazy,
+    (SELECT groupArray(n) FROM (SELECT rowNumberInBlock() AS n FROM t_rep ARRAY JOIN arr LIMIT 100)
+        SETTINGS enable_lazy_columns_replication = 0) AS arm_eager);
 
 -- Control: a query-deterministic function over the same replicated column keeps the optimization.
 SELECT 'control length', groupArray(length(s))
