@@ -14,8 +14,11 @@ namespace ErrorCodes
 }
 
 PackedFilesReader::PackedFilesReader(
-    const DiskPtr & disk, const String & data_file_name, const ReadSettings & read_settings)
-    : index(readIndex(*disk->readFile(data_file_name, read_settings.adjustBufferSize(4096))))
+    const DiskPtr & disk,
+    const String & data_file_name,
+    const ReadSettings & read_settings,
+    const std::function<void()> & cancellation_hook)
+    : index(readIndex(*disk->readFile(data_file_name, read_settings.adjustBufferSize(4096), {}, cancellation_hook)))
 {
 }
 
@@ -109,7 +112,8 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     const String & data_file_name,
     const String & file_name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    const std::function<void()> & cancellation_hook) const
 {
     auto it = index.find(file_name);
     if (it == index.end())
@@ -121,7 +125,7 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     /// ReadBufferFromFileView doesn't support reading with mmap and direct io methods, because
     /// they require special alignment which cannot be achieved while reading archive file.
     /// So just disable them.
-    auto in = disk->readFile(data_file_name, patchSettings(settings), read_hint);
+    auto in = disk->readFile(data_file_name, patchSettings(settings), read_hint, cancellation_hook);
     return std::make_unique<ReadBufferFromFileView>(std::move(in), file_name, offset, offset + size);
 }
 

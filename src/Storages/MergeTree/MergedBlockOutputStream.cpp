@@ -43,7 +43,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    std::function<void()> cancellation_hook)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -58,6 +59,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     writer_settings = MergeTreeWriterSettings(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings_,
+        std::move(cancellation_hook),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,
@@ -330,7 +332,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     auto write_hashed_file = [&](const auto & filename, auto && writer)
     {
-        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, writer_settings.query_write_settings);
+        auto out = new_part->getDataPartStorage().writeFile(
+            filename, 4096, writer_settings.query_write_settings, writer_settings.cancellation_hook);
         HashingWriteBuffer out_hashing(*out);
         writer(out_hashing);
         out_hashing.finalize();
@@ -342,7 +345,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     auto write_plain_file = [&](const auto & filename, auto && writer)
     {
-        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, writer_settings.query_write_settings);
+        auto out = new_part->getDataPartStorage().writeFile(
+            filename, 4096, writer_settings.query_write_settings, writer_settings.cancellation_hook);
         writer(*out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
@@ -417,13 +421,15 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         if (isFullPartStorage(new_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto out = serializeStatisticsPacked(
+                new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, writer_settings.cancellation_hook);
             written_files.emplace_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto files = serializeStatisticsWide(
+                new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, writer_settings.cancellation_hook);
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }

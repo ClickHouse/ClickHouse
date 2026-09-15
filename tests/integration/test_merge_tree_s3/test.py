@@ -8,8 +8,10 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import generate_values, replace_config
+from helpers.network import PartitionManager
+from helpers.utility import generate_values
 from helpers.blobs import wait_blobs_count_synchronization
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
     wait_for_delete_inactive_parts,
@@ -36,6 +38,7 @@ def cluster():
             ],
             stay_alive=True,
             with_minio=True,
+            with_zookeeper=True,
         )
 
         cluster.add_instance(
@@ -703,16 +706,20 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     )
     s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
 
-    # Force multi-part upload mode.
-    replace_config(
-        config_path,
-        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
-    )
-
-    node.query("SYSTEM RELOAD CONFIG")
+    with open(config_path, "r") as config_file:
+        original_config = config_file.read()
 
     try:
+        # Force multi-part upload mode.
+        modified_config = original_config.replace(
+            "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
+            "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
+        )
+        with open(config_path, "w") as config_file:
+            config_file.write(modified_config)
+
+        node.query("SYSTEM RELOAD CONFIG")
+
         s3_requests_before = get_s3_requests()
         node.query(
             "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096, -1))
@@ -724,12 +731,8 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
         check_no_objects_after_drop(cluster)
 
     finally:
-        # Restore
-        replace_config(
-            config_path,
-            "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
-            "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-        )
+        with open(config_path, "w") as config_file:
+            config_file.write(original_config)
 
         node.query("SYSTEM RELOAD CONFIG")
 
@@ -885,6 +888,473 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     check_no_objects_after_drop(
         cluster, table_name="test_merge_canceled_by_s3_errors", node_name=node_name
     )
+
+
+@pytest.fixture
+def s3_cancellation_read_mode(request, cluster, broken_s3):
+    if not hasattr(request, "param"):
+        yield None
+        return
+
+    node = cluster.instances["node"]
+    config_path = "/etc/clickhouse-server/users.d/users.xml"
+    original_config = node.exec_in_container(["cat", config_path])
+    assert original_config.count("</profiles>") == 1
+    assert "<background>" not in original_config
+    profile = (
+        "<background><profile>default</profile>"
+        f"<use_reader_executor>{request.param}</use_reader_executor>"
+        "<remote_filesystem_read_method>read</remote_filesystem_read_method>"
+        "<use_page_cache_for_disks_without_file_cache>0</use_page_cache_for_disks_without_file_cache>"
+        "</background>"
+    )
+    try:
+        with node.with_replace_config(
+            config_path, original_config.replace("</profiles>", profile + "</profiles>")
+        ):
+            node.restart_clickhouse()
+            yield request.param
+    finally:
+        broken_s3.reset()
+        node.restart_clickhouse()
+
+
+@pytest.fixture
+def s3_cancellation(cluster, broken_s3, s3_cancellation_read_mode):
+    node = cluster.instances["node"]
+    table = "cancel_s3"
+    try:
+        yield node, table
+    finally:
+        broken_s3.reset()
+        node.query(f"SYSTEM START MERGES {table}")
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def wait_for_s3_request(broken_s3, kind, count=1):
+    wait_condition(
+        broken_s3.get_request_counts,
+        lambda counts: counts[kind] >= count,
+        max_attempts=100,
+    )
+
+
+def assert_s3_cancelled(node, table, request):
+    node.query(f"SYSTEM STOP MERGES {table}")
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
+        "0",
+        retry_count=20,
+        sleep_time=0.1,
+    )
+    assert "ABORTED" in request.get_error()
+
+
+def test_cancelling_horizontal_text_index_merge_stops_s3_retries(
+    s3_cancellation, broken_s3
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, version UInt32, value String, "
+        "INDEX idx_value(value) TYPE text(tokenizer='splitByNonAlpha')) "
+        "ENGINE=ReplacingMergeTree(version) ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "enable_vertical_merge_algorithm=0, min_bytes_for_full_part_storage=0"
+    )
+    node.query(f"SYSTEM STOP MERGES {table}")
+    # Keep ordinary column output buffered until the rebuilt text index is finalized.
+    node.query(f"INSERT INTO {table} VALUES (1, 1, 'old'), (2, 1, 'retained')")
+    node.query(f"INSERT INTO {table} VALUES (1, 2, 'new')")
+
+    failpoint = "text_index_pause_before_write_temporary_segment"
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node.query(f"SYSTEM START MERGES {table}")
+        request = node.get_query_request(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        merge_query_id = node.query(
+            "SELECT concat(toString(t.uuid), '::', m.result_part_name) "
+            "FROM system.merges AS m INNER JOIN system.tables AS t "
+            "ON m.database=t.database AND m.table=t.name "
+            f"WHERE m.database=currentDatabase() AND m.table='{table}' "
+            "AND m.merge_algorithm='Horizontal'"
+        ).strip()
+        assert merge_query_id
+        log_line = node.count_log_lines()
+
+        broken_s3.reset()
+        broken_s3.setup_at_object_upload(action="internal_error", count=10000)
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        wait_for_s3_request(broken_s3, "object_upload", count=2)
+
+        write_log = node.exec_in_container(
+            ["tail", "-n", f"+{log_line + 1}", "/var/log/clickhouse-server/clickhouse-server.log"]
+        )
+        merge_log = "\n".join(
+            line for line in write_log.splitlines() if "{" + merge_query_id + "}" in line
+        )
+        assert any(
+            "DiskObjectStorageTransaction: write file " in line
+            and "/text_index_tmp/" in line
+            for line in merge_log.splitlines()
+        ), merge_log
+        assert broken_s3.get_request_counts()["part_upload"] == 0
+        assert_s3_cancelled(node, table, request)
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            broken_s3.reset()
+
+
+@pytest.mark.parametrize(
+    "storage_policy",
+    [
+        "broken_s3_long_retries_always_multi_part",
+        "encrypted_broken_s3_long_retries_always_multi_part",
+        "cached_broken_s3_long_retries_always_multi_part",
+    ],
+)
+def test_cancelling_vertical_multipart_merge_stops_s3_retries(
+    s3_cancellation, broken_s3, storage_policy
+):
+    node, table = s3_cancellation
+    cached_policy = storage_policy == "cached_broken_s3_long_retries_always_multi_part"
+    if cached_policy:
+        assert (
+            node.query(
+                "SELECT value FROM system.settings "
+                "WHERE name = 'enable_filesystem_cache_on_write_operations'"
+            ).strip()
+            == "1"
+        )
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String, extra String) "
+        "ENGINE=MergeTree ORDER BY key "
+        f"SETTINGS storage_policy='{storage_policy}', "
+        "vertical_merge_algorithm_min_rows_to_activate=0, "
+        "vertical_merge_algorithm_min_columns_to_activate=0"
+    )
+    if cached_policy:
+        assert (
+            node.query(
+                "SELECT cache_on_write_operations FROM system.filesystem_cache_settings "
+                "WHERE cache_name = 'cached_broken_s3_long_retries_always_multi_part'"
+            ).strip()
+            == "1"
+        )
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for offset in (0, 10000):
+        node.query(f"INSERT INTO {table} SELECT number + {offset}, toString(number), toString(number) FROM numbers(10000)")
+
+    cache_write_bytes_before = None
+    if cached_policy:
+        cache_write_bytes_before = int(
+            node.query(
+                "SELECT coalesce(any(value), 0) FROM system.events "
+                "WHERE event = 'CachedWriteBufferCacheWriteBytes'"
+            )
+        )
+    broken_s3.reset()
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(action="internal_error", count=10000)
+    node.query(f"SYSTEM START MERGES {table}")
+    request = node.get_query_request(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.merges WHERE table='{table}' AND merge_algorithm='Vertical'",
+        "1",
+    )
+    wait_for_s3_request(broken_s3, "part_upload")
+    if cached_policy:
+        wait_condition(
+            lambda: int(
+                node.query(
+                    "SELECT coalesce(any(value), 0) FROM system.events "
+                    "WHERE event = 'CachedWriteBufferCacheWriteBytes'"
+                )
+            ),
+            lambda cache_write_bytes: cache_write_bytes > cache_write_bytes_before,
+            max_attempts=100,
+        )
+    assert_s3_cancelled(node, table, request)
+    wait_for_s3_request(broken_s3, "abort_multipart_upload")
+    assert broken_s3.get_request_counts()["abort_multipart_upload"] == 1
+
+
+@pytest.mark.parametrize(
+    "part_storage_type,min_bytes_for_full_part_storage",
+    [("Full", "0"), ("Packed", "10M")],
+)
+def test_cancelling_untouched_mutation_copy_stops_s3_retries(
+    s3_cancellation, broken_s3, part_storage_type, min_bytes_for_full_part_storage
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "always_use_copy_instead_of_hardlinks=1, "
+        f"min_bytes_for_full_part_storage='{min_bytes_for_full_part_storage}'"
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
+    assert node.query(
+        f"SELECT part_storage_type FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == part_storage_type
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_upload(action="internal_error", after=1, count=10000)
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
+        timeout=30,
+    )
+    wait_for_s3_request(broken_s3, "object_upload", count=2)
+    assert_s3_cancelled(node, table, request)
+
+
+@pytest.mark.parametrize(
+    "s3_cancellation_read_mode", [0, 1], indirect=True, ids=["legacy", "executor"]
+)
+def test_cancelling_packed_mutation_copy_source_stops_s3_retries(
+    s3_cancellation, broken_s3, s3_cancellation_read_mode
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage='10M'"
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
+    assert node.query(
+        f"SELECT part_storage_type FROM system.parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == "Packed"
+
+    failpoint = "packed_part_freeze_pause_before_copy"
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        request = node.get_query_request(
+            f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
+            timeout=30,
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        mutation_query_id = node.query(
+            "SELECT concat(toString(t.uuid), '::', m.result_part_name) "
+            "FROM system.merges AS m INNER JOIN system.tables AS t "
+            "ON m.database=t.database AND m.table=t.name "
+            f"WHERE m.database=currentDatabase() AND m.table='{table}'"
+        ).strip()
+        assert mutation_query_id
+        log_line = node.count_log_lines()
+
+        # The predicate finished before this gate. Only the physical copy sees GET failures.
+        broken_s3.reset()
+        broken_s3.setup_at_object_read(action="internal_error", count=10000)
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        wait_for_s3_request(broken_s3, "object_read", count=2)
+
+        # The packed view wraps a disk pipeline; prove that inner pipeline's actual reader.
+        copy_log = node.exec_in_container(
+            ["tail", "-n", f"+{log_line + 1}", "/var/log/clickhouse-server/clickhouse-server.log"]
+        )
+        mutation_log = "\n".join(
+            line for line in copy_log.splitlines() if "{" + mutation_query_id + "}" in line
+        )
+        executor = "ReadPipeline: build: using ReaderExecutor for object storage"
+        if s3_cancellation_read_mode:
+            assert executor in mutation_log, mutation_log
+        else:
+            assert "ReadBufferFromRemoteFSGather: Reading from file:" in mutation_log, mutation_log
+            assert executor not in mutation_log, mutation_log
+
+        assert_s3_cancelled(node, table, request)
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            broken_s3.reset()
+
+
+@pytest.mark.parametrize(
+    "storage_policy",
+    ["broken_s3_long_retries", "encrypted_broken_s3_long_retries"],
+    ids=["plain", "encrypted"],
+)
+def test_cancelling_partial_mutation_copy_stops_s3_retries(
+    s3_cancellation, broken_s3, storage_policy
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value UInt32, unchanged String) "
+        "ENGINE=MergeTree ORDER BY key "
+        f"SETTINGS storage_policy='{storage_policy}', "
+        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0, "
+        "min_rows_for_wide_part=0, min_bytes_for_wide_part=0"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number, number, toString(number) FROM numbers(10000)"
+    )
+    assert node.query(
+        f"SELECT part_type, part_storage_type, disk_name FROM system.parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == f"Wide\tFull\t{storage_policy}"
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_copy(action="internal_error", count=10000)
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 0 SETTINGS mutations_sync=1",
+        timeout=30,
+    )
+    wait_for_s3_request(broken_s3, "object_copy", count=2)
+    assert_s3_cancelled(node, table, request)
+
+
+def test_cancelling_projection_copy_stops_s3_retries(s3_cancellation, broken_s3):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value UInt32, unchanged String, "
+        "PROJECTION p (SELECT unchanged ORDER BY unchanged)) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0, "
+        "min_rows_for_wide_part=0, min_bytes_for_wide_part=0"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number, number, toString(number) FROM numbers(10000)"
+    )
+    assert node.query(
+        f"SELECT part_type, part_storage_type FROM system.parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == "Wide\tFull"
+    assert node.query(
+        f"SELECT count() FROM system.projection_parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active AND name='p'"
+    ).strip() == "1"
+
+    table_uuid = node.query(
+        f"SELECT toString(uuid) FROM system.tables "
+        f"WHERE database=currentDatabase() AND name='{table}'"
+    ).strip()
+    projection_remote_paths = (
+        node.query(
+            "SELECT remote_path FROM system.remote_data_paths "
+            "WHERE disk_name='broken_s3_long_retries' "
+            f"AND local_path LIKE '%{table_uuid}%' AND local_path LIKE '%/p.proj/%' "
+            "ORDER BY remote_path"
+        )
+        .strip()
+        .splitlines()
+    )
+    assert projection_remote_paths
+    projection_copy_sources = [
+        f"root/{remote_path.lstrip('/')}" for remote_path in projection_remote_paths
+    ]
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_copy(
+        action="internal_error", count=10000, copy_sources=projection_copy_sources
+    )
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 0 SETTINGS mutations_sync=1",
+        timeout=30,
+    )
+    wait_for_s3_request(broken_s3, "object_copy_injected", count=2)
+    assert_s3_cancelled(node, table, request)
+
+
+def test_cancelling_mutation_copy_source_stops_s3_retries(
+    s3_cancellation, broken_s3
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', always_use_copy_instead_of_hardlinks=1, "
+        "min_bytes_for_full_part_storage=0"
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
+    assert node.query(
+        f"SELECT part_storage_type FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == "Full"
+
+    # Deny native copy first, then fail buffered source reads. This avoids injecting
+    # errors into ordinary mutation reads before the copy operation starts.
+    broken_s3.reset()
+    broken_s3.setup_at_object_copy(action="access_denied", count=10000)
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
+        timeout=30,
+    )
+    wait_for_s3_request(broken_s3, "object_copy")
+    broken_s3.setup_at_object_read(action="internal_error", count=10000)
+    wait_for_s3_request(broken_s3, "object_read")
+    assert_s3_cancelled(node, table, request)
+
+
+@pytest.mark.parametrize("operation", ["merge", "mutation"])
+def test_keeper_expiry_cancels_s3_retries(s3_cancellation, broken_s3, operation):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value UInt32) "
+        f"ENGINE=ReplicatedMergeTree('/test/{table}', 'r1') ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries'"
+    )
+    if operation == "merge":
+        # Only the explicit `OPTIMIZE` should assign this merge.
+        node.query(f"ALTER TABLE {table} MODIFY SETTING max_replicated_merges_in_queue=0")
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for part in range(1 if operation == "mutation" else 2):
+        node.query(f"INSERT INTO {table} SELECT number + {part * 1000}, number FROM numbers(1000)")
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_upload(action="internal_error", count=10000)
+    if operation == "mutation":
+        node.query(f"ALTER TABLE {table} UPDATE value = value + 1 WHERE 1")
+    node.query(f"SYSTEM START MERGES {table}")
+    if operation == "merge":
+        node.query(f"OPTIMIZE TABLE {table} FINAL SETTINGS alter_sync=0")
+    wait_for_s3_request(broken_s3, "object_upload", count=2)
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.merges WHERE table='{table}' AND is_mutation={int(operation == 'mutation')}",
+        "1",
+    )
+
+    with PartitionManager() as partition:
+        partition.drop_instance_zk_connections(node)
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_session_expired AND is_readonly FROM system.replicas WHERE table='{table}'",
+            "1",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.merges WHERE table='{table}'",
+            "0",
+            retry_count=20,
+            sleep_time=0.1,
+        )
+
+    # Keeper recovery must not wait for S3 recovery. New work may retry again.
+    assert_eq_with_retry(
+        node,
+        f"SELECT is_readonly OR is_session_expired FROM system.replicas WHERE table='{table}'",
+        "0",
+    )
+    broken_s3.reset()
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.mutations WHERE table='{table}' AND NOT is_done",
+        "0",
+    )
+    node.query(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
+    expected = "1000\t500500\n" if operation == "mutation" else "2000\t999000\n"
+    assert node.query(f"SELECT count(), sum(value) FROM {table}") == expected
+    node.query(f"INSERT INTO {table} VALUES (1000, 1000)")
 
 
 @pytest.mark.parametrize("node_name", ["node"])

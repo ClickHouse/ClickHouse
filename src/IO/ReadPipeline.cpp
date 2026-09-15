@@ -252,7 +252,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
 
         LOG_DEBUG(log, "build: using ReaderExecutor for object storage, {} objects, gather={}",
             source->objects.size(), gather);
-        source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
+        source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings, cancellation_hook);
     }
 
     if (!source_reader)
@@ -347,10 +347,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     {
         gather_creator =
             [storage = obj_source->storage, read_hint = obj_source->read_hint,
-             captured_settings = settings](
+             captured_settings = settings, captured_cancellation_hook = cancellation_hook](
                 bool restricted_seek, const StoredObject & object) mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            if (captured_cancellation_hook)
+                return storage->readObjectForCopy(
+                    object, captured_settings, captured_cancellation_hook, read_hint, /* use_external_buffer */ true, restricted_seek);
             return storage->readObject(object, captured_settings, read_hint, /* use_external_buffer */ true, restricted_seek);
         };
     }
@@ -380,6 +383,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
              cache_log = dc.cache_log,
              custom_key = dc.custom_cache_key,
              custom_origin = dc.custom_origin,
+             use_private_remote_reader = bool(cancellation_hook),
              query_id](
                 bool restricted_seek, const StoredObject & object) mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
@@ -412,7 +416,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 /* use_external_buffer */ true,
                 /* read_until_position */ std::nullopt,
                 cache_log,
-                captured_settings.local_throttler);
+                captured_settings.local_throttler,
+                use_private_remote_reader);
         };
     }
 
@@ -540,9 +545,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         auto fallback_creator = [storage = dc_obj_source->storage,
                                  read_hint = dc_obj_source->read_hint,
                                  captured_object = object,
-                                 captured_settings = settings]()
+                                 captured_settings = settings,
+                                 captured_cancellation_hook = cancellation_hook]()
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            if (captured_cancellation_hook)
+                return storage->readObjectForCopy(captured_object, captured_settings, captured_cancellation_hook, read_hint,
+                    /* use_external_buffer */ true, /* restrict_seek */ false);
             return storage->readObject(captured_object, captured_settings, read_hint,
                 /* use_external_buffer */ true, /* restrict_seek */ false);
         };
@@ -576,9 +585,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
         {
             impl_creator = [storage = obj_src->storage, read_hint = obj_src->read_hint,
-                            captured_object = object, captured_settings = settings]()
+                            captured_object = object, captured_settings = settings, captured_cancellation_hook = cancellation_hook]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
+                if (captured_cancellation_hook)
+                    return storage->readObjectForCopy(captured_object, captured_settings, captured_cancellation_hook, read_hint,
+                        impl_use_external_buffer, /* restrict_seek */ false);
                 return storage->readObject(captured_object, captured_settings, read_hint,
                     impl_use_external_buffer, /* restrict_seek */ false);
             };
@@ -617,6 +629,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 object_size = object.bytes_size,
                 cache_log = dc.cache_log,
                 throttler = settings.local_throttler,
+                use_private_remote_reader = bool(cancellation_hook),
                 query_id
             ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
             {
@@ -633,7 +646,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                     /* allow_seeks_after_first_read */ true,
                     /* use_external_buffer */ true,
                     /* read_until_position */ std::nullopt,
-                    cache_log, throttler);
+                    cache_log, throttler, use_private_remote_reader);
             };
         }
 
@@ -659,13 +672,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             use_ext_buf,
             /* read_until_position */ std::nullopt,
             outermost.cache_log,
-            settings.local_throttler);
+            settings.local_throttler,
+            /* use_private_remote_reader */ bool(cancellation_hook));
     }
 
     /// -- Stage 1 only: Source (no cache, no DC, no gather) --
     return std::visit(Overloaded{
         [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            if (cancellation_hook)
+                return s.storage->readObjectForCopy(object, settings, cancellation_hook, s.read_hint, use_ext_buf, /* restrict_seek */ false);
             return s.storage->readObject(object, settings, s.read_hint, use_ext_buf, /* restrict_seek */ false);
         },
         [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>

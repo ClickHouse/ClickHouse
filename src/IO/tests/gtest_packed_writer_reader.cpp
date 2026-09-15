@@ -7,8 +7,88 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/SingleDiskVolume.h>
+#include <Common/Throttler.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+
+namespace ProfileEvents
+{
+    extern const Event LocalWriteThrottlerBytes;
+}
 
 using namespace DB;
+
+static std::shared_ptr<DataPartStorageOnDiskPacked> createPackedPart(const DiskPtr & disk)
+{
+    auto volume = std::make_shared<SingleDiskVolume>("packed_files", disk);
+    auto storage = std::make_shared<DataPartStorageOnDiskPacked>(volume, "", "part", ReadSettings{}, false);
+    storage->beginTransaction();
+    storage->createDirectories();
+    for (const auto * name : {"a", "b"})
+    {
+        auto out = storage->writeFile(name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{}, {});
+        writeString(name, *out);
+        out->finalize();
+    }
+    storage->commitTransaction();
+    return storage;
+}
+
+TEST(PackedPartStorage, MetadataOnlyRemoval)
+{
+    DiskPtr disk = createDisk("packed_metadata_remove");
+    SCOPE_EXIT({ destroyDisk(disk); });
+    auto storage = createPackedPart(disk);
+
+    storage->beginTransaction();
+    storage->removeFile("a");
+    storage->commitTransaction();
+
+    PackedFilesReader reader(disk, "part/data.packed", ReadSettings{});
+    ASSERT_FALSE(reader.exists("a"));
+    ASSERT_TRUE(reader.exists("b"));
+    auto in = reader.readFile(disk, "part/data.packed", "b", ReadSettings{}, {});
+    assertString("b", *in);
+    assertEOF(*in);
+}
+
+TEST(PackedPartStorage, ExplicitWriteSettingsAfterMetadataChange)
+{
+    DiskPtr disk = createDisk("packed_explicit_settings");
+    SCOPE_EXIT({ destroyDisk(disk); });
+    auto storage = createPackedPart(disk);
+
+    storage->beginTransaction();
+    storage->removeFile("a");
+
+    size_t callback_calls = 0;
+    WriteSettings settings;
+    settings.local_throttler = std::make_shared<Throttler>(0, nullptr, ProfileEvents::LocalWriteThrottlerBytes);
+    auto out = storage->writeFile("c", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings, [&] { ++callback_calls; });
+    writeString("new", *out);
+    out->finalize();
+
+    /// A later member's defaults must not replace the first member's settings or callback.
+    auto second_out = storage->writeFile("d", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, WriteSettings{}, {});
+    writeString("later", *second_out);
+    second_out->finalize();
+
+    const ProfileEvents::Count bytes_before = ProfileEvents::global_counters[ProfileEvents::LocalWriteThrottlerBytes];
+    storage->commitTransaction();
+    EXPECT_GT(callback_calls, 0);
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::LocalWriteThrottlerBytes] - bytes_before,
+        disk->getFileSize("part/data.packed"));
+
+    PackedFilesReader reader(disk, "part/data.packed", ReadSettings{});
+    ASSERT_FALSE(reader.exists("a"));
+    for (const auto & [name, content] : {std::pair{"b", "b"}, std::pair{"c", "new"}, std::pair{"d", "later"}})
+    {
+        auto in = reader.readFile(disk, "part/data.packed", name, ReadSettings{}, {});
+        assertString(content, *in);
+        assertEOF(*in);
+    }
+}
 
 /// Writes the archive of @writer into @file_name on @disk and returns its index.
 static PackedFilesIO::Index writeArchive(const DiskPtr & disk, const String & file_name, PackedFilesWriter & writer)
@@ -30,7 +110,7 @@ TEST(PackedFilesWriter, Basics)
     DiskPtr disk = createDisk("packed_files");
     SCOPE_EXIT({ destroyDisk(disk); });
 
-    PackedFilesWriter writer;
+    PackedFilesWriter writer(WriteSettings{});
 
     {
         auto out1 = writer.writeFile("file1");
@@ -93,7 +173,7 @@ TEST(PackedFilesWriter, Removes)
     DiskPtr disk = createDisk("packed_files");
     SCOPE_EXIT({ destroyDisk(disk); });
 
-    PackedFilesWriter writer1;
+    PackedFilesWriter writer1(WriteSettings{});
 
     {
         auto out1 = writer1.writeFile("file1");
@@ -107,7 +187,7 @@ TEST(PackedFilesWriter, Removes)
 
     auto old_index = writeArchive(disk, data_filename, writer1);
 
-    PackedFilesWriter writer2;
+    PackedFilesWriter writer2(WriteSettings{});
 
     {
         writer2.removeFile("file1");
@@ -144,7 +224,7 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     DiskPtr disk = createDisk("packed_files");
     SCOPE_EXIT({ destroyDisk(disk); });
 
-    PackedFilesWriter writer1;
+    PackedFilesWriter writer1(WriteSettings{});
 
     {
         auto out1 = writer1.writeFile("file1");
@@ -155,7 +235,7 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     auto old_index = writeArchive(disk, data_filename, writer1);
     const auto old_archive_size = disk->getFileSize(data_filename);
 
-    PackedFilesWriter writer2;
+    PackedFilesWriter writer2(WriteSettings{});
 
     {
         auto out2 = writer2.writeFile("file2");

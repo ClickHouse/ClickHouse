@@ -24,17 +24,17 @@ struct WriteSettings;
   *
   * If `transaction` is provided, the changes will be added to it instead of performend on disk.
   */
-    void Backup(
-        const DiskPtr & src_disk,
-        const DiskPtr & dst_disk,
-        const String & source_path,
-        const String & destination_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        bool make_source_readonly = true,
-        std::optional<size_t> max_level = {},
-        bool copy_instead_of_hardlinks = false,
-        const NameSet & files_to_copy_intead_of_hardlinks = {},
-        DiskTransactionPtr disk_transaction = nullptr);
-
+void Backup(
+    const DiskPtr & src_disk,
+    const DiskPtr & dst_disk,
+    const String & source_path,
+    const String & destination_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    bool make_source_readonly = true,
+    std::optional<size_t> max_level = {},
+    bool copy_instead_of_hardlinks = false,
+    const NameSet & files_to_copy_intead_of_hardlinks = {},
+    DiskTransactionPtr disk_transaction = nullptr,
+    const std::function<void()> & cancellation_hook = {});
 }

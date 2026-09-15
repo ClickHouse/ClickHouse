@@ -70,6 +70,13 @@ public:
         const std::string & to_file_path,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings) = 0;
+    virtual void copyFile(
+        const std::string & from_file_path,
+        const std::string & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook)
+        = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
@@ -84,6 +91,12 @@ public:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings) = 0;
+
+    /// Open the file with an operation-local cancellation check installed before
+    /// any underlying object-storage write buffer can be created.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, std::function<void()> cancellation_hook)
+        = 0;
 
     using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 

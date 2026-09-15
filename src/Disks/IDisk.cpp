@@ -72,8 +72,9 @@ void IDisk::copyFile( /// NOLINT
     LOG_DEBUG(getLogger("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
-    auto in = readFile(from_file_path, read_settings);
+    auto in = readFile(from_file_path, read_settings, {}, cancellation_hook);
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+    out->setCancellationHook(cancellation_hook);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
 }
@@ -81,9 +82,10 @@ void IDisk::copyFile( /// NOLINT
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::function<void()> cancellation_hook) const
 {
-    ReadPipeline pipeline;
+    ReadPipeline pipeline(std::move(cancellation_hook));
     prepareRead(path, settings, read_hint, pipeline);
     return pipeline.build();
 }

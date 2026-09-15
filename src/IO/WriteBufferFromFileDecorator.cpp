@@ -64,6 +64,12 @@ std::string WriteBufferFromFileDecorator::getFileName() const
     return std::string();
 }
 
+void WriteBufferFromFileDecorator::setCancellationHook(std::function<void()> cancellation_hook)
+{
+    if (WriteBufferFromFileBase * buffer = dynamic_cast<WriteBufferFromFileBase*>(impl.get()))
+        buffer->setCancellationHook(std::move(cancellation_hook));
+}
+
 void WriteBufferFromFileDecorator::preFinalize()
 {
     next();
