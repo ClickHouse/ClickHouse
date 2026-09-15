@@ -73,6 +73,18 @@ SELECT parseISO8601Duration('P1,5D'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('-PT1S'); -- { serverError BAD_ARGUMENTS }
 SELECT parseISO8601Duration('+PT1S'); -- { serverError BAD_ARGUMENTS }
 
+-- A fraction is read as one decimal rather than accumulated digit by digit, so it lands on the same
+-- double the decimal itself parses to. Accumulating `digit * 0.1^k` rounds each term before adding it.
+SELECT parseISO8601Duration('PT0.7S') = 0.7;
+SELECT count()
+FROM numbers(1000)
+WHERE parseISO8601Duration(concat('PT0.', toString(number), 'S')) != toFloat64(concat('0.', toString(number)));
+
+-- The integer part goes through the same reader, so past 2^53 it lands on whichever `Float64` the
+-- decimal itself parses to. Not exact - `toFloat64('9007199254740993')` is already 9007199254740992 -
+-- but the same rounding, which is the contract here.
+SELECT parseISO8601Duration('PT9007199254740993S') = toFloat64('9007199254740993');
+
 -- Values that do not fit into Float64 are rejected rather than returned as infinity.
 -- A single component that overflows on its own:
 SELECT parseISO8601Duration(concat('PT', repeat('9', 309), 'S')); -- { serverError BAD_ARGUMENTS }
