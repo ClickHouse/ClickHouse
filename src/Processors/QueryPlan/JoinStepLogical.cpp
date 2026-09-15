@@ -862,7 +862,7 @@ static void predicateOperandsToCommonType(
 static void preferNullableRightKey(
     JoinActionRef & right_node,
     const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
 {
     /// The `Join` engine and a dictionary are looked up by the key they declare.
     if (planning_context.is_storage_join || planning_context.is_prebuilt_hash_join)
@@ -887,8 +887,8 @@ static void preferNullableRightKey(
     right_node = JoinActionRef::transform({right_node}, [to_nullable](auto &, auto &&) { return to_nullable; });
     for (auto & descriptor : shared_runtime_filter_descriptors)
     {
-        if (descriptor.second == name_before)
-            descriptor.second = right_node.getColumnName();
+        if (descriptor.build_key_name == name_before)
+            descriptor.build_key_name = right_node.getColumnName();
     }
 }
 
