@@ -79,8 +79,9 @@ bool partitionEquals(const Row & lhs, const Row & rhs)
 {
     if (lhs.size() != rhs.size())
         return false;
+    /// `icebergBucket` returns `UInt32`, but manifest bucket values are `Int32`.
     for (size_t i = 0; i < lhs.size(); ++i)
-        if (lhs[i] != rhs[i])
+        if (!accurateEquals(lhs[i], rhs[i]))
             return false;
     return true;
 }
@@ -389,6 +390,30 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     UInt64 removed_position_deletes = 0;
     UInt64 removed_position_delete_files = 0;
 
+    /// Paranoia. Partition's key values are converted from iceberg's manifest to clickhouse's representation
+    /// We're trying to protect ourselfs againts ambigious conversions which might lead to several partitions matches a single clickhouse's defintion
+    Row partition_key_value_for_assert;
+    auto assert_on_ambigious_partition_key = [&](const auto & parsed_entry)
+    {
+        if (!partitionEquals(parsed_entry.partition_key_value, target_partition))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Manifest file entry partition value ({}) is different from target ({})",
+                fmt::join(parsed_entry.partition_key_value, ", "),
+                fmt::join(target_partition, ", "));
+
+        if (partition_key_value_for_assert.empty())
+            partition_key_value_for_assert = parsed_entry.partition_key_value;
+        else if (!std::ranges::equal(partition_key_value_for_assert, parsed_entry.partition_key_value))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Manifest file entry partition value ({}) is different from previous one ({})",
+                fmt::join(partition_key_value_for_assert, ", "),
+                fmt::join(parsed_entry.partition_key_value, ", "));
+        }
+    };
+
     auto process_entries = [&](const auto & entries, size_t & entries_to_keep, size_t & entries_to_remove)
     {
         for (const auto & entry : entries)
@@ -404,12 +429,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 continue;
             }
 
-            if (!partitionEquals(parsed_entry.partition_key_value, target_partition))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Manifest file entry partition value ({}) is different from target ({})",
-                    fmt::join(parsed_entry.partition_key_value, ", "),
-                    fmt::join(target_partition, ", "));
+            assert_on_ambigious_partition_key(parsed_entry);
 
             ++entries_to_remove;
             unprocessed_target_file_paths.erase(storage_path);
