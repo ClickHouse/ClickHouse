@@ -1077,15 +1077,15 @@ Arguments can also be passed using [named collections](/concepts/features/config
 |----------------------------------|----------|--------------------------------------------------------------------------------------------------------|
 | `container`                      | Yes      | Container name. Corresponds to the positional argument `container_name`.                               |
 | `blob_path`                      | Yes      | File path (with optional wildcards). Corresponds to the positional argument `blobpath`.                |
-| `connection_string`              | No*      | Connection string with embedded credentials. *Either `connection_string` or `storage_account_url` must be provided. |
-| `storage_account_url`            | No*      | Storage account endpoint URL. *Either `connection_string` or `storage_account_url` must be provided.   |
-| `account_name`                   | No       | Required when using `storage_account_url`                                                            |
-| `account_key`                    | No       | Required when using `storage_account_url`                                                            |
+| `connection_string`              | No*      | Connection string with embedded credentials. *Either `connection_string` or `storage_account_url` must be provided. Cannot be combined with `client_id` / `tenant_id`. |
+| `storage_account_url`            | No*      | Storage account endpoint URL. *Either `connection_string` or `storage_account_url` must be provided. Required for workload identity (`client_id` / `tenant_id`). |
+| `account_name`                   | No       | Required when using `storage_account_url` with account-key authentication. Cannot be combined with `client_id` / `tenant_id`. |
+| `account_key`                    | No       | Required when using `storage_account_url` with account-key authentication. Cannot be combined with `client_id` / `tenant_id`. |
 | `format`                         | No       | File format.                                                                                           |
 | `compression`                    | No       | Compression type.                                                                                      |
 | `structure`                      | No       | Table structure.                                                                                       |
-| `client_id`                      | No       | Client ID for authentication.                                                                          |
-| `tenant_id`                      | No       | Tenant ID for authentication.                                                                          |
+| `client_id`                      | No       | Client ID for Azure workload identity. Requires `tenant_id` and `storage_account_url`; the server process must have `AZURE_FEDERATED_TOKEN_FILE` set. |
+| `tenant_id`                      | No       | Tenant ID for Azure workload identity. Requires `client_id` and `storage_account_url`; the server process must have `AZURE_FEDERATED_TOKEN_FILE` set. |
 
 <Note>
 Named collection key names differ from positional function argument names: `container` (not `container_name`) and `blob_path` (not `blobpath`).

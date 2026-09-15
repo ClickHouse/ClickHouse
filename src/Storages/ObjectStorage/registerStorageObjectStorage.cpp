@@ -280,7 +280,9 @@ select _path, * from azure_table;
 [Azure Blob Storage Table Function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD",
         .syntax = "ENGINE = AzureBlobStorage(connection_string | storage_account_url, container_name, blobpath, "
-            "[account_name, account_key,] format [, compression])",
+            "[account_name, account_key,] format [, compression])\n"
+            "ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, "
+            "extra_credentials(client_id=, tenant_id=), format [, compression])",
         .related = {"S3", "HDFS"}});
 }
 #endif
@@ -2388,7 +2390,6 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 <Note>
 Writing using the table engine is supported only through delta kernel.
 Writes work for S3 and GCS, and for Azure from version 26.9.
-Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
 </Note>
 
 ### Data cache {#data-cache}
@@ -2476,7 +2477,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         Documentation{
             .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
-            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath) | ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=))",
+            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])\n"
+                      "ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])",
             .related = {"DeltaLake"}});
 #    endif
     factory.registerStorage(
