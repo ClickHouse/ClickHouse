@@ -33,6 +33,14 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 /// Returns true if storage is used in tree, false otherwise
 bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root);
 
+/// Whether comparing the two types with `equals` and looking one up in a set of the other can
+/// disagree. `equals` compares the string family zero-padded, so `'a' = toFixedString('a', 2)` is
+/// true, while set membership is bytewise and `'a' IN (toFixedString('a', 2))` is false. The two
+/// therefore agree only when the types are identical, and a container agrees only when its members
+/// do. Rewrites that turn a comparison into a set lookup - `arrayExists` to `has`, an equality chain
+/// to `IN` - have to decline for such a pair.
+bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & left_type, const DataTypePtr & right_type);
+
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
 
