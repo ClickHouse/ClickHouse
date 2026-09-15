@@ -622,7 +622,7 @@ def test_partition_key_cast_overflow(started_cluster):
     url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
     write = {
         "allow_experimental_delta_kernel_rs": 1,
-        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_writes": 1,
         "allow_delta_lake_create_table": 1,
     }
 
