@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <ranges>
@@ -176,6 +177,94 @@ TEST_F(MetadataPlainRewritableDiskTest, JustWorking)
 
     EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(metadata, "A")), "A/");
     EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(metadata, "A/B/C")), "A/B/C/");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
+{
+    class CountingStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+        mutable std::atomic<size_t> reads = 0;
+        bool expose_etags = true;
+
+        std::unique_ptr<ReadBufferFromFileBase> readObject(
+            const StoredObject & object, const ReadSettings & settings, std::optional<size_t> hint,
+            bool external_buffer, bool restrict_seek) const override
+        {
+            ++reads;
+            return LocalObjectStorage::readObject(object, settings, hint, external_buffer, restrict_seek);
+        }
+
+        void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
+        {
+            LocalObjectStorage::listObjects(path, children, max_keys);
+            if (!expose_etags)
+                for (const auto & child : children)
+                    child->metadata->etag.clear();
+        }
+    };
+
+    auto writer = getMetadataStorage("RefreshSkipsUnchangedDirectoryReads");
+    auto create_directory = [&](const std::string & path)
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory(path);
+        tx->commit(DB::NoCommitOptions{});
+    };
+    create_directory("A");
+    create_directory("B");
+    {
+        auto tx = writer->createTransaction();
+        auto remote_path = tx->generateObjectKeyForPath("A/file").serialize();
+        auto size = writeObject(getObjectStorage("RefreshSkipsUnchangedDirectoryReads"), remote_path, "data");
+        tx->createMetadataFile("A/file", {StoredObject(remote_path, "A/file", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    auto object_storage = std::make_shared<CountingStorage>(LocalObjectStorageSettings(
+        "reader", getObjectStorage("RefreshSkipsUnchangedDirectoryReads")->getCommonKeyPrefix(), false));
+    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "");
+    ASSERT_EQ(object_storage->reads, 2);
+    reader.refresh(0);
+    EXPECT_EQ(object_storage->reads, 2);
+    EXPECT_EQ(reader.getFileSize("A/file"), 4);
+
+    {
+        auto tx = writer->createTransaction();
+        tx->moveDirectory("A", "C");
+        tx->removeDirectory("B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    reader.refresh(0);
+    EXPECT_EQ(object_storage->reads, 3);
+    EXPECT_EQ(reader.listDirectory(""), std::vector<std::string>({"C"}));
+    EXPECT_EQ(reader.getFileSize("C/file"), 4);
+
+    create_directory("A");
+    reader.refresh(0);
+    EXPECT_EQ(object_storage->reads, 4);
+    EXPECT_EQ(sorted(reader.listDirectory("")), std::vector<std::string>({"A", "C"}));
+    reader.refresh(0);
+    EXPECT_EQ(object_storage->reads, 4);
+
+    /// Without ETags, read the body to detect renames even after an unchanged refresh.
+    object_storage->expose_etags = false;
+    reader.refresh(0);
+    EXPECT_EQ(object_storage->reads, 6);
+    {
+        auto tx = writer->createTransaction();
+        tx->moveDirectory("C", "D");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    reader.refresh(0);
+    EXPECT_EQ(object_storage->reads, 8);
+    EXPECT_FALSE(reader.existsDirectory("C"));
+    EXPECT_EQ(reader.getFileSize("D/file"), 4);
+
+    /// A forced reload must still read all directory bodies.
+    reader.dropCache();
+    EXPECT_EQ(object_storage->reads, 10);
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
