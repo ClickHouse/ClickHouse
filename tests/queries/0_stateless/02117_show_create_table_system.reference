@@ -866,6 +866,7 @@ CREATE TABLE system.quota_limits
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
     `max_written_bytes` Nullable(UInt64),
+    `max_written_rows` Nullable(UInt64),
     `max_failed_sequential_authentications` Nullable(UInt64),
     `max_queries_per_normalized_hash` Nullable(UInt64)
 )
@@ -898,6 +899,8 @@ CREATE TABLE system.quota_usage
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
+    `written_rows` Nullable(UInt64),
+    `max_written_rows` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
     `max_failed_sequential_authentications` Nullable(UInt64),
     `queries_per_normalized_hash` Nullable(UInt64),
@@ -948,6 +951,8 @@ CREATE TABLE system.quotas_usage
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
+    `written_rows` Nullable(UInt64),
+    `max_written_rows` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
     `max_failed_sequential_authentications` Nullable(UInt64),
     `queries_per_normalized_hash` Nullable(UInt64),

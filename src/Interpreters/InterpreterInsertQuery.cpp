@@ -138,7 +138,10 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
+    {
+        quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_ROWS);
         quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_BYTES);
+    }
 
     const Settings & settings = getContext()->getSettingsRef();
     max_threads = getMaxThreadsForAvailableMemory(

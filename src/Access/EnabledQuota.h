@@ -58,7 +58,7 @@ public:
     void usedPerNormalizedHash(UInt64 normalized_query_hash) const;
 
     /// Tracks consumption of a per-query counter (e.g. `QUERIES`, `QUERY_SELECTS`, `ERRORS`,
-    /// `READ_ROWS`, `RESULT_ROWS`, `WRITTEN_BYTES`) against every governing quota. For
+    /// `READ_ROWS`, `RESULT_ROWS`, `WRITTEN_ROWS`, `WRITTEN_BYTES`) against every governing quota. For
     /// `NORMALIZED_QUERY_HASH` quotas the consumption is accounted against the intervals resolved
     /// for `normalized_query_hash`; for all other quotas it is accounted against the shared session
     /// intervals. For each quota the target intervals are resolved once, so passing several usages
