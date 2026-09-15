@@ -87,10 +87,13 @@ SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asy
          log_comment = 'async'
 FORMAT Null;
 
+-- The read method is pinned because a synchronous one turns ReadBuffer::prefetch into a no-op, and
+-- the effective default is only conditionally 'pread_threadpool': applySettingsQuirks downgrades it
+-- to 'pread' on a host where preadv2(RWF_NOWAIT) is unavailable, without marking it changed.
 SELECT count() FROM (SELECT j FROM t LIMIT 1)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1,
-         local_filesystem_read_prefetch = 1, enable_filesystem_read_prefetches_log = 1,
-         log_comment = 'prefetch'
+         local_filesystem_read_prefetch = 1, local_filesystem_read_method = 'pread_threadpool',
+         enable_filesystem_read_prefetches_log = 1, log_comment = 'prefetch'
 FORMAT Null;
 
 SYSTEM DISABLE FAILPOINT merge_tree_marks_load_sync_sleep;
