@@ -565,8 +565,8 @@ void processMatch(
     }
     else if constexpr (join_features.is_all_join)
     {
-        /// This branch records a key's whole cell word, which the emit reads correctly only in the
-        /// matching shape, so `emits_whole_key_per_word` has to cover it.
+        /// This branch records a key's whole cell word. The emit reads such a word correctly only in
+        /// the `Lists` shape, which `emits_whole_key_per_word` selects, so it has to cover this branch.
         static_assert(join_features.emits_whole_key_per_word);
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);

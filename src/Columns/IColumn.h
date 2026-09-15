@@ -118,31 +118,6 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
     ColumnCheckpoints nested;
 };
 
-/// Shape of an encoded ref-word sequence (see RowRef / RowRefList in Interpreters/RowRefs.h) as
-/// handed from an emit producer to an emit consumer:
-///   Flat   - exactly one word per output row: 0 is a default row, anything else an inline
-///            (block_no, row_no) ref.
-///   Lists  - a word may be a `RowRefList` list word standing for every row of one key.
-///   Ranges - a word may be a range node (the reranged "sorted" build): a consumer emits one range
-///            operation per word and never flattens it, so sorted output stays O(ranges).
-enum class RefWordShape : uint8_t
-{
-    Flat,
-    Lists,
-    Ranges,
-};
-
-/// One selection of right-table rows to emit: the ref words, their shape, and the number of output
-/// rows they expand to (a zero word counting as one default row). This is the single currency
-/// between the emit producers (the lazy-output builders, the not-joined scans) and the emit kernels.
-struct RefWordSelection
-{
-    const UInt64 * begin = nullptr;
-    const UInt64 * end = nullptr;
-    size_t rows = 0;
-    RefWordShape shape = RefWordShape::Flat;
-};
-
 struct RowStorePointers
 {
     /// Either `ptrs` or `base_ptr` should be used.

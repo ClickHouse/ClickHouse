@@ -1682,7 +1682,7 @@ private:
     }
 
     /// The row store needs its rows resolved to pointers and the columnar columns need the ref
-    /// words; a scan collects only what its columns read.
+    /// words. A scan collects only what its columns read.
     template <typename F>
     void dispatchOutputs(F && f) const
     {

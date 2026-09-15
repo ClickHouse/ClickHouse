@@ -80,8 +80,8 @@ struct LazyOutput
     /// Shared by all row-store columns of a block; a specific column is a field_offset/field_size slice.
     const RowDataStore * const * block_row_stores = nullptr;
 
-    /// Per output column, the source descriptor `gatherColumn` reads. Resolved once per probe
-    /// block, being a property of the join rather than of an output chunk; empty for joinGet.
+    /// Per output column, the source descriptor `gatherColumn` reads. Resolved once per probe block,
+    /// as it is a property of the join rather than of an output chunk. Empty for joinGet.
     std::vector<GatherColumn> emit_gather;
 
     NamesAndTypes type_name;

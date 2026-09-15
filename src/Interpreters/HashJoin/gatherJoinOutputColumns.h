@@ -52,8 +52,8 @@ struct EmitScratch
 
 /// Resolve block `block_no`'s planes of `node` from `column`, recursively. The first live block's
 /// `IColumn::getPlanes` decides the node's shape and every later block has to be of the same concrete
-/// class. `type` is walked alongside because the column decides which kernel reads it while the type
-/// decides what an unmatched row writes; `default_from_type` goes false below a `Nullable`, where
+/// class. `type` is walked alongside: the column decides which kernel reads it, the type decides what
+/// an unmatched row writes. `default_from_type` goes false below a `Nullable`, where
 /// `ColumnNullable::insertDefault` fills the nested planes from the nested *column*'s default.
 void resolveGatherNode(
     GatherNode & node,

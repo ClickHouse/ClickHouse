@@ -2,21 +2,20 @@
 -- The flaky check runs one copy of the changed test per core. This test is heavy enough that the
 -- self-contention alone puts it over the 180 second cap.
 
--- Every right-side encoding has exactly one emit kernel, and the four emit builders - by blocks, by
--- ref lists, by limit and offset, and the not-joined scan - all have to produce the same values
--- through it. Every arm pins the settings that select the builder, because the test runner randomizes
--- them, and checks its values against a source that shares no code with the kernel under test: a
--- `full_sorting_merge` twin of the same query where that is possible, and a hand-computed count
+-- Every right-side encoding has exactly one emit kernel. The emit paths - the recorded words read as
+-- they are, the limit and offset walk, and the not-joined scans - all have to produce the same values
+-- through it. Every arm pins the settings that select the path, because the test runner randomizes
+-- them. Every arm checks its values against a source that shares no code with the kernel under test:
+-- a `full_sorting_merge` twin of the same query where that is possible, and a hand-computed count
 -- otherwise.
 --
--- Whether the in-memory row store claims a narrow column instead of the gather depends on a planner
--- estimate that is not stable across runs, so every arm takes that estimate out of its own outcome
--- in one of two ways: it reads a fixture carrying a `FixedString(40)` payload, which is above the
--- row store's inclusive 32-byte limit and so stays on the columnar path either way, or it pins
--- `enable_hash_join_row_store` explicitly. Neither row store setting is randomized by the test
--- runner. Carrying a `FixedString(40)` is not what makes an arm gather: several arms that must NOT
--- gather read fixtures that have one, and it is the emit path their settings and shape select that
--- makes them negative.
+-- The in-memory row store claims a narrow column instead of the gather when a planner estimate says
+-- so, and that estimate is not stable across runs. So every arm takes the estimate out of its own
+-- outcome in one of two ways. It reads a fixture with a `FixedString(40)` payload, which is above the
+-- row store's inclusive 32-byte limit and stays on the columnar path either way. Or it pins
+-- `enable_hash_join_row_store`. Neither row store setting is randomized by the test runner. A
+-- `FixedString(40)` payload does not by itself make an arm gather: several arms that must NOT gather
+-- read fixtures that have one. Their settings and shape select the emit path that makes them negative.
 
 DROP TABLE IF EXISTS dg_build;
 DROP TABLE IF EXISTS dg_probe;
@@ -140,7 +139,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 2: 100 probe keys have no match. With `join_use_nulls = 0` an unmatched right value is the type
--- default, which is what a zero ref word makes the gather write - not zero bytes, because an `Enum8`
+-- default. A zero ref word makes the gather write that default, and it is not zero bytes: an `Enum8`
 -- defaults to its first declared value. `countIf(c_enum = 'a')` is that default counted directly.
 -- The row store is pinned off in both halves so that `c_enum` stays on the emit kernels, which is
 -- where its default is decided; arm 28 covers the enum shapes systematically.
@@ -166,10 +165,10 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- Arms 3 and 5: ten build rows per key. The threshold pin selects the emit builder, and all three -
--- by blocks, by ref lists, by limit and offset - have to agree on the values. `buildOutputFromBlocks`
--- expands a key's rows into one word each while `buildOutputFromRowRefLists` hands the kernel the
--- list words as they are, so the counts are equal but the work is not.
+-- Arms 3 and 5: ten build rows per key, so every recorded word is a `RowRefList` one. The kernels
+-- read the list words as they are on both sides of the row-list threshold, which steers only the row
+-- store. The limit and offset walk expands them into one inline word per row instead. All of them
+-- have to agree on the values.
 CREATE TABLE dg_list (k UInt64, a UInt64, b Int32, w FixedString(40)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_list SELECT number % 200, number * 1000003, toInt32(number) - 1000,
     toFixedString(leftPad(toString(number), 40, 'w'), 40) FROM numbers(2000);
@@ -186,7 +185,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 
 -- Every arm below that asks for the limit and offset builder also pins `enable_analyzer = 1`: only
 -- the `TableJoin` the analyzer builds carries `joined_block_split_single_row`, so with the old
--- analyzer the arm silently gets the by-blocks builder that arms 3 and 14 already cover.
+-- analyzer the arm silently gets the plain path that arms 3 and 14 already cover.
 SELECT 'arm5 limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
@@ -271,8 +270,8 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 
 -- Arm 9: a reranged build side is the one producer of the range shape, and the kernels consume it as
 -- ranges rather than flattening it - one copy per run of consecutive rows. The threshold is pinned to
--- the value that makes arm 3 gather, so the values agreeing with arm 3's is the reranging taking
--- effect rather than the threshold.
+-- arm 3's value. So when the values agree with arm 3's, it is the reranging that took effect and not
+-- the threshold.
 SELECT 'arm9 reranged control', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0,
@@ -486,9 +485,9 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- Arm 14: the extended types through the two remaining gathering builders: the row-list one (ten
--- build rows per key, `refsOf` expansion plus adjacent-run merging under `Array`) and the
--- limit-and-offset one (the all-or-nothing walk).
+-- Arm 14: the extended types through the two remaining word shapes: list words (ten build rows per
+-- key, expanded by `flatWords`, with adjacent-run merging under `Array`) and the inline words of the
+-- limit and offset walk.
 CREATE TABLE dg_list_ext (k UInt64, s String, a Array(UInt64), nu Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_list_ext SELECT number % 200, concat('s', toString(number)), range(number % 4),
     if(number % 6 = 0, NULL, number * 31) FROM numbers(2000);
@@ -620,9 +619,9 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 
 -- Arm 21: `ANY` strictness records one ref word per emitted left row like every other strictness, so
 -- it runs the same kernels: 30 payload columns over 1000 matched probe rows, the same 30000 as the
--- `ALL` join of arm 1d over the same fixture. The second half joins an unbounded source, which is
--- what makes the planner derive the output header by running the join over an empty block - the
--- emit builders have to reach that and do nothing. Both halves pin `query_plan_join_swap_table`,
+-- `ALL` join of arm 1d over the same fixture. The second half joins an unbounded source. That makes
+-- the planner derive the output header by running the join over an empty block, and the emit has to
+-- reach that point and do nothing. Both halves pin `query_plan_join_swap_table`,
 -- because swapping an `ANY LEFT` join makes it a `RIGHT ANY` one, which claims its rows differently.
 SELECT 'arm21 any left join', count(), sum(cityHash64(*)) FROM dg_probe ANY LEFT JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
@@ -758,12 +757,10 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- The same enum shapes with ten build rows per key, which is what lets the threshold pin select the
--- emit builder: `buildOutputFromRowRefLists` is only reached at a per-key fanout above one, so a
--- unique-key fixture like the one above cannot select it. The two sub-arms therefore carry the oracle
--- for the captured pattern between them: two builders reading the same words, which must agree to the
--- byte even though one expands the row lists and the other hands them to the kernel whole.
--- `full_sorting_merge` cannot be that oracle: it fills an unmatched row from the column rather than
+-- The same enum shapes with ten build rows per key, so the recorded words are `RowRefList` ones,
+-- which a unique-key fixture like the one above never produces. The two sub-arms pin both sides of
+-- the row-list threshold and have to agree to the byte; the per-value counts below are the oracle
+-- for the captured pattern. `full_sorting_merge` cannot be that oracle: it fills an unmatched row from the column rather than
 -- from the type, so it disagrees with every hash join on enum defaults. 50 of the 250 probe keys
 -- have no match, and a matched one brings ten rows: 2000 + 50 = 2050.
 CREATE TABLE dg_enum_list
@@ -802,13 +799,13 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
--- Arm 29: `LowCardinality`, whose kernel is `ColumnLowCardinality::insertRangeFrom` bound to the
--- concrete class. That call is the whole point: it adopts the source dictionary when the destination
--- is still empty and translates only the keys a range actually uses afterwards, so an output column
--- that spans blocks with unrelated dictionaries is its problem and not the emit's. The three inserts
--- below use disjoint string sets and merges are stopped, so the stored blocks keep diverging
--- dictionaries; `uniqExact(lc)` = 7 + 11 + 13 distinct values + the empty default is what says the
--- translation happened rather than one dictionary being adopted for all of them.
+-- Arm 29: `LowCardinality`, whose kernel is `ColumnLowCardinality::insertRangeFrom`. That call is
+-- the whole point. It adopts the source dictionary while the destination is still empty, and
+-- afterwards translates only the keys a range uses. So an output column spanning blocks with
+-- unrelated dictionaries is its problem and not the emit's. The three inserts below use disjoint
+-- string sets and merges are stopped, so the stored blocks keep diverging dictionaries.
+-- `uniqExact(lc)` = 7 + 11 + 13 distinct values + the empty default shows that the translation
+-- happened, rather than one dictionary being adopted for all of them.
 -- 50 of the 250 probe keys have no match and a matched one brings ten rows: 2000 + 50 = 2050.
 -- A numeric dictionary needs `allow_suspicious_low_cardinality_types`, and is worth the setting: it
 -- is the one `LowCardinality` whose keys are not variable-width.
@@ -850,8 +847,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- The other builder over the same words, which hands the kernel the list words whole instead of
--- expanding them: the values have to agree to the byte.
+-- The other side of the row-list threshold over the same words: the values have to agree to the byte.
 SELECT 'arm29 low cardinality ref lists control', count(), sum(cityHash64(*)),
     countIf(lc = ''), uniqExact(lc), countIf(lcn IS NULL), uniqExact(lcn),
     sum(lcu), uniqExact(lcu), sum(length(alc)), uniqExact(arrayStringConcat(alc, ',')),
@@ -939,7 +935,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
     enable_hash_join_row_store = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
--- Arm 30: `JSON`. Its kernel is `ColumnObject::insertRangeFrom` bound to the concrete class, and the
+-- Arm 30: `JSON`. Its kernel is `ColumnObject::insertRangeFrom`, and the
 -- three inserts below carry disjoint path sets with merges stopped, so an output column has to
 -- reconcile blocks whose structures have nothing in common. That reconciliation is the only thing
 -- the call does that a plane copy could not, so `uniqExact` over the sorted path list is the

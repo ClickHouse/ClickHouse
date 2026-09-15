@@ -37,13 +37,13 @@ constexpr size_t look_ahead = 32;
 /// A `Nullable`'s null map byte for an unmatched row: `insertDefault` inserts NULL.
 constexpr char null_map_default = 1;
 
-/// What a string run expects next when none is open. A word is zero or carries the inline flag, so
-/// none equals 1 - including a default row's `word + 1`, which therefore closes its run for free.
+/// What a string run expects next while none is open. No word equals 1: a word is zero or carries
+/// the inline flag. A default row sets the expectation to 1 as well, so it closes any open run.
 constexpr UInt64 no_open_run = 1;
 
-/// `STRIDE` is 0 when the width is only known at run time, which is what covers `FixedString(n)` for
-/// an arbitrary `n`; a compile-time width turns the copy into a single load and store.
-/// `default_pattern` is the `stride` bytes a zero ref word writes.
+/// `STRIDE` is 0 when the width is only known at run time, as for a `FixedString(n)` of arbitrary `n`.
+/// A compile-time width turns the copy into one load and one store. `default_pattern` is the `stride`
+/// bytes a zero ref word writes.
 template <bool from_row_list, size_t STRIDE>
 void gatherFixedStride(
     IColumn & dst,
@@ -153,7 +153,7 @@ ALWAYS_INLINE UInt64 remapFlatWord(UInt64 word, const GatherRowRemap * remap_by_
         case 4: mapped = static_cast<const UInt32 *>(remap.indexes_data)[row]; break;
         default: mapped = static_cast<const UInt64 *>(remap.indexes_data)[row]; break;
     }
-    /// Bounded where the block is taken, by `resolveEmitColumns`.
+    /// `resolveEmitColumns` rejects a nested column with more rows than this when it takes the block.
     chassert(mapped <= std::numeric_limits<UInt32>::max());
     return (word & 0xFFFFFFFF00000000ull) | static_cast<UInt32>(mapped);
 }
@@ -201,8 +201,8 @@ const UInt64 * flatWords(const RefWordSelection & selection, const GatherRowRema
     return scratch.remapped.data();
 }
 
-/// The selection as runs of source rows. A range word is an inline ref - the rerange stores
-/// single-row keys that way - or a range node; a zero word is a run of one unmatched row.
+/// The selection as runs of source rows. A range word is either an inline ref, which is how the
+/// rerange stores a single-row key, or a range node. A zero word is a run of one unmatched row.
 const GatherRanges & rangesOf(const RefWordSelection & selection, EmitScratch & scratch)
 {
     if (!scratch.ranges_ready)
@@ -374,8 +374,8 @@ void gatherStringChars(
     size_t run_last_row = 0;
     UInt64 expected_word = no_open_run;
 
-    /// A run of one row is usually a short value; both chars arrays are padded, which is what lets
-    /// it take the copy that may read and write 15 bytes past the end.
+    /// A run of one row is usually a short value. Both chars arrays are padded, so it can take the
+    /// copy that reads and writes up to 15 bytes past the end.
     auto flush_run = [&]
     {
         const UInt64 from = run_offsets[static_cast<ssize_t>(run_first_row) - 1];
@@ -534,8 +534,8 @@ void gatherVariantRows(ColumnVariant & dst, const GatherNode & node, const UInt6
     dst_discriminators.reserve(dst_discriminators.size() + count);
     dst_offsets.reserve(dst_offsets.size() + count);
 
-    /// One global variant's rows are collected as (block, in-variant row) words and gathered per
-    /// child in a second step, reusing the flat encoding so the children stay oblivious.
+    /// The rows of one global variant are collected as (block, in-variant row) words and gathered
+    /// per child in a second step. The children read them like any other flat words.
     std::vector<PaddedPODArray<UInt64>> child_words(num_variants);
     std::vector<UInt64> child_sizes(num_variants);
     for (size_t g = 0; g < num_variants; ++g)
@@ -901,7 +901,7 @@ void resolveGatherNode(
     }
 
     /// `ColumnNullable::insertDefault` leaves the nested planes at the nested *column*'s default, not
-    /// the type's; they differ for an `Enum`, and `assumeNotNull` sees it. An array's or a variant's
+    /// the type's. They differ for an `Enum`, and `assumeNotNull` sees it. An array's or a variant's
     /// unmatched row has no nested rows at all. Only a tuple's elements keep writing the type's default.
     for (size_t i = 0; i < planes.children.size(); ++i)
         resolveGatherNode(

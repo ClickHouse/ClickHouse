@@ -418,6 +418,30 @@ ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
         return mapped.encode();
 }
 
+/// Shape of an encoded ref-word sequence as handed from an emit producer to an emit consumer:
+///   Flat   - exactly one word per output row: 0 is a default row, anything else an inline
+///            (block_no, row_no) ref.
+///   Lists  - a word may be a `RowRefList` list word standing for every row of one key.
+///   Ranges - a word may be a range node (the reranged "sorted" build): a consumer emits one range
+///            operation per word and never flattens it, so sorted output stays O(ranges).
+enum class RefWordShape : UInt8
+{
+    Flat,
+    Lists,
+    Ranges,
+};
+
+/// One selection of right-table rows to emit: the ref words, their shape, and the number of output
+/// rows they expand to (a zero word counting as one default row). This is what the emit producers -
+/// the lazy-output builders and the not-joined scans - hand to the emit kernels.
+struct RefWordSelection
+{
+    const UInt64 * begin = nullptr;
+    const UInt64 * end = nullptr;
+    size_t rows = 0;
+    RefWordShape shape = RefWordShape::Flat;
+};
+
 struct GatherNode;
 
 /// One level of a gather source descriptor: the `ColumnPlanes` of a stored column, per block,
@@ -465,8 +489,8 @@ struct GatherColumn
     const GatherRowRemap * remap_by_block = nullptr;
 };
 
-/// One column an emit table is asked for. The destination type is part of the request because it
-/// decides both which kernel reads the source and what an unmatched row writes.
+/// One column an emit table is asked for. The destination type is part of the request: it decides
+/// what an unmatched row writes, and its column class has to be the stored one.
 struct EmitColumnRequest
 {
     size_t position = 0;
@@ -483,7 +507,7 @@ struct EmitColumnRequest
 /// On top of the block map it builds the emit table: a resolved gather source per requested output
 /// column, whose raw plane pointers let the kernels skip the stored block and its column vector.
 /// `resolveEmitColumns` builds the requested positions lazily under `mutex` and hands back the per-column
-/// descriptors; positions already built for the current generation are reused. The table is keyed by
+/// descriptors. Positions already built for the current generation are reused. The table is keyed by
 /// `blocks_generation`, bumped whenever the stored blocks change (add/clearEntry, and in-place column
 /// replacement via `invalidateEmitTable`), so a stale table is dropped and rebuilt. This matters for
 /// `StorageJoin`, which (a) inserts more blocks between queries and (b) lets different queries select

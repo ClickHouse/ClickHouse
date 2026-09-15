@@ -3,8 +3,8 @@
 
 -- A join that selects `count()` puts no right column in the output, so the emit has nothing to
 -- append. The join still records row refs, because `EXPLAIN ANALYZE matches = 1` counts the matches
--- from them. All three emit builders have to tolerate that empty output, and which one runs depends
--- on settings the test runner randomizes, so pin them and walk all three.
+-- from them. Every emit path has to tolerate that empty output, and which one runs depends on
+-- settings the test runner randomizes, so pin them and walk all of them.
 --
 -- Both sides stay under a thousand rows. Above that a count prints as `1.00 thousand`, which the
 -- regex below reads as 1.

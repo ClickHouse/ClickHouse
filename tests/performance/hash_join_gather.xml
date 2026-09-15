@@ -48,9 +48,9 @@
     <query>SELECT * FROM dg_probe p JOIN dg_s32 b ON p.k = b.k FORMAT Null</query>
     <!-- Runtime stride -->
     <query>SELECT * FROM dg_probe p JOIN dg_wide b ON p.k = b.k FORMAT Null</query>
-    <!-- Row lists: ten build rows per key, forced onto the by-blocks builder -->
+    <!-- Row lists: ten build rows per key, so the kernels read list words -->
     <query>SELECT * FROM dg_probe p JOIN dg_wide_x10 b ON p.k = b.k SETTINGS join_output_by_rowlist_perkey_rows_threshold = 1000000 FORMAT Null</query>
-    <!-- Limit and offset builder -->
+    <!-- The limit and offset walk -->
     <query>SELECT * FROM dg_probe p JOIN dg_wide_x10 b ON p.k = b.k SETTINGS join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1, max_joined_block_size_rows = 4096 FORMAT Null</query>
     <!-- parallel_hash, inline rather than as a substitution: a substitution expands as a cartesian
          product and would push this file past the runner's 10-query sample. -->
