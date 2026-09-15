@@ -1,0 +1,140 @@
+-- { echo ON }
+
+DROP TABLE IF EXISTS t_projection_codecs;
+-- `y` is listed only to assert its type; without a codec it uses the codec the projection would
+-- otherwise use.
+CREATE TABLE t_projection_codecs
+(
+    x UInt64,
+    y UInt64,
+    PROJECTION p
+    (
+        x UInt64 CODEC(NONE),
+        y UInt64
+    )
+    AS
+    (
+        SELECT x, y ORDER BY x
+    )
+)
+ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_projection_codecs SELECT number, number FROM numbers(100000);
+-- Does the declared codec reach the part writer? With `CODEC(NONE)` the `.bin` file exceeds the raw
+-- size by the per-block frame, while a monotonic sequence under the default codec compresses ~10x.
+SELECT column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
+FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_projection_codecs' AND active AND name = 'p'
+    AND column IN ('x', 'y')
+ORDER BY column;
+x	1
+y	0
+-- The parent table's own columns must be unaffected.
+SELECT column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_projection_codecs' AND active AND column IN ('x', 'y')
+ORDER BY column;
+x	0
+y	0
+-- The declaration must survive DETACH / ATTACH.
+SHOW CREATE TABLE t_projection_codecs;
+CREATE TABLE default.t_projection_codecs\n(\n    `x` UInt64,\n    `y` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE),\n        `y` UInt64\n    )\n    AS\n    (\n        SELECT\n            x,\n            y\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+DETACH TABLE t_projection_codecs;
+ATTACH TABLE t_projection_codecs;
+SHOW CREATE TABLE t_projection_codecs;
+CREATE TABLE default.t_projection_codecs\n(\n    `x` UInt64,\n    `y` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE),\n        `y` UInt64\n    )\n    AS\n    (\n        SELECT\n            x,\n            y\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+SELECT count() FROM t_projection_codecs;
+100000
+-- Only `x` has a codec of its own; the type-only declaration of `y` is not reported.
+SELECT name, codecs FROM system.projections
+WHERE database = currentDatabase() AND table = 't_projection_codecs';
+p	{'x':'CODEC(NONE)'}
+DROP TABLE t_projection_codecs;
+-- A projection without a column list must format exactly as before.
+CREATE TABLE t_projection_codecs (x UInt64, PROJECTION p (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x;
+SHOW CREATE TABLE t_projection_codecs;
+CREATE TABLE default.t_projection_codecs\n(\n    `x` UInt64,\n    PROJECTION p\n    (\n        SELECT x\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192
+DROP TABLE t_projection_codecs;
+-- A declared column must be produced by the projection's `SELECT`.
+CREATE TABLE t_bad (x UInt64, PROJECTION p (z UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x UInt64 CODEC(NONE), x UInt64 CODEC(LZ4)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError DUPLICATE_COLUMN }
+-- A declared type must agree with the type the `SELECT` produces.
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x String CODEC(NONE)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError TYPE_MISMATCH }
+-- Only CODEC may be declared, and other properties are rejected rather than silently ignored.
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x UInt64 DEFAULT 1) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x UInt64 COMMENT 'c') AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+-- A suspicious codec is rejected unless it is explicitly allowed.
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x UInt64 CODEC(Delta, Delta)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
+SET allow_suspicious_codecs = 1;
+CREATE TABLE t_suspicious (x UInt64, PROJECTION p (x UInt64 CODEC(Delta, Delta)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x;
+-- An accepted codec must not be re-validated, or the table could never be attached again. The setting
+-- is reset first so the round trip is not simply allowed a second time.
+SET allow_suspicious_codecs = 0;
+DETACH TABLE t_suspicious;
+ATTACH TABLE t_suspicious;
+SHOW CREATE TABLE t_suspicious;
+CREATE TABLE default.t_suspicious\n(\n    `x` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(Delta(8), Delta(8))\n    )\n    AS\n    (\n        SELECT x\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192
+DROP TABLE t_suspicious;
+-- The type is optional, so a declaration can carry a default expression and a codec and no type at
+-- all; resolving the codec must not assume one. Each column below is produced by the `SELECT`, or
+-- `THERE_IS_NO_COLUMN` would fire first and these would pass without reaching the check.
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x DEFAULT 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x MATERIALIZED 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x ALIAS 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x EPHEMERAL 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+-- A codec on a subcolumn is rejected rather than silently dropped.
+CREATE TABLE t_bad (k UInt64, a Tuple(x UInt64), b UInt64, PROJECTION p (`a.x` UInt64 CODEC(NONE)) AS (SELECT a, a.x, b ORDER BY k))
+ENGINE = MergeTree ORDER BY k; -- { serverError NOT_IMPLEMENTED }
+-- A column declared twice is a duplicate first and a type mismatch second.
+CREATE TABLE t_bad (x UInt64, PROJECTION p (x UInt64 CODEC(NONE), x String) AS (SELECT x ORDER BY x))
+ENGINE = MergeTree ORDER BY x; -- { serverError DUPLICATE_COLUMN }
+-- The codec must survive every path that rewrites a projection's parts. `min_bytes_for_wide_part = 0`
+-- keeps them Wide: `MergeTreeDataPartCompact` reports no per-column sizes, so every count below would
+-- be zero and these assertions would pass without measuring anything.
+DROP TABLE IF EXISTS t_lifecycle;
+CREATE TABLE t_lifecycle (x UInt64, y UInt64)
+ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
+-- Data first, so MATERIALIZE runs over pre-existing parts.
+INSERT INTO t_lifecycle SELECT number, number FROM numbers(100000);
+ALTER TABLE t_lifecycle ADD PROJECTION p (x UInt64 CODEC(NONE), y UInt64) AS (SELECT x, y ORDER BY x);
+ALTER TABLE t_lifecycle MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+SELECT 'after MATERIALIZE', column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
+FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_lifecycle' AND active AND name = 'p' AND column IN ('x', 'y')
+ORDER BY column;
+after MATERIALIZE	x	1
+after MATERIALIZE	y	0
+-- A merge uses a different writer than an insert.
+INSERT INTO t_lifecycle SELECT number, number FROM numbers(100000, 100000);
+OPTIMIZE TABLE t_lifecycle FINAL;
+SELECT 'after OPTIMIZE FINAL', column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
+FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_lifecycle' AND active AND name = 'p' AND column IN ('x', 'y')
+ORDER BY column;
+after OPTIMIZE FINAL	x	1
+after OPTIMIZE FINAL	y	0
+-- A mutation rebuilds the projection again.
+ALTER TABLE t_lifecycle UPDATE y = y + 1 WHERE x < 50000 SETTINGS mutations_sync = 2;
+SELECT 'after UPDATE', column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
+FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_lifecycle' AND active AND name = 'p' AND column IN ('x', 'y')
+ORDER BY column;
+after UPDATE	x	1
+after UPDATE	y	0
+SELECT count() FROM t_lifecycle;
+200000
+SELECT name, codecs FROM system.projections
+WHERE database = currentDatabase() AND table = 't_lifecycle';
+p	{'x':'CODEC(NONE)'}
+DROP TABLE t_lifecycle;

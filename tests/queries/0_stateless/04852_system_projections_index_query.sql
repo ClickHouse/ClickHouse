@@ -1,0 +1,23 @@
+-- { echo ON }
+
+DROP TABLE IF EXISTS t_projection_index_query;
+
+-- A projection index is declared as `INDEX ... TYPE ...` and has no `SELECT` of its own, so
+-- `system.projections` has no query to report for it.
+CREATE TABLE t_projection_index_query
+(
+    x UInt64,
+    y String,
+    PROJECTION pi INDEX y TYPE basic,
+    PROJECTION pq
+    (
+        SELECT x, y ORDER BY y
+    )
+)
+ENGINE = MergeTree ORDER BY x;
+
+SELECT name, query, codecs FROM system.projections
+WHERE database = currentDatabase() AND table = 't_projection_index_query'
+ORDER BY name;
+
+DROP TABLE t_projection_index_query;

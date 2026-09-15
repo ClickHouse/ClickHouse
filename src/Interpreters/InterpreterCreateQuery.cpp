@@ -945,6 +945,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
                     projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
+                ProjectionDescription::validateDeclaredColumnCodecs(projection, getContext(), mode);
                 properties.projections.add(std::move(projection));
             }
 
