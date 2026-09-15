@@ -1,3 +1,5 @@
+#include <Columns/ColumnConst.h>
+#include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
@@ -103,8 +105,23 @@ bool hasBasicStatsOnNullableType(const ColumnDescription & col)
         && isNullableOrLowCardinalityNullable(col.type);
 }
 
+bool isConstantZero(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+        return false;
+
+    const Field value = (*node.column)[0];
+    if (value.getType() == Field::Types::UInt64)
+        return value.safeGet<UInt64>() == 0;
+    if (value.getType() == Field::Types::Int64)
+        return value.safeGet<Int64>() == 0;
+    return false;
+}
+
 /// Collect top-level `AND` conjuncts testing a column's NULL-ness: a bare `<col>.null`
-/// input, `not(<col>.null)`, or `isNull(<col>)` / `isNotNull(<col>)` on a bare column.
+/// input, `not(<col>.null)`, `<col>.null != 0` / `<col>.null = 0` (the
+/// `optimize_functions_to_subcolumns` rewrite of `isNull` / the complementary form),
+/// or `isNull(<col>)` / `isNotNull(<col>)` on a bare column.
 /// The constructor keeps only columns with `Basic` statistics on a nullable type, so a
 /// lone `IS NULL` that cannot prune does not load per-part statistics.
 void collectNullPredicates(
@@ -130,18 +147,37 @@ void collectNullPredicates(
         return;
     }
 
-    if (node.children.size() != 1 || node.children.front()->type != ActionsDAG::ActionType::INPUT)
+    if (node.children.size() == 1 && node.children.front()->type == ActionsDAG::ActionType::INPUT)
+    {
+        const String & arg_name = node.children.front()->result_name;
+        if (name == "not")
+        {
+            if (auto parent = tryResolveNullMapParent(columns, arg_name))
+                out.emplace_back(*parent, false);
+        }
+        else if (name == "isNull" || name == "isNotNull")
+        {
+            out.emplace_back(arg_name, name == "isNull");
+        }
         return;
-
-    const String & arg_name = node.children.front()->result_name;
-    if (name == "not")
-    {
-        if (auto parent = tryResolveNullMapParent(columns, arg_name))
-            out.emplace_back(*parent, false);
     }
-    else if (name == "isNull" || name == "isNotNull")
+
+    /// `isNull(col)` with `optimize_functions_to_subcolumns = 1` is rewritten to
+    /// `<col>.null != 0`. Only 0 qualifies: a NULL-map byte only has to be non-zero
+    /// to mean NULL. `= 0` is the complementary `IS NOT NULL` form.
+    if (node.children.size() == 2 && (name == "equals" || name == "notEquals"))
     {
-        out.emplace_back(arg_name, name == "isNull");
+        const ActionsDAG::Node * input = nullptr;
+        if (node.children[0]->type == ActionsDAG::ActionType::INPUT && isConstantZero(*node.children[1]))
+            input = node.children[0];
+        else if (node.children[1]->type == ActionsDAG::ActionType::INPUT && isConstantZero(*node.children[0]))
+            input = node.children[1];
+
+        if (input)
+        {
+            if (auto parent = tryResolveNullMapParent(columns, input->result_name))
+                out.emplace_back(*parent, name == "notEquals");
+        }
     }
 }
 
