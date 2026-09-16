@@ -495,7 +495,8 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
     if (!post_build_phase_ran.load(std::memory_order_acquire) && getNumBuckets() <= 1)
     {
         std::lock_guard lock(hash_join_mutex);
-        if (hash_join)
+        /// Re-checked under the lock: several probe threads can pass the check above before the first one finishes.
+        if (hash_join && !post_build_phase_ran.load(std::memory_order_relaxed))
         {
             hash_join->runPostBuildPhase();
             post_build_phase_ran.store(true, std::memory_order_release);
