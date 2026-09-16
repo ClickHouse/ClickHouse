@@ -446,6 +446,16 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
+/// Two lookups of one object can quote an Azure `ETag` differently; on S3 the value compares as is.
+static bool isSameGeneration([[maybe_unused]] ObjectStorageType type, const String & lhs, const String & rhs)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (type == ObjectStorageType::Azure)
+        return AzureBlobStorage::normalizeETag(lhs) == AzureBlobStorage::normalizeETag(rhs);
+#endif
+    return lhs == rhs;
+}
+
 void ObjectStorageQueuePostProcessor::moveWithinBucket(
     const StoredObjects & objects,
     const String & move_prefix,
@@ -519,6 +529,15 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                 if (auto source_metadata
                                     = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false))
                                 {
+                                    /// Only the generation the rows were read from may be moved. Rethrown once the
+                                    /// batch is done, so the file is not committed and the newer generation is ingested.
+                                    if (!isSameGeneration(type, source_metadata->etag, source_object.etag))
+                                        throw Exception(
+                                            type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
+                                                                             : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                            "Object {} was not moved: it changed after it was ingested "
+                                            "(its `ETag` is {} instead of {})",
+                                            source_object.remote_path, source_metadata->etag, source_object.etag);
                                     consumed.version_id = source_metadata->version_id;
                                     provenance = makeMoveProvenance(
                                         source_metadata->attributes,
