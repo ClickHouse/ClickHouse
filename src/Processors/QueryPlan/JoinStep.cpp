@@ -219,7 +219,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
+    /// A join whose blocks already respect `max_joined_block_size_*` would only pay one more copy of
+    /// every output row here.
+    if (join->supportParallelJoin() && !join->emitsSizedOutputBlocks() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
         /// Do not squash past `max_joined_block_size_rows` / `max_joined_block_size_bytes`: those
         /// bounds are why `joined_block_split_single_row` split the result in the first place.
@@ -239,7 +241,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
         joined_pipeline->addSimpleTransform(
             [&, squash_rows, squash_bytes](const SharedHeader & header)
-            { return tag_tail(std::make_shared<JoinOutputSquashingTransform>(header, squash_rows, squash_bytes, join)); });
+            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, squash_rows, squash_bytes)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
