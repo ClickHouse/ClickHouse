@@ -24,6 +24,12 @@
 1	2
 2	2
 3	2
+-- 3b/4b/5b the plan really carries each bound form, with the bound it computed
+3b rk = 1	1
+3c rk < 4	1
+3d 4 >= rk	1
+4b row_number() <= 1	1
+5b the smaller of two bounds	1
 -- no PARTITION BY: the whole input is one partition
 10
 10
@@ -201,13 +207,12 @@ nan	nan	2
 31 the setting itself declines	0
 -- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception
 --     the query raises today must survive the optimization
--- 33 a function can be cheap and still throw on a value: `IPv4StringToNum` describes no
---     `canThrow` of its own, so the property falls back to the short-circuit answer, which is
---     `false` for it. Only an allowlist keeps the exception below alive.
+-- 33 a conjunct the filter evaluates on a row the prefilter would remove keeps alive the
+--     exception that row raises, because a filter that computes anything but the bound is
+--     refused. `IPv4StringToNum` is the cheap-and-still-throwing case.
 33 a cheap throwing conjunct beside the bound	0
--- 34 a comparison of two values of the same type is direct only if that type stores every row the
---     same way: inside a `Tuple(Variant)` it is resolved per row and can find no common type, so a
---     composite type holding one has to be refused as well.
+-- 34 the same for a comparison whose result is resolved per row inside a composite type:
+--     refused, so the `NO_COMMON_TYPE` a removed row raises still fires.
 34 a composite comparison resolved per row	0
 -- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the
 --    prefilter is admitted and the expanded rows must be unchanged

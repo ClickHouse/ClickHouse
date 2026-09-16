@@ -3,15 +3,15 @@
 #include <DataTypes/IDataType_fwd.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+
+#include <unordered_set>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -79,47 +79,29 @@ std::optional<UInt64> tryGetIntegerConstant(const ActionsDAG::Node * node)
     return {};
 }
 
-/// A function that throws on a row the prefilter removes stops throwing. `IFunction::canThrow` is not a
-/// proof of the opposite on its own: by default it answers `isSuitableForShortCircuitArgumentsExecution`
-/// instead, which reports a function that is cheap and throws, such as `IPv4StringToNum`, as non-throwing
-/// (`IFunction.h:681` says so and asks for an override). So a function is admitted only when it cannot fail
-/// on a value at all - the boolean connectives - or when it implements the property exactly, which in the
-/// tree today means the comparisons: those answer `false` when both sides are compared as stored, and `true`
-/// when one of them is parsed or rescaled first. As more functions describe the property this list can give
-/// way to it.
-bool mayThrowOnRemovedRows(const ActionsDAG & dag)
+/// Rows the prefilter removes must be rows the filter above removes anyway, so nothing the filter computes may
+/// depend on them: it may compute the bound and nothing else. `and`/`or`/`not` are admitted because they reject
+/// any argument that is not a native number at analysis time (`FunctionsLogical.cpp:715-718`), so they have no
+/// value-dependent failure mode; every other function is refused, whatever it does.
+bool computesOnlyTheBound(const ActionsDAG & dag, const std::unordered_set<const ActionsDAG::Node *> & bound_atoms)
 {
-    /// `IFunction::getName` reports the name the function was registered under, whatever case the query used.
-    static const NameSet cannot_throw_on_a_value
-        = {"and", "or", "not", "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals"};
+    static const NameSet connectives = {"and", "or", "not"};
 
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION)
         {
-            /// `IFunctionBase` does not publish `canThrow`, so it is read off the function behind the
-            /// standard adaptor; any other `IFunctionBase` is refused, which is what
-            /// `IExecutableFunction::canThrow` itself defaults to.
-            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
-            if (!adaptor)
-                return true;
-            const IFunction & function = *adaptor->getFunction();
-            if (!cannot_throw_on_a_value.contains(function.getName()))
-                return true;
-            DataTypesWithConstInfo arguments;
-            arguments.reserve(node.children.size());
-            for (const auto * child : node.children)
-                arguments.push_back({child->result_type, child->column != nullptr});
-            if (function.canThrow(arguments))
-                return true;
+            if (bound_atoms.contains(&node))
+                continue;
+            if (!node.function_base || !connectives.contains(node.function_base->getName()))
+                return false;
         }
-        /// A lambda folded into a `COLUMN` node hides its body from the scan above, and the argument types
-        /// its functions were resolved with are not reachable from here, so it is refused outright.
+        /// A lambda folded into a `COLUMN` node hides its body from the scan above.
         else if (node.type == ActionsDAG::ActionType::COLUMN && node.column
                  && !allNodeFunctions(node, [](const IFunctionBase &) { return false; }))
-            return true;
+            return false;
     }
-    return false;
+    return true;
 }
 
 /// The largest rank the conjunct admits, when it bounds one of `ranking_columns` by an integer constant:
@@ -209,11 +191,15 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
         return;
 
     UInt64 top_k = 0;
+    std::unordered_set<const ActionsDAG::Node *> bound_atoms;
     const auto & predicate = filter_dag.findInOutputs(filter_step->getFilterColumnName());
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
     {
         if (const auto bound = tryGetRankBound(atom, ranking_columns))
+        {
             top_k = top_k == 0 ? *bound : std::min(top_k, *bound);
+            bound_atoms.insert(atom);
+        }
     }
     if (top_k == 0)
         return;
@@ -246,13 +232,11 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     if (!sameSortColumns(sorting_step->getSortDescription(), window_description.full_sort_description))
         return;
 
-    /// The rewrite changes which rows every step between the window and this filter sees, so the filter's
-    /// own predicate must not depend on how many rows reached it, must not raise an exception that a
-    /// removed row raises today, and its column names must identify their carriers uniquely
-    /// (`CAST(rk, 'UInt64') AS rk` republishes an input's name for a computed node). These three walk the
-    /// whole filter DAG, so they run only once the cheap structural tests have admitted the shape.
-    if (isSensitiveToEvaluationCount(filter_dag) || filter_dag.hasInputNameShadowedByComputedNode()
-        || mayThrowOnRemovedRows(filter_dag))
+    /// The rewrite changes which rows every step between the window and this filter sees, so the filter must
+    /// compute nothing but the bound, and its column names must identify their carriers uniquely
+    /// (`CAST(rk, 'UInt64') AS rk` republishes an input's name for a computed node). Both walk the whole
+    /// filter DAG, so they run only once the cheap structural tests have admitted the shape.
+    if (filter_dag.hasInputNameShadowedByComputedNode() || !computesOnlyTheBound(filter_dag, bound_atoms))
         return;
 
     sorting_step->setWindowTopKPrefilter(window_description.partition_by, window_description.order_by, top_k);

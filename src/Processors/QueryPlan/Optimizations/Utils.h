@@ -60,14 +60,6 @@ bool makeFilterNodeOnTopOf(
 
 bool isPassthroughActions(const ActionsDAG & actions_dag);
 
-/// Whether evaluating the DAG a different number of times, or on a different set of rows, is observable:
-/// a non-deterministic function draws different values, a stateful function reads a different position in
-/// the query's row sequence, and a function with observable side effects (`sleep`) spends a different
-/// amount of time and accounts different profile events. A lambda without captures is constant-folded into
-/// a `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body from a plain scan over
-/// the function nodes, so the check descends into it.
-bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
-
 namespace QueryPlanOptimizations
 {
 

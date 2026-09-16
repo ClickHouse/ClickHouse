@@ -25,22 +25,6 @@ bool isPassthroughActions(const ActionsDAG & actions_dag)
     return actions_dag.getOutputs() == actions_dag.getInputs() && actions_dag.trivial();
 }
 
-bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
-{
-    auto is_insensitive = [](const IFunctionBase & function)
-    {
-        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
-    };
-
-    for (const auto & node : dag.getNodes())
-    {
-        if (!allNodeFunctions(node, is_insensitive))
-            return true;
-    }
-
-    return false;
-}
-
 template <typename Step, typename ...Args>
 bool makeExpressionNodeOnTopOfImpl(
     QueryPlan::Node & node, ActionsDAG actions_dag, QueryPlan::Nodes & nodes,

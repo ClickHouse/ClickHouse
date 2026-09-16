@@ -28,6 +28,13 @@ SELECT '-- 4 row_number dedup idiom, and 5 the smallest of two bounds';
 SELECT p, o FROM (SELECT p, o, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rn <= 1 ORDER BY p;
 SELECT p, count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rk <= 5 AND rn <= 2 GROUP BY p ORDER BY p;
 
+SELECT '-- 3b/4b/5b the plan really carries each bound form, with the bound it computed';
+SELECT '3b rk = 1', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk = 1) WHERE explain ILIKE '%Window top-K prefilter 1%';
+SELECT '3c rk < 4', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk < 4) WHERE explain ILIKE '%Window top-K prefilter 3%';
+SELECT '3d 4 >= rk', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE 4 >= rk) WHERE explain ILIKE '%Window top-K prefilter 4%';
+SELECT '4b row_number() <= 1', count() FROM (EXPLAIN actions=1 SELECT p, rn FROM (SELECT p, o, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rn <= 1) WHERE explain ILIKE '%Window top-K prefilter 1%';
+SELECT '5b the smaller of two bounds', count() FROM (EXPLAIN actions=1 SELECT p, rk, rn FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rk <= 5 AND rn <= 2) WHERE explain ILIKE '%Window top-K prefilter 2%';
+
 SELECT '-- no PARTITION BY: the whole input is one partition';
 SELECT o FROM (SELECT o, rank() OVER (ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 2 ORDER BY o;
 
@@ -99,13 +106,12 @@ SELECT '19b not the direct child', count() FROM (EXPLAIN actions=1 SELECT p, rk 
 SELECT p, rk, n FROM (SELECT p, rk, rowNumberInAllBlocks() AS n FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp)) WHERE rk <= 3 AND n < 5 ORDER BY p, rk, n SETTINGS query_plan_merge_expressions = 0;
 SELECT '19 computing step between', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rk, rowNumberInAllBlocks() AS n FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp)) WHERE rk <= 3 AND n < 5) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '20 lambda body, rand, sleepEachRow', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> ((x + rowNumberInAllBlocks()) < 5), [0])) WHERE explain ILIKE '%Window top-K prefilter%';
--- A lambda is folded into a `COLUMN` node, which carries neither the argument types its functions were
--- resolved with nor a way to ask them whether they throw, so it is refused even when its body is harmless.
+-- A lambda is folded into a `COLUMN` node, which hides its body from the scan over the filter's functions,
+-- so it is refused whatever the body does.
 SELECT '20b deterministic lambda body', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2])) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2]) ORDER BY p, o, rk;
--- `o + 1` is merged into the filter step, and `plus` describes no `canThrow` of its own while it can fail
--- on a value (a Decimal sum overflows), so a conjunct computing it is refused even where, as here, it
--- cannot fail. The rows must be the same as without it.
+-- `o + 1` is merged into the filter step, so the filter computes something other than the bound and is
+-- refused. The rows must be the same as without it.
 SELECT '20c a conjunct computing o + 1', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, o + 1 AS x, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND x > 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, o + 1 AS x, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND x > 0 ORDER BY p, o, rk;
 SELECT '20 rand', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND rand() > 0) WHERE explain ILIKE '%Window top-K prefilter%';
@@ -119,9 +125,9 @@ SELECT '--     the query raises today must survive the optimization';
 SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
-SELECT '-- 33 a function can be cheap and still throw on a value: `IPv4StringToNum` describes no';
-SELECT '--     `canThrow` of its own, so the property falls back to the short-circuit answer, which is';
-SELECT '--     `false` for it. Only an allowlist keeps the exception below alive.';
+SELECT '-- 33 a conjunct the filter evaluates on a row the prefilter would remove keeps alive the';
+SELECT '--     exception that row raises, because a filter that computes anything but the bound is';
+SELECT '--     refused. `IPv4StringToNum` is the cheap-and-still-throwing case.';
 DROP TABLE IF EXISTS t_wtkp_ip;
 CREATE TABLE t_wtkp_ip (p UInt8, o UInt8, s String) ENGINE = Memory;
 -- The middle row is the one the prefilter would remove at `rk <= 1`, and it holds the only unparseable
@@ -134,9 +140,8 @@ SELECT '33 a cheap throwing conjunct beside the bound', count() FROM (EXPLAIN ac
 SELECT count() FROM (SELECT p, s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ip) WHERE IPv4StringToNum(s) > 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, cast_ipv4_ipv6_default_on_conversion_error = 0; -- { serverError CANNOT_PARSE_IPV4 }
 SELECT count() FROM (SELECT p, s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ip) WHERE IPv4StringToNum(s) > 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, cast_ipv4_ipv6_default_on_conversion_error = 0; -- { serverError CANNOT_PARSE_IPV4 }
 
-SELECT '-- 34 a comparison of two values of the same type is direct only if that type stores every row the';
-SELECT '--     same way: inside a `Tuple(Variant)` it is resolved per row and can find no common type, so a';
-SELECT '--     composite type holding one has to be refused as well.';
+SELECT '-- 34 the same for a comparison whose result is resolved per row inside a composite type:';
+SELECT '--     refused, so the `NO_COMMON_TYPE` a removed row raises still fires.';
 DROP TABLE IF EXISTS t_wtkp_var;
 CREATE TABLE t_wtkp_var (p UInt8, o UInt8, v Tuple(Variant(String, UInt8))) ENGINE = Memory;
 -- The middle row is the one the prefilter would remove at `rk <= 1`, and it holds the only variant with no
