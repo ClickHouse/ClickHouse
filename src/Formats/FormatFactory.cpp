@@ -966,14 +966,12 @@ void FormatFactory::setDocumentation(const String & name, Documentation document
     it->second.documentation = std::move(documentation);
 }
 
-void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
+void FormatFactory::registerFileExtension(const String & extension, const String & format_name, bool used_for_format_inference)
 {
-    file_extension_formats[boost::to_lower_copy(extension)] = format_name;
-}
-
-void FormatFactory::registerAdditionalFileExtension(const String & extension, const String & format_name)
-{
-    additional_file_extensions.emplace_back(boost::to_lower_copy(extension), format_name);
+    const auto lowercased_extension = boost::to_lower_copy(extension);
+    if (used_for_format_inference)
+        file_extension_formats[lowercased_extension] = format_name;
+    format_file_extensions[boost::to_lower_copy(format_name)].insert(lowercased_extension);
 }
 
 std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & format_name) const
@@ -994,16 +992,11 @@ std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & for
     /// The format name itself is registered as a file extension for every input and output
     /// format, so the lowercased format name always ends up in the result.
     std::set<String> extensions{format_names.front()};
-    const auto collect = [&](const String & extension, const String & extension_format)
+    for (const auto & name : format_names)
     {
-        if (std::find(format_names.begin(), format_names.end(), boost::to_lower_copy(extension_format)) != format_names.end())
-            extensions.insert(extension);
-    };
-
-    for (const auto & [extension, extension_format] : file_extension_formats)
-        collect(extension, extension_format);
-    for (const auto & [extension, extension_format] : additional_file_extensions)
-        collect(extension, extension_format);
+        if (const auto it = format_file_extensions.find(name); it != format_file_extensions.end())
+            extensions.insert(it->second.begin(), it->second.end());
+    }
 
     return {extensions.begin(), extensions.end()};
 }
