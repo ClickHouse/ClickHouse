@@ -5,8 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The structure of `mergeTreeTextIndex` depends on the tokenizer of the source index, so resolving it
-# (e.g. `DESCRIBE`) requires `SHOW TABLES` on the source table: the grant that also reveals the index
-# definition in `system.data_skipping_indices`. Reading the tokens still requires `SELECT` on the indexed columns.
+# (e.g. `DESCRIBE`) is gated like reading it: `SHOW TABLES` on the source table before the index is looked up
+# (the grant that also reveals the index definition in `system.data_skipping_indices`), then `SELECT` on the
+# indexed columns before anything derived from the index is returned.
 
 user_name="${CLICKHOUSE_DATABASE}_test_user_05219"
 
@@ -54,7 +55,7 @@ check_access "SELECT token_key FROM mergeTreeTextIndex(currentDatabase(), tab, i
 
 $CLICKHOUSE_CLIENT -q "GRANT SHOW TABLES ON $CLICKHOUSE_DATABASE.tab TO $user_name"
 
-echo "-- SHOW TABLES on the table: the structure resolves, reading the tokens is still denied"
+echo "-- SHOW TABLES on the table: the index is looked up, but its structure and tokens need SELECT on the indexed column"
 check_access "DESCRIBE mergeTreeTextIndex(currentDatabase(), tab, idx_kv)"
 check_access "DESCRIBE mergeTreeTextIndex(currentDatabase(), tab, idx_minmax)"
 check_access "DESCRIBE mergeTreeTextIndex(currentDatabase(), tab, idx_missing)"

@@ -4,8 +4,8 @@
 (ACCESS_DENIED)
 (ACCESS_DENIED)
 (ACCESS_DENIED)
--- SHOW TABLES on the table: the structure resolves, reading the tokens is still denied
-OK
+-- SHOW TABLES on the table: the index is looked up, but its structure and tokens need SELECT on the indexed column
+(ACCESS_DENIED)
 (BAD_ARGUMENTS)
 (BAD_ARGUMENTS)
 (ACCESS_DENIED)
