@@ -792,6 +792,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// Readable MATERIALIZED dependency graph; EPHEMERAL inputs are excluded.
     std::unordered_map<String, Names> column_to_affected_materialized;
     std::unordered_map<String, NameSet> materialized_column_dependencies;
+    /// MATERIALIZED columns reading an EPHEMERAL column, with their readable dependencies. They are
+    /// skipped by the recompute, so they are checked for staleness after the graph is built.
+    std::vector<std::pair<String, const Names *>> ephemeral_reading_materialized;
 
     const bool need_materialized_analysis =
         !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
@@ -813,17 +816,14 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (materialized->reads_ephemeral)
             {
-                /// Warn if the mutation also updates a dependency of this MATERIALIZED column — the
-                /// on-disk value will become stale. Not on an on-fly read, which builds an interpreter
-                /// per read task per part and writes nothing, so the warning is untrue and repeats there.
-                if (!settings.apply_on_fly_for_read
-                    && std::ranges::any_of(required_columns, [&](const auto & dep) { return updated_columns.contains(dep); }))
-                    LOG_WARNING(logger,
-                        "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
-                        "columns that are being updated. Its value will NOT be recalculated "
-                        "during this mutation — the on-disk value may become inconsistent. "
-                        "To fix this, re-INSERT the affected rows.",
-                        column.name);
+                /// Such a column is never recomputed, so its on-disk value goes stale as soon as
+                /// one of its regular inputs changes. Collect it and warn below, once the readable
+                /// dependency graph is complete: whether an input changed can only be answered
+                /// over the transitive closure, and a hop of the chain may still be unvisited here.
+                /// Not on an on-fly read, which builds an interpreter per read task per part and
+                /// writes nothing, so the warning is untrue and repeats there.
+                if (!settings.apply_on_fly_for_read)
+                    ephemeral_reading_materialized.emplace_back(column.name, &required_columns);
                 continue;
             }
 
@@ -884,6 +884,30 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         return affected;
     };
+
+    /// A MATERIALIZED column reading an EPHEMERAL column cannot be recomputed by a mutation, so if
+    /// any of its readable inputs is changed by this mutation — directly, or through another
+    /// MATERIALIZED hop that this mutation does recompute — its on-disk value becomes stale.
+    if (!ephemeral_reading_materialized.empty())
+    {
+        NameSet changed_base_columns = updated_columns;
+        changed_base_columns.insert(clear_column_names.begin(), clear_column_names.end());
+        changed_base_columns.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+
+        NameSet stale_columns = affected_materialized_closure(changed_base_columns);
+        stale_columns.insert(changed_base_columns.begin(), changed_base_columns.end());
+
+        for (const auto & [name, readable_dependencies] : ephemeral_reading_materialized)
+        {
+            if (std::ranges::any_of(*readable_dependencies, [&](const auto & dep) { return stale_columns.contains(dep); }))
+                LOG_WARNING(logger,
+                    "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
+                    "columns that are being updated or cleared. Its value will NOT be "
+                    "recalculated during this mutation — the on-disk value may become "
+                    "inconsistent. To fix this, re-INSERT the affected rows.",
+                    name);
+        }
+    }
 
     /// Emit dependency-ordered recomputation stages.
     auto emit_materialized_recompute_stages = [&](const NameSet & affected_materialized, std::optional<UInt64> mutation_version)
@@ -1601,31 +1625,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (!unchanged_columns.empty())
         {
-            if (!stages.empty())
-            {
-                std::vector<Stage> stages_copy;
-                /// Copy all filled stages except index calculation stage.
-                /// We need to deep clone ASTs because prepareMutationStages may modify the ASTs in place
-                /// (e.g., replacing scalar subqueries with default values during dry_run).
-                for (const auto & stage : stages)
-                {
-                    stages_copy.emplace_back(context);
-                    for (const auto & [name, ast] : stage.column_to_updated)
-                        stages_copy.back().column_to_updated.emplace(name, ast->clone());
-                    stages_copy.back().output_columns = stage.output_columns;
-                    stages_copy.back().affects_all_columns = stage.affects_all_columns;
-                    for (const auto & filter : stage.filters)
-                        stages_copy.back().filters.push_back(filter->clone());
-                }
-
-                prepareMutationStages(stages_copy, true);
-
-                QueryPlan plan;
-                initQueryPlan(stages_copy.front(), plan);
-                auto pipeline = addStreamsForLaterStages(stages_copy, plan);
-                updated_header = std::make_unique<Block>(pipeline.getHeader());
-            }
-
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
             stages.back().is_readonly = true;
@@ -2628,8 +2627,39 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         }
     }
 
-    if (!updated_header)
-        updated_header = std::make_unique<Block>(builder.getHeader());
+    Block header = builder.getHeader();
+
+    const bool rewrites_whole_part = settings.return_all_columns
+        || std::any_of(
+            stages.begin(),
+            stages.end(),
+            [](const Stage & stage) { return !stage.is_readonly && stage.affects_all_columns; });
+
+    if (!rewrites_whole_part)
+    {
+        NameSet write_stage_columns;
+        for (const auto & stage : stages)
+        {
+            if (stage.is_readonly)
+                continue;
+
+            for (const auto & [column_name, _] : stage.column_to_updated)
+                write_stage_columns.insert(column_name);
+        }
+
+        /// Keep only write stage columns to avoid rewriting readonly stage columns whose data the
+        /// mutation does not touch. A readonly stage only reads unchanged columns, so that indices,
+        /// projections and TTL expressions can be recalculated.
+        Block kept;
+        for (const auto & column : header)
+        {
+            if (write_stage_columns.contains(column.name))
+                kept.insert(column);
+        }
+        header = std::move(kept);
+    }
+
+    updated_header = std::make_unique<Block>(std::move(header));
 
     return builder;
 }
@@ -2674,7 +2704,15 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION ? Block{} : *updated_header;
+    if (mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION)
+        return Block{};
+
+    /// Not an empty header like the branch above: that would silently hardlink every column instead
+    /// of writing the ones the mutation changed.
+    if (!updated_header)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getUpdatedHeader called before execute. It is a bug");
+
+    return *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const

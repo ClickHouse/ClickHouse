@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-old-analyzer
-# no-old-analyzer: make_distributed_plan requires the analyzer.
+# Tags: no-fasttest
 # Checks that cancelling a distributed-plan query terminates it promptly and reports the cancellation,
 # for both exchange kinds and both ways of running the tasks. Streaming exercises waking tasks blocked
 # on in-memory exchanges, Persisted the stage-dependency wait under the executor mutex, and remote
