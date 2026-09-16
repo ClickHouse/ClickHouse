@@ -26,6 +26,7 @@
 
 #include <Poco/String.h>
 
+#include <array>
 #include <optional>
 #include <string_view>
 #include <unordered_set>
@@ -37,6 +38,15 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsUInt64 max_bytes_in_join;
+    extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsUInt64 max_bytes_to_read_leaf;
+    extern const SettingsUInt64 max_columns_to_read;
+    extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsUInt64 max_temporary_columns;
+    extern const SettingsUInt64 max_temporary_non_const_columns;
     extern const SettingsBool optimize_fuse_sibling_aggregate_subqueries;
 }
 
@@ -65,7 +75,9 @@ public:
         if (it == substitution.end())
             return;
 
-        node = std::make_shared<ColumnNode>(column_node->getColumn(), it->second);
+        auto repointed = std::make_shared<ColumnNode>(column_node->getColumn(), it->second);
+        repointed->setAlias(column_node->getAlias());
+        node = std::move(repointed);
     }
 
 private:
@@ -156,9 +168,9 @@ bool isTotalOnEveryRow(const QueryTreeNodePtr & root)
 
 /// Fusion computes the branches' equal expressions once instead of once per branch, so a branch whose
 /// expressions are not reproducible keeps its own scan: separate `min(rand64())` and `max(rand64())`
-/// branches must go on drawing independent values. `isDeterministicInScopeOfQuery` rather than
-/// `isDeterministic`, so a sound `now()` survives; ordinary functions are the whole scope, since every
-/// branch keeps its own aggregate state.
+/// branches must go on drawing independent values. Ordinary functions are the whole scope, since every
+/// branch keeps its own aggregate state. A server constant such as `now()` never reaches this check:
+/// the analyzer has already folded it into a `ConstantNode` whose source expression is not a child.
 bool isReproducibleBranch(const QueryTreeNodePtr & root)
 {
     QueryTreeNodes nodes_to_visit{root};
@@ -244,6 +256,16 @@ bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr 
         if (!table_node->getStorage()->readsColumnsWithoutTransformations(table_node->getStorageSnapshot(), context))
             return false;
 
+        /// A projection is selected against the branch's own filter, and the fused OR implies none of
+        /// them.
+        if (table_node->getStorageSnapshot()->metadata->hasProjections())
+            return false;
+
+        /// A modifier changes what the read returns, and for an absolute SAMPLE it does so as a
+        /// function of this branch's own key condition, which fusion replaces with the merged one.
+        if (table_node->getTableExpressionModifiers().has_value())
+            return false;
+
         const auto & storage_id = table_node->getStorageID();
         if (storage_id.hasDatabase()
             && context->getRowPolicyFilter(
@@ -302,6 +324,12 @@ bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr
         return false;
 
     if (query_node->hasSettingsChanges())
+        return false;
+
+    /// A branch with no filter of its own is already read in full, or answered from part metadata
+    /// without reading at all; fusing it cannot shrink its scan, and it leaves the fused filter empty,
+    /// which takes every sibling's residual out of the reader's reach.
+    if (!query_node->hasWhere())
         return false;
 
     /// Fusion grows the kept branch's projection, and an override whose size stops matching it turns
@@ -540,6 +568,23 @@ public:
         /// cannot reproduce that per-branch behaviour.
         if (getSettings()[Setting::empty_result_for_aggregation_by_empty_set])
             return;
+
+        /// Fusion answers N independently bounded reads and joins with one, and each of these limits is
+        /// evaluated on that fused shape: a query that fits N times over can stop fitting once.
+        static constexpr std::array scope_changing_limits{
+            &Setting::max_rows_to_read,
+            &Setting::max_bytes_to_read,
+            &Setting::max_rows_to_read_leaf,
+            &Setting::max_bytes_to_read_leaf,
+            &Setting::max_columns_to_read,
+            &Setting::max_temporary_columns,
+            &Setting::max_temporary_non_const_columns,
+            &Setting::max_rows_in_join,
+            &Setting::max_bytes_in_join,
+        };
+        for (const auto * limit : scope_changing_limits)
+            if (getSettings()[*limit])
+                return;
 
         auto * query_node = node->as<QueryNode>();
         if (!query_node)

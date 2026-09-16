@@ -2,6 +2,8 @@
 01	1	1
 01	1	1
 01 fused	1
+01 tables off	2
+01 tables on	1
 -- 02 a Nullable(UInt8) and a LowCardinality(UInt8) residual: both fuse
 02a	1	1
 02a	1	1
@@ -39,6 +41,8 @@
 09a	1	0
 09b	1	0
 09b	1	0
+09a fused	1
+09b fused	1
 -- 10 with empty_result_for_aggregation_by_empty_set an empty branch empties the whole join, which one fused aggregation cannot reproduce
 10	1	1
 10	1	1
@@ -64,7 +68,7 @@
 14	1	1	500
 14	1	1	500
 14 fused	1
--- 15 a table-expression modifier is part of the source, so branches differing in FINAL are not fused; a branch reading FINAL is refused outright
+-- 15 a table expression that carries any modifier is refused: what the modifier makes the read return is not preserved by the fused filter (arm 31), and branches differing in FINAL are not siblings to begin with
 15a	1	1
 15a	1	1
 15a fused	0
@@ -82,6 +86,8 @@
 18	1	1	1	1	1	1	1	1
 18	1	1	1	1	1	1	1	1
 18 countIf	8
+18 tables off	8
+18 tables on	1
 -- 19 an ARRAY JOIN is not a table expression the pass can substitute positionally
 19	2	2
 19	2	2
@@ -112,13 +118,47 @@
 25a fused	0
 25b fused	1
 -- 26 residuals over two tables lose their per-branch correlation inside the fused OR; over one table they do not
-26a	800	800
-26a	800	800
+26a	120	120
+26a	120	120
 26a fused	0
-26b	800	800
-26b	800	800
+26b	840	840
+26b	840	840
 26b fused	1
 -- 27 a projection-alias override whose size would stop matching the grown projection
 27	1	1
 27	1	1
 27 fused	0
+-- 28 a branch with no WHERE of its own is refused: it is already read in full, or answered from part metadata, and it would leave the fused filter empty
+28a	1000	1
+28a	1000	1
+28a fused	0
+28b	1000	1	1
+28b	1000	1	1
+28b countIf	2
+28b tables	2
+-- 29 a limit that bounds the whole query is evaluated on the fused shape, where N bounded reads and joins have become one
+29a	60	60
+29a	60	60
+29a fused	0
+29b	50	33
+29b	50	33
+29b fused	0
+29c max_rows_to_read	0
+29c max_bytes_to_read	0
+29c max_rows_to_read_leaf	0
+29c max_bytes_to_read_leaf	0
+29c max_temporary_columns	0
+29c max_temporary_non_const_columns	0
+29c max_bytes_in_join	0
+29c none	1
+-- 30 a projection is chosen against the own filter of a branch, and the fused OR implies none of them
+30	250	250
+30	250	250
+30 fused	0
+-- 31 for an absolute SAMPLE the sampled set is derived from the own key condition of a branch, which fusion replaces with the merged one, so any modifier is refused
+31a	999	1000
+31a	999	1000
+31a fused	0
+31b	999	1000
+31b	999	1000
+31b fused	0

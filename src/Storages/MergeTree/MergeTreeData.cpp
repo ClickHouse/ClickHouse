@@ -13513,11 +13513,11 @@ bool MergeTreeData::readsColumnsWithoutTransformations(const StorageSnapshotPtr 
 
     /// Both overloads: the snapshot one answers what this read will apply, the live one answers what
     /// is pending at all, which the snapshot omits when the on-the-fly settings are off while the
-    /// reader still converts.
+    /// reader still converts. The live one also covers masking policies, which rewrite values at read
+    /// time.
     return getColumnDefaultnessStatsUnavailableReason(query_context, snapshot_data->mutations_snapshot)
             == ColumnDefaultnessStatsUnavailableReason::None
-        && getColumnDefaultnessStatsUnavailableReason(query_context) == ColumnDefaultnessStatsUnavailableReason::None
-        && !hasEnabledMaskingPolicies(query_context);
+        && getColumnDefaultnessStatsUnavailableReason(query_context) == ColumnDefaultnessStatsUnavailableReason::None;
 }
 
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)

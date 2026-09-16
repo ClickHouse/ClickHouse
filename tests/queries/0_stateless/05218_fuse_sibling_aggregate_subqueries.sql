@@ -18,6 +18,11 @@ DROP TABLE IF EXISTS arr;
 DROP TABLE IF EXISTS al;
 DROP TABLE IF EXISTS rmt;
 DROP TABLE IF EXISTS rp;
+DROP TABLE IF EXISTS jl;
+DROP TABLE IF EXISTS jr;
+DROP TABLE IF EXISTS cols;
+DROP TABLE IF EXISTS proj;
+DROP TABLE IF EXISTS smp;
 
 CREATE TABLE t (k Int64, v Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t SELECT number, number * 2 FROM numbers(1000);
@@ -42,10 +47,12 @@ ALTER TABLE dflt ADD COLUMN x Int64 DEFAULT k * 10;
 CREATE TABLE dec (id Int64, p Decimal(7, 2)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO dec SELECT number, number FROM numbers(100);
 
+-- f2.x is independent of g, so arm 26a's f2.x residual is not implied by the join equality and a
+-- dropped residual changes the answer (120 rather than 800).
 CREATE TABLE f1 (g Int64, x Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO f1 SELECT number % 10, number % 5 FROM numbers(200);
 CREATE TABLE f2 (g Int64, x Int64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO f2 SELECT number % 10, number % 5 FROM numbers(200);
+INSERT INTO f2 SELECT number % 10, intDiv(number, 7) % 5 FROM numbers(200);
 
 CREATE TABLE arr (k Int64, a Array(Int64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO arr VALUES (1, [1, 2]), (2, [3, 4]);
@@ -59,10 +66,30 @@ INSERT INTO rmt SELECT number, number * 2 FROM numbers(1000);
 CREATE TABLE rp (k Int64, v Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO rp SELECT number, number * 2 FROM numbers(1000);
 
+-- Small granules, so that 120 joined rows cross max_rows_in_join = 100 mid-block.
+CREATE TABLE jl (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 10;
+INSERT INTO jl SELECT number FROM numbers(120);
+CREATE TABLE jr (id UInt64, bucket UInt8) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 10;
+INSERT INTO jr SELECT number, number % 2 FROM numbers(120);
+
+CREATE TABLE cols (c1 UInt8, c2 UInt8) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO cols SELECT number % 2, number % 3 FROM numbers(100);
+
+CREATE TABLE proj (k UInt8, PROJECTION p0 (SELECT count() WHERE k = 0), PROJECTION p1 (SELECT count() WHERE k = 1))
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO proj SELECT number % 4 FROM numbers(1000);
+
+CREATE TABLE smp (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SAMPLE BY k;
+INSERT INTO smp SELECT number, number FROM numbers(100000);
+
 SELECT '-- 01 two sibling branches over one table: fuses';
 SELECT '01', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '01', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '01 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+-- Inserting the -If aggregates and removing the fused-away branches are separate steps, so the number
+-- of table expressions is asserted as well: without it, a rewrite that kept every scan would pass.
+SELECT '01 tables off', countIf(explain LIKE '%TABLE id:%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0);
+SELECT '01 tables on', countIf(explain LIKE '%TABLE id:%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 
 SELECT '-- 02 a Nullable(UInt8) and a LowCardinality(UInt8) residual: both fuse';
 SELECT '02a', a, b FROM (SELECT count() AS a FROM tn WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM tn WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
@@ -112,6 +139,8 @@ SELECT '09a', a, b FROM (SELECT count() AS a FROM t WHERE k = 300) AS x, (SELECT
 SELECT '09a', a, b FROM (SELECT count() AS a FROM t WHERE k = 300) AS x, (SELECT count() AS b FROM t WHERE k = -1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '09b', a, b FROM (SELECT count() AS a FROM t WHERE k = 300) AS x, (SELECT count() AS b FROM t WHERE k = -1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, aggregate_functions_null_for_empty = 1;
 SELECT '09b', a, b FROM (SELECT count() AS a FROM t WHERE k = 300) AS x, (SELECT count() AS b FROM t WHERE k = -1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, aggregate_functions_null_for_empty = 1;
+SELECT '09a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE k = 300) AS x, (SELECT count() AS b FROM t WHERE k = -1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+SELECT '09b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE k = 300) AS x, (SELECT count() AS b FROM t WHERE k = -1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, aggregate_functions_null_for_empty = 1);
 
 SELECT '-- 10 with empty_result_for_aggregation_by_empty_set an empty branch empties the whole join, which one fused aggregation cannot reproduce';
 SELECT '10', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, empty_result_for_aggregation_by_empty_set = 1;
@@ -145,7 +174,7 @@ SELECT '14', a, b, c FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) 
 SELECT '14', a, b, c FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y, (SELECT count() AS c FROM t GROUP BY k % 2 ORDER BY c LIMIT 1) AS z SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '14 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y, (SELECT count() AS c FROM t GROUP BY k % 2 ORDER BY c LIMIT 1) AS z SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 
-SELECT '-- 15 a table-expression modifier is part of the source, so branches differing in FINAL are not fused; a branch reading FINAL is refused outright';
+SELECT '-- 15 a table expression that carries any modifier is refused: what the modifier makes the read return is not preserved by the fused filter (arm 31), and branches differing in FINAL are not siblings to begin with';
 SELECT '15a', a, b FROM (SELECT count() AS a FROM rmt FINAL WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM rmt WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '15a', a, b FROM (SELECT count() AS a FROM rmt FINAL WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM rmt WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '15a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM rmt FINAL WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM rmt WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
@@ -166,6 +195,8 @@ SELECT '-- 18 eight branches, the arity TPC-DS query 88 uses';
 SELECT '18', h1, h2, h3, h4, h5, h6, h7, h8 FROM (SELECT count() AS h1 FROM t WHERE v > 10 AND k = 100) AS s1, (SELECT count() AS h2 FROM t WHERE v > 10 AND k = 200) AS s2, (SELECT count() AS h3 FROM t WHERE v > 10 AND k = 300) AS s3, (SELECT count() AS h4 FROM t WHERE v > 10 AND k = 400) AS s4, (SELECT count() AS h5 FROM t WHERE v > 10 AND k = 500) AS s5, (SELECT count() AS h6 FROM t WHERE v > 10 AND k = 600) AS s6, (SELECT count() AS h7 FROM t WHERE v > 10 AND k = 700) AS s7, (SELECT count() AS h8 FROM t WHERE v > 10 AND k = 800) AS s8 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '18', h1, h2, h3, h4, h5, h6, h7, h8 FROM (SELECT count() AS h1 FROM t WHERE v > 10 AND k = 100) AS s1, (SELECT count() AS h2 FROM t WHERE v > 10 AND k = 200) AS s2, (SELECT count() AS h3 FROM t WHERE v > 10 AND k = 300) AS s3, (SELECT count() AS h4 FROM t WHERE v > 10 AND k = 400) AS s4, (SELECT count() AS h5 FROM t WHERE v > 10 AND k = 500) AS s5, (SELECT count() AS h6 FROM t WHERE v > 10 AND k = 600) AS s6, (SELECT count() AS h7 FROM t WHERE v > 10 AND k = 700) AS s7, (SELECT count() AS h8 FROM t WHERE v > 10 AND k = 800) AS s8 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '18 countIf', countIf(explain LIKE '%countIf%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS h1 FROM t WHERE v > 10 AND k = 100) AS s1, (SELECT count() AS h2 FROM t WHERE v > 10 AND k = 200) AS s2, (SELECT count() AS h3 FROM t WHERE v > 10 AND k = 300) AS s3, (SELECT count() AS h4 FROM t WHERE v > 10 AND k = 400) AS s4, (SELECT count() AS h5 FROM t WHERE v > 10 AND k = 500) AS s5, (SELECT count() AS h6 FROM t WHERE v > 10 AND k = 600) AS s6, (SELECT count() AS h7 FROM t WHERE v > 10 AND k = 700) AS s7, (SELECT count() AS h8 FROM t WHERE v > 10 AND k = 800) AS s8 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+SELECT '18 tables off', countIf(explain LIKE '%TABLE id:%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS h1 FROM t WHERE v > 10 AND k = 100) AS s1, (SELECT count() AS h2 FROM t WHERE v > 10 AND k = 200) AS s2, (SELECT count() AS h3 FROM t WHERE v > 10 AND k = 300) AS s3, (SELECT count() AS h4 FROM t WHERE v > 10 AND k = 400) AS s4, (SELECT count() AS h5 FROM t WHERE v > 10 AND k = 500) AS s5, (SELECT count() AS h6 FROM t WHERE v > 10 AND k = 600) AS s6, (SELECT count() AS h7 FROM t WHERE v > 10 AND k = 700) AS s7, (SELECT count() AS h8 FROM t WHERE v > 10 AND k = 800) AS s8 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0);
+SELECT '18 tables on', countIf(explain LIKE '%TABLE id:%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS h1 FROM t WHERE v > 10 AND k = 100) AS s1, (SELECT count() AS h2 FROM t WHERE v > 10 AND k = 200) AS s2, (SELECT count() AS h3 FROM t WHERE v > 10 AND k = 300) AS s3, (SELECT count() AS h4 FROM t WHERE v > 10 AND k = 400) AS s4, (SELECT count() AS h5 FROM t WHERE v > 10 AND k = 500) AS s5, (SELECT count() AS h6 FROM t WHERE v > 10 AND k = 600) AS s6, (SELECT count() AS h7 FROM t WHERE v > 10 AND k = 700) AS s7, (SELECT count() AS h8 FROM t WHERE v > 10 AND k = 800) AS s8 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 
 SELECT '-- 19 an ARRAY JOIN is not a table expression the pass can substitute positionally';
 SELECT '19', c1, c2 FROM (SELECT count() AS c1 FROM arr ARRAY JOIN a AS e WHERE k = 1) AS x, (SELECT count() AS c2 FROM arr ARRAY JOIN a AS e WHERE k = 2) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
@@ -219,6 +250,54 @@ SELECT '27', a, b FROM (SELECT count() FROM t WHERE v > 10 AND k = 300) AS x(a),
 SELECT '27', a, b FROM (SELECT count() FROM t WHERE v > 10 AND k = 300) AS x(a), (SELECT count() FROM t WHERE v > 10 AND k = 500) AS y(b) SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '27 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT a, b FROM (SELECT count() FROM t WHERE v > 10 AND k = 300) AS x(a), (SELECT count() FROM t WHERE v > 10 AND k = 500) AS y(b) SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 
+SELECT '-- 28 a branch with no WHERE of its own is refused: it is already read in full, or answered from part metadata, and it would leave the fused filter empty';
+SELECT '28a', a, b FROM (SELECT count() AS a FROM t) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
+SELECT '28a', a, b FROM (SELECT count() AS a FROM t) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
+SELECT '28a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+-- Refusing that branch leaves its filtered siblings free to fuse with each other, which is why the
+-- refusal belongs to the branch rather than to the group.
+SELECT '28b', a, b, c FROM (SELECT count() AS a FROM t) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 300) AS y, (SELECT count() AS c FROM t WHERE v > 10 AND k = 500) AS z SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
+SELECT '28b', a, b, c FROM (SELECT count() AS a FROM t) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 300) AS y, (SELECT count() AS c FROM t WHERE v > 10 AND k = 500) AS z SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
+SELECT '28b countIf', countIf(explain LIKE '%countIf%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 300) AS y, (SELECT count() AS c FROM t WHERE v > 10 AND k = 500) AS z SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+SELECT '28b tables', countIf(explain LIKE '%TABLE id:%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 300) AS y, (SELECT count() AS c FROM t WHERE v > 10 AND k = 500) AS z SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+
+-- query_plan_join_swap_table decides which side of the join is built, which moves where
+-- join_overflow_mode = 'break' truncates: with it left at the default `auto` the truncated count is
+-- 60 or 50 independently of this pass (measured: 12 of 50 randomized runs), so it is pinned here.
+SELECT '-- 29 a limit that bounds the whole query is evaluated on the fused shape, where N bounded reads and joins have become one';
+SELECT '29a', x.a, y.b FROM (SELECT count() AS a FROM jl AS l, jr AS r WHERE l.id = r.id AND r.bucket = 0) AS x, (SELECT count() AS b FROM jl AS l, jr AS r WHERE l.id = r.id AND r.bucket = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, join_algorithm = 'hash', max_rows_in_join = 100, join_overflow_mode = 'break', max_threads = 1, max_block_size = 10, query_plan_join_swap_table = false;
+SELECT '29a', x.a, y.b FROM (SELECT count() AS a FROM jl AS l, jr AS r WHERE l.id = r.id AND r.bucket = 0) AS x, (SELECT count() AS b FROM jl AS l, jr AS r WHERE l.id = r.id AND r.bucket = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, join_algorithm = 'hash', max_rows_in_join = 100, join_overflow_mode = 'break', max_threads = 1, max_block_size = 10, query_plan_join_swap_table = false;
+SELECT '29a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM jl AS l, jr AS r WHERE l.id = r.id AND r.bucket = 0) AS x, (SELECT count() AS b FROM jl AS l, jr AS r WHERE l.id = r.id AND r.bucket = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, join_algorithm = 'hash', max_rows_in_join = 100, join_overflow_mode = 'break', max_threads = 1, max_block_size = 10, query_plan_join_swap_table = false);
+-- Two one-column reads become one two-column read, so the answer itself is what is asserted here:
+-- both arms must succeed.
+SELECT '29b', x.a, y.b FROM (SELECT count() AS a FROM cols WHERE c1 = 0) AS x, (SELECT count() AS b FROM cols WHERE c2 = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, max_columns_to_read = 1;
+SELECT '29b', x.a, y.b FROM (SELECT count() AS a FROM cols WHERE c1 = 0) AS x, (SELECT count() AS b FROM cols WHERE c2 = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_columns_to_read = 1;
+SELECT '29b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM cols WHERE c1 = 0) AS x, (SELECT count() AS b FROM cols WHERE c2 = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_columns_to_read = 1);
+-- The rest of the family, each measured to turn a query that succeeds into one that fails once
+-- fused (evidence.md has the codes); asserted as a refusal, because a row-count bound tight
+-- enough to separate the two arms would move with the randomized index granularity.
+SELECT '29c max_rows_to_read', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_rows_to_read = 1000000);
+SELECT '29c max_bytes_to_read', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_bytes_to_read = 1000000);
+SELECT '29c max_rows_to_read_leaf', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_rows_to_read_leaf = 1000000);
+SELECT '29c max_bytes_to_read_leaf', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_bytes_to_read_leaf = 1000000);
+SELECT '29c max_temporary_columns', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_temporary_columns = 33);
+SELECT '29c max_temporary_non_const_columns', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_temporary_non_const_columns = 33);
+SELECT '29c max_bytes_in_join', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_bytes_in_join = 1000000);
+SELECT '29c none', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+
+SELECT '-- 30 a projection is chosen against the own filter of a branch, and the fused OR implies none of them';
+SELECT '30', x.a, y.b FROM (SELECT count() AS a FROM proj WHERE k = 0) AS x, (SELECT count() AS b FROM proj WHERE k = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, force_optimize_projection = 1;
+SELECT '30', x.a, y.b FROM (SELECT count() AS a FROM proj WHERE k = 0) AS x, (SELECT count() AS b FROM proj WHERE k = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, force_optimize_projection = 1;
+SELECT '30 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM proj WHERE k = 0) AS x, (SELECT count() AS b FROM proj WHERE k = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, force_optimize_projection = 1);
+
+SELECT '-- 31 for an absolute SAMPLE the sampled set is derived from the own key condition of a branch, which fusion replaces with the merged one, so any modifier is refused';
+SELECT '31a', x.a, y.b FROM (SELECT count() AS a FROM smp SAMPLE 1000 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 1000 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
+SELECT '31a', x.a, y.b FROM (SELECT count() AS a FROM smp SAMPLE 1000 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 1000 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
+SELECT '31a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM smp SAMPLE 1000 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 1000 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+SELECT '31b', x.a, y.b FROM (SELECT count() AS a FROM smp SAMPLE 0.1 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 0.1 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
+SELECT '31b', x.a, y.b FROM (SELECT count() AS a FROM smp SAMPLE 0.1 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 0.1 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
+SELECT '31b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM smp SAMPLE 0.1 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 0.1 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+
 DROP TABLE t;
 DROP TABLE tn;
 DROP TABLE m;
@@ -231,3 +310,8 @@ DROP TABLE arr;
 DROP TABLE al;
 DROP TABLE rmt;
 DROP TABLE rp;
+DROP TABLE jl;
+DROP TABLE jr;
+DROP TABLE cols;
+DROP TABLE proj;
+DROP TABLE smp;

@@ -6336,8 +6336,9 @@ Rewrite sumIf() and sum(if()) function countIf() function when logically equival
 Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
 only when col is of String or FixedString type.
 )", 0) \
-    DECLARE(Bool, optimize_fuse_sibling_aggregate_subqueries, true, R"(
-Answer sibling single-row aggregate subqueries that read the same tables with a single pass.
+    DECLARE(Bool, optimize_fuse_sibling_aggregate_subqueries, false, R"(
+Answer sibling single-row aggregate subqueries that read the same tables with a single pass. Disabled
+by default.
 
 A cross/comma join of derived tables that each aggregate the same `FROM` and differ only in their own
 `WHERE` conjuncts reads those tables once per branch. When enabled, the conjuncts shared by every
@@ -6351,6 +6352,11 @@ The rewrite is deliberately restricted to the cases where it is provably answer-
 that take no arguments (such as `count()`), MergeTree sources that read stored values with no
 expression evaluated on the way out, and branch filters built from comparisons and logical
 connectives over a single one of those tables.
+
+One shape loses: when the branches' residual conjuncts are each prunable by the sorting key, the
+unfused branches prune to a few marks apiece while the single fused scan keeps the rows of all of
+them, so one broad read replaces several narrow ones. A query tree cannot see access paths, hence the
+opt-in default.
 
 :::note
 Supported only with the analyzer (`enable_analyzer = 1`).
