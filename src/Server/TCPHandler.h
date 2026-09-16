@@ -358,7 +358,8 @@ private:
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
-    static void initMaybeCompressedOut(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out);
+    static void initMaybeCompressedOut(
+        QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
     void initMaybeCompressedOut(QueryState & state);
     void initBlockInput(QueryState & state);
     void initBlockOutput(QueryState & state, const Block & block);

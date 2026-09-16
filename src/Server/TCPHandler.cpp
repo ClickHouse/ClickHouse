@@ -107,6 +107,7 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
+    extern const SettingsUInt64 network_compression_min_bytes;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
@@ -3074,16 +3075,22 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 
 void TCPHandler::initMaybeCompressedOut(QueryState & state)
 {
-    initMaybeCompressedOut(state, out);
+    initMaybeCompressedOut(state, out, client_tcp_protocol_version);
 }
 
-void TCPHandler::initMaybeCompressedOut(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out)
+void TCPHandler::initMaybeCompressedOut(
+    QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version)
 {
     const Settings & query_settings = state.query_context->getSettingsRef();
     if (!state.maybe_compressed_out)
     {
         if (auto codec = getCompressionCodec(query_settings, state.compression))
-            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
+        {
+            auto compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
+            if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SMALL_FRAME_COMPRESSION)
+                compressed_out->setMinBytesToCompress(query_settings[Setting::network_compression_min_bytes]);
+            state.maybe_compressed_out = std::move(compressed_out);
+        }
         else
             state.maybe_compressed_out = std::move(out);
     }
@@ -3114,7 +3121,7 @@ void TCPHandler::initLogsBlockOutput(
         WriteBuffer * logs_buf = out.get();
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
         {
-            initMaybeCompressedOut(state, std::move(out));
+            initMaybeCompressedOut(state, std::move(out), client_tcp_protocol_version);
             logs_buf = state.maybe_compressed_out.get();
         }
 
