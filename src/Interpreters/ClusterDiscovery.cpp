@@ -643,7 +643,7 @@ void ClusterDiscovery::findDynamicClusters(
                     /* username= */ path.username,
                     /* password= */ path.password,
                     /* cluster_secret= */ path.cluster_secret,
-                    /* port= */ context->getBoundTCPPort(),
+                    /* port= */ getAdvertisedPort(path.is_secure_connection),
                     /* secure= */ path.is_secure_connection,
                     /* shard_id= */ 0,
                     /* observer_mode= */ true,
@@ -891,6 +891,10 @@ String ClusterDiscovery::NodeInfo::serialize() const
     Poco::JSON::Object json;
     json.set("version", data_ver);
     json.set("address", address);
+    /// `parse` reads this flag and `makeCluster` skips every node whose flag differs from the
+    /// current node's, so a secure node that did not publish it would be skipped by all peers
+    /// (and by itself).
+    json.set("secure", secure);
     json.set("shard_id", shard_id);
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
