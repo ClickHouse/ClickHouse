@@ -485,8 +485,7 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 
 using DictionaryBlockRanges = std::vector<std::pair<size_t, size_t>>;
 
-/// Ascending, non-overlapping, half-open ranges of dictionary blocks holding the tokens of `key_ranges`.
-/// Without key ranges the whole dictionary is returned; an empty result means no block can hold a match.
+/// Ascending, non-overlapping, half-open block ranges; absent key ranges mean the whole dictionary, an empty result none.
 DictionaryBlockRanges blocksMatchingTokenKeyRanges(
     const DictionarySparseIndex & sparse_index, const std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> & key_ranges)
 {
@@ -703,9 +702,11 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
 
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
+    const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
     size_t postings_to_read = 0;
     std::vector<size_t> matched_indices;
+    PaddedPODArray<UInt8> candidate_marks;
     for (const auto & [range_begin, range_end] : block_ranges)
     {
         for (size_t block_idx = range_begin; block_idx < range_end; ++block_idx)
@@ -722,11 +723,18 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
 
             matched_indices.clear();
 
-            for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
+            if (filter_tokens_by_literals)
             {
-                const auto & token = block_tokens.getDataAt(token_idx);
-                if (analyzer->addTokenToPatterns(token))
-                    matched_indices.emplace_back(token_idx);
+                analyzer->matchTokensByLiterals(block_tokens, candidate_marks, matched_indices);
+            }
+            else
+            {
+                for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
+                {
+                    const auto & token = block_tokens.getDataAt(token_idx);
+                    if (analyzer->addTokenToPatterns(token))
+                        matched_indices.emplace_back(token_idx);
+                }
             }
 
             if (matched_indices.empty())

@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 #include <Common/re2.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -156,6 +157,10 @@ public:
     RegexpMatchKind getMatchKind() const { return match_kind; }
 
     std::string_view getRequiredSubstring() const { return required_substring; }
+
+    /// Finds `required_substring` in `[haystack, haystack + haystack_size)` with the searcher `match` uses, so
+    /// `match` rejects any subject this does not find it in. Returns the end when it does not occur.
+    const UInt8 * searchRequiredSubstring(const UInt8 * haystack, size_t haystack_size) const;
 
 private:
     bool isAnchoredLiteral() const { return isAnchoredLiteralMatchKind(match_kind); }
