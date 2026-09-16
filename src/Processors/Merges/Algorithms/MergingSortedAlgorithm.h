@@ -26,8 +26,7 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
-        bool apply_virtual_row_conversions_ = true,
-        bool emit_boundary_virtual_rows_ = false);
+        bool apply_virtual_row_conversions_ = true);
 
     void addInput();
 
@@ -57,12 +56,6 @@ private:
 
     bool apply_virtual_row_conversions;
 
-    /// A preliminary merge of a two-level in-order merge consumes its members' virtual rows;
-    /// with this set it forwards each one downstream first: the group's next output is
-    /// bounded by its queue minimum, so the announcement is as valid for the merged stream
-    /// as it was for the member, and the top-level merge can keep the whole group deferred.
-    const bool emit_boundary_virtual_rows;
-
     /// Chunks currently being merged.
     Inputs current_inputs;
 
@@ -77,10 +70,6 @@ private:
 
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
-
-    /// Re-emits the virtual row consumed from `source_num` as this merge's own boundary
-    /// announcement and asks the source for its next chunk.
-    Status forwardVirtualRow(size_t source_num);
 
     bool hasFilter() const { return filter_column_position != -1; }
     void insertRow(const SortCursorImpl & current);

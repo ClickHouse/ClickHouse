@@ -1,8 +1,8 @@
--- A two-level in-order merge forwards the virtual rows of its members through the preliminary
--- merges, so they pass every transform between the preliminary and the final merge, here a
--- preliminary DISTINCT. A forwarded virtual row must stay an announcement (an empty chunk), or
--- the DISTINCT remembers its key and drops the real rows it announced: the first key of every
--- part in read order, i.e. the minimum of the table for ascending and the maximum for descending.
+-- A two-level in-order merge consumes the virtual rows of its members in the preliminary
+-- merges, so nothing but real rows may reach the transforms between the preliminary and the
+-- final merge, here a preliminary DISTINCT: were an announcement to pass, the DISTINCT would
+-- remember its key and drop the real rows it announced (the first key of every part in read
+-- order, i.e. the minimum of the table for ascending and the maximum for descending).
 
 DROP TABLE IF EXISTS t_virtual_row_two_level_distinct;
 

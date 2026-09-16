@@ -94,8 +94,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     WriteBuffer * out_row_sources_buf_,
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
-    bool apply_virtual_row_conversions_,
-    bool emit_boundary_virtual_rows_)
+    bool apply_virtual_row_conversions_)
     : header(std::move(header_))
     , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , description(description_)
@@ -103,7 +102,6 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , out_row_sources_buf(out_row_sources_buf_)
     , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
-    , emit_boundary_virtual_rows(emit_boundary_virtual_rows_)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
@@ -357,22 +355,6 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
     }
 }
 
-IMergingAlgorithm::Status MergingSortedAlgorithm::forwardVirtualRow(size_t source_num)
-{
-    /// Downstream must see the announcement the way `VirtualRowTransform` emits it: an empty
-    /// chunk whose key lives in the chunk info. The row `setVirtualRow` materialized for the
-    /// cursor is this merge's business only; any transform in between would take it for data.
-    auto & chunk = current_inputs[source_num].chunk;
-    chunk.setColumns(chunk.cloneEmptyColumns(), 0);
-
-    Status result(std::move(chunk));
-    result.required_source = source_num;
-    /// The consumer may park this whole group behind the boundary and never come back for it,
-    /// so the member is read only once the consumer asks for more (see `IMergingTransformBase`).
-    result.required_source_on_demand = true;
-    return result;
-}
-
 template <typename TSortingHeap>
 IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue)
 {
@@ -386,22 +368,9 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
         {
-            size_t source_num = current.impl->order;
-
-            if (emit_boundary_virtual_rows && isVirtualRow(current_inputs[source_num].chunk))
-            {
-                /// Rows merged before this boundary must leave first, or downstream would
-                /// see data below a boundary it was already given.
-                if (merged_data.mergedRows() != 0)
-                    return Status(merged_data.pull());
-
-                queue.removeTop();
-                return forwardVirtualRow(source_num);
-            }
-
             /// Get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            return Status(source_num);
+            return Status(current.impl->order);
         }
 
         if (current.impl->isFirst()
@@ -485,21 +454,9 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
 
             if (initial_batch_size == 1)
             {
-                size_t source_num = current.impl->order;
-
-                if (emit_boundary_virtual_rows && isVirtualRow(current_inputs[source_num].chunk))
-                {
-                    /// See mergeImpl: flush merged rows before forwarding the boundary.
-                    if (merged_data.mergedRows() != 0)
-                        return Status(merged_data.pull());
-
-                    queue.removeTop();
-                    return forwardVirtualRow(source_num);
-                }
-
                 /// Get the next block from the corresponding source, if there is one.
                 queue.removeTop();
-                return Status(source_num);
+                return Status(current.impl->order);
             }
         }
 

@@ -5,19 +5,22 @@
 #include <Processors/IProcessor.h>
 
 #include <deque>
-#include <optional>
 
 namespace DB
 {
 
-/// N-in / N-out processor between the in-order `MergeTree` streams and the final
-/// `MergingSortedTransform` of a read-in-order query. Lane i connects input i to output i.
+/// N-in / N-out processor between the in-order `MergeTree` streams (or their preliminary
+/// merges) and the final `MergingSortedTransform` of a read-in-order query. Lane i connects
+/// input i to output i. It takes over two things the merge used to get from elsewhere:
 ///
-/// Starts on demand, then reads ahead when a portion produces too few surviving rows.
-/// Active lanes buffer independently of speculation; consecutive announcements coalesce.
-/// With a `LIMIT`, speculation widens one lane at a time as sparse results come back and
-/// stops past the key where the rows already held satisfy the limit.
-/// The merge still owns ordering and decides when to stop for `LIMIT`.
+/// - the buffering of `BufferChunksTransform`: an active lane reads ahead up to the caps, and
+///   after delivering a virtual row it waits until the merge asks for the lane again, so a
+///   source parked behind its announcement is not read;
+/// - the read-ahead window the merge itself used to run: lanes that start with a virtual row
+///   are deferred, and up to `read_ahead_window` of them, nearest to the merge in key order,
+///   are woken once each, so their reads overlap with the merge instead of running one at a
+///   time. With a `LIMIT` the window opens only after the merge has moved past a lane that
+///   delivered data, since until then the front lane alone may answer the query.
 class VirtualRowReadAheadTransform final : public IProcessor
 {
 public:
@@ -34,44 +37,39 @@ public:
     String getName() const override { return "VirtualRowReadAhead"; }
 
     Status prepare() override;
-    Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
-    void work() override;
 
 private:
     struct Lane
     {
         InputPort * input = nullptr;
         OutputPort * output = nullptr;
-        Chunk incoming;
         std::deque<Chunk> chunks;
-        Columns boundary;
-        size_t rows_since_boundary = 0;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
-        size_t port_rows = 0;
-        Columns port_keys;
-        bool port_filled = false;
-        size_t taken_rows = 0;
-        Columns taken_keys;
         UInt64 rows_read = 0;
-        bool output_started = false;
+        /// Sort key of the initial virtual row; empty for a lane that started with data.
+        Columns key;
+        bool started = false;
+        /// A virtual row was delivered and the merge has not asked for the lane since.
+        bool parked = false;
+        /// Started with a virtual row, and neither the merge nor the window has reached it.
+        bool deferred = false;
+        /// Woken by the window; holds a slot until its data arrives or it runs dry.
+        bool prefetched = false;
         bool demanded = false;
-        bool read_requested = false;
-        bool speculated = false;
-        bool limit_reached = false;
-        bool input_finished = false;
+        bool had_data = false;
         bool finished = false;
     };
 
     void finishLane(Lane & lane);
-    Columns getBoundary(const Columns & key_columns, size_t row) const;
-    Columns getBoundary(const Chunk & chunk, size_t row) const;
-    Columns heldRowKey(const Lane & lane, size_t row) const;
-    int compareBoundaries(const Columns & lhs, const Columns & rhs) const;
-    bool earlier(size_t lhs, size_t rhs) const;
-    bool needsMoreSources(size_t lane_num, const Chunk & chunk) const;
+    void releaseSlot(Lane & lane);
+    /// Records the chunk in the lane's state; returns false for an empty chunk to drop.
+    bool accept(Lane & lane, const Chunk & chunk);
+    void deliver(size_t lane_num, Chunk chunk);
+    void wakeDeferredLanes();
+    Columns extractKey(const Chunk & virtual_row) const;
+    bool keyLess(size_t lhs, size_t rhs) const;
     bool canBuffer(const Lane & lane) const;
-    std::optional<Columns> coverageBoundary();
 
     const SharedHeader header;
     const SortDescription description;
@@ -80,16 +78,21 @@ private:
     const size_t max_rows_to_buffer;
     const size_t max_bytes_to_buffer;
     const size_t read_ahead_window;
-    const size_t useful_rows_target;
     std::vector<size_t> sort_positions;
 
     std::vector<Lane> lanes;
-    std::vector<size_t> candidates;
-    std::vector<size_t> data_lanes;
-    std::vector<size_t> ready_lanes;
     size_t finished_lanes = 0;
-    bool read_ahead_started = false;
-    size_t speculation_allowance = 0;
+
+    /// Deferred lanes in the order the merge will reach them, fixed once every lane has
+    /// announced itself; `next_deferred` walks it, so each lane is woken at most once.
+    std::vector<size_t> deferred_order;
+    bool deferred_order_built = false;
+    size_t next_deferred = 0;
+    size_t prefetches_in_flight = 0;
+    /// The merge asked for a lane other than the one whose data it was consuming, or a lane
+    /// it asked for ran dry: with a `LIMIT`, this is what justifies reading ahead.
+    bool merge_advanced = false;
+    ssize_t last_lane_with_data = -1;
 };
 
 }
