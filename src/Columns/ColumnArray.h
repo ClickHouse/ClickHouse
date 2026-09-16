@@ -189,6 +189,7 @@ public:
         data->forEachMutableSubcolumnRecursively(callback);
     }
 
+    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(offsets);
