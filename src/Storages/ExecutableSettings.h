@@ -25,7 +25,6 @@ struct ExecutableSettings
     std::string script_name;
     VectorWithMemoryTracking<std::string> script_arguments;
     bool is_executable_pool = false;
-    bool is_table_function = false;
 
     ExecutableSettings();
     ExecutableSettings(const ExecutableSettings & settings);

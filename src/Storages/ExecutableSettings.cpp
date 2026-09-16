@@ -31,7 +31,6 @@ ExecutableSettings::ExecutableSettings()
     : script_name({})
     , script_arguments({})
     , is_executable_pool(false)
-    , is_table_function(false)
     , impl(std::make_unique<ExecutableSettingsImpl>())
 {
 }
@@ -40,7 +39,6 @@ ExecutableSettings::ExecutableSettings(const ExecutableSettings & settings)
     : script_name(settings.script_name)
     , script_arguments(settings.script_arguments)
     , is_executable_pool(settings.is_executable_pool)
-    , is_table_function(settings.is_table_function)
     , impl(std::make_unique<ExecutableSettingsImpl>(*settings.impl))
 {
 }

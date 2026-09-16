@@ -37,7 +37,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_executable_table_engine;
+    extern const SettingsBool allow_executable_tables;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds max_execution_time;
 }
@@ -64,16 +64,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkExecutableEngineAllowed(const ContextPtr & context, const String & engine_name)
-    {
-        if (!context->getSettingsRef()[Setting::allow_executable_table_engine])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Table engine `{}` is disabled. "
-                "Set `allow_executable_table_engine` setting to enable it",
-                engine_name);
-    }
-
     void transformToSingleBlockSources(Pipes & inputs)
     {
         size_t inputs_size = inputs.size();
@@ -176,8 +166,11 @@ void StorageExecutable::readImpl(
     size_t max_block_size,
     size_t /*threads*/)
 {
-    if (!settings->is_table_function)
-        checkExecutableEngineAllowed(context, getName());
+    if (!context->getSettingsRef()[Setting::allow_executable_tables])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The `executable` table function and the `Executable` and `ExecutablePool` table "
+            "engines are disabled. Set `allow_executable_tables` setting to enable them");
 
     auto & script_name = settings->script_name;
 
@@ -243,8 +236,12 @@ void registerStorageExecutable(StorageFactory & factory)
     {
         auto local_context = args.getLocalContext();
 
-        if (args.mode <= LoadingStrictnessLevel::CREATE)
-            checkExecutableEngineAllowed(local_context, args.engine_name);
+        if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+            && !local_context->getSettingsRef()[Setting::allow_executable_tables])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The `executable` table function and the `Executable` and `ExecutablePool` table "
+                "engines are disabled. Set `allow_executable_tables` setting to enable them");
 
         if (args.engine_args.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

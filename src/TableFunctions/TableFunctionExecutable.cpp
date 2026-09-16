@@ -1,6 +1,5 @@
 
 #include <Analyzer/TableFunctionNode.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -25,14 +24,8 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool allow_executable_table_function;
-}
-
 namespace ErrorCodes
 {
-    extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
@@ -41,15 +34,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-void checkExecutableFunctionAllowed(const ContextPtr & context)
-{
-    if (!context->getSettingsRef()[Setting::allow_executable_table_function])
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Table function `executable` is disabled. "
-            "Set `allow_executable_table_function` setting to enable it");
-}
 
 /* executable(script_name_optional_arguments, format, structure, input_query) - creates a temporary storage from executable file
  *
@@ -194,19 +178,16 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
 ColumnsDescription TableFunctionExecutable::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    checkExecutableFunctionAllowed(context);
     return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    checkExecutableFunctionAllowed(context);
     auto storage_id = StorageID(getDatabaseName(), table_name);
     auto global_context = context->getGlobalContext();
     ExecutableSettings settings;
     settings.script_name = script_name;
     settings.script_arguments = arguments;
-    settings.is_table_function = true;
     if (settings_query != nullptr)
         settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
 
