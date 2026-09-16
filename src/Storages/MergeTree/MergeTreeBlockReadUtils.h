@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
@@ -15,6 +16,7 @@ class IMergeTreeDataPartInfoForReader;
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr context,
     bool with_subcolumns,
     Names & columns);
 
@@ -38,13 +40,15 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
+    ContextPtr context,
     bool with_subcolumns);
 
 MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const PrewhereExprSteps & mutation_steps);
+    const PrewhereExprSteps & mutation_steps,
+    ContextPtr context);
 
 struct MergeTreeBlockSizePredictor
 {

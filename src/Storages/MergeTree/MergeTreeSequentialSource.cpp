@@ -335,7 +335,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch)
+    bool prefetch,
+    ContextPtr context)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
     info->alter_conversions = std::move(alter_conversions);
@@ -365,7 +366,8 @@ Pipe createMergeTreeSequentialSource(
     auto result_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_to_read));
     const auto & info_for_reader = *info->data_part_info;
 
-    info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, info->mutation_steps);
+    info->task_columns = getReadTaskColumnsForMerge(
+        info_for_reader, storage_snapshot, columns_to_read, info->mutation_steps, context);
     info->task_columns.moveAllColumnsFromPrewhere();
 
     if (info->alter_conversions->hasPatches())
@@ -494,7 +496,8 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            prefetch);
+            prefetch,
+            context);
 
         pipeline.init(Pipe(std::move(source)));
     }

@@ -1,0 +1,10 @@
+-- rename into a name freed by DROP, wide part
+0	1000	1000
+1	1001	1001
+2	1002	1002
+all_1_1_0_2	1	
+-- plain rename, wide part
+0	1000	1000
+1	1001	1001
+2	1002	1002
+all_1_1_0_2	1	

@@ -1,0 +1,13 @@
+-- index over matcher alias: rebuilt on ADD COLUMN
+1
+1
+1
+1
+-- index over matcher alias: THROW mode
+1
+-- materialized column with matcher: rematerialized on ADD COLUMN
+1
+0
+1001
+-- materialized column without matcher: no mutation on ADD COLUMN
+0

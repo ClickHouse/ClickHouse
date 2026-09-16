@@ -6,9 +6,9 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
@@ -30,6 +30,44 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_parsing_to_custom_serialization;
+}
+
+/// Append to `columns_to_read` the columns that the `DEFAULT` expressions of the already requested
+/// columns read, when those columns exist in the data file. Without them a column missing from the
+/// file cannot be materialized from its default (see `AddingDefaultsTransform`).
+static void addDefaultExpressionInputsToRead(
+    Strings & columns_to_read,
+    const NamesAndTypesList & columns_in_data_file,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context)
+{
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    const auto & column_defaults = columns.getDefaults();
+    if (column_defaults.empty())
+        return;
+
+    NameSet already_read(columns_to_read.begin(), columns_to_read.end());
+    NameSet available_in_file;
+    for (const auto & column : columns_in_data_file)
+        available_in_file.insert(column.name);
+
+    /// `columns_to_read` grows while it is walked, so a default that reads another defaulted
+    /// column pulls in the inputs of that one too.
+    for (size_t i = 0; i < columns_to_read.size(); ++i)
+    {
+        auto it = column_defaults.find(columns_to_read[i]);
+        if (it == column_defaults.end() || it->second.kind != ColumnDefaultKind::Default)
+            continue;
+
+        for (const auto & required_name : getDefaultExpressionRequiredColumns(it->second, columns, context))
+        {
+            auto column_in_storage = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_name);
+            auto name = column_in_storage ? column_in_storage->getNameInStorage() : required_name;
+
+            if (available_in_file.contains(name) && already_read.emplace(name).second)
+                columns_to_read.push_back(name);
+        }
+    }
 }
 
 ReadFromFormatInfo prepareReadingFromFormat(
@@ -105,6 +143,13 @@ ReadFromFormatInfo prepareReadingFromFormat(
         {
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
+
+        /// A requested column absent from the data file is computed from its `DEFAULT` expression
+        /// after reading, so the columns that expression reads have to be read as well. The
+        /// expression is expanded first, because a column matcher only names its source columns
+        /// after expansion. The extra columns are appended after `source_header` and
+        /// `requested_columns` are built, so they are read but not returned.
+        addDefaultExpressionInputsToRead(columns_to_read, columns_in_data_file, storage_snapshot, context);
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
@@ -448,7 +493,8 @@ size_t clampClusterFunctionNumStreams(UInt64 num_streams)
     return std::min<UInt64>(num_streams, 256 * getNumberOfCPUCoresToUse());
 }
 
-std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names)
+std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(
+    ReadFromFormatInfo & info, const NameSet & required_names, const ContextPtr & context)
 {
     /// Columns that the PREWHERE / row-level filter needs as inputs must stay in the main read
     /// because filtering happens there.
@@ -564,12 +610,23 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
         if (column_defaults.contains(storage_name) && names_in_default_expressions.insert(storage_name).second)
             names_to_visit.push_back(storage_name);
     };
-    auto default_expression_inputs = [&](const String & name)
+    std::unordered_map<String, NameSet> default_expression_inputs_cache;
+    auto default_expression_inputs = [&](const String & name) -> const NameSet &
     {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        auto expression = column_defaults.at(name).expression->clone();
-        RequiredSourceColumnsVisitor(columns_context).visit(expression);
-        return columns_context.requiredColumns();
+        auto [it, inserted] = default_expression_inputs_cache.try_emplace(name);
+        if (!inserted)
+            return it->second;
+
+        auto required_columns = getDefaultExpressionRequiredColumns(
+            column_defaults.at(name), info.columns_description, context);
+        for (const auto & required_name : required_columns)
+        {
+            if (auto column = info.columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_name))
+                it->second.insert(column->getNameInStorage());
+            else
+                it->second.insert(required_name);
+        }
+        return it->second;
     };
     for (const auto & column : info.source_header)
         if (columns_to_keep.contains(column.name))

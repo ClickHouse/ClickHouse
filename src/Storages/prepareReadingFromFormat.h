@@ -106,7 +106,8 @@ namespace DB
     /// appended to its source header, and the returned info describes the deferred columns alone
     /// (no virtual columns, no filters). Returns std::nullopt (leaving `info` untouched) if there
     /// is nothing to defer.
-    std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names);
+    std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(
+        ReadFromFormatInfo & info, const NameSet & required_names, const ContextPtr & context);
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
