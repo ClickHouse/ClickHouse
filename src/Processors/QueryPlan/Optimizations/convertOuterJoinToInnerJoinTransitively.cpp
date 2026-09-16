@@ -362,7 +362,7 @@ void visit(QueryPlan::Node & root)
                 stack.push_back({node.children.front(), {}});
                 continue;
             }
-            
+
             auto child_null_rejected_columns = remapNullRejectedColumnsThroughActions(filter->getExpression(), null_rejected_columns);
             collectNullRejectedColumnsFromFilter(*filter, child_null_rejected_columns);
             stack.push_back({node.children.front(), std::move(child_null_rejected_columns)});
