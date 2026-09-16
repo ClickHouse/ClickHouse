@@ -3578,7 +3578,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
-/// A set inside a lambda body lives in that body's own DAG and is not seen here.
+/// An `IN` inside a lambda yields no `KeyCondition` atom, so such a set never reaches index analysis.
 static bool conjunctProbesUnboundedSet(const ActionsDAG::Node * conjunct, size_t max_set_rows)
 {
     std::vector<const ActionsDAG::Node *> to_visit{conjunct};
