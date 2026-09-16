@@ -13,7 +13,6 @@ import subprocess
 from pathlib import Path
 
 from ci.jobs.parser_memory_check import (
-    CHANGE_THRESHOLD_BYTES,
     CHANGE_THRESHOLD_PCT,
     analyze_heap_profiles,
     batch_symbolize,
@@ -29,6 +28,10 @@ from ci.praktika.utils import Utils
 
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"
 SCENARIOS_DIR = Path(Utils.cwd()) / "utils/storage-memory-profiler/scenarios"
+# Stateful scenarios can leave one short-lived background executor task at a
+# checkpoint. Its tracked allocations vary by several hundred bytes between
+# otherwise identical runs, unlike the single-threaded parser measurements.
+STORAGE_CHANGE_THRESHOLD_BYTES = 1024
 
 
 def find_heap_profile(profiles_dir: Path, prefix: str, checkpoint: str) -> str:
@@ -303,7 +306,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
             else (100.0 if absolute_change else 0.0)
         )
         significant = (
-            absolute_change > CHANGE_THRESHOLD_BYTES
+            absolute_change > STORAGE_CHANGE_THRESHOLD_BYTES
             and percent_change > CHANGE_THRESHOLD_PCT
         )
         if significant and change > 0:
@@ -361,6 +364,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
             "Measuring live-memory changes across stateful storage scenarios."
         ),
         item_label="Scenario",
+        change_threshold_bytes=STORAGE_CHANGE_THRESHOLD_BYTES,
     )
 
     cleanup_heap_profiles(master_run["profiles_dir"])
