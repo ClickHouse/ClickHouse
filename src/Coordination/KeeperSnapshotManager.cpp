@@ -3,6 +3,7 @@
 #include <optional>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
@@ -28,6 +29,8 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
 
+#include <zstd.h>
+
 namespace ProfileEvents
 {
     extern const Event KeeperSnapshotWrittenBytes;
@@ -48,6 +51,21 @@ namespace ErrorCodes
 
 namespace
 {
+    int validateSnapshotZstdCompressionLevel(Int64 level)
+    {
+        const int min_level = ZSTD_minCLevel();
+        const int max_level = ZSTD_maxCLevel();
+        if (level < min_level || level > max_level)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "snapshot_zstd_compression_level must be between {} and {}, got {}",
+                min_level,
+                max_level,
+                level);
+
+        return static_cast<int>(level);
+    }
+
     std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
     {
         /// Unique-from-birth name avoids collisions between concurrent same-index writes.
@@ -355,9 +373,11 @@ KeeperSnapshotManager::makeManagedSnapshotFileInfo(std::string path, DiskPtr dis
 KeeperSnapshotManager::KeeperSnapshotManager(
     size_t snapshots_to_keep_,
     const KeeperContextPtr & keeper_context_,
-    bool compress_snapshots_zstd_)
+    bool compress_snapshots_zstd_,
+    Int64 snapshot_zstd_compression_level_)
     : snapshots_to_keep(snapshots_to_keep_)
     , compress_snapshots_zstd(compress_snapshots_zstd_)
+    , snapshot_zstd_compression_level(validateSnapshotZstdCompressionLevel(snapshot_zstd_compression_level_))
     , keeper_context(keeper_context_)
 {
     std::unordered_set<DiskPtr> read_disks;
@@ -691,9 +711,12 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
     auto * buffer_raw_ptr = writer.get();
     std::unique_ptr<WriteBuffer> compressed_writer;
     if (compress_snapshots_zstd)
-        compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
+        compressed_writer = wrapWriteBufferWithCompressionMethod(
+            std::move(writer), CompressionMethod::Zstd, snapshot_zstd_compression_level);
     else
-        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+        /// Pin `LZ4` explicitly: this is the legacy custom-frame snapshot format, so it must stay `LZ4`
+        /// independently of the server's default compression codec.
+        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer, CompressionCodecFactory::instance().get("LZ4", {}));
 
     KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
@@ -904,11 +927,14 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
         /// which is why only the uncompressed branch tracks the file buffer separately.
         WriteBuffer * unowned_file_buffer = nullptr;
         if (compress_snapshots_zstd)
-            compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
+            compressed_writer = wrapWriteBufferWithCompressionMethod(
+                std::move(writer), CompressionMethod::Zstd, snapshot_zstd_compression_level);
         else
         {
             unowned_file_buffer = writer.get();
-            compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+            /// Pin `LZ4` explicitly: this is the legacy custom-frame snapshot format, so it must stay `LZ4`
+            /// independently of the server's default compression codec.
+            compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer, CompressionCodecFactory::instance().get("LZ4", {}));
         }
 
         const size_t bytes_before = compressed_writer->count();
