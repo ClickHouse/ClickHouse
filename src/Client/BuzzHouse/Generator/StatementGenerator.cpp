@@ -2623,7 +2623,6 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     rg.pickWeighted({
         {0, [&] { sc->set_reload_embedded_dictionaries(true); }},
         {0, [&] { sc->set_reload_dictionaries(true); }},
-        {0, [&] { sc->set_reload_models(true); }},
         {3, [&] { sc->set_reload_functions(true); }},
         {1 * static_cast<uint32_t>(!functions.empty()),
          [&]

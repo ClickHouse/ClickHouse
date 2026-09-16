@@ -1,0 +1,9 @@
+<test>
+    <!-- The bucket-local Top-K conversion (query_plan_aggregation_bucket_top_k) visits every group
+         of every bucket, so its cost is O(groups) while the rest of the query is O(rows). Query 1
+         is conversion-dominated by construction: one group per row, two String keys, no scan.
+         Query 2 is the realistic ClickBench shape (~0.2 groups/row), a regression guard only. -->
+
+    <query>SELECT concat('u', toString(number)) AS a, concat('v', toString(number + 1)) AS b, count() AS c FROM numbers_mt(10000000) GROUP BY a, b ORDER BY c DESC LIMIT 10 SETTINGS query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, automatic_parallel_replicas_mode = 0 FORMAT Null</query>
+    <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c DESC LIMIT 10 SETTINGS query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, automatic_parallel_replicas_mode = 0 FORMAT Null</query>
+</test>

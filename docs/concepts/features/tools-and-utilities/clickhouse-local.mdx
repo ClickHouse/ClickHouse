@@ -247,6 +247,41 @@ Arguments:
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
+### Configuration files {#configuration-files}
+
+`clickhouse-local` does not use the configuration of a ClickHouse server installed on the same
+host - it looks for its own main configuration file and uses the first of these that exists:
+
+1. the path passed with `--config-file`;
+2. `./config.xml`;
+3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` or `./clickhouse-local.yml`;
+4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` or `~/.clickhouse-local/config.yml`;
+5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` or `/etc/clickhouse-local/config.yml`.
+
+Just like for `clickhouse-server`, the `.xml`, `.yaml`, `.yml` and `.conf` files from the merge
+directories next to the main configuration file are merged into it: `config.d` and `conf.d` for
+`config.xml`, `clickhouse-local.d` and `conf.d` for `clickhouse-local.yaml`, and so on.
+
+The merge directories of the current directory apply even when there is no main configuration file:
+`./config.d` and `./conf.d` are merged into a minimal configuration embedded in the binary. This
+makes a directory self-describing - for example, with
+
+```yaml title="config.d/datasets.yaml"
+storage_configuration:
+  disks:
+    datasets:
+      type: object_storage
+      object_storage_type: s3
+      metadata_type: plain_rewritable
+      endpoint: https://data.clickhouse.com/public-datasets/db/
+      no_sign_request: true
+      readonly: true
+      skip_access_check: true
+```
+
+every `clickhouse-local` started in that directory has the `datasets` disk, and no `config.xml`
+has to be created for it.
+
 ## Commands {#commands}
 
 ### LS Command {#ls-command}
