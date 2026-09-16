@@ -59,7 +59,7 @@ struct FormatSettings
 
     bool allow_special_serialization_kinds = false;
 
-    /// tolerates leading zeros during parsing integers
+    /// Infers a number, not a `String`, for an integer with leading zeros
     bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
