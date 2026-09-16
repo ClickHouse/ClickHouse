@@ -662,6 +662,10 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         text_index->preprocessor,
         text_index->postprocessor,
         text_index->params.positions,
+        /// A projection index is built without a storage metadata snapshot (see the constructors),
+        /// so `getColumnsShadowingMapSubcolumns` cannot be evaluated here; the projection's own
+        /// columns are the only ones this condition can read, so nothing shadows them.
+        /*columns_shadowing_map_subcolumns_=*/ NameSet{},
         text_index->params.enable_phrase_query_support,
         /*is_projection_index_=*/ true);
 }
