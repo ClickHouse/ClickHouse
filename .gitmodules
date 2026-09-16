@@ -426,3 +426,39 @@
 [submodule "contrib/substrait"]
 	path = contrib/substrait
 	url = https://github.com/substrait-io/substrait.git
+[submodule "contrib/cudf"]
+	path = contrib/cudf
+	url = https://github.com/rapidsai/cudf.git
+[submodule "contrib/rmm"]
+	path = contrib/rmm
+	url = https://github.com/rapidsai/rmm.git
+[submodule "contrib/kvikio"]
+	path = contrib/kvikio
+	url = https://github.com/rapidsai/kvikio.git
+[submodule "contrib/cccl"]
+	path = contrib/cccl
+	url = https://github.com/NVIDIA/cccl.git
+[submodule "contrib/cuCollections"]
+	path = contrib/cuCollections
+	url = https://github.com/NVIDIA/cuCollections.git
+[submodule "contrib/nvtx"]
+	path = contrib/nvtx
+	url = https://github.com/NVIDIA/NVTX.git
+[submodule "contrib/rapids-logger"]
+	path = contrib/rapids-logger
+	url = https://github.com/rapidsai/rapids-logger.git
+[submodule "contrib/bs-thread-pool"]
+	path = contrib/bs-thread-pool
+	url = https://github.com/bshoshany/thread-pool.git
+[submodule "contrib/dlpack"]
+	path = contrib/dlpack
+	url = https://github.com/dmlc/dlpack.git
+[submodule "contrib/nanoarrow"]
+	path = contrib/nanoarrow
+	url = https://github.com/apache/arrow-nanoarrow.git
+[submodule "contrib/librtcx"]
+	path = contrib/librtcx
+	url = https://github.com/rapidsai/librtcx.git
+[submodule "contrib/spdlog"]
+	path = contrib/spdlog
+	url = https://github.com/gabime/spdlog.git
