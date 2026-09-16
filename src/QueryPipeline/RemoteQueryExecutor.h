@@ -316,12 +316,6 @@ private:
     mutable std::mutex finish_gate_mutex;
     size_t finish_in_progress TSA_GUARDED_BY(finish_gate_mutex) = 0;
 
-    /** Test-only. Set by the one executor per arming that fires `remote_query_executor_finish_entry_hold`,
-      * so the holds in `finish` and `cancel` can be consumed only by that executor and not by a sibling
-      * shard's. False unless the failpoints are enabled.
-      */
-    std::atomic_bool owns_test_holds = false;
-
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
     /// owe us is that announcement - see `tryCancel`.
     std::atomic_bool announcement_received = false;
