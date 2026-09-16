@@ -1781,7 +1781,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
                 else
                 {
-                    table_expression_query_info.small_limit_above_array_join = true;
+                    table_expression_query_info.small_limit_above_array_join = shrink_block;
                 }
             }
 
