@@ -2,6 +2,7 @@
 #include <functional>
 #include <iterator>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -56,18 +57,21 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -101,6 +105,8 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace MergeTreeSetting
@@ -788,12 +794,16 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 /// 04367_distributed_plan_merge_scatter_multishard; the second, materializing run of the
 /// transforms in `ReadFromMerge::buildPipeline` is fenced by `planContainsLogicalExchange`) —
 /// unless the query has subquery sets, whose plans a child fragment cannot carry anymore.
-static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const ContextPtr & context, const SelectQueryInfo & query_info)
+static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
+    const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
 {
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.enable_parallel_replicas = false;
     if (queryHasSubquerySets(query_info))
         optimization_settings.make_distributed_plan = false;
+    /// Include the fallback decision here before call to optimize
+    if (child_plan.isInitialized())
+        child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     return optimization_settings;
 }
 
@@ -822,7 +832,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info));
+            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info, child.plan));
         }
     }
 
@@ -1039,6 +1049,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     auto logger = getLogger("StorageMerge");
 
+    /// A `FINAL` read is never distributed, so leave its children exactly as before.
+    const auto & settings = context->getSettingsRef();
+    const bool keep_parallel_replicas_for_children = settings[Setting::parallel_replicas_plan_based]
+        && settings[Setting::parallel_replicas_allow_merge_tables] && !InterpreterSelectQuery::isQueryWithFinal(query_info);
+
     /** Cache getModifiedQueryInfo results per column structure.
       * For tables with identical columns, getModifiedQueryInfo produces functionally identical results
       * (same cloned query tree, same aliases, same column names). The only differences are the table
@@ -1082,7 +1097,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// nested interpreters (e.g. for a `View` child) derive their own settings from this
             /// context. `make_distributed_plan` is cleared under the same condition as in
             /// `getChildPlanOptimizationSettings`.
-            modified_context->setSetting("enable_parallel_replicas", Field(0));
+            ///
+            /// The exception is a plain `MergeTree` child of a `Merge` read which is going to be expanded
+            /// for the plan-based parallel replicas (see `expandForParallelReplicas`): its read becomes an
+            /// ordinary read of the outer plan, which is distributed there, and that conversion needs the
+            /// setting in the context this read captures. Such a child is read directly, without a nested
+            /// interpreter, and its own plan is still never distributed - `getChildPlanOptimizationSettings`
+            /// disables the transformation for it regardless of the context.
+            if (!keep_parallel_replicas_for_children || !storage->isMergeTree())
+                modified_context->setSetting("enable_parallel_replicas", Field(0));
             if (queryHasSubquerySets(query_info))
                 modified_context->setSetting("make_distributed_plan", Field(0));
 
@@ -1179,6 +1202,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 database_name,
                 table_name,
                 RowPolicyFilterType::SELECT_FILTER);
+            /// `Merge` reads matched tables directly, so include the target policy when a matched table is an `Alias`.
+            if (const auto * alias = storage->as<StorageAlias>())
+            {
+                const auto target_storage_id = alias->getTargetTable()->getStorageID();
+                auto target_row_policy_filter = modified_context->getRowPolicyFilter(
+                    target_storage_id.getDatabaseName(),
+                    target_storage_id.getTableName(),
+                    RowPolicyFilterType::SELECT_FILTER);
+                row_policy_filter_ptr = combineRowPolicyFilters(
+                    std::move(row_policy_filter_ptr), std::move(target_row_policy_filter));
+            }
+
             if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
             {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
@@ -1361,7 +1396,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(*common_header, query_info, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1376,7 +1411,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 removeDelayedMaterializingCTEsStepFor(child.plan, outer_materialized_ctes);
 
-                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info));
+                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info, child.plan));
             }
 
             res.emplace_back(std::move(child));
@@ -1474,6 +1509,19 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     if (query_node->hasLimitByOffset())
         query_node->getLimitByOffset() = {};
     query_node->getLimitBy().getNodes().clear();
+    /// LIMIT selects rows relative to the ORDER BY cleared just above, so it is stale here.
+    query_node->setIsLimitWithTies(false);
+    if (query_node->hasLimit())
+        query_node->getLimit() = {};
+    if (query_node->hasOffset())
+        query_node->getOffset() = {};
+    /// The `LIMIT AFTER`/`UNTIL` boundaries select rows relative to that ORDER BY as well, and may refer
+    /// to columns of the removed joined table.
+    query_node->setIsLimitAfterAll(false);
+    if (query_node->hasLimitAfter())
+        query_node->getLimitAfter() = {};
+    if (query_node->hasLimitUntil())
+        query_node->getLimitUntil() = {};
 
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
@@ -1680,7 +1728,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// Original query could contain JOIN but we need only the first joined table and its columns.
         auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
         TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
-        removeJoin(modified_select, new_analyzer_res, modified_context);
+        if (removeJoin(modified_select, new_analyzer_res, modified_context))
+        {
+            /// removeJoin cleared the ORDER BY, so the LIMIT it selected rows for is stale.
+            /// Only when a JOIN was actually removed: a child without one may own its LIMIT.
+            modified_select.limit_with_ties = false;
+            modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
+            modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
+        }
         modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
     }
 
@@ -1690,8 +1745,18 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
-    for (auto * child : node->children)
-        ok &= recursivelyApplyToReadingSteps(child, func);
+    /// Only the first child of a set-creating step is the main pipeline; the rest read unrelated
+    /// tables to build the sets, and their sorting keys need not match this read's order prefix.
+    if (typeid_cast<CreatingSetsStep *>(node->step.get()) || typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+    {
+        if (!node->children.empty())
+            ok &= recursivelyApplyToReadingSteps(node->children.front(), func);
+    }
+    else
+    {
+        for (auto * child : node->children)
+            ok &= recursivelyApplyToReadingSteps(child, func);
+    }
 
     // This code is mainly meant to be used to call `requestReadingInOrder` on child steps.
     // In this case it is ok if one child will read in order and other will not (though I don't know when it is possible),
@@ -1716,7 +1781,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     /// this is the run that materializes the logical exchanges inserted into the child plan when
     /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
     /// referencing a subquery set must not be distributed.
-    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info);
+    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
@@ -1869,6 +1934,10 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
 
+    /// Keep the analyzer's set registry: it is the only list of the predicate's IN-subqueries,
+    /// and addFilterTransform needs it to plant the step that builds them.
+    prepared_sets = expression_analyzer.getPreparedSets();
+
     /// The filter column is dropped from the stream after filtering, so it must be a dedicated
     /// column that does not coincide with a data column. Wrap the policy predicate in a
     /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
@@ -1926,10 +1995,14 @@ void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
     step->addFilter(actions_dag.clone(), filter_column_name);
 }
 
-void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan) const
+void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextPtr local_context) const
 {
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
+
+    /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
+    /// additional pushdown. No subquery adds no step.
+    addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
@@ -2101,7 +2174,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
 }
 
 void StorageMerge::alter(
-    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
 
@@ -2115,6 +2188,7 @@ void StorageMerge::alter(
 
 void ReadFromMerge::convertAndFilterSourceStream(
     const Block & header,
+    const SelectQueryInfo & outer_query_info,
     SelectQueryInfo & modified_query_info,
     const StorageSnapshotPtr & snapshot,
     const Aliases & aliases,
@@ -2172,13 +2246,36 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt)
-        row_policy_data_opt->addFilterTransform(child.plan);
+        row_policy_data_opt->addFilterTransform(child.plan, local_context);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,
       * execution names in the output header may be different.
       * The same happens with StorageDistributed, even in the case of FetchColumns.
       */
+
+    /** A child that computes the whole query can return fewer columns than expected: its `ActionsDAG`
+      * deduplicates projection items that expand to the same expression, and `Distributed` inlines the
+      * `ALIAS` columns of the child table before sending the query, so `b UInt64 ALIAS a` selected next
+      * to `a` becomes one column. The names of the collapsed columns are gone from the child's header,
+      * and the reconciliation below matches by name or by position, neither of which can rebuild them -
+      * `addMissingDefaults` would then fill them with the default value of the type.
+      * Fan the collapsed columns back out first, the same way a direct read of such a child does
+      * (see `buildShardCollapseFanOut`, used by the planner for a `Distributed` table read).
+      */
+    if (child.plan.getCurrentHeader()->columns() < header.columns())
+    {
+        /// The translation between an `ALIAS` column's own name and its inlined expression is read from
+        /// the outer query tree and its planner context: those are what the expected `header` is named
+        /// after, and the child's derived planner context holds no column identifiers of its own.
+        if (auto fan_out_actions_dag = buildShardCollapseFanOut(
+                outer_query_info.query_tree, outer_query_info.planner_context, *child.plan.getCurrentHeader(), header))
+        {
+            auto fan_out_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
+            fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");
+            child.plan.addStep(std::move(fan_out_step));
+        }
+    }
 
     /** Convert types of columns according to the resulting Merge table.
       * And convert column names to the expected ones.
@@ -2317,6 +2414,129 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
         plans.push_back(child_plan.plan.isInitialized() ? &child_plan.plan : nullptr);
 
     return plans;
+}
+
+const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
+    const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
+{
+    /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
+    /// them. This step is opaque to it: the per-table subplans are built lazily and their pipelines - not
+    /// their plans - are united in `initializePipeline`, so the underlying reads are invisible while the
+    /// plan is transformed. `expandForParallelReplicas` unites the very same subplans at plan level instead,
+    /// turning the `Merge` into exactly the shape the transformation already distributes: a union of
+    /// `MergeTree` reads. This tells the caller whether that is possible, and which tables the union would
+    /// read, without touching the plan - so that the decision to distribute can be taken before anything is
+    /// rewritten.
+    if (expandable_reads)
+        return *expandable_reads;
+
+    filterTablesAndCreateChildrenPlans();
+
+    if (selected_tables.empty() || child_plans->empty())
+        return expandable_reads.emplace();
+
+    /// Every child must be a `MergeTree` table read by a plain read step, and none of them may be `FINAL`.
+    /// A child read through an interpreter (a `View`, a nested `Merge`) or a table of another engine has no
+    /// marks to coordinate, and a `FINAL` read is incompatible with parallel reading; either way the child
+    /// would be read in full by every replica and its rows duplicated. One such child disables the expansion
+    /// for the whole `Merge`: keeping the plan-level union for the remaining children would split the
+    /// `Merge` between two different reading mechanisms.
+    ///
+    /// The engine is checked on the table and not only on the shape of its plan, because the plan of a
+    /// `View` over a single `MergeTree` table has the same shape. Such a child was planned with parallel
+    /// replicas cleared from its context (see `createChildrenPlans`), so distributing its read would be
+    /// rejected later anyway, leaving an expanded `Merge` that is read by a single replica after all.
+    ///
+    /// The last word on whether a read can be distributed belongs to the caller, whose `can_ship_read` says
+    /// no for a table which is not replicated while `parallel_replicas_for_non_replicated_merge_tree` is off,
+    /// and for the target of a refreshable materialized view.
+    std::vector<StorageID> storage_ids;
+    storage_ids.reserve(child_plans->size());
+
+    /// `filterTablesAndCreateChildrenPlans` keeps the two aligned one to one, truncating the tables to the
+    /// plans it managed to build; walk them together, and expand nothing should they ever disagree.
+    chassert(selected_tables.size() == child_plans->size());
+
+    auto table_it = selected_tables.begin();
+    for (const auto & child : *child_plans)
+    {
+        if (table_it == selected_tables.end())
+            return expandable_reads.emplace();
+
+        const auto & storage = std::get<1>(*table_it);
+        ++table_it;
+
+        if (!storage->isMergeTree() || !child.plan.isInitialized())
+            return expandable_reads.emplace();
+
+        const auto * node = child.plan.getRootNode();
+
+        /// A row policy with an `IN (subquery)` predicate roots the child plan at a set-creating step
+        /// (`RowPolicyData::addFilterTransform`). Its sets are built by the initiator and a fragment
+        /// referencing them cannot be shipped to the replicas yet - `planHasSubquerySet` in
+        /// `applyParallelReplicas.cpp` keeps such plans local for the same reason - so this child keeps the
+        /// whole `Merge` on a single replica, deliberately and not through the shape check below.
+        if (node
+            && (typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())))
+            return expandable_reads.emplace();
+
+        /// Descend the steps the child plan puts on top of the read - the converting expressions and the
+        /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
+        /// by a plain read, whatever its leaf turns out to be.
+        while (node && node->children.size() == 1
+               && (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get())))
+            node = node->children.front();
+
+        const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
+        if (!reading || reading->isQueryWithFinal() || !can_ship_read(*reading))
+            return expandable_reads.emplace();
+
+        storage_ids.push_back(reading->getMergeTreeData().getStorageID());
+    }
+
+    return expandable_reads.emplace(std::move(storage_ids));
+}
+
+QueryPlan ReadFromMerge::expandForParallelReplicas()
+{
+    /// Precondition: `getExpandableReads` returned a value, so the child plans exist and every one of them
+    /// is a plain `MergeTree` read this union may distribute.
+    chassert(child_plans && !child_plans->empty());
+
+    SharedHeaders input_headers;
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    input_headers.reserve(child_plans->size());
+    plans.reserve(child_plans->size());
+    for (auto & child : *child_plans)
+    {
+        input_headers.push_back(child.plan.getCurrentHeader());
+        plans.push_back(std::make_unique<QueryPlan>(std::move(child.plan)));
+    }
+
+    /// Narrowing is allowed, as it is for the `UNION ALL` this union stands for. `initializePipeline` does
+    /// the same thing by hand (`pipeline.narrow`) because it unites pipelines, where the step's own machinery
+    /// is out of reach; here the union step caps the number of simultaneously reading children itself, by
+    /// `max_streams_for_union_step` and `max_streams_for_union_step_to_max_threads_ratio`. Of the three cases
+    /// in which `initializePipeline` skips narrowing, two cannot happen for an expanded `Merge` - every child
+    /// is a plain `MergeTree` read, so no child produces sorted streams or partial aggregation states - and
+    /// reading in order is handled generically: `optimizeReadInOrder` and `applyOrder` call `disableNarrowing`
+    /// on a union whose streams have to stay individually sorted.
+    QueryPlan union_plan;
+    union_plan.unitePlans(
+        std::make_unique<UnionStep>(std::move(input_headers), /*max_threads_=*/ 0, /*allow_narrowing_=*/ true),
+        std::move(plans));
+
+    /// This step is destroyed once it is replaced by the union, so the tables it holds must be kept alive by
+    /// the plan instead - the same holders `initializePipeline` attaches to the pipeline.
+    QueryPlanResourceHolder resources;
+    for (const auto & table : selected_tables)
+    {
+        resources.storage_holders.push_back(std::get<1>(table));
+        resources.table_locks.push_back(std::get<2>(table));
+    }
+    union_plan.addResources(std::move(resources));
+
+    return union_plan;
 }
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const

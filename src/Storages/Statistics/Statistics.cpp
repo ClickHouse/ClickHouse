@@ -1,6 +1,9 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,6 +53,28 @@ bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunct
         if (!a_types[i]->equals(*b_types[i]))
             return false;
     return true;
+}
+
+void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && value < accumulator)
+        accumulator = value;
+}
+
+void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && accumulator < value)
+        accumulator = value;
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -956,6 +981,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
+{
+    return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
 }
 
 }

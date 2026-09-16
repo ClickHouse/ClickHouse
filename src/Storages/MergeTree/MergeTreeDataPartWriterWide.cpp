@@ -246,23 +246,7 @@ void MergeTreeDataPartWriterWide::addStreams(
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
 
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-
-        /// If we can use special codec then just get it
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-        {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
-        }
-        else /// otherwise return only generic codecs and don't use info about the` data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
-
-        /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
-        /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
-        /// above (`isSpecialCompressionAllowed` == false), which drops it. So every stream that carries a
-        /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
-        /// pure-float `Tuple`.
+        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
@@ -521,13 +505,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
     const WrittenOffsetSubstreams & offset_substreams)
 {
     StreamsWithMarks result;
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    UInt64 min_compress_block_size = 0;
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            min_compress_block_size = value->safeGet<UInt64>();
-    if (!min_compress_block_size)
-        min_compress_block_size = settings.min_compress_block_size;
+    const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
 
     auto callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
@@ -618,6 +596,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
+    serialize_settings.min_compress_block_size = settings.min_compress_block_size;
     return serialize_settings;
 }
 
@@ -651,6 +630,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     auto serialize_settings = getSerializationSettings();
     serialize_settings.getter = createStreamGetter(name_and_type, offset_substreams);
+    serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
     serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
         auto stream_name = getStreamName(name_and_type, substream_path);
