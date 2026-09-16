@@ -259,7 +259,7 @@ bool typeCanHideTheValueType(const IDataType & type)
     if (hides_the_value_type(type))
         return true;
 
-    /// `forEachChild` already walks the whole subtree, so the callback must not recurse again.
+    /// `forEachChild` visits the whole subtree, not only the direct children.
     bool result = false;
     type.forEachChild([&](const IDataType & child) { result = result || hides_the_value_type(child); });
 

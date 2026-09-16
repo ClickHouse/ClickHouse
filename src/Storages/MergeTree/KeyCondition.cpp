@@ -2839,8 +2839,6 @@ static bool areTypesCompatibleForHasSetIndex(
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
 
-    /// The key side's cast into key space honours the type a raw `Field` drops, so such a key side
-    /// names a key value no matching row need hold, even when both sides are declared alike.
     if (typeCanHideTheValueType(*key_type))
         return false;
 
