@@ -16,6 +16,8 @@ doc_type: 'reference'
 時系列データをタイムスタンプと値の組として受け取り、開始タイムスタンプ、終了タイムスタンプ、step で定義される一定間隔の時間グリッド上で、このデータから [PromQL ライクな delta](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) を計算する集約関数です。
 グリッド上の各点について、`delta` の計算に使用するサンプルは、指定した time window 内で考慮されます。
 
+複数のサンプルのタイムスタンプが同一の場合、使用されるのはそのうち 1 つだけです。最も大きい値を持つサンプルが使用されます。NaN 値は他のどの値よりも優先度が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ使用されます。
+
 <Warning>
   この関数は実験的機能です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効にしてください。
 </Warning>
@@ -69,7 +71,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +92,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                    │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

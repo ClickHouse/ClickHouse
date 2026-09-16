@@ -13,7 +13,9 @@ doc_type: 'reference'
 
 Introducido en: v25.6.0
 
-Función de agregación que toma series temporales como pares de timestamps y valores, y calcula [cambios similares a PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#changes) a partir de estos datos en una cuadrícula temporal regular definida por el timestamp de inicio, el timestamp de fin y el paso. Para cada punto de la cuadrícula, las muestras para calcular `changes` se toman dentro de la ventana de tiempo especificada.
+Función de agregación que toma series temporales como pares de marcas de tiempo y valores, y calcula [cambios similares a PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#changes) a partir de estos datos en una cuadrícula temporal regular definida por la marca de tiempo de inicio, la marca de tiempo de fin y el paso. Para cada punto de la cuadrícula, las muestras para calcular `changes` se toman dentro de la ventana de tiempo especificada.
+
+Si varias muestras tienen la misma marca de tiempo, solo se utiliza una de ellas: la muestra con el mayor valor. Un valor NaN pierde frente a cualquier otro valor, por lo que un valor NaN solo se utiliza si todas las muestras con esta marca de tiempo son NaN.
 
 <Note>
   Esta función es experimental; habilítela estableciendo `allow_experimental_time_series_aggregate_functions=true`.
@@ -27,10 +29,10 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
 
 **Parámetros**
 
-* `start_timestamp` — Especifica el inicio de la cuadrícula. Con un argumento de timestamp `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o un texto de fecha y hora. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
-* `end_timestamp` — Especifica el final de la cuadrícula. Con un argumento de timestamp `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o un texto de fecha y hora. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
-* `grid_step` — Especifica el paso de la cuadrícula en segundos. Con un argumento de timestamp `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o una duración como &#39;15s&#39; o &#39;1m&#39;. [`UInt32`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
-* `staleness` — Especifica la &quot;desactualización&quot; máxima, en segundos, de las muestras consideradas. Con un argumento de timestamp `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o una duración como &#39;15s&#39; o &#39;1m&#39;. [`UInt32`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
+* `start_timestamp` — Especifica el inicio de la cuadrícula. Con un argumento de marca de tiempo `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o un texto de fecha y hora. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
+* `end_timestamp` — Especifica el final de la cuadrícula. Con un argumento de marca de tiempo `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o un texto de fecha y hora. [`UInt32`](/es/reference/data-types/int-uint) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
+* `grid_step` — Especifica el paso de la cuadrícula en segundos. Con un argumento de marca de tiempo `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o una duración como &#39;15s&#39; o &#39;1m&#39;. [`UInt32`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
+* `staleness` — Especifica la &quot;desactualización&quot; máxima, en segundos, de las muestras consideradas. Con un argumento de marca de tiempo `DateTime64`, también puede ser un número fraccionario o una cadena que contenga un número o una duración como &#39;15s&#39; o &#39;1m&#39;. [`UInt32`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`String`](/es/reference/data-types/string)
 
 **Argumentos**
 
@@ -67,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,1,1,1,NULL,0,1,2]                                                            │
+│ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                            │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,9 +88,9 @@ SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(t
 ```
 
 ```response title=Response
-┌─timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,1,1,1,NULL,0,1,2]                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

@@ -6,7 +6,6 @@
 #include <Storages/StorageSharedSetJoin.h>
 #endif
 
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -19,7 +18,6 @@
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
-#include <TableFunctions/TableFunctionFactory.h>
 
 #include <unordered_set>
 
@@ -42,55 +40,24 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
+class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
 {
 public:
-    explicit CollectSetsVisitor(PlannerContext & planner_context_)
-        : planner_context(planner_context_)
+    CollectSetsVisitor(PlannerContext & planner_context_, std::vector<QueryTreeNodePtr> & pending_source_expressions_)
+        : InDepthQueryTreeVisitorWithContext(planner_context_.getQueryContext())
+        , planner_context(planner_context_)
+        , pending_source_expressions(pending_source_expressions_)
     {}
 
-    void visitImpl(const QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
-        if (const auto * table_node = node->as<TableFunctionNode>())
-        {
-            const auto & table_function_name = table_node->getTableFunctionName();
-            const auto & context = planner_context.getQueryContext();
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, context);
-
-            const auto & table_function_arguments = table_node->getArguments().getNodes();
-
-            if (!table_function_ptr)
-            {
-                /// The name is not a table function: it is a parameterized view resolved as a `TableFunctionNode`.
-                /// Its arguments are view parameter values substituted into the view query, not expressions to
-                /// collect sets from, so skip all of them. This also avoids traversing into unresolved nodes.
-                for (const auto & table_function_argument : table_function_arguments)
-                    skip_children.insert(table_function_argument);
-            }
-            else
-            {
-                auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
-                size_t table_function_arguments_size = table_function_arguments.size();
-
-                for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
-                {
-                    const auto & table_function_argument = table_function_arguments[table_function_argument_index];
-
-                    auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
-                    if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
-                    {
-                        skip_children.insert(table_function_argument);
-                        continue;
-                    }
-                }
-            }
-        }
-
         if (const auto * constant_node = node->as<ConstantNode>())
             /// Collect sets from source expression as well.
             /// Most likely we will not build them, but those sets could be requested during analysis.
+            /// A source expression is not a query tree child, and a chain of them can be arbitrarily
+            /// long, so it is queued for a separate visit rather than descended into from here.
             if (constant_node->hasSourceExpression())
-                collectSets(constant_node->getSourceExpression(), planner_context);
+                pending_source_expressions.push_back(constant_node->getSourceExpression());
 
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
@@ -192,29 +159,41 @@ public:
         }
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child_node)
     {
-        if (skip_children.contains(child_node))
-        {
-            skip_children.erase(child_node);
-            return false;
-        }
-
         auto child_node_type = child_node->getNodeType();
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
 private:
     PlannerContext & planner_context;
-    std::unordered_set<QueryTreeNodePtr> skip_children;
+    std::vector<QueryTreeNodePtr> & pending_source_expressions;
 };
 
 }
 
 void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context)
 {
-    CollectSetsVisitor visitor(planner_context);
-    visitor.visit(node);
+    std::vector<QueryTreeNodePtr> pending_source_expressions{node};
+    /// Every link of a `DEFAULT` chain is reachable from each link above it, so without this the
+    /// worklist would visit link `i` once per link above it: `2 * N^2` root visits for a chain of N
+    /// columns, against `4 * N` with it. Skipping a repeat visit changes nothing, because every set
+    /// registration in `enterImpl` is already guarded by `findTuple`, `findStorage` or `findSubquery`.
+    std::unordered_set<QueryTreeNodePtr> visited_source_expressions;
+
+    while (!pending_source_expressions.empty())
+    {
+        auto node_to_visit = pending_source_expressions.back();
+        pending_source_expressions.pop_back();
+
+        if (!visited_source_expressions.insert(node_to_visit).second)
+            continue;
+
+        /// Each pending node is visited as a root: needChildVisit refuses QUERY and UNION
+        /// children, so a source expression that is itself a query must start its own visit.
+        CollectSetsVisitor visitor(planner_context, pending_source_expressions);
+        visitor.visit(node_to_visit);
+    }
 }
 
 }

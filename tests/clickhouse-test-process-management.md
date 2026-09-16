@@ -93,10 +93,10 @@ Two producers can reach these streams:
   unrelated internal error instead of as this test's failure.
   A write from a branch that *does* go on to exec would be truncated by the
   redirect, which is why the benign "cgroups are not available" notice is emitted
-  from the parent instead: `report_cgroups_unavailable` is `@cache_ignore_args`,
+  from the parent instead: `report_cgroups_unavailable` is `functools.cache`d,
   so it reports once per test-executing process rather than once per spawn - up to
-  `--jobs + 1` times, because the cache lives in a per-function closure (so it is
-  per process) and `run_single_test` is reached both from the forked parallel
+  `--jobs + 1` times, because the cache lives in the decorated function itself (so
+  it is per process) and `run_single_test` is reached both from the forked parallel
   workers and directly from the parent for a suite's sequential tests.
 
 Both halves of the `open` pair above are load-bearing, and for opposite reasons:
