@@ -530,6 +530,8 @@ ColumnPtr extractSubObjectColumn(const ColumnObject & object_column, const Strin
 /// Prefers the literal value if present; falls back to the sub-object cast to Dynamic; otherwise NULL.
 /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present,
 /// so a sub-object whose only typed descendants are all NULL is treated as empty.
+/// When literal_type is set (typed path), the typed literal is cast to Dynamic before the merge
+/// so the result type is always Dynamic, including the empty-sub-object early return.
 ColumnPtr extractCombinedColumn(
     const ColumnObject & object_column,
     const String & path,
@@ -537,9 +539,13 @@ ColumnPtr extractCombinedColumn(
     const DataTypePtr & sub_object_type,
     const DataTypePtr & dynamic_result_type,
     size_t max_dynamic_types,
-    bool skip_null_typed_paths = false)
+    bool skip_null_typed_paths = false,
+    DataTypePtr literal_type = {})
 {
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
+    if (literal_type)
+        literal_column = castColumn({literal_column, literal_type, ""}, dynamic_result_type);
+
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
     /// If sub-object contains only empty objects, just use literal.
@@ -945,10 +951,14 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
         max_dynamic_paths, max_dynamic_types);
     auto dynamic_result_type = getDynamicType();
 
+    DataTypePtr literal_type;
+    if (auto it = typed_paths.find(path); it != typed_paths.end())
+        literal_type = it->second;
+
     return extractCombinedColumn(
         object_column, path, prefix, sub_object_type,
         dynamic_result_type, max_dynamic_types,
-        skip_null_typed_paths);
+        skip_null_typed_paths, literal_type);
 }
 
 UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
