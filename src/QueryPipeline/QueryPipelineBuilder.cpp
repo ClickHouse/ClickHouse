@@ -660,7 +660,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         }
 
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
+            left_header,
+            output_header,
+            join,
+            max_block_size,
+            false,
+            default_totals,
+            joining_finish_counter,
+            joining_right_rows_match_counter,
+            emit_non_joined,
+            /*probe_lane_=*/i);
 
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
