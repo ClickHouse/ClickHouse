@@ -943,12 +943,16 @@ void writeColumnImpl(
     }
 
     s.column_chunk.meta_data.__isset.size_statistics = true;
-    if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-        s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
-    if (s.max_rep > 0)
-        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
-    if (s.max_def > 0)
-        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+    auto reset_size_statistics = [&]
+    {
+        if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
+        if (s.max_rep > 0)
+            s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+        if (s.max_def > 0)
+            s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+    };
+    reset_size_statistics();
 
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
@@ -1171,7 +1175,11 @@ void writeColumnImpl(
         use_dictionary = false;
 
         s.indexes = {};
-        /// (no need to clear hashes_for_bloom_filter)
+        /// Everything the discarded pass accumulated is about to be accumulated again.
+        /// (no need to clear hashes_for_bloom_filter: the same values hash to the same set)
+        reset_size_statistics();
+        page_statistics.clear();
+        total_statistics.clear();
 
 #ifndef NDEBUG
         /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
@@ -1265,6 +1273,18 @@ void writeColumnImpl(
                     data_count += s.def[next_def_offset + def_count] == s.max_def;
                     ++def_count;
                 }
+            }
+
+            /// A converter materializes the whole batch before it can be measured, and ConverterJSON
+            /// serializes each value into storage of its own, so a batch of wide values has to be cut
+            /// from the source column's sizes before that happens. Those sizes only approximate the
+            /// encoded ones - serializing a value can grow it - so the batch is measured again below,
+            /// once the values exist.
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count,
+                    [&](size_t i) { return s.primitive_column->byteSizeAt(next_data_offset + i); });
             }
 
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
