@@ -33,6 +33,15 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             stats.num_distinct_values += output_lineage.input->ndv_delta;
         if (!output_lineage.input->preserves_width)
             stats.avg_bytes = 0;
+        /// The value range and NULL set survive only lineage known to pass the value through
+        /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `negate(k)`)
+        /// or a `CAST`, which may rewrite NULL rows into real values.
+        if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
+        {
+            stats.min_value.reset();
+            stats.max_value.reset();
+            stats.null_fraction.reset();
+        }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 }
