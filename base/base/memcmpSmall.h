@@ -4,9 +4,9 @@
 #include <bit>
 #include <cstdint>
 
+#include <base/bigEndianCompare.h>
 #include <base/MemorySanitizer.h>
 #include <base/simd.h>
-#include <base/unaligned.h>
 
 namespace detail
 {
@@ -21,32 +21,15 @@ inline int cmp(T a, T b)
     return 0;
 }
 
-inline unsigned __int128 loadBigEndian128(const void * p)
-{
-    uint64_t hi = unalignedLoad<uint64_t>(p);
-    uint64_t lo = unalignedLoad<uint64_t>(static_cast<const char *>(p) + sizeof(hi));
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        hi = std::byteswap(hi);
-        lo = std::byteswap(lo);
-    }
-    return static_cast<unsigned __int128>(hi) << 64 | lo;
-}
-
 }
 
 
 /** Compare memory regions of size 16 exactly.
-  * Comparing the operands as big-endian 128-bit integers is branchless (on x86-64: movbe, cmp, sbb, setcc),
-  * unlike locating the first differing byte with SIMD, which mispredicts when it is not predictable
-  * whether the values are equal.
   */
 template <typename Char>
 inline int memcmp16(const Char * a, const Char * b)
 {
-    unsigned __int128 x = detail::loadBigEndian128(a);
-    unsigned __int128 y = detail::loadBigEndian128(b);
-    return (x > y) - (x < y);
+    return compareBigEndian16(a, b);
 }
 
 
