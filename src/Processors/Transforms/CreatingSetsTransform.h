@@ -32,12 +32,14 @@ public:
         SharedHeader out_header_,
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        PreparedSetsCachePtr prepared_sets_cache_,
+        bool recoverable_build_ = false);
 
     ~CreatingSetsTransform() override;
 
     String getName() const override { return "CreatingSetsTransform"; }
 
+    Status prepare() override;
     void work() override;
     void consume(Chunk chunk) override;
     Chunk generate() override;
@@ -57,6 +59,9 @@ private:
 
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
+
+    /// See `CreatingSetStep::recoverable_build`.
+    bool recoverable_build = false;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;

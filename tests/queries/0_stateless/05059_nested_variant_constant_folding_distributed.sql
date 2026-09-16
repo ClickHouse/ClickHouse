@@ -58,8 +58,10 @@ FROM
 
 DROP TABLE t_variant_const_pushdown;
 
--- The `OR`-to-`IN` rewrite builds a constant with its enclosing cast suppressed, so each leaf has to name
--- its own type: the row below is matched on a single node and missed through a secondary server otherwise.
+-- The `OR`-to-`IN` rewrite builds the constant with its enclosing cast suppressed, so the member type has
+-- to be named there too, and the `DateTime` sibling has to keep crossing as a raw timestamp: as local
+-- date-time text it would be re-parsed an hour early in the DST overlap and the row below would be missed
+-- through a secondary server while still matching on a single node.
 DROP TABLE IF EXISTS t_variant_const_or_in;
 CREATE TABLE t_variant_const_or_in (x Tuple(DateTime('Europe/Berlin'), Variant(UInt64))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_variant_const_or_in VALUES ((1698541800, 42)), ((1698538200, 41));
@@ -72,8 +74,8 @@ WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64))
 SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3;
 
 -- `count()` stays 1 if the rewrite declines and each equality keeps its own cast, so assert the rewritten
--- predicate too: the `IN` and the leaf's numeric cast have to be there together.
-SELECT countIf(explain ILIKE '%in(__table1.x, tuple(tuple(_CAST(1698541800,%')
+-- predicate too: the `IN`, the named member and the `DateTime` sibling's raw timestamp together.
+SELECT countIf(explain ILIKE '%in(__table1.x, tuple(tuple(1698541800, _CAST(_CAST(42, ''UInt64''), ''Variant(UInt64)''%')
 FROM
 (
     EXPLAIN SYNTAX run_query_tree_passes = 1

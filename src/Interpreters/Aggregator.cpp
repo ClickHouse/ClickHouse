@@ -74,6 +74,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationGiveUps;
     extern const Event AdaptiveAggregationPressureStandDowns;
+    extern const Event AdaptiveAggregationSpillBacklogSheds;
 }
 
 namespace CurrentMetrics
@@ -1746,6 +1747,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     state.resetCache();
 
     [[maybe_unused]] std::vector<DestroyedState> destroyed_states;
+    /// Assign at the branch tails so `no_more_keys` is not live across either loop.
+    bool all_places_are_non_null = false;
 
     /// For all rows.
     if (!no_more_keys)
@@ -1862,6 +1865,8 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
         }
+
+        all_places_are_non_null = !top_k;
     }
     else
     {
@@ -1876,6 +1881,8 @@ void NO_INLINE Aggregator::executeImplBatch(
                 aggregate_data = overflow_row;
             places[i] = aggregate_data;
         }
+
+        all_places_are_non_null = false;
     }
 
     if constexpr (top_k)
@@ -1898,6 +1905,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             key_start,
             has_only_one_value,
             all_keys_are_const,
+            all_places_are_non_null,
             use_jit);
 }
 
@@ -1910,6 +1918,7 @@ void Aggregator::executeAggregateInstructions(
     size_t key_start,
     bool has_only_one_value_since_last_reset,
     bool all_keys_are_const,
+    bool all_places_are_non_null,
     bool use_compiled_functions [[maybe_unused]]) const
 {
 #if USE_EMBEDDED_COMPILER
@@ -1962,7 +1971,7 @@ void Aggregator::executeAggregateInstructions(
         }
         else
         {
-            addBatch(row_begin, row_end, inst, places, aggregates_pool);
+            addBatch(row_begin, row_end, inst, places, aggregates_pool, all_places_are_non_null);
         }
     }
 
@@ -2026,7 +2035,8 @@ void Aggregator::addBatch(
     size_t row_begin, size_t row_end,
     const AggregateFunctionInstruction * inst,
     AggregateDataPtr * places,
-    Arena * arena)
+    Arena * arena,
+    bool all_places_are_non_null)
 {
     if (inst->offsets)
         inst->batch_that->addBatchArray(
@@ -2037,6 +2047,12 @@ void Aggregator::addBatch(
             arena);
     else if (inst->has_sparse_arguments)
         inst->batch_that->addBatchSparse(
+            row_begin, row_end, places,
+            inst->state_offset,
+            inst->batch_arguments,
+            arena);
+    else if (all_places_are_non_null)
+        inst->batch_that->addBatchWithNonNullPlaces(
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
@@ -2243,7 +2259,8 @@ bool Aggregator::executeOnBlock(Columns columns,
       */
     Columns materialized_columns;
     bool all_keys_are_const = false;
-    if (params.optimize_group_by_constant_keys)
+    /// A single key row stands for the whole block, so an empty block would get a group out of nothing.
+    if (params.optimize_group_by_constant_keys && row_begin != row_end)
     {
         all_keys_are_const = true;
         for (size_t i = 0; i < params.keys_size; ++i)
@@ -2462,6 +2479,32 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
     }
 
+    /// A producer the adaptive engine put back on the baseline path keeps every record it staged
+    /// while frozen published for the merge, and flushing its own table cannot free them, so left
+    /// resident they hold the query over the external threshold. The backlog is therefore shed
+    /// under the same trigger the frozen branch above uses, and like it before `checkLimits`: the
+    /// freeze thresholds are far below the two-level ones, so such a table can carry the whole
+    /// backlog while still being single-level and unspillable, and waiting for the conversion
+    /// would leave it resident across the limit checks. The `initialized` flag also reports that
+    /// the shared drain table the sweep routes into exists.
+    ///
+    /// The gate is the baseline phase itself and not the thaw that motivated it: the backlog is
+    /// session-wide memory, so whichever producer arrives at the spill trigger is the right one to
+    /// shed it, and a producer that stood down on its own - by the give-up rule above, or by the
+    /// pressure stand-down - sheds a frozen twin's backlog just as usefully. Narrowing this to
+    /// `RepeatedStagedKeys` would only make the query wait for a thaw, or for a frozen producer to
+    /// reach its own trigger, to free memory that already holds the query over the threshold.
+    if (adaptive && adaptive->isBaseline() && params.max_bytes_before_external_group_by
+        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+        && adaptive->session->initialized.load(std::memory_order_acquire))
+    {
+        flushPendingChunks(*adaptive);
+        /// Every later block reaches this trigger too, with the backlog already down to what no
+        /// sweep writes, so the event counts the records taken out and not the arrivals here.
+        if (drainStagedChunksUnderMemoryPressure(*adaptive->session))
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+    }
+
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
@@ -2475,15 +2518,29 @@ bool Aggregator::executeOnBlock(Columns columns,
     if (!checkLimits(result_size, no_more_keys))
         return false;
 
+    /// The spill below is decided from query-wide memory but can only free this thread's own
+    /// table. The session's shared drain table is memory no sweep writes once it is below the
+    /// part floor, so left resident it keeps every later block over the threshold.
+    Int64 spill_decision_memory = current_memory_usage;
+    if (adaptive && adaptive->isBaseline() && params.max_bytes_before_external_group_by
+        && result.isTwoLevel() && worth_convert_to_two_level
+        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+    {
+        /// The backlog itself was already shed above, under the same trigger; what is left here
+        /// is the residue below the sweeps' part bound, which no sweep writes.
+        if (auto sampled = releaseAdaptiveDrainResidue(*adaptive->session))
+            spill_decision_memory = *sampled;
+    }
+
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+        && spill_decision_memory > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
+        size_t size = spill_decision_memory + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
     }
 
@@ -2665,6 +2722,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     /// The root is the worst kept candidate, so a new cell only pays the heap when it beats it.
     const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
 
+    /// Only the dataflow statistics cache consumes this byte count, so a null counter makes the
+    /// per-group key materialization below dead work.
+    const bool need_full_key_bytes = full_key_bytes != nullptr;
+
     /// Account for the full output using the same conversion as the final result. A serialized
     /// multi-key table stores a length-prefixed arena blob, whose size is not the size of the
     /// materialized key columns (in particular, every String key has an offset column).
@@ -2681,12 +2742,15 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            method.insertKeyIntoColumns(
-                key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
-            for (auto * column : key_size_columns.raw_key_columns)
+            if (need_full_key_bytes)
             {
-                key_bytes += column->byteSizeAt(column->size() - 1);
-                column->popBack(1);
+                method.insertKeyIntoColumns(
+                    key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
+                for (auto * column : key_size_columns.raw_key_columns)
+                {
+                    key_bytes += column->byteSizeAt(column->size() - 1);
+                    column->popBack(1);
+                }
             }
             const UInt64 value = count_of(mapped);
             if (top.size() < params.bucket_top_k)
@@ -2784,8 +2848,9 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
 
-    /// Filled by the Top-K conversion (zero otherwise): the untruncated key bytes to account in
-    /// the dataflow statistics, because the truncated chunk carries only the kept groups.
+    /// Filled by the Top-K conversion when the statistics ask for it (zero otherwise): the
+    /// untruncated key bytes to account in the dataflow statistics, because the truncated chunk
+    /// carries only the kept groups.
     UInt64 topk_full_key_bytes = 0;
 
     if (false) {} // NOLINT
@@ -2797,7 +2862,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
             updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
-        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, &topk_full_key_bytes, full_group_count); \
+        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, updater ? &topk_full_key_bytes : nullptr, full_group_count); \
         if (updater) \
         { \
             if (topk_full_key_bytes) \
@@ -4553,6 +4618,31 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
+    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
+    /// `StringHashTable::reserve` splits the hint evenly over its four size-class sub-maps,
+    /// while a real key set concentrates in one of them, so it is not reserved.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
+    size_t input_keys = 0;
+    if constexpr (can_reserve)
+    {
+        for (const auto & variants : data)
+            input_keys += getDataVariant<Method>(*variants).data.impls[bucket].size();
+
+        /// A bucket that is about to be abandoned must not add a buffer to the unwinding query.
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+
+        /// The counters are published input-first with the result released and read here
+        /// result-first with an acquire, so every observed result contribution comes with its
+        /// input contribution; extra input contributions only lower the ratio.
+        const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
+        const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
+        if (seen_input_keys)
+            dst.reserve(std::min(
+                input_keys,
+                static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+    }
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -4576,6 +4666,12 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 prefetch,
                 is_cancelled);
         }
+    }
+
+    if constexpr (can_reserve)
+    {
+        res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
+        res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_release);
     }
 }
 
