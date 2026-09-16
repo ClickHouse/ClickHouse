@@ -1,0 +1,8 @@
+-- clickhouse-local, both names
+1
+1
+-- clickhouse-local declaring a secondary query
+1
+1
+-- clickhouse-client
+SETTING_CONSTRAINT_VIOLATION
