@@ -13,7 +13,7 @@ CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
 CLIENT_NAME = "05055 native protocol"
-CLIENT_REVISION = 54449
+CLIENT_REVISION = 54459  # the first revision with query parameters
 
 
 def writeVarUInt(x, ba):
@@ -96,6 +96,10 @@ def connect():
     readStringBinary(s)  # timezone
     readStringBinary(s)  # display name
     readVarUInt(s)  # version patch
+
+    ba = bytearray()
+    writeStringBinary("", ba)  # addendum: quota key
+    s.sendall(ba)
     return s
 
 
@@ -119,9 +123,19 @@ def serializeClientInfo(ba, query_id, os_user_declared_size=None):
     writeVarUInt(0, ba)  # distributed_depth
     writeVarUInt(1, ba)  # client_version_patch
     ba.append(0)  # no telemetry
+    writeVarUInt(0, ba)  # collaborate_with_initiator
+    writeVarUInt(0, ba)  # count_participating_replicas
+    writeVarUInt(0, ba)  # number_of_current_replica
 
 
-def sendQuery(s, query, num_settings=0, os_user_declared_size=None):
+def sendQuery(
+    s,
+    query,
+    num_settings=0,
+    os_user_declared_size=None,
+    setting_name_declared_size=None,
+    parameter_name_declared_size=None,
+):
     ba = bytearray()
     query_id = uuid.uuid4().hex
     writeVarUInt(1, ba)  # Query
@@ -129,6 +143,13 @@ def sendQuery(s, query, num_settings=0, os_user_declared_size=None):
     ba.append(1)  # INITIAL_QUERY
     serializeClientInfo(ba, query_id, os_user_declared_size)
     if os_user_declared_size is not None:
+        s.sendall(ba)
+        return
+
+    if setting_name_declared_size is not None:
+        writeVarUInt(
+            setting_name_declared_size, ba
+        )  # a setting name that never follows
         s.sendall(ba)
         return
 
@@ -142,6 +163,15 @@ def sendQuery(s, query, num_settings=0, os_user_declared_size=None):
     writeVarUInt(2, ba)  # stage: Complete
     ba.append(0)  # no compression
     writeStringBinary(query, ba)
+
+    if parameter_name_declared_size is not None:
+        writeVarUInt(
+            parameter_name_declared_size, ba
+        )  # a parameter name that never follows
+        s.sendall(ba)
+        return
+
+    writeStringBinary("", ba)  # end of query parameters
     s.sendall(ba)
 
 
@@ -227,6 +257,19 @@ def main():
     s = connect()
     sendQuery(s, "SELECT 1", os_user_declared_size=1 << 30)
     print("client info string of a gigabyte:", outcome(s))
+    s.close()
+
+    # A setting name that declares a gigabyte and never sends it: the count bound alone does not
+    # cover a single pair.
+    s = connect()
+    sendQuery(s, "SELECT 1", setting_name_declared_size=1 << 30)
+    print("setting name of a gigabyte:", outcome(s))
+    s.close()
+
+    # The same for a query parameter name.
+    s = connect()
+    sendQuery(s, "SELECT 1", parameter_name_declared_size=1 << 30)
+    print("query parameter name of a gigabyte:", outcome(s))
     s.close()
 
     # A `TablesStatusRequest` about more tables than a server can hold.

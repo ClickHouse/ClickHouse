@@ -33,6 +33,13 @@ String BaseSettingsHelpers::readString(ReadBuffer & in)
     return str;
 }
 
+String BaseSettingsHelpers::readName(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in, MAX_SETTING_NAME_SIZE);
+    return str;
+}
+
 
 void BaseSettingsHelpers::writeFlags(Flags flags, WriteBuffer & out)
 {

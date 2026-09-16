@@ -10292,7 +10292,7 @@ NameToNameMap readQueryParameters(ReadBuffer & in)
     size_t num_parameters = 0;
     while (true)
     {
-        String name = BaseSettingsHelpers::readString(in);
+        String name = BaseSettingsHelpers::readName(in);
         if (name.empty())
             break;
 
