@@ -186,6 +186,49 @@ FROM (
     SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 6
 );
 
+-- A built set that is not a literal list: an `ENGINE = Set` table. It has no pre-deduplication list
+-- length, so its deduplicated size is the only bound the plan can put on it. `KeyCondition` prints
+-- `Condition: true` for a Set-table `IN` whether or not the conjunct crossed the step, so this case
+-- asserts the plan shape instead: a top-level `Filter` survives only while the conjunct is held above
+-- the LIMIT BY. Top-level plan nodes print with no tree-drawing prefix, so `^Filter` cannot match a
+-- deeper step.
+DROP TABLE IF EXISTS t_04366_set;
+CREATE TABLE t_04366_set (k String) ENGINE = Set;
+INSERT INTO t_04366_set VALUES ('5'), ('7'), ('11'), ('13');
+
+-- Four rows against a bound of three: held back, so the top-level `Filter` is still there.
+SELECT countIf(match(explain, '^Filter')) AS filter_on_top
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN t_04366_set
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 3
+);
+
+-- The same table at a bound equal to its size is pushed, so no top-level `Filter` remains.
+SELECT countIf(match(explain, '^Filter')) AS filter_on_top
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN t_04366_set
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4
+);
+
+-- Holding the conjunct above the LIMIT BY and pushing it must give the same result.
+SELECT count(), sum(val) FROM (
+    SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+) WHERE key IN t_04366_set
+SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 3;
+
+SELECT count(), sum(val) FROM (
+    SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+) WHERE key IN t_04366_set
+SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4;
+
+DROP TABLE t_04366_set;
+
 DROP TABLE t_04366_keys;
 
 DROP TABLE t_04366;
