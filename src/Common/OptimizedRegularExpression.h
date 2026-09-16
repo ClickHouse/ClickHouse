@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <Common/re2.h>
 
@@ -153,6 +154,8 @@ public:
     static RegexpAnalysisResult analyze(std::string_view regexp_);
 
     RegexpMatchKind getMatchKind() const { return match_kind; }
+
+    std::string_view getRequiredSubstring() const { return required_substring; }
 
 private:
     bool isAnchoredLiteral() const { return isAnchoredLiteralMatchKind(match_kind); }

@@ -6,12 +6,21 @@
 namespace DB
 {
 
+class ColumnString;
+
 /// Drives text-index analysis during a granule's dictionary scan: folds per-query
 /// token postings and row ranges, then bypasses queries that have failed or are no
 /// longer worth evaluating (low-selectivity hints, pattern bypass).
 class TextIndexAnalyzer
 {
 public:
+    /// Half-open range of dictionary token keys. An empty `end` reaches the end of the dictionary.
+    struct TokenKeyRange
+    {
+        String begin;
+        String end;
+    };
+
     struct ReadableRows
     {
     public:
@@ -79,6 +88,8 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
+    /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
+    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 

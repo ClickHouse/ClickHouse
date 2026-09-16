@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
+#include <Columns/ColumnString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
@@ -292,6 +294,40 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
     }
 
     return added;
+}
+
+std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> TextIndexAnalyzer::getPatternTokenKeyRanges() const
+{
+    if (queries_by_pattern.empty())
+        return std::nullopt;
+
+    std::vector<TokenKeyRange> key_ranges;
+    key_ranges.reserve(queries_by_pattern.size());
+
+    for (const auto & [pattern, _] : queries_by_pattern)
+    {
+        String literal(pattern->getRequiredSubstring());
+        if (literal.empty())
+            return std::nullopt;
+
+        /// An anchored kind compares bytes: the constructor demotes a case-insensitive one to `General`.
+        /// That is the order the dictionary is sorted in, so such a pattern matches inside one key range.
+        switch (pattern->getMatchKind())
+        {
+            case RegexpMatchKind::Prefix:
+                key_ranges.emplace_back(literal, firstStringThatIsGreaterThanAllStringsWithPrefix(literal));
+                break;
+            case RegexpMatchKind::Exact:
+                key_ranges.emplace_back(literal, literal);
+                break;
+            case RegexpMatchKind::Suffix:
+            case RegexpMatchKind::Substring:
+            case RegexpMatchKind::General:
+                return std::nullopt;
+        }
+    }
+
+    return key_ranges;
 }
 
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const
