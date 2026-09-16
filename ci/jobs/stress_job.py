@@ -1,4 +1,5 @@
 import csv
+import fnmatch
 import logging
 import os
 import re
@@ -51,6 +52,86 @@ def _names_a_non_oom_finding(results: List[Result]) -> bool:
         for r in results
         for marker in NON_OOM_FINDING_MARKERS
     )
+
+
+# The watchdog's record of a SIGKILL. A kernel OOM kill leaves exactly this line and nothing
+# else - no `Logical error`, no sanitizer report - so it is the only in-log evidence of one.
+KILL_LINE = " <Fatal> Application: Child process was terminated by signal 9"
+
+# The harness sends the same SIGKILL itself when a server ignores SIGTERM (`stop_server` in
+# `tests/docker_scripts/stress_tests.lib` ends in `clickhouse stop --force`), and records
+# each such kill as a `Warning: server did not stop yet` row before sending it. The watchdog
+# cannot tell the two senders apart, so the rows are the way to discount the harness's own
+# kills from the kill lines.
+HARNESS_KILL_MARKER = "server did not stop yet"
+
+
+def count_harness_kills(results: List[Result]) -> int:
+    """How many SIGKILLs the harness itself sent, as recorded in the results."""
+    return sum(1 for r in results if HARNESS_KILL_MARKER in (r.name or "").lower())
+
+
+def count_kill_lines(server_log_path: Path) -> int:
+    """Kill lines in the current server logs, never in rotated ones.
+
+    A `signal 9` in a rotated log belongs to an incarnation that was already replaced and
+    restarted, and the run records its own verdict for that (`Possible deadlock on
+    shutdown`), so reading it as an OOM would excuse that very failure.
+    """
+    logs = _log_family(
+        server_log_path, lambda name: fnmatch.fnmatch(name, CURRENT_SERVER_LOG_GLOB)
+    )
+    if not logs:
+        return 0
+    # `rg -c` prints one `path:count` line per file that matched, or a bare count for a
+    # single file; nothing at all when no file matched.
+    output = Shell.get_output(
+        f"rg -Fac -- '{KILL_LINE}' " + " ".join(f"'{log}'" for log in logs)
+    )
+    return sum(
+        int(line.rsplit(":", 1)[-1]) for line in output.splitlines() if line.strip()
+    )
+
+
+def server_log_reports_oom(server_log_path: Path, results: List[Result]) -> bool:
+    """Whether the current server logs hold a SIGKILL the harness did not send.
+
+    Each harness kill is announced by a `Warning: server did not stop yet` row, so only
+    a kill line beyond those can be the kernel's - and only that one may pass the run
+    as an out-of-memory one. The harness's kill is the mark of a server that would not
+    stop, and reading it as an OOM would rewrite whatever failed after it to OK.
+    """
+    kill_lines = count_kill_lines(server_log_path)
+    if kill_lines == 0:
+        return False
+    harness_kills = count_harness_kills(results)
+    if kill_lines <= harness_kills:
+        print(
+            f"{kill_lines} kill line(s) in the current server logs, all accounted for by "
+            f"{harness_kills} harness-initiated kill(s): not an OOM"
+        )
+        return False
+    return True
+
+
+def oom_explains_failure(
+    is_oom: bool, crash_named: bool, failed_results: List[Result]
+) -> bool:
+    """Whether a failing run may be passed as an out-of-memory one.
+
+    Running out of memory is allowed in stress tests, so it passes the run - but it does
+    not explain a crash. A kernel OOM kill writes no `Logical error`, no assertion and no
+    sanitizer report, so when the parser named one of those the run found a real bug and
+    the downgrade must not bury it. Nor when a failing row names one itself: the parser only
+    runs under `server_died or crash_evidence`, so a hung check or a lost-key error reported
+    by the suite alone leaves `crash_named` False and would otherwise be rewritten to OK.
+    """
+    if not is_oom or crash_named:
+        return False
+    if _names_a_non_oom_finding(failed_results):
+        print("A failing result names a finding an OOM does not explain")
+        return False
+    return True
 
 
 def _log_family(directory: Path, matches) -> List[Path]:
@@ -500,16 +581,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"{result_path}/dmesg.log"
         )
 
-    # Check for OOM (signal 9) in server logs. Current logs only: this sets `is_oom`, which
-    # rewrites the whole job to OK at the end, so it must not be tripped by a kill line that
-    # describes an already-restarted server rather than this run's outcome.
-    if server_log_path.exists():
-        server_log_oom = Shell.check(
-            f"rg -Fqa ' <Fatal> Application: Child process was terminated by signal 9' "
-            f"{server_log_path}/{CURRENT_SERVER_LOG_GLOB}"
-        )
-        is_oom = is_oom or server_log_oom
-
     # Generate fatal.log from all server logs
     fatal_log = result_path / "fatal.log"
     crash_evidence = False
@@ -523,6 +594,12 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         crash_evidence = fatal_log.is_file() and fatal_log.stat().st_size > 0
 
     test_results, additional_logs = process_results(result_path, server_log_path)
+
+    # Check for OOM (signal 9) in server logs. This sets `is_oom`, which rewrites the whole
+    # job to OK at the end, so it reads the current logs only - a kill line in a rotated log
+    # describes an already-restarted server rather than this run's outcome - and discounts
+    # the kills the harness itself announced in `test_results`.
+    is_oom = is_oom or server_log_reports_oom(server_log_path, test_results)
 
     server_died = False
     # Set once the log parser names a crash, so the OOM downgrade at the end cannot bury it.
@@ -633,23 +710,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
-    oom_cannot_explain = _names_a_non_oom_finding(failed_results)
-    if oom_cannot_explain:
-        print("A failing result names a finding an OOM does not explain")
-
     all_results = failed_results + [r for r in test_results if r.is_ok()]
     r = Result.create_from(
         results=all_results,
         status=Result.Status.OK if not failed_results else "",
         stopwatch=stopwatch,
     )
-    # Running out of memory is allowed in stress tests, so it passes the run - but it does
-    # not explain a crash. A kernel OOM kill writes no `Logical error`, no assertion and no
-    # sanitizer report, so when the parser named one of those the run found a real bug and
-    # the downgrade must not bury it. Nor when a failing row names one itself: the parser only
-    # runs under `server_died or crash_evidence`, so a hung check or a lost-key error reported
-    # by the suite alone leaves `crash_named` False and would otherwise be rewritten to OK.
-    if not r.is_ok() and is_oom and not (crash_named or oom_cannot_explain):
+    if not r.is_ok() and oom_explains_failure(is_oom, crash_named, failed_results):
         r.set_status(Result.Status.OK)
         r.set_info("OOM error (allowed in stress tests)")
 

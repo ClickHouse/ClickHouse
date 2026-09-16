@@ -14,7 +14,12 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.log_parser import FuzzerLogParser
-from ci.jobs.stress_job import select_replica_failures
+from ci.jobs.stress_job import (
+    oom_explains_failure,
+    select_replica_failures,
+    server_log_reports_oom,
+)
+from ci.praktika.result import Result
 
 _ORACLE_MISMATCH_LOG = (
     "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> ASTFuzzer: "
@@ -221,3 +226,93 @@ def test_memory_limit_ranks_below_crash_and_above_expected_only(tmp_path):
 
 def test_nothing_parsed_returns_empty(tmp_path):
     assert select_replica_failures([]).results == []
+
+
+# ---------------------------------------------------------------------------
+# The final OOM downgrade: `server_log_reports_oom` / `oom_explains_failure`.
+#
+# `run_stress_test` rewrites a failing run to OK when it ran out of memory. The
+# only in-log evidence of a kernel OOM kill is the watchdog's `signal 9` line -
+# which the harness's own `clickhouse stop --force` produces too, announced by a
+# `Warning: server did not stop yet` row - so a kill the harness sent, a kill in a
+# rotated log, or a failing row an OOM cannot produce must all keep the run red.
+# ---------------------------------------------------------------------------
+
+_KILL_LINE = (
+    "2026.09.04 00:44:57.972626 [ 1 ] {} <Fatal> Application: "
+    "Child process was terminated by signal 9 (KILL). If it is not done by 'forcestop' "
+    "command or manually, the possible cause is OOM Killer "
+    "(see 'dmesg' and look at the '/var/log/kern.log' for the details).\n"
+)
+_QUIET_LOG = (
+    "2026.09.04 00:44:58.000000 [ 1 ] {} <Information> Application: shutting down\n"
+)
+
+
+def _row(name, ok=True):
+    return Result.create_from(
+        name=name, status=Result.Status.OK if ok else Result.Status.FAIL
+    )
+
+
+def test_kill_line_without_harness_kill_is_oom(tmp_path):
+    (tmp_path / "clickhouse-server.log").write_text(_QUIET_LOG + _KILL_LINE)
+    assert server_log_reports_oom(tmp_path, [_row("Check failed", ok=False)])
+
+
+def test_kill_line_announced_by_harness_is_not_oom(tmp_path):
+    # The harness could not stop the server with SIGTERM, said so, and SIGKILLed it
+    # itself: the resulting kill line must not pass whatever failed as an OOM.
+    (tmp_path / "clickhouse-server.log").write_text(_QUIET_LOG + _KILL_LINE)
+    results = [_row("Warning: server did not stop yet"), _row("Check failed", ok=False)]
+    assert not server_log_reports_oom(tmp_path, results)
+
+
+def test_kill_line_beyond_the_harness_kills_is_oom(tmp_path):
+    # One announced kill, two kill lines: the second one is the kernel's.
+    (tmp_path / "clickhouse-server.log").write_text(
+        _KILL_LINE + _QUIET_LOG + _KILL_LINE
+    )
+    assert server_log_reports_oom(tmp_path, [_row("Warning: server did not stop yet")])
+
+
+def test_kill_line_in_rotated_log_only_is_not_oom(tmp_path):
+    # A kill in a rotated log belongs to an incarnation that was already replaced;
+    # only the current `clickhouse-server*.log` files count.
+    (tmp_path / "clickhouse-server.log.1").write_text(_KILL_LINE)
+    (tmp_path / "clickhouse-server.log").write_text(_QUIET_LOG)
+    (tmp_path / "clickhouse-server.err.log").write_text(_QUIET_LOG)
+    assert not server_log_reports_oom(tmp_path, [])
+
+
+def test_kill_line_in_current_err_log_counts(tmp_path):
+    (tmp_path / "clickhouse-server.err.log").write_text(_KILL_LINE)
+    assert server_log_reports_oom(tmp_path, [])
+
+
+def test_no_server_logs_is_not_oom(tmp_path):
+    assert not server_log_reports_oom(tmp_path / "missing", [])
+    assert not server_log_reports_oom(tmp_path, [])
+
+
+def test_oom_explains_plain_check_failed_only():
+    assert oom_explains_failure(True, False, [_row("Check failed", ok=False)])
+    assert not oom_explains_failure(False, False, [_row("Check failed", ok=False)])
+
+
+def test_oom_does_not_explain_a_named_crash():
+    assert not oom_explains_failure(True, True, [_row("Check failed", ok=False)])
+
+
+def test_oom_does_not_explain_a_non_oom_finding_row():
+    # The suite's own verdicts an OOM kill cannot produce keep the run red even
+    # though the log parser named no crash.
+    for name in (
+        "Hung check failed",
+        "Possible deadlock on shutdown (see gdb.log)",
+        "Logical error thrown (see clickhouse-server.log or logical_errors.txt)",
+        "Sanitizer assert (in stderr.log)",
+        "Lost forever for part",
+        "No such key errors",
+    ):
+        assert not oom_explains_failure(True, False, [_row(name, ok=False)]), name
