@@ -1,0 +1,53 @@
+---
+title: 'FAQ'
+sidebarTitle: 'FAQ'
+description: 'ClickHouse Connector에 대해 자주 묻는 질문'
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'connector', 'FAQ']
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## FAQ
+</div>
+
+<div id="what-data-leaves-my-environment">
+  ### 내 환경 외부로 전송되는 데이터는 무엇입니까?
+</div>
+
+데이터는 connector가 직접 여는 아웃바운드 연결을 통해 두 가지 경로로 외부에 전송됩니다. 운영 메타데이터를 지속적으로 전송하는 스크레이프 경로와, 활성화한 지원 세션에서 진단 정보를 반환하는 경로입니다.
+
+scraper는 고정된 시스템 테이블 집합(기본적으로 `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`)의 결과, 상태 및 상태 정보 하트비트, 인스턴스 및 백업 상태, 그리고 connector 자체 메트릭을 전송합니다. 기본 스크레이프 집합에서는 의도적으로 `system.query_log`를 제외하므로, 원시 SQL 텍스트와 그 안의 리터럴 또는 개인 데이터는 명시적으로 추가하지 않는 한 스크레이프 경로를 통해 외부로 전송되지 않습니다. 세션 중에는 기본 테이블 허용 목록에 실시간 쿼리 텍스트를 표시하는 `system.processes`가 포함됩니다. 이를 숨겨야 한다면 허용 목록에서 제거하십시오.
+
+활성 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions) 중 troubleshooter는 허용 목록에 있는 ClickHouse 테이블 및 파드 로그를 포함한 읽기 전용 Kubernetes 뷰로 범위가 제한된 명령 출력도 반환합니다. 이 출력은 전송 전에 IP, 자격 증명, 토큰, 키에 대한 기본 제공 패턴과 직접 추가한 패턴을 통해 민감 정보가 마스킹됩니다. 테이블 데이터, 백업, 쿼리 이력(`system.query_log`, `system.text_log`)은 예외 없이 환경 내부에 유지됩니다. 문서화된 예외는 다음과 같습니다. 허용 목록에 있는 메트릭 이력 테이블(`system.metric_log`, `system.asynchronous_metric_log`)의 행은 모든 스크레이프와 함께 전송되고, 실시간 쿼리 텍스트는 허용 목록에서 제거하지 않는 한 `system.processes`를 통해 세션에서 표시되며, Kubernetes 지원 세션 중 읽은 파드 로그는 민감 정보가 마스킹된 후 외부로 전송됩니다. 전체 아웃바운드 연결 목록은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model) 페이지에서 확인할 수 있습니다.
+
+<div id="how-do-i-revoke-access">
+  ### ClickHouse의 액세스 권한을 어떻게 철회합니까?
+</div>
+
+조치 강도 순서대로:
+
+1. **대화형 액세스를 종료합니다.** VM 호스트에서 `sudo clicklink clctl troubleshoot session disable` 명령어로 세션을 비활성화하거나, Kubernetes에서는 포트 포워딩을 통해 `--gateway-url`을 추가하여 동일한 명령어를 실행합니다(정확한 명령어는 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions) 페이지 참조). 활성 세션이 없으면 troubleshooter는 연결된 상태에서도 모든 명령어 실행을 거부합니다.
+2. **향후 세션을 차단합니다.** 연산자 허용 목록을 비우거나(허용 목록가 비어 있으면 gateway가 닫힘) gateway를 비활성화합니다. VM에서는 호스트의 root 사용자가 로컬 세션 관리를 계속 사용할 수 있습니다. [구성 가이드](/ko/products/bring-your-own-cloud/connector/configuration)를 참조하십시오.
+3. **ClickHouse Cloud 연결을 차단합니다.** 네트워크 계층에서 connector endpoint로의 egress를 차단하거나, 강제 적용되는 CNI에서 `networkPolicy.allowEgressCIDRs`를 비웁니다. connector는 아웃바운드 전용이므로 ClickHouse Cloud에는 연결을 복원할 인바운드 경로가 없습니다. 워크로드를 중지하거나 제거할 때까지 ClickHouse에 대한 로컬 읽기는 계속됩니다. 이를 중지하거나 제거하는 것이 완전한 차단 방법입니다.
+4. **자격 증명을 철회합니다.** `pcm_scraper` 및 `pcm_troubleshooter` ClickHouse 사용자를 삭제하고 connector의 시크릿(Kubernetes) 또는 `/etc/clicklink` 아래의 파일(VM)을 삭제합니다.
+5. **connector를 완전히 제거합니다.** [운영](/ko/products/bring-your-own-cloud/connector/operations)을 참조하십시오.
+
+<div id="air-gapped-and-mirrors">
+  ### 에어갭 환경에서 실행하거나 자체 미러를 사용할 수 있습니까?
+</div>
+
+예. 설치 시 필요한 모든 아티팩트는 보안 경계 내부에서 가져올 수 있습니다. `releases.clicklink.clickhouse.com` 및 공개 레지스트리의 CLI tarball과 컨테이너 image를 미러링하고, `image.repository`를 미러로 지정한 다음, `oci://` 참조, URL 또는 로컬 아카이브와 함께 `--chart`를 전달하십시오(`--chart-version`을 사용하며, 기본값은 CLI 자체 버전입니다). 커넥터 API endpoint가 사설 CA 뒤의 보안 경계 내부에서 제공되는 경우, `--api-private-ca`(Kubernetes) 또는 `api.tls.ca_file`(VM)는 등록 번들의 체인에 대해 이를 검증합니다. 직접 연결 없이 등록하려면 `init --handoff`에서 대역 외로 확보한 번들을 사용하고, `--no-auto-sign`과 `init --signed-cert`를 함께 사용하여 인증서 서명을 대역 외로 완료할 수 있습니다. [사설 미러](/ko/products/bring-your-own-cloud/connector/configuration) 및 [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding)의 에어갭 섹션을 참조하십시오. 커넥터는 런타임에도 조직의 커넥터 API endpoint에 연결할 경로가 필요합니다. 경로가 없으면 ClickHouse Cloud는 telemetry를 수신하지 못합니다.
+
+<div id="connector-down">
+  ### connector가 중단되면 어떻게 되나요?
+</div>
+
+ClickHouse 서비스는 영향을 받지 않습니다. connector는 해당 서비스에서 읽기만 할 뿐 데이터 경로에는 포함되지 않습니다. 가시성을 잃게 되므로 ClickHouse Cloud는 telemetry 수신을 중단하고, connector가 복구될 때까지 지원 세션을 사용할 수 없게 됩니다. VM에서는 API endpoint에 연결할 수 없을 때 scraper가 스크레이프한 데이터를 `/var/lib/clicklink/buffer`에 스풀링합니다(기본값: 최대 168시간 또는 1024MB). 연결이 복구되면 해당 데이터를 전송하므로 endpoint 장애로 telemetry가 손실되지는 않습니다. daemon이 크래시하면 systemd가 다시 시작하고, Kubernetes에서는 큐블릿이 다시 시작합니다. 문제를 진단하려면 각 component의 `/livez` endpoint를 확인하고(HTTP 코드가 아니라 JSON `status` field를 확인), `clicklink clctl preflight`를 실행하십시오(VM 호스트에서는 `sudo` 사용). 이 명령은 구성, 연결 상태, ClickHouse 연결 가능 여부, 액세스 및 디스크를 한 번에 확인합니다. [operations](/ko/products/bring-your-own-cloud/connector/operations)를 참조하십시오. connector가 계속 비정상 상태이면 ClickHouse 지원팀에 문의하십시오.
+
+<div id="support-session-auditing">
+  ### 지원 세션은 어떻게 감사되나요?
+</div>
+
+허용되었거나 차단된 모든 gateway 호출과 모든 troubleshooter 명령어는 항목별 출처 정보와 함께 newline-delimited JSON 형식으로 `/var/log/clicklink/troubleshoot-audit.log`의 감사 로그에 추가됩니다. gateway 호출에는 토큰으로 검증된 연산자 이메일(자체 입력한 이름은 사용하지 않음)이 기록되고, VM 로컬 세션 변경에는 이를 호출한 host 사용자가 기록되며, 세션 중 실행된 명령어에는 인증된 채널의 org 아이덴티티가 기록됩니다. 세션 자체에는 시간 제한이 적용되며(기본 4시간, 최대 24시간), 활성화할 때마다 활성화한 주체, 만료 시점, 선택적 사유가 기록됩니다. 이 정보는 `clicklink clctl troubleshoot session status`에서 표시됩니다.
+
+`clicklink clctl troubleshoot audit tail` 명령어로 로그를 읽으십시오. Kubernetes에서는 이 명령어가 지원되는 reader입니다(런타임 image에는 셸이 없음). 기본값인 `persistence.enabled: true`를 사용하면 로그는 troubleshooter의 영구 volume에 저장되므로 파드가 재스케줄링된 후에도 감사 추적이 유지됩니다. persistence를 비활성화하면 감사 로그와 세션 state는 파드 수명 동안에만 유지되며, chart 자체에서도 이를 로컬 개발에만 적합한 것으로 표시합니다. 기본적으로 교체는 최대 128 MB 크기의 파일 5개를 168시간 동안 유지합니다. 조정 방법은 [구성 참고](/ko/products/bring-your-own-cloud/connector/reference/configuration)를, 전체 신뢰 모델은 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
