@@ -233,7 +233,6 @@ MutableColumnPtr makeLowCardinalityStrings(size_t n, size_t dict_size)
 
 }
 
-/// Every fixed-width fast-path type, with batched sources, counts and dispatch.
 TEST(ColumnsScatter, FixedWidthVectorTypes)
 {
     checkFixedTypeEquivalence(*ColumnUInt8::create());
@@ -311,7 +310,6 @@ TEST(ColumnsScatter, SwwcManyLinesPerShard)
     checkEquivalence(sources, pids, 256);
 }
 
-/// Transparent wrappers over fixed-width nested columns.
 TEST(ColumnsScatter, ConstMixedWithFull)
 {
     auto full = fillFixedRandom(ColumnUInt64::create(), 300);
@@ -796,7 +794,6 @@ TEST(ColumnsScatter, DispatchTableComplete)
         ASSERT_EQ(ScatterKernelId::Map, ColumnsScatter::plannedKernel(*map_column));
     }
     ASSERT_EQ(ScatterKernelId::LowCardinality, ColumnsScatter::plannedKernel(*makeLowCardinalityStrings(1, 1)));
-    /// Types without a dedicated kernel take the fallback.
     for (const char * type_name : {"Variant(UInt64, String)", "Dynamic", "AggregateFunction(count)", "JSON"})
     {
         auto column = DataTypeFactory::instance().get(type_name)->createColumn();

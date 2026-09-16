@@ -136,7 +136,7 @@ public:
         st.spanning_keys += scratch.spanning_keys;
 
         for (const auto bucket : scratch.keys)
-            openKey(mapped_at(bucket), arena, st);
+            openKey(mapped_at(bucket));
 
         const size_t n = scratch.item.size();
         for (size_t i = 0; i < n; ++i)
@@ -154,7 +154,7 @@ public:
         {
             if (!zero_mapped)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows of the zero key were appended, but no cell was given for them");
-            openKey(*zero_mapped, arena, st);
+            openKey(*zero_mapped);
             for (const auto it : scratch.zero_items)
                 placeItem(*zero_mapped, it);
             closeKey(*zero_mapped);
@@ -167,7 +167,7 @@ private:
     Arena & arena;
     Stats st;
 
-    static void openKey(RowRefList & mapped, Arena & arena, Stats & st)
+    void openKey(RowRefList & mapped)
     {
         chassert(mapped.isCount());
         const UInt64 n_items = mapped.countItems();
