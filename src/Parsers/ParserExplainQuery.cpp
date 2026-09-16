@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainTextActions.h>
@@ -22,7 +23,7 @@
 #include <algorithm>
 
 #if !defined(CLICKHOUSE_PARSER_NO_DCL)
-    #include <Parsers/Access/ASTExecuteAsQuery.h>
+  #include <Parsers/Access/ASTExecuteAsQuery.h>
 #endif
 
 namespace DB
@@ -34,18 +35,24 @@ namespace ErrorCodes
 
 namespace
 {
-ASTInsertQuery * findTrailingInsertQuery(const ASTPtr & query)
+IAST * findTrailingQuery(const ASTPtr & query)
 {
     IAST * node = query.get();
 
     while (node)
     {
+        /// a nested `EXPLAIN` may already have extracted the insert's format
+        /// `EXECUTE AS` may then have moved that format onto itself
+        if (auto * output = dynamic_cast<ASTQueryWithOutput *>(node);
+            output && output->format_ast)
+            return node;
+
         #if !defined (CLICKHOUSE_PARSER_NO_DCL)
-            if (auto * execute_as = node->as<ASTExecuteAsQuery>())
-            {
-                node = execute_as->subquery.get();
-                continue;
-            }
+          if (auto * execute_as = node->as<ASTExecuteAsQuery>())
+          {
+              node = execute_as->subquery.get();
+              continue;
+          }
         #endif
 
         if (auto * parallel = node->as<ASTParallelWithQuery>())
@@ -62,9 +69,21 @@ ASTInsertQuery * findTrailingInsertQuery(const ASTPtr & query)
     return nullptr;
 }
 
-ASTPtr extractExplainOutputFormatFromInsert(const ASTPtr & query, IParser::Pos & pos, Expected & expected)
+ASTPtr extractExplainOutputFormat(const ASTPtr & query, IParser::Pos & pos, Expected & expected)
 {
-    auto * insert_query = findTrailingInsertQuery(query);
+    auto * trailing_query = findTrailingQuery(query);
+    if (!trailing_query)
+        return {};
+
+    if (auto * output = dynamic_cast<ASTQueryWithOutput *>(trailing_query);
+        output && output->format_ast)
+    {
+        ASTPtr format = output->format_ast;
+        output->reset(output->format_ast);
+        return format;
+    }
+
+    auto * insert_query = trailing_query->as<ASTInsertQuery>();
     if (!insert_query || !insert_query->select || insert_query->format.empty())
         return {};
 
@@ -240,7 +259,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /// parentheses and actions explicitly delimit from the source. only bare form
         /// without actions gives a trailing `FORMAT` to `EXPLAIN TEXT`
         if (!parenthesized_source && !actions)
-          explain_output_format = extractExplainOutputFormatFromInsert(query, pos, expected);
+          explain_output_format = extractExplainOutputFormat(query, pos, expected);
 
         explain_query->setExplainedQuery(std::move(query));
 
@@ -249,10 +268,14 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
     {
-        ParserQuery p(end, allow_settings_after_format_in_insert);
+        ParserQuery p(end, allow_settings_after_format_in_insert, false, parse_output_options);
         bool parsed_query = false;
         if (p.parse(pos, query, expected))
         {
+            /// pass an insert-derived format toward the enclosing formatting request
+            if (!parse_output_options)
+                explain_output_format = extractExplainOutputFormat(query, pos, expected);
+
             explain_query->setExplainedQuery(std::move(query));
             parsed_query = true;
         }
@@ -261,7 +284,10 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             auto saved = pos;
             ++pos;
-            if (p.parse(pos, query, expected) && pos->type == TokenType::ClosingRoundBracket)
+
+            /// explicit parentheses preserve the inner query's output options
+            ParserQuery parenthesized_parser(end, allow_settings_after_format_in_insert);
+            if (parenthesized_parser.parse(pos, query, expected) && pos->type == TokenType::ClosingRoundBracket)
             {
                 ++pos;
                 explain_query->setExplainedQuery(std::move(query));
@@ -309,7 +335,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         insert_p.parse(pos, query, expected) ||
         system_p.parse(pos, query, expected))
     {
-        explain_output_format = extractExplainOutputFormatFromInsert(query, pos, expected);
+        explain_output_format = extractExplainOutputFormat(query, pos, expected);
         explain_query->setExplainedQuery(std::move(query));
     }
     else

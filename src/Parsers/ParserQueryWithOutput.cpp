@@ -101,7 +101,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
-    ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
+    ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert, parse_output_options);
     ParserBackupQuery backup_p;
     ParserSnapshotQuery snapshot_p;
 
