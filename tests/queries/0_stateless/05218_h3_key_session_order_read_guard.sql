@@ -1,5 +1,8 @@
 -- Tags: no-fasttest
 -- no-fasttest: h3ToGeo and geoToH3 need a binary with the Uber H3 library
+-- Random settings limits: merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=(None, 0)
+-- The layer-split read path that setting injects rebuilds its range filter from the primary-key AST and
+-- analyzes it in the query session, which drops rows of a deviating session whatever the key guard does.
 
 -- `h3togeo_lon_lat_result_order` and `geotoh3_argument_order` change the VALUE a key function produces
 -- without changing its type. The stored key is built under the server baseline, while a query
