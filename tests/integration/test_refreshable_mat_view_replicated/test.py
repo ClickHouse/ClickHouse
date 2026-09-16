@@ -881,21 +881,23 @@ def _next_refresh_time(n, view):
 def test_randomize_for_is_per_replica(module_setup_tables):
     """RANDOMIZE FOR is applied by each replica on its own, so the replicas disagree about when the
     next refresh is due and whichever one comes first performs it."""
-    _drop_randomize_objects()
+    # Retry because there's a tiny chance the random next_refresh_time values conicide by chance.
+    for attempt in range(2):
+        _drop_randomize_objects()
 
-    # A wide window keeps the two draws from landing on the same second, which next_refresh_time
-    # rounds to. EMPTY so no refresh fires while we look at the scheduled time.
-    node.query(
-        "CREATE MATERIALIZED VIEW randomize_rmv ON CLUSTER default "
-        "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
-        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
-    )
+        # A wide window keeps the two draws from landing on the same second, which next_refresh_time
+        # rounds to. EMPTY so no refresh fires while we look at the scheduled time.
+        node.query(
+            "CREATE MATERIALIZED VIEW randomize_rmv ON CLUSTER default "
+            "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
+            "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
+        )
 
-    time1 = _next_refresh_time(node, "randomize_rmv")
-    time2 = _next_refresh_time(node2, "randomize_rmv")
-    assert (
-        time1 != time2
-    ), f"both replicas scheduled the refresh for {time1}, so the random offset is still shared"
+        time1 = _next_refresh_time(node, "randomize_rmv")
+        time2 = _next_refresh_time(node2, "randomize_rmv")
+        if time1 == time2:
+            break # success
+        assert attempt == 0, f"both replicas scheduled the refresh for {time1}, so the random offset is still shared"
 
     _drop_randomize_objects()
 
@@ -919,29 +921,20 @@ def test_randomize_for_is_redrawn_on_every_replica(module_setup_tables):
         "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
     )
 
+    failed_rounds = 0
     for round_number in range(3):
         before = {n.name: _next_refresh_time(n, "randomize_multi_rmv") for n in nodes}
 
-        # Out of schedule, so exactly one replica performs it and both observe the result.
-        node.query("SYSTEM REFRESH VIEW randomize_multi_rmv")
-        node.query("SYSTEM WAIT VIEW randomize_multi_rmv")
-
-        # Polling without raising, so the assertion below is what reports a frozen offset.
-        after = {}
         for n in nodes:
-            for _ in range(200):
-                after[n.name] = _next_refresh_time(n, "randomize_multi_rmv")
-                if after[n.name] != before[n.name]:
-                    break
-                time.sleep(0.3)
-            assert after[n.name] != before[n.name], (
-                f"round {round_number}: {n.name} kept next_refresh_time {before[n.name]}, so its "
-                f"random offset was never redrawn"
-            )
+            n.query(f"SYSTEM TEST VIEW randomize_multi_rmv SET FAKE TIME '20{45+round_number}-07-04 00:00:00'")
 
-        assert len(set(after.values())) == len(nodes), (
-            f"round {round_number}: all replicas scheduled the next refresh for the same time "
-            f"{after}, so the random offsets became shared again"
-        )
+        time.sleep(1)
+
+        time1 = _next_refresh_time(node, "randomize_multi_rmv")
+        time2 = _next_refresh_time(node2, "randomize_multi_rmv")
+        if time1 != time2:
+            failed_rounds += 1
+            # Ignore if there's only one coincidence.
+            assert failed_rounds == 1, f"both replicas scheduled the refresh for {time1} on round {round_number}, so the random offset is still shared"
 
     _drop_randomize_objects()
