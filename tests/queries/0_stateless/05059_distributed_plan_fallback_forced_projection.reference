@@ -1,0 +1,6 @@
+-- force_optimize_projection falls back: no GatherExchange
+0
+-- force_optimize_projection_name falls back: no GatherExchange
+0
+-- without forcing, the query is distributed: GatherExchange present
+1
