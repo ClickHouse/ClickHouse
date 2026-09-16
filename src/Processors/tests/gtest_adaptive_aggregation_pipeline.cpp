@@ -31,7 +31,7 @@
 #include <Processors/ISink.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/Transforms/AdaptiveAggregatingTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationPartitionTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationCoalescingTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
@@ -203,7 +203,7 @@ Chunk partitionedBlock(
     return params->aggregator.partitionAdaptiveBlock(*session, converter, recordedBlock(params, rows));
 }
 
-void acknowledgeBlock(AdaptiveAggregatingTransform & producer, StagingPipeline & staging)
+void acknowledgeBlock(AggregatingTransform & producer, StagingPipeline & staging)
 {
     ASSERT_EQ(producer.prepare(), IProcessor::Status::PortFull);
     ASSERT_TRUE(staging.runUntil([&] { return producer.getOutputs().front().canPush(); }));
@@ -332,7 +332,7 @@ TEST(AdaptiveAggregationPipeline, ProducerForwardsOnlyAggregateArguments)
         auto params = makeParams(header, 0, aggregate);
         auto many_data = std::make_shared<ManyAggregatedData>(2);
         many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
-        AdaptiveAggregatingTransform producer(header, params, many_data, 0);
+        AggregatingTransform producer(header, params, many_data, 0, 2, 2);
         OutputPort source(header);
         InputPort partition(params->aggregator.getAdaptiveArgumentHeader());
         connect(source, producer.getInputs().front());
@@ -505,8 +505,8 @@ TEST(AdaptiveAggregationPipeline, CompletesAtSingleAndMultipleExecutorThreads)
                 chunks.push_back(keyRange(begin, 8192));
                 chunks.push_back(keyRange(begin + 8192, 140000));
                 auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
-                auto producer = std::make_shared<AdaptiveAggregatingTransform>(
-                    header, params, many_data, producer_index);
+                auto producer = std::make_shared<AggregatingTransform>(
+                    header, params, many_data, producer_index, 2, 2);
                 StagingPipeline staging(params, many_data->adaptive_session);
                 connect(source->getPort(), producer->getInputs().front());
                 connect(producer->getOutputs().front(), staging.input());
@@ -710,7 +710,7 @@ TEST(AdaptiveAggregationPipeline, ProducerWaitsForEveryPublicationBeforePressure
     auto many_data = std::make_shared<ManyAggregatedData>(2);
     auto session = std::make_shared<AdaptiveAggregationSession>();
     many_data->adaptive_session = session;
-    AdaptiveAggregatingTransform producer(header, params, many_data, 0);
+    AggregatingTransform producer(header, params, many_data, 0, 2, 2);
     StagingPipeline staging(params, session);
     OutputPort source(header);
     InputPort completion{Block()};
@@ -813,7 +813,7 @@ TEST(AdaptiveAggregationPipeline, CancellationReleasesUnsentAndQueuedInput)
         auto many_data = std::make_shared<ManyAggregatedData>(2);
         auto session = std::make_shared<AdaptiveAggregationSession>();
         many_data->adaptive_session = session;
-        AdaptiveAggregatingTransform producer(header, params, many_data, 0);
+        AggregatingTransform producer(header, params, many_data, 0, 2, 2);
         StagingPipeline admission(params, session);
         OutputPort source(header);
         InputPort completion{Block()};
@@ -914,14 +914,14 @@ TEST(AdaptiveAggregationPipeline, FinalAssemblyIncludesLateSpillsAndReadersOwnTe
         auto merge = std::make_unique<AdaptiveAggregationMergeTransform>(params, many_data, 2, 2, nullptr);
         InputPort result(header);
         connect(merge->getOutputs().front(), result);
-        std::vector<std::unique_ptr<AdaptiveAggregatingTransform>> producers;
+        std::vector<std::unique_ptr<AggregatingTransform>> producers;
         std::vector<std::unique_ptr<StagingPipeline>> admissions;
         std::vector<std::unique_ptr<OutputPort>> sources;
         IProcessor::UpdatedInputPorts completion_inputs;
         auto completion = merge->getInputs().begin();
         for (size_t i = 0; i < num_producers; ++i)
         {
-            auto producer = std::make_unique<AdaptiveAggregatingTransform>(header, params, many_data, i);
+            auto producer = std::make_unique<AggregatingTransform>(header, params, many_data, i, 2, 2);
             auto admission = std::make_unique<StagingPipeline>(params, session);
             auto source = std::make_unique<OutputPort>(header);
             connect(*source, producer->getInputs().front());
@@ -1083,7 +1083,7 @@ TEST(AdaptiveAggregationPipeline, CancellationReleasesQueuedAndPulledProducerInp
             auto many_data = std::make_shared<ManyAggregatedData>(2);
             auto session = std::make_shared<AdaptiveAggregationSession>();
             many_data->adaptive_session = session;
-            AdaptiveAggregatingTransform producer(header, params, many_data, 0);
+            AggregatingTransform producer(header, params, many_data, 0, 2, 2);
             OutputPort source(header);
             InputPort admission(params->aggregator.getAdaptiveArgumentHeader());
             connect(source, producer.getInputs().front());
@@ -1160,13 +1160,13 @@ TEST(AdaptiveAggregationPipeline, EmptyAndEarlyFinishedProducersBeforeLateEngage
             AdaptiveAggregationMergeTransform merge(params, many_data, 2, 2, nullptr);
             InputPort result(header);
             connect(merge.getOutputs().front(), result);
-            std::vector<std::unique_ptr<AdaptiveAggregatingTransform>> producers;
+            std::vector<std::unique_ptr<AggregatingTransform>> producers;
             std::vector<std::unique_ptr<StagingPipeline>> admissions;
             std::vector<std::unique_ptr<OutputPort>> sources;
             auto completion = merge.getInputs().begin();
             for (size_t i = 0; i < many_data->num_producers; ++i)
             {
-                auto producer = std::make_unique<AdaptiveAggregatingTransform>(header, params, many_data, i);
+                auto producer = std::make_unique<AggregatingTransform>(header, params, many_data, i, 2, 2);
                 auto admission = std::make_unique<StagingPipeline>(params, session);
                 auto source = std::make_unique<OutputPort>(header);
                 connect(*source, producer->getInputs().front());

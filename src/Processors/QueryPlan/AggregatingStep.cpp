@@ -30,7 +30,6 @@
 #include <Processors/Transforms/AdaptiveAggregationPartitionTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationCoalescingTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
-#include <Processors/Transforms/AdaptiveAggregatingTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationMergeTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -690,10 +689,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         size_t counter = 0;
         pipeline.addSimpleTransform(
-            [&](const SharedHeader & header) -> ProcessorPtr
+            [&](const SharedHeader & header)
             {
-                if (use_adaptive_aggregator)
-                    return std::make_shared<AdaptiveAggregatingTransform>(header, transform_params, many_data, counter++);
                 return std::make_shared<AggregatingTransform>(
                     header,
                     transform_params,
