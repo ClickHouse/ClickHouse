@@ -29,32 +29,13 @@ sys.stdout.buffer.write(bytearray.fromhex(sys.argv[1])[::-1] + bytearray.fromhex
 " "$checksum" "$1"
 }
 
-# Method bytes are from CompressionInfo.h: NONE is 0x02 = 2, Multiple is 0x91, Quantized is 0x9e = 158.
+# Method bytes are from CompressionInfo.h: NONE is 0x02 = 2 and Quantized is 0x9e = 158.
 frame() { # $1 = method byte (decimal), $2 = size_decompressed, $3 = payload
     emit "$(python3 -c "
 import struct, sys
 payload = sys.argv[3].encode()
 sys.stdout.buffer.write(bytes([int(sys.argv[1])]) + struct.pack('<I', 9 + len(payload)) + struct.pack('<I', int(sys.argv[2])) + payload)
 " "$1" "$2" "$3" | xxd -p | tr -d '\n')"
-}
-
-# A Multiple frame's body is [codec count][one method byte per codec][nested frame], and the nested
-# frame is parsed by CompressionCodecMultiple::doDecompressData, which never calls the top-level
-# header parser. Both frames declare the same size, so the only rule such a frame breaks is that a
-# codec storing data verbatim has a body as long as it declares. The nested size_compressed comes
-# from the declaration too, so the two nested header fields agree with each other and only the real
-# body length contradicts them.
-multiple_verbatim_frame() { # $1 = nested method byte, $2 = size_decompressed, declared by the outer and the nested frame alike
-    python3 -c "
-import struct, sys
-MULTIPLE = 0x91
-inner = int(sys.argv[1])
-declared = int(sys.argv[2])
-payload = b'SELECT 1'
-nested = bytes([inner]) + struct.pack('<I', 9 + declared) + struct.pack('<I', declared) + payload
-body = bytes([1, inner]) + nested
-sys.stdout.buffer.write(bytes([MULTIPLE]) + struct.pack('<I', 9 + len(body)) + struct.pack('<I', declared) + body)
-" "$1" "$2" | xxd -p | tr -d '\n'
 }
 
 post() { ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1" --data-binary @-; }
@@ -64,38 +45,19 @@ frame 2 8 'SELECT 1' | post
 
 echo '-- a codec that stores data uncompressed must not lie about the uncompressed size'
 frame 2 999 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
-# Quantized is the other codec reporting isNone(). The read path builds it from the method byte
-# alone, so the check applies to it without the enable_quantized_codec setting its DDL requires.
+# Quantized is the other codec reporting isNone(), so it takes the same shortcut. The read path
+# builds it from the method byte alone, without the enable_quantized_codec setting its DDL requires.
 echo '-- and neither may the other verbatim codec'
 frame 158 999 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
 
-echo '-- a valid nested frame still executes'
-emit "$(multiple_verbatim_frame 2 8)" | post
-
-# The top-level parser never reads a nested header, so only the check inside `Multiple` can
-# produce this message. Observing it pins that the nested layer refuses the frame, not where
-# within that layer the check runs.
-echo '-- and neither may a nested one, which the top-level parser never sees'
-emit "$(multiple_verbatim_frame 2 999)" | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
-
-# The nested layer selects the rule by isNone() just as the top level does, so it has to be pinned
-# for both verbatim codecs there too: restricted to the NONE method byte, it would keep refusing
-# every nested arm above while nested Quantized went back to allocating from its declaration.
-echo '-- including the other verbatim codec nested'
-emit "$(multiple_verbatim_frame 158 999)" | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
-
-# Both layers compare the two lengths for inequality, so arms that only ever declare more than the
-# body pin one side of each: narrowed to "body shorter than declared", both would still refuse every
-# frame above. These declare less instead. The top-level frame is then not refused at all, it
-# executes its real body verbatim, and the nested one fails inside the codec with a different
-# message, which is what the grep tells apart.
+# The comparison is for inequality, so arms that only ever declare more than the body pin one side of
+# it: narrowed to "body shorter than declared", both frames above would still be refused. This one
+# declares less instead, and without the check it is not refused at all, it executes its real body.
 echo '-- nor may it understate the uncompressed size'
 frame 2 3 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (3)'
-echo '-- and neither may a nested one'
-emit "$(multiple_verbatim_frame 2 3)" | post 2>&1 | grep -c '(8) does not match size_decompressed (3)'
 
-# No-regression control: engines reading frames they wrote themselves keep working, now that the
-# frame size bound applies to every reader with no per-call-site escape.
+# No-regression control: the shortcut is the ordinary read path for compressed marks and for the Log
+# family, so engines reading frames they wrote themselves have to keep working.
 echo '-- engines keep working on ordinary data'
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_log_bound;

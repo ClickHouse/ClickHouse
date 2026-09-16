@@ -1428,16 +1428,6 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when the `enable_quantized_codec` setting is set, and the method byte is always accepted on decompression.
 
-### Size limits {#frame-size-limits}
-
-Both size fields are 32-bit on the wire, but each is capped at `0x40000000` (1 GiB) **inclusive**: exactly `0x40000000` is accepted and only a strictly larger value is rejected. A decoder checks both from the header alone, before allocating any buffer sized from either field, and fails with `TOO_LARGE_SIZE_COMPRESSED`. A `Multiple` codec applies the same constant to its nested frames, but exclusively (exactly `0x40000000` is rejected) and to two quantities only: the length of the intermediate buffer it tracks itself, and each nested header's declared `uncompressed_size`. A nested header's declared `compressed_size` is not inspected, because each nested decoder is handed the length the outer decoder tracks rather than one read off the nested header.
-
-The checksum does not gate these checks. It is an unkeyed CityHash128 over bytes the sender chose, so it detects corruption in transit but not a crafted header, and a decoder that sized a buffer from `uncompressed_size` before checking it would honour whatever the sender declared.
-
-A limit is not a validation, so for a method byte whose codec stores the body verbatim (`NONE`, `Quantized`) the two fields are checked against each other as well: they describe the same bytes, so `compressed_size - 9` must equal `uncompressed_size`, and a frame where they disagree is rejected. The same rule applies to a nested frame, where the body length is the length the outer decoder tracks for it rather than a field of the nested header, and the comparison runs before the buffer sized from `uncompressed_size` is allocated.
-
-All of these checks belong to the decoder. Beyond them the format does not constrain the sizes a writer puts in a header.
-
 ### Checksum {#checksum}
 
 ClickHouse uses CityHash v1.0.2 (the historical variant), **not** modern Google CityHash; the two produce different outputs.
