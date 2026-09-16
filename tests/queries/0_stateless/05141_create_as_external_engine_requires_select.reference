@@ -11,6 +11,8 @@ URL
 Proxy
 -- null_copy_of_url_src:
 Null
+-- null_copy_of_function_src:
+Null
 after GRANT SELECT:
 -- copy_of_url_src:
 URL

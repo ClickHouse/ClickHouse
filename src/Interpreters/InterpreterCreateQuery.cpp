@@ -1464,6 +1464,26 @@ namespace
         }
     }
 
+    /// The same for a table function the query is backed by, whether it was written in the query or
+    /// inherited from the source table of `CREATE TABLE x AS y`. Returns whether it was replaced.
+    bool replaceExternalTableFunctionWithNullIfNeeded(ASTCreateQuery & create, bool enabled)
+    {
+        if (!enabled)
+            return false;
+
+        auto properties = TableFunctionFactory::instance().tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
+        if (properties && properties->allow_readonly)
+            return false;
+
+        if (create.storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
+
+        create.set(create.storage, make_intrusive<ASTStorage>());
+        create.reset(create.as_table_function);
+        setNullTableEngine(*create.storage);
+        return true;
+    }
+
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
     {
         ASTDictionary & dict = *create_query.dictionary;
@@ -1512,23 +1532,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
     {
-        if (getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null])
-        {
-            const auto & factory = TableFunctionFactory::instance();
-
-            auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
-            if (properties && properties->allow_readonly)
-                return;
-            if (!create.storage)
-            {
-                auto storage_ast = make_intrusive<ASTStorage>();
-                create.set(create.storage, storage_ast);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-            create.reset(create.as_table_function);
-            setNullTableEngine(*create.storage);
-        }
+        replaceExternalTableFunctionWithNullIfNeeded(
+            create, getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]);
         return;
     }
 
@@ -1635,8 +1640,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// clauses were specified for the new table; otherwise keep the explicit storage definition.
             if (!create.storage)
             {
-                check_access_to_inherited_definition(*as_create.as_table_function);
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
+                /// Replaced by `Null` here just as it would be if it were written in the query, and then
+                /// there is nothing inherited left to authorize.
+                if (!replaceExternalTableFunctionWithNullIfNeeded(
+                        create, getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]))
+                    check_access_to_inherited_definition(*create.as_table_function);
                 return;
             }
         }
