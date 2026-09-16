@@ -348,14 +348,19 @@ def test_replica_host_cluster_view(started_cluster):
     node2.query("DROP DATABASE test_cluster SYNC")
 
 
-def test_host_id_migration_with_stale_active_node(started_cluster):
+@pytest.mark.parametrize("unsynced_marker", [False, True], ids=["plain", "unsynced"])
+def test_host_id_migration_with_stale_active_node(started_cluster, unsynced_marker):
     """Test that a stale `/active` node left by our own previous session does not block the migration.
 
     A server that is restarted before its previous ZooKeeper session expires still sees its own
     ephemeral `/active` znode. That node belongs to this very server, so the host_id rewrite must
     proceed; only an `/active` node owned by a different server may reject it.
+
+    A replica that is still marked unsynced after recovery stores `<server_uuid>\tUNSYNCED` in
+    `/active` (`DatabaseReplicated::REPLICA_UNSYNCED_MARKER`), so both payloads must be accepted
+    as self-owned.
     """
-    db = "test_host_id_migration_stale_active"
+    db = "test_host_id_migration_stale_active" + ("_unsynced" if unsynced_marker else "")
     zk_replica_path = f"/clickhouse/databases/{db}/replicas/shard1|node2"
 
     node2.query(
@@ -382,10 +387,11 @@ def test_host_id_migration_with_stale_active_node(started_cluster):
     # A persistent node is used because an ephemeral one would vanish with the kazoo session;
     # `DatabaseReplicatedDDLWorker::initializeReplication` removes it either way.
     active_path = f"{zk_replica_path}/active"
+    active_value = server_uuid + ("\tUNSYNCED" if unsynced_marker else "")
     if zk.exists(active_path):
-        zk.set(active_path, server_uuid.encode())
+        zk.set(active_path, active_value.encode())
     else:
-        zk.create(active_path, server_uuid.encode())
+        zk.create(active_path, active_value.encode())
     zk.stop()
 
     # Startup must succeed: the `/active` node belongs to this server.
