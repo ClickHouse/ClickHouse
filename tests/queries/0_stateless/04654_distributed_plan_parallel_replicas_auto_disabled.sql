@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- make_distributed_plan used to throw SUPPORT_IS_DISABLED when enable_parallel_replicas (or the
 -- automatic parallel replicas heuristic) was on. It now auto-disables parallel replicas instead
 -- (issue #109476).
