@@ -69,10 +69,18 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
         if (&allocation == &*pending_allocations.begin() && increasing_allocations.empty()) // Only if it should be processed next
             scheduleActivation();
     }
-    else // Zero-cost allocations are not blocked - enqueue into running allocations directly
+    else // Zero-cost allocations are not blocked - they are admitted on the scheduler thread
     {
+        // A zero-size allocation adds no resource cost, so it can never violate a limit and is admitted
+        // unconditionally. The hierarchy `allocations` counters are scheduler-thread-only, so we must not
+        // count it here (this runs on a query thread). Park it in `admitting_allocations` and let
+        // `processActivation` promote it into `running_allocations` and propagate the admission count up the
+        // tree. This preserves the invariant: an allocation is in `running_allocations` only after it has been
+        // counted at the leaf and every ancestor.
         allocation.fair_key = 0;
-        running_allocations.insert(allocation);
+        admitting_allocations.push_back(allocation);
+        if (&allocation == &*admitting_allocations.begin())
+            scheduleActivation();
     }
 }
 
@@ -84,17 +92,25 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
     ensureUsable();
 
     chassert(!allocation.increasing_hook.is_linked());
+    // A growing allocation is either already running or still awaiting its zero-size admission (parked in
+    // `admitting_allocations`, not yet promoted by the scheduler thread).
+    chassert(allocation.running_hook.is_linked() || allocation.admitting_hook.is_linked());
 
-    // Update the key of running allocation
-    running_allocations.erase(running_allocations.iterator_to(allocation));
-    allocation.fair_key = allocation.allocated + increase_size;
-    running_allocations.insert(allocation);
+    // Update the fair-ordering key. Re-key `running_allocations` only if the allocation is actually a member;
+    // an admitting allocation is not there yet, so its promotion in `processActivation` inserts it with the
+    // already-updated `fair_key`.
+    if (allocation.running_hook.is_linked())
+    {
+        running_allocations.erase(running_allocations.iterator_to(allocation));
+        allocation.fair_key = allocation.allocated + increase_size;
+        running_allocations.insert(allocation);
+    }
+    else
+        allocation.fair_key = allocation.allocated + increase_size;
 
-    // Enqueue increase request. `Kind::Initial` is the first increase that admits the allocation
-    // into the hierarchy (it makes `apply(IncreaseRequest)` increment `allocations`). Use the
-    // sticky `admitted` flag — not `allocated == 0` — because an allocation that has been admitted
-    // and then shrunk back to zero must not be re-admitted on a later grow.
-    allocation.increase.prepare(increase_size, allocation.admitted ? IncreaseRequest::Kind::Regular : IncreaseRequest::Kind::Initial);
+    // Every grow of a running (or soon-to-be-running) allocation is `Regular`; the only non-regular increase is
+    // the first grow of a `Pending` allocation, set in `insertAllocation`.
+    allocation.increase.prepare(increase_size, IncreaseRequest::Kind::Regular);
     increasing_allocations.insert(allocation);
     if (&allocation == &*increasing_allocations.begin())
         scheduleActivation();
@@ -122,11 +138,11 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
         return; // Queue has been purged — `allocationFailed` has already notified the owner.
     // If the allocation has been failed by a concurrent path (e.g. `updateMinMaxAllocated` or
     // `updateQueueLimit` rejected it after the owner's destructor checked `fail_reason` but
-    // before this call), it is no longer in `pending_allocations` or `running_allocations`.
-    // Adding it to `removing_allocations` in this state would leave `removing_hook` linked when
-    // the owner reaches `~ResourceAllocation`, with `processActivation` later dereferencing a
-    // freed object.
-    if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
+    // before this call), it is no longer in `pending_allocations`, `admitting_allocations` or
+    // `running_allocations`. Adding it to `removing_allocations` in this state would leave
+    // `removing_hook` linked when the owner reaches `~ResourceAllocation`, with `processActivation`
+    // later dereferencing a freed object.
+    if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked() && !allocation.admitting_hook.is_linked())
         return;
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
@@ -155,6 +171,18 @@ void AllocationQueue::purgeQueue()
         allocation.allocationFailed(reason);
     }
 
+    // Fail allocations still awaiting zero-size admission (never counted in the hierarchy)
+    while (!admitting_allocations.empty())
+    {
+        ResourceAllocation & allocation = admitting_allocations.front();
+        admitting_allocations.pop_front();
+        if (allocation.increasing_hook.is_linked())
+            increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+        if (allocation.removing_hook.is_linked())
+            removing_allocations.erase(removing_allocations.iterator_to(allocation));
+        allocation.allocationFailed(reason);
+    }
+
     while (!running_allocations.empty())
     {
         ResourceAllocation & allocation = *running_allocations.begin();
@@ -170,6 +198,7 @@ void AllocationQueue::purgeQueue()
     }
 
     chassert(pending_allocations.empty());
+    chassert(admitting_allocations.empty());
     chassert(running_allocations.empty());
     chassert(increasing_allocations.empty());
     chassert(decreasing_allocations.empty());
@@ -227,30 +256,20 @@ void AllocationQueue::approveIncrease()
     chassert(increase);
     ResourceAllocation & allocation = increase->allocation;
     SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, increase->size, allocated);
-    // `admitted` is part of the `ByEvictionKey` ordering of `running_allocations`, so it must carry its final
-    // value whenever the allocation is (re)inserted there. `apply` below keys off `increase.kind`, not
-    // `admitted`, so setting the flag first is safe. Mark the allocation admitted so its eventual removal
-    // propagates a matching `removing_allocation` decrease instead of underflowing `allocations`.
     if (allocation.increase.kind == IncreaseRequest::Kind::Pending)
     {
+        // A pending allocation becomes running for the first time: move it into `running_allocations`.
+        // `apply(*increase)` below counts it (Kind::Pending) in this queue and every ancestor.
         pending_allocations.erase(pending_allocations.iterator_to(allocation));
         pending_allocations_size -= allocation.increase.size;
         allocation.fair_key = increase->size;
-        allocation.admitted = true;
         running_allocations.insert(allocation);
     }
     else
     {
+        // Regular grow of an already-running allocation (it is already a member of `running_allocations`,
+        // re-keyed in `increaseAllocation`). It was counted at admission, so `apply` does not recount it.
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-        // A `Kind::Initial` increase admits an allocation that is already in `running_allocations` (inserted
-        // as a zero-cost, not-admitted allocation). Re-key it: erase, flip `admitted`, re-insert so it lands
-        // at its new `ByEvictionKey` position.
-        if (allocation.increase.kind == IncreaseRequest::Kind::Initial)
-        {
-            running_allocations.erase(running_allocations.iterator_to(allocation));
-            allocation.admitted = true;
-            running_allocations.insert(allocation);
-        }
     }
     apply(*increase);
     allocation.allocated += increase->size;
@@ -316,11 +335,9 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // cross-workload least common ancestor. Nothing to decide from `limit` at the leaf.
     UNUSED(limit);
 
-    // The victim is the greatest allocation by `ByEvictionKey`: an admitted allocation with the highest
-    // `eviction_score`, then the largest `fair_key`. Not-admitted allocations sort first (killed last),
-    // so a pending/never-admitted allocation is chosen only when no admitted one exists — which cannot happen
-    // under real pressure (an admitted allocation holds the resource), and an impossible grow is already
-    // handled by the self-kill above.
+    // The victim is the greatest allocation by `ByEvictionKey`: the highest `eviction_score`, then the largest
+    // `fair_key`, then `unique_id`. Pending and admitting allocations are not members of `running_allocations`,
+    // so they are never selected as victims.
     ResourceAllocation & victim = *running_allocations.rbegin();
 
     // If this is the least common ancestor of killer and victim - add details
@@ -345,6 +362,27 @@ void AllocationQueue::processActivation()
     {
         std::lock_guard lock(mutex);
 
+        // Promote zero-size admitting allocations into `running_allocations` and count them in the hierarchy.
+        // Done first so that any removal or request published below sees them as running, and so the invariant
+        // "a member of `running_allocations` has been counted at the leaf and every ancestor" holds before any
+        // victim can be selected against this queue.
+        size_t admitted_count = 0;
+        while (!admitting_allocations.empty())
+        {
+            ResourceAllocation & allocation = admitting_allocations.front();
+            admitting_allocations.pop_front();
+            chassert(allocation.allocated == 0);
+            chassert(!allocation.pending_hook.is_linked());
+            chassert(!allocation.running_hook.is_linked());
+            running_allocations.insert(allocation);
+            ++admitted_count;
+        }
+        if (admitted_count)
+        {
+            applyAdmissions(admitted_count); // count at this leaf
+            update.setAdmissions(admitted_count); // carry the count to every ancestor
+        }
+
         // Remove allocation if necessary
         while (!removing_allocations.empty())
         {
@@ -365,20 +403,6 @@ void AllocationQueue::processActivation()
                     running_allocations.erase(running_allocations.iterator_to(allocation));
                     allocation.fair_key = allocation.allocated;
                     running_allocations.insert(allocation);
-                }
-
-                // Never-admitted allocation (inserted with `initial_size == 0` and either never
-                // grew or had its first `Initial` increase cancelled above). The hierarchy's
-                // `allocations` counter was never incremented for it, so propagating a removing
-                // decrease would underflow `allocations` in this queue and every ancestor.
-                // Remove locally and notify the owner directly.
-                if (!allocation.admitted)
-                {
-                    chassert(allocation.allocated == 0);
-                    running_allocations.erase(running_allocations.iterator_to(allocation));
-                    allocation.decrease.prepare(0, /*removing_allocation=*/ true);
-                    allocation.decreaseApproved(allocation.decrease);
-                    continue;
                 }
 
                 // Prepare decrease for the full current amount (accurate because increase is cancelled above,

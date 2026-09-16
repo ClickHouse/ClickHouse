@@ -3459,13 +3459,90 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationChangePrecedenceWithActi
     }
 }
 
-// Regression: a `TestAllocation` (or `MemoryReservation`) created with `initial_size == 0`
-// goes directly into `running_allocations` and is never counted in the hierarchy's
-// `allocations` counter (no `apply(IncreaseRequest)` ever runs for it). Removing it must not
-// propagate a `removing_allocation` decrease — that would underflow `allocations` in this
-// queue and every ancestor via `apply(DecreaseRequest)`. With the `chassert(allocations > 0)`
-// guard, the bug aborts the process without the fix.
-TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeNoCounterUnderflow)
+// A zero-reserve allocation created under a child workload is admitted (counted) through its parent's
+// Precedence policy node, which must add the child to `running_children` on the admission delta even though
+// no bytes and no increase/decrease pointer changed. Growing/shrinking it and finally removing it must leave
+// every node's `allocations` counter balanced back to zero.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeAdmittedUnderPrecedenceParent)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD B IN all SETTINGS precedence = 2");
+
+    ClassifierPtr c = t.manager->acquire("A");
+    ResourceLink link = c->get("memory");
+    {
+        TestAllocation z(link, "zero", 0);
+        z.waitSync();
+
+        // The admitted zero-size allocation is counted up the tree (leaf + every ancestor, through `all`'s
+        // PrecedenceAllocation). `forEachNode` runs on the scheduler thread, so the admission has been applied.
+        size_t total_live = 0;
+        t.manager->forEachNode([&](const String &, const String &, ISchedulerNode * node)
+        {
+            if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                total_live += ss->allocations;
+        });
+        EXPECT_GT(total_live, 0u) << "zero-size allocation was not counted under its Precedence parent";
+
+        z.setSize(10); // grow under the policy parent
+        z.waitSync();
+        z.setSize(0);
+        z.waitSync();
+    }
+
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+    {
+        if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+            EXPECT_EQ(ss->allocations, 0u) << "leaked counter at node '" << path << "'";
+    });
+}
+
+// Same, but under a default (Fair) parent policy — exercises `FairAllocation::propagateUpdate` refreshing
+// running-child membership on an admission-only update (via `setIncrease`/`updateKey`).
+TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeAdmittedUnderFairParent)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    ClassifierPtr c = t.manager->acquire("A");
+    ResourceLink link = c->get("memory");
+    {
+        TestAllocation z(link, "zero", 0);
+        z.waitSync();
+
+        size_t total_live = 0;
+        t.manager->forEachNode([&](const String &, const String &, ISchedulerNode * node)
+        {
+            if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                total_live += ss->allocations;
+        });
+        EXPECT_GT(total_live, 0u) << "zero-size allocation was not counted under its Fair parent";
+
+        z.setSize(10);
+        z.waitSync();
+        z.setSize(0);
+        z.waitSync();
+    }
+
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+    {
+        if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+            EXPECT_EQ(ss->allocations, 0u) << "leaked counter at node '" << path << "'";
+    });
+}
+
+// A zero-reserve allocation is admitted (counted in the hierarchy `allocations`) the moment it starts
+// running, on the scheduler thread, and its removal decrements the same counters exactly once. Verify the
+// accounting is balanced: while a single zero-size allocation is live every space-shared node on its path
+// reports `allocations == 1`, and after it is removed every node reports `allocations == 0`. Repeating the
+// cycle catches any counter drift.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeAdmissionAccounting)
 {
     ResourceTest t;
 
@@ -3475,19 +3552,36 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeNoCounterUnderfl
     ClassifierPtr c = t.manager->acquire("all");
     ResourceLink link = c->get("memory");
 
-    // Repeating exercises the path: each cycle inserts a never-admitted zero-cost allocation
-    // and then removes it. Without the fix the underflow accumulates and the chassert in
-    // `apply(DecreaseRequest)` fires on the first iteration.
     for (int i = 0; i < 4; ++i)
     {
-        TestAllocation a(link, "zero", 0);
-        a.waitSync();
+        {
+            TestAllocation a(link, "zero", 0);
+            a.waitSync();
+
+            // The admitted zero-size allocation is counted exactly once at every space-shared node.
+            // `forEachNode` runs the visitor on the scheduler thread, so the admission activation has
+            // already been processed by the time it observes the counters.
+            t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+            {
+                if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                    EXPECT_EQ(ss->allocations, 1u) << "zero-size allocation not counted at node '" << path << "'";
+            });
+        }
+
+        // After removal the counters return to zero at every node (admit and remove are paired).
+        t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+        {
+            if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                EXPECT_EQ(ss->allocations, 0u) << "leaked counter at node '" << path << "'";
+        });
     }
 }
 
-// Regression: a zero-reserve allocation that grew, shrank back to 0, then grew again must not
-// re-fire `Kind::Initial`. The previous predicate `allocation.allocated == 0` would do so and
-// double-increment `allocations` in the queue and parents, silently leaking the counter.
+// A zero-reserve allocation is admitted (counted) exactly once when it starts running. Growing it,
+// shrinking it back to zero, and growing it again are all `Regular` increases/decreases that never
+// re-admit or re-count it, so the hierarchy `allocations` counter stays at 1 while it is live and returns
+// to 0 only when it is finally removed. (Under the old design the first grow of a zero-reserve allocation
+// was a separate admission keyed on `allocated == 0`, which double-counted after a shrink-to-zero.)
 TEST(SchedulerWorkloadResourceManager, MemoryReservationShrinkThenGrowDoesNotReadmit)
 {
     ResourceTest t;
@@ -3507,8 +3601,14 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationShrinkThenGrowDoesNotRea
         a.waitSync();
         a.setSize(0);
         a.waitSync();
-        // Destructor below removes the allocation. With the bug, the queue's `allocations`
-        // counter would be left at `1` (incremented twice, decremented once).
+
+        // Through every grow/shrink cycle the allocation remains a single admitted allocation.
+        t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+        {
+            if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                EXPECT_EQ(ss->allocations, 1u) << "zero-reserve allocation miscounted at node '" << path << "'";
+        });
+        // Destructor below removes the allocation.
     }
 
     // Verify no leak: every space-shared node in the tree must report `allocations == 0`.
