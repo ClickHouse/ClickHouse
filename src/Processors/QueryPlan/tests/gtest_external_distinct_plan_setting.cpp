@@ -10,12 +10,14 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 
 namespace DB
 {
 namespace QueryPlanSerializationSetting
 {
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_distinct;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_distinct;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
@@ -147,6 +149,29 @@ TEST(ExternalDistinctPlanSetting, TemporaryFilesBufferSizeIsClampedOnDeserializa
     QueryPlanSerializationSettings plan_settings;
     plan_settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = MAX_TEMPORARY_FILES_BUFFER_SIZE + 1;
     EXPECT_EQ(DistinctStep::Settings(plan_settings).temporary_files_buffer_size, MAX_TEMPORARY_FILES_BUFFER_SIZE);
+}
+
+TEST(ExternalDistinctPlanSetting, MaxBlockSizeIsValidatedOnDeserialization)
+{
+    /// Plan settings store `max_block_size` as `UInt64`. Restoring the step must reject zero so
+    /// suppression-key extraction can advance, and preserve every valid block size.
+    for (const UInt64 max_block_size : {UInt64{0}, UInt64{1}, UInt64{DEFAULT_BLOCK_SIZE}})
+    {
+        SCOPED_TRACE(max_block_size);
+        QueryPlanSerializationSettings plan_settings;
+        plan_settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+
+        WriteBufferFromOwnString out;
+        plan_settings.writeChangedBinary(out);
+        ReadBufferFromString in(out.str());
+        QueryPlanSerializationSettings restored_settings;
+        restored_settings.readBinary(in);
+
+        if (max_block_size == 0)
+            EXPECT_THROW(static_cast<void>(DistinctStep::Settings(restored_settings)), Exception);
+        else
+            EXPECT_EQ(DistinctStep::Settings(restored_settings).max_block_size, max_block_size);
+    }
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)

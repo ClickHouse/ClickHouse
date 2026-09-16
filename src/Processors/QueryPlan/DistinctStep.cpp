@@ -133,7 +133,7 @@ DistinctStep::Settings::Settings(const QueryPlanSerializationSettings & settings
         settings_[QueryPlanSerializationSetting::max_rows_in_distinct],
         settings_[QueryPlanSerializationSetting::max_bytes_in_distinct],
         settings_[QueryPlanSerializationSetting::distinct_overflow_mode]);
-    max_block_size = settings_[QueryPlanSerializationSetting::max_block_size];
+    max_block_size = SettingFieldNonZeroUInt64(settings_[QueryPlanSerializationSetting::max_block_size]);
 
     max_bytes_before_external_distinct = settings_[QueryPlanSerializationSetting::max_bytes_before_external_distinct];
     max_bytes_ratio_before_external_distinct = settings_[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct];
