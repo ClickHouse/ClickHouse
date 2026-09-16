@@ -1,0 +1,6 @@
+-- the bare form
+ShowTableSettings
+-- CHANGED and a negated case-insensitive pattern parse into the same node
+ShowTableSettings
+-- and a database-qualified name
+ShowTableSettings
