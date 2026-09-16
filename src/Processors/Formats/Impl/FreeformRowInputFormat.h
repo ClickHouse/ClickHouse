@@ -53,12 +53,15 @@ public:
     }
 
     virtual String getName() const = 0;
+    /// Whether the field is the whole remainder of the line, taken verbatim: such a field is not
+    /// bound by the escaping rule when it is finally deserialized (see `FreeformRowInputFormat::readField`).
+    virtual bool readsWholeLine() const { return false; }
     virtual ~FieldMatcher() = default;
 
 protected:
     virtual NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const = 0;
     Result generateResult(NamesAndFields & fields, size_t offset);
-    DataTypePtr getDataTypeFromField(const String & s) { return tryInferDataTypeByEscapingRule(s, settings, rule, &json_inference_info); }
+    virtual DataTypePtr getDataTypeFromField(const String & s) { return tryInferDataTypeByEscapingRule(s, settings, rule, &json_inference_info); }
 
     FormatSettings::EscapingRule rule;
     FormatSettings settings;
@@ -105,8 +108,24 @@ public:
     NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
+/// Reads the remainder of the physical line as one verbatim field. It is only tried after a
+/// whitespace-separated token that ends with `:` (`kernel:`, `MergeTask::PrepareStage:`), where the
+/// rest of the line is a message rather than a sequence of fields. The bytes are kept as they are:
+/// no escaping rule is applied, a tab does not end the field, and the type is always `String`.
+class RestOfLineFieldMatcher : public FieldMatcher
+{
+public:
+    using FieldMatcher::FieldMatcher;
+    String getName() const override { return "RestOfLineFieldMatcher"; }
+    bool readsWholeLine() const override { return true; }
+    NamesAndFields readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
+
+protected:
+    DataTypePtr getDataTypeFromField(const String &) override;
+};
+
 /// Class for matching generic data row by row.
-/// Currently supported JSON, CSV, Quoted, Escaped and Raw.
+/// Currently supported JSON, CSV, Quoted, Escaped and Raw, plus the remainder of a line as one field.
 class FreeformFieldMatcher
 {
 public:
@@ -138,14 +157,18 @@ public:
 
     const String & getField(unsigned index) { return matched_fields[index]; }
     const FormatSettings::EscapingRule & getRule(unsigned index) { return rules[index]; }
+    bool readsWholeLine(unsigned index) const { return whole_line[index]; }
     NamesAndTypes & getNamesAndTypes() { return final_solution.columns; }
     unsigned getSolutionLength() const { return final_solution.size; }
     /// The number of rows the accepted solution was checked against.
     size_t getRowsChecked() const { return rows_checked; }
 
 private:
+    /// The matchers tried for a field, in the order of priority; the last one is the
+    /// `RestOfLineFieldMatcher`, which is only tried where the previous field asks for it.
     std::vector<FieldMatcherPtr> matchers;
     std::vector<FormatSettings::EscapingRule> rules;
+    std::vector<bool> whole_line;
     Solution final_solution;
 
     std::vector<String> matched_fields;

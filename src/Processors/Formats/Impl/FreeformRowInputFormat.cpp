@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
+#include <base/find_symbols.h>
 #include <base/sort.h>
 #include <fmt/ranges.h>
 #include <Common/logger_useful.h>
@@ -12,10 +13,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Common/Documentation.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -179,6 +182,13 @@ FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, unsigned 
     }
     catch (Exception & e)
     {
+        /// Only a genuine parse miss means that the matcher does not fit the field. A failure of the
+        /// underlying buffer (a socket, a truncated HTTP body, an object storage read) is a failure
+        /// of the input, and `ReadBuffer::next` cancels the buffer before rethrowing: reporting it
+        /// as a mismatch would lose the real error and go on retrying other matchers on a canceled stream.
+        if (!isParseError(e.code()) || in.isCanceled())
+            throw;
+
         LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Error while parsing: {}", e.message());
         return makeFailedResult();
     }
@@ -259,6 +269,28 @@ FieldMatcher::NamesAndFields RawByWhitespaceFieldMatcher::readFieldsByEscapingRu
     return {{fmt::format("c{}", index), field}};
 }
 
+FieldMatcher::NamesAndFields RestOfLineFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const
+{
+    String field;
+    while (!in.eof())
+    {
+        char * end = find_first_symbols<'\n', '\r'>(in.position(), in.buffer().end());
+        field.append(in.position(), static_cast<size_t>(end - in.position()));
+        in.position() = end;
+        if (in.hasPendingData())
+            break;
+    }
+
+    return {{fmt::format("c{}", index), field}};
+}
+
+DataTypePtr RestOfLineFieldMatcher::getDataTypeFromField(const String &)
+{
+    /// The remainder of a line is a message, and a message is text whatever it happens to look like
+    /// in the first rows: `42` in one row and `restarted` in the next must not invalidate the solution.
+    return std::make_shared<DataTypeString>();
+}
+
 FreeformFieldMatcher::FreeformFieldMatcher(PeekableReadBuffer & in_, const FormatSettings & settings_)
     : max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference))
     , in(in_)
@@ -269,6 +301,8 @@ FreeformFieldMatcher::FreeformFieldMatcher(PeekableReadBuffer & in_, const Forma
     matchers.emplace_back(std::make_unique<RawByWhitespaceFieldMatcher>(FormatSettings::EscapingRule::Raw, settings_));
     matchers.emplace_back(std::make_unique<QuotedFieldMatcher>(FormatSettings::EscapingRule::Quoted, settings_));
     matchers.emplace_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
+    /// Must stay last: `readNextFields` tries it only where the previous field ends with `:`.
+    matchers.emplace_back(std::make_unique<RestOfLineFieldMatcher>(FormatSettings::EscapingRule::Raw, settings_));
 }
 
 void FreeformFieldMatcher::seekInRow(size_t offset) const
@@ -294,8 +328,10 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
     }
 
     size_t best_score = 0;
-    for (uint8_t i = 0; const auto & matcher : matchers)
+    /// The last matcher reads the rest of the line and is only tried above.
+    for (uint8_t i = 0; i + 1 < matchers.size(); ++i)
     {
+        const auto & matcher = matchers[i];
         auto result = matcher->parseField<true>(in, index);
         if (result.ok)
         {
@@ -307,7 +343,6 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
             }
         }
 
-        ++i;
         seekInRow(offset);
     }
 
@@ -421,6 +456,10 @@ bool FreeformFieldMatcher::validateSolution(Solution & solution)
     }
     catch (Exception & e)
     {
+        /// See `FieldMatcher::parseField`: a failure of the buffer itself is not a failed candidate.
+        if (!isParseError(e.code()) || in.isCanceled())
+            throw;
+
         LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Solution fails: {}", e.message());
     }
 
@@ -489,6 +528,7 @@ bool FreeformFieldMatcher::parseRow()
     /// instead of silently reusing the previous row's values.
     matched_fields.assign(final_solution.size, {});
     rules.resize(final_solution.size);
+    whole_line.resize(final_solution.size);
 
     unsigned assigned_fields = 0;
     for (unsigned col{0}; const auto & i : final_solution.matchers_order)
@@ -530,6 +570,7 @@ bool FreeformFieldMatcher::parseRow()
 
                 field_name_to_index[name] = col;
                 rules[col] = matchers[i]->getEscapingRule();
+                whole_line[col] = matchers[i]->readsWholeLine();
                 matched_fields[col] = result.fields[j];
                 ++assigned_fields;
                 ++col;
@@ -614,7 +655,7 @@ void FreeformRowInputFormat::buildHeaderPositions()
     for (size_t i = 0; i < inferred.size(); ++i)
     {
         const auto & name = inferred[i].name;
-        size_t target;
+        size_t target = 0;
         if (header.has(name))
             target = header.getPositionByName(name);
         else if (name == fmt::format("c{}", i))
@@ -651,9 +692,54 @@ bool FreeformRowInputFormat::readField(unsigned index, MutableColumns & columns)
     const size_t target = header_positions[index];
     const auto & type = getPort().getHeader().getByPosition(target).type;
     const auto rule = matcher->getRule(index);
-    ReadBufferFromString field_buf(matcher->getField(index));
+    const auto & field = matcher->getField(index);
+    ReadBufferFromString field_buf(field);
 
-    return deserializeFieldByEscapingRule(type, serializations[target], *columns[target], field_buf, rule, format_settings);
+    try
+    {
+        bool read = true;
+        if (matcher->readsWholeLine(index))
+        {
+            /// The remainder of a line was taken verbatim, so it is read as a whole text: a `Raw`
+            /// reader would stop at a tab, and an `Escaped` one would decode escape sequences that
+            /// were never meant as such.
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(*columns[target], field_buf, format_settings, serializations[target]);
+            else
+                serializations[target]->deserializeWholeText(*columns[target], field_buf, format_settings);
+        }
+        else
+        {
+            read = deserializeFieldByEscapingRule(type, serializations[target], *columns[target], field_buf, rule, format_settings);
+
+            /// The matcher has isolated the whole field, so the value has to consume it entirely: a
+            /// number reader stops at the first byte it cannot use (`1x` would be read as `1`), and no
+            /// delimiter follows here to reject the leftover. The `CSV` and `JSON` rules permit
+            /// whitespace after a value.
+            if (rule == FormatSettings::EscapingRule::CSV)
+            {
+                if (!format_settings.csv.allow_whitespace_or_tab_as_delimiter)
+                    while (!field_buf.eof() && (*field_buf.position() == ' ' || *field_buf.position() == '\t'))
+                        ++field_buf.position();
+            }
+            else if (rule == FormatSettings::EscapingRule::JSON)
+                skipWhitespaceIfAny(field_buf);
+        }
+
+        if (!field_buf.eof())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected data '{}' after parsed value in the field '{}'",
+                String(field_buf.position(), field_buf.available()),
+                field);
+
+        return read;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("(while reading the value of column " + getPort().getHeader().getByPosition(target).name + ")");
+        throw;
+    }
 }
 
 bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
