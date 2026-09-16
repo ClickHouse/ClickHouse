@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+FILE="$CLICKHOUSE_TMP/${CLICKHOUSE_DATABASE}_fallback.parquet"
+trap 'rm -f "$FILE"' EXIT
+
+# A column chunk that grows past output_format_parquet_max_dictionary_size is encoded twice: the
+# dictionary pass is discarded and the chunk starts over without one. Its size statistics must
+# describe the values once, not once per pass.
+$CLICKHOUSE_LOCAL --query "
+    SELECT toString(number) AS s FROM numbers(1000)
+    SETTINGS output_format_parquet_max_dictionary_size = 1
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --query "
+    SELECT
+        columns.size_statistics.unencoded_byte_array_data_bytes AS reported,
+        reported = (SELECT sum(length(toString(number))) FROM numbers(1000)) AS matches_values
+    FROM file('$FILE', ParquetMetadata)
+    ARRAY JOIN row_groups
+    ARRAY JOIN row_groups.columns AS columns
+"
