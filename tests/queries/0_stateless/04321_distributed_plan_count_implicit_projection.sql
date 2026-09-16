@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- The implicit count/minmax projection counts rows from part metadata. A distributed read buckets the
 -- part across workers; if the projection is left enabled it is replicated to every bucket and counts
 -- the whole part each time, so the result is multiplied by the bucket count. These distributed counts

@@ -1943,6 +1943,11 @@ expired based on their TTL settings are removed.
 
 When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
 rows in that part have expired according to their `TTL` settings.
+
+This applies only to the TTLs that delete rows. A column `TTL` can only be
+honoured by rewriting the part, so the merges that clear expired columns are
+still assigned when this setting is enabled. Such a merge rewrites the part
+anyway, and therefore also removes the rows that have expired in it.
 )", 0) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 Only recalculate ttl info when MATERIALIZE TTL
@@ -3018,6 +3023,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
 
     ClickHouseVersion version(compatibility_value);
     const auto & settings_changes_history = getMergeTreeSettingsChangesHistory();
+    /// Keep blockers across versions to skip earlier changes to the same setting.
+    std::unordered_set<std::string_view> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
@@ -3030,6 +3037,13 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
         {
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
+
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilitySetting::Ignore)
+                blocked_settings.insert(final_name);
+
+            if (blocked_settings.contains(final_name))
+                continue;
+
             auto setting_index = MergeTreeSettingsTraits::Accessor::instance().find(final_name);
             if (setting_index == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting in history: {}", final_name);
