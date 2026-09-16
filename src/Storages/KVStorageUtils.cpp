@@ -34,18 +34,6 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-/// The source type of a constant matters for layout-changing conversions (e.g. `UUID` -> `UUID2`, which share the
-/// `Field` representation but store the two 64-bit halves in a different order), so it has to be threaded into
-/// `convertFieldToType` as a hint: a key converted without it would be serialized into the wrong bytes and the
-/// direct `GetKeys` lookup would find no row even though the row exists.
-/// `Nullable` and `LowCardinality` wrappers are removed because `convertFieldToType` inspects the hint as-is.
-DataTypePtr getSourceTypeHint(const DataTypePtr & type)
-{
-    if (!type)
-        return nullptr;
-    return removeNullable(removeLowCardinality(type));
-}
-
 /// Helper function to create a Tuple field from multiple field values
 Field createTupleField(const std::vector<Field> & fields)
 {
@@ -153,10 +141,22 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
-        auto value_type_hint = getSourceTypeHint(value->result_type);
-        auto converted_field = convertFieldToType(value->column->getField(), *primary_key_type, value_type_hint.get());
-        if (!converted_field.isNull())
-            res->push_back(converted_field);
+        /// The type of the literal decides how it converts: a `DateTime` literal compared with a `Date`
+        /// key is a number of seconds, not a day number, so without the source type its raw value is
+        /// reinterpreted in the key's unit space and the lookup probes a key that does not exist.
+        /// The wrappers are stripped from the source type: the conversion branches are chosen by that
+        /// type, and a `Nullable(Date)` or `LowCardinality(Date)` literal would otherwise miss them and
+        /// have its day number reinterpreted as a number of seconds.
+        const auto value_type = removeNullable(recursiveRemoveLowCardinality(value->result_type));
+        auto converted_field = tryConvertFieldToType(value->column->getField(), *primary_key_type, value_type.get());
+
+        /// A literal the key type cannot represent - `Date = <a DateTime with a time of day>`, or a
+        /// value out of the key type's range - is not a key filter: the condition is left to be
+        /// evaluated over a full scan, instead of looking up an empty set of keys and answering no rows.
+        if (converted_field.isNull())
+            return false;
+
+        res->push_back(converted_field);
         return true;
     }
     if (func_name == "in" || func_name == "globalIn")
@@ -309,19 +309,20 @@ bool traverseDAGFilter(
             if (tuple_value.size() != primary_keys.size())
                 return false;
 
-            /// The element types of the right-hand tuple constant are the source types of the values.
-            auto right_type_hint = getSourceTypeHint(right->result_type);
-            const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_type_hint.get());
-            if (right_tuple_type && right_tuple_type->getElements().size() != tuple_value.size())
-                right_tuple_type = nullptr;
+            // Convert each tuple element to the correct type, with the type of the element it comes
+            // from: without it a date-family literal is reinterpreted in the key's unit space.
+            const auto * value_tuple_type
+                = typeid_cast<const DataTypeTuple *>(removeNullable(recursiveRemoveLowCardinality(right->result_type)).get());
 
-            // Convert each tuple element to the correct type
             std::vector<Field> converted_values;
             converted_values.reserve(tuple_value.size());
             for (size_t i = 0; i < tuple_value.size(); ++i)
             {
-                auto element_type_hint = right_tuple_type ? getSourceTypeHint(right_tuple_type->getElement(i)) : nullptr;
-                auto converted = convertFieldToType(tuple_value[i], *primary_key_types[i], element_type_hint.get());
+                DataTypePtr element_type;
+                if (value_tuple_type && i < value_tuple_type->getElements().size())
+                    element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
+
+                auto converted = tryConvertFieldToType(tuple_value[i], *primary_key_types[i], element_type.get());
                 if (converted.isNull())
                     return false;
                 converted_values.push_back(converted);
@@ -389,7 +390,6 @@ bool traverseDAGFilter(
 
             // Extract all tuple values from the set
             const auto & set_elements = set->getSetElements();
-            /// The set element types are the source types of the values.
             const auto & set_element_types = set->getElementsTypes();
 
             if (set_elements.empty())
@@ -407,9 +407,15 @@ bool traverseDAGFilter(
                 {
                     Field field;
                     set_elements[col]->get(row, field);
-                    auto element_type_hint
-                        = col < set_element_types.size() ? getSourceTypeHint(set_element_types[col]) : nullptr;
-                    auto converted = convertFieldToType(field, *primary_key_types[col], element_type_hint.get());
+
+                    /// Converted with the type of the element it comes from, and with the wrappers
+                    /// stripped: without it a date-family element is reinterpreted in the key's unit
+                    /// space, and one the key type cannot represent raises instead of being skipped.
+                    DataTypePtr element_type;
+                    if (col < set_element_types.size())
+                        element_type = removeNullable(recursiveRemoveLowCardinality(set_element_types[col]));
+
+                    auto converted = tryConvertFieldToType(field, *primary_key_types[col], element_type.get());
                     if (converted.isNull())
                     {
                         all_converted = false;

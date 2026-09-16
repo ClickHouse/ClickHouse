@@ -394,10 +394,12 @@ SELECT 'control_fixed_string_padding', (SELECT count() FROM pk_fixed10 WHERE key
 -- condition, so such an element is converted to the name and not to the number.
 SELECT 'array_element_uses_name', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '37';
 
--- hasAny and hasAll go through createColumnFromConstantArray, which converts the element with the hint,
--- the same as has above, so their bloom filter lookup agrees with the expression and does not over prune.
-SELECT 'bloom_filter_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [['7']];
-SELECT 'bloom_filter_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [['7']];
+-- hasAny and hasAll go through createColumnFromConstantArray, which converts the elements with their
+-- own type as well, so their bloom filter lookup agrees with the function - as it does for has above.
+SELECT 'bloom_filter_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]))
+    = (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]) SETTINGS use_skip_indexes = 0);
+SELECT 'bloom_filter_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')]))
+    = (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')]) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE ref_str;
 DROP TABLE pk_str;

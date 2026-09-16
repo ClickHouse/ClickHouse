@@ -21,6 +21,20 @@ if (ENABLE_LLVM_LIBC_MATH)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
     if (NOT SANITIZE)
+        # Force every llvm-libc member into the link ahead of all objects and archives
+        # (linker flags precede them on the link line; -L placement does not matter to ld).
+        # Symbol resolution in archives is first-definition-wins in command-line order, and
+        # the Rust static libraries precede libllvmlibc there, so without this the libm
+        # functions Rust's compiler_builtins exports (cbrt, fmod, fma - baseline-CPU builds)
+        # would shadow the llvm-libc ones whenever symbol localization is bypassed. With all
+        # members pre-loaded, later archives can never supply an already-defined symbol, so
+        # this also covers the mem functions without per-symbol -u flags.
+        #
+        # Skipped under sanitizers, where the interceptors must wrap the libc mem functions
+        # instead (same reason the -u forcing was skipped before).
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -llibllvmlibc -Wl,--no-whole-archive")
+        # Redundant with --whole-archive above, but kept as a backstop for the mem functions
+        # in case the whole-archive link is ever weakened or repositioned.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
     endif()
 endif()

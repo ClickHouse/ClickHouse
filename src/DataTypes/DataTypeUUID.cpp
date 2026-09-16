@@ -48,7 +48,7 @@ The default UUID is all-zero. It is used, for example, when a new record is inse
 00000000-0000-0000-0000-000000000000
 ```
 
-:::warning
+<Warning>
 Due to historical reasons, UUIDs are sorted by their second half.
 
 While this is fine for UUIDv4 values, this can deteriorate performance with UUIDv7 columns used in primary index definitions (usage in ordering keys or partition keys is fine).
@@ -58,7 +58,7 @@ Assuming UUIDs were sorted by the first half (timestamp), then the primary key i
 However, with sorting by the second half (counter), at least one mark is expected to be returned for all parts, leading to unnecessary disk accesses.
 
 The [UUID2](/reference/data-types/uuid2) data type fixes this: it is a variant of `UUID` that sorts by its textual (lexicographic) representation. The name `UUID` can be made to resolve to `UUID2` with the [`uuid_type_version`](/reference/settings/session-settings/other#uuid_type_version) setting.
-:::
+</Warning>
 
 Example:
 

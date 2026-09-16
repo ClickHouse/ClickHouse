@@ -1800,14 +1800,6 @@ void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values,
     }
 }
 
-std::optional<Field> UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/) const
-{
-    if (data.size() != input_size)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
-
-    return Field(decodeParquetUUID(data.data()));
-}
-
 void UUID2Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
     auto & col_data = assert_cast<ColumnVector<UUID> &>(col).getData();
