@@ -202,27 +202,8 @@ private:
     /// reason to cut an output chunk short.
     const size_t max_retained_build_bytes;
 
-    /// Which of the pairs that satisfy the condition are part of the result, which is what
-    /// strictness controls. The two limits are independent: a left-driven `ANY`/`SEMI` takes one
-    /// pair per probe row, a right-driven one takes one per build row, and `ANY INNER` takes both
-    /// at once - `INNER` is its own reverse, so the operator has to answer the same way whichever
-    /// of its inputs the planner decided to build.
-    /// Whether a probe row contributes at most one pair - the first build row it matches.
-    const bool one_pair_per_probe_row;
-    /// Whether a build row is taken by the probe row that reaches it first, and by no other.
-    const bool claim_build_rows;
-    /// Whether no pair at all is part of the result: an `ANTI` result is made of the rows that
-    /// matched nothing, on whichever side the kind keeps them.
-    const bool emits_no_pairs;
-    /// Neither side is limited and every pair is emitted: `ALL`, and any strictness on an explicit
-    /// cartesian join. The pairs of a tile then go to the accumulator wholesale.
-    const bool takes_every_pair;
-    /// Whether a probe row that matched nothing is still part of the result, padded.
-    const bool keep_unmatched_probe_rows;
-    /// Whether every matched build row must be flagged for the stage that runs after the probe.
-    const bool flag_matched_build_rows;
-    /// Whether a probe row leaves the walk as soon as it matches.
-    const bool early_exit_per_probe_row;
+    /// What the kind and strictness decide about which pairs and which unmatched rows are emitted.
+    const BlockNestedLoopJoinRules rules;
     /// Whether the walk records which probe rows have matched.
     const bool track_probe_row_match;
 

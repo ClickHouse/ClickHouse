@@ -159,61 +159,6 @@ void BlockNestedLoopBuildTransform::finishBuild()
 namespace
 {
 
-/// Which pairs that satisfy the condition are part of the result: `ALL` keeps every one of them,
-/// `ANY` and `SEMI` keep one per row of the side they are driven by, and an `ANTI` result is made
-/// of the rows that matched nothing. The two limits below are what the strictness decides, and they
-/// are independent - `ANY INNER` applies both at once.
-///
-/// `join_any_take_last_row` is not honoured here, as the setting itself documents: it applies to
-/// the `Join` table engine and the hash-based algorithms. With no join key there is no group of
-/// rows to take the last of, and the store's block order is the order the build streams happened
-/// to fill it in, so "the last matching row" would name nothing in particular while costing the
-/// early exit that makes `ANY` worth choosing.
-void checkStrictnessIsSupported(JoinKind kind, JoinStrictness strictness)
-{
-    if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Unspecified)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join does not support {} {} JOIN",
-            toString(strictness), toString(kind));
-}
-
-/// Whether a probe row contributes at most one pair - the first build row it matches. That is a
-/// left-driven `ANY`/`SEMI`, `ANY INNER`, and the old `ANY`
-/// (`any_join_distinct_right_table_keys`), which joins one build row to every probe row whatever
-/// the kind.
-bool takesOnePairPerProbeRow(JoinKind kind, JoinStrictness strictness)
-{
-    /// An explicit cartesian join has no strictness of its own.
-    if (isCrossOrComma(kind))
-        return false;
-    if (strictness == JoinStrictness::RightAny)
-        return true;
-    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::Semi)
-        return false;
-    return isInner(kind) || !isRight(kind);
-}
-
-/// Whether a build row is taken by the probe row that reaches it first, and by no other: a
-/// right-driven `ANY`/`SEMI`, and `ANY INNER`.
-bool takesOnePairPerBuildRow(JoinKind kind, JoinStrictness strictness)
-{
-    if (isCrossOrComma(kind) || strictness == JoinStrictness::RightAny)
-        return false;
-    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::Semi)
-        return false;
-    return isInner(kind) || isRight(kind);
-}
-
-/// Whether a probe row that matched no build row is still part of the result, padded with the
-/// build side's defaults.
-bool keepsUnmatchedProbeRows(JoinKind kind, JoinStrictness strictness)
-{
-    if (strictness == JoinStrictness::Semi)
-        return false;
-    if (strictness == JoinStrictness::Anti)
-        return isLeft(kind);
-    return isLeftOrFull(kind);
-}
-
 /// The tile's view of `column`: `indexes` picks one source row per candidate pair.
 ColumnPtr tileColumn(const ColumnPtr & column, const ColumnPtr & indexes)
 {
@@ -296,31 +241,13 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
     , max_retained_build_bytes(maxRetainedBuildBytesPerStream(num_probe_streams_))
-    , one_pair_per_probe_row(takesOnePairPerProbeRow(data->getKind(), data->getStrictness()))
-    , claim_build_rows(takesOnePairPerBuildRow(data->getKind(), data->getStrictness()))
-    , emits_no_pairs(!isCrossOrComma(data->getKind()) && data->getStrictness() == JoinStrictness::Anti)
-    , takes_every_pair(!one_pair_per_probe_row && !claim_build_rows && !emits_no_pairs)
-    , keep_unmatched_probe_rows(keepsUnmatchedProbeRows(data->getKind(), data->getStrictness()))
-    , flag_matched_build_rows(data->hasBuildSideMatchFlags())
-    /// A probe row leaves the walk as soon as it has its pair - or, for `ANTI`, as soon as it has
-    /// any match at all - unless the result still needs its other pairs, or unless the build rows
-    /// it would match further on must be kept out of the scan for unmatched build rows.
-    , early_exit_per_probe_row(
-        (one_pair_per_probe_row || emits_no_pairs)
-        && !keepsUnmatchedBuildRows(data->getKind(), data->getStrictness()))
+    , rules(data->getRules())
     /// `EXPLAIN ANALYZE matches = 1` asks how many probe rows matched, so it records them where the
     /// result itself has no use for the record.
     , track_probe_row_match(
-        keep_unmatched_probe_rows || early_exit_per_probe_row || one_pair_per_probe_row
+        rules.keep_unmatched_probe_rows || rules.early_exit_per_probe_row || rules.one_pair_per_probe_row
         || analyze_mode_ == JoinAnalyzeMode::Exact)
 {
-    checkStrictnessIsSupported(data->getKind(), data->getStrictness());
-
-    if (claim_build_rows && !flag_matched_build_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Block nested loop join keeps no build-side match flags to give each build row to one probe row for {} {} JOIN",
-            toString(data->getStrictness()), toString(data->getKind()));
-
     if (output_header->columns() != probe_header->columns() + data->getHeader()->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Block nested loop join output header [{}] is not the concatenation of its inputs [{}] and [{}]",
@@ -432,7 +359,7 @@ void BlockNestedLoopProbeTransform::work()
             continue;
         }
 
-        if (keep_unmatched_probe_rows && walk.unmatched_probe_cursor < walk.probe_num_rows)
+        if (rules.keep_unmatched_probe_rows && walk.unmatched_probe_cursor < walk.probe_num_rows)
         {
             /// A window in which every probe row matched yields nothing; the cursor still advances,
             /// so the walk ends.
@@ -615,7 +542,7 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
         walk.current_build_block.reset();
     }
 
-    if (early_exit_per_probe_row)
+    if (rules.early_exit_per_probe_row)
     {
         dropMatchedProbeRows();
         /// Every probe row of the chunk has its match: no build row further on can change the
@@ -634,9 +561,9 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
     const auto & build_values = assert_cast<const ColumnUInt64 &>(matched_build).getData();
     /// A row's index into its block's columns is also its position in the block, so the global row
     /// number the flags are indexed by is just the block's row offset plus it.
-    const size_t block_row_offset = flag_matched_build_rows ? data->getRowOffsets()[walk.build_block_cursor] : 0;
+    const size_t block_row_offset = rules.flag_matched_build_rows ? data->getRowOffsets()[walk.build_block_cursor] : 0;
 
-    if (takes_every_pair)
+    if (rules.takes_every_pair)
     {
         walk.matched_probe_rows.insert(probe_values.begin(), probe_values.end());
         walk.matched_build_rows.insert(build_values.begin(), build_values.end());
@@ -646,7 +573,7 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
             for (auto probe_row : probe_values)
                 walk.probe_row_matched[probe_row] = 1;
 
-        if (flag_matched_build_rows)
+        if (rules.flag_matched_build_rows)
             for (auto build_row : build_values)
                 data->setBuildRowMatched(block_row_offset + build_row);
 
@@ -664,18 +591,18 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
         /// Both limits have to hold, and the build row is claimed only where it would settle the
         /// probe row - so a probe row whose match is already spoken for keeps looking instead of
         /// taking a build row away from a row that could still use it.
-        const bool selected = !emits_no_pairs
-            && (!one_pair_per_probe_row || !walk.probe_row_matched[probe_row])
-            && (!claim_build_rows || data->claimBuildRow(block_row_offset + build_row));
+        const bool selected = !rules.emits_no_pairs
+            && (!rules.one_pair_per_probe_row || !walk.probe_row_matched[probe_row])
+            && (!rules.claim_build_rows || data->claimBuildRow(block_row_offset + build_row));
 
         /// A probe row of an `ANY INNER` - the one kind limited on both sides - counts as matched
         /// only once it has its pair; otherwise a match is final, and the build rows it passed over
         /// stay behind.
-        if (track_probe_row_match && (selected || !(one_pair_per_probe_row && claim_build_rows)))
+        if (track_probe_row_match && (selected || !(rules.one_pair_per_probe_row && rules.claim_build_rows)))
             walk.probe_row_matched[probe_row] = 1;
         /// A claim flags the build row itself; the other selections flag the rows they matched but
         /// did not take, so that the stage after the probe does not report them as unmatched.
-        if (flag_matched_build_rows && !claim_build_rows)
+        if (rules.flag_matched_build_rows && !rules.claim_build_rows)
             data->setBuildRowMatched(block_row_offset + build_row);
 
         if (selected)

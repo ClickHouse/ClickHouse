@@ -255,39 +255,19 @@ TEST(BlockNestedLoopJoinData, ConcurrentInsertsKeepEveryRow)
 
 TEST(BlockNestedLoopJoinData, MatchFlagsAreKeptOnlyWhereTheResultNeedsThem)
 {
-    for (auto strictness : {JoinStrictness::All, JoinStrictness::Any, JoinStrictness::RightAny})
-    {
-        EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, strictness));
-        EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Cross, strictness));
-        EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Right, strictness));
-        EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Full, strictness));
-
-        EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Inner, strictness));
-        EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Left, strictness));
-        EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Right, strictness));
-        EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Full, strictness));
-    }
-
+    EXPECT_FALSE(makeData(JoinKind::Left, JoinStrictness::All)->hasBuildSideMatchFlags());
+    EXPECT_TRUE(makeData(JoinKind::Full, JoinStrictness::All)->hasBuildSideMatchFlags());
     /// `ANY INNER` keeps the flags to take each build row once, though it emits no build row itself.
-    EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Inner, JoinStrictness::Any));
-    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Inner, JoinStrictness::All));
-    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Inner, JoinStrictness::RightAny));
+    EXPECT_TRUE(makeData(JoinKind::Inner, JoinStrictness::Any)->hasBuildSideMatchFlags());
+}
 
-    /// The right-driven early-exit kinds select build rows by their flag, the left-driven ones do not.
-    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, JoinStrictness::Semi));
-    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, JoinStrictness::Anti));
-    EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Right, JoinStrictness::Semi));
-    EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Right, JoinStrictness::Anti));
-
-    /// `RIGHT SEMI` emits the build rows that did match, which is the other half of the same scan.
-    EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Right, JoinStrictness::Semi));
-    EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Right, JoinStrictness::Anti));
-    EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Left, JoinStrictness::Anti));
-
-    auto without_flags = makeData(JoinKind::Left, JoinStrictness::All);
-    EXPECT_FALSE(without_flags->hasBuildSideMatchFlags());
-    auto with_flags = makeData(JoinKind::Full, JoinStrictness::All);
-    EXPECT_TRUE(with_flags->hasBuildSideMatchFlags());
+TEST(BlockNestedLoopJoinData, UnsupportedJoinsAreRefused)
+{
+    EXPECT_FALSE(BlockNestedLoopJoinRules::forJoin(JoinKind::Full, JoinStrictness::Any).has_value());
+    EXPECT_FALSE(BlockNestedLoopJoinRules::forJoin(JoinKind::Inner, JoinStrictness::Semi).has_value());
+    EXPECT_FALSE(BlockNestedLoopJoinRules::forJoin(JoinKind::Inner, JoinStrictness::Asof).has_value());
+    EXPECT_FALSE(BlockNestedLoopJoinRules::forJoin(JoinKind::Paste, JoinStrictness::All).has_value());
+    EXPECT_THROW(makeData(JoinKind::Full, JoinStrictness::Any), Exception);
 }
 
 TEST(BlockNestedLoopJoinData, MatchFlagsStartUnset)

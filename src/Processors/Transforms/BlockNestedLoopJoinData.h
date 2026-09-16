@@ -21,20 +21,58 @@ class TemporaryBlockStreamHolder;
 using TemporaryBlockStreamHolderPtr = std::unique_ptr<TemporaryBlockStreamHolder>;
 class TemporaryBlockStreamReaderHolder;
 
-/// Whether the result still depends on which build rows matched once the probe phase is over:
-/// `RIGHT` and `FULL` emit the build rows that matched nothing, and a right-driven `SEMI`/`ANTI`
-/// result is made of build rows selected by whether they matched at all. The other kinds decide
-/// every output row while the probe row that produced it is still at hand, so they keep no flags.
-bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness);
+/// What the kind and the strictness decide for the operator, in one place: which of the pairs that
+/// satisfy the condition are part of the result, which unmatched rows are, and what the build side
+/// has to record for that. `ALL` keeps every pair, `ANY` and `SEMI` keep one per row of the side they
+/// are driven by, and an `ANTI` result is made of the rows that matched nothing. The two limits are
+/// independent - `ANY INNER` applies both at once, since `INNER` is its own reverse and the operator
+/// has to answer the same way whichever input the planner decided to build.
+///
+/// `join_any_take_last_row` is not honoured, as the setting itself documents: it applies to the `Join`
+/// table engine and the hash-based algorithms. With no join key there is no group of rows to take the
+/// last of, and the store's block order is the order the build streams happened to fill it in, so
+/// "the last matching row" would name nothing in particular while costing the early exit that makes
+/// `ANY` worth choosing.
+struct BlockNestedLoopJoinRules
+{
+    /// Whether a probe row contributes at most one pair - the first build row it matches: a
+    /// left-driven `ANY`/`SEMI`, `ANY INNER`, and the old `ANY` (`any_join_distinct_right_table_keys`),
+    /// which joins one build row to every probe row whatever the kind.
+    bool one_pair_per_probe_row = false;
+    /// Whether a build row is taken by the probe row that reaches it first, and by no other: a
+    /// right-driven `ANY`/`SEMI`, and `ANY INNER`.
+    bool claim_build_rows = false;
+    /// Whether no pair at all is part of the result: an `ANTI` result is made of the rows that
+    /// matched nothing, on whichever side the kind keeps them.
+    bool emits_no_pairs = false;
+    /// Neither side is limited and every pair is emitted: `ALL`, and any strictness on an explicit
+    /// cartesian join.
+    bool takes_every_pair = false;
+    /// Whether a probe row that matched nothing is still part of the result, padded with the build
+    /// side's column defaults.
+    bool keep_unmatched_probe_rows = false;
+    /// Whether a stage after the probe phase emits the build rows that no probe row matched, padded
+    /// with the probe side's column defaults.
+    bool keep_unmatched_build_rows = false;
+    /// Whether the build side keeps a match flag per row: it does wherever the result still depends
+    /// on which build rows matched once the probe phase is over, which is exactly when build rows are
+    /// claimed or the unmatched ones emitted. So a kind that claims always has the flags to do it with.
+    bool flag_matched_build_rows = false;
+    /// Whether the flags end up set for every build row that satisfied the condition with some probe
+    /// row, which is what makes counting them the build side's `matched` number in `EXPLAIN ANALYZE`.
+    /// `ANY INNER` is the exception: it flags a build row only where the row settles a probe row that
+    /// had no pair yet, so a build row it matched but passed over stays unflagged.
+    bool flags_count_every_match = false;
+    /// Whether a probe row leaves the walk as soon as it has its pair - or, for `ANTI`, as soon as it
+    /// has any match at all. Not where the result still needs its other pairs, and not where the build
+    /// rows it would match further on must be kept out of the scan for unmatched build rows.
+    bool early_exit_per_probe_row = false;
 
-/// Whether a stage after the probe phase emits the build rows that no probe row matched, padded
-/// with the probe side's column defaults.
-bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness);
+    bool operator==(const BlockNestedLoopJoinRules &) const = default;
 
-/// Whether the match flags, where they are kept, end up set for every build row that satisfied the
-/// condition with some probe row - which is what makes counting them the build side's `matched`
-/// number in `EXPLAIN ANALYZE`.
-bool buildSideMatchFlagsCountEveryMatch(JoinKind kind, JoinStrictness strictness);
+    /// The rules for a join the operator can execute, or `nullopt` for one it cannot.
+    static std::optional<BlockNestedLoopJoinRules> forJoin(JoinKind kind, JoinStrictness strictness);
+};
 
 /// A build block ready for matching. The store never scatters a block, so a row's index into the
 /// columns is also its position in the block - the equality the match flags and the
@@ -152,7 +190,7 @@ public:
     bool spillInMemoryBlocks(size_t min_bytes, size_t stream_index);
 
     /// Whether the match flags below are kept at all; decided by the kind and strictness.
-    bool hasBuildSideMatchFlags() const { return needs_match_flags; }
+    bool hasBuildSideMatchFlags() const { return rules.flag_matched_build_rows; }
     /// Records that some probe row matched the build row `global_row`. Called by every probe stream
     /// concurrently, only for a kind that keeps the flags.
     void setBuildRowMatched(size_t global_row);
@@ -179,6 +217,7 @@ public:
     const SharedHeader & getHeader() const { return build_header; }
     JoinKind getKind() const { return kind; }
     JoinStrictness getStrictness() const { return strictness; }
+    const BlockNestedLoopJoinRules & getRules() const { return rules; }
 
 private:
     friend class BuildSideBlockReader;
@@ -253,7 +292,7 @@ private:
     const JoinStrictness strictness;
     const SizeLimits size_limits;
     const BlockNestedLoopStoreSettings store_settings;
-    const bool needs_match_flags;
+    const BlockNestedLoopJoinRules rules;
 
     /// The build phase's state, which every build stream appends to concurrently. `finish` moves all
     /// of it into `finished_state` and nothing reads it here afterwards, so the annotation covers

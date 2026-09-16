@@ -30,37 +30,64 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness)
+std::optional<BlockNestedLoopJoinRules> BlockNestedLoopJoinRules::forJoin(JoinKind kind, JoinStrictness strictness)
 {
-    /// `ANY INNER` disables the cartesian product on both sides, so it needs the flags to give a
-    /// build row to at most one probe row, even though it emits no build row of its own afterwards.
-    if (strictness == JoinStrictness::Any && isInner(kind))
-        return true;
-    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
-        return isRight(kind);
-    return isRightOrFull(kind);
-}
+    /// ASOF and PASTE prescribe the shape of the join condition (one inequality, or none at all),
+    /// so an arbitrary predicate is not a condition they can express.
+    if (strictness == JoinStrictness::Asof || isPaste(kind))
+        return {};
 
-bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness)
-{
-    /// `RIGHT SEMI` is the exception among the right-driven kinds: it keeps a build row only when
-    /// it does match, which is the other half of the same flag scan.
-    if (strictness == JoinStrictness::Semi)
-        return false;
+    const bool cross = isCrossOrComma(kind);
+    switch (strictness)
+    {
+        /// `ANY FULL` is left out on purpose: nothing in ClickHouse implements it (the query tree
+        /// rejects it with NOT_IMPLEMENTED), so the operator has no reference semantics to answer
+        /// with. `RightAny` is the old `any_join_distinct_right_table_keys` form, which does have
+        /// them - one build row joined to every probe row, whatever the kind.
+        case JoinStrictness::Any:
+            if (!isInner(kind) && !isLeftOrRight(kind) && !cross)
+                return {};
+            break;
+        case JoinStrictness::All:
+        case JoinStrictness::RightAny:
+            if (!isInner(kind) && !isLeftOrRight(kind) && !isFull(kind) && !cross)
+                return {};
+            break;
+        case JoinStrictness::Semi:
+        case JoinStrictness::Anti:
+            if (!isLeftOrRight(kind))
+                return {};
+            break;
+        default:
+            return {};
+    }
+
+    /// An explicit cartesian join has no strictness of its own.
+    const bool one_pair_per_driving_row = !cross && (strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi);
+
+    BlockNestedLoopJoinRules rules;
+    rules.one_pair_per_probe_row = !cross
+        && (strictness == JoinStrictness::RightAny || (one_pair_per_driving_row && (isInner(kind) || !isRight(kind))));
+    rules.claim_build_rows = one_pair_per_driving_row && (isInner(kind) || isRight(kind));
+    rules.emits_no_pairs = !cross && strictness == JoinStrictness::Anti;
+    rules.takes_every_pair = !rules.one_pair_per_probe_row && !rules.claim_build_rows && !rules.emits_no_pairs;
+
+    /// `SEMI` keeps no unmatched row on either side; `ANTI` keeps them on the side it is driven by.
     if (strictness == JoinStrictness::Anti)
-        return isRight(kind);
-    return isRightOrFull(kind);
-}
+    {
+        rules.keep_unmatched_probe_rows = isLeft(kind);
+        rules.keep_unmatched_build_rows = isRight(kind);
+    }
+    else if (strictness != JoinStrictness::Semi)
+    {
+        rules.keep_unmatched_probe_rows = isLeftOrFull(kind);
+        rules.keep_unmatched_build_rows = isRightOrFull(kind);
+    }
 
-bool buildSideMatchFlagsCountEveryMatch(JoinKind kind, JoinStrictness strictness)
-{
-    /// `ANY INNER` is the exception: it flags a build row only where the row settles a probe row that
-    /// had no pair yet, so a build row it matched but passed over stays unflagged. Every other kind
-    /// that keeps the flags flags each build row a probe row matched, whether or not the pair is part
-    /// of the result.
-    if (strictness == JoinStrictness::Any && isInner(kind))
-        return false;
-    return needsBuildSideMatchFlags(kind, strictness);
+    rules.flag_matched_build_rows = rules.claim_build_rows || rules.keep_unmatched_build_rows;
+    rules.flags_count_every_match = rules.flag_matched_build_rows && !(rules.claim_build_rows && rules.one_pair_per_probe_row);
+    rules.early_exit_per_probe_row = (rules.one_pair_per_probe_row || rules.emits_no_pairs) && !rules.keep_unmatched_build_rows;
+    return rules;
 }
 
 namespace
@@ -140,6 +167,15 @@ BlockNestedLoopStoreSettings withJoinTemporaryDataScope(BlockNestedLoopStoreSett
     return settings;
 }
 
+BlockNestedLoopJoinRules rulesForSupportedJoin(JoinKind kind, JoinStrictness strictness)
+{
+    auto rules = BlockNestedLoopJoinRules::forJoin(kind, strictness);
+    if (!rules)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join does not support {} {} JOIN",
+            toString(strictness), toString(kind));
+    return *rules;
+}
+
 }
 
 size_t BuildBlock::allocatedBytes() const
@@ -162,7 +198,7 @@ BlockNestedLoopJoinData::BlockNestedLoopJoinData(
     , strictness(strictness_)
     , size_limits(size_limits_)
     , store_settings(withJoinTemporaryDataScope(std::move(store_settings_)))
-    , needs_match_flags(needsBuildSideMatchFlags(kind_, strictness_))
+    , rules(rulesForSupportedJoin(kind_, strictness_))
     , spill_sinks(std::max<size_t>(1, num_build_streams_))
 {
 }
@@ -431,7 +467,7 @@ void BlockNestedLoopJoinData::finish()
     state->row_offsets.back() = offset;
     chassert(offset == total_rows.load(std::memory_order_relaxed));
 
-    if (needs_match_flags && offset != 0)
+    if (rules.flag_matched_build_rows && offset != 0)
         matched_flags = std::make_unique<std::atomic_bool[]>(offset);
 
     {
@@ -474,7 +510,7 @@ std::optional<UInt64> BlockNestedLoopJoinData::countMatchedBuildRows() const
 {
     /// The flags are allocated by `finish`, so a store the query left still growing has none of them,
     /// whatever the kind.
-    if (!buildSideMatchFlagsCountEveryMatch(kind, strictness) || !isFinished())
+    if (!rules.flags_count_every_match || !isFinished())
         return {};
 
     const size_t num_rows = getTotalRows();

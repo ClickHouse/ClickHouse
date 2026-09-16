@@ -231,7 +231,7 @@ ProbeResult runProbe(
     processors->emplace_back(std::move(source));
     processors->emplace_back(std::move(probe));
 
-    if (keepsUnmatchedBuildRows(kind, strictness))
+    if (data->getRules().keep_unmatched_build_rows)
     {
         /// The same wiring the step builds: the probe stream is the main port of `DelayedPorts` and
         /// the scan over the stored blocks its delayed one, so the scan starts only once the probe

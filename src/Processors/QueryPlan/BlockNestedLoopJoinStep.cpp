@@ -23,28 +23,7 @@ namespace ErrorCodes
 
 bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness strictness)
 {
-    /// ASOF and PASTE prescribe the shape of the join condition (one inequality, or none at all),
-    /// so an arbitrary predicate is not a condition they can express.
-    if (strictness == JoinStrictness::Asof || isPaste(kind))
-        return false;
-
-    switch (strictness)
-    {
-        /// `ANY FULL` is left out on purpose: nothing in ClickHouse implements it (the query tree
-        /// rejects it with NOT_IMPLEMENTED), so the operator has no reference semantics to answer
-        /// with. `RightAny` is the old `any_join_distinct_right_table_keys` form, which does have
-        /// them - one build row joined to every probe row, whatever the kind.
-        case JoinStrictness::Any:
-            return isInner(kind) || isLeftOrRight(kind) || isCrossOrComma(kind);
-        case JoinStrictness::All:
-        case JoinStrictness::RightAny:
-            return isInner(kind) || isLeftOrRight(kind) || isFull(kind) || isCrossOrComma(kind);
-        case JoinStrictness::Semi:
-        case JoinStrictness::Anti:
-            return isLeftOrRight(kind);
-        default:
-            return false;
-    }
+    return BlockNestedLoopJoinRules::forJoin(kind, strictness).has_value();
 }
 
 /// The position of a condition input in the header it comes from. Two columns of one header may
@@ -304,7 +283,7 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
                 max_streams);
         });
 
-        if (keepsUnmatchedBuildRows(kind, strictness))
+        if (data->getRules().keep_unmatched_build_rows)
             addUnmatchedBuildRowsStage(*probe_pipeline, data, max_streams);
 
         auto probe_processors = collector.detachProcessors(static_cast<size_t>(Stage::Probe));
