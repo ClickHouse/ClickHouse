@@ -246,17 +246,10 @@ namespace
                     context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
 
-                /// WHERE isNotNull(values[1]) AND values[1] is not a Prometheus stale marker.
-                ASTPtr array_element_for_null_check = makeASTFunction(
-                    "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u));
-                ASTPtr array_element_for_stale_check = array_element_for_null_check->clone();
+                /// WHERE isNotNull(values[1])
                 where = makeASTFunction(
-                    "and",
-                    makeASTFunction("isNotNull", std::move(array_element_for_null_check)),
-                    makeASTFunction(
-                        "notEquals",
-                        makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", std::move(array_element_for_stale_check))),
-                        make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)));
+                    "isNotNull",
+                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
                 break;
             }
 
@@ -384,8 +377,7 @@ namespace
             case StoreMethod::VECTOR_GRID:
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
-                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           arrayMap(x -> if(<x is stale marker>, NULL, x), values::Array(Nullable(scalar_data_type)))) AS samples
+                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(scalar_data_type))) AS samples
                 /// FROM <vector_grid>
                 /// WHERE notEmpty(samples)
 
@@ -394,40 +386,10 @@ namespace
                 tags->setAlias(ColumnNames::Tags);
 
                 /// values::Array(Nullable(scalar_data_type))
-                ASTPtr grid_values = makeASTFunction(
+                values = makeASTFunction(
                     "CAST",
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
                     make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", context.scalar_data_type->getName())));
-
-                /// A VECTOR_GRID built for an instant vector keeps Prometheus stale markers in its `values` array
-                /// (see fromSelector and finalizeInstantVectorAsSQL). When the same grid is finalized as a range
-                /// vector - for example a `query_range` over an instant selector - the stale markers would otherwise
-                /// surface as real matrix samples, because `timeSeriesFromGrid` only skips NULL entries. Replace stale
-                /// markers with NULL so the step is dropped entirely, which matches Prometheus omitting a stale step.
-                const String iterator_name = "x";
-
-                /// isNotNull(x) AND reinterpretAsUInt64(assumeNotNull(x)) = 0x7ff0000000000002
-                /// (0x7ff0000000000002 is the bit representation of the Prometheus stale marker.)
-                ASTPtr is_stale_marker = makeASTFunction(
-                    "and",
-                    makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>(iterator_name)),
-                    makeASTFunction(
-                        "equals",
-                        makeASTFunction(
-                            "reinterpretAsUInt64", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(iterator_name))),
-                        make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)));
-
-                /// if(<is_stale_marker>, NULL, x)
-                ASTPtr lambda_body = makeASTFunction(
-                    "if",
-                    std::move(is_stale_marker),
-                    make_intrusive<ASTLiteral>(Field{} /* NULL */),
-                    make_intrusive<ASTIdentifier>(iterator_name));
-
-                values = makeASTFunction(
-                    "arrayMap",
-                    makeASTFunction("lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>(iterator_name)), std::move(lambda_body)),
-                    std::move(grid_values));
 
                 where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
                 break;
