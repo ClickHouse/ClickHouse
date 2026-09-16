@@ -2872,21 +2872,8 @@ bool ReadFromMergeTree::isColumnPrunable(const String & column_name, bool with_p
     if (!with_skip_indexes)
         return false;
 
-    /// Same state `buildIndexes` will end up with: FINAL can turn skip indexes off for this read,
-    /// and named indexes can be ignored for it
-    const auto & settings = context->getSettingsRef();
-    if (isQueryWithFinal() && !settings[Setting::use_skip_indexes_if_final])
-        return false;
-
-    std::unordered_set<std::string> ignored_index_names;
-    if (settings[Setting::ignore_data_skipping_indices].changed)
-        ignored_index_names
-            = parseIdentifiersOrStringLiteralsToSet(settings[Setting::ignore_data_skipping_indices].toString(), settings);
-
     for (const auto & index : metadata.getSecondaryIndices())
     {
-        if (ignored_index_names.contains(index.name))
-            continue;
         if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
             continue;
         if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
