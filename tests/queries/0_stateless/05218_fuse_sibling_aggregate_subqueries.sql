@@ -23,6 +23,9 @@ DROP TABLE IF EXISTS jr;
 DROP TABLE IF EXISTS cols;
 DROP TABLE IF EXISTS proj;
 DROP TABLE IF EXISTS smp;
+DROP TABLE IF EXISTS pq;
+DROP TABLE IF EXISTS pt;
+DROP TABLE IF EXISTS mm;
 
 CREATE TABLE t (k Int64, v Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t SELECT number, number * 2 FROM numbers(1000);
@@ -82,6 +85,19 @@ INSERT INTO proj SELECT number % 4 FROM numbers(1000);
 CREATE TABLE smp (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SAMPLE BY k;
 INSERT INTO smp SELECT number, number FROM numbers(100000);
 
+-- Two partitions, so each branch's own read spans one and the fused read spans both.
+CREATE TABLE pq (p UInt8, k UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
+INSERT INTO pq SELECT number % 2, number FROM numbers(100);
+
+-- The same shape with the limit carried by the table rather than by the query.
+CREATE TABLE pt (p UInt8, k UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS max_partitions_to_read = 1;
+INSERT INTO pt SELECT number % 2, number FROM numbers(100);
+
+-- No explicit projection: each branch's count() over a partition filter is answered by the implicit
+-- _minmax_count_projection, which the -If rewrite makes ineligible.
+CREATE TABLE mm (p UInt8, k UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
+INSERT INTO mm SELECT number % 4, number FROM numbers(1000);
+
 SELECT '-- 01 two sibling branches over one table: fuses';
 SELECT '01', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '01', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
@@ -124,7 +140,7 @@ SELECT '05 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TRE
 SELECT '06a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND rowNumberInAllBlocks() < 5) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 SELECT '06b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM m WHERE k > 8 AND sleepEachRow(0.001) = 0) AS x, (SELECT count() AS b FROM m WHERE k = 2) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 
-SELECT '-- 07 now() is deterministic within one query, so it does not block fusion';
+SELECT '-- 07 the analyzer folds now() into a constant before the reproducibility check can see it, so it does not block fusion';
 SELECT '07', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND toDateTime('2020-01-01') < now()) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '07', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND toDateTime('2020-01-01') < now()) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '07 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND toDateTime('2020-01-01') < now()) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
@@ -298,6 +314,28 @@ SELECT '31b', x.a, y.b FROM (SELECT count() AS a FROM smp SAMPLE 0.1 WHERE v > 0
 SELECT '31b', x.a, y.b FROM (SELECT count() AS a FROM smp SAMPLE 0.1 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 0.1 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 SELECT '31b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM smp SAMPLE 0.1 WHERE v > 0 AND k < 1000) AS x, (SELECT count() AS b FROM smp SAMPLE 0.1 WHERE v > 0 AND k >= 99000) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 
+SELECT '-- 32 a limit on how far one read may span is evaluated on the fused read, which spans the union of the partitions the branches read';
+SELECT '32a', a, b FROM (SELECT count() AS a FROM pq WHERE k < 100 AND p = 0) AS x, (SELECT count() AS b FROM pq WHERE k < 100 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, max_partitions_to_read = 1;
+SELECT '32a', a, b FROM (SELECT count() AS a FROM pq WHERE k < 100 AND p = 0) AS x, (SELECT count() AS b FROM pq WHERE k < 100 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_partitions_to_read = 1;
+SELECT '32a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM pq WHERE k < 100 AND p = 0) AS x, (SELECT count() AS b FROM pq WHERE k < 100 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_partitions_to_read = 1);
+-- The effective limit is the table's own whenever the query has not set one, which is a fact about the
+-- data rather than about the query, so the pass has to ask the storage for it.
+SELECT '32b', a, b FROM (SELECT count() AS a FROM pt WHERE k < 100 AND p = 0) AS x, (SELECT count() AS b FROM pt WHERE k < 100 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
+SELECT '32b', a, b FROM (SELECT count() AS a FROM pt WHERE k < 100 AND p = 0) AS x, (SELECT count() AS b FROM pt WHERE k < 100 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
+SELECT '32b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM pt WHERE k < 100 AND p = 0) AS x, (SELECT count() AS b FROM pt WHERE k < 100 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+-- Neither spelling in force: the same shape fuses, so the two refusals above are the limit and not the shape.
+SELECT '32c fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM pq WHERE k < 100 AND p = 0) AS x, (SELECT count() AS b FROM pq WHERE k < 100 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+
+SELECT '-- 33 the implicit minmax_count projection is a separate member of the metadata, so a table with no projection of its own still loses an access path the rewrite cannot keep';
+SELECT '33a', a, b FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, force_optimize_projection = 1;
+SELECT '33a', a, b FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, force_optimize_projection = 1;
+SELECT '33a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, force_optimize_projection = 1);
+SELECT '33b', a, b FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, force_optimize_projection_name = '_minmax_count_projection';
+SELECT '33b', a, b FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, force_optimize_projection_name = '_minmax_count_projection';
+SELECT '33b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, force_optimize_projection_name = '_minmax_count_projection');
+-- Nothing forced: the same shape fuses, and the projection it silently gives up is disclosed rather than guarded.
+SELECT '33c fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1);
+
 DROP TABLE t;
 DROP TABLE tn;
 DROP TABLE m;
@@ -315,3 +353,6 @@ DROP TABLE jr;
 DROP TABLE cols;
 DROP TABLE proj;
 DROP TABLE smp;
+DROP TABLE pq;
+DROP TABLE pt;
+DROP TABLE mm;

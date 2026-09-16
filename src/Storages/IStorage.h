@@ -329,6 +329,12 @@ public:
         return false;
     }
 
+    /// Return true if a read of this storage is bounded by a limit on how much one read may span,
+    /// which a rewrite that widens the set of rows read can push over. The default is true: a storage
+    /// that has not answered this is assumed to be bounded. The safe answer is the opposite one from
+    /// the predicate above: here it is true that has to stop such a rewrite.
+    virtual bool readIsBoundedBySpanLimit(ContextPtr /*query_context*/) const { return true; }
+
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return SerializationInfoByName{{}}; }
 

@@ -38,6 +38,8 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool force_optimize_projection;
+    extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
@@ -256,6 +258,11 @@ bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr 
         if (!table_node->getStorage()->readsColumnsWithoutTransformations(table_node->getStorageSnapshot(), context))
             return false;
 
+        /// Fusion answers the branches with a read of the union of their rows, so a limit on how far
+        /// one read may span is evaluated against that union rather than against each branch.
+        if (table_node->getStorage()->readIsBoundedBySpanLimit(context))
+            return false;
+
         /// A projection is selected against the branch's own filter, and the fused OR implies none of
         /// them.
         if (table_node->getStorageSnapshot()->metadata->hasProjections())
@@ -359,14 +366,13 @@ bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr
             return false;
     }
 
-    if (query_node->hasWhere())
-    {
-        QueryTreeNodes conjuncts;
-        collectConjuncts(query_node->getWhere(), conjuncts);
-        for (const auto & conjunct : conjuncts)
-            if (!isTotalOnEveryRow(conjunct))
-                return false;
-    }
+    /// Established above, and `collectConjuncts` dereferences the WHERE.
+    chassert(query_node->hasWhere());
+    QueryTreeNodes conjuncts;
+    collectConjuncts(query_node->getWhere(), conjuncts);
+    for (const auto & conjunct : conjuncts)
+        if (!isTotalOnEveryRow(conjunct))
+            return false;
 
     /// Fusion collapses what were independent evaluations of this branch's expressions into one.
     if (!isReproducibleBranch(table_expression))
@@ -585,6 +591,12 @@ public:
         for (const auto * limit : scope_changing_limits)
             if (getSettings()[*limit])
                 return;
+
+        /// A forced projection turns a lost access path into an error, and the -If rewrite makes the
+        /// read ineligible for the implicit minmax_count projection every MergeTree table carries.
+        if (getSettings()[Setting::force_optimize_projection]
+            || !getSettings()[Setting::force_optimize_projection_name].value.empty())
+            return;
 
         auto * query_node = node->as<QueryNode>();
         if (!query_node)

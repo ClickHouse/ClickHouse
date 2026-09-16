@@ -28,7 +28,7 @@
 05 fused	0
 06a fused	0
 06b fused	0
--- 07 now() is deterministic within one query, so it does not block fusion
+-- 07 the analyzer folds now() into a constant before the reproducibility check can see it, so it does not block fusion
 07	994	1
 07	994	1
 07 fused	1
@@ -162,3 +162,19 @@
 31b	999	1000
 31b	999	1000
 31b fused	0
+-- 32 a limit on how far one read may span is evaluated on the fused read, which spans the union of the partitions the branches read
+32a	50	50
+32a	50	50
+32a fused	0
+32b	50	50
+32b	50	50
+32b fused	0
+32c fused	1
+-- 33 the implicit minmax_count projection is a separate member of the metadata, so a table with no projection of its own still loses an access path the rewrite cannot keep
+33a	250	250
+33a	250	250
+33a fused	0
+33b	250	250
+33b	250	250
+33b fused	0
+33c fused	1

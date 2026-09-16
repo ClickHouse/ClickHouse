@@ -262,6 +262,7 @@ namespace Setting
     extern const SettingsBool optimize_dry_run_check_part;
     extern const SettingsBool materialize_ttl_after_modify;
     extern const SettingsUInt64 max_partition_size_to_drop;
+    extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
@@ -323,6 +324,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_delay_to_insert;
     extern const MergeTreeSettingsUInt64 max_delay_to_mutate_ms;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 max_parts_in_total;
     extern const MergeTreeSettingsUInt64 max_projections;
     extern const MergeTreeSettingsUInt64 max_table_size_rows;
@@ -13518,6 +13520,17 @@ bool MergeTreeData::readsColumnsWithoutTransformations(const StorageSnapshotPtr 
     return getColumnDefaultnessStatsUnavailableReason(query_context, snapshot_data->mutations_snapshot)
             == ColumnDefaultnessStatsUnavailableReason::None
         && getColumnDefaultnessStatsUnavailableReason(query_context) == ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+bool MergeTreeData::readIsBoundedBySpanLimit(ContextPtr query_context) const
+{
+    /// Mirrors ReadFromMergeTree::AnalysisResult::checkLimits, which bounds the partitions one read
+    /// may span: the query setting decides when it is set, the table's own when it is not.
+    const auto & settings = query_context->getSettingsRef();
+    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : (*getSettings())[MergeTreeSetting::max_partitions_to_read].value;
+    return max_partitions_to_read > 0;
 }
 
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)
