@@ -7,7 +7,6 @@ import pytest
 from helpers.iceberg_utils import (
     create_iceberg_table,
     default_download_directory,
-    default_upload_directory,
     get_uuid_str,
     spark_alter_table,
 )

@@ -262,10 +262,10 @@ RemoveOrphanFilesResult removeOrphanFiles(
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version, metadata_path, metadata] = collectReachableFiles(
+    auto root = resolveReachableFilesRoot(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
 
-    Int32 current_format_version = metadata->getValue<Int32>(f_format_version);
+    Int32 current_format_version = root.metadata->getValue<Int32>(f_format_version);
     if (current_format_version < 2)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -273,7 +273,9 @@ RemoveOrphanFilesResult removeOrphanFiles(
             "but this table uses format version {}",
             current_format_version);
 
-    validateGarbageCollectionEnabled(metadata, "delete orphan files");
+    validateGarbageCollectionEnabled(root.metadata, "delete orphan files");
+
+    auto reachable = collectReachableFiles(root, object_storage, persistent_table_components, context, log);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -289,14 +291,14 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version, recheck_path, recheck_metadata] = collectReachableFiles(
+    auto recheck_root = resolveReachableFilesRoot(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
-    if (recheck_path != metadata_path)
+    if (recheck_root.metadata_path != root.metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "
             "aborting to avoid deleting files referenced by a concurrent commit",
-            metadata_path, metadata_version, recheck_path, recheck_version);
-    validateGarbageCollectionEnabled(recheck_metadata, "delete orphan files");
+            root.metadata_path, root.metadata_version, recheck_root.metadata_path, recheck_root.metadata_version);
+    validateGarbageCollectionEnabled(recheck_root.metadata, "delete orphan files");
 
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
