@@ -1008,7 +1008,7 @@ The following restrictions apply:
   `FixedString` is rejected because the column stores the padding bytes while the searched constant does not, which would silently miss rows.
   `Nullable` is rejected because the encoding cannot distinguish an empty value from `NULL`.
 - The arguments `preprocessor`, `postprocessor` and `support_phrase_search` are rejected at table creation.
-- Only `=` on a map element and [mapContainsKeyValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue) are answered from the index so far.
+- Only `=` on a map element and `mapContainsKeyValue` are answered from the index so far.
   Other map searches, such as `mapContainsKey`, `mapContainsValue`, their `*Like` variants and `IN`, fall back to a brute-force scan.
   So does a needle of type `FixedString`, whose padding bytes the index does not store.
 - `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.

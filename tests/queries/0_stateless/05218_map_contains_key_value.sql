@@ -42,6 +42,12 @@ SELECT mapContainsKeyValue(CAST(map('k', NULL) AS Map(String, Nullable(String)))
 SELECT mapContainsKeyValue(CAST(map('k', 'v') AS Map(String, Nullable(String))), 'k', 'v');
 SELECT mapContainsKeyValue(CAST(map('k', 'v') AS Map(String, Nullable(String))), 'k', NULL);
 
+SELECT 'documentation';
+-- The declared argument types are rendered into links, and an unknown type name makes every read of
+-- `system.functions` and `system.documentation` throw, not only a read of this function's row.
+SELECT name, is_aggregate FROM system.functions WHERE name = 'mapContainsKeyValue';
+SELECT count() FROM system.documentation WHERE type = 'Function' AND name = 'mapContainsKeyValue';
+
 SELECT 'errors';
 SELECT mapContainsKeyValue(map('k', 1), 'k', 'v'); -- { serverError NO_COMMON_TYPE }
 SELECT mapContainsKeyValue('not a map', 'k', 'v'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

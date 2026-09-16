@@ -634,14 +634,14 @@ Returns whether the map contains an entry with the given key and value, i.e. whe
 All entries are considered, unlike `map[key] = value`, which compares only the value of the first
 occurrence of `key`. A `NULL` matches only another `NULL`.
 
-A [text index](/engines/table-engines/mergetree-family/textindexes) with the `keyValuePairs`
+A [text index](/reference/engines/table-engines/mergetree-family/textindexes) with the `keyValuePairs`
 tokenizer answers this function from the index.
 )";
     FunctionDocumentation::Syntax syntax_mapContainsKeyValue = "mapContainsKeyValue(map, key, value)";
     FunctionDocumentation::Arguments arguments_mapContainsKeyValue = {
         {"map", "The map to search.", {"Map(K, V)"}},
-        {"key", "The key to search for.", {"K"}},
-        {"value", "The value to search for.", {"V"}}
+        {"key", "The key to search for. Type must match the key type of the map.", {"Any"}},
+        {"value", "The value to search for. Type must match the value type of the map.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_mapContainsKeyValue = {"Returns `1` if the map contains an entry with the key and the value, `0` if not.", {"UInt8"}};
     FunctionDocumentation::Examples examples_mapContainsKeyValue = {
