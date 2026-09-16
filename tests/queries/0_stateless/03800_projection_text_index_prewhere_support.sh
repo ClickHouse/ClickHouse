@@ -158,19 +158,20 @@ $MY_CLICKHOUSE_CLIENT --query "
 "
 
 # Tests that text indexes can be used in PREWHERE clause.
+# One client invocation per query: a sanitizer client start-up costs seconds, and three of them
+# for each of the queries below pushed the test past the 180 s limit under ASan.
 function run()
 {
     query="$1"
     echo "$query"
-    $MY_CLICKHOUSE_CLIENT --use_skip_indexes 0 --query "$query"
-    $MY_CLICKHOUSE_CLIENT --use_skip_indexes 1 --query "$query"
-
     $MY_CLICKHOUSE_CLIENT --query "
+        $query SETTINGS use_skip_indexes = 0;
+        $query SETTINGS use_skip_indexes = 1;
         SELECT trim(explain) FROM
         (
             EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1
         )
-        WHERE explain ILIKE '%filter column%' OR explain ILIKE '%name: inv_idx%'
+        WHERE explain ILIKE '%filter column%' OR explain ILIKE '%name: inv_idx%';
     "
 }
 
