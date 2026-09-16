@@ -47,6 +47,16 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
 
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 
+## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to fall back to local execution when a plan cannot be distributed (only takes effect under `make_distributed_plan`)."}]}]}/>
+
+When a query plan contains a step that does not support distributed execution, log the reason and execute the query on the initiator instead of throwing an exception. Disable to get an exception instead.
+
+Only takes effect when `make_distributed_plan` (private preview) is enabled.
+
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge/>
@@ -70,6 +80,7 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "New experimental setting"}]}]}/>
 
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
 
 ## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 

@@ -278,6 +278,14 @@ def send_test_data():
                 {"__name__": "bar", "shape": "rectangle", "size": "l"},
                 {110: 9, 130: 90},
             ),
+            (
+                {"__name__": "large_values", "id": "a"},
+                {120: 1e155},
+            ),
+            (
+                {"__name__": "large_values", "id": "b"},
+                {120: 1e155},
+            ),
         ]
     )
 
@@ -1037,6 +1045,13 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:15.000',5),('1970-01-01 00:02:30.000',9),('1970-01-01 00:02:45.000',7),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',18)]",
             ]
         ],
+    )
+
+    do_query_test(
+        "changes(vector(NaN)[80:10])",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "0"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 0]],
     )
 
     # changes: `resets` also counts decreases as changes, unlike `resets()` below.
@@ -1840,7 +1855,7 @@ def test_date_time_functions():
 # `vector(scalar(vector(time())))` below.)
 def test_date_time_functions_zero_arg_with_float32_scalar():
     node.query(
-        "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+        "CREATE TABLE prometheus_f32 (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
     )
 
     try:
@@ -4434,6 +4449,21 @@ def test_aggregation_operators():
         '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "7.25"], [120, "144"], [130, "400"], [140, "0"], [150, "235225"]]}]}',
         [["[]", "[('1970-01-01 00:01:50.000',7.25),('1970-01-01 00:02:00.000',144),('1970-01-01 00:02:10.000',400),('1970-01-01 00:02:20.000',0),('1970-01-01 00:02:30.000',235225)]"]],
         eps=1e-9,
+    )
+
+    # Squaring these equal finite values overflows Float64, but their variance is zero.
+    do_query_test(
+        "stddev(large_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 0]],
+    )
+
+    do_query_test(
+        "stdvar(large_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 0]],
     )
 
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
