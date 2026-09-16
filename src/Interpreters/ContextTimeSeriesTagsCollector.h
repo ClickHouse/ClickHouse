@@ -81,7 +81,7 @@ public:
     /// derived from the tags of a specified group. It's intended as a deterministic sort key
     /// for sampling operations like `limitk` and `limit_ratio`.
     UInt64 getSamplingKeyByGroup(Group group) const;
-    VectorWithMemoryTracking<UInt64> getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_) const;
+    void getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_, PaddedPODArray<UInt64> & res) const;
 
     /// Extracts the value of a specified tag, or an empty string if there is no such tag in the group.
     String extractTag(Group group, const String & tag_to_extract) const;
