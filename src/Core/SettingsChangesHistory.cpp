@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.10",
+        {
+            {"optimize_rewrite_intersect_except_to_join", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a semi or anti join on all columns followed by `DISTINCT`."},
+        });
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
@@ -54,7 +58,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
-            {"optimize_rewrite_intersect_except_to_join", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a semi or anti join on all columns followed by `DISTINCT`."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
