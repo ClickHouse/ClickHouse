@@ -100,6 +100,7 @@ namespace FailPoints
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
     extern const char mt_skip_scheduling_merge_once[];
+    extern const char mt_fail_selected_merge_before_start_once[];
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -1775,7 +1776,36 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         return future_part;
     };
 
-    const auto select_without_hint = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
+    {
+        /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
+        if (isTTLMergeType(future_part->merge_type))
+            getContext()->getMergeList().bookMergeWithTTL();
+
+        try
+        {
+            /// Test hook: a selected merge that fails before it starts, as when the parts cannot be
+            /// tagged or the disk space for the result cannot be reserved.
+            fiu_do_on(FailPoints::mt_fail_selected_merge_before_start_once,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint mt_fail_selected_merge_before_start_once is triggered");
+            });
+
+            uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
+            auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
+
+            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+        }
+        catch (...)
+        {
+            if (isTTLMergeType(future_part->merge_type))
+                getContext()->getMergeList().cancelMergeWithTTL();
+
+            throw;
+        }
+    };
+
+    const auto select_without_hint = [&]() -> std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
     {
         if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
             return std::unexpected(SelectMergeFailure{
@@ -1809,7 +1839,38 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             ),
             /*partitions_hint=*/std::nullopt);
 
-        return select_result.and_then(construct_future_part);
+        if (!select_result.has_value())
+            return std::unexpected(std::move(select_result.error()));
+
+        /// Selecting a TTL merge has already postponed the next TTL merge of its partition by
+        /// `merge_with_ttl_timeout` / `merge_with_recompression_ttl_timeout`. That postponement is
+        /// for a merge that runs: if the selected merge dies below - the future part cannot be
+        /// constructed, or the parts cannot be tagged and the disk space reserved - no TTL merge
+        /// starts, so give the postponement back. The map is shared with background selection, and a
+        /// partially expired single part has no regular merge to fall back to, so a leaked
+        /// postponement would defer its TTL rewrite for the whole timeout. The slot discard in `merge`
+        /// does the same for a selection it gives up. `lock` protects `merger_mutator`'s TTL times.
+        chassert(select_result->size() == 1);
+        const MergeType selected_merge_type = select_result->front().merge_type;
+        const String selected_partition_id = select_result->front().range.front().info.getPartitionId();
+        const auto rollback_ttl_merge_time = [&]
+        {
+            if (isTTLMergeType(selected_merge_type))
+                merger_mutator.rollbackTTLMergeTime(selected_partition_id, selected_merge_type);
+        };
+
+        try
+        {
+            auto entry = construct_future_part(std::move(*select_result)).and_then(construct_merge_select_entry);
+            if (!entry.has_value())
+                rollback_ttl_merge_time();
+            return entry;
+        }
+        catch (...)
+        {
+            rollback_ttl_merge_time();
+            throw;
+        }
     };
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
@@ -1886,30 +1947,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         }
     };
 
-    const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
-    {
-        /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-        if (isTTLMergeType(future_part->merge_type))
-            getContext()->getMergeList().bookMergeWithTTL();
-
-        try
-        {
-            uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
-            auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
-
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
-        }
-        catch (...)
-        {
-            if (isTTLMergeType(future_part->merge_type))
-                getContext()->getMergeList().cancelMergeWithTTL();
-
-            throw;
-        }
-    };
-
     if (partition_id.empty())
-        return select_without_hint().and_then(construct_merge_select_entry);
+        return select_without_hint();
     else
         return select_in_partition().and_then(construct_merge_select_entry);
 }
@@ -2388,8 +2427,15 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
         /// in MergePlainMergeTreeTask. So, this slot will never be freed.
+        /// Likewise, selecting the TTL merge postponed the next TTL merge of its partition; a merge that
+        /// never starts gives that back, so the next selection can pick it up again (see `selectPartsToMerge`).
         if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
+        {
             getContext()->getMergeList().cancelMergeWithTTL();
+
+            std::lock_guard lock(currently_processing_in_background_mutex);
+            merger_mutator.rollbackTTLMergeTime(merge_entry->future_part->part_info.getPartitionId(), merge_entry->future_part->merge_type);
+        }
 
         fiu_do_on(FailPoints::storage_merge_tree_background_schedule_merge_fail,
         {
