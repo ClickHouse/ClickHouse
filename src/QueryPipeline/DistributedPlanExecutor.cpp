@@ -90,8 +90,6 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsString network_compression_method;
-    extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -1787,11 +1785,6 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
-        /// The sending tasks compress the exchange packets with the codec of these two settings. Both are
-        /// sent even at their default values, so a worker with other defaults still uses the codec chosen
-        /// on the initiator.
-        task_description.settings_changes.setSetting("network_compression_method", context->getSettingsRef()[Setting::network_compression_method].toString());
-        task_description.settings_changes.setSetting("network_zstd_compression_level", context->getSettingsRef()[Setting::network_zstd_compression_level].value);
 
         const String unique_temp_file_path = toString(unique_query_id);
 
