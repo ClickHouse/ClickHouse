@@ -812,12 +812,10 @@ void registerStorageTimeSeries(StorageFactory & factory)
     Documentation{
         .description = R"DOCS_MD(
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # TimeSeries table engine
 
 <PrivatePreviewBadge/>
-<CloudNotSupportedBadge/>
 
 A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels):
 
@@ -832,6 +830,14 @@ Enable usage of the TimeSeries table engine
 with the `enable_time_series_table` setting.
 Input the command `set enable_time_series_table = 1`.
 </Info>
+
+<Note>
+The TimeSeries table engine in ClickHouse Cloud is also in private preview.
+The services that take part in the private preview already have the
+`enable_time_series_table` setting configured. Other ClickHouse Cloud services
+do not have this configuration, and you cannot enable the engine yourself on
+such a service.
+</Note>
 
 ## Syntax {#syntax}
 
