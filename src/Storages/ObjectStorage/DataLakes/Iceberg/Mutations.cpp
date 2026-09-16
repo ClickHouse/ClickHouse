@@ -420,6 +420,7 @@ static bool writeMetadataFiles(
     auto manifest_entries_in_storage = std::make_shared<Strings>();
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_row_counts;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
     std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
@@ -455,6 +456,7 @@ static bool writeMetadataFiles(
             manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
             per_entry_content_types.push_back(content_type);
+            manifest_entry_row_counts.push_back(data_file.total_rows);
 
             /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (chunk_partitioner)
@@ -536,7 +538,8 @@ static bool writeMetadataFiles(
                 /* entry_counts */ {},
                 /* carry_forward_manifest_paths */ {},
                 /* entry_partition_spec_ids */ {},
-                entry_partition_summaries);
+                entry_partition_summaries,
+                manifest_entry_row_counts);
             buffer_manifest_list->finalize();
         }
 
