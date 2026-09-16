@@ -41,7 +41,8 @@ class AccessControl;
 /// With a `<sync>` section the storage is additionally populated proactively: a background job
 /// enumerates the directory under the server's lookup identity and applies the result to the
 /// same in-memory storage the lazy path uses (see `sync`). In such a "synced" directory the
-/// synchronisation is the sole role authority: logins only verify the password.
+/// synchronisation is the sole role authority: logins only verify the password. A synced directory
+/// must be the only `ldap` directory of the server (see `AccessControl::checkLDAPStoragesLayout`).
 class LDAPAccessStorage : public IAccessStorage
 {
 public:
@@ -96,18 +97,8 @@ public:
     void shutdown() override;
     void reload(ReloadMode reload_mode) override;
 
-    /// Whether a synchronisation of this directory has been applied since the server started, that is, whether
-    /// `memory_storage` holds the directory's whole user set (with `only_synced_users`, nothing else can get in).
-    /// Only then is the answer of this directory to the shadow rule of a synchronised directory declared after it
-    /// authoritative (see `checkPrecedingLDAPDirectories`). Never true for a `dry_run` directory, nor without a
-    /// `<sync>` section. Lock-free: reads the last-success bookkeeping of `checkNotStale`.
-    bool hasAppliedSyncSnapshot() const { return last_sync_success_time_s.load() != 0; }
-
-    /// Whether no synchronisation of this directory has finished (applied, refused or failed) since the server
-    /// started. The synchronisation job of a directory declared after this one waits for this to turn false before
-    /// its own first run, so that the first runs happen in declaration order (see `runSyncThread`). Always true
-    /// without a `<sync>` section. Lock-free.
-    bool isFirstSyncRunPending() const { return !first_sync_run_finished.load(); }
+    /// Whether the directory has a `<sync>` section. `sync_params` is set by the constructor and never changes.
+    bool hasSync() const { return sync_params.has_value(); }
 
 private: // IAccessStorage implementations.
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
@@ -170,18 +161,7 @@ private: // IAccessStorage implementations.
     };
 
     void runSyncThread();
-    /// Blocks the synchronisation job until every synchronised `ldap` directory declared before this one has
-    /// finished its first run (`isFirstSyncRunPending`), re-checking every second; returns false if the job was
-    /// asked to exit meanwhile. Called before the first run only.
-    bool waitForFirstRunsOfPrecedingDirectories();
-    const LDAPAccessStorage * findPrecedingDirectoryWithPendingFirstRun() const;
     void sync();
-    /// The shadow rule of `planSync` cannot be authoritative against an `ldap` directory declared before this one
-    /// that does not know its whole user set. Throws `BAD_ARGUMENTS` for a layout no run can fix: a directory that
-    /// materialises users at their login (one without a `<sync>` section, or one with `only_synced_users` set to
-    /// false), or a `dry_run` directory, which never materialises anybody. Throws `LDAP_ERROR` for a synchronised
-    /// directory that has not applied a snapshot yet (`hasAppliedSyncSnapshot`): the next run checks again.
-    void checkPrecedingLDAPDirectories() const;
     SyncPlan planSync(std::vector<LDAPSyncClient::UserEntry> entries) const;
     SyncDiff computeSyncDiffNoLock(const SyncPlan & plan) const;
     void checkRemovalGuard(const SyncDiff & diff) const;
@@ -219,9 +199,6 @@ private: // IAccessStorage implementations.
     bool roles_storage_pick_logged = false;                     // the ambiguous default pick is warned about once, under `sync_mutex`
     /// Steady-clock seconds of the last successful (non-dry) run, 0 = never; read by `checkNotStale` without `mutex`.
     std::atomic<Int64> last_sync_success_time_s{0};
-    /// Set when the first run (of the job or of `SYSTEM RELOAD USERS`) finishes, applied or not; read by the jobs of
-    /// the directories declared after this one (`isFirstSyncRunPending`).
-    std::atomic<bool> first_sync_run_finished{false};
     mutable std::atomic<Int64> last_staleness_log_time_s{0};    // once-per-minute throttle of the staleness warning
 };
 }

@@ -24,10 +24,12 @@
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <mutex>
 
@@ -540,6 +542,46 @@ void AccessControl::addStoragesFromMainConfig(
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
+
+    checkLDAPStoragesLayout();
+}
+
+
+void AccessControl::checkLDAPStoragesLayout() const
+{
+    /// The synchronisation of an `ldap` storage asks the other storages whether they define a name before it
+    /// materialises the user (see `LDAPAccessStorage::planSync`): a storage declared before it wins the login, so the
+    /// name is left to it; one declared after it is overridden. A storage of any other type answers from its whole
+    /// user set, so its answer is authoritative. Another `ldap` storage never answers authoritatively: a lazy one
+    /// knows only the users who have logged in through it, and a synchronised one only its last snapshot, taken on
+    /// its own schedule, so a user who starts matching both is materialised by one of them and taken over by the
+    /// other at its next run or at the next login, and the identity and the roles of the login follow the timing of
+    /// the runs. No run-time check makes that sound (whether two search filters can select the same user cannot be
+    /// told in general), so the layout is refused here, once every storage of the configuration is known, and the
+    /// server does not start.
+    std::vector<const LDAPAccessStorage *> ldap_storages;
+    for (const auto & storage : getStorages())
+    {
+        if (const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get()))
+            ldap_storages.push_back(ldap_storage);
+    }
+
+    if (ldap_storages.size() < 2)
+        return;
+
+    const auto synced_it = std::ranges::find_if(ldap_storages, [](const auto * storage) { return storage->hasSync(); });
+    if (synced_it == ldap_storages.end())
+        return;
+
+    const auto * synced = *synced_it;
+    const auto * other = (ldap_storages.front() == synced) ? ldap_storages[1] : ldap_storages.front();
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "User directory {} has a 'sync' section and user directory {} is another 'ldap' user directory: "
+        "a synchronised 'ldap' user directory must be the only 'ldap' user directory in 'user_directories'. "
+        "Its synchronisation cannot tell from a snapshot whether another 'ldap' directory will serve a login, so a user "
+        "matching both would change directory, and roles, with the timing of the runs. Remove one of the two directories "
+        "or the 'sync' section; to synchronise the users of both, widen the 'search_filter' of the synchronised one",
+        backQuote(synced->getStorageName()), backQuote(other->getStorageName()));
 }
 
 

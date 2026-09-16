@@ -1053,29 +1053,16 @@ void LDAPAccessStorage::runSyncThread()
 
     const auto interval = sync_params->interval;
 
-    /// Spread the first runs of several directories, and of several nodes started together, over a tenth
-    /// of the interval so that they do not all hit the directory at the same moment.
+    /// Spread the first runs of several nodes started together over a tenth of the interval so that they do not
+    /// all hit the directory at the same moment.
     std::uniform_int_distribution<Int64> jitter(0, interval.count() / 10);
     std::chrono::seconds wait{jitter(thread_local_rng)};
-    bool first_run = true;
 
     while (true)
     {
         {
             std::unique_lock lock(sync_thread_mutex);
             if (sync_thread_cv.wait_for(lock, wait, [this] { return sync_thread_should_exit; }))
-                return;
-        }
-
-        /// The jitters are independent, so the first run of this directory could come before the first run of a
-        /// synchronised directory declared before it, and `checkPrecedingLDAPDirectories` would refuse it, with an
-        /// error logged and a failure counted, for a layout that is correct. Wait for those first runs instead, so
-        /// that the first runs happen in declaration order: this run is then judged against what they left behind,
-        /// a snapshot, or a failure that is already reported.
-        if (first_run)
-        {
-            first_run = false;
-            if (!waitForFirstRunsOfPrecedingDirectories())
                 return;
         }
 
@@ -1100,45 +1087,6 @@ void LDAPAccessStorage::runSyncThread()
 }
 
 
-bool LDAPAccessStorage::waitForFirstRunsOfPrecedingDirectories()
-{
-    const LDAPAccessStorage * awaited = nullptr;
-    while (const auto * pending = findPrecedingDirectoryWithPendingFirstRun())
-    {
-        if (pending != awaited)
-        {
-            awaited = pending;
-            LOG_INFO(getLogger(), "The first LDAP synchronisation of directory {} waits for the first synchronisation of directory {}, "
-                "which is declared before it", backQuote(getStorageName()), backQuote(pending->getStorageName()));
-        }
-
-        std::unique_lock lock(sync_thread_mutex);
-        if (sync_thread_cv.wait_for(lock, std::chrono::seconds{1}, [this] { return sync_thread_should_exit; }))
-            return false;
-    }
-    return true;
-}
-
-
-const LDAPAccessStorage * LDAPAccessStorage::findPrecedingDirectoryWithPendingFirstRun() const
-{
-    /// The wait always ends: every `ldap` directory is added from the main configuration before the jobs are
-    /// started, and the job of each synchronised directory finishes its first run whatever the outcome. The
-    /// layouts `checkPrecedingLDAPDirectories` refuses for good are not special-cased: their first run finishes
-    /// too, and the refusal follows right after the wait.
-    for (const auto & storage : access_control.getStorages())
-    {
-        if (storage.get() == this)
-            return nullptr;
-
-        const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get());
-        if (ldap_storage && ldap_storage->sync_params && ldap_storage->isFirstSyncRunPending())
-            return ldap_storage;
-    }
-    return nullptr;
-}
-
-
 void LDAPAccessStorage::sync()
 {
     /// Runs are serialised; `mutex` is taken only for the in-memory apply phase, never around LDAP I/O.
@@ -1158,15 +1106,10 @@ void LDAPAccessStorage::sync()
     SCOPE_EXIT({
         if (!succeeded)
             ProfileEvents::increment(ProfileEvents::LDAPSyncFailures);
-        /// The jobs of the directories declared after this one wait for this, whatever the outcome (see `runSyncThread`).
-        first_sync_run_finished.store(true);
     });
 
     LOG_DEBUG(getLogger(), "Starting LDAP synchronisation of directory {} from server '{}'{}",
         backQuote(getStorageName()), ldap_server_name, params.dry_run ? " (dry run)" : "");
-
-    /// Phase 0: the layout of the storages must let the shadow rule of `planSync` be authoritative.
-    checkPrecedingLDAPDirectories();
 
     /// Phase 1: enumerate the directory under the lookup identity. No storage lock is held meanwhile.
     auto entries = access_control.getExternalAuthenticators().enumerateLDAPUsers(ldap_server_name, params.enumeration, role_search_params);
@@ -1246,62 +1189,6 @@ void LDAPAccessStorage::sync()
 }
 
 
-void LDAPAccessStorage::checkPrecedingLDAPDirectories() const
-{
-    /// `planSync` asks every storage declared before this one whether it has a name, and does not materialise
-    /// the names it finds there because the preceding storage wins the login anyway. That answer is authoritative
-    /// only for a storage that knows its whole user set; for an `ldap` directory declared before this one that
-    /// means: it serves only synchronised users, it applies its snapshots (not `dry_run`), and it has applied one
-    /// since the server started. Anything else answers "not found" for names it will serve later, so this run
-    /// would materialise them here, and their owner would flip to the preceding directory at their next login or
-    /// at its first applied run, with whatever roles it maps. The first two conditions no run can fix
-    /// (`BAD_ARGUMENTS`); the third clears up on its own (`LDAP_ERROR`: the retry after a failed run, or the next
-    /// `SYSTEM RELOAD USERS`, checks again). Everything is refused before the directory is contacted, once per
-    /// run. Storages declared after this one lose the login anyway and need no check.
-    for (const auto & storage : access_control.getStorages())
-    {
-        if (storage.get() == this)
-            return;
-
-        const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get());
-        if (!ldap_storage)
-            continue;
-
-        const auto & preceding = ldap_storage->sync_params;
-        if (!preceding || !preceding->only_synced_users)
-        {
-            const bool has_sync = preceding.has_value();
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "LDAP synchronisation of directory {} cannot run: user directory {} is an 'ldap' directory {} and is declared "
-                "before it. Such a directory materialises users at their first login and would win the next login of a name "
-                "synchronised here, so the user would flip between the two directories. Declare directory {} before {}, or {} {}",
-                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()),
-                has_sync ? "with 'only_synced_users' set to false" : "without a 'sync' section",
-                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()),
-                has_sync ? "set 'only_synced_users' to true in" : "add a 'sync' section to",
-                backQuote(ldap_storage->getStorageName()));
-        }
-
-        if (preceding->dry_run)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "LDAP synchronisation of directory {} cannot run: user directory {} is an 'ldap' directory with 'dry_run' enabled "
-                "and is declared before it. A dry run never materialises its users, so the names it would serve cannot be told "
-                "from the rest and would be synchronised here; they would flip to directory {} as soon as it applies a real "
-                "snapshot. Declare directory {} before {}, or disable 'dry_run' in {}",
-                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()), backQuote(ldap_storage->getStorageName()),
-                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()), backQuote(ldap_storage->getStorageName()));
-
-        if (!ldap_storage->hasAppliedSyncSnapshot())
-            throw Exception(ErrorCodes::LDAP_ERROR,
-                "LDAP synchronisation of directory {} cannot run yet: user directory {} is an 'ldap' directory declared before it "
-                "and has no authoritative snapshot yet (none of its synchronisations has been applied since the server started), "
-                "so the names it will serve cannot be told from the rest. This run is refused; the next one (periodic, or "
-                "SYSTEM RELOAD USERS) checks again",
-                backQuote(getStorageName()), backQuote(ldap_storage->getStorageName()));
-    }
-}
-
-
 LDAPAccessStorage::SyncPlan LDAPAccessStorage::planSync(std::vector<LDAPSyncClient::UserEntry> entries) const
 {
     const auto & params = *sync_params;
@@ -1321,9 +1208,10 @@ LDAPAccessStorage::SyncPlan LDAPAccessStorage::planSync(std::vector<LDAPSyncClie
     }
 
     /// A storage declared before this one wins for a name it defines (the user is never materialised here);
-    /// a storage declared after it is overridden by the LDAP entry, exactly as at login time. The answer of a
-    /// preceding storage is complete for every kind of storage `checkPrecedingLDAPDirectories` lets through: an
-    /// `ldap` directory is refused there unless it serves only the users of a snapshot it has applied.
+    /// a storage declared after it is overridden by the LDAP entry, exactly as at login time. Every other storage
+    /// answers from its whole user set, so its answer is authoritative: none of them is an `ldap` directory, whose
+    /// answer would only cover the users it happens to hold right now (`AccessControl::checkLDAPStoragesLayout`
+    /// refuses such a layout at startup).
     const auto storages = access_control.getStorages();
 
     for (auto & entry : entries)
