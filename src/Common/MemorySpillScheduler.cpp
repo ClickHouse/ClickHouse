@@ -4,6 +4,8 @@
 #include <vector>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 #include <Processors/IProcessor.h>
 
 
@@ -241,6 +243,84 @@ void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
         }
         completeForcedSpillProcessor(epoch, state->second);
     }
+}
+
+void MemorySpillScheduler::executeForcedSpillUntil(UInt64 epoch, std::chrono::steady_clock::time_point deadline)
+{
+    if (epoch == 0 || std::chrono::steady_clock::now() >= deadline)
+        return;
+
+    /// Production schedulers are query-owned shared objects. Keep the synchronous fallback for
+    /// direct stack-allocated unit tests rather than detaching work that could outlive `this`.
+    auto self = weak_from_this().lock();
+    if (!self)
+    {
+        executeForcedSpill(epoch);
+        return;
+    }
+
+    bool start_pass = false;
+    {
+        std::lock_guard lock(async_forced_spill_mutex);
+        auto & state = async_forced_spills[epoch];
+        if (state.exception)
+            std::rethrow_exception(state.exception);
+        if (!state.running && getForcedSpillResult(epoch).outcome == ForcedSpillOutcome::Pending)
+        {
+            state.running = true;
+            start_pass = true;
+        }
+    }
+
+    if (start_pass)
+    {
+        auto thread_group = getCurrentThreadGroup();
+        try
+        {
+            ThreadFromGlobalPool spill_thread([self, thread_group, epoch]
+            {
+                std::exception_ptr exception;
+                try
+                {
+                    ThreadGroupSwitcher switcher(thread_group, "MemSpill");
+                    self->executeForcedSpill(epoch);
+                }
+                catch (...)
+                {
+                    exception = std::current_exception();
+                }
+
+                {
+                    std::lock_guard lock(self->async_forced_spill_mutex);
+                    auto & state = self->async_forced_spills[epoch];
+                    state.running = false;
+                    state.exception = exception;
+                }
+                self->async_forced_spill_cv.notify_all();
+            });
+            spill_thread.detach();
+        }
+        catch (...)
+        {
+            {
+                std::lock_guard lock(async_forced_spill_mutex);
+                async_forced_spills[epoch].running = false;
+            }
+            async_forced_spill_cv.notify_all();
+            throw;
+        }
+    }
+
+    std::unique_lock lock(async_forced_spill_mutex);
+    async_forced_spill_cv.wait_until(lock, deadline, [&]
+    {
+        const auto state = async_forced_spills.find(epoch);
+        return state == async_forced_spills.end() || !state->second.running;
+    });
+
+    const auto state = async_forced_spills.find(epoch);
+    if (state != async_forced_spills.end() && state->second.exception)
+        std::rethrow_exception(state->second.exception);
 }
 
 MemorySpillScheduler::ForcedSpillResult MemorySpillScheduler::getForcedSpillResult(UInt64 epoch) const
