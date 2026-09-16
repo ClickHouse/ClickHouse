@@ -5,9 +5,12 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnVariant.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -24,9 +27,7 @@ namespace
 /// (from_type, value, to_type, strict, convert_inexact_floats), the column twin returns null iff the
 /// Field version returns a Null Field, and otherwise its single value equals the Field result. This
 /// pins the contract so column-native fast paths can replace the delegation without changing results.
-/// One deliberate exception: an identity conversion of a `Variant`-carrying type returns the input
-/// column unchanged, so where a `Field` is lossy (a `Variant` discriminator) the two differ and the
-/// column twin is the correct one.
+/// A `Variant` target is the one deliberate exception, asserted separately by `VariantTargetKeepsAlternative`.
 struct Case
 {
     const char * from_type;
@@ -199,6 +200,34 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
 
     for (const auto & c : cases)
         checkEquivalent(c);
+}
+
+/// A value keeps the `Variant` alternative its type names, and the `Field` twin does not: it cannot
+/// record the alternative, so `ColumnVariant::tryInsert` picks the first one that accepts the value.
+/// Both sides are asserted, because the point of the column-native path is the difference between them.
+TEST(ConvertColumnToType, VariantTargetKeepsAlternative)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    const auto from = type_factory.get("UInt64");
+    const auto to = type_factory.get("Variant(Date, UInt64)");
+    const auto & to_variant = assert_cast<const DataTypeVariant &>(*to);
+
+    auto column = from->createColumn();
+    column->insert(Field(UInt64(1)));
+
+    const ColumnPtr converted = convertColumnToTypeOrNull(*column, from, to, {}, /*strict=*/true);
+    ASSERT_NE(converted, nullptr);
+    ASSERT_EQ(converted->size(), 1u);
+    EXPECT_EQ(
+        assert_cast<const ColumnVariant &>(*converted).globalDiscriminatorAt(0),
+        to_variant.tryGetVariantDiscriminator("UInt64").value());
+
+    const Field field_converted = convertFieldToType(Field(UInt64(1)), *to, from.get());
+    auto field_column = to->createColumn();
+    field_column->insert(field_converted);
+    EXPECT_EQ(
+        assert_cast<const ColumnVariant &>(*field_column).globalDiscriminatorAt(0),
+        to_variant.tryGetVariantDiscriminator("Date").value());
 }
 
 TEST(ConvertColumnToType, OrThrow)
