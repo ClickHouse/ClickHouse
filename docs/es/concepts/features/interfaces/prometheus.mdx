@@ -6,9 +6,9 @@ title: 'API HTTP de Prometheus y PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge />
+<PrivatePreviewBadge />
 
 ClickHouse implementa la API HTTP de Prometheus sobre una tabla [`TimeSeries`](/es/reference/engines/table-engines/integrations/time-series). Un handler gestiona la escritura remota, la lectura remota, las consultas PromQL instantáneas y las consultas PromQL de rango.
 
@@ -16,7 +16,17 @@ Para exponer las propias métricas de ClickHouse y que un servidor de Prometheus
 
 ## Requisitos previos {#prerequisites}
 
-### Habilite el SETTING TimeSeries {#enable-the-timeseries-setting}
+Los pasos de configuración difieren entre ClickHouse Cloud y ClickHouse autogestionado. Siga la sección correspondiente a su Implementación.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  La compatibilidad con PromQL en ClickHouse Cloud está en private preview. Los servicios que participan en la private preview ya tienen configurado el SETTING `enable_time_series_table` y los API endpoints de Prometheus. El resto de los servicios de ClickHouse Cloud no cuentan con esta configuración, y no es posible habilitar la feature por cuenta propia en dichos servicios. La sentencia `SET enable_time_series_table` y la configuración `http_handlers` de las secciones siguientes se aplican a Implementaciones autogestionadas.
+</Note>
+
+Si su servicio participa en la private preview, continúe en [Crear una tabla TimeSeries](#create-a-timeseries-table). El servicio expone las rutas de endpoint que se enumeran en la [tabla de endpoints](#configure-prometheus-api).
+
+### Autogestionado: habilite el SETTING TimeSeries {#enable-the-timeseries-setting}
 
 Habilite el SETTING `enable_time_series_table` para el usuario que crea la tabla y accede a ella:
 
@@ -26,7 +36,7 @@ SET enable_time_series_table = 1;
 
 Para las solicitudes a la API HTTP, habilite `enable_time_series_table` en el perfil del usuario de la API.
 
-### Configure los endpoints de la API de Prometheus {#configure-prometheus-api}
+### Autogestionado: configure los endpoints de la API de Prometheus {#configure-prometheus-api}
 
 Configure un handler enrutado por prefijo en el puerto HTTP principal de ClickHouse:
 
@@ -44,14 +54,14 @@ Configure un handler enrutado por prefijo en el puerto HTTP principal de ClickHo
 
 `<defaults/>` conserva los handler integrados para endpoints como `/ping` y para solicitudes SQL. El prefijo anterior expone estos endpoints mediante un único handler:
 
-| Endpoint                          | Finalidad                       |
-| --------------------------------- | ------------------------------- |
-| `/prometheus/api/v1/write`        | Escritura remota de Prometheus  |
-| `/prometheus/api/v1/read`         | Lectura remota de Prometheus    |
-| `/prometheus/api/v1/query`        | Consultas PromQL instantáneas   |
-| `/prometheus/api/v1/query_range`  | Consultas PromQL de rango       |
-| `/prometheus/api/v1/format_query` | Formato de expresiones PromQL   |
-| `/prometheus/api/v1/series`       | Metadatos de series             |
+| Endpoint                          | Finalidad                           |
+| --------------------------------- | ----------------------------------- |
+| `/prometheus/api/v1/write`        | Escritura remota de Prometheus      |
+| `/prometheus/api/v1/read`         | Lectura remota de Prometheus        |
+| `/prometheus/api/v1/query`        | Consultas PromQL instantáneas       |
+| `/prometheus/api/v1/query_range`  | Consultas PromQL de rango           |
+| `/prometheus/api/v1/format_query` | Formato de expresiones PromQL       |
+| `/prometheus/api/v1/series`       | Metadatos de series                 |
 | `/prometheus/api/v1/metadata`     | Metadatos de la familia de métricas |
 
 El ejemplo omite `database` y `table` del handler. Cada solicitud debe incluir el parámetro de consulta `table` (excepto `/format_query`, que solo analiza la expresión PromQL indicada y no necesita una tabla). También puede incluir `database`, usar un nombre de tabla completo como `prometheus.metrics` u omitir la base de datos para usar `default`. Esto permite que un único handler atienda varias tablas `TimeSeries`.

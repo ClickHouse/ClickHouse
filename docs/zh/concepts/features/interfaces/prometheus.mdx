@@ -6,9 +6,9 @@ title: 'Prometheus HTTP API 和 PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge />
+<PrivatePreviewBadge />
 
 ClickHouse 基于 [`TimeSeries`](/zh/reference/engines/table-engines/integrations/time-series) 表实现 Prometheus HTTP API。一个处理程序可处理 远程写入、远程读取、即时 PromQL 查询和范围 PromQL 查询。
 
@@ -16,7 +16,17 @@ ClickHouse 基于 [`TimeSeries`](/zh/reference/engines/table-engines/integration
 
 ## 前置条件 {#prerequisites}
 
-### 启用 TimeSeries 设置 {#enable-the-timeseries-setting}
+ClickHouse Cloud 与自管理 ClickHouse 的设置步骤有所不同。请参照与你的部署方式相对应的章节进行操作。
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  ClickHouse Cloud 中的 PromQL 支持目前处于私有预览阶段。参与私有预览的服务已配置好 `enable_time_series_table` 设置以及 Prometheus API 端点。其他 ClickHouse Cloud 服务不具备该配置，你也无法自行在这类服务上启用该功能。后续章节中的 `SET enable_time_series_table` 语句和 `http_handlers` 配置仅适用于自管理部署。
+</Note>
+
+如果你的服务参与了私有预览，请直接跳至[创建 TimeSeries 表](#create-a-timeseries-table)。该服务会提供[端点表](#configure-prometheus-api)中列出的端点路径。
+
+### 自管理：启用 TimeSeries 设置 {#enable-the-timeseries-setting}
 
 为创建和访问该表的用户启用 `enable_time_series_table` 设置：
 
@@ -26,7 +36,7 @@ SET enable_time_series_table = 1;
 
 对于 HTTP API 请求，请在 API 用户的 profile 中启用 `enable_time_series_table`。
 
-### 配置 Prometheus API 端点 {#configure-prometheus-api}
+### 自管理：配置 Prometheus API 端点 {#configure-prometheus-api}
 
 在主 ClickHouse HTTP 端口上配置一个按前缀路由的处理程序：
 

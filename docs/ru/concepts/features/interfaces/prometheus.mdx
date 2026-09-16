@@ -6,9 +6,9 @@ title: 'HTTP API Prometheus и PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge />
+<PrivatePreviewBadge />
 
 ClickHouse реализует HTTP API Prometheus поверх таблицы [`TimeSeries`](/ru/reference/engines/table-engines/integrations/time-series). Один обработчик поддерживает удалённую запись, удалённое чтение, мгновенные запросы PromQL и запросы PromQL по диапазону.
 
@@ -16,7 +16,17 @@ ClickHouse реализует HTTP API Prometheus поверх таблицы [`
 
 ## Предварительные требования {#prerequisites}
 
-### Включение настройки TimeSeries {#enable-the-timeseries-setting}
+Шаги настройки различаются для ClickHouse Cloud и самоуправляемого ClickHouse. Следуйте разделу, соответствующему вашему развертыванию.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  Поддержка PromQL в ClickHouse Cloud доступна в режиме закрытой предварительной версии. В сервисах, участвующих в закрытой предварительной версии, параметр `enable_time_series_table` и конечные точки Prometheus API уже настроены. В остальных сервисах ClickHouse Cloud такой конфигурации нет, и включить эту возможность самостоятельно в подобном сервисе невозможно. Оператор `SET enable_time_series_table` и конфигурация `http_handlers`, описанные в следующих разделах, относятся к самоуправляемым развертываниям.
+</Note>
+
+Если ваш сервис участвует в закрытой предварительной версии, переходите к разделу [Создание таблицы TimeSeries](#create-a-timeseries-table). Такой сервис обслуживает пути конечных точек, перечисленные в [таблице конечных точек](#configure-prometheus-api).
+
+### Самоуправляемый вариант: включение настройки TimeSeries {#enable-the-timeseries-setting}
 
 Включите настройку `enable_time_series_table` для пользователя, создающего таблицу и работающего с ней:
 
@@ -26,7 +36,7 @@ SET enable_time_series_table = 1;
 
 Для HTTP-запросов к API включите `enable_time_series_table` в профиле пользователя API.
 
-### Настройка конечных точек API Prometheus {#configure-prometheus-api}
+### Самоуправляемый вариант: настройка конечных точек API Prometheus {#configure-prometheus-api}
 
 Настройте один обработчик с маршрутизацией по префиксу на основном HTTP-порту ClickHouse:
 

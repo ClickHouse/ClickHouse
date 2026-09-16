@@ -6,9 +6,9 @@ title: 'API HTTP do Prometheus e PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge />
+<PrivatePreviewBadge />
 
 O ClickHouse implementa a API HTTP do Prometheus em uma tabela [`TimeSeries`](/pt-BR/reference/engines/table-engines/integrations/time-series). Um handler atende a gravação remota, a leitura remota, consultas PromQL instantâneas e consultas PromQL de intervalo.
 
@@ -16,7 +16,17 @@ Para expor as métricas do próprio ClickHouse para que um servidor Prometheus a
 
 ## Pré-requisitos {#prerequisites}
 
-### Habilite a configuração TimeSeries {#enable-the-timeseries-setting}
+As etapas de configuração diferem entre o ClickHouse Cloud e o ClickHouse autogerenciado. Siga a seção correspondente à sua implantação.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  O suporte a PromQL no ClickHouse Cloud está em private preview. Os serviços que participam do private preview já possuem a configuração `enable_time_series_table` e os endpoints da API do Prometheus configurados. Os demais serviços do ClickHouse Cloud não têm essa configuração, e não é possível habilitar o recurso por conta própria nesses serviços. O comando `SET enable_time_series_table` e a configuração `http_handlers` descritos nas próximas seções aplicam-se a implantações autogerenciadas.
+</Note>
+
+Em um serviço que participa do private preview, prossiga para [Criar uma tabela TimeSeries](#create-a-timeseries-table). O serviço disponibiliza os caminhos de endpoint listados na [tabela de endpoints](#configure-prometheus-api).
+
+### Autogerenciado: habilite a configuração TimeSeries {#enable-the-timeseries-setting}
 
 Habilite a configuração `enable_time_series_table` para o usuário que cria e acessa a tabela:
 
@@ -26,9 +36,9 @@ SET enable_time_series_table = 1;
 
 Para solicitações à API HTTP, habilite `enable_time_series_table` no perfil do usuário da API.
 
-### Configure os endpoints da API do Prometheus {#configure-prometheus-api}
+### Autogerenciado: configure os endpoints da API do Prometheus {#configure-prometheus-api}
 
-Configure um manipulador roteado por prefixo na porta HTTP principal do ClickHouse:
+Configure um handler roteado por prefixo na porta HTTP principal do ClickHouse:
 
 ```xml
 <http_handlers>

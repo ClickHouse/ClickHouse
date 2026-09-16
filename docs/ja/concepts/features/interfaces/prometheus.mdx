@@ -6,9 +6,9 @@ title: 'Prometheus HTTP API と PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge />
+<PrivatePreviewBadge />
 
 ClickHouse は [`TimeSeries`](/ja/reference/engines/table-engines/integrations/time-series) テーブルを介して Prometheus HTTP API を実装しています。単一のハンドラーが、リモート書き込み、リモート読み取り、インスタント PromQL クエリ、範囲 PromQL クエリを処理します。
 
@@ -16,7 +16,17 @@ Prometheus サーバーがスクレイプできるように ClickHouse 自身の
 
 ## 前提条件 {#prerequisites}
 
-### TimeSeries設定を有効にする {#enable-the-timeseries-setting}
+セットアップ手順は ClickHouse Cloud とセルフマネージドの ClickHouse で異なります。ご利用のデプロイメントに該当するセクションに従ってください。
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  ClickHouse Cloud における PromQL のサポートはプライベートプレビューです。プライベートプレビューの対象となっているサービスでは、`enable_time_series_table` 設定と Prometheus API エンドポイントがすでに構成済みです。それ以外の ClickHouse Cloud サービスにはこの構成がなく、ユーザー自身でこの機能を有効化することはできません。以降のセクションで説明する `SET enable_time_series_table` ステートメントおよび `http_handlers` の構成は、セルフマネージドのデプロイメントに適用されるものです。
+</Note>
+
+プライベートプレビューの対象となっているサービスでは、[TimeSeries テーブルを作成する](#create-a-timeseries-table)に進んでください。対象サービスでは、[エンドポイント一覧](#configure-prometheus-api)に記載されたエンドポイントパスが利用できます。
+
+### セルフマネージド: TimeSeries設定を有効にする {#enable-the-timeseries-setting}
 
 テーブルを作成しアクセスするユーザーに対して、`enable_time_series_table` 設定を有効にします。
 
@@ -26,7 +36,7 @@ SET enable_time_series_table = 1;
 
 HTTP APIリクエストの場合は、APIユーザーのプロファイルで`enable_time_series_table`を有効にします。
 
-### Prometheus API エンドポイントを設定する {#configure-prometheus-api}
+### セルフマネージド: Prometheus API エンドポイントを設定する {#configure-prometheus-api}
 
 ClickHouse のメイン HTTP ポートで、プレフィックスルーティングされたハンドラーを 1 つ設定します。
 

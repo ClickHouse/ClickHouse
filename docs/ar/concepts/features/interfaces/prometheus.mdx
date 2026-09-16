@@ -6,9 +6,9 @@ title: 'واجهة برمجة تطبيقات HTTP لـ Prometheus وPromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge />
+<PrivatePreviewBadge />
 
 يطبّق ClickHouse واجهة برمجة تطبيقات HTTP لـ Prometheus على جدول [`TimeSeries`](/ar/reference/engines/table-engines/integrations/time-series). يتولى معالج واحد عمليات الكتابة والقراءة عن بُعد، واستعلامات PromQL الفورية، واستعلامات PromQL للنطاق.
 
@@ -16,7 +16,17 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 ## المتطلبات الأساسية {#prerequisites}
 
-### تفعيل إعداد TimeSeries {#enable-the-timeseries-setting}
+تختلف خطوات الإعداد بين ClickHouse Cloud وClickHouse المُدار ذاتيًا. اتبع القسم الخاص بنوع النشر لديك.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  دعم PromQL في ClickHouse Cloud متاح في private preview. الخدمات المشاركة في private preview مهيّأة مسبقًا بالإعداد `enable_time_series_table` وبنقاط نهاية واجهة برمجة تطبيقات Prometheus. أما خدمات ClickHouse Cloud الأخرى فلا تتضمّن هذه التهيئة، ولا يمكنك تفعيل هذه الميزة بنفسك على خدمة من هذا النوع. أما عبارة `SET enable_time_series_table` وتهيئة `http_handlers` الواردتان في الأقسام التالية فتنطبقان على عمليات النشر المُدارة ذاتيًا.
+</Note>
+
+في حال كانت خدمتك مشاركة في private preview، تابع من [إنشاء جدول TimeSeries](#create-a-timeseries-table). فالخدمة توفّر مسارات نقاط النهاية المذكورة في [جدول نقاط النهاية](#configure-prometheus-api).
+
+### مُدار ذاتيًا: تفعيل إعداد TimeSeries {#enable-the-timeseries-setting}
 
 فعِّل الإعداد `enable_time_series_table` للمستخدم الذي يُنشئ الجدول ويصل إليه:
 
@@ -26,7 +36,7 @@ SET enable_time_series_table = 1;
 
 لطلبات واجهة برمجة تطبيقات HTTP، فعِّل `enable_time_series_table` في ملف تعريف مستخدم واجهة برمجة التطبيقات.
 
-### تهيئة نقاط نهاية واجهة برمجة تطبيقات Prometheus {#configure-prometheus-api}
+### مُدار ذاتيًا: تهيئة نقاط نهاية واجهة برمجة تطبيقات Prometheus {#configure-prometheus-api}
 
 هيِّئ معالجًا واحدًا قائمًا على توجيه البادئة على منفذ HTTP الرئيسي لـ ClickHouse:
 
