@@ -16,7 +16,7 @@ struct GlobalMemoryAllocator
 
     GlobalMemoryAllocator() = default;
     template <typename U>
-    GlobalMemoryAllocator(const GlobalMemoryAllocator<U> &)
+    explicit GlobalMemoryAllocator(const GlobalMemoryAllocator<U> &)
     {
     }
 

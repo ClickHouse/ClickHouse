@@ -824,7 +824,7 @@ std::optional<MemoryTracker::ParentLimitExceeded> MemoryTracker::tryInsertParent
     const Int64 limit = new_parent->hard_limit.load(std::memory_order_relaxed);
     const bool enforce_limit = memoryTrackerCanThrow(new_parent->level, false);
     auto old_amount = new_parent->amount.load(std::memory_order_relaxed);
-    Int64 will_be;
+    Int64 will_be = 0;
     do
     {
         will_be = old_amount + size;

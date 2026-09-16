@@ -153,11 +153,11 @@ TEST(MemoryTrackerInsertParent, PendingBytesFollowCommittedParentAndOriginalBloc
                 std::thread([&]
                 {
                     DB::ThreadStatus thread;
-                    bool rejected;
-                    Int64 pending_before;
-                    Int64 query_before_flush;
-                    Int64 user_before_flush;
-                    Int64 global_before_flush;
+                    bool rejected = false;
+                    Int64 pending_before = 0;
+                    Int64 query_before_flush = 0;
+                    Int64 user_before_flush = 0;
+                    Int64 global_before_flush = 0;
                     {
                         DB::MemoryTrackerSwitcher scope(&ledger.query, 1024);
                         {

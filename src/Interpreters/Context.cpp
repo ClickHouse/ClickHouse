@@ -1582,7 +1582,7 @@ struct QueryContextControlBlockAllocator : GlobalMemoryAllocator<T>
 
     QueryContextControlBlockAllocator() = default;
     template <typename U>
-    QueryContextControlBlockAllocator(const QueryContextControlBlockAllocator<U> &)
+    explicit QueryContextControlBlockAllocator(const QueryContextControlBlockAllocator<U> &)
     {
     }
 
