@@ -299,6 +299,8 @@ def test_remote_write_denies_before_it_classifies_the_target(
     )
     assert denied.status_code == requests.codes.forbidden, denied.text
     assert "Not enough privileges" in denied.text, denied.text
+    # The grant it names may list the columns, including the target's own samples column, but only
+    # for a caller already holding SHOW COLUMNS on them, which `system.columns` answers anyway.
     for fragment in SHARD_LOCAL_LEAK + ["is not TimeSeries", "does not declare column"]:
         assert fragment not in denied.text, denied.text
 
