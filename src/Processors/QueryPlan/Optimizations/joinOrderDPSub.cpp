@@ -55,6 +55,9 @@ private:
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
+    std::optional<UInt64> boundCardinality(
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const;
+
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
@@ -131,6 +134,12 @@ std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
     JoinStrictness strictness) const
 {
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
+}
+
+std::optional<UInt64> DPSubJoinOrderOptimizer::boundCardinality(
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const
+{
+    return boundJoinRows(left_rows, right_rows, join_kind);
 }
 
 void DPSubJoinOrderOptimizer::initDPsubScratch()
@@ -464,7 +473,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 {
     auto& entry = dptable[S];
     if (!entry.left && !entry.right)
-        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
+        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats, entry.estimated_rows_upper);
 
     /// `entry.strictness` is All for every DP entry except semi/anti joins admitted by the
     /// conflict detector (CD-A/CD-C), which must keep their strictness in the reordered tree.
@@ -526,6 +535,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         Bitvector left{0};
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
+        std::optional<UInt64> estimated_rows_upper = {};
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
