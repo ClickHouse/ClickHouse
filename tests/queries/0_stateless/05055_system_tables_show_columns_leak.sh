@@ -111,25 +111,28 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "
     WHERE table_schema = '${db}' AND table_name = 'dep_view';"
 
 echo "--- a dictionary's CREATE query follows SHOW CREATE DICTIONARY, not SHOW COLUMNS ---"
-# ${user} still holds only SHOW TABLES on ${db}.*. A dictionary row carries no key expressions and
-# no secondary indices, so partition_key and skipping_indices_types read 0 in both arms: they pin
-# that nothing starts emitting them, not the width of the SHOW DICTIONARIES disjunct, which the
-# create_table_query transition and the dict_engine_tbl control establish. dict_engine_tbl (a plain
-# table declared as ENGINE = Dictionary, granted the same privilege) stays withheld entirely.
+# ${user} still holds only SHOW TABLES on ${db}.*. The admin arm comes first and is the ceiling that
+# makes the zeros below meaningful: local_dict reads engine_full 0 even there, because a
+# CREATE DICTIONARY query has no ENGINE clause to render, so no privilege widens that column, while
+# dict_engine_tbl (a plain table declared as ENGINE = Dictionary, granted the same privilege) reads
+# 1, so its zeros in the restricted arms are withholding and not an empty column. partition_key and
+# skipping_indices_types pin that a dictionary row never starts emitting them.
 dictionary_probe() {
-    ${CLICKHOUSE_CLIENT} --user="${user}" --query "
-        SELECT notEmpty(create_table_query), notEmpty(partition_key), notEmpty(skipping_indices_types)
+    ${CLICKHOUSE_CLIENT} "$@" --query "
+        SELECT notEmpty(create_table_query), notEmpty(engine_full),
+               notEmpty(partition_key), notEmpty(skipping_indices_types)
         FROM system.tables WHERE database = '${db}' AND name = 'local_dict';
-        SELECT notEmpty(create_table_query) FROM system.tables
+        SELECT notEmpty(create_table_query), notEmpty(engine_full) FROM system.tables
             WHERE database = '${db}' AND name = 'dict_engine_tbl';
     "
 }
 dictionary_probe
+dictionary_probe "--user=${user}"
 ${CLICKHOUSE_CLIENT} --query "
     GRANT SHOW DICTIONARIES ON ${db}.local_dict TO ${user};
     GRANT SHOW DICTIONARIES ON ${db}.dict_engine_tbl TO ${user};"
-dictionary_probe
-# Each row above matches what the interpreter hands the same user for the same object.
+dictionary_probe "--user=${user}"
+# Each restricted row above matches what the interpreter hands the same user for the same object.
 ${CLICKHOUSE_CLIENT} --user="${user}" --query "SHOW CREATE DICTIONARY ${db}.local_dict" 2>&1 | grep -o -m1 'CREATE DICTIONARY'
 ${CLICKHOUSE_CLIENT} --user="${user}" --query "SHOW CREATE TABLE ${db}.dict_engine_tbl" 2>&1 | grep -o -m1 ACCESS_DENIED
 
