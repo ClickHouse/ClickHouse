@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <mutex>
 #include <unordered_set>
@@ -123,6 +124,15 @@ public:
     /// of all files stored in FileStatusesCache cache.
     const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }
 
+    /// Drop all failed files from Keeper metadata.
+    /// Called by SYSTEM DROP S3QUEUE FAILED FILES.
+    /// Acquires the same cleanup_lock as the periodic cleanup sweep.
+    void dropFailedFiles();
+
+    /// Reconcile local cache with Keeper state after another replica completes cleanup.
+    /// Removes cache entries for files that no longer have /failed nodes in Keeper.
+    void reconcileFailedFilesCache();
+
     /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
@@ -216,8 +226,70 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes();
-    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description);
+    void cleanupPersistentProcessingNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client);
+    void removeFromCacheIfGenerationMatches(const std::string & file_path, const std::unordered_map<std::string, uint64_t> & failed_generations);
+    size_t removeStaleFailedCacheEntries(const std::unordered_map<std::string, uint64_t> & failed_generations,
+        const std::function<bool(const std::string &)> & path_filter = [](const std::string &) { return true; });
+    /// Publishes the outcome of this replica's `dropFailedFiles` attempt at `<zookeeper_path>/last_drop_result`,
+    /// so a replica waiting on the cleanup lock learns what happened instead of inferring it from `/failed`.
+    /// Must be called while the cleanup lock is still held.
+    /// `command_id` identifies one `dropFailedFiles` statement and is stable across the attempts that
+    /// statement makes; `attempt_id` is the `czxid` of the lock node of the single attempt that produced
+    /// this result. A waiter matches on `command_id`, because it waits for a command and not for one of
+    /// its attempts; the writer checks `attempt_id`, because ownership of the lock is what it must not
+    /// lose. Both are published: neither answers the other's question.
+    void publishDropResult(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const std::string & command_id, const std::string & attempt_id,
+        bool success, size_t snapshot_size, size_t deleted, const std::string & error);
+    /// One attempt at `dropFailedFiles`: acquires the cleanup lock, does the work pinned to the session that
+    /// owns it, and publishes the result. Returns false when the attempt lost that session and produced no
+    /// verdict, which is the only case the caller retries; every other failure throws.
+    bool tryDropFailedFilesOnce(const std::string & command_id);
+    /// The body of one attempt, run with the cleanup lock held and pinned to `zk_client`.
+    bool dropFailedFilesUnderLock(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const zkutil::EphemeralNodeHolder::Ptr & ephemeral_node, const fs::path & zookeeper_cleanup_lock_path,
+        const std::string & command_id, const std::string & attempt_id);
+    /// True while `<zookeeper_path>/cleanup_lock` is still the node this attempt created. Once it is not,
+    /// nothing this attempt does may touch shared state - it no longer holds the lock.
+    bool stillHoldsCleanupLock(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const fs::path & zookeeper_cleanup_lock_path, const std::string & attempt_id) const;
+    bool verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
+        const std::string & waited_command_id, size_t & out_terminal_failed_count);
+    /// What waiting on a concurrent `SYSTEM DROP S3QUEUE FAILED FILES` came to.
+    enum class WaitOutcome
+    {
+        /// The command that held the lock finished and published a verdict this waiter could accept,
+        /// so the work it was waiting for is done and there is nothing left to do.
+        CommandCompleted,
+        /// The lock was already gone when this waiter went to read it, so there is no attempt to bind
+        /// to - and, since the node is ephemeral and unheld, nobody is doing the work either. The
+        /// caller should start its attempt over and try to take the lock itself.
+        LockVanished,
+    };
+    WaitOutcome waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path);
+    /// Executes `remove_requests` as a single Keeper `multi` and reconciles the result, retrying
+    /// individually the requests that were aborted with `ZRUNTIMEINCONSISTENCY`. For every node that is
+    /// confirmed gone, drops the local cache entry (only if its generation still matches the snapshot)
+    /// and appends its file path to `file_paths`.
+    ///
+    /// Precondition: the last `remove_requests.size()` entries of `batch_file_paths` correspond 1:1 to
+    /// `remove_requests` (the caller pushes them in lockstep).
+    void deleteFailedNodeBatch(
+        const Coordination::Requests & remove_requests,
+        const std::vector<std::string> & batch_file_paths,
+        const std::unordered_map<std::string, uint64_t> & failed_generations,
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        std::string_view batch_description,
+        size_t report_batch_index,
+        size_t & total_deleted,
+        std::vector<std::string> & file_paths,
+        std::vector<std::pair<size_t, Coordination::Error>> & failed_batches);
+    /// Both take the client that owns the cleanup lock and do not retry on it: a hardware error may
+    /// mean the session, and with it the lock, is gone, and retrying would delete nodes while another
+    /// replica legitimately holds the lock. The caller abandons the sweep instead; the next scheduled
+    /// run is the retry.
+    void cleanupTrackedNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds, UInt64 nodes_limit);
 
     void migrateToBucketsInKeeper(size_t value);
 
@@ -235,7 +307,8 @@ private:
     const std::string zookeeper_name;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
-
+    /// Whether this table can ever need each kind of cleanup. Coarse and computed once: the sweep
+    /// re-derives the precise conditions per run, because the settings behind them are alterable.
     const bool cleanup_processed_files = false;
     const bool cleanup_failed_files = false;
     const bool cleanup_processing_files = false;
