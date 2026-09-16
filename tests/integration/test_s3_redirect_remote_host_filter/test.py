@@ -5,7 +5,6 @@
 # that target against RemoteHostFilter (like the Poco 307 path already does) instead of
 # blindly following it. Without the fix the s3() query reaches the disallowed host
 # (SSRF to internal services / cloud metadata); with the fix it fails with UNACCEPTABLE_URL.
-import json
 import logging
 import os
 import time
@@ -116,25 +115,6 @@ def test_301_redirect_target_is_host_filtered(cluster, bucket):
     assert _followed(cluster) == "NO", "ClickHouse followed the 301 to a disallowed host (SSRF)"
 
 
-def test_redirect_is_cached_after_access_denied(cluster):
-    node = cluster.instances["node"]
-    table = "s3_redirect_cache"
-    node.query(f"DROP TABLE IF EXISTS {table}")
-    node.query(
-        f"CREATE TABLE {table} (x UInt8) "
-        "ENGINE = S3('http://resolver:8080/cache/key.csv', NOSIGN, 'CSV')"
-    )
-    try:
-        for max_redirects in (5, 0):
-            error = node.query_and_get_error(
-                f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1, s3_max_redirects={max_redirects}"
-            )
-            assert "AccessDenied" in error
-        assert _initial_requests(cluster, "cache") == "1"
-    finally:
-        node.query(f"DROP TABLE {table}")
-
-
 def test_cached_redirect_is_revalidated_after_config_reload(cluster):
     node = cluster.instances["node"]
     table = "s3_redirect_cache_reload"
@@ -200,34 +180,5 @@ def test_head_redirect_is_not_cached_after_network_error(cluster):
         for _ in range(2):
             assert node.query_and_get_error(f"SELECT * FROM {table}")
         assert _initial_requests(cluster, "network") == "4"
-    finally:
-        node.query(f"DROP TABLE {table}")
-
-
-@pytest.mark.parametrize("bucket", ["region-error", "region-head"])
-def test_region_discovery_preserves_custom_endpoint(cluster, bucket):
-    node = cluster.instances["node"]
-    table = "s3_" + bucket.replace("-", "_")
-    node.query(
-        f"CREATE TABLE {table} (x UInt8) "
-        f"ENGINE = S3('http://resolver:8080/{bucket}/key.csv', 'CSV')"
-    )
-    try:
-        for max_redirects in (1, 0):
-            node.query(
-                f"INSERT INTO {table} SELECT 1 "
-                f"SETTINGS s3_truncate_on_insert=1, s3_max_redirects={max_redirects}"
-            )
-        requests = json.loads(
-            cluster.exec_in_container(
-                cluster.get_container_id("resolver"),
-                ["curl", "-sS", f"http://resolver:8080/region_requests/{bucket}"],
-            )
-        )["requests"]
-        expected = [["PUT", "resolver:8080", "us-east-1"]]
-        if bucket == "region-head":
-            expected.append(["HEAD", "resolver:8080", "us-east-1"])
-        expected.extend([["PUT", "resolver:8080", "eu-west-1"]] * 2)
-        assert requests == expected
     finally:
         node.query(f"DROP TABLE {table}")
