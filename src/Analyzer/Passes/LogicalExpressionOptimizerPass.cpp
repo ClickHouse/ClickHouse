@@ -1049,7 +1049,6 @@ static void convertNotEqualsChainToNotIn(
     const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    auto not_in_function_resolver = FunctionFactory::instance().get("notIn", context);
 
     for (auto & [expression, not_equals_entries] : node_to_not_equals_functions)
     {
@@ -1063,6 +1062,15 @@ static void convertNotEqualsChainToNotIn(
         /// `notIn` rejects arguments with a dynamic structure outright, and resolving the function is
         /// what would throw, so this must be checked before building it.
         if (expression.node->getResultType()->hasDynamicStructure())
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
+
+        /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+        const auto not_in_function_name
+            = getInFunctionNameForPassCreatedNode("notIn", expression.node->getResultType(), context);
+        if (!not_in_function_name)
         {
             std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
             continue;
@@ -1110,7 +1118,7 @@ static void convertNotEqualsChainToNotIn(
         /// the resulting `notIn` would compare different values than the notEquals it replaces.
         auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
-        auto not_in_function = std::make_shared<FunctionNode>("notIn");
+        auto not_in_function = std::make_shared<FunctionNode>(*not_in_function_name);
         not_in_function->markAsOperator();
 
         QueryTreeNodes not_in_arguments;
@@ -1119,7 +1127,7 @@ static void convertNotEqualsChainToNotIn(
         not_in_arguments.push_back(std::move(rhs_node));
 
         not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
-        not_in_function->resolveAsFunction(not_in_function_resolver);
+        not_in_function->resolveAsFunction(FunctionFactory::instance().get(*not_in_function_name, context));
 
         /// `notIn` may be nullable where the notEquals it replaces was not (a Variant expression
         /// resolves through the variant adaptor to Nullable(UInt8)). Ancestors already captured the
@@ -1379,12 +1387,32 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     return CommonExpressionExtractionResult{new_or_node, common_exprs};
 }
 
+/// Rebuild the root of a logical operator as an `and` over `arguments`, converted to `result_type`.
+/// A lone argument is still wrapped in `and(arg, 1)`, because the plain `_CAST(arg, UInt8)` below
+/// would map values like `0.5` to `0` where the enclosing operator read them as true.
+static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, const DataTypePtr & result_type, const ContextPtr & context)
+{
+    if (arguments.size() == 1 && arguments.front()->getResultType()->equals(*result_type))
+        return std::move(arguments.front());
+
+    if (arguments.size() == 1)
+        arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
+
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->markAsOperator();
+    and_function_node->getArguments().getNodes() = std::move(arguments);
+    and_function_node->resolveAsFunction(FunctionFactory::instance().get("and", context));
+
+    QueryTreeNodePtr result = std::move(and_function_node);
+    if (!result->getResultType()->equals(*result_type))
+        result = buildCastFunction(result, result_type, context);
+    return result;
+}
+
 static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
 {
     [[maybe_unused]] auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "or");
-
-    QueryTreeNodePtr new_root_node{};
 
     if (auto maybe_result = tryExtractCommonExpressions(node, context); maybe_result.has_value())
     {
@@ -1393,31 +1421,7 @@ static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const Cont
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        if (new_root_arguments.size() == 1 && new_root_arguments.front()->getResultType()->equals(*node->getResultType()))
-        {
-            new_root_node = std::move(new_root_arguments.front());
-        }
-        else
-        {
-            /// If only one argument remains but its ResultType does not match the original `or`
-            /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-            /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-            /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-            /// function performs the `!= 0` on `arg` internally.
-            if (new_root_arguments.size() == 1)
-                new_root_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
-            auto new_function_node = std::make_shared<FunctionNode>("and");
-            new_function_node->markAsOperator();
-            new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
-            auto and_function_resolver = FunctionFactory::instance().get("and", context);
-            new_function_node->resolveAsFunction(and_function_resolver);
-            new_root_node = std::move(new_function_node);
-        }
-
-        if (!new_root_node->getResultType()->equals(*node->getResultType()))
-            new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
-        node = std::move(new_root_node);
+        node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context);
     }
 }
 
@@ -1455,33 +1459,7 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
     if (!extracted_something)
         return;
 
-    QueryTreeNodePtr new_root_node;
-
-    if (new_top_level_arguments.size() == 1 && new_top_level_arguments.front()->getResultType()->equals(*node->getResultType()))
-    {
-        new_root_node = std::move(new_top_level_arguments.front());
-    }
-    else
-    {
-        /// If only one argument remains but its ResultType does not match the original `and`
-        /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-        /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-        /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-        /// function performs the `!= 0` on `arg` internally.
-        if (new_top_level_arguments.size() == 1)
-            new_top_level_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
-        auto and_function_node = std::make_shared<FunctionNode>("and");
-        and_function_node->markAsOperator();
-        and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
-        auto and_function_resolver = FunctionFactory::instance().get("and", context);
-        and_function_node->resolveAsFunction(and_function_resolver);
-        new_root_node = std::move(and_function_node);
-    }
-
-    if (!new_root_node->getResultType()->equals(*node->getResultType()))
-        new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
-    node = std::move(new_root_node);
+    node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context);
 }
 
 static void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
@@ -2577,8 +2555,6 @@ private:
                 or_operands.push_back(argument);
         }
 
-        auto in_function_resolver = FunctionFactory::instance().get("in", getContext());
-
         for (auto & [expression, equals_functions] : node_to_equals_functions)
         {
             const auto & settings = getSettings();
@@ -2592,6 +2568,15 @@ private:
             /// `in` rejects Dynamic-structure arguments outright, so building it would turn a working
             /// OR chain into an error. Keep the original comparisons.
             if (expression.node->getResultType()->hasDynamicStructure())
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
+
+            /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+            const auto in_function_name
+                = getInFunctionNameForPassCreatedNode("in", expression.node->getResultType(), getContext());
+            if (!in_function_name)
             {
                 std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
                 continue;
@@ -2638,7 +2623,7 @@ private:
 
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
-            auto in_function = std::make_shared<FunctionNode>("in");
+            auto in_function = std::make_shared<FunctionNode>(*in_function_name);
             in_function->markAsOperator();
 
             QueryTreeNodes in_arguments;
@@ -2647,7 +2632,7 @@ private:
             in_arguments.push_back(std::move(rhs_node));
 
             in_function->getArguments().getNodes() = std::move(in_arguments);
-            in_function->resolveAsFunction(in_function_resolver);
+            in_function->resolveAsFunction(FunctionFactory::instance().get(*in_function_name, getContext()));
 
             DataTypePtr result_type = in_function->getResultType();
             const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
