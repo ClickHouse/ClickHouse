@@ -1,10 +1,10 @@
 -- Tags: long
 -- `long` because the file builds four MergeTree tables of 300000-800000 rows and runs five timed
--- guards, nine `EXPLAIN PIPELINE` mirrors and three identity checks over them: 5.9 s on a debug build
+-- guards, eight `EXPLAIN PIPELINE` mirrors and three identity checks over them: 5.9 s on a debug build
 -- with the CI jemalloc profiler config armed
 -- (tests/config/config.d/jemalloc_enable_global_profiler.yaml), against a 60 s Fast test cap on a
 -- runner shared with 24 workers. No sanitizer is excluded: the slowest single guarded query measured
--- 0.48 s server-side on that same build, so even a 20x sanitizer multiplier stays 12x under 120 s.
+-- 0.576 s server-side on that same build, so even a 20x sanitizer multiplier stays 10x under 120 s.
 --
 -- Regression test for a quadratic blowup in aggregation in order and DISTINCT in order with a
 -- fixed-size GROUP BY key: a hashing state built per run of the sorting prefix batch-packed the whole
@@ -16,7 +16,7 @@
 -- How every timed guard below is sized, stated once for all of them:
 --
 -- 1. `max_execution_time = 120` guards the quadratic blowup, not the linear runtime, and the two are
---    orders of magnitude apart: 0.48 s for the slowest guarded query fixed against 465 s or more
+--    orders of magnitude apart: 0.576 s for the slowest guarded query fixed against 465 s or more
 --    broken. `04537_aggregation_in_order_serialized_keys` settled on 120 s after 20 s flaked there.
 -- 2. The aggregation and merge guards observe the limit between key intervals, where
 --    `AggregatingInOrderTransform::consume` checks `isCancelled()`. `DistinctSortedStreamTransform`
