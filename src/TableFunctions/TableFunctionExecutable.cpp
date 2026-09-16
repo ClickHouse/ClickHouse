@@ -55,6 +55,11 @@ private:
 
     const char * getStorageEngineName() const override { return "Executable"; }
 
+    void checkFreshDefinitionAllowed(const ContextPtr & context) const override
+    {
+        checkExecutableTablesAllowed(context);
+    }
+
     /// `executable` runs a server-side script.
     bool requiresTableEngineGrant() const override { return true; }
 

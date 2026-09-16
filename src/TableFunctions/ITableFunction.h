@@ -83,6 +83,8 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    virtual void checkFreshDefinitionAllowed(const ContextPtr &) const {}
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:

@@ -166,11 +166,7 @@ void StorageExecutable::readImpl(
     size_t max_block_size,
     size_t /*threads*/)
 {
-    if (!context->getSettingsRef()[Setting::allow_executable_tables])
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "The `executable` table function and the `Executable` and `ExecutablePool` table "
-            "engines are disabled. Set `allow_executable_tables` setting to enable them");
+    checkExecutableTablesAllowed(context);
 
     auto & script_name = settings->script_name;
 
@@ -229,6 +225,15 @@ void StorageExecutable::readImpl(
     query_plan.addResources(std::move(resources));
 }
 
+void checkExecutableTablesAllowed(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::allow_executable_tables])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The `executable` table function and the `Executable` and `ExecutablePool` table "
+            "engines are disabled. Set `allow_executable_tables` setting to enable them");
+}
+
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory)
 {
@@ -236,12 +241,8 @@ void registerStorageExecutable(StorageFactory & factory)
     {
         auto local_context = args.getLocalContext();
 
-        if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
-            && !local_context->getSettingsRef()[Setting::allow_executable_tables])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "The `executable` table function and the `Executable` and `ExecutablePool` table "
-                "engines are disabled. Set `allow_executable_tables` setting to enable them");
+        if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax))
+            checkExecutableTablesAllowed(local_context);
 
         if (args.engine_args.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

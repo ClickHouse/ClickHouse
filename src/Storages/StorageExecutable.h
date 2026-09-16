@@ -9,6 +9,8 @@ namespace DB
 {
 struct ExecutableSettings;
 
+void checkExecutableTablesAllowed(const ContextPtr & context);
+
 /**
  * This class represents table engine for external executable files.
  * Executable storage that will start process for read.

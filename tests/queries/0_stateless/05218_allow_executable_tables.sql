@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 -- `allow_executable_tables` gates the `executable` table function and the
 -- `Executable` and `ExecutablePool` table engines.
 
@@ -9,9 +10,11 @@ SET allow_executable_tables = 0;
 SELECT * FROM executable('nonexist.sh', 'TSV', 'x UInt32'); -- { serverError SUPPORT_IS_DISABLED }
 CREATE TABLE t_exec_gate (x UInt32) ENGINE = Executable('nonexist.sh', 'TSV'); -- { serverError SUPPORT_IS_DISABLED }
 CREATE TABLE t_exec_gate (x UInt32) ENGINE = ExecutablePool('nonexist.sh', 'TSV'); -- { serverError SUPPORT_IS_DISABLED }
+CREATE TABLE t_exec_as2 (x UInt32) AS executable('nonexist.sh', 'TSV', 'x UInt32'); -- { serverError SUPPORT_IS_DISABLED }
 
 -- A full-definition ATTACH is fresh user input, not replay, so the gate applies.
 ATTACH TABLE t_exec_gate UUID '00000000-0000-0000-0000-000000005218' (x UInt32) ENGINE = Executable('nonexist.sh', 'TSV'); -- { serverError SUPPORT_IS_DISABLED }
+ATTACH TABLE t_exec_as2 UUID '00000000-0000-0000-0000-000000005219' (`x` UInt32) AS executable('nonexist.sh', 'TSV', 'x UInt32'); -- { serverError SUPPORT_IS_DISABLED }
 
 -- A table created while allowed still attaches once disabled, so a server already holding one
 -- starts up. It keeps its metadata and can be dropped or detached, but cannot be read.
