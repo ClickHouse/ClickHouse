@@ -255,7 +255,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     if (res)
     {
         chassert(res->data.type->getName() == full_res->data.type->getName());
-        chassert(ISerialization::getSubcolumnNameForStream(res->substreams_path, false) == ISerialization::getSubcolumnNameForStream(full_res->substreams_path, false));
+        chassert(ISerialization::getSubcolumnNameForStream(res->substreams_path) == ISerialization::getSubcolumnNameForStream(full_res->substreams_path));
     }
 #endif
 

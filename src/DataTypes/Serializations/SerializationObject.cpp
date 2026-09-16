@@ -229,7 +229,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     {
         /// Include the separator using the canonical stream naming, including empty path elements.
         settings.path.push_back(Substream::ObjectTypedPath);
-        const auto prefix = getSubcolumnNameForStream(settings.path, false);
+        const auto prefix = getSubcolumnNameForStream(settings.path);
         settings.path.pop_back();
         auto name = *settings.subcolumn_name;
         if (name.starts_with(prefix))
