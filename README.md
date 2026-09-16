@@ -53,15 +53,15 @@ Upcoming meetups
 * [The Agentic Data Stack: Paris](https://luma.com/clickh-s2a1) - September 17th, 2026
 * [The Agentic Data Stack: Zurich](https://luma.com/clickh-oo1l) - September 17th, 2026
 * [Rows And Columns Summit](https://luma.com/event/evt-bQcR6tDKi8OmTXu) - September 22nd, 2026
-* [Hands-on training: Building agents with ClickHouse and LibreChat Seattle](https://luma.com/clickh-0vvr) - Sep 23rd, 2026
-* [Hands-on training: Agent Observability with Langfuse in San Francisco](https://luma.com/gp4dehl2) - Sep 23rd, 2026
+* [Hands-on training: Building agents with ClickHouse and LibreChat Seattle](https://luma.com/clickh-0vvr) - September 23rd, 2026
+* [Hands-on training: Agent Observability with Langfuse in San Francisco](https://luma.com/gp4dehl2) - September 23rd, 2026
 * [PyData Seattle Meetup](https://luma.com/clickh-ttgg) - September 24th, 2026
-* [build fridays sf x clickhouse + langfuse - work on your startup alongside others](https://luma.com/bf925) - Sep 25th, 2026
+* [build fridays sf x clickhouse + langfuse - work on your startup alongside others](https://luma.com/bf925) - September 25th, 2026
 * [Chicago Meetup](https://luma.com/clickh-8tnc) - September 28th, 2026
 * [Paris Meetup](https://luma.com/clickh-gsz1) - September 29th, 2026
 * [Open House London](https://luma.com/ggnwajnd) - September 30th, 2026
 * [Open House Munich](https://luma.com/6xorx3qw) - October 6th, 2026
-* [SF Tech Week AI Night](https://luma.com/clickh-zngw) - October 6, 2026
+* [SF Tech Week AI Night](https://luma.com/clickh-zngw) - October 6th, 2026
 * [AI Builders and Databases Stockholm](https://luma.com/clickh-ku2p) - October 8th, 2026
 * [Mountain view Meetup](https://luma.com/clickh-5ms6) - October 8th, 2026
 
