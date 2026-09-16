@@ -72,10 +72,7 @@ WHERE ratio > 2;
 
 -- Check the output bytes estimate against what the replicas actually send (ratio within 2.5x).
 -- The expected values are `NetworkReceiveBytes` on the initiator, measured on 2e6 rows with the local
--- plan disabled and compression forced on every replica of the cluster. Forcing it is what makes the
--- measurement meaningful: every replica address of this cluster looks local and is therefore shipped
--- uncompressed by default (see `Cluster.cpp`), which is several times more bytes than any real cluster
--- transfers.
+-- plan disabled and compression forced on every replica of the cluster.
 --
 -- The estimate runs 1.8x to 2.1x high on these shapes and the tolerance covers that. The overshoot is
 -- the aggregate states: they are sampled from the hash table and so priced in hash-table order, while
