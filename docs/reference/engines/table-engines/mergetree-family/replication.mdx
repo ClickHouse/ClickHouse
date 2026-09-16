@@ -345,7 +345,7 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 
 When you have a cross-ocean ClickHouse deployment and each region has multiple ClickHouse replicas, the cross-ocean network bandwidth could become expensive. For example, you have two replicas in `US` and two replicas in `APAC`, once you insert data to a replica in `APAC`, both `US` replica will try to fetch parts from the `APAC` node, which double the necessary cross-ocean network bandwidth.
 
-ClickHouse can group replicas into region to solve this issue. You can enable this feature by setting `geo_replication_control_region` when create replicated table.
+ClickHouse can group replicas into region to solve this issue. You can enable this feature by setting `geo_replication_control_region` when create replicated table. The feature is experimental: creating a table with a non-empty `geo_replication_control_region` requires the session setting `allow_experimental_geo_replication_control = 1`, otherwise the `CREATE TABLE` query is rejected. Existing tables are attached regardless of the session setting.
 
 ```xml
 <clickhouse>

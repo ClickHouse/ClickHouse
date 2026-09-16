@@ -54,6 +54,7 @@ namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
     extern const SettingsBool enable_unique_key;
+    extern const SettingsBool enable_geo_replication_control;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
@@ -68,6 +69,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsString geo_replication_control_region;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
@@ -977,6 +979,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
             storage_settings->sanityCheck(
                 context->getMergeMutateExecutor()->getMaxTasksCount(), context->wasBackgroundPoolAutoLowered());
+        }
+
+        /// A non-empty region opts the table into the experimental geo-location-aware fetching (region leader
+        /// election, fetching within the region only). The region may also come from the `replicated_merge_tree`
+        /// server config, so it is checked against the effective settings, not only against the query. Gate on
+        /// `CREATE` only: `ATTACH` must load the existing tables regardless of the session setting.
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !(*storage_settings)[MergeTreeSetting::geo_replication_control_region].value.empty()
+            && !local_settings[Setting::enable_geo_replication_control])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Geo-location-aware fetching (a non-empty `geo_replication_control_region` setting) is an experimental feature. "
+                "Set the session setting `allow_experimental_geo_replication_control = 1` to enable it.");
         }
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query

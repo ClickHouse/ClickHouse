@@ -7,13 +7,29 @@ import time
 
 cluster = ClickHouseCluster(__file__)
 apac1 = cluster.add_instance(
-    "apac1", main_configs=["configs/apac1.xml"], with_zookeeper=True
+    "apac1",
+    main_configs=["configs/apac1.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
 )
 apac2 = cluster.add_instance(
-    "apac2", main_configs=["configs/apac2.xml"], with_zookeeper=True
+    "apac2",
+    main_configs=["configs/apac2.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
 )
-us3 = cluster.add_instance("us3", main_configs=["configs/us3.xml"], with_zookeeper=True)
-us4 = cluster.add_instance("us4", main_configs=["configs/us4.xml"], with_zookeeper=True)
+us3 = cluster.add_instance(
+    "us3",
+    main_configs=["configs/us3.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
+)
+us4 = cluster.add_instance(
+    "us4",
+    main_configs=["configs/us4.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -662,6 +678,106 @@ def test_fetch_partition_falls_back_when_same_region_has_no_partition(start_clus
         for node in [apac2, us3]:
             node.query("DROP TABLE IF EXISTS fallback_src SYNC")
         apac1.query("DROP TABLE IF EXISTS fallback_dst SYNC")
+
+
+def test_fetch_partition_falls_back_when_same_region_has_stale_partition(start_cluster):
+    src_path = "/clickhouse/tables/fetch_partition_stale_src"
+    try:
+        for node, replica in [(apac2, "apac2"), (us3, "us3")]:
+            node.query(
+                f"CREATE TABLE stale_src(key UInt64, data String) ENGINE = ReplicatedMergeTree('{src_path}', '{replica}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+            time.sleep(1)
+
+        apac1.query(
+            "CREATE TABLE stale_dst(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/fetch_partition_stale_dst', 'apac1') ORDER BY tuple() PARTITION BY key"
+        )
+
+        # The same-region replica gets the first part of the partition, and then stops receiving the rest of it.
+        us3.query("INSERT INTO stale_src SELECT 1, '0'")
+        apac2.query("SYSTEM SYNC REPLICA stale_src LIGHTWEIGHT")
+        apac2.query("SYSTEM STOP FETCHES stale_src")
+        for i in range(1, 4):
+            us3.query(f"INSERT INTO stale_src SELECT 1, toString({i})")
+        us3.query("SYSTEM SYNC REPLICA stale_src LIGHTWEIGHT")
+
+        assert (
+            int(
+                apac2.query(
+                    "SELECT count() FROM system.parts WHERE table = 'stale_src' AND active"
+                )
+            )
+            == 1
+        ), "The same-region replica must have only a stale subset of the partition for this test to be meaningful"
+
+        # The same-region replica cannot serve the whole partition, so the out-of-region one has to be used.
+        apac1.query(f"ALTER TABLE stale_dst FETCH PARTITION 1 FROM '{src_path}'")
+
+        assert apac1.contains_in_log(
+            "Selected us3 to fetch from"
+        ), "FETCH PARTITION did not fall back to the out-of-region replica that has the whole partition"
+        assert apac1.contains_in_log(
+            "Replica apac2 of the same region has only a part of partition 1"
+        )
+
+        detached = int(
+            apac1.query(
+                "SELECT count() FROM system.detached_parts WHERE table = 'stale_dst'"
+            )
+        )
+        assert detached == 4, "Expected all four parts of the partition to be detached, got {}".format(
+            detached
+        )
+
+        apac1.query("ALTER TABLE stale_dst ATTACH PARTITION 1")
+        assert apac1.query("SELECT count() FROM stale_dst") == "4\n"
+
+    finally:
+        for node in [apac2, us3]:
+            node.query("DROP TABLE IF EXISTS stale_src SYNC")
+        apac1.query("DROP TABLE IF EXISTS stale_dst SYNC")
+
+
+def test_region_requires_experimental_setting(start_cluster):
+    try:
+        # The region comes from the server config here, so a plain CREATE opts the table into the feature.
+        error = apac1.query_and_get_error(
+            "CREATE TABLE gated(key UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/gated', 'apac1') ORDER BY key",
+            settings={"allow_experimental_geo_replication_control": 0},
+        )
+        assert "SUPPORT_IS_DISABLED" in error
+        assert "allow_experimental_geo_replication_control" in error
+
+        # A table can still be created without the region when the experimental setting is off.
+        apac1.query(
+            "CREATE TABLE gated(key UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/gated', 'apac1') ORDER BY key"
+            + " SETTINGS geo_replication_control_region = ''",
+            settings={"allow_experimental_geo_replication_control": 0},
+        )
+        apac1.query("DROP TABLE gated SYNC")
+
+        apac1.query(
+            "CREATE TABLE gated(key UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/gated', 'apac1') ORDER BY key",
+            settings={"allow_experimental_geo_replication_control": 1},
+        )
+        assert (
+            apac1.query(
+                "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/gated/replicas/apac1' AND name = 'region'"
+            )
+            == "APAC\n"
+        )
+
+        # Existing tables are attached regardless of the session setting.
+        apac1.query("DETACH TABLE gated")
+        apac1.query(
+            "ATTACH TABLE gated",
+            settings={"allow_experimental_geo_replication_control": 0},
+        )
+        assert apac1.query("SELECT count() FROM gated") == "0\n"
+
+    finally:
+        apac1.query("DROP TABLE IF EXISTS gated SYNC")
 
 
 def test_clone_part_from_shard_skips_lagging_same_region_replica(start_cluster):
