@@ -96,6 +96,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
+    extern const CoordinationSettingsMilliseconds slow_member_backpressure_no_progress_timeout_ms;
+    extern const CoordinationSettingsUInt64 slow_member_backpressure_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
@@ -149,7 +151,9 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     if (config.has(root_ca_file_property))
         params.caLocation = config.getString(root_ca_file_property);
 
-    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
+    /// Unlike `Poco::Net::SSLManager`, the default CA certificates are not trusted unless `loadDefaultCAFile` is set.
+    constexpr bool load_default_cas_default = false;
+    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, load_default_cas_default);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
     const String cipher_list_property = config_prefix + "cipherList";
@@ -197,7 +201,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
 
         /// Try to register with CertificateReloader for hot-reload support.
         /// If registration fails, fall back to static certificate loading.
-        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix))
+        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix, load_default_cas_default))
         {
             /// For passphrase-protected keys, load certificates manually
             if (certificate_data)
@@ -617,6 +621,19 @@ nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_se
     params.max_bytes_in_flight_in_stream_
         = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
     params.max_uncommitted_log_entries_ = coordination_settings[CoordinationSetting::nuraft_max_uncommitted_log_entries];
+    params.slow_member_backpressure_no_progress_timeout_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::slow_member_backpressure_no_progress_timeout_ms].totalMilliseconds(),
+        "slow_member_backpressure_no_progress_timeout_ms",
+        log);
+    params.slow_member_backpressure_max_uncommitted_
+        = coordination_settings[CoordinationSetting::slow_member_backpressure_max_uncommitted_log_entries];
+
+    if (params.max_uncommitted_log_entries_ == 0 && params.slow_member_backpressure_max_uncommitted_ == 0)
+        LOG_WARNING(
+            log,
+            "Both nuraft_max_uncommitted_log_entries and slow_member_backpressure_max_uncommitted_log_entries are 0, so "
+            "nothing bounds the log while the slow member backpressure is switched on with `bpon`: the leader keeps "
+            "appending while the commit index is held at the slowest voting replica. Set at least one of them before using it.");
     params.append_entries_backward_probe_throttle_threshold_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
@@ -1636,6 +1653,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     }
     result.is_standalone = !result.is_follower && result.follower_count == 0;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
+    result.is_slow_member_backpressure = isSlowMemberBackpressure();
     return result;
 }
 
@@ -1686,6 +1704,16 @@ std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
+}
+
+bool KeeperServer::requestSlowMemberBackpressure(bool enable)
+{
+    return raft_instance->request_slow_member_backpressure(enable);
+}
+
+bool KeeperServer::isSlowMemberBackpressure() const
+{
+    return raft_instance->get_current_params().slow_member_backpressure_enabled_;
 }
 
 int64_t KeeperServer::getLeaderID() const
