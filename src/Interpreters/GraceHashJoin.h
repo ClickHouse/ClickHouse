@@ -188,6 +188,7 @@ private:
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
     bool build_finished = false; /// Protected by `hash_join_mutex`.
+    bool delayed_bucket_loading = false; /// Protected by `hash_join_mutex`.
 
     GraceHashJoinStats stats;
 
