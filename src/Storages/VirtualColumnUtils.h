@@ -157,6 +157,8 @@ struct VirtualsForFileLikeStorage
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
+    /// Only available once the read buffer is open, so the caller materializes it.
+    const Map * headers { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
     /// Original file path as stored in Iceberg metadata (before resolution to storage path).
     /// Used by Iceberg position deletes to reference data files in the metadata path format.
