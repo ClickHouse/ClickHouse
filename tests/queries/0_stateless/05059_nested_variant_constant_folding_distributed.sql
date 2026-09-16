@@ -17,6 +17,11 @@ SELECT mapExtractKeyLike(map('k', 42::UInt64::Variant(UInt64, String)), 'z%') FR
 SELECT mapFilter((k, v) -> false, map(42::UInt64::Variant(UInt64, String), 'x')) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 SELECT arrayFilter(x -> false, [42::UInt64::Variant(UInt64, String)]) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 
+-- The empty literal also has to name its own type, or a non-empty sibling in the same parent resolves against
+-- an array: as `Array` elements that is a dimension mismatch, as `Map` values a missing supertype.
+SELECT [mapExtractKeyLike(map('k', 42::UInt64::Variant(UInt64, String)), 'z%'), map('k', 42::UInt64::Variant(UInt64, String))] FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
+SELECT map('a', mapExtractKeyLike(map('k', 42::UInt64::Variant(UInt64, String)), 'z%'), 'b', map('k', 42::UInt64::Variant(UInt64, String))) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0, use_variant_as_common_type = 0;
+
 -- A `DateTime` member is exact only as its raw Unix timestamp: both epochs below format to the local
 -- text `2023-10-29 02:10:00` in the DST overlap, so the text form comes back an hour early.
 SELECT arrayMap(x -> toUnixTimestamp(assumeNotNull(variantElement(x, 'DateTime(\'Europe/Berlin\')'))), [toDateTime(1698541800, 'Europe/Berlin')::Variant(DateTime('Europe/Berlin'), String)]) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;

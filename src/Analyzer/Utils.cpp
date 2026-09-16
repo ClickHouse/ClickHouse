@@ -1602,8 +1602,8 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 }
 
 /// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
-/// a static Decimal/DateTime64/Time64 anywhere (all scaled decimals), a Variant anywhere (a literal does not
-/// keep the active member type), or a Dynamic whose runtime value's type is not visible in the type.
+/// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
+/// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
     bool result = false;
@@ -1756,10 +1756,14 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             const auto & values = map_column.getNestedData().getColumnPtr(1);
             size_t start = offsets[static_cast<ssize_t>(row) - 1];
             size_t end = offsets[row];
-            /// An empty map has no leaf to serialize, and `map()` is inferred as `Map(Nothing, Nothing)`,
-            /// which cannot be converted to a map type carrying a `Variant`.
+            /// An empty map has no leaf to serialize, and an argumentless `map` is inferred as
+            /// `Map(Nothing, Nothing)`, which cannot be converted to a map type carrying a `Variant`. The
+            /// empty literal is inferred as `Array(Nothing)`, so name the map type on it as well, or a
+            /// non-empty sibling in the same parent resolves against an array instead of a map.
             if (start == end)
-                return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
+                return makeCastToTypeNameAST(
+                    make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers)),
+                    type->getName());
             ASTs elements;
             for (size_t i = start; i < end; ++i)
             {
