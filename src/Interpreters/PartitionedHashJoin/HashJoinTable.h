@@ -342,10 +342,9 @@ struct TableFor<FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>>
 
 /// `HashJoin`'s single-level maps are bucket-partitioned tables with one bucket (`BITS_FOR_BUCKET_SERIAL`):
 /// `JoinHashMap` is a `TwoLevelHashMapTable` over `HashMapTable`, `JoinFixedHashMap` a `TwoLevelHashTable`
-/// over `FixedHashMap`. Both take their `cell_type`, `key_type` and `LookupResult` from that inner table, so
-/// the inner table is what decides the shared table's cell layout; the routing layer around it adds no
-/// state to a cell. The two specializations therefore strip the routing layer and delegate to the trait of
-/// the inner table, which keeps the cells bit-identical to what `HashJoin`'s probe code reads.
+/// over `FixedHashMap`. Both take `cell_type`, `key_type` and `LookupResult` from the inner table, and the
+/// routing layer adds no state to a cell. So the two specializations strip the routing layer and delegate
+/// to the inner table's trait; the cells stay bit-identical to what `HashJoin`'s probe code reads.
 template <
     typename Key,
     typename Cell,

@@ -147,11 +147,11 @@ public:
     /// Could be called from different threads in parallel.
     virtual JoinResultPtr joinBlock(Block block) = 0;
 
-    /// The probe-side counterpart of `worker_id`: `lane` is the number of the `JoiningTransform` that
-    /// probes, assigned in `QueryPipelineBuilder`, so a join can index per-lane probe state instead of
-    /// keying a thread-id map (executor threads migrate between transforms, the lane does not). Some
-    /// pipeline shapes hand out lanes above the join's thread count, so an implementation must tolerate
-    /// an out-of-range lane. The default ignores it.
+    /// `lane` is the probe-side counterpart of `worker_id`: the number of the `JoiningTransform` that
+    /// probes, assigned in `QueryPipelineBuilder`. A join can index per-lane probe state by it; executor
+    /// threads migrate between transforms, the lane does not. Some pipeline shapes hand out lanes above
+    /// the join's thread count, so an implementation must tolerate an out-of-range lane. The default
+    /// ignores the lane.
     virtual JoinResultPtr joinBlock(Block block, size_t /*lane*/) { return joinBlock(std::move(block)); }
 
     /** Set/Get totals for right table

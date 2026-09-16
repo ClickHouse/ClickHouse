@@ -913,10 +913,9 @@ public:
 
     /// Creates a row store based on the already initialized layout and fills from block columns.
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
-    /// Packs a prepared right block (`prepareRightBlock`) into its stored form: the columns the
-    /// initialized row store layout admits go into a `RowDataStore`, the rest stay columnar. Without an
-    /// initialized row store every column stays columnar. A caller that already built the row store
-    /// of this block passes it in.
+    /// Packs a prepared right block (`prepareRightBlock`) into its stored form. When the row store is
+    /// initialized, the columns its layout admits go into a `RowDataStore` and the rest stay columnar;
+    /// otherwise every column stays columnar. A caller that already built this block's row store passes it in.
     StoredBlock createStoredBlock(
         const Block & block_to_save, ScatteredBlock::Selector selector, RowDataStorePtr row_store = nullptr) const;
 
