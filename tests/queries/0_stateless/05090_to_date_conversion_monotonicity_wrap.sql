@@ -47,6 +47,45 @@ INSERT INTO t_in_range_date32 SELECT toDate32('2000-01-01') + number FROM number
 SELECT count() FROM t_in_range_date32 WHERE toDate(d) >= toDate('2000-03-01') SETTINGS force_primary_key = 1;
 SELECT countIf(toDate(d) >= toDate('2000-03-01')) FROM t_in_range_date32;
 
+SELECT 'the instant that wraps depends on the time zone';
+-- `toDateTime` takes the instant of local midnight: day 49710 (`2106-02-07`) still fits `DateTime` in
+-- `UTC`, but in `America/Hermosillo` (UTC-7) its midnight is 7 hours later and wraps to 1970.
+SET session_timezone = 'America/Hermosillo';
+DROP TABLE IF EXISTS t_wrap_tz_date32;
+CREATE TABLE t_wrap_tz_date32 (d Date32) ENGINE = MergeTree ORDER BY d
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_wrap_tz_date32 VALUES ('2000-01-01'),('2106-02-05'),('2106-02-06'),('2106-02-07'),('2106-02-08');
+SELECT count() FROM t_wrap_tz_date32 WHERE toDateTime(d) >= toDateTime('2050-01-01');
+SELECT countIf(toDateTime(d) >= toDateTime('2050-01-01')) FROM t_wrap_tz_date32;
+SELECT count() FROM t_wrap_tz_date32 WHERE toDateTime(d) < toDateTime('2050-01-01');
+SELECT countIf(toDateTime(d) < toDateTime('2050-01-01')) FROM t_wrap_tz_date32;
+DROP TABLE t_wrap_tz_date32;
+
+-- `toDate` takes the local calendar day: an instant late on `2149-06-06` UTC is already `2149-06-07`
+-- in `Pacific/Kiritimati` (UTC+14), which does not fit `Date` and wraps to 1970.
+SET session_timezone = 'Pacific/Kiritimati';
+DROP TABLE IF EXISTS t_wrap_tz_dt64;
+CREATE TABLE t_wrap_tz_dt64 (d DateTime64(3)) ENGINE = MergeTree ORDER BY d
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_wrap_tz_dt64 SELECT toDateTime64(arrayJoin(['2000-01-01 00:00:00', '2149-06-05 00:00:00', '2149-06-06 00:00:00', '2149-06-06 12:00:00', '2149-06-07 12:00:00']), 3, 'UTC');
+SELECT count() FROM t_wrap_tz_dt64 WHERE toDate(d) >= toDate('2100-01-01');
+SELECT countIf(toDate(d) >= toDate('2100-01-01')) FROM t_wrap_tz_dt64;
+SELECT count() FROM t_wrap_tz_dt64 WHERE toDate(d) < toDate('2100-01-01');
+SELECT countIf(toDate(d) < toDate('2100-01-01')) FROM t_wrap_tz_dt64;
+DROP TABLE t_wrap_tz_dt64;
+SET session_timezone = 'UTC';
+
+SELECT 'a Date argument wraps too: Date reaches 2149-06-06, DateTime ends in 2106-02-07';
+DROP TABLE IF EXISTS t_wrap_date;
+CREATE TABLE t_wrap_date (d Date) ENGINE = MergeTree ORDER BY d
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_wrap_date VALUES ('2000-01-01'),('2106-02-07'),('2106-02-08'),('2149-06-06');
+SELECT count() FROM t_wrap_date WHERE toDateTime(d) >= toDateTime('2050-01-01');
+SELECT countIf(toDateTime(d) >= toDateTime('2050-01-01')) FROM t_wrap_date;
+SELECT count() FROM t_wrap_date WHERE toDateTime(d) < toDateTime('2050-01-01');
+SELECT countIf(toDateTime(d) < toDateTime('2050-01-01')) FROM t_wrap_date;
+DROP TABLE t_wrap_date;
+
 SELECT 'the wider results are unaffected';
 SELECT count() FROM t_wrap_dt64 WHERE toDate32(d) >= toDate32('2100-01-01') SETTINGS force_primary_key = 1;
 SELECT countIf(toDate32(d) >= toDate32('2100-01-01')) FROM t_wrap_dt64;
