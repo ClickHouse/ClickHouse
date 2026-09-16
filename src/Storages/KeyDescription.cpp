@@ -173,7 +173,7 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
         return result;
 
     /// Hand-maintained, like date_time_parsing_functions in KeyCondition: the functions whose produced
-    /// VALUE (not type) follows a session setting, paired with the setting that drives them. A function
+    /// VALUE follows a session setting, paired with the setting that drives them. A function
     /// is a carrier only while the query session deviates from the server baseline the key was built
     /// under (see createKeyExpressionContext); when the two agree the key and the query mean the same.
     const auto & baseline = context->getGlobalContext()->getSettingsRef();
@@ -183,6 +183,15 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
         deviating_functions.insert("h3ToGeo");
     if (settings[Setting::geotoh3_argument_order].value != baseline[Setting::geotoh3_argument_order].value)
         deviating_functions.insert("geoToH3");
+    if (settings[Setting::geo_distance_returns_float64_on_float64_arguments]
+        != baseline[Setting::geo_distance_returns_float64_on_float64_arguments])
+    {
+        /// One FunctionGeoDistance behind three names, and the setting picks Float32 arithmetic for all
+        /// of them, so the value is rounded rather than merely returned under a narrower type.
+        deviating_functions.insert("geoDistance");
+        deviating_functions.insert("greatCircleDistance");
+        deviating_functions.insert("greatCircleAngle");
+    }
     if (deviating_functions.empty())
         return result;
 

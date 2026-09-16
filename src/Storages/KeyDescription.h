@@ -27,9 +27,11 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context);
 
 /// The read-side complement of createKeyExpressionContext. A key expression is analyzed under the server
 /// baseline, but a query predicate or ORDER BY over the same text is analyzed under the query session, and
-/// the index consumers (KeyCondition, read-in-order) match the two by name. For a setting that changes the
-/// VALUE a key function produces (h3togeo_lon_lat_result_order exchanges the elements h3ToGeo returns,
-/// geotoh3_argument_order exchanges the arguments geoToH3 takes) a session that deviates from the baseline
+/// the index consumers (KeyCondition, skip indexes, read-in-order) match the two by name. For a setting
+/// that changes the VALUE a key function produces (h3togeo_lon_lat_result_order exchanges the elements
+/// h3ToGeo returns, geotoh3_argument_order exchanges the arguments geoToH3 takes, and
+/// geo_distance_returns_float64_on_float64_arguments computes geoDistance and its siblings in single
+/// precision, which rounds the result) a session that deviates from the baseline
 /// makes the same text mean two different values, so matching by name would prune away rows the runtime
 /// filter keeps, or announce an order the parts do not have. Returns the names of every subexpression of
 /// `key_expr` (including the key columns themselves) that depends on such a function while the session
