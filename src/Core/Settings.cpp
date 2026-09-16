@@ -2236,7 +2236,7 @@ The number of streams that read simultaneously is capped by this multiplier as w
 )", 0) \
     \
     DECLARE(String, network_compression_method, "ZSTD", R"(
-The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the data exchanged between the tasks of a distributed query plan (`make_distributed_plan`).
+The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`). Exchanges through temporary files use the default codec of the server.
 
 Possible values:
 
