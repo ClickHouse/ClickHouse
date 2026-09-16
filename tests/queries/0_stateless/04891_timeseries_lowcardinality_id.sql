@@ -28,7 +28,7 @@ SELECT '-- the default id generator dictionary-encodes the tags hash';
 SELECT default_expression FROM system.columns
 WHERE database = currentDatabase() AND table LIKE '.inner_id.tags.%' AND name = 'id';
 
-INSERT INTO ts_lc (metric_name, tags, time_series) VALUES
+INSERT INTO ts_lc (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.), (toDateTime64(200, 3), 2.), (toDateTime64(300, 3), 3.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.), (toDateTime64(250, 3), 20.)]),
     ('foo', map(), [(toDateTime64(100, 3), 5.)]),
@@ -43,7 +43,7 @@ SELECT '-- whole-metric selector: results and the emitted id range';
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
 
 SELECT '-- partial selector: results, no id range';
 
@@ -51,7 +51,7 @@ SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 100
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
 
 SELECT '-- prometheus query evaluation over the dictionary-encoded ids';
 
@@ -62,7 +62,7 @@ SELECT '-- the same queries over the plain layout return the same results';
 
 CREATE TABLE ts_plain ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
 
-INSERT INTO ts_plain (metric_name, tags, time_series) VALUES
+INSERT INTO ts_plain (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.), (toDateTime64(200, 3), 2.), (toDateTime64(300, 3), 3.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.), (toDateTime64(250, 3), 20.)]),
     ('foo', map(), [(toDateTime64(100, 3), 5.)]),
@@ -76,7 +76,7 @@ SELECT '-- a custom generator with a LowCardinality id also works';
 CREATE TABLE ts_custom_gen ENGINE = TimeSeries
 TAGS INNER COLUMNS (id Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(tags), toLowCardinality(reinterpretAsUUID(sipHash128(metric_name, tags)))));
 
-INSERT INTO ts_custom_gen (metric_name, tags, time_series) VALUES
+INSERT INTO ts_custom_gen (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
