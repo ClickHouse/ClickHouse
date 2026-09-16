@@ -349,8 +349,16 @@ Possible values:
 - `v1`
 - `v2`
 - `v3`
+- `v4`
 
-Only version `v3` supports changing the shared data serialization version.
+Versions `v3` and `v4` support changing the shared data serialization version.
+Version `v4` additionally supports sparse encoding of eligible typed `JSON` paths only, recorded in one sorted list in the part's structure.
+Dynamic paths retain their compact `Variant` encoding without an outer sparse wrapper.
+Encoding is selected per part using `ratio_of_defaults_for_sparse_serialization`; setting the ratio to `1` keeps all typed paths dense.
+The default remains `v3`.
+Versions `v1`, `v2`, and `v3` do not use per-path sparse encoding.
+Reading existing parts uses their stored version and encoding, regardless of the current settings.
+Upgrade all readers before enabling `v4`; parts written with this version require a reader that supports it.
 )", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
 Serialization version for shared data inside JSON data type.
