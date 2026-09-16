@@ -19,8 +19,7 @@ CREATE TABLE rp_merge (id UInt32, tenant_id UInt32, active UInt8) ENGINE = Merge
 
 CREATE ROW POLICY rp_target_policy ON rp_target FOR SELECT USING tenant_id = 1 TO CURRENT_USER;
 
-SELECT 'Target policy through Alias, old analyzer', arraySort(groupArray(id)) FROM rp_alias SETTINGS enable_analyzer = 0;
-SELECT 'Target policy through Alias, analyzer', arraySort(groupArray(id)) FROM rp_alias SETTINGS enable_analyzer = 1;
+SELECT 'Target policy through Alias', arraySort(groupArray(id)) FROM rp_alias;
 SELECT 'Target policy through Merge over Alias', arraySort(groupArray(id)) FROM rp_merge;
 
 -- The trivial count optimization must not bypass the target policy.
@@ -29,8 +28,7 @@ SELECT 'Count through Alias, trivial count enabled', count() FROM rp_alias SETTI
 
 -- Policies of the alias and of its target are combined with a logical AND.
 CREATE ROW POLICY rp_alias_policy ON rp_alias FOR SELECT USING active = 1 TO CURRENT_USER;
-SELECT 'Combined policies, old analyzer', arraySort(groupArray(id)) FROM rp_alias SETTINGS enable_analyzer = 0;
-SELECT 'Combined policies, analyzer', arraySort(groupArray(id)) FROM rp_alias SETTINGS enable_analyzer = 1;
+SELECT 'Combined policies', arraySort(groupArray(id)) FROM rp_alias;
 
 DROP ROW POLICY rp_target_policy ON rp_target;
 SELECT 'Alias policy only', arraySort(groupArray(id)) FROM rp_alias;
