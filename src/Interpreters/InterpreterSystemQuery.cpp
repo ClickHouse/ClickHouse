@@ -2297,8 +2297,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
     }
     return required_access;
 }
-void registerSystemCommands();
-void registerSystemCommands()
+void registerSystemCommandLambdas();
+void registerSystemCommandLambdas()
 {
     using Type = ASTSystemQuery::Type;
     auto & factory = SystemCommandFactory::instance();
@@ -2386,43 +2386,6 @@ void registerSystemCommands()
         };
     };
 
-    reg_fn(
-        Type::SHUTDOWN,
-        with_check_fn(
-            AccessType::SYSTEM_SHUTDOWN,
-            []()
-            {
-                if (kill(0, SIGTERM))
-                    throw ErrnoException(ErrorCodes::CANNOT_KILL, "System call kill(0, SIGTERM) failed");
-            }));
-    reg_fn(
-        Type::KILL,
-        with_check_fn(
-            AccessType::SYSTEM_SHUTDOWN,
-            [](LoggerPtr log)
-            {
-                /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
-                /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
-                LOG_INFO(log, "Exit immediately as the SYSTEM KILL command has been issued.");
-                _exit(128 + SIGKILL);
-            }));
-    reg_fn(
-        Type::SUSPEND,
-        with_check_fn(
-            AccessType::SYSTEM_SHUTDOWN,
-            [](LoggerPtr log, ASTSystemQuery& query)
-            {
-                auto command = fmt::format("kill -STOP {0} && sleep {1} && kill -CONT {0}", getpid(), query.seconds);
-                LOG_DEBUG(log, "Will run {}", command);
-                auto res = ShellCommand::execute(command);
-                res->in.close();
-                WriteBufferFromOwnString out;
-                copyData(res->out, out);
-                copyData(res->err, out);
-                if (!out.str().empty())
-                    LOG_DEBUG(log, "The command {} returned output: {}", command, out.str());
-                res->wait();
-            }));
     reg_fn(
         Type::SYNC_FILE_CACHE,
         with_check_fn(
@@ -3645,10 +3608,13 @@ void registerSystemCommands()
                 interpreter.getContext()->getDDLWorker().requestToResetState();
             }));
 }
+
+void registerSystemCommands();
 void registerInterpreterSystemQuery(InterpreterFactory & factory);
 void registerInterpreterSystemQuery(InterpreterFactory & factory)
 {
     registerSystemCommands();
+    registerSystemCommandLambdas();
 
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
     {

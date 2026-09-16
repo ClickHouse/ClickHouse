@@ -113,7 +113,8 @@ private:
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();
 
-    friend void registerSystemCommands();
+    friend void registerSystemCommandLambdas();
+    friend class ISystemCommand;
 };
 
 
