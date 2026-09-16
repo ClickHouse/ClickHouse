@@ -1,16 +1,4 @@
-/// The cuDF side of the GPU engine - the aggregation and the hash join: everything here is compiled
-/// by nvcc's host pass against the system libstdc++, not by ClickHouse's own toolchain, and it must
-/// not include a ClickHouse header. It talks to the rest of the server only through the C boundary
-/// declared in the header below - see that file, and `gpu_island_target` in cmake/cuda.cmake.
-///
-/// Both operators live in this one translation unit rather than in a file each, for two reasons.
-/// They share the type mapping, the error convention and `checkNoNulls`, which would otherwise have
-/// to move into a header of their own that only the island may include. And they share
-/// `setUpDeviceMemoryResourceOnce`, whose `std::once_flag` has to be the one flag in the process: a
-/// second copy of it in a second translation unit would replace RMM's current device resource while
-/// buffers allocated from the first one were still alive.
-
-#include <GPU/GPUAggregationABI.h>
+#include <GPU/GPUAggregationCudf.h>
 
 #include <cudf/aggregation.hpp>
 #include <cudf/column/column.hpp>
@@ -56,11 +44,6 @@ void writeError(char * error, size_t error_size, const std::string & message)
     error[length] = '\0';
 }
 
-/// One `cudaMallocAsync` pool for the whole process, in place of RMM's default resource, which
-/// does a `cudaMalloc` and a `cudaFree` per allocation - and `cudaFree` synchronizes the device,
-/// so with a batch of a few hundred megabytes it costs more than the reduction it feeds. The pool
-/// hands the same pages back for the next batch instead. RMM keeps the resource alive until the
-/// process exits and takes care of tearing it down there.
 void setUpDeviceMemoryResourceOnce()
 {
     static std::once_flag once;
@@ -102,14 +85,11 @@ cudf::data_type sumTypeOf(int sum_type)
     }
 }
 
-/// Reads the reduction's result out of the scalar and into the eight bytes the caller owns.
 void writeSum(const cudf::scalar & sum, int sum_type, void * result, rmm::cuda_stream_view stream)
 {
     if (!sum.is_valid(stream))
         throw std::runtime_error("the device returned no sum for a non-empty batch of values without nulls");
 
-    /// The reduction was asked for this type, so a different one means cuDF and the switch below
-    /// disagree about what a sum is - and the casts below would be reading the wrong bytes.
     if (sum.type() != sumTypeOf(sum_type))
         throw std::logic_error(
             "the device returned a sum of type " + std::to_string(static_cast<int32_t>(sum.type().id()))
@@ -141,10 +121,6 @@ void writeSum(const cudf::scalar & sum, int sum_type, void * result, rmm::cuda_s
 }
 
 
-/// Reduces a column of values into a sum of `sum_type` and writes it to the eight bytes at
-/// `result`. Shared by the keyless sum, which uploads the values first, and by the cache's
-/// buffer sum, whose values are on the device already - the reduction is the same one either
-/// way, and having it here is what keeps them from drifting apart in what they ask cuDF for.
 void reduceIntoSum(const cudf::column_view & column, int sum_type, void * result, rmm::cuda_stream_view stream)
 {
     const auto aggregation = cudf::make_sum_aggregation<cudf::reduce_aggregation>();
@@ -153,17 +129,8 @@ void reduceIntoSum(const cudf::column_view & column, int sum_type, void * result
     writeSum(*sum, sum_type, result, stream);
 }
 
-/// Every sum this boundary carries is eight bytes wide, whichever of the three `ClickHouseGPUSumType`
-/// it is - which is why copying a partial-sum column out is a plain memcpy of `num_groups * 8`.
 constexpr size_t sum_type_size = 8;
 
-/// The type `cudf::groupby`'s `SUM` produces for a column of `source`.
-///
-/// Unlike `cudf::reduce`, which is told the type to reduce into, the groupby has no output-type
-/// parameter at all: `cudf::detail::target_type_t` decides, and it accumulates any integral column
-/// in an `int64_t` and a floating point column in its own type. So this is not a preference, it is
-/// what cuDF will hand back, and the code below arranges the input so that what it hands back is
-/// what ClickHouse asked for.
 cudf::data_type cudfGroupBySumTargetTypeFor(cudf::data_type source)
 {
     switch (source.id())
@@ -187,13 +154,6 @@ cudf::data_type cudfGroupBySumTargetTypeFor(cudf::data_type source)
     }
 }
 
-/// The type the partial sums are held in on the device, for a sum ClickHouse wants as `sum_type`.
-///
-/// `CLICKHOUSE_GPU_SUM_UINT64` comes out as a signed `INT64` because cuDF's groupby has no unsigned
-/// sum - see `cudfGroupBySumTargetTypeFor`. That is not a loss: two's complement addition wraps
-/// modulo 2^64 whether the operand is read as signed or unsigned, so the eight bytes are the same
-/// eight bytes, and ClickHouse's own `sum` over an unsigned column wraps modulo 2^64 as well. The
-/// ClickHouse side reads them back as a `UInt64`.
 cudf::data_type deviceSumTypeOf(int sum_type)
 {
     switch (sum_type)
@@ -208,13 +168,6 @@ cudf::data_type deviceSumTypeOf(int sum_type)
     }
 }
 
-/// A column produced by the device that the host is about to read, or that a later groupby is about
-/// to read as a value: a null in it would mean the bytes underneath are undefined.
-///
-/// Nulls cannot arise on this path - the views handed to cuDF carry no null mask, and `SUM` returns
-/// a null only for a group with no non-null value - so this is an invariant check rather than a
-/// case to handle. cuDF is free to attach an all-valid mask to an output, which is why the test is
-/// on `null_count` rather than on `nullable`.
 void checkNoNulls(const cudf::column_view & column, const std::string & what)
 {
     if (column.null_count() != 0)
@@ -223,14 +176,6 @@ void checkNoNulls(const cudf::column_view & column, const std::string & what)
             + ", where the input had no null mask at all");
 }
 
-/// Groups the rows of `keys` and sums each of `values` within every group. Returns one table: the
-/// distinct key rows first, in the order `keys` gives their columns, then one partial sum per value
-/// column, in the order `values` gives them - the same shape this function takes, which is what
-/// lets its own output be fed back into it when partial results are merged.
-///
-/// `sum_types` says what each sum has to come back as, and is checked rather than assumed: the
-/// eight bytes eventually copied out are read as that type on the ClickHouse side, so cuDF
-/// returning a different one would silently be a wrong answer instead of an error.
 std::unique_ptr<cudf::table> groupBySum(
     const cudf::table_view & keys,
     const std::vector<cudf::column_view> & values,
@@ -242,11 +187,6 @@ std::unique_ptr<cudf::table> groupBySum(
 
     for (size_t i = 0; i < values.size(); ++i)
     {
-        /// The value column is already of the type its sum comes back as, either because it was
-        /// uploaded or cast to it, or because it is itself a partial sum from an earlier groupby.
-        /// cuDF's target type for such a column is that same type - `INT64` sums into `INT64`,
-        /// `FLOAT64` into `FLOAT64` - so the merge below sums a column of the sum type into itself
-        /// and the partial result keeps its shape however many times it is merged.
         if (cudfGroupBySumTargetTypeFor(values[i].type()) != sum_types[i])
             throw std::logic_error(
                 "a groupby over a value column of cuDF type " + std::to_string(static_cast<int32_t>(values[i].type().id()))
@@ -259,11 +199,6 @@ std::unique_ptr<cudf::table> groupBySum(
         requests.push_back(std::move(request));
     }
 
-    /// `null_policy::EXCLUDE` and `null_policy::INCLUDE` differ only in whether a key row holding a
-    /// null forms a group of its own, and there are no nulls to decide about: nullable keys are not
-    /// eligible for this path, and the views built by the callers carry no null mask. The default is
-    /// left in place so that whoever makes nullable keys eligible has to choose deliberately -
-    /// ClickHouse groups `NULL` with `NULL`, which is `INCLUDE`.
     cudf::groupby::groupby grouper(keys, cudf::null_policy::EXCLUDE);
 
     auto [group_keys, results] = grouper.aggregate(requests, stream);
@@ -290,42 +225,23 @@ std::unique_ptr<cudf::table> groupBySum(
     return std::make_unique<cudf::table>(std::move(columns));
 }
 
-/// The partial result of one keyed `sum`, living on the device between batches. What the handle
-/// `clickhouseGPUGroupBySumCreate` returns points at.
 struct GroupBySumState
 {
-    /// How the key columns arrive from the host, and how they go back: a group's key is one of the
-    /// input keys, so a key column keeps its type all the way through.
     std::vector<ElementLayout> keys;
 
-    /// How the value columns arrive from the host, and what their sums are held in.
     std::vector<ElementLayout> values;
     std::vector<cudf::data_type> sum_types;
-
-    /// The groups so far: the key columns first, then one partial sum per value column - the shape
-    /// `groupBySum` both produces and consumes. Null until the first batch, which is also how no
-    /// rows at all is represented.
     std::unique_ptr<cudf::table> partial;
 
     bool finalized = false;
 };
 
-/// cuDF counts the rows of a column in a signed 32-bit integer, so nothing handed to it may hold
-/// more rows than that.
 void checkRowCountFitsCudf(size_t num_rows, const std::string & what)
 {
     if (num_rows > static_cast<size_t>(std::numeric_limits<cudf::size_type>::max()))
         throw std::logic_error(what + " of " + std::to_string(num_rows) + " rows is too large for cuDF");
 }
 
-/// One column of one `MergeTree` part, resident in device memory for as long as the GPU column
-/// cache keeps it. What the handle `clickhouseGPUDeviceBufferAllocate` returns points at.
-///
-/// Nothing but the buffer. Unlike the grouped sum and the join above it accumulates no partial
-/// result and holds no cuDF object, because what the bytes mean - the element type and the row
-/// count - belongs to the cache entry on the ClickHouse side and is passed in on every call. That
-/// is what lets one buffer be summed by as many queries as reach the part without anything here
-/// having to remember what the last of them did.
 struct DeviceBufferState
 {
     DeviceBufferState(size_t bytes, rmm::cuda_stream_view stream)
@@ -356,8 +272,6 @@ int clickhouseGPUProbeDevice(char * error, size_t error_size)
         return 1;
     }
 
-    /// Brings the context up, so that a driver which is installed but cannot be used says so here
-    /// instead of in the middle of the first query that reaches the device.
     if (const cudaError_t status = cudaFree(nullptr); status != cudaSuccess)
     {
         writeError(error, error_size, std::string("cannot initialize a CUDA context: ") + cudaGetErrorString(status));
@@ -381,9 +295,6 @@ int clickhouseGPUSum(
         if (num_rows == 0)
             throw std::logic_error("nothing to sum");
 
-        /// cuDF counts rows in a signed 32-bit type, so a batch has to stay under two billion
-        /// rows. The caller batches by bytes and the smallest element is one byte wide, so this
-        /// bounds the batch at 2 GB for `Int8` and proportionally more for wider types.
         if (num_rows > static_cast<size_t>(std::numeric_limits<cudf::size_type>::max()))
             throw std::logic_error("a batch of " + std::to_string(num_rows) + " rows is too large for cuDF");
 
@@ -393,9 +304,6 @@ int clickhouseGPUSum(
 
         const rmm::cuda_stream_view stream = cudf::get_default_stream();
 
-        /// The one transfer of the batch, and the reduction over it. Nothing else here touches
-        /// host memory, which is the whole point of batching on the way in: this copy runs at the
-        /// speed of the link, and the reduction at the speed of the device's own memory.
         const rmm::device_buffer device_data(host_data, num_rows * element.size, stream);
 
         const cudf::column_view column(
@@ -409,8 +317,6 @@ int clickhouseGPUSum(
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything: nothing may leave this function as an exception, and every
-    /// exception that reaches here does leave as a message the caller turns back into one.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -454,8 +360,6 @@ int clickhouseGPUGroupBySumCreate(
             state->sum_types.push_back(deviceSumTypeOf(value_sum_types[i]));
         }
 
-        /// Brought up here rather than on the first batch so that a machine which cannot set up the
-        /// pool says so before any data has been staged for it.
         setUpDeviceMemoryResourceOnce();
 
         *handle = state.release();
@@ -466,8 +370,6 @@ int clickhouseGPUGroupBySumCreate(
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything: nothing may leave this function as an exception, and every
-    /// exception that reaches here does leave as a message the caller turns back into one.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -496,18 +398,12 @@ int clickhouseGPUGroupBySumAddBatch(
         if (num_rows == 0)
             throw std::logic_error("nothing to group");
 
-        /// cuDF counts rows in a signed 32-bit type, so a batch has to stay under two billion rows.
-        /// The caller batches by bytes and caps the row count at exactly this, so reaching here
-        /// means the two sides disagree about the cap rather than that a query is too large.
         if (num_rows > static_cast<size_t>(std::numeric_limits<cudf::size_type>::max()))
             throw std::logic_error("a batch of " + std::to_string(num_rows) + " rows is too large for cuDF");
 
         const auto batch_rows = static_cast<cudf::size_type>(num_rows);
         const rmm::cuda_stream_view stream = cudf::get_default_stream();
 
-        /// The buffers own the uploaded batch and the views only point into them, so both have to
-        /// outlive the groupby below - hence the two parallel vectors rather than a view built on
-        /// the spot. This is the one transfer of the batch; everything after it stays on the device.
         std::vector<rmm::device_buffer> key_buffers;
         std::vector<cudf::column_view> key_views;
         key_buffers.reserve(state.keys.size());
@@ -520,8 +416,6 @@ int clickhouseGPUGroupBySumAddBatch(
         }
 
         std::vector<rmm::device_buffer> value_buffers;
-        /// Only the value columns that need widening (see below) put anything here; the vector
-        /// exists to keep those columns alive for as long as the views over them.
         std::vector<std::unique_ptr<cudf::column>> widened_values;
         std::vector<cudf::column_view> value_views;
         value_buffers.reserve(state.values.size());
@@ -540,13 +434,6 @@ int clickhouseGPUGroupBySumAddBatch(
                 continue;
             }
 
-            /// cuDF's groupby sums a column into a type of its own choosing, and for one case that
-            /// is not the type ClickHouse's `sum` returns: a `Float32` column sums into a `Float32`,
-            /// where ClickHouse gives a `Float64`. So widen the column first and let the groupby
-            /// sum `Float64` into `Float64`. The widening is done here, on the device, rather than
-            /// while staging on the host, because the host copy is what crosses the link and there
-            /// is no reason to send twice the bytes. Integral columns need none of this - cuDF
-            /// widens every one of them to `INT64` by itself.
             widened_values.push_back(cudf::cast(uploaded, state.sum_types[i], stream));
             value_views.push_back(widened_values.back()->view());
         }
@@ -560,15 +447,6 @@ int clickhouseGPUGroupBySumAddBatch(
             return 0;
         }
 
-        /// The merge. `sum` is associative, and a partial sum per group has the same shape as the
-        /// batch's own result, so stacking the two partial results on top of each other and
-        /// grouping that gives exactly the groups and sums one groupby over every row would have:
-        /// each group's rows in the concatenation are the partial sums of that group's rows in the
-        /// batches, and summing those sums is summing the rows. Which is why the merge can be the
-        /// same `groupBySum` again and needs no separate merge operator.
-        ///
-        /// It also keeps the partial result on the device, unlike merging on the host, and its cost
-        /// is proportional to the number of groups rather than to the number of rows seen so far.
         const std::vector<cudf::table_view> to_concatenate{state.partial->view(), batch->view()};
         const std::unique_ptr<cudf::table> concatenated = cudf::concatenate(to_concatenate, stream);
 
@@ -589,7 +467,6 @@ int clickhouseGPUGroupBySumAddBatch(
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything, for the reason given above.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -610,8 +487,6 @@ int clickhouseGPUGroupBySumFinalize(void * handle, size_t * num_groups, char * e
 
         state.finalized = true;
 
-        /// No batch was ever added, so the aggregation read no rows and has no groups. There is no
-        /// row to produce for the empty input the way a keyless aggregation has one.
         *num_groups = state.partial ? static_cast<size_t>(state.partial->num_rows()) : 0;
         return 0;
     }
@@ -620,7 +495,6 @@ int clickhouseGPUGroupBySumFinalize(void * handle, size_t * num_groups, char * e
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything, for the reason given above.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -656,9 +530,6 @@ int clickhouseGPUGroupBySumCopyOut(
         {
             checkNoNulls(column, what);
 
-            /// These columns come straight out of a groupby, which allocates each of them for
-            /// itself, so none of them is a slice of a larger one. `head` would be the wrong pointer
-            /// if one were, and there is no `offset` to add to a `void *`.
             if (column.offset() != 0)
                 throw std::logic_error("the device returned " + what + " as a slice at offset " + std::to_string(column.offset()));
 
@@ -679,8 +550,6 @@ int clickhouseGPUGroupBySumCopyOut(
                 sum_type_size,
                 "a column of sums");
 
-        /// The copies were queued on the stream, so the host memory only holds the groups once it
-        /// has run. Synchronizing once, after all of the columns, rather than once per column.
         stream.synchronize();
         return 0;
     }
@@ -689,7 +558,6 @@ int clickhouseGPUGroupBySumCopyOut(
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything, for the reason given above.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -699,9 +567,6 @@ int clickhouseGPUGroupBySumCopyOut(
 
 void clickhouseGPUGroupBySumDestroy(void * handle)
 {
-    /// `delete` runs `~table`, which frees the device memory through the same memory resource that
-    /// allocated it, and neither that nor `~vector` throws - so there is nothing here to catch and
-    /// nothing that could be reported anyway.
     delete static_cast<GroupBySumState *>(handle);
 }
 
@@ -719,12 +584,6 @@ int clickhouseGPUDeviceBufferAllocate(size_t bytes, void ** handle, char * error
 
         setUpDeviceMemoryResourceOnce();
 
-        /// The allocation is ordered on the stream rather than finished by the time this returns,
-        /// and every copy into the buffer and every reduction over it runs on that same stream -
-        /// so the ordering is what makes the memory be there when they reach it, and synchronizing
-        /// here would only add a round trip. An allocation that cannot be satisfied at all throws
-        /// out of RMM and leaves as a message below, which is what a cache larger than the device
-        /// looks like from here.
         auto state = std::make_unique<DeviceBufferState>(bytes, cudf::get_default_stream());
 
         *handle = state.release();
@@ -735,8 +594,6 @@ int clickhouseGPUDeviceBufferAllocate(size_t bytes, void ** handle, char * error
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything: nothing may leave this function as an exception, and every
-    /// exception that reaches here does leave as a message the caller turns back into one.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -764,9 +621,6 @@ int clickhouseGPUDeviceBufferCopyIn(
         if (bytes == 0)
             throw std::logic_error("nothing to copy");
 
-        /// Checked here rather than trusted from the other side of the boundary: this is the place
-        /// where a wrong offset stops being a mistake in the caller and becomes a write past the
-        /// end of a device allocation.
         if (offset > state.buffer.size() || bytes > state.buffer.size() - offset)
             throw std::logic_error(
                 "a copy of " + std::to_string(bytes) + " bytes at offset " + std::to_string(offset)
@@ -779,10 +633,6 @@ int clickhouseGPUDeviceBufferCopyIn(
             status != cudaSuccess)
             throw std::runtime_error(std::string("cannot copy a column of a part to the device: ") + cudaGetErrorString(status));
 
-        /// The copy was queued on the stream, and the caller is free to release the block it copied
-        /// from as soon as this returns - so it has to have run by then. This is the one place the
-        /// host waits for the device on this path, and it is what the 4.8 GB/s of the link is spent
-        /// on.
         stream.synchronize();
         return 0;
     }
@@ -791,7 +641,6 @@ int clickhouseGPUDeviceBufferCopyIn(
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything, for the reason given above.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -822,9 +671,6 @@ int clickhouseGPUDeviceBufferSum(
 
         const ElementLayout element = elementLayoutOf(element_type);
 
-        /// The row count belongs to the cache entry and the bytes to this buffer, and a reduction
-        /// reading past the end of the allocation is exactly what a disagreement between the two
-        /// would look like. So they are checked against each other here, every time.
         if (num_rows > state.buffer.size() / element.size)
             throw std::logic_error(
                 "a column of " + std::to_string(num_rows) + " values of " + std::to_string(element.size)
@@ -832,9 +678,6 @@ int clickhouseGPUDeviceBufferSum(
 
         const rmm::cuda_stream_view stream = cudf::get_default_stream();
 
-        /// No transfer and no allocation of the values: the reduction reads the buffer where it
-        /// already is, which on this machine is 6 ms for 1.49 GiB against the 334 ms the same
-        /// values take to get there.
         const cudf::column_view column(
             element.type, static_cast<cudf::size_type>(num_rows), state.buffer.data(), nullptr, 0);
 
@@ -846,7 +689,6 @@ int clickhouseGPUDeviceBufferSum(
         writeError(error, error_size, e.what());
         return 1;
     }
-    /// Ok to catch everything, for the reason given above.
     catch (...)
     {
         writeError(error, error_size, "unknown exception");
@@ -856,10 +698,6 @@ int clickhouseGPUDeviceBufferSum(
 
 void clickhouseGPUDeviceBufferFree(void * handle)
 {
-    /// `delete` gives the memory back through the same resource that handed it out, and
-    /// `rmm::device_buffer`'s destructor does not throw - so there is nothing here to catch, and
-    /// nobody to report it to if there were: this runs from the cache entry's destructor, which is
-    /// also where an eviction ends up.
     delete static_cast<DeviceBufferState *>(handle);
 }
 

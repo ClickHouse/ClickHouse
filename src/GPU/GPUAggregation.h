@@ -208,31 +208,14 @@ private:
 /// a second layout on both sides of the boundary, not a wider `switch`.
 bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types);
 
-/// Sums columns grouped by keys that arrive in pieces, on the device.
-///
-/// Batched like `SumAccumulator`, and for the same reason - a block at a time is too little to
-/// occupy either the link or the device - but the partial result cannot come back after every
-/// batch the way a scalar sum can. It is a whole table of groups, so it stays on the device from
-/// the first batch until `finalize`, behind the handle `GPUAggregationABI.h` describes, and every
-/// batch is grouped and merged into it there. Nothing here is proportional to the size of the
-/// table; what it holds in host memory is one batch, and on the device one partial result.
-///
-/// One caveat, inherited from cuDF's groupby having no output type to ask for: an integral column is
-/// summed into an `Int64` whatever it holds, so a 64-bit column's group sums are accumulated signed
-/// and wrap where ClickHouse's `sum` wraps. Two's complement addition wraps modulo 2^64 either way,
-/// so the bits agree with the CPU's - but this does lean on the device wrapping rather than
-/// trapping on a signed overflow, which C++ leaves undefined and NVIDIA's hardware defines.
 class GroupBySumAccumulator
 {
 public:
-    /// The types must be a triple `canGroupBySumOnDevice` accepts. `argument_types[i]` is what the
-    /// `i`-th `sum` reads and `result_types[i]` what it returns.
     GroupBySumAccumulator(
         const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types, size_t batch_bytes);
 
     ~GroupBySumAccumulator();
 
-    /// Holds a device resource, and there is no use for a second name for one.
     GroupBySumAccumulator(const GroupBySumAccumulator &) = delete;
     GroupBySumAccumulator & operator=(const GroupBySumAccumulator &) = delete;
 

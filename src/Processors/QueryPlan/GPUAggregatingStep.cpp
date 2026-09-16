@@ -40,15 +40,9 @@ GPUAggregatingStep::GPUAggregatingStep(const SharedHeader & input_header_, Aggre
 
 bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggregator::Params & params)
 {
-    /// A merge-only aggregator is handed states rather than values, and an overflow row is a
-    /// second output row this step cannot produce.
     if (params.only_merge || params.overflow_row)
         return false;
 
-    /// A group-count limit cannot fire over the single group of a keyless aggregation, and over the
-    /// groups of a keyed one it is the `Aggregator` that establishes it - `no_more_keys` and the
-    /// overflow row are its machinery. So do not take the aggregation over while it is set, on
-    /// either path.
     if (params.max_rows_to_group_by != 0)
         return false;
 
@@ -62,9 +56,6 @@ bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggreg
 
     for (const auto & aggregate : params.aggregates)
     {
-        /// `sum` and nothing else - and by its own name, so that a combinator (`sumIf`,
-        /// `sumDistinct`) or a parametric form does not slip through. A `Nullable` argument keeps
-        /// the name, and is turned away by the type checks below.
         if (aggregate.function->getName() != "sum" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1)
             return false;
 
@@ -76,8 +67,6 @@ bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggreg
         result_types.push_back(aggregate.function->getResultType());
     }
 
-    /// Without keys the device reduces each argument column to a scalar, with them it groups - two
-    /// different pieces of cuDF, each with its own type support, so they are asked separately.
     if (params.keys.empty())
     {
         for (size_t i = 0; i < argument_types.size(); ++i)
@@ -106,17 +95,8 @@ bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggreg
 
 void GPUAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// An aggregation computes its own totals and extremes, if it has any; this one has none,
-    /// since `WITH TOTALS` is not eligible for it.
     pipeline.dropTotalsAndExtremes();
 
-    /// Everything read has to reach the one accumulator, which then produces the query's result.
-    /// Aggregating per stream and merging the partial results afterwards - what the CPU path does
-    /// with its per-thread hash tables - is the obvious next step and not needed to begin with:
-    /// the device is a single resource no matter how many streams feed it, and the reading below
-    /// keeps its threads either way. It would also need a merge of the partial results above this
-    /// step, which for the keyed case is a second groupby on the device rather than a sum on the
-    /// host - the accumulator already does exactly that between its own batches.
     pipeline.resize(1);
 
     pipeline.addTransform(std::make_shared<GPUAggregatingTransform>(

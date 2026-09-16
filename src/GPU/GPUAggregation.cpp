@@ -2,7 +2,7 @@
 
 #if USE_GPU
 
-#include <GPU/GPUAggregationABI.h>
+#include <GPU/GPUAggregationCudf.h>
 
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
