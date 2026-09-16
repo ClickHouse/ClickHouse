@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_experimental_geo_replication_control", false, false, "New setting to gate the experimental geo-location-aware fetching of `ReplicatedMergeTree` (a non-empty `geo_replication_control_region` table setting)."},
+            {"enable_geo_replication_control", false, false, "Added an alias for setting `allow_experimental_geo_replication_control`."},
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
             {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
             {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
@@ -1520,6 +1522,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
+            {"geo_replication_control_region", "", "", "New setting for geo-location-aware fetching: the region this replica belongs to. Empty (the default) disables geo replication control, so the previous behavior is preserved."},
+            {"geo_replication_control_leader_election_period_ms", 10000, 10000, "New setting for geo-location-aware fetching: how often a replica triggers a region leader election when there is no leader. Has no effect unless `geo_replication_control_region` is set."},
+            {"geo_replication_control_leader_wait", 5, 5, "New setting for geo-location-aware fetching: how long a follower waits before retrying a log entry when the target part is not yet available within the region. Has no effect unless `geo_replication_control_region` is set."},
+            {"geo_replication_control_leader_wait_timeout", 300, 300, "New setting for geo-location-aware fetching: the maximum time a follower waits to fetch within the region before falling back to fetching from any replica. Has no effect unless `geo_replication_control_region` is set."},
+            {"fetch_merged_part_within_region_only", true, true, "New setting for geo-location-aware fetching: fetch merged parts from the same region only unless a consistent part must be fetched from elsewhere. Has no effect unless `geo_replication_control_region` is set."},
+            {"fetch_covered_part_within_region_only", true, true, "New setting for geo-location-aware fetching: look for a covered part only within the same region unless the exact part cannot be found on any replica. Has no effect unless `geo_replication_control_region` is set."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
