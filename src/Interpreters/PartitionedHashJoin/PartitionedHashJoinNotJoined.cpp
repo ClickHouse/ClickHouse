@@ -326,7 +326,7 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     const size_t expected_columns_count
-        = left_columns_count + hash_join->required_right_keys.columns() + hash_join->sample_block_with_columnsto_add.columns();
+        = left_columns_count + hash_join->required_right_keys.columns() + hash_join->sample_block_with_columns_to_add.columns();
     if (expected_columns_count != result_sample_block.columns())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -336,7 +336,7 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
             result_sample_block.dumpNames(),
             left_sample_block.dumpNames(),
             hash_join->required_right_keys.dumpNames(),
-            hash_join->sample_block_with_columnsto_add.dumpNames());
+            hash_join->sample_block_with_columns_to_add.dumpNames());
 
     auto non_joined = std::make_unique<NotJoinedPartitioned>(*this, max_block_size, stream_idx, num_streams);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
