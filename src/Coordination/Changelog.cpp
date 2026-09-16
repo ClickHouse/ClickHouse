@@ -97,7 +97,9 @@ namespace FailPoints
 namespace
 {
 
-void moveChangelogBetweenDisks(
+/// False means the file was not moved and `description` still names `disk_from`. A caller that
+/// goes on to write to `disk_to` - `writeAt` and `initWriter` - must not ignore it.
+bool moveChangelogBetweenDisks(
     DiskPtr disk_from,
     ChangelogFileDescriptionPtr description,
     DiskPtr disk_to,
@@ -105,7 +107,7 @@ void moveChangelogBetweenDisks(
     const KeeperContextPtr & keeper_context)
 {
     auto path_from = description->path;
-    moveFileBetweenDisks(
+    return moveFileBetweenDisks(
         disk_from,
         path_from,
         disk_to,
@@ -4025,8 +4027,18 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
 
     auto log_disk = description->disk;
     auto latest_log_disk = getLatestLogDisk();
-    if (log_disk != latest_log_disk)
-        moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
+    /// Same reason as in `writeAt`: without the move, `setFile` would append to the wrong disk.
+    /// Leaving the writer unset makes the caller rotate into a new changelog instead.
+    if (log_disk != latest_log_disk
+        && !moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context))
+    {
+        LOG_WARNING(
+            log,
+            "Not continuing to write into {} because moving it to disk {} was abandoned, a new changelog will be started",
+            description->path,
+            latest_log_disk->getName());
+        return;
+    }
 
     current_writer->setFile(std::move(description), WriteMode::Append);
 }
@@ -4359,11 +4371,24 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             {
                 auto log_disk = description->disk;
                 auto latest_log_disk = getLatestLogDisk();
-                if (log_disk != latest_log_disk)
-                    moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
-
-                LOG_INFO(log, "Writing into {}", description->path);
-                current_writer->setFile(std::move(description), WriteMode::Append);
+                /// `setFile` writes to the latest log disk unconditionally, so an abandoned move
+                /// would append to a file that does not hold the preceding records while
+                /// `description` still points at the disk that does.
+                if (log_disk != latest_log_disk
+                    && !moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context))
+                {
+                    LOG_WARNING(
+                        log,
+                        "Cannot write into {} because moving it to disk {} was abandoned, rotating",
+                        description->path,
+                        latest_log_disk->getName());
+                    current_writer->rotate(index);
+                }
+                else
+                {
+                    LOG_INFO(log, "Writing into {}", description->path);
+                    current_writer->setFile(std::move(description), WriteMode::Append);
+                }
             }
 
             /// Remove all subsequent files if overwritten something in previous one

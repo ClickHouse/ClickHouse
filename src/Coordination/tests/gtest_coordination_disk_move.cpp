@@ -41,7 +41,7 @@ namespace ProfileEvents
 {
     extern const Event KeeperDiskMoves;
     extern const Event KeeperDiskMoveMicroseconds;
-    extern const Event KeeperDiskMoveRetries;
+    extern const Event KeeperDiskMoveFailedAttempts;
     extern const Event KeeperDiskMovesAbandoned;
 }
 
@@ -112,7 +112,7 @@ struct DiskMoveEvents
 {
     UInt64 moves = 0;
     UInt64 microseconds = 0;
-    UInt64 retries = 0;
+    UInt64 failed_attempts = 0;
     UInt64 abandoned = 0;
 };
 
@@ -123,7 +123,7 @@ DiskMoveEvents readDiskMoveEvents()
     return DiskMoveEvents{
         .moves = ProfileEvents::global_counters[ProfileEvents::KeeperDiskMoves],
         .microseconds = ProfileEvents::global_counters[ProfileEvents::KeeperDiskMoveMicroseconds],
-        .retries = ProfileEvents::global_counters[ProfileEvents::KeeperDiskMoveRetries],
+        .failed_attempts = ProfileEvents::global_counters[ProfileEvents::KeeperDiskMoveFailedAttempts],
         .abandoned = ProfileEvents::global_counters[ProfileEvents::KeeperDiskMovesAbandoned],
     };
 }
@@ -133,7 +133,7 @@ DiskMoveEvents operator-(const DiskMoveEvents & after, const DiskMoveEvents & be
     return DiskMoveEvents{
         .moves = after.moves - before.moves,
         .microseconds = after.microseconds - before.microseconds,
-        .retries = after.retries - before.retries,
+        .failed_attempts = after.failed_attempts - before.failed_attempts,
         .abandoned = after.abandoned - before.abandoned,
     };
 }
@@ -228,7 +228,7 @@ TEST(KeeperDiskMove, MoveIsNotRefusedByTheMemoryTracker)
             SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(previous_hard_limit));
             total_memory_tracker.setHardLimit(1);
 
-            DB::moveFileBetweenDisks(disk_from, "changelog.bin", disk_to, "changelog.bin", {}, log, keeper_context);
+            EXPECT_TRUE(DB::moveFileBetweenDisks(disk_from, "changelog.bin", disk_to, "changelog.bin", {}, log, keeper_context));
         });
     mover.join();
 
@@ -249,7 +249,7 @@ TEST(KeeperDiskMove, RuntimeRetriesAreBounded)
 
     bool before_file_remove_op_called = false;
     const auto before = readDiskMoveEvents();
-    DB::moveFileBetweenDisks(
+    const bool moved = DB::moveFileBetweenDisks(
         fixture.disk_from,
         "changelog.bin",
         fixture.disk_to,
@@ -260,11 +260,12 @@ TEST(KeeperDiskMove, RuntimeRetriesAreBounded)
     const auto delta = readDiskMoveEvents() - before;
 
     /// Bounded by the runtime limit, not by the much larger initialization one.
+    EXPECT_FALSE(moved);
     EXPECT_EQ(fixture.disk_to->tmp_write_calls.load(), 3u);
     EXPECT_EQ(fixture.disk_from->copy_calls.load(), 0u);
 
     EXPECT_EQ(delta.moves, 1u);
-    EXPECT_EQ(delta.retries, 3u);
+    EXPECT_EQ(delta.failed_attempts, 3u);
     EXPECT_EQ(delta.abandoned, 1u);
 
     /// The source file is untouched and the caller's metadata was never repointed at
@@ -288,7 +289,7 @@ TEST(KeeperDiskMove, InitRetriesAreStillBounded)
 
     bool before_file_remove_op_called = false;
     const auto before = readDiskMoveEvents();
-    DB::moveFileBetweenDisks(
+    const bool moved = DB::moveFileBetweenDisks(
         fixture.disk_from,
         "changelog.bin",
         fixture.disk_to,
@@ -298,11 +299,12 @@ TEST(KeeperDiskMove, InitRetriesAreStillBounded)
         keeper_context);
     const auto delta = readDiskMoveEvents() - before;
 
+    EXPECT_FALSE(moved);
     EXPECT_EQ(fixture.disk_to->tmp_write_calls.load(), 1u);
     EXPECT_EQ(fixture.disk_from->copy_calls.load(), 2u);
 
     EXPECT_EQ(delta.moves, 1u);
-    EXPECT_EQ(delta.retries, 2u);
+    EXPECT_EQ(delta.failed_attempts, 2u);
     EXPECT_EQ(delta.abandoned, 1u);
 
     EXPECT_FALSE(before_file_remove_op_called);
@@ -326,7 +328,7 @@ TEST(KeeperDiskMove, TransientFailuresAreRetriedAndTheMoveSucceeds)
 
     size_t before_file_remove_op_calls = 0;
     const auto before = readDiskMoveEvents();
-    DB::moveFileBetweenDisks(
+    const bool moved = DB::moveFileBetweenDisks(
         fixture.disk_from,
         "changelog.bin",
         fixture.disk_to,
@@ -336,11 +338,12 @@ TEST(KeeperDiskMove, TransientFailuresAreRetriedAndTheMoveSucceeds)
         keeper_context);
     const auto delta = readDiskMoveEvents() - before;
 
+    EXPECT_TRUE(moved);
     EXPECT_EQ(fixture.disk_to->tmp_write_calls.load(), 3u);
     EXPECT_EQ(fixture.disk_from->copy_calls.load(), 2u);
 
     EXPECT_EQ(delta.moves, 1u);
-    EXPECT_EQ(delta.retries, 3u);
+    EXPECT_EQ(delta.failed_attempts, 3u);
     EXPECT_EQ(delta.abandoned, 0u);
     EXPECT_GT(delta.microseconds, 0u);
 
@@ -358,12 +361,13 @@ TEST(KeeperDiskMove, SuccessfulMoveReportsNoRetries)
     auto keeper_context = fixture.makeKeeperContext(DB::KeeperContext::Phase::RUNNING);
 
     const auto before = readDiskMoveEvents();
-    DB::moveFileBetweenDisks(
+    const bool moved = DB::moveFileBetweenDisks(
         fixture.disk_from, "changelog.bin", fixture.disk_to, "changelog.bin", {}, getLogger("KeeperDiskMoveTest"), keeper_context);
     const auto delta = readDiskMoveEvents() - before;
 
+    EXPECT_TRUE(moved);
     EXPECT_EQ(delta.moves, 1u);
-    EXPECT_EQ(delta.retries, 0u);
+    EXPECT_EQ(delta.failed_attempts, 0u);
     EXPECT_EQ(delta.abandoned, 0u);
     EXPECT_GT(delta.microseconds, 0u);
 

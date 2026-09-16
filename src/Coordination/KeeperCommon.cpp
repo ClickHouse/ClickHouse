@@ -26,7 +26,7 @@ namespace ProfileEvents
 {
     extern const Event KeeperDiskMoves;
     extern const Event KeeperDiskMoveMicroseconds;
-    extern const Event KeeperDiskMoveRetries;
+    extern const Event KeeperDiskMoveFailedAttempts;
     extern const Event KeeperDiskMovesAbandoned;
 }
 
@@ -76,7 +76,7 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
     return static_cast<int32_t>(value);
 }
 
-void moveFileBetweenDisks(
+bool moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
@@ -128,7 +128,7 @@ void moveFileBetweenDisks(
             }
 
             ++retry_num;
-            ProfileEvents::increment(ProfileEvents::KeeperDiskMoveRetries);
+            ProfileEvents::increment(ProfileEvents::KeeperDiskMoveFailedAttempts);
 
             /// The limit follows the phase we are in right now, not the one the move
             /// started in: a move that outlives initialization becomes a runtime move.
@@ -166,22 +166,26 @@ void moveFileBetweenDisks(
                 buf->finalize();
             },
             "creating temporary file"))
-        return;
+        return false;
 
     if (!run_with_retries([&] { disk_from->copyFile(from_path, *disk_to, path_to, {}); }, "copying file"))
-        return;
+        return false;
 
     if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
-        return;
+        return false;
 
     if (before_file_remove_op && !before_file_remove_op())
     {
         LOG_DEBUG(logger, "Move of {} to disk {} was rejected by the caller, keeping the source file", path_from, disk_to->getName());
-        return;
+        return false;
     }
 
-    if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
-        return;
+    /// Deliberately not part of the result: `before_file_remove_op` already repointed the
+    /// caller's metadata at `disk_to`, so the move is done as far as every caller is concerned.
+    /// An abandoned source removal leaves an untracked copy on `disk_from`, which is logged and
+    /// counted but does not make the move a failure.
+    run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk");
+    return true;
 }
 
 /// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!

@@ -301,7 +301,7 @@
     M(KeeperSnapshotRemoteLoaderErrors) \
     M(KeeperDiskMoves) \
     M(KeeperDiskMoveMicroseconds) \
-    M(KeeperDiskMoveRetries) \
+    M(KeeperDiskMoveFailedAttempts) \
     M(KeeperDiskMovesAbandoned) \
 \
     M(KeeperLSMTFlushes) \
