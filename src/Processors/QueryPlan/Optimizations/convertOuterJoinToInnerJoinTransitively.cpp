@@ -152,6 +152,10 @@ void collectNullRejectedColumnsFromFilter(const FilterStep & filter, NameSet & n
 
 void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, NameSet & left, NameSet & right)
 {
+    const auto & actions = join.getActionsDAG();
+    if (actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(actions))
+        return;
+
     const auto & join_operator = join.getJoinOperator();
     /// The sides for which a null-rejecting condition proves the input column not NULL.
     auto [discards_left, discards_right] = [&]() -> std::pair<bool, bool>
