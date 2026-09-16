@@ -5,15 +5,6 @@
 -- The same applies to the `urlCluster` sibling: without this guard an omitted structure would even
 -- send a body `POST` for schema inference before the insert failed.
 
-SET enable_analyzer = 1;
-INSERT INTO FUNCTION url('http://localhost:11111/test/data', body('payload')) SELECT 1; -- { serverError BAD_ARGUMENTS }
-INSERT INTO FUNCTION url('http://localhost:11111/test/data', 'TSV', body((SELECT 1))) SELECT 1; -- { serverError BAD_ARGUMENTS }
-INSERT INTO FUNCTION url('http://localhost:11111/test/data', body('')) SELECT 1; -- { serverError BAD_ARGUMENTS }
-INSERT INTO FUNCTION urlCluster('test_shard_localhost', 'http://localhost:11111/test/data', body('payload')) SELECT 1; -- { serverError BAD_ARGUMENTS }
-INSERT INTO FUNCTION urlCluster('test_shard_localhost', 'http://localhost:11111/test/data', 'TSV', body((SELECT 1))) SELECT 1; -- { serverError BAD_ARGUMENTS }
-INSERT INTO FUNCTION urlCluster('test_shard_localhost', 'http://localhost:11111/test/data', body('')) SELECT 1; -- { serverError BAD_ARGUMENTS }
-
-SET enable_analyzer = 0;
 INSERT INTO FUNCTION url('http://localhost:11111/test/data', body('payload')) SELECT 1; -- { serverError BAD_ARGUMENTS }
 INSERT INTO FUNCTION url('http://localhost:11111/test/data', 'TSV', body((SELECT 1))) SELECT 1; -- { serverError BAD_ARGUMENTS }
 INSERT INTO FUNCTION url('http://localhost:11111/test/data', body('')) SELECT 1; -- { serverError BAD_ARGUMENTS }

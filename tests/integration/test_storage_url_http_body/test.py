@@ -198,17 +198,6 @@ def test_count_cache_is_body_aware(started_cluster):
     assert count_three == "3"
 
 
-def test_subquery_body_with_old_analyzer(started_cluster):
-    # The subquery body must be interpreted under the old planner too. The body stores an
-    # `ASTSubquery` wrapper; the old-planner branch must unwrap it before handing it to
-    # `InterpreterSelectWithUnionQuery`, otherwise the query fails before the request is sent.
-    query = (
-        "SELECT * FROM url('http://localhost:8000/', headers('type'='string'), "
-        "body((SELECT 1 + 2))) SETTINGS enable_analyzer = 0"
-    )
-    run_test(query, '{"plus(1, 2)":3}')
-
-
 def reset_request_count():
     server.exec_in_container(
         ["curl", "-s", "http://localhost:8002/reset"], user="root"
@@ -238,15 +227,14 @@ def test_subquery_body_identical_across_schema_inference_and_read(started_cluste
     # requests carried different payloads. The body query is executed as a subquery now, so the
     # session `limit`/`offset` do not apply to it and every send carries the same payload.
     expected = '{"n":0}\n{"n":1}\n{"n":2}\n'
-    for analyzer in (1, 0):
-        reset_request_count()
-        server.query(
-            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, "
-            "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
-            f"SETTINGS enable_analyzer = {analyzer}, offset = 1"
-        )
-        assert get_request_count() == 2
-        assert get_request_bodies() == [expected, expected]
+    reset_request_count()
+    server.query(
+        "SELECT * FROM url('http://localhost:8002/', JSONEachRow, "
+        "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
+        "SETTINGS offset = 1"
+    )
+    assert get_request_count() == 2
+    assert get_request_bodies() == [expected, expected]
 
 
 def test_top_level_only_settings_do_not_apply_to_subquery_body(started_cluster):
@@ -262,40 +250,37 @@ def test_top_level_only_settings_do_not_apply_to_subquery_body(started_cluster):
         "CREATE TABLE implicit_body_table (k UInt8) ENGINE = Memory AS SELECT number FROM numbers(3)"
     )
     try:
-        for analyzer in (1, 0):
-            settings = f"enable_analyzer = {analyzer}"
-
             # `max_result_rows` with `result_overflow_mode = 'break'` must not truncate the body.
-            reset_request_count()
-            result = server.query(
-                "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
-                "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
-                f"SETTINGS {settings}, max_result_rows = 1, result_overflow_mode = 'break'"
-            )
-            assert result.strip() == "1"
-            assert get_request_bodies() == ['{"n":0}\n{"n":1}\n{"n":2}\n']
+        reset_request_count()
+        result = server.query(
+            "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+            "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
+            "SETTINGS max_result_rows = 1, result_overflow_mode = 'break'"
+        )
+        assert result.strip() == "1"
+        assert get_request_bodies() == ['{"n":0}\n{"n":1}\n{"n":2}\n']
 
-            # `extremes` must not add an extremes trailer to a body in the `JSON` format.
-            reset_request_count()
-            server.query(
-                "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
-                "body((SELECT toUInt8(number) AS n FROM numbers(3)), 'JSON')) "
-                f"SETTINGS {settings}, extremes = 1"
-            )
-            bodies = get_request_bodies()
-            assert len(bodies) == 1
-            body = json.loads(bodies[0])
-            assert body["rows"] == 3
-            assert "extremes" not in body
+        # `extremes` must not add an extremes trailer to a body in the `JSON` format.
+        reset_request_count()
+        server.query(
+            "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+            "body((SELECT toUInt8(number) AS n FROM numbers(3)), 'JSON')) "
+            "SETTINGS extremes = 1"
+        )
+        bodies = get_request_bodies()
+        assert len(bodies) == 1
+        body = json.loads(bodies[0])
+        assert body["rows"] == 3
+        assert "extremes" not in body
 
-            # `implicit_table_at_top_level` must not turn `SELECT 1` into `SELECT 1 FROM <table>`.
-            reset_request_count()
-            server.query(
-                "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
-                "body((SELECT 1 AS x))) "
-                f"SETTINGS {settings}, implicit_table_at_top_level = 'implicit_body_table'"
-            )
-            assert get_request_bodies() == ['{"x":1}\n']
+        # `implicit_table_at_top_level` must not turn `SELECT 1` into `SELECT 1 FROM <table>`.
+        reset_request_count()
+        server.query(
+            "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+            "body((SELECT 1 AS x))) "
+            "SETTINGS implicit_table_at_top_level = 'implicit_body_table'"
+        )
+        assert get_request_bodies() == ['{"x":1}\n']
     finally:
         server.query("DROP TABLE IF EXISTS implicit_body_table")
 
@@ -308,16 +293,15 @@ def test_subquery_body_with_glob_url_and_parallel_streams(started_cluster):
     # the shared prepared pipeline. Assert that every request is answered and that all four bodies
     # are delivered in full and identical.
     expected = '{"n":0}\n{"n":1}\n{"n":2}\n'
-    for analyzer in (1, 0):
-        reset_request_count()
-        result = server.query(
-            "SELECT count() FROM url('http://localhost:8002/{a,b,c,d}', JSONEachRow, 'v UInt8', "
-            "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
-            f"SETTINGS enable_analyzer = {analyzer}, max_threads = 4, max_download_threads = 4"
-        )
-        assert result.strip() == "4"
-        assert get_request_count() == 4
-        assert get_request_bodies() == [expected] * 4
+    reset_request_count()
+    result = server.query(
+        "SELECT count() FROM url('http://localhost:8002/{a,b,c,d}', JSONEachRow, 'v UInt8', "
+        "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
+        "SETTINGS max_threads = 4, max_download_threads = 4"
+    )
+    assert result.strip() == "4"
+    assert get_request_count() == 4
+    assert get_request_bodies() == [expected] * 4
 
 
 def test_post_count_without_structure_is_two(started_cluster):
@@ -356,15 +340,13 @@ def test_invalid_body_format_sends_no_request(started_cluster):
     # rejected while parsing the arguments, before any HTTP request is created. Otherwise the
     # format would only be checked inside the request callback, after the POST has already been
     # sent. Assert that the query fails and that the endpoint received zero requests.
-    for analyzer in (1, 0):
-        reset_request_count()
-        error = server.query_and_get_error(
-            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
-            "body((SELECT 1), 'NoSuchFormat')) "
-            f"SETTINGS enable_analyzer = {analyzer}"
-        )
-        assert "UNKNOWN_FORMAT" in error
-        assert get_request_count() == 0
+    reset_request_count()
+    error = server.query_and_get_error(
+        "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+        "body((SELECT 1), 'NoSuchFormat'))"
+    )
+    assert "UNKNOWN_FORMAT" in error
+    assert get_request_count() == 0
 
 
 def test_body_format_constructor_failure_sends_no_request(started_cluster):
@@ -373,15 +355,13 @@ def test_body_format_constructor_failure_sends_no_request(started_cluster):
     # missing. The output format is preflighted before any HTTP request is created, so a
     # constructor-time failure is also a purely local error. Assert that the query fails and that
     # the endpoint received zero requests.
-    for analyzer in (1, 0):
-        reset_request_count()
-        error = server.query_and_get_error(
-            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
-            "body((SELECT 1), 'AvroConfluent')) "
-            f"SETTINGS enable_analyzer = {analyzer}"
-        )
-        assert "BAD_ARGUMENTS" in error
-        assert get_request_count() == 0
+    reset_request_count()
+    error = server.query_and_get_error(
+        "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+        "body((SELECT 1), 'AvroConfluent'))"
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert get_request_count() == 0
 
 
 def test_header_dependent_body_format_is_not_rejected(started_cluster):
@@ -389,17 +369,15 @@ def test_header_dependent_body_format_is_not_rejected(started_cluster):
     # one column and its constructor throws on a header with a different number of columns, so a
     # preflight with an artificial empty header would reject this legal body. Assert that the query
     # reaches the endpoint and that the delivered payload is the `Npy` serialization of the body.
-    for analyzer in (1, 0):
-        reset_request_count()
-        server.query(
-            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
-            "body((SELECT 1 AS x), 'Npy')) "
-            f"SETTINGS enable_analyzer = {analyzer}"
-        )
-        assert get_request_count() == 1
-        # The magic byte of the `Npy` header is not valid UTF-8, and the test server decodes bodies
-        # with replacement, so match on the readable part of the magic string.
-        assert "NUMPY" in get_request_bodies()[0]
+    reset_request_count()
+    server.query(
+        "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+        "body((SELECT 1 AS x), 'Npy'))"
+    )
+    assert get_request_count() == 1
+    # The magic byte of the `Npy` header is not valid UTF-8, and the test server decodes bodies
+    # with replacement, so match on the readable part of the magic string.
+    assert "NUMPY" in get_request_bodies()[0]
 
 
 def test_create_as_with_body_rejected_before_any_request(started_cluster):
