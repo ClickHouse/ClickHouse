@@ -758,6 +758,8 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
 
 void IcebergMetadata::checkAlterPartitionIsPossible(const PartitionCommands & commands) const
 {
+    checkTableRootIsQueriedPath("ALTER PARTITION");
+
     for (const auto & command : commands)
     {
         if (command.type != PartitionCommand::Type::DROP_PARTITION)
