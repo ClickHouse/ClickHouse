@@ -113,32 +113,31 @@ public:
         const bool index_is_unsigned = isUInt(arguments[1].type);
         const bool index_is_const = isColumnConst(index_column);
 
-        UInt64 constant_unsigned_index = 0;
-        Int64 constant_signed_index = 0;
+        UInt64 constant_index_distance = 0;
+        bool constant_index_from_end = false;
         if (index_is_const)
         {
-            UInt64 required_array_size;
             if (index_is_unsigned)
             {
-                constant_unsigned_index = index_column.getUInt(0);
-                if (constant_unsigned_index == 0)
+                constant_index_distance = index_column.getUInt(0);
+                if (constant_index_distance == 0)
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
-                required_array_size = constant_unsigned_index;
             }
             else
             {
-                constant_signed_index = index_column.getInt(0);
-                if (constant_signed_index == 0)
+                const Int64 constant_index = index_column.getInt(0);
+                if (constant_index == 0)
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
 
-                required_array_size = constant_signed_index > 0
-                    ? static_cast<UInt64>(constant_signed_index)
-                    : UInt64(0) - static_cast<UInt64>(constant_signed_index);
+                constant_index_from_end = constant_index < 0;
+                constant_index_distance = constant_index_from_end
+                    ? UInt64(0) - static_cast<UInt64>(constant_index)
+                    : static_cast<UInt64>(constant_index);
             }
 
             /// No individual array can be longer than the whole nested column.
             /// If even that is shorter than the requested position, every row is unchanged.
-            if (required_array_size > static_cast<UInt64>(source_data.size()))
+            if (constant_index_distance > static_cast<UInt64>(source_data.size()))
                 return arguments[0].column;
         }
 
@@ -165,9 +164,12 @@ public:
             std::optional<size_t> remove_position;
             if (index_is_const)
             {
-                remove_position = index_is_unsigned
-                    ? getRemovePosition(constant_unsigned_index, array_size)
-                    : getRemovePosition(constant_signed_index, array_size);
+                if (constant_index_distance <= array_size)
+                {
+                    remove_position = constant_index_from_end
+                        ? array_size - static_cast<size_t>(constant_index_distance)
+                        : static_cast<size_t>(constant_index_distance - 1);
+                }
             }
             else
             {
