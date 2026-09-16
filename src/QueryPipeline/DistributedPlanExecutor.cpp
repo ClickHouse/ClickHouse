@@ -751,8 +751,10 @@ ExchangeLookupPtr createExchangeLookup(
         if (address.port == 0)
             address.port = static_cast<UInt16>(streaming_exchange_port);
 
+    /// The auth token this node presents when opening an outbound exchange connection, taken from
+    /// the query context (empty when connection authentication is not configured).
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation),
+        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation), /*auth_token=*/ String{},
         streamingExchangeCompressionCodec(context->getSettingsRef()));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else

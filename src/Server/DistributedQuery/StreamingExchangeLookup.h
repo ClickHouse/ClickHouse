@@ -23,6 +23,9 @@ ExchangeLookupPtr createStreamingExchangeLookup(
     ExchangeConnectionsPtr connections,
     const ExchangeStreamSources & exchange_stream_sources,
     DistributedQueryCancellationPtr cancellation,
+    /// Auth token presented when opening the exchange connection; empty leaves the
+    /// connection unauthenticated.
+    const String & auth_token,
     CompressionCodecPtr codec);
 
 }

@@ -53,11 +53,13 @@ public:
         ExchangeConnectionsPtr connections_,
         const ExchangeStreamSources & exchange_stream_sources_,
         DistributedQueryCancellationPtr cancellation_,
+        const String & auth_token_,
         CompressionCodecPtr codec_)
         : query_id(query_id_)
         , connections(connections_)
         , exchange_stream_sources(exchange_stream_sources_)
         , cancellation(std::move(cancellation_))
+        , auth_token(auth_token_)
         , codec(std::move(codec_))
     {
     }
@@ -89,7 +91,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "No streaming exchange port for exchange stream {} on host {}", stream_name, it->second.host);
         return std::make_shared<StreamingExchangeSource>(
-            output_header, query_id, stream_name, it->second.host, it->second.port, cancellation, /*auth_token_=*/ String{}, output_is_serialized);
+            output_header, query_id, stream_name, it->second.host, it->second.port, cancellation, auth_token, output_is_serialized);
     }
 
 private:
@@ -97,6 +99,7 @@ private:
     const ExchangeConnectionsPtr connections;
     const ExchangeStreamSources exchange_stream_sources;
     const DistributedQueryCancellationPtr cancellation;
+    const String auth_token;
     const CompressionCodecPtr codec;
 };
 
@@ -105,9 +108,10 @@ ExchangeLookupPtr createStreamingExchangeLookup(
     ExchangeConnectionsPtr connections,
     const ExchangeStreamSources & exchange_stream_sources,
     DistributedQueryCancellationPtr cancellation,
+    const String & auth_token,
     CompressionCodecPtr codec)
 {
-    return std::make_shared<StreamingExchangeLookup>(query_id, connections, exchange_stream_sources, std::move(cancellation), std::move(codec));
+    return std::make_shared<StreamingExchangeLookup>(query_id, connections, exchange_stream_sources, std::move(cancellation), auth_token, std::move(codec));
 }
 
 }
