@@ -80,7 +80,7 @@ SELECT format('{} {}', 'Hello', 'World')
 
 引入版本：v24.9.0
 
-从基于 1 的位置 `offset` 开始，用另一个字符串 `replace` 替换字符串 `input` 的一部分。
+从索引 `offset` 开始，用另一个字符串 `replace` 替换字符串 `input` 的一部分。
 
 **语法**
 
@@ -108,9 +108,9 @@ SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;
 ```
 
 ```response title=Response
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
+┌─res───────────────────────┐
+│ My mother is from Mexico. │
+└───────────────────────────┘
 ```
 
 **按长度替换**
@@ -120,9 +120,9 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
+┌─res────────────────────┐
+│ My dad is from Mexico. │
+└────────────────────────┘
 ```
 
 <div id="overlayUTF8">
@@ -161,9 +161,9 @@ SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
+┌─res────────────────────────────┐
+│ Mein Vater ist aus der Türkei. │
+└────────────────────────────────┘
 ```
 
 <div id="printf">
@@ -359,9 +359,9 @@ SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res
 ```
 
 ```response title=Response
-┌─res──────────────────┐
-│ HHeelllloo112233     │
-└──────────────────────┘
+┌─res──────────────┐
+│ HHeelllloo112233 │
+└──────────────────┘
 ```
 
 **空子串替换示例**

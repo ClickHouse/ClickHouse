@@ -33,7 +33,7 @@ public:
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
-    std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const override;
+    std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 

@@ -38,14 +38,12 @@ Introduced in: v21.1.0
 
 Returns number of matches of a regular expression in a string.
 
-<Info>
-**Version dependent behavior**
-
+<Note title="Version dependent behavior">
 The behavior of this function depends on the ClickHouse version:
 
 - in versions < v25.6, the function stops counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, the function continues execution when an empty match occurs. The legacy behavior can be restored using setting `count_matches_stop_at_empty_match = true`;
-</Info>
+</Note>
 
     
 
@@ -1152,6 +1150,11 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 
 Introduced in: v20.1.0
 
+<Note>
+`hasToken` has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
+We recommend using `hasAnyTokens` and `hasAllTokens` instead.
+</Note>
+
 Checks if the given token is present in the haystack.
 
 Uses [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha) as tokenizer, i.e. a token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]` (numbers, ASCII characters and underscore).
@@ -1472,14 +1475,12 @@ Introduced in: v18.16.0
 
 Like [`position`](#position) but with arguments `haystack` and `locate` switched.
 
-<Info>
-**Version dependent behavior**
-
+<Note title="Version dependent behavior">
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`.
 The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+</Note>
     
 
 **Syntax**

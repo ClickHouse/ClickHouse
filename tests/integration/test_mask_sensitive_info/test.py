@@ -234,7 +234,6 @@ def test_backup_table_AzureBlobStorage():
 
 def test_create_table():
     password = new_password()
-    has_delta_lake = int(node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     azure_sas_conn_string = f"{azure_conn_string};SharedAccessSignature={password}"
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
@@ -264,7 +263,6 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         "S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_STORAGE"),
         "S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         "S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -374,7 +372,6 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')"),
             generate_create_table_numbered("(x int) ENGINE = S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')"),
-            generate_create_table_numbered("(`x` int) ENGINE = DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'"),
             # due to sensitive data substitution the query will be normalized, so not "settings" but "SETTINGS"

@@ -20,7 +20,7 @@ ClickHouse는 [입력 및 출력용 데이터 포맷](/ko/reference/formats/inde
 $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
 ```
 
-[CLI 인터페이스](/ko/concepts/features/interfaces/cli) 사용 시:
+[clickhouse-client](/ko/concepts/features/interfaces/client) 사용 시:
 
 ```bash
 $ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"

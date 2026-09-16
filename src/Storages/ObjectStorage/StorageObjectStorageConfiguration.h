@@ -139,6 +139,8 @@ public:
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
+    virtual String getDataSourceDescriptionForNamespace(const String &) const { return getDataSourceDescription(); }
+
     virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
@@ -167,6 +169,8 @@ public:
     /// Empty means "no restriction" - that is the case for the plain object storage engines.
     virtual Strings getSupportedDataLakeFormats() const { return {}; }
 
+    virtual bool supportsFullyQualifiedPaths() const { return false; }
+
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
@@ -176,7 +180,7 @@ public:
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
+    virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
@@ -213,6 +217,8 @@ public:
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
+
+    virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
 
     virtual bool supportsPartialPathPrefix() const { return true; }
 
@@ -396,6 +402,8 @@ public:
     String url_overridden_by_base_setting;
 
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
