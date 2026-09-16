@@ -1,7 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
-#include <DataTypes/IDataType_fwd.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
@@ -96,10 +94,6 @@ bool computesOnlyTheBound(const ActionsDAG & dag, const std::unordered_set<const
             if (!node.function_base || !connectives.contains(node.function_base->getName()))
                 return false;
         }
-        /// A lambda folded into a `COLUMN` node hides its body from the scan above.
-        else if (node.type == ActionsDAG::ActionType::COLUMN && node.column
-                 && !allNodeFunctions(node, [](const IFunctionBase &) { return false; }))
-            return false;
     }
     return true;
 }

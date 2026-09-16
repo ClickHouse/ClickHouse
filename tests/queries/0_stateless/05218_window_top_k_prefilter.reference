@@ -136,7 +136,7 @@ nan	nan	2
 3	8	3
 3	9	2
 3	10	1
--- 27 the hint survives a cloned subplan (window result used as an IN set)
+-- 27 a bounded window subplan used as an IN set returns the same rows
 3
 -- (C) still optimized: now() is constant within the query and folded before the filter is built
 1

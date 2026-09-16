@@ -14,15 +14,15 @@ namespace DB
 namespace
 {
 
-using PartitionMap = HashMap<UInt128, UInt32, UInt128TrivialHash>;
+using PartitionMap = HashMap<UInt128, size_t, UInt128TrivialHash>;
 
 /// Row indices into the live chunk, arranged as a heap whose front is the worst of the best `top_k`.
 struct PartitionHeap
 {
-    std::vector<UInt32> rows;
+    std::vector<size_t> rows;
     /// The row that created the bucket. Every later row is verified against it with `compareAt`, so a
     /// hash collision cannot make two logically different keys share one heap.
-    UInt32 first_row = 0;
+    size_t first_row = 0;
 };
 
 }
@@ -81,7 +81,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
 
     /// `direction * compareAt` over the ORDER BY columns: bit for bit the comparator the sort itself uses,
     /// so "better" means "earlier in the window's order".
-    auto is_better = [&](UInt32 lhs, UInt32 rhs) -> bool
+    auto is_better = [&](size_t lhs, size_t rhs) -> bool
     {
         for (size_t i = 0, size = order_columns.size(); i < size; ++i)
         {
@@ -93,7 +93,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
         return false;
     };
 
-    auto same_partition = [&](UInt32 lhs, UInt32 rhs) -> bool
+    auto same_partition = [&](size_t lhs, size_t rhs) -> bool
     {
         for (size_t i = 0, size = partition_columns.size(); i < size; ++i)
         {
@@ -110,7 +110,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
     filter.resize(num_rows);
     size_t kept_rows = 0;
 
-    for (UInt32 row = 0; row < num_rows; ++row)
+    for (size_t row = 0; row < num_rows; ++row)
     {
         SipHash hash;
         for (const auto * column : partition_columns)
@@ -121,7 +121,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
         partition_to_heap.emplace(hash.get128(), bucket, inserted);
         if (inserted)
         {
-            bucket->getMapped() = static_cast<UInt32>(heaps.size());
+            bucket->getMapped() = heaps.size();
             heaps.emplace_back(PartitionHeap{.rows = {}, .first_row = row});
         }
 
@@ -174,13 +174,6 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
 
     if (kept_rows == num_rows)
         return;
-
-    if (kept_rows == 0)
-    {
-        /// `ISimpleTransform::work` restores the header's column count for an emptied chunk.
-        chunk.clear();
-        return;
-    }
 
     Columns filtered;
     filtered.reserve(columns.size());

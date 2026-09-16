@@ -80,7 +80,7 @@ CREATE TABLE t_wtkp_merge (p UInt8, o UInt8) ENGINE = Merge(currentDatabase(), '
 SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_merge) WHERE rk <= 3) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_merge) WHERE rk <= 3 ORDER BY p, o, rk;
 
-SELECT '-- 27 the hint survives a cloned subplan (window result used as an IN set)';
+SELECT '-- 27 a bounded window subplan used as an IN set returns the same rows';
 SELECT count() FROM t_wtkp WHERE o IN (SELECT o FROM (SELECT o, rank() OVER (ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 2);
 
 SELECT '-- (C) still optimized: now() is constant within the query and folded before the filter is built';
@@ -106,8 +106,7 @@ SELECT '19b not the direct child', count() FROM (EXPLAIN actions=1 SELECT p, rk 
 SELECT p, rk, n FROM (SELECT p, rk, rowNumberInAllBlocks() AS n FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp)) WHERE rk <= 3 AND n < 5 ORDER BY p, rk, n SETTINGS query_plan_merge_expressions = 0;
 SELECT '19 computing step between', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rk, rowNumberInAllBlocks() AS n FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp)) WHERE rk <= 3 AND n < 5) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '20 lambda body, rand, sleepEachRow', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> ((x + rowNumberInAllBlocks()) < 5), [0])) WHERE explain ILIKE '%Window top-K prefilter%';
--- A lambda is folded into a `COLUMN` node, which hides its body from the scan over the filter's functions,
--- so it is refused whatever the body does.
+-- `arrayExists` is not the bound, so the filter is refused whatever the lambda body does.
 SELECT '20b deterministic lambda body', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2])) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2]) ORDER BY p, o, rk;
 -- `o + 1` is merged into the filter step, so the filter computes something other than the bound and is
