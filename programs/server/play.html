@@ -9470,9 +9470,12 @@ function rememberLoginPassword(server_address, user, password) {
 
 /// Whether the browser filled the field itself (its password manager), as opposed to the user typing
 /// or the page setting it. Reported by the standard `:autofill` pseudo-class, or its `-webkit-` form in
-/// older engines; a browser supporting neither never reports a field as autofilled, which leaves the
+/// older engines; a browser supporting neither (or an environment without `CSS.supports`, such as the
+/// headless harnesses of the integration tests) never reports a field as autofilled, which leaves the
 /// stale-password handling inert there.
-const AUTOFILL_SELECTOR = [':autofill', ':-webkit-autofill'].find(s => CSS.supports(`selector(${s})`)) ?? null;
+const AUTOFILL_SELECTOR = (typeof CSS !== 'undefined' && typeof CSS.supports === 'function')
+    ? ([':autofill', ':-webkit-autofill'].find(s => CSS.supports(`selector(${s})`)) ?? null)
+    : null;
 function isAutofilled(elem) {
     return AUTOFILL_SELECTOR !== null && elem.matches(AUTOFILL_SELECTOR);
 }
