@@ -1,0 +1,23 @@
+16 leaves, disjunction pruning=0
+Granules: 32/32
+Name: ia
+Granules: 32/32
+Name: ib
+Granules: 32/32
+16
+16 leaves, disjunction pruning=1
+Granules: 32/32
+Name: ia
+Granules: 32/32
+Name: ib
+Granules: 32/32
+Name: <Combined skip indexes>
+Granules: 13/32
+16
+17 leaves, disjunction pruning=1
+Granules: 32/32
+Name: ia
+Granules: 32/32
+Name: ib
+Granules: 32/32
+17

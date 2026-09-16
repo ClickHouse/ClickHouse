@@ -13,11 +13,10 @@ DROP TABLE IF EXISTS test_det_intdiv;
 DROP TABLE IF EXISTS test_det_alias;
 DROP TABLE IF EXISTS test_det_modulo_legacy;
 
--- Both key columns are non-injective deterministic transforms of ts.
--- For `=`, the monotonic toDate candidate wins and the deterministic path is not
--- consulted (it only runs when no other candidate exists); for `!=`, the monotonic
--- transform is not applicable, so the deterministic path produces atoms on both
--- key columns (relaxed, must not prune).
+-- Both key columns are non-injective deterministic transforms of `ts`. Equality uses
+-- the monotonic `toDate` candidate and the deterministic `cityHash64` candidate. For `!=`,
+-- deterministic transforms produce relaxed atoms on both columns, which cannot prune
+-- through negation.
 CREATE TABLE test_det_multi (ts DateTime('UTC')) ENGINE = MergeTree
 ORDER BY (toDate(ts), cityHash64(ts))
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;

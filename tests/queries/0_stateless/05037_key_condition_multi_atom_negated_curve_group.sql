@@ -22,8 +22,8 @@ SELECT count() FROM t_negated_curve_group WHERE NOT x;
 SELECT count() FROM t_negated_curve_group WHERE x = 0;
 SELECT count() FROM t_negated_curve_group WHERE NOT has([3, 5], x) SETTINGS optimize_rewrite_has_to_in = 0;
 
--- Only the index-analysis lines are compared: the shape of the query plan around
--- `ReadFromMergeTree` differs between analyzers and with parallel replicas.
+-- Only the index-analysis lines are compared because parallel replicas can change
+-- the shape of the surrounding `ReadFromMergeTree` plan.
 -- { echo }
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE NOT x) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%/%';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE x = 0) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%/%';

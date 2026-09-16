@@ -7,6 +7,8 @@
         ENGINE = MergeTree() ORDER BY (toYYYYMM(ts), toDate(ts), ts)
     </create_query>
 
+    <fill_query>SYSTEM STOP MERGES test_kc_multi_expr</fill_query>
+
     <!-- Insert in chunks to get multiple parts: index analysis runs per part per query. -->
     <fill_query>INSERT INTO test_kc_multi_expr SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(2000000)</fill_query>
     <fill_query>INSERT INTO test_kc_multi_expr SELECT toDateTime('2024-02-01 00:00:00', 'UTC') + number FROM numbers(2000000)</fill_query>

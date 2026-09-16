@@ -26,8 +26,8 @@ SELECT count() FROM test_skip_mm WHERE ts > toDateTime('2026-03-04 00:00:00', 'U
 SELECT count() FROM test_skip_mm WHERE ts > toDateTime('2026-03-04 00:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
 -- Disjunctions over two indexed columns with multi-atom expansion per branch.
--- The partial-disjunction machinery is limited to RPNs of 32 elements; exercise both
--- below the limit and above it (where it must disable itself gracefully).
+-- The partial-disjunction machinery uses the unexpanded predicate template. Multi-atom
+-- groups must keep their original leaf positions even when the expanded RPN is larger.
 CREATE TABLE test_skip_disj (id UInt32, ta DateTime('UTC'), tb DateTime('UTC'),
     INDEX ia (toDate(ta), ta) TYPE minmax GRANULARITY 1,
     INDEX ib (toDate(tb), tb) TYPE minmax GRANULARITY 1) ENGINE = MergeTree
@@ -40,7 +40,7 @@ INSERT INTO test_skip_disj SELECT number, toDateTime('2026-03-01 00:00:00', 'UTC
 SELECT count() FROM test_skip_disj WHERE ta = toDateTime('2026-03-01 05:00:00', 'UTC') OR tb = toDateTime('2026-06-02 07:00:00', 'UTC') OR ta = toDateTime('2026-03-02 11:00:00', 'UTC') SETTINGS use_skip_indexes_for_disjunctions = 1;
 SELECT count() FROM test_skip_disj WHERE ta = toDateTime('2026-03-01 05:00:00', 'UTC') OR tb = toDateTime('2026-06-02 07:00:00', 'UTC') OR ta = toDateTime('2026-03-02 11:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
--- Wide disjunction (the multi-atom RPN exceeds the 32-element template limit).
+-- The 12-leaf disjunction has 23 template elements; its expanded RPN has more than 32 elements.
 SELECT count() FROM test_skip_disj WHERE ta = toDateTime('2026-03-01 01:00:00', 'UTC') OR tb = toDateTime('2026-06-01 02:00:00', 'UTC') OR ta = toDateTime('2026-03-01 03:00:00', 'UTC') OR tb = toDateTime('2026-06-01 04:00:00', 'UTC') OR ta = toDateTime('2026-03-01 05:00:00', 'UTC') OR tb = toDateTime('2026-06-01 06:00:00', 'UTC') OR ta = toDateTime('2026-03-01 07:00:00', 'UTC') OR tb = toDateTime('2026-06-01 08:00:00', 'UTC') OR ta = toDateTime('2026-03-01 09:00:00', 'UTC') OR tb = toDateTime('2026-06-01 10:00:00', 'UTC') OR ta = toDateTime('2026-03-01 11:00:00', 'UTC') OR tb = toDateTime('2026-06-01 12:00:00', 'UTC') SETTINGS use_skip_indexes_for_disjunctions = 1;
 SELECT count() FROM test_skip_disj WHERE ta = toDateTime('2026-03-01 01:00:00', 'UTC') OR tb = toDateTime('2026-06-01 02:00:00', 'UTC') OR ta = toDateTime('2026-03-01 03:00:00', 'UTC') OR tb = toDateTime('2026-06-01 04:00:00', 'UTC') OR ta = toDateTime('2026-03-01 05:00:00', 'UTC') OR tb = toDateTime('2026-06-01 06:00:00', 'UTC') OR ta = toDateTime('2026-03-01 07:00:00', 'UTC') OR tb = toDateTime('2026-06-01 08:00:00', 'UTC') OR ta = toDateTime('2026-03-01 09:00:00', 'UTC') OR tb = toDateTime('2026-06-01 10:00:00', 'UTC') OR ta = toDateTime('2026-03-01 11:00:00', 'UTC') OR tb = toDateTime('2026-06-01 12:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 

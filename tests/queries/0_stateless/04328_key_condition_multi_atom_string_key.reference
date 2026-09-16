@@ -6,8 +6,8 @@ CREATE TABLE test_str_sub (s String) ENGINE = MergeTree
 ORDER BY (substring(s, 1, 2), s)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_str_sub VALUES (''), ('aaa'), ('aab'), ('ab_'), ('aba'), ('abc'), ('abcz'), ('abz'), ('aca'), ('acd'), ('baa'), ('xyz');
--- Equality: the direct key column atom on s is exact (the deterministic substring
--- candidate is not added because a direct candidate already exists).
+-- Equality produces an exact atom on `s` and a relaxed atom on `substring(s, 1, 2)`.
+-- The direct atom preserves exactness while both atoms contribute to pruning.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_str_sub WHERE s = 'abc') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 PrimaryKey
 Keys:

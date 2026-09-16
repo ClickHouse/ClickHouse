@@ -1,6 +1,8 @@
 8
 8
 48
+-- Only the index-analysis lines are compared because parallel replicas can change
+-- the shape of the surrounding `ReadFromMergeTree` plan.
 -- { echo }
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE NOT x) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%/%';
 Condition: not((argument 0 of mortonEncode(x, y) not in [0, 0]))
