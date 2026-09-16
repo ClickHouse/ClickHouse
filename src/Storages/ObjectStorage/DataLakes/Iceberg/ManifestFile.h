@@ -110,6 +110,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 record_count;
     Int64 file_size_in_bytes;
 
+    bool isDeletionVector() const;
+
     ParsedManifestFileEntry(
         FileContentType content_type_,
         IcebergPathFromMetadata file_path_key_,

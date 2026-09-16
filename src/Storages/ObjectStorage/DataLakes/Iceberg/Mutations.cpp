@@ -660,7 +660,7 @@ void validateSnapshotForMutation(
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
         {
-            if (Poco::toUpper(file_entry->parsed_entry->file_format) == "PUFFIN")
+            if (file_entry->parsed_entry->isDeletionVector())
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Iceberg DELETE and UPDATE are not supported for snapshots containing deletion vectors");

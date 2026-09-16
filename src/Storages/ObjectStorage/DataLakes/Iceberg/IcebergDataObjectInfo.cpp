@@ -103,9 +103,11 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
         return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
 }
 
-void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path)
+namespace
 {
-    const bool is_deletion_vector = Poco::toUpper(position_delete_object->parsed_entry->file_format) == "PUFFIN";
+
+void checkDataFileSupportsPositionDeletes(const Iceberg::IcebergObjectSerializableInfo & info)
+{
     if (Poco::toUpper(info.file_format) != "PARQUET")
     {
         throw Exception(
@@ -113,35 +115,42 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
             "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
             info.file_format);
     }
-    if (is_deletion_vector)
-    {
-        if (!position_delete_object->parsed_entry->referenced_data_file_path.has_value())
-            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg deletion vector does not have referenced_data_file");
-        if (!position_delete_object->parsed_entry->content_offset.has_value()
-            || !position_delete_object->parsed_entry->content_size_in_bytes.has_value())
-            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg deletion vector does not have content offset or size");
+}
 
-        if (info.deletion_vector.has_value())
-            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Multiple deletion vectors apply to the same Iceberg data file");
+}
 
-        /// There may be a mix of position delete files and deletion vectors (this happens if the table started as V2
-        /// and then got updated to V3). Per the spec, apply only the deletion vector and disregard any position
-        /// delete files.
-        info.position_deletes_objects.clear();
-        info.deletion_vector = Iceberg::DeletionVectorObject{
-            resolved_storage_path,
-            *position_delete_object->parsed_entry->content_offset,
-            *position_delete_object->parsed_entry->content_size_in_bytes};
-        return;
-    }
+void IcebergDataObjectInfo::addPositionDeleteFile(const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path)
+{
+    chassert(!position_delete_file->parsed_entry->isDeletionVector());
+    checkDataFileSupportsPositionDeletes(info);
 
-    /// Ignore position delete files replaced by an existing deletion vector.
+    /// A deletion vector replaces all position delete files of the data file.
     if (info.deletion_vector.has_value())
         return;
 
     info.position_deletes_objects.emplace_back(
-        resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt,
-        position_delete_object->sequence_number);
+        resolved_storage_path, position_delete_file->parsed_entry->file_format, std::nullopt,
+        position_delete_file->sequence_number);
+}
+
+void IcebergDataObjectInfo::addDeletionVector(const Iceberg::ProcessedManifestFileEntryPtr & deletion_vector, const String & resolved_storage_path)
+{
+    chassert(deletion_vector->parsed_entry->isDeletionVector());
+    checkDataFileSupportsPositionDeletes(info);
+
+    const auto & entry = *deletion_vector->parsed_entry;
+    if (!entry.referenced_data_file_path.has_value())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg deletion vector does not have referenced_data_file");
+    if (!entry.content_offset.has_value() || !entry.content_size_in_bytes.has_value())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg deletion vector does not have content offset or size");
+    if (info.deletion_vector.has_value())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Multiple deletion vectors apply to the same Iceberg data file");
+
+    /// There may be a mix of position delete files and deletion vectors (this happens if the table started as V2
+    /// and then got updated to V3). Per the spec, apply only the deletion vector and disregard any position
+    /// delete files.
+    info.position_deletes_objects.clear();
+    info.deletion_vector = Iceberg::DeletionVectorObject{resolved_storage_path, *entry.content_offset, *entry.content_size_in_bytes};
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path)
