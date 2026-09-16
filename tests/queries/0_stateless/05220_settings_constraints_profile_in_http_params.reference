@@ -1,0 +1,4 @@
+-- a value passed after the profile parameter is rejected
+SETTING_CONSTRAINT_VIOLATION
+-- the profile alone still applies
+10
