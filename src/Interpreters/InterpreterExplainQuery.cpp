@@ -360,10 +360,10 @@ namespace
         return node;
     }
 
-    /// `DumpASTNode` prints a literal through `IAST::getID`, which embeds the value, so the AST dump
-    /// cannot hide secrets while formatting the way `ASTFunction::formatImpl` does. Hide them in the
-    /// tree itself. Every value of a nested map (`headers(...)`, `extra_credentials(...)`) is hidden,
-    /// which is stricter than the formatter for the non-secret `extra_credentials` keys.
+    /// `DumpASTNode` prints a literal through `IAST::getID`, value included, so the dump cannot hide
+    /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead.
+    /// All values of a nested map (`headers(...)`, `extra_credentials(...)`) are hidden; the formatter
+    /// keeps the non-secret `extra_credentials` values, so the dump is stricter.
     struct HideSecretArgumentsMatcher
     {
         struct Data
@@ -1070,8 +1070,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
-            /// With `optimize = 1` the dump includes the body of a view the user may read without
-            /// being allowed to see its secrets, so they are hidden under the same gate as `SHOW CREATE`.
+            /// `optimize = 1` inlines views the user may read but whose secrets they may not see.
+            /// Hide them under the same gate as `SHOW CREATE`.
             if (!canDisplaySecrets(query_context))
             {
                 HideSecretArgumentsVisitor::Data data;

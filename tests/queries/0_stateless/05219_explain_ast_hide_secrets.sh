@@ -7,10 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `EXPLAIN AST optimize = 1` inlines the body of a view the user may only SELECT from, and the AST
-# dump prints every literal verbatim. Secret arguments must be hidden the way `SHOW CREATE` hides
-# them (the stateless test server keeps the `display_secrets_in_show_and_select` server setting
-# off, so the full gate always hides secrets here).
+# `EXPLAIN AST optimize = 1` inlines the body of a view the user may only SELECT from, and the dump
+# prints every literal verbatim. The secret arguments must be hidden as `SHOW CREATE` hides them.
+# The stateless test server keeps `display_secrets_in_show_and_select` off, so the gate always hides here.
 
 user="user_05219_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
