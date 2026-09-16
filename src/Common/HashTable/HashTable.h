@@ -422,7 +422,7 @@ protected:
     friend class iterator;
     friend class Reader;
 
-    template <typename, typename, typename, typename, typename, typename, size_t>
+    template <typename, typename, typename, typename, typename, typename, Int32, typename>
     friend class TwoLevelHashTable;
 
     template <typename, typename, size_t>

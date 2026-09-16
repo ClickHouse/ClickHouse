@@ -360,9 +360,13 @@ public:
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
-    /// or memoizing the result. The executed read analyzes again after its final mode is known.
-    AnalysisResultPtr selectRangesToReadForEstimation() const;
+    /// Analyze ranges only for an intermediate cardinality estimate: row limits are not enforced and
+    /// `analyzed_result_ptr` is not set, so the executed read analyzes again after its final mode is
+    /// known. A fresh index analysis does stay on the step, in `indexes`, for that read to reuse,
+    /// unless `keep_index_analysis` is false. Pass false when filters have not been pushed down to
+    /// this step yet: a `KeyCondition` built without them would stay and the executed read would
+    /// prune nothing.
+    AnalysisResultPtr selectRangesToReadForEstimation(bool keep_index_analysis) const;
 
     /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
     /// the query condition cache and without caching the analysis on the step. Used for the automatic
@@ -468,6 +472,10 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+    /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
+    RangesInDataParts getPartsForPrewhere() const;
+    IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
     /// Compose statistics over the part set of the given partition/PK analysis result
     /// instead of all prepared parts. Passing nullptr falls back to getParts().
