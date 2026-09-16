@@ -9,10 +9,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 
-#include <roaring/roaring64map.hh>
-
-#include <tuple>
-
 namespace DB::Iceberg
 {
 class IcebergPositionDeleteTransform : public ISimpleTransform
@@ -127,39 +123,12 @@ private:
         size_t position_index;
     };
 
-    struct DeletionVectorState
-    {
-        explicit DeletionVectorState(std::unique_ptr<roaring::Roaring64Map> bitmap_);
-
-        std::unique_ptr<roaring::Roaring64Map> bitmap;
-        roaring::Roaring64Map::const_iterator iterator;
-        roaring::Roaring64Map::const_iterator end;
-    };
-
-    enum class DeleteSourceKind
-    {
-        File,
-        Vector,
-    };
-
-    struct DeleteSourceRef
-    {
-        DeleteSourceKind kind;
-        size_t index;
-
-        bool operator<(const DeleteSourceRef & rhs) const
-        {
-            return std::tie(kind, index) < std::tie(rhs.kind, rhs.index);
-        }
-    };
-
     void fetchNewChunkFromSource(size_t position_delete_file_index);
 
     std::vector<PositionDeleteFileIndexes> position_delete_file_column_indices;
     std::vector<Chunk> latest_chunks;
     std::vector<size_t> iterator_at_latest_chunks;
-    std::vector<DeletionVectorState> deletion_vectors;
-    std::set<std::pair<size_t, DeleteSourceRef>> latest_positions;
+    std::set<std::pair<size_t, size_t>> latest_positions;
 
     std::optional<size_t> previous_chunk_end_offset;
 };
