@@ -60,7 +60,7 @@ DROP TABLE ts_v1_uuid;
 -- 7. The auto-generated `id` with a `UUID2` component is a valid, non-zero identifier.
 SET uuid_type_version = 2;
 CREATE TABLE ts_insert ENGINE = TimeSeries;
-INSERT INTO ts_insert (metric_name, tags, time_series) VALUES ('http_requests', map('job', 'api'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.0)]);
+INSERT INTO ts_insert (metric_name, tags, samples) VALUES ('http_requests', map('job', 'api'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.0)]);
 SELECT 'insert', toTypeName(id), tupleElement(id, 2) != toUUID2('00000000-0000-0000-0000-000000000000'), count()
 FROM merge(currentDatabase(), '^\.inner_id\.tags\.')
 GROUP BY id;

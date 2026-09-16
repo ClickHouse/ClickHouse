@@ -11,7 +11,7 @@ SET uuid_type_version = 2;
 DROP TABLE IF EXISTS ts_uuid2_range;
 CREATE TABLE ts_uuid2_range ENGINE = TimeSeries;
 
-INSERT INTO ts_uuid2_range (metric_name, tags, time_series) VALUES
+INSERT INTO ts_uuid2_range (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(200, 3), 2.)]);
 
