@@ -148,9 +148,9 @@ See also:
     DECLARE(Bool, input_format_defaults_for_omitted_fields, true, R"(
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/reference/formats/JSON/JSONEachRow) (and other JSON formats), [CSV](/reference/formats/CSV/CSV), [TabSeparated](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [Parquet](/reference/formats/Parquet/Parquet), [Arrow](/reference/formats/Arrow/Arrow), [Avro](/reference/formats/Avro/Avro), [ORC](/reference/formats/ORC), [Native](/reference/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
-:::note
+<Note>
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
-:::
+</Note>
 
 Possible values:
 
@@ -381,9 +381,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-:::note
+<Note>
 If the `schema_inference_hints` is not formatted properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
-:::
+</Note>
 )", 0) \
     DECLARE(SchemaInferenceMode, schema_inference_mode, "default", R"(
 Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be the a union of schemas of all files
@@ -614,6 +614,14 @@ Possible values:
 
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
+)", 0) \
+    DECLARE(Bool, type_json_skip_null_typed_paths, false, R"(
+When enabled, typed paths in JSON columns that have NULL values are treated as absent, matching the behavior of dynamic paths. This affects JSON serialization output, introspection functions like `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has`, and `empty`/`notEmpty` checks.
+
+Possible values:
+
++ 0 — Disable (typed paths are always present, even with NULL values).
++ 1 — Enable (NULL typed paths are treated as absent).
 )", 0) \
     DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
 The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
@@ -1364,9 +1372,10 @@ When `format_schema_source` is set to 'query', the following conditions apply:
 - The result of the query is treated as the schema content.
 - This result is cached locally in the `format_schemas` directory.
 - You can clear the local cache using the command: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
-- Once cached, identical queries are not executed to fetch the schema again until the cache is explicitly cleared
+- Once cached, identical queries from the same user are not executed to fetch the schema again until the cache is explicitly cleared
 - In addition to local cache files, Protobuf messages are also cached in memory. Even after clearing the local cache files, the in-memory cache must be cleared using `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]` to fully refresh the schema.
 - Run the query `SYSTEM DROP FORMAT SCHEMA CACHE` to clear the cache for both cache files and Protobuf messages schemas at once.
+- The query is executed on behalf of the user running it, so it is subject to that user's access rights, and its cached result is reused only for the same user. It cannot be executed where there is no user: in a background task, such as a streaming engine consumer, or when `INSERT` data is parsed on the client side. Use `format_schema_source` set to `file` or `string` there.
 )", 0) \
     DECLARE(String, format_schema, "", R"(
 This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
@@ -1576,6 +1585,10 @@ Skip fields with unsupported types while schema inference for format BSON.
 Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
 table functions, and dictionaries.
 
+It also controls whether secrets embedded in setting values (such as a password in
+`format_avro_schema_registry_url`) are shown in `system.settings`, `system.processes`,
+`system.settings_profile_elements` and in `SHOW CREATE USER` / `SHOW CREATE SETTINGS PROFILE`.
+
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 turned on and a
@@ -1665,13 +1678,13 @@ When building the JSON column's internal String buffers while parsing JSON from 
     DECLARE(UInt64, input_format_max_block_wait_ms, 0, R"(
 Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
 
-:::note
+<Note>
 This option only works if `input_format_connection_handling` is enabled. Setting a value also disables parallel parsing and makes deduplication impossible.
-:::
+</Note>
 
-:::note
+<Note>
 For streaming inserts, you must also set `min_insert_block_size_rows=0` and `min_insert_block_size_bytes=0`. Otherwise, parsed blocks may still be accumulated in memory by the block squashing stage until those thresholds are reached, preventing timely inserts.
-:::
+</Note>
 
 **Example: streaming Wikipedia recent changes into ClickHouse**
 
@@ -1691,9 +1704,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
     DECLARE(Bool, input_format_connection_handling, false, R"(
     When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
 
-:::note
+<Note>
 Enabling this option disables parallel parsing and makes deduplication impossible
-:::
+</Note>
 )", 0) \
     DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
