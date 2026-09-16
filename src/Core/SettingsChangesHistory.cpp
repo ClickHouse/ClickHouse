@@ -35,14 +35,20 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// History of settings changes that controls some backward incompatible changes
         /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
         /// in this version. This history contains both changes to existing settings and newly added settings.
-        /// Settings changes is a vector of structs
-        ///     {setting_name, previous_value, new_value, reason}.
-        /// For newly added setting choose the most appropriate previous_value (for example, if new setting
-        /// controls new feature and it's 'true' by default, use 'false' as previous_value).
+        /// Entries are `{setting_name, previous_value, new_value, reason, compatibility_mode = Apply}`.
+        /// Use `Ignore` when a new default must apply even with an older `compatibility` version.
+        /// For a newly added setting choose the most appropriate `previous_value` (for example, if the setting
+        /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
+            {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
+            {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
+            {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
+            {"enable_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
+            {"allow_nullable_tuple_in_extracted_subcolumns", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."},
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
@@ -65,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_lower_array_join_function", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
+            {"allow_experimental_analyzer", true, true, "The setting is obsolete: the analyzer is mandatory and the old query analysis is no longer supported. Disabling it is refused instead of being ignored, and `compatibility` with a version below 24.3 no longer reverts it."},
             {"allow_url_wildcard_from_index_pages", false, false, "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."},
             {"allow_kafka_offsets_storage_in_keeper", false, false, "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."},
             {"allow_correlated_subqueries", true, true, "Added an alias for setting `allow_experimental_correlated_subqueries`."},
@@ -85,7 +92,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_runtime_filters_index_analysis", false, false, "The JOIN runtime filters became a Production tier feature."},
             {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
-            {"allow_experimental_trino_dialect", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."},
+            {"enable_trino_dialect", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."},
             {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
             {"distributed_plan_read_in_order", false, false, "New setting to allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the table's sorting key can skip the sort and stop early. Off by default: only shapes where no exchange survives between the read and the sort are safe today."},
             {"distributed_cache_client_id", "", "", "New setting (CI tests only) to override the distributed cache client id per query."},
@@ -113,9 +120,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
             {"enable_tuple_element_codecs", false, false, "New setting to enable CODEC declarations on Tuple elements."},
-            {"query_plan_derive_not_null_filters_from_joins", false, true, "New setting to derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
-            {"query_plan_allow_derived_not_null_filters_execution", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be executed."},
-            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."}
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -202,6 +206,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_dictionary_filter_push_down", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."},
             {"input_format_read_datetime_number_as_raw_value", true, false, "From 26.8, an unquoted number for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` paths (and in `JSONExtract` and typed `JSON`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks). The tab-separated, CSV and other escaped/whole-text formats are not governed by this setting."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
+            {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
             {"query_plan_optimize_lazy_materialization_for_object_storage", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."},
             {"query_plan_optimize_lazy_materialization_for_file", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."},
             {"enable_packed_string_keys_in_aggregation", false, true, "New setting to toggle the `PackedStringRef`-based hash table for single-`String`-key GROUP BY. previous_value=false so `compatibility` with versions before 26.8 restores the legacy `StringHashTable`-based method, including its two-level bucketing."},
@@ -226,6 +231,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"validate_group_by_all_key_types", false, true, "New setting gating the validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into. 26.7 started rejecting a `Variant`/`Dynamic` key there, which earlier versions accepted with the analyzer enabled (`enable_analyzer = 1`, the default; the old analyzer rejected such a key before 26.7 as well), so the previous value is `false` and `compatibility` with a version before 26.7 restores the earlier acceptance."},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"query_plan_optimize_lazy_materialization_for_object_storage", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
@@ -1499,6 +1505,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
+    using CompatibilitySetting = SettingsChangesHistory::SettingChange::CompatibilitySetting;
     static VersionToSettingsChangesMap merge_tree_settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
@@ -1510,6 +1517,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "sainte_lague", "sainte_lague", "Keep Sainte-Lague distribution regardless of `compatibility`.", CompatibilitySetting::Ignore},
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
