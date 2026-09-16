@@ -1237,6 +1237,10 @@ struct ByteJaroSimilarityImpl
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
         {
+            constexpr int neon_scalar_cutoff = 16;
+            if (std::max(s1len, s2len) <= neon_scalar_cutoff)
+                return processScalar(haystack, needle, s1len, s2len, max_range);
+
             const auto * s1 = reinterpret_cast<const unsigned char *>(haystack);
             const auto * s2 = reinterpret_cast<const unsigned char *>(needle);
             /// `jaroSmall` hoists the second string into four NEON registers, so it requires that
