@@ -5,12 +5,15 @@ SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS prop_nopk_big;
 DROP TABLE IF EXISTS prop_nopk_small;
+DROP TABLE IF EXISTS prop_nopk_idx;
 
 CREATE TABLE prop_nopk_big (k UInt64, pad UInt64) ENGINE = MergeTree ORDER BY pad;
 CREATE TABLE prop_nopk_small (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE prop_nopk_idx (k UInt64, pad UInt64, INDEX k_idx k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY pad;
 
 INSERT INTO prop_nopk_big SELECT number, number FROM numbers(10000);
 INSERT INTO prop_nopk_small SELECT number FROM numbers(1000);
+INSERT INTO prop_nopk_idx SELECT number, number FROM numbers(10000);
 
 -- A comparison costs a fraction of a probe, so it is copied even without an index
 SELECT 'comparison',
@@ -53,6 +56,27 @@ FROM (
     SETTINGS use_primary_key = 0
 );
 
+-- A skip index prunes too, so it also pays for a set lookup
+SELECT 'in set on a skip-indexed column',
+       countIf(explain LIKE '%ilter column:%k IN (42, 43)%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_small WHERE k IN (42, 43)) AS s
+    INNER JOIN prop_nopk_idx AS i ON s.k = i.k
+);
+
+-- ... unless skip indexes are off, and note `use_primary_key` does not disable them
+SELECT 'in set on a skip-indexed column, no skip indexes',
+       countIf(explain LIKE '%ilter column:%k IN (42, 43)%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_small WHERE k IN (42, 43)) AS s
+    INNER JOIN prop_nopk_idx AS i ON s.k = i.k
+    SETTINGS use_skip_indexes = 0
+);
+
 SELECT 'correctness',
        (SELECT count() FROM (SELECT * FROM prop_nopk_small WHERE k = 42) AS s
         INNER JOIN prop_nopk_big AS b ON s.k = b.k)
@@ -61,4 +85,5 @@ SELECT 'correctness',
         SETTINGS query_plan_propagate_predicate_across_join = 0);
 
 DROP TABLE prop_nopk_big;
+DROP TABLE prop_nopk_idx;
 DROP TABLE prop_nopk_small;

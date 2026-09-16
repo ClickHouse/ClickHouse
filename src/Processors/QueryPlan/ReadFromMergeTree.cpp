@@ -2858,32 +2858,37 @@ bool areAllSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const
 
 }
 
-void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+bool ReadFromMergeTree::isColumnPrunable(const String & column_name, bool with_primary_key, bool with_skip_indexes) const
 {
     /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
     const auto & metadata = *storage_snapshot->metadata;
-    const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
-    const bool is_primary_key_column
-        = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
+    if (with_primary_key)
+    {
+        const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
+        if (std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end())
+            return true;
+    }
 
-    bool has_applicable_skip_index = false;
+    if (!with_skip_indexes)
+        return false;
+
     for (const auto & index : metadata.getSecondaryIndices())
     {
         if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
             continue;
         if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
-        {
-            has_applicable_skip_index = true;
-            break;
-        }
+            return true;
     }
+    return false;
+}
 
-    if (!is_primary_key_column && !has_applicable_skip_index)
+void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+{
+    if (!isColumnPrunable(column_name, /*with_primary_key=*/true, /*with_skip_indexes=*/true))
         return;
 
     join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
-    LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
-        filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
+    LOG_DEBUG(log, "Registered join runtime filter {} on column {}", filter_id, column_name);
 }
 
 void ReadFromMergeTree::buildPartitionPruningIndexes(

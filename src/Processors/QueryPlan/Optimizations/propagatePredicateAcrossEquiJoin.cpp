@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
@@ -81,17 +82,14 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Primary key of the MergeTree the target reads from. `std::nullopt` when it reads from something else
-std::optional<NameSet> getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
+/// The MergeTree the target side reads from, nullptr when it reads from something else
+const ReadFromMergeTree * getTargetRead(const QueryPlan::Node * target_root)
 {
-    const auto * read = walkDown(target_root, [](const auto * n)
+    const auto * node = walkDown(target_root, [](const auto * n)
     {
         return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
     });
-    if (!read)
-        return {};
-    const auto & primary_key = typeid_cast<const ReadFromMergeTree &>(*read->step).getStorageMetadata()->getPrimaryKey();
-    return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
+    return node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
 }
 
 /// A fixed-size comparison costs a fraction of what any join algorithm spends per row, so a copy
@@ -113,7 +111,8 @@ bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
 /// the primary key is only worth it when the atom itself is cheap
 bool atomWorthCopying(
     const QueryPlan::Node * target_root,
-    const NameSet & prunable_columns,
+    const ReadFromMergeTree & target_read,
+    const QueryPlanOptimizationSettings & settings,
     const ActionsDAG::Node * atom,
     const SubstitutionMap & substitution)
 {
@@ -128,7 +127,7 @@ bool atomWorthCopying(
         const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
         if (!target_column)
             return false;
-        if (!cheap && !prunable_columns.contains(*target_column))
+        if (!cheap && !target_read.isColumnPrunable(*target_column, settings.use_primary_key, settings.use_skip_indexes))
             return false;
     }
     return true;
@@ -235,17 +234,15 @@ size_t tryPropagateToSide(
     QueryPlan::Node * source_root,
     const FilterStep * source_filter,
     const SubstitutionMap & substitution,
-    bool index_analysis_enabled,
+    const QueryPlanOptimizationSettings & settings,
     QueryPlan::Nodes & nodes)
 {
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
-    if (!primary_key_columns)
+    const auto * target_read = getTargetRead(target_root);
+    if (!target_read)
         return 0;
-    /// With index analysis off a key column prunes nothing, so an expensive atom has nothing to earn
-    const NameSet prunable_columns = index_analysis_enabled ? *primary_key_columns : NameSet{};
 
     SubstitutionMap filter_level_sub;
     for (const auto & [join_name, target_col] : substitution)
@@ -263,7 +260,7 @@ size_t tryPropagateToSide(
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
         if (atomSafelySubstitutable(atom, filter_level_sub)
-            && atomWorthCopying(target_root, prunable_columns, atom, filter_level_sub))
+            && atomWorthCopying(target_root, *target_read, settings, atom, filter_level_sub))
             propagatable.push_back(atom);
     }
     if (propagatable.empty())
@@ -304,7 +301,7 @@ size_t tryPropagateToSide(
 }
 
 size_t tryPropagatePredicateAcrossEquiJoin(
-    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool index_analysis_enabled, const Optimization::ExtraSettings &)
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, const Optimization::ExtraSettings &)
 {
     auto * join = typeid_cast<JoinStepLogical *>(parent_node->step.get());
     if (!join || parent_node->children.size() != 2)
@@ -354,9 +351,9 @@ size_t tryPropagatePredicateAcrossEquiJoin(
 
     size_t propagated = 0;
     if (can_l_to_r)
-        propagated += tryPropagateToSide(parent_node, 1, left_root, left_filter, l_to_r, index_analysis_enabled, nodes);
+        propagated += tryPropagateToSide(parent_node, 1, left_root, left_filter, l_to_r, settings, nodes);
     if (can_r_to_l)
-        propagated += tryPropagateToSide(parent_node, 0, right_root, right_filter, r_to_l, index_analysis_enabled, nodes);
+        propagated += tryPropagateToSide(parent_node, 0, right_root, right_filter, r_to_l, settings, nodes);
     return propagated;
 }
 
