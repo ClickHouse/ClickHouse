@@ -279,6 +279,74 @@ ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions()
     return combined_columns;
 }
 
+void IMergeTreeReader::evaluateDefaults(Block & block, const NamesAndTypesList & columns_to_evaluate) const
+{
+    try
+    {
+        NameSet names_to_evaluate;
+        for (const auto & column : columns_to_evaluate)
+            names_to_evaluate.insert(column.name);
+
+        /// The expressions read every column but the ones they produce.
+        Block inputs;
+        for (const auto & column : block)
+        {
+            if (!names_to_evaluate.contains(column.name))
+                inputs.insert(column);
+        }
+
+        /// Defaults are evaluated on full columns to get correct values for subcolumns.
+        NameSet full_requested_columns_set;
+        NamesAndTypesList full_requested_columns;
+        for (const auto & column : columns_to_evaluate)
+        {
+            auto name_in_storage = column.getNameInStorage();
+            if (full_requested_columns_set.emplace(name_in_storage).second)
+                full_requested_columns.emplace_back(name_in_storage, column.getTypeInStorage());
+        }
+
+        auto context_copy = createContextForDefaultExpressions();
+        auto combined_columns = buildCombinedColumnsForDefaultExpressions();
+
+        auto dag = DB::evaluateMissingDefaults(
+            inputs,
+            full_requested_columns,
+            combined_columns,
+            context_copy);
+
+        if (dag)
+        {
+            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
+            auto actions = std::make_shared<ExpressionActions>(
+                std::move(*dag),
+                ExpressionActionsSettings(context_copy->getSettingsRef()));
+            actions->execute(inputs);
+        }
+
+        for (const auto & column : columns_to_evaluate)
+        {
+            auto & result = block.getByName(column.name);
+
+            if (inputs.has(column.name))
+                result.column = inputs.getByName(column.name).column;
+            else if (column.isSubcolumn())
+                result.column = tryGetSubcolumnFromBlock(inputs, column.getTypeInStorage(), column);
+            else
+                result.column = inputs.getByName(column.getNameInStorage()).column;
+        }
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while evaluating defaults after applying patches for part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
+        throw;
+    }
+}
+
 void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const
 {
     try

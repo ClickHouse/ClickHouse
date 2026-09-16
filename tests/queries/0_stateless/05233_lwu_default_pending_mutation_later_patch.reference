@@ -1,0 +1,42 @@
+pending mutation not applied
+0	5	1005	7
+1	0	1000	7
+2	7	1007	7
+3	0	1000	7
+4	9	1009	7
+5	0	1000	7
+pending mutation applied on the fly
+0	5	1005	8
+1	0	1000	8
+2	7	1007	8
+3	0	1000	8
+4	9	1009	8
+5	0	1000	8
+pending mutation applied on the fly, dependents only
+1000	8
+1000	8
+1000	8
+1005	8
+1007	8
+1009	8
+mutation materialized
+0	5	1005	8
+1	0	1000	8
+2	7	1007	8
+3	0	1000	8
+4	9	1009	8
+5	0	1000	8
+overwriting mutation applied on the fly
+0	5	3
+1	0	1000
+2	7	1000
+3	0	3
+4	9	1000
+5	0	1000
+overwriting mutation materialized
+0	5	3
+1	0	1000
+2	7	1000
+3	0	3
+4	9	1000
+5	0	1000

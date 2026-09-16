@@ -65,6 +65,12 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    /// Evaluates the `DEFAULT` expressions of `columns_to_evaluate` (a subset of the requested
+    /// columns, present in `block`) once more and replaces their values in `block`. The other
+    /// columns of `block` are the inputs of the expressions. Used after patch parts have
+    /// overwritten a column that such an expression reads.
+    void evaluateDefaults(Block & block, const NamesAndTypesList & columns_to_evaluate) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
