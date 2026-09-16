@@ -1232,15 +1232,25 @@ void writeColumnImpl(
     /// master writes with a valid index keeps one.
     static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
 
-    auto limit_batch_by_bytes = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, auto && value_size)
+    /// `overhead_per_value` is what the encoding writes around each value: plain BYTE_ARRAY prefixes
+    /// every one with its 4-byte length, which a record of many small values reaches the page limit
+    /// on long before its payload does. The returned total stays the payload alone, because that is
+    /// what `unencoded_byte_array_data_bytes` reports.
+    auto limit_batch_by_bytes
+        = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, size_t overhead_per_value, auto && value_size)
     {
         size_t bytes = 0;
+        size_t encoded_bytes = 0;
         size_t data_idx = 0;
 
         for (size_t i = 0; i < def_count; ++i)
         {
             if (s.max_def == 0 || s.def[batch_def_offset + i] == s.max_def)
-                bytes += value_size(data_idx++);
+            {
+                const size_t value_bytes = value_size(data_idx++);
+                bytes += value_bytes;
+                encoded_bytes += value_bytes + overhead_per_value;
+            }
 
             bool record_ends = !pages_change_on_record_boundaries
                 || batch_def_offset + i + 1 == num_values
@@ -1248,7 +1258,7 @@ void writeColumnImpl(
 
             /// Pages of such a chunk no longer start on record boundaries, which is what the column
             /// index promises, so it is dropped rather than written wrong.
-            if (!record_ends && bytes >= max_record_bytes)
+            if (!record_ends && encoded_bytes >= max_record_bytes)
             {
                 /// Neither index can describe a chunk whose pages start mid-record, so both are
                 /// dropped rather than written wrong.
@@ -1257,7 +1267,7 @@ void writeColumnImpl(
                 record_ends = true;
             }
 
-            if (record_ends && bytes >= max_batch_bytes)
+            if (record_ends && encoded_bytes >= max_batch_bytes)
             {
                 def_count = i + 1;
                 data_count = data_idx;
@@ -1302,7 +1312,7 @@ void writeColumnImpl(
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
             {
                 limit_batch_by_bytes(
-                    next_def_offset, def_count, data_count,
+                    next_def_offset, def_count, data_count, sizeof(UInt32),
                     [&](size_t i) { return s.primitive_column->byteSizeAt(next_data_offset + i); });
             }
 
@@ -1377,12 +1387,13 @@ void writeColumnImpl(
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
             {
                 batch_byte_size = limit_batch_by_bytes(
-                    next_def_offset, def_count, data_count, [&](size_t i) { return static_cast<size_t>(converted[i].len); });
+                    next_def_offset, def_count, data_count, sizeof(UInt32),
+                    [&](size_t i) { return static_cast<size_t>(converted[i].len); });
             }
             else if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
             {
                 batch_byte_size = limit_batch_by_bytes(
-                    next_def_offset, def_count, data_count, [&](size_t) { return converter.fixedStringSize(); });
+                    next_def_offset, def_count, data_count, 0, [&](size_t) { return converter.fixedStringSize(); });
             }
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
