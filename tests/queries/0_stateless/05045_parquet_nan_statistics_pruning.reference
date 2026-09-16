@@ -7,6 +7,7 @@ not_equals_float32 on=1 off=1
 not_equals_nullable on=1 off=1
 not_equals_low_cardinality on=1 off=1
 not_equals_lc_nullable on=1 off=1
+absent_not_equals on=1 off=1
 -- and so must a negated set predicate
 not_in_one on=1 off=1
 not_in_two on=1 off=1
@@ -27,11 +28,13 @@ in_null_nan_transform on=2 off=2
 chain_sign on=1 off=1
 chain_sign_float32 on=1 off=1
 chain_nan_bound on=1 off=1
+absent_chain_sign on=1 off=1
 -- page statistics prune the same way, with row group pushdown disabled
 page_not_equals on=1 off=1
 page_not_in on=1 off=1
 page_in_nan on=1 off=1
 page_chain_sign on=1 off=1
+page_absent_chain_sign on=1 off=1
 -- already correct before, must stay correct
 equals on=2 off=2
 in_finite on=2 off=2

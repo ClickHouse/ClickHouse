@@ -15,6 +15,7 @@ NAN_TUPLE="${PREFIX}_nan_tuple.parquet"
 # hidden NaN alike, so a chain over it cannot tell a widened decision from a pruned one.
 NAN_NEG="${PREFIX}_nan_neg.parquet"
 NAN_NEG_F32="${PREFIX}_nan_neg_f32.parquet"
+LEGACY="${PREFIX}_legacy_no_nan_count.parquet"
 FINITE="${PREFIX}_finite.parquet"
 INTEGER="${PREFIX}_integer.parquet"
 MANY="${PREFIX}_many.parquet"
@@ -53,6 +54,14 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT toFloat64(number) FROM numbers(30000)
     SETTINGS engine_file_truncate_on_insert = 1,
              output_format_parquet_row_group_size = 10000, output_format_parquet_data_page_size = 1024"
+
+# The one fixture that is not written by the build under test: float statistics with min = max = -5
+# and no nan_count field at all, which per parquet.thrift obliges a reader to assume that a NaN may
+# be present. Reproduce on a build whose Parquet writer does not emit nan_count, then base64 -w0:
+#   INSERT INTO FUNCTION file('legacy.parquet', Parquet, 'val Float64')
+#   SELECT arrayJoin([toFloat64(-5), toFloat64(-5), nan]) SETTINGS engine_file_truncate_on_insert = 1
+LEGACY_B64="UEFSMRUEFSAVQBWZ5d6KAjwVBBUAAAAotS/9BFiAAAAAAAAAAAAUwAAAAAAAAPh/AQAAW1tYuxUAFQYVJhXRmuHvARwVBhUQFQYVBhwYCAAAAAAAABTAGAgAAAAAAAAUwDgIAAAAAAAAFMAYCAAAAAAAABTAEREAAAAotS/9BFgYAAABAwQBAADZXG8EJpoCHBUKGSUAEBkYA3ZhbBUMFgYW0gEWkgImbiYIHBgIAAAAAAAAFMAYCAAAAAAAABTAOAgAAAAAAAAUwBgIAAAAAAAAFMAREQAZLBUEFQAVAgAVABUQFQIAPAAAABVAHBwAABwcAAAcHAAAACAAAAEgACAAAAEQAEAAAASAAAAQAAAIBAAIAIABACAAGRECGRgIAAAAAAAAFMAZGAgAAAAAAAAUwBUAABkcFm4VrAEWAAAAFQQZLEgGc2NoZW1hFQIAFQolABgDdmFsABYGGRwZHCaaAhwVChklABAZGAN2YWwVDBYGFtIBFpICJm4mCBwYCAAAAAAAABTAGAgAAAAAAAAUwDgIAAAAAAAAFMAYCAAAAAAAABTAEREAGSwVBBUAFQIAFQAVEBUCABbWAxVeHAAAFuwEFRYWtAQVOAAW0gEWBiYIFpICAChKQ2xpY2tIb3VzZSB2ZXJzaW9uIDI2LjkuMSAoYnVpbGQgOTRhMTU1MzEyM2JiMjlkZDhlM2EzZjg1ZDcwNTIzMjI0MjhhMjdiZCkZHBwAAADpAAAAUEFSMQ=="
+echo "${LEGACY_B64}" | base64 -d > "${USER_FILES_PATH}/${LEGACY}"
 
 # The statistics every pruning decision below is taken from: min and max are both 5 while the file
 # holds three values, so the third one is not described by them.
@@ -116,6 +125,10 @@ arm not_equals_low_cardinality "${NAN}" 'val != 5.' 'allow_suspicious_low_cardin
 # LowCardinality(Nullable(Float64)) is the only structure that needs both wrappers stripped, and in
 # that order: removeNullable alone cannot see through LowCardinality.
 arm not_equals_lc_nullable "${NAN_NULLABLE}" 'val != 5.' 'allow_suspicious_low_cardinality_types = 1' 'val LowCardinality(Nullable(Float64))'
+# The three absent_ arms below carry the same bounds as ${NAN_NEG} in a different statistics state:
+# nan_count absent rather than present and non-zero, which is how a reader must treat any file whose
+# writer did not report the count.
+arm absent_not_equals "${LEGACY}" 'val != -5.'
 run_arms
 
 echo '-- and so must a negated set predicate'
@@ -156,6 +169,7 @@ echo '-- a monotonic chain must not map the hidden NaN out of the atom range'
 arm chain_sign "${NAN_NEG}" 'sign(val) = 1'
 arm chain_sign_float32 "${NAN_NEG_F32}" 'sign(val) = 1'
 arm chain_nan_bound "${NAN_NEG}" 'sign(val) * inf + inf > 0'
+arm absent_chain_sign "${LEGACY}" 'sign(val) = 1'
 run_arms
 
 echo '-- page statistics prune the same way, with row group pushdown disabled'
@@ -163,6 +177,7 @@ arm_page_only page_not_equals "${NAN}" 'val != 5.'
 arm_page_only page_not_in "${NAN}" 'val NOT IN (5.)'
 arm_page_only page_in_nan "${NAN}" 'val IN (nan)'
 arm_page_only page_chain_sign "${NAN_NEG}" 'sign(val) = 1'
+arm_page_only page_absent_chain_sign "${LEGACY}" 'sign(val) = 1'
 run_arms
 
 echo '-- already correct before, must stay correct'
