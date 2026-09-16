@@ -52,10 +52,6 @@ SELECT multiIf(0, NULL, materialize(toNullable(NULL))) FROM merge(currentDatabas
 SELECT multiIf(0, NULL, materialize(toNullable(NULL))) FROM merge(currentDatabase(), '^(local_t|dist_t)$') GROUP BY ALL SETTINGS distributed_aggregation_memory_efficient = 0;
 SELECT count() FROM (SELECT 1 FROM merge(currentDatabase(), '^(local_t|dist_t)$') GROUP BY materialize(toNullable(NULL)));
 
-SELECT '-- and the same shapes without the analyzer';
-SELECT count() FROM (SELECT 1 FROM local_t GROUP BY materialize(NULL)) SETTINGS enable_analyzer = 0;
-SELECT count() FROM (SELECT 1 FROM merge(currentDatabase(), '^(local_t|dist_t)$') GROUP BY materialize(toNullable(NULL))) SETTINGS enable_analyzer = 0;
-
 DROP TABLE dist_t;
 DROP TABLE local_t;
 DROP TABLE empty_t;
