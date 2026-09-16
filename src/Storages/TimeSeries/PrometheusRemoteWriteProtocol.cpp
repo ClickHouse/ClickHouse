@@ -47,11 +47,14 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -426,7 +429,25 @@ void PrometheusRemoteWriteProtocol::write(
     checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
 
     FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);
-    insertBlock(std::move(block), *time_series_storage, getContext());
+    try
+    {
+        insertBlock(std::move(block), *time_series_storage, getContext());
+    }
+    catch (const Exception & e)
+    {
+        /// A shard-local table that went away between the check and the INSERT is as transient as a
+        /// shard that stopped answering, but `UNKNOWN_TABLE` is a 404, which Prometheus drops instead
+        /// of resending. Reported the way the check reports a shard with no verified target.
+        if (!distributed_target || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE))
+            throw;
+        throw Exception(
+            ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+            /// The cause goes last: a remote exception carries its stack trace after a newline, and
+            /// anything appended after it is cut off with the trace.
+            "Remote write over table {} is refused while a shard has no target, retry once it has one: {}",
+            storage_id.getNameForLogs(),
+            e.message());
+    }
 
     LOG_TRACE(
         log,

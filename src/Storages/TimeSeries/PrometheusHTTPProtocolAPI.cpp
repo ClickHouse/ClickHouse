@@ -302,7 +302,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     {
         query_context->setSetting("prefer_localhost_replica", true);
         query_context->setSetting("enable_parallel_replicas", false);
-        /// Also stated on the generated cluster() call, where a readonly profile may drop it.
+        /// Also stated on the generated cluster() call, which a constrained profile would reject.
         query_context->setSetting("serialize_query_plan", false);
     }
 
