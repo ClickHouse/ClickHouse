@@ -5,4 +5,5 @@ direct monotonicity sweep, Asia/Kolkata (+05:30, sub-hour offset, calendar path)
 partition pruning across the epoch: indexed count must match full-scan count
 4	4	1
 PK range analysis across the epoch: indexed count must match full-scan count
-0	0	1
+3	3	1
+1	1	1
