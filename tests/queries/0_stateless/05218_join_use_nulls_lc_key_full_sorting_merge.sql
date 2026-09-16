@@ -2,7 +2,8 @@
 -- Under `join_use_nulls` a selected right join key is joined on as `toNullable(key)`, which for a
 -- `LowCardinality` key is `LowCardinality(Nullable(T))`, so the `full_sorting_merge` key check has to
 -- compare the key types with both wrappers removed.
--- Every case runs under `hash` as well: the `hash` rows are the oracle and the merge rows must match them.
+-- Each merge case has a `hash` twin with the same expected rows, and the `hash` rows are the oracle;
+-- case 1 is a control that passes without the fix and case 5 pins the output type.
 
 SET join_use_nulls = 1;
 SET enable_analyzer = 1;
@@ -31,6 +32,25 @@ ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swa
 SELECT '-- 2. LEFT, key selected, swap 0, parallel_full_sorting_merge';
 SELECT l.k, r.k, r.w FROM t_lc_l AS l LEFT JOIN t_lc_r AS r ON l.k = r.k
 ORDER BY ALL SETTINGS join_algorithm = 'parallel_full_sorting_merge', query_plan_join_swap_table = 0, max_threads = 4;
+
+SELECT '-- 2b. parallel_full_sorting_merge is sharded, full_sorting_merge is not';
+-- The parallel rows above are the only coverage of hash-sharded execution, which is the one path
+-- where a key pair the shards hashed inconsistently would lose matches silently instead of throwing.
+-- `optimize_read_in_order` and `query_plan_join_shard_by_pk_ranges` are randomized in CI, so pin them.
+SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
+FROM (
+    EXPLAIN PIPELINE
+    SELECT l.k, r.k, r.w FROM t_lc_l AS l LEFT JOIN t_lc_r AS r ON l.k = r.k
+    SETTINGS join_algorithm = 'parallel_full_sorting_merge', query_plan_join_swap_table = 0,
+        max_threads = 4, optimize_read_in_order = 0, query_plan_join_shard_by_pk_ranges = 0
+);
+SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
+FROM (
+    EXPLAIN PIPELINE
+    SELECT l.k, r.k, r.w FROM t_lc_l AS l LEFT JOIN t_lc_r AS r ON l.k = r.k
+    SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0,
+        max_threads = 4, optimize_read_in_order = 0, query_plan_join_shard_by_pk_ranges = 0
+);
 
 SELECT '-- 3. LEFT, key selected, swap 1, full_sorting_merge';
 SELECT l.k, r.k, r.w FROM t_lc_l AS l LEFT JOIN t_lc_r AS r ON l.k = r.k

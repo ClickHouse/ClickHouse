@@ -26,6 +26,9 @@ c	c	30
 c	c	30
 c	c	31
 c	c	31
+-- 2b. parallel_full_sorting_merge is sharded, full_sorting_merge is not
+1
+1
 -- 3. LEFT, key selected, swap 1, full_sorting_merge
 a	a	10
 b	\N	\N
