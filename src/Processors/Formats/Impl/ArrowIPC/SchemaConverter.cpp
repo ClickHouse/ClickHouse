@@ -394,11 +394,23 @@ bool isUUIDField(const ArrowField & field)
 {
     if (field.type.kind != TypeKind::FixedSizeBinary || field.type.byte_width != 16)
         return false;
-    auto it = field.custom_metadata.find("ARROW:extension:name");
-    if (it != field.custom_metadata.end() && it->second == "arrow.uuid")
+    auto uuid_it = field.custom_metadata.find("ARROW:extension:name");
+    if (uuid_it != field.custom_metadata.end() && uuid_it->second == "arrow.uuid")
         return true;
     auto logical = field.custom_metadata.find("PARQUET:logical_type");
     return logical != field.custom_metadata.end() && logical->second == "UUID";
+}
+
+std::string_view opaqueFieldTypeName(const ArrowField & field)
+{
+    auto name_it = field.custom_metadata.find("ARROW:extension:name");
+    if (name_it == field.custom_metadata.end() || name_it->second != FormatSettings::ARROW_OPAQUE_EXTENSION_NAME)
+        return {};
+
+    auto type_it = field.custom_metadata.find("ARROW:extension:metadata");
+    if (type_it == field.custom_metadata.end())
+        return {};
+    return type_it->second;
 }
 
 namespace

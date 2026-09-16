@@ -59,7 +59,8 @@ namespace
 bool dictionaryValueTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::ArrowType & b);
 
 /// Struct and union element names identify dictionary value types; list and map container labels do not.
-/// Metadata matters only when `isUUIDField` changes value decoding.
+/// Metadata matters only where it changes value decoding: `isUUIDField`, and the `clickhouse.opaque` tag
+/// naming the ClickHouse type a binary payload deserializes back into.
 bool dictionaryValueFieldsEqual(const ArrowIPC::ArrowField & a, const ArrowIPC::ArrowField & b, bool compare_name)
 {
     if (compare_name && a.name != b.name)
@@ -69,6 +70,8 @@ bool dictionaryValueFieldsEqual(const ArrowIPC::ArrowField & a, const ArrowIPC::
     if (a.dictionary != b.dictionary)
         return false;
     if (ArrowIPC::isUUIDField(a) != ArrowIPC::isUUIDField(b))
+        return false;
+    if (ArrowIPC::opaqueFieldTypeName(a) != ArrowIPC::opaqueFieldTypeName(b))
         return false;
     return dictionaryValueTypesEqual(a.type, b.type);
 }

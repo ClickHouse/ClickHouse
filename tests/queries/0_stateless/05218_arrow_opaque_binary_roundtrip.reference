@@ -1,0 +1,35 @@
+=== written as binary and as text, read back into the same types ===
+Row 1:
+──────
+mode:         binary
+j:            {
+    "a": 1,
+    "b": "s"
+}
+dynamic_type: String
+dynamic_hex:  3432
+q:            [1,2,3]
+aggregate:    77
+Row 1:
+──────
+mode:         text
+j:            {
+    "a": 1,
+    "b": "s"
+}
+dynamic_type: String
+dynamic_hex:  3432
+q:            [1,2,3]
+aggregate:    77
+Row 1:
+──────
+mode:         original
+j:            {
+    "a": 1,
+    "b": "s"
+}
+dynamic_type: String
+dynamic_hex:  3432
+q:            [1,2,3]
+aggregate:    77
+as String	03803F00404040

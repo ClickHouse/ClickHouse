@@ -4,6 +4,7 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/BufferCompression.h>
 #include <IO/NetUtils.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -285,6 +286,44 @@ MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap *
         }
         const auto ref = str.getDataAt(i);
         out->insertData(ref.data(), ref.size());
+    }
+    return out;
+}
+
+/// Only the binary encoding needs this. The text one lands in a `Utf8` field, and the `String` -> type cast
+/// the caller applies afterwards parses it, that cast being the text route.
+MutableColumnPtr deserializeOpaqueBinaryLeaf(
+    const ColumnString & str,
+    const NullMap * null_map,
+    const DataTypePtr & to_no_null,
+    const ArrowField & field,
+    const FormatSettings & format_settings)
+{
+    if (!to_no_null || opaqueFieldTypeName(field) != to_no_null->getName())
+        return nullptr;
+
+    const auto serialization = to_no_null->getDefaultSerialization();
+    auto out = to_no_null->createColumn();
+    const size_t rows = str.size();
+    out->reserve(rows);
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (null_map && (*null_map)[i])
+        {
+            out->insertDefault();
+            continue;
+        }
+
+        ReadBufferFromMemory rb(str.getDataAt(i));
+        serialization->deserializeBinary(*out, rb, format_settings);
+        /// The value occupies its whole slot, so anything left over is a payload that does not match the
+        /// type the tag claims - a forged stream, or one written by a different encoding.
+        if (!rb.eof())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC column is tagged as {} but row {} has {} trailing byte(s) after deserialization",
+                to_no_null->getName(), i, rb.available());
     }
     return out;
 }
@@ -1921,6 +1960,25 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
             /*invisible_rows=*/nullptr,
             decoded_null_map);
     }
+    /// A column with no Arrow mapping that this writer wrote with `serializeBinary` carries the ClickHouse
+    /// type it came from. Decoding it as `String` and leaving the caller to CAST would run the text parser
+    /// over binary bytes, so deserialize it properly here - and here rather than in `decodeInner`, because
+    /// `decoded.type` is derived from the Arrow field alone and the block would otherwise claim `String`
+    /// while holding the decoded type.
+    if (!constant && !field.nullable && !field.dictionary && field.type.kind == TypeKind::Binary)
+    {
+        if (const auto * str = typeid_cast<const ColumnString *>(decoded.column.get()))
+        {
+            const DataTypePtr opaque_type = stripHint(resolveTargetHint(target_hint, path, list_depth));
+            if (MutableColumnPtr typed
+                = deserializeOpaqueBinaryLeaf(*str, /*null_map=*/nullptr, opaque_type, field, settings))
+            {
+                decoded.column = std::move(typed);
+                decoded.type = opaque_type;
+            }
+        }
+    }
+
     /// Struct null maps survive decoding even when the inferred type has no nullable wrapper.
     decoded.type = matchColumnNullability(decoded.type, decoded.column);
     if (constant)
