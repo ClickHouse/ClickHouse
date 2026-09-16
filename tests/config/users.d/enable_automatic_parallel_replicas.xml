@@ -14,9 +14,6 @@
             <cluster_for_parallel_replicas>parallel_replicas</cluster_for_parallel_replicas>
             <parallel_replicas_local_plan>1</parallel_replicas_local_plan>
             <parallel_replicas_for_non_replicated_merge_tree>1</parallel_replicas_for_non_replicated_merge_tree>
-            <!-- Matches the randomized mode-2 runs: it pushed the suite over the memory limit of the
-                 sanitizer builds. -->
-            <parallel_distributed_insert_select>0</parallel_distributed_insert_select>
         </default>
     </profiles>
 </clickhouse>
