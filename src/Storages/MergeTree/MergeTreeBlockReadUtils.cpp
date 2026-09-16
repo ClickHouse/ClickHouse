@@ -455,8 +455,7 @@ void addPatchPartsColumns(
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
     auto first_step_columns_set = first_step_columns.getNameSet();
 
-    /// Seeded with this step's own names: `injectRequiredColumns` falls back to adding a minimum-size
-    /// column when none of the names it is given resolves to a column present in the part.
+    /// `injectRequiredColumns` falls back to a minimum-size column when none of the names it is given resolves to one present in the part.
     auto names_to_read = first_step_columns.getNames();
 
     for (const auto & key_column_name : required_key_columns)
