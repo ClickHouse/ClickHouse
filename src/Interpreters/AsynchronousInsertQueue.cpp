@@ -45,6 +45,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
@@ -103,6 +104,11 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSnappyMode snappy_mode;
+}
+
+namespace FailPoints
+{
+    extern const char async_insert_parse_pause_before_next_entry[];
 }
 
 namespace ErrorCodes
@@ -1553,6 +1559,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         for (auto entry_it = slice.begin; entry_it != slice.end; ++entry_it)
         {
+            /// Lets a test park a slice once it has parsed its first entry, so that a `KILL QUERY`
+            /// finds a batch with some entries already parsed and some not (see the log replay below).
+            if (entry_it != slice.begin)
+                FailPointInjection::pauseFailPoint(FailPoints::async_insert_parse_pause_before_next_entry);
+
             current_entry = *entry_it;
 
             const auto * bytes = current_entry->chunk.asString();
@@ -1576,30 +1587,65 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         slice.columns = executor.getResultColumns();
     };
 
-    if (num_slices == 1)
+    /// Replays what parsing produced for every entry, in the original order of the entries, whether
+    /// the batch was parsed to the end or not. It must run on this thread and only once no slice is
+    /// being parsed any more, because `add_to_async_insert_log` and everything it updates are
+    /// single-threaded.
+    auto replay_entry_results = [&](bool release_data)
     {
-        parse_slice(slices[0]);
+        for (auto & slice : slices)
+        {
+            for (const auto & result : slice.entry_results)
+            {
+                /// `add_to_async_insert_log` reads `entry->chunk`, so the data is released only after it.
+                add_to_async_insert_log(result.entry, result.exception, result.num_rows, result.num_bytes);
+                if (release_data)
+                    result.entry->resetChunk();
+            }
+        }
+    };
+
+    try
+    {
+        if (num_slices == 1)
+        {
+            parse_slice(slices[0]);
+        }
+        else
+        {
+            /// Declared after `slices` and `parse_slice` on purpose: the runner's destructor cancels
+            /// the tasks that have not started yet and waits for the running ones, so no task can
+            /// outlive the state it refers to, including when scheduling or parsing below throws.
+            /// The runner also attaches every task to the thread group of the flush query, so that
+            /// profile events, memory and CPU accounting of the parsing are not lost.
+            ///
+            /// The pool is dedicated to this and is not the format parsing pool: some input formats
+            /// (`Parquet`, `ArrowStream`, ...) parallelize their own work on the format parsing pool,
+            /// and a slice waiting for such a nested task while occupying a thread of the very same
+            /// pool could deadlock once all its threads are held by slices.
+            ThreadPoolCallbackRunnerLocal<void> runner(getAsyncInsertParsingThreadPool().get(), ThreadName::ASYNC_INSERT_PARSE);
+
+            /// The tasks refer to this stack frame, so every scheduled task must be tracked by the
+            /// runner. With the capacity reserved upfront, tracking a task cannot throw after the
+            /// pool has accepted it (see `ThreadPoolCallbackRunnerLocal::reserve`).
+            runner.reserve(num_slices - 1);
+            for (size_t i = 1; i < num_slices; ++i)
+                runner.enqueueAndKeepTrack([&parse_slice, &slice = slices[i]] { parse_slice(slice); });
+
+            /// The calling thread takes one slice instead of only waiting for the pool.
+            parse_slice(slices[0]);
+            runner.waitForAllToFinishAndRethrowFirstError();
+        }
     }
-    else
+    catch (...)
     {
-        /// Declared after `slices` and `parse_slice` on purpose: the runner's destructor cancels
-        /// the tasks that have not started yet and waits for the running ones, so no task can
-        /// outlive the state it refers to, including when scheduling or parsing below throws.
-        /// The runner also attaches every task to the thread group of the flush query, so that
-        /// profile events, memory and CPU accounting of the parsing are not lost.
-        ///
-        /// The pool is dedicated to this and is not the format parsing pool: some input formats
-        /// (`Parquet`, `ArrowStream`, ...) parallelize their own work on the format parsing pool,
-        /// and a slice waiting for such a nested task while occupying a thread of the very same
-        /// pool could deadlock once all its threads are held by slices.
-        ThreadPoolCallbackRunnerLocal<void> runner(getAsyncInsertParsingThreadPool().get(), ThreadName::ASYNC_INSERT_PARSE);
-
-        for (size_t i = 1; i < num_slices; ++i)
-            runner.enqueueAndKeepTrack([&parse_slice, &slice = slices[i]] { parse_slice(slice); });
-
-        /// The calling thread takes one slice instead of only waiting for the pool.
-        parse_slice(slices[0]);
-        runner.waitForAllToFinishAndRethrowFirstError();
+        /// The runner is destroyed by now, so no slice is being parsed any more, and the results of
+        /// the entries parsed before the failure are complete. Record them the way the flushing
+        /// thread did when it parsed every entry itself: the caller then logs them as `FlushError`
+        /// with the exception, and the entries that failed to parse are already logged as
+        /// `ParsingError`. The entries not reached are not logged, as before.
+        replay_entry_results(/*release_data=*/ false);
+        throw;
     }
 
     /// Concatenate the slices into a single chunk and replay the per-entry bookkeeping in the
@@ -1609,20 +1655,17 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     MutableColumns result_columns;
     size_t total_rows = 0;
 
+    /// With more than one slice the data is released later than it used to be, which keeps the raw
+    /// data of the whole batch (at most `async_insert_max_data_size`) alive while the batch is parsed.
+    replay_entry_results(/*release_data=*/ true);
+
     for (size_t i = 0; i < num_slices; ++i)
     {
         auto & slice = slices[i];
 
+        /// it is ok if num_rows is 0 here or async_dedup_token is empty
         for (const auto & result : slice.entry_results)
-        {
-            /// it is ok if num_rows is 0 here or async_dedup_token is empty
             deduplication_info->setUserToken(result.entry->async_dedup_token, result.num_rows);
-            /// `add_to_async_insert_log` reads `entry->chunk`, so the data is released only after it.
-            /// With more than one slice that is later than it used to be, which keeps the raw data of
-            /// the whole batch (at most `async_insert_max_data_size`) alive while the batch is parsed.
-            add_to_async_insert_log(result.entry, result.exception, result.num_rows, result.num_bytes);
-            result.entry->resetChunk();
-        }
 
         total_rows += slice.num_rows;
 
