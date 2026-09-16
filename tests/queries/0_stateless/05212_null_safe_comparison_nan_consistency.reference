@@ -1,0 +1,54 @@
+-- scalar Float64
+plain	0	0	1
+nullable	0	0	1
+nullable/plain	0	0	1
+plain/nullable	0	0	1
+materialized	0	0	1
+materialized nullable	0	0	1
+-- narrower floats and mixed widths
+f32	0	0	1
+f32 nullable	0	0	1
+bf16 nullable	0	0	1
+f32 vs f64	0	0	1
+f32 vs f64 nul	0	0	1
+-- LowCardinality
+lc	0	0	1
+lc nullable	0	0	1
+-- Tuple
+tuple	0	0	1
+nullable element	0	0	1
+nullable tuple	0	0	1
+nullable tuple mat	0	0	1
+-- signed NaN, signed zero, infinity
+nan vs -nan	0	0	1
+nan vs -nan nullable	0	0	1
+-0.0 vs 0.0	1	1	0
+-0.0 vs 0.0 nullable	1	1	0
+inf	1	1	0
+inf nullable	1	1	0
+inf vs -inf nullable	0	0	1
+nan vs inf nullable	0	0	1
+nan vs 1 nullable	0	0	1
+-- NULL handling is unchanged
+null/null	1	\N	0
+nan/null	0	\N	1
+null/nan	0	\N	1
+nan/null plain	0	\N	1
+equal nullable	1	1	0
+differ nullable	0	0	1
+int/null	0	\N	1
+string nullable	1	1	0
+-- Nullable operands with no least common supertype are unchanged
+u64/i64 equal	1
+u64/i64 differ	0
+u64/i64 null	0
+-- Array and Map track `=`, which reports NaN as equal for containers
+array	1	1	0
+map	1	1	0
+-- table columns
+1	0	0	0	0	0	0
+2	1	1	1	1	1	1
+3	0	1	0	0	\N	\N
+rows matching a <=> nan	0
+rows matching b <=> nan	0
+rows matching b <=> NULL	1
