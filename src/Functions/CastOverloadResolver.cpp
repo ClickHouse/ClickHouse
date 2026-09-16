@@ -313,8 +313,10 @@ When `x` is written as a number and `T` is a `Decimal` or an integer wider than 
 of the number are read directly with `T`, so no precision is lost on the way. Without this,
 `CAST(0.1 AS Decimal256(76))` would read `0.1` as a `Float64` first and return
 `0.1000000000000000127244406382982157680441515146893321226564617167921968152`. This applies to a
-number written directly as the argument; a number that first takes part in an expression, as in
-`CAST(0.1 + 0 AS Decimal256(76))`, is still read as a `Float64`.
+number written as the argument; a number that first takes part in an expression, as in
+`CAST(0.1 + 0 AS Decimal256(76))`, is still read as a `Float64`. A number not written plainly in
+decimal - in brackets, in hexadecimal, or with a leading plus - is read with `T` from the way it is
+written back into a query, which is the nearest `Float64` when it has a fractional part.
     )";
     FunctionDocumentation::Syntax CAST_syntax = R"(
 CAST(x, T)

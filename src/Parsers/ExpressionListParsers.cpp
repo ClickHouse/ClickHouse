@@ -1651,16 +1651,11 @@ private:
         literal_argument = std::move(literal);
     }
 
-    /// `argument` with the literal it was parsed from put back as text, when the target type reads
-    /// the text more precisely - see `typeReadsLiteralExactly`.
+    /// `argument` put back as text, when it is a literal and the target type reads the text more
+    /// precisely - see `exactCastArgument`.
     ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
     {
-        if (!literal_argument || !typeReadsLiteralExactly(type_text, *literal_argument, pos))
-            return argument;
-
-        auto literal = make_intrusive<ASTLiteral>(literal_argument->text);
-        literal->setAlias(argument->tryGetAlias());
-        return literal;
+        return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 };
 
@@ -4115,6 +4110,14 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         std::optional<String> type_text = parseDataTypeAsText(pos, expected);
         if (!type_text)
             return Action::NONE;
+
+        /// Nothing binds tighter than `::`, so its operand is complete: when it is a literal the
+        /// type reads more precisely as text - `(0.1)::Decimal256(76)`, `0xFF::UInt128` - it goes
+        /// as text, the way `ParserCastOperator` sends a literal written plainly.
+        ASTPtr argument;
+        if (!layers.back()->popOperand(argument))
+            return Action::NONE;
+        layers.back()->pushOperand(exactCastArgument(argument, std::nullopt, *type_text, pos));
 
         layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;

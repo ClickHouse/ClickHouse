@@ -14,6 +14,7 @@
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTDataType.h>
@@ -1112,6 +1113,21 @@ static bool isIntegerNumeral(std::string_view text)
     return text.find_first_of(".eE") == std::string_view::npos;
 }
 
+/// True if a plain decimal numeral stands for zero, whatever its exponent: `0`, `0.00`, `00e5`.
+/// A minus in front of it is dropped from the text: it does not make the value negative - `-0` is
+/// the number `0`, and is written back as `0` - and an unsigned type does not read the sign.
+static bool isZeroNumeral(std::string_view text)
+{
+    for (const char c : text)
+    {
+        if (c == 'e' || c == 'E')
+            break;
+        if (c != '0' && c != '.')
+            return false;
+    }
+    return true;
+}
+
 static std::string_view tokenText(IParser::Pos pos)
 {
     return std::string_view(pos->begin, pos->end - pos->begin);
@@ -1128,13 +1144,14 @@ static bool isNullKeyword(std::string_view text)
 }
 
 /// Scans an array or a tuple of numbers, strings and `NULL`s, and of nested arrays and tuples of them,
-/// leaving `pos` right after it. Returns the end of its text, or nullptr if there is no such
-/// collection ahead, in which case `pos` is left somewhere inside what was scanned.
-static const char * scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal)
+/// leaving `pos` right after it, and appends its text to `literal.text` token by token: without
+/// whatever the query holds between the tokens - a comment, or a space between a minus and its
+/// digits - which the text readers of the types do not skip, except for a single space after a
+/// comma when the query has one, which they do. Returns false if there is no such collection ahead,
+/// in which case `pos` is left somewhere inside what was scanned.
+static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal)
 {
     using enum TokenType;
-
-    const char * data_end = pos->end;
 
     /// A round bracket holding a single number or string is a parenthesized expression rather than a
     /// one-element tuple: `(1)` is the value `1`, and only a tuple type reads `(1)` as text. Whatever
@@ -1145,91 +1162,104 @@ static const char * scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAs
     bool holds_own_scalar = false;
 
     TokenType last_token = OpeningSquareBracket;
+    const char * last_token_end = pos->begin;
     std::vector<TokenType> stack;
     while (pos.isValid())
     {
         /// Whether this token sits directly inside the outermost bracket.
         const bool own = stack.size() == 1;
 
+        if (last_token == Comma && pos->begin != last_token_end)
+            literal.text += ' ';
+
         if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
         {
             stack.push_back(pos->type);
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                return nullptr;
+                return false;
+            literal.text += tokenText(pos);
         }
         else if (pos->type == ClosingSquareBracket)
         {
             if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
-                return nullptr;
+                return false;
             if (stack.empty() || stack.back() != OpeningSquareBracket)
-                return nullptr;
+                return false;
             stack.pop_back();
+            literal.text += tokenText(pos);
         }
         else if (pos->type == ClosingRoundBracket)
         {
             if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
-                return nullptr;
+                return false;
             if (stack.empty() || stack.back() != OpeningRoundBracket)
-                return nullptr;
+                return false;
             stack.pop_back();
+            literal.text += tokenText(pos);
         }
         else if (pos->type == Comma)
         {
             if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
-                return nullptr;
-            if (stack.empty())
-                break;
+                return false;
             holds_own_comma |= own;
+            literal.text += ',';
         }
         else if (pos->type == Number)
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
-                return nullptr;
-            if (!isPlainDecimalNumeral(tokenText(pos)))
-                return nullptr;
-            literal.all_integers &= isIntegerNumeral(tokenText(pos));
+                return false;
+            const std::string_view text = tokenText(pos);
+            if (!isPlainDecimalNumeral(text))
+                return false;
+            literal.all_integers &= isIntegerNumeral(text);
             holds_own_scalar |= own;
+            if (last_token == Minus && !isZeroNumeral(text))
+            {
+                literal.all_non_negative = false;
+                literal.text += '-';
+            }
+            literal.text += text;
         }
         else if (isOneOf<StringLiteral, Minus>(pos->type))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                return nullptr;
+                return false;
             if (pos->type == StringLiteral)
             {
                 literal.all_numbers = false;
                 holds_own_scalar |= own;
+                literal.text += tokenText(pos);
             }
-            else
-            {
-                literal.all_non_negative = false;
-            }
+            /// A minus is written together with the number that follows it.
         }
         else if (pos->type == BareWord && isNullKeyword(tokenText(pos)))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
-                return nullptr;
+                return false;
             literal.has_null = true;
             holds_own_scalar |= own;
+            literal.text += "NULL";
         }
         else
         {
             break;
         }
 
-        /// Update data_end on every iteration to avoid appearances of extra trailing
-        /// whitespaces into data. Whitespaces are skipped at operator '++' of Pos.
-        data_end = pos->end;
         last_token = pos->type;
+        last_token_end = pos->end;
         ++pos;
+
+        if (stack.empty())
+            break;
     }
 
     if (!stack.empty())
-        return nullptr;
+        return false;
 
     if (outer_is_round && !holds_own_comma && holds_own_scalar)
-        return nullptr;
+        return false;
 
-    return data_end;
+    return true;
 }
 
 bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
@@ -1239,9 +1269,6 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
     /// Numbers (including decimals), and arrays and tuples of numbers and strings.
 
     IParser::Pos begin = pos;
-    const char * data_begin = pos->begin;
-    const char * data_end = pos->end;
-
     LiteralAsText result;
 
     if (pos->type == Minus)
@@ -1253,23 +1280,29 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
             return false;
         }
 
-        result.all_non_negative = false;
-        result.all_integers = isIntegerNumeral(tokenText(pos));
-        data_end = pos->end;
+        const std::string_view text = tokenText(pos);
+        result.all_integers = isIntegerNumeral(text);
+        if (!isZeroNumeral(text))
+        {
+            result.all_non_negative = false;
+            result.text += '-';
+        }
+        result.text += text;
         ++pos;
     }
     else if (pos->type == Number)
     {
-        if (!isPlainDecimalNumeral(tokenText(pos)))
+        const std::string_view text = tokenText(pos);
+        if (!isPlainDecimalNumeral(text))
             return false;
 
-        result.all_integers = isIntegerNumeral(tokenText(pos));
+        result.all_integers = isIntegerNumeral(text);
+        result.text += text;
         ++pos;
     }
     else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
-        data_end = scanCollectionOfLiteralsAsText(pos, result);
-        if (!data_end)
+        if (!scanCollectionOfLiteralsAsText(pos, result))
         {
             pos = begin;
             return false;
@@ -1278,9 +1311,26 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
     else
         return false;
 
-    result.text.assign(data_begin, data_end - data_begin);
     literal = std::move(result);
     return true;
+}
+
+std::optional<LiteralAsText> literalAsText(const ASTLiteral & literal, const IParser::Pos & outer_pos)
+{
+    /// The formatted literal is what a query holding this AST is written back as, so what is read
+    /// off its tokens is exactly what `parseLiteralAsText` reads off that query: this is what keeps
+    /// the AST the same after being formatted and parsed back. The formatted number is the value
+    /// rather than its spelling in the query - `255` for `0xFF`, and the nearest `Float64` of a
+    /// fractional number - which is why the spelling is kept when it is a plain literal.
+    const String formatted = applyVisitor(FieldVisitorToString(), literal.value);
+
+    Tokens tokens(formatted.data(), formatted.data() + formatted.size());
+    IParser::Pos pos(tokens, outer_pos);
+
+    LiteralAsText result;
+    if (!parseLiteralAsText(pos, result) || !pos->isEnd())
+        return {};
+    return result;
 }
 
 /// How a target type reads a numeral written as text, for the types that read it more precisely than
@@ -1372,6 +1422,27 @@ bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & lit
         case NumeralReader::UnsignedInteger:
             return literal.all_numbers && literal.all_integers && literal.all_non_negative;
     }
+}
+
+ASTPtr exactCastArgument(
+    const ASTPtr & argument, const std::optional<LiteralAsText> & spelled, const String & type_text, const IParser::Pos & pos)
+{
+    const auto * literal_ast = argument->as<ASTLiteral>();
+    if (!literal_ast)
+        return argument;
+
+    std::optional<LiteralAsText> literal = spelled;
+    if (!literal)
+        literal = literalAsText(*literal_ast, pos);
+
+    if (!literal || !typeReadsLiteralExactly(type_text, *literal, pos))
+        return argument;
+
+    /// The text is a literal only together with the type that reads it, so it is not recorded in the
+    /// literal token map - it is not a literal of the query on its own.
+    auto result = make_intrusive<ASTLiteral>(std::move(literal->text));
+    result->setAlias(argument->tryGetAlias());
+    return result;
 }
 
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)

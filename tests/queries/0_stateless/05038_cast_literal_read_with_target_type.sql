@@ -37,7 +37,8 @@ CREATE TEMPORARY TABLE t (d Decimal256(76));
 INSERT INTO t VALUES (CAST(0.1 AS Decimal256(76))), (CAST(0.2 AS Decimal256(76)));
 SELECT * FROM t ORDER BY d;
 
--- Only a whole number written as the argument is read with the type; an expression is not.
+-- Only a number written as the argument is read with the type; an expression is not. A number in
+-- brackets is still the number, and is read with the type as it is written back into the query.
 SELECT CAST(0.1 + 0 AS Decimal256(76));
 SELECT CAST((0.1) AS Decimal256(76));
 SELECT CAST(-(0.1) AS Decimal256(76));
@@ -60,8 +61,9 @@ SELECT CAST(256 AS Nullable(UInt8));
 SELECT CAST(-1 AS UInt128), CAST(1.9 AS Int128), CAST(1e19 AS UInt256);
 SELECT CAST(-1 AS Int256), CAST(1 AS UInt128);
 
--- A number no type reads as text - hexadecimal, binary, or with digit separators - is read as a
--- number whatever the target type is.
+-- A number written in a form no type reads as text - hexadecimal, binary, or with digit separators -
+-- is read as a number, and a type that reads the text more precisely gets the number written back
+-- in decimal, the way it is written back into the query. See `05218_cast_literal_canonical_text`.
 SELECT CAST(0xFF AS UInt8), CAST(0b101 AS UInt8), CAST(1_000 AS UInt16);
 SELECT CAST(0xFF AS Decimal32(2)), CAST(1_000 AS Decimal32(2)), CAST(0b101 AS UInt128);
 

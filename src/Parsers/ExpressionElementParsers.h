@@ -11,6 +11,8 @@
 namespace DB
 {
 
+class ASTLiteral;
+
 /** The SELECT or EXPLAIN subquery, in parentheses.
   */
 class ParserSubquery : public IParserBase
@@ -594,6 +596,13 @@ struct LiteralAsText
   */
 bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal);
 
+/** The text of a literal that was not written as one `parseLiteralAsText` reads - `(0.1)`, `0xFF`,
+  * `+1` - taken from the literal as it is formatted, which is how it is written back into a query:
+  * `255` for `0xFF`. Nothing if the formatted literal is not something `parseLiteralAsText` reads,
+  * such as a string or a `Bool`. `outer_pos` only lends its recursion limits.
+  */
+std::optional<LiteralAsText> literalAsText(const ASTLiteral & literal, const IParser::Pos & outer_pos);
+
 /** True if the type written as `type_text` reads `literal` back as the value it stands for, and more
   * precisely than a numeric literal carries it. Only `Decimal` and the integers wider than 64 bits
   * do: for every other type, reading the text is either no more precise or means something else
@@ -602,6 +611,17 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal);
   * recursion limits to parsing `type_text`.
   */
 bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & literal, const IParser::Pos & outer_pos);
+
+/** The argument of a cast to the type written as `type_text`, put back as the text the type reads
+  * when the argument is a literal and the type reads the text more precisely than the literal
+  * carries the value - see `typeReadsLiteralExactly` - or `argument` itself otherwise. `spelled` is
+  * the argument as read off the query by `parseLiteralAsText`, when it was written as a plain
+  * literal; without it, the text is taken from the literal as it is formatted - see `literalAsText`.
+  * The decision is the same for a query and for the query written back from its AST, which is what
+  * keeps the AST the same after being formatted and parsed back.
+  */
+ASTPtr exactCastArgument(
+    const ASTPtr & argument, const std::optional<LiteralAsText> & spelled, const String & type_text, const IParser::Pos & pos);
 
 /// `CAST(expr, 'type')`, the canonical form of every way of writing a cast.
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text);
