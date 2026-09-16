@@ -3036,6 +3036,11 @@ void ReadFromMergeTree::buildIndexes(
         if (index_helper->isInert())
             continue;
 
+        /// Granules hold what the index expression produced under the server baseline, and only a
+        /// KeyCondition disarms itself there, so a deviating session must not reach any index family.
+        if (!getKeySubexpressionsWithSessionDependentValues(*index.expression, query_context).empty())
+            continue;
+
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {

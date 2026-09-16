@@ -10,6 +10,8 @@
 DROP TABLE IF EXISTS t_h3_pk;
 DROP TABLE IF EXISTS t_h3_part;
 DROP TABLE IF EXISTS t_h3_minmax;
+DROP TABLE IF EXISTS t_h3_set;
+DROP TABLE IF EXISTS t_h3_bloom;
 DROP TABLE IF EXISTS t_h3_geo;
 
 -- 608009741498580991: latitude 80.007, longitude 9.99. 610315033787760639: latitude -0.0005, longitude 69.99.
@@ -25,6 +27,16 @@ CREATE TABLE t_h3_minmax (h UInt64, v UInt32, INDEX i_lat tupleElement(h3ToGeo(h
 INSERT INTO t_h3_minmax VALUES (608009741498580991, 1);
 INSERT INTO t_h3_minmax VALUES (610315033787760639, 2);
 
+-- set and bloom_filter match the index expression by name themselves instead of through a KeyCondition,
+-- so they need the index to be refused as a whole rather than the condition disarmed.
+CREATE TABLE t_h3_set (h UInt64, v UInt32, INDEX i_lat tupleElement(h3ToGeo(h), 1) TYPE set(100) GRANULARITY 1) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_h3_set VALUES (608009741498580991, 1);
+INSERT INTO t_h3_set VALUES (610315033787760639, 2);
+
+CREATE TABLE t_h3_bloom (h UInt64, v UInt32, INDEX i_lat tupleElement(h3ToGeo(h), 1) TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_h3_bloom VALUES (608009741498580991, 1);
+INSERT INTO t_h3_bloom VALUES (610315033787760639, 2);
+
 CREATE TABLE t_h3_geo (lat Float64, lon Float64, v UInt32) ENGINE = MergeTree ORDER BY geoToH3(lat, lon, 5);
 INSERT INTO t_h3_geo VALUES (80.0, 10.0, 1);
 INSERT INTO t_h3_geo VALUES (0.0, 70.0, 2);
@@ -34,6 +46,11 @@ SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Parts:%';
 SELECT h FROM t_h3_part WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT h FROM t_h3_minmax WHERE tupleElement(h3ToGeo(h), 1) > 50;
+-- force_data_skipping_indices throws unless the index really pruned, so these also assert that agreeing
+-- sessions keep both skip indexes. The query condition cache is off because a granule verdict cached in
+-- one session would answer the other one.
+SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_data_skipping_indices = 'i_lat', use_query_condition_cache = 0;
+SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 80.00712511716989 SETTINGS force_data_skipping_indices = 'i_lat', use_query_condition_cache = 0;
 SELECT v FROM t_h3_geo WHERE geoToH3(lat, lon, 5) = geoToH3(80.0, 10.0, 5);
 -- The two counts below only mean anything while in-order reading is enabled: with it off both are 0,
 -- whatever the guard does, so the setting is pinned rather than taken from the session.
@@ -47,6 +64,10 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE t
 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT h FROM t_h3_part WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT h FROM t_h3_minmax WHERE tupleElement(h3ToGeo(h), 1) > 50;
+SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS use_query_condition_cache = 0;
+SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_data_skipping_indices = 'i_lat'; -- { serverError INDEX_NOT_USED }
+SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 SETTINGS use_query_condition_cache = 0;
+SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 SETTINGS force_data_skipping_indices = 'i_lat'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
 SET h3togeo_lon_lat_result_order = 0;
@@ -65,4 +86,6 @@ SELECT v FROM t_h3_geo WHERE geoToH3(lat, lon, 5) = geoToH3(80.0, 10.0, 5) ORDER
 DROP TABLE t_h3_pk;
 DROP TABLE t_h3_part;
 DROP TABLE t_h3_minmax;
+DROP TABLE t_h3_set;
+DROP TABLE t_h3_bloom;
 DROP TABLE t_h3_geo;
