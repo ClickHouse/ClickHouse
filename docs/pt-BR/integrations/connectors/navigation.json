@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Data sources",
+      "group": "Fontes de dados",
       "pages": [
         "pt-BR/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Data visualization",
+      "group": "Visualização de dados",
       "pages": [
         "pt-BR/integrations/connectors/data-visualization/index",
         {
@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Integrações da comunidade",
           "pages": [
             "pt-BR/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "pt-BR/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,7 +100,7 @@
     },
     {
       "expanded": true,
-      "group": "Data ingestion",
+      "group": "Ingestão de dados",
       "pages": [
         "pt-BR/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "pt-BR/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
@@ -138,7 +138,7 @@
             "pt-BR/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow templates",
+              "group": "Modelos do Dataflow",
               "pages": [
                 "pt-BR/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "pt-BR/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -171,7 +171,7 @@
         },
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Integrações da comunidade",
           "pages": [
             "pt-BR/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "pt-BR/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -189,7 +189,7 @@
     },
     {
       "expanded": true,
-      "group": "Data integrations",
+      "group": "Integrações de dados",
       "pages": [
         "pt-BR/integrations/connectors/tools/data-integration-index",
         "pt-BR/integrations/connectors/data-integrations/integrations/retool",
@@ -202,7 +202,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-clients",
+      "group": "Clientes SQL",
       "pages": [
         "pt-BR/integrations/connectors/sql-clients/index",
         "pt-BR/integrations/connectors/sql-clients/sql-console",
@@ -218,7 +218,7 @@
     },
     {
       "expanded": true,
-      "group": "Tools",
+      "group": "Ferramentas",
       "pages": [
         "pt-BR/integrations/connectors/tools/index",
         "pt-BR/integrations/connectors/tools/misc-index",
@@ -229,5 +229,5 @@
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",
-  "item": "Connectors"
+  "item": "Conectores"
 }

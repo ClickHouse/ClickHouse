@@ -4,40 +4,40 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "0b240341596183431a2c0d2988a1d4211d0dfcc018e1a88b8cfa67f4b0deaf22",
+      "versionId": "912d4ea7eb14eab5911f88b95a8e5be0b8dcba7e7a59e4a3c8c83c0f5df33be0",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-16T04:10:04.761Z",
-          "fileName": "docs.json"
-        },
-        "ja": {
-          "updatedAt": "2026-09-16T04:10:04.944Z",
-          "fileName": "docs.json"
-        },
-        "ko": {
-          "updatedAt": "2026-09-16T04:10:05.144Z",
-          "fileName": "docs.json"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-16T04:10:05.305Z",
-          "fileName": "docs.json"
-        },
         "ru": {
-          "updatedAt": "2026-09-16T04:10:05.475Z",
-          "fileName": "docs.json"
-        },
-        "zh": {
-          "updatedAt": "2026-09-16T04:10:05.662Z",
+          "updatedAt": "2026-09-16T09:55:43.693Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-16T04:10:05.860Z",
+          "updatedAt": "2026-09-16T09:55:43.959Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-16T04:10:06.042Z",
+          "updatedAt": "2026-09-16T09:55:44.212Z",
+          "fileName": "docs.json"
+        },
+        "ko": {
+          "updatedAt": "2026-09-16T09:55:44.443Z",
+          "fileName": "docs.json"
+        },
+        "es": {
+          "updatedAt": "2026-09-16T09:55:44.681Z",
+          "fileName": "docs.json"
+        },
+        "ja": {
+          "updatedAt": "2026-09-16T09:55:44.906Z",
+          "fileName": "docs.json"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-16T09:55:45.132Z",
+          "fileName": "docs.json"
+        },
+        "zh": {
+          "updatedAt": "2026-09-16T09:55:45.361Z",
           "fileName": "docs.json",
-          "postProcessHash": "0b7cf5469fc6c13c04d5952e492e64418ca84741915bcae9c32ad8aa4880a029"
+          "postProcessHash": "5b4883bfb1c9a8091be4d8e3120394a2a8376bfcdef45ec41c28026c6280d1b1"
         }
       },
       "fileName": "docs.json"
@@ -14149,51 +14149,50 @@
     },
     {
       "fileId": "f652d9eeb49b10da11efd635cf2b1a95e754b64a853349c5edac857e569ebe96",
-      "versionId": "3a6f1db21a63f09c715e2a0f44cb09372fc578982c160b81fe1a0bab8d60d2c6",
+      "versionId": "c6b5b2898761dc0f063686cbc20f5e5f68e48577564ca41376f7af3f79415479",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.961Z",
-          "fileName": "es/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "fe8528e6b63a5a1dc6c2d117f021fe56d7597ee8aad2c6825e66bd7d27b81651"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.961Z",
-          "fileName": "ja/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "64d39b2a36a6ba5cc9a239823ff75240a69d70bd09b41bf01505a16775ed46c9"
+        "ru": {
+          "updatedAt": "2026-09-16T09:55:43.421Z",
+          "fileName": "ru/products/managed-postgres/extensions.mdx",
+          "postProcessHash": "c12b229a7c24ba3c1cda74cdb809af1024def341194f54ed3badc70bb162d3e3"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:05.961Z",
+          "updatedAt": "2026-09-16T09:55:43.422Z",
           "fileName": "ko/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "ecbb0f662ff6935c7edcdd6f6324938388710297c17e1349bf45030a61f4827d"
+          "postProcessHash": "e9ead42dfbcdd84a063416d72dcdee1394540166793ced1b7d1fb30ddd15f798"
         },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.961Z",
-          "fileName": "pt-BR/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "8f206aee99486ddd91a93def0de7ee87dda59784d5d021b277733003a981a6f1"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.961Z",
-          "fileName": "ru/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "4a6f41ffe99dd022bd5722dd619a62a6f93523b226f78559e2df66e6de2f63f6"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.961Z",
-          "fileName": "zh/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "608883cfe9de4dc3c4830c933ceb621b0f5ec3943cb9f1343742453156625385"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.962Z",
-          "fileName": "ar/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "9a577fcbd62f7054cc8edac7976980e1d6cc5b20624914412cc65030db5004bf"
+        "es": {
+          "updatedAt": "2026-09-16T09:55:43.423Z",
+          "fileName": "es/products/managed-postgres/extensions.mdx",
+          "postProcessHash": "17c314a120d4803df606fa639fb880e3085dd19ab19318eac7918d28beddb1ed"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.962Z",
+          "updatedAt": "2026-09-16T09:55:43.425Z",
           "fileName": "fr/products/managed-postgres/extensions.mdx",
-          "postProcessHash": "50ddcd996467a5c98c4eed636188a055540434a949dc78be49ea98cf1da813b4"
+          "postProcessHash": "8009443bbfe3e4dcfd64f1e853b4e5f9e31b912f70df70b267f83f4f4d3a9db4"
+        },
+        "ja": {
+          "updatedAt": "2026-09-16T09:55:43.427Z",
+          "fileName": "ja/products/managed-postgres/extensions.mdx",
+          "postProcessHash": "59bd2289cb696b5c408a26f585852c8cc7e4f9d605b7e87eac1cfb103d3e699c"
+        },
+        "ar": {
+          "updatedAt": "2026-09-16T09:55:43.429Z",
+          "fileName": "ar/products/managed-postgres/extensions.mdx",
+          "postProcessHash": "f4c631cda0c0fe9eb9d315f07e42f6233460f62793e8a24e59c2e595fce5ce78"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-16T09:55:43.699Z",
+          "fileName": "pt-BR/products/managed-postgres/extensions.mdx",
+          "postProcessHash": "13e8b2e8cbba24c7f77057d32585e2baa9269219b1e061fc8677ad824dc6541b"
+        },
+        "zh": {
+          "updatedAt": "2026-09-16T09:55:44.214Z",
+          "fileName": "zh/products/managed-postgres/extensions.mdx",
+          "postProcessHash": "e356674285efc263ffcddae92d73af9087176deda9e0fb22e15d855b43082c64"
         }
       },
-      "fileName": "products/managed-postgres/extensions.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/extensions.mdx"
     },
     {
       "fileId": "b3e6410562c09d1a4eb633364785f35dde8d081feb40962a33762510fa5a3fbf",
@@ -97444,141 +97443,141 @@
     },
     {
       "fileId": "59d48b4051fa23d249d4873548f297f8b36120c972565163d8b297ca0ea65f75",
-      "versionId": "a53e2ce7110f895b81429fdb2e20d2e8b750dd3680deefe82a4c2a670fa77eed",
+      "versionId": "f0d60286261d7bb31e38a9e7b4adea52943a2dd24ba3796e8f60b374336fb147",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-08-26T23:12:58.661Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "f5dc1e4cf385082fa1510e7264d1eb90190288d776868fafc7657745257c3449"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T23:12:58.663Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "30b54849132e0f79c2a8b78b22f5247e03d6c6c34b0fc13cc601920aa3256519"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T23:12:58.673Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "27948eeccc1da3e9980f51171f705a744f724f34a07b02cb95845f840bbf66bd"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T23:12:58.678Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "b8ed4a21b3d6185521f868f8b64babf8275bddef0e4ee9185ec530729d9f7bc2"
+        "ar": {
+          "updatedAt": "2026-09-16T09:55:43.424Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "82e0a3d296f0a43c91e670d3d4dbbecb17989cb05c09a62f5935b81ca867b09d"
         },
         "ru": {
-          "updatedAt": "2026-08-26T23:12:58.682Z",
+          "updatedAt": "2026-09-16T09:55:43.425Z",
           "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "2c67f26ce0602be8f2bd070e8a662e99cfefc370214c06d51ac9f2e10acaf5ed"
+          "postProcessHash": "b3ad6d4ed257f85ca975f7e1e55706d3ae11f9e02f36d401938298b20fc68f50"
         },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T23:12:58.686Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "80475bbb929a346db8dad8f588c6fe394db3ae50eea4da2d44c0507f495bb166"
+        "zh": {
+          "updatedAt": "2026-09-16T09:55:43.426Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "fe591cfdd5fe2926bff2012876f03096b4b06a112c5fa1cb8b0bd8b6cae47dfd"
         },
         "es": {
-          "updatedAt": "2026-08-26T23:12:58.688Z",
+          "updatedAt": "2026-09-16T09:55:43.426Z",
           "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "681cb9a2d15705fe6113673b911c2885a7b058dda06d4df9f18ac8a65ff452ba"
+          "postProcessHash": "3ccddeb238079667cf52d2dc8879fbd99ee0b44a035a2a21d881c10d78c980c7"
         },
-        "ar": {
-          "updatedAt": "2026-08-26T23:12:58.719Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "42cdbcbdf689bff7efd39aa55319208e309b2bcb4cf0f45056fa44b41e8e1daa"
+        "ja": {
+          "updatedAt": "2026-09-16T09:55:43.431Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "8a889bdac6dd3341dc26595f3cc20ced2ee48e11f1c099fe3060457429cb7fb7"
+        },
+        "ko": {
+          "updatedAt": "2026-09-16T09:55:43.694Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "7d62eee25d360ae4ea9aadd26e6bfe7104c045afc6e1fd433b01de09aff35647"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-16T09:55:43.696Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "f814cf8415c0ae9f21e81a297d45dd7974f5508cbe0307caf98f4b8f2a6e528e"
+        },
+        "fr": {
+          "updatedAt": "2026-09-16T09:55:43.698Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "1c267822e2f7d3bc812bbbfc121bc308d242e6f6f470dccbd3cbb55607044783"
         }
       },
       "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx"
     },
     {
       "fileId": "b4ff40701c5d393a58188b5def18a03081b38f677d8f75f21688b6c98a083ae6",
-      "versionId": "cf6c4fe10c7290d994084fef8aebdf37c774ffc9fb06d866aef849631cd1a563",
+      "versionId": "b884d3e08a94da861abe05276bc0e73afe628053a5314f743af9aa27aaa2f3e8",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:32.294Z",
-          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "1a1d67f99872b0ff2da93fb4c57da4180e27a823c69e0b43106c99372f2019a7"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:32.296Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "8d8644417fa60082e55411619973d89b1f85e8329294c3d1e4b5a33512a36356"
+        "pt-BR": {
+          "updatedAt": "2026-09-16T09:55:43.695Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
+          "postProcessHash": "6a795fdbd4986d0c17dee9159b4424389e8226aa400b380a25a2d5d380070a48"
         },
         "ko": {
-          "updatedAt": "2026-08-26T08:10:32.296Z",
+          "updatedAt": "2026-09-16T09:55:43.699Z",
           "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "9365e691d112a3a0cb9abc879c29304a76af248f1e1238e27f0ca9a506162262"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:32.297Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "9c75387a54cc5fbd7658475f49d677d93b3314763d9848d689d9ca3fe734ac9d"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:32.298Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "5a175fdd6a89df9505d221dbfd2bb2bccbb041752793482e6f9a85cff002c086"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:32.299Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "9d9f4f995fa151973dc81573b6857ada41ba7b59e71a9afcd123dcf64b15501f"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:32.301Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "b566d00b40720a4cc209f6dd9ba9d5cc4f6e349b5ac73b316db6c37d5b0d63bb"
+          "postProcessHash": "df146eba3149b9ba047442cac49abd01a2c61863d03cf682759bdf6cb6599813"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:32.302Z",
+          "updatedAt": "2026-09-16T09:55:43.701Z",
           "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
-          "postProcessHash": "8759c3561810575da124db4f86bde625018bb600fe3527283f6147df7f6a7d90"
+          "postProcessHash": "5e2d38822ccf6b9133b199a29cb20da38d7d0eb8f3a2262db24e51b48a910fef"
+        },
+        "ja": {
+          "updatedAt": "2026-09-16T09:55:43.702Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
+          "postProcessHash": "7648c731f7fa57ea871d75fd6386d755186cdf21fec2d80bda7075de5fe66a42"
+        },
+        "ar": {
+          "updatedAt": "2026-09-16T09:55:44.218Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
+          "postProcessHash": "b5c11f62761cc1be05effd69360efb4942f3cba895d3bc4595d7fd75b8689972"
+        },
+        "zh": {
+          "updatedAt": "2026-09-16T09:55:44.446Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
+          "postProcessHash": "c1855f89ec5f498af947d0c368a28563fa87331271bdeafb9975d25b407f655d"
+        },
+        "es": {
+          "updatedAt": "2026-09-16T09:55:45.134Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
+          "postProcessHash": "0caa7b81dc9e9f61c6f28b00827645411b91eaf478760b4b9af8984764de5f1c"
+        },
+        "ru": {
+          "updatedAt": "2026-09-16T09:55:45.135Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx",
+          "postProcessHash": "a573d08a4e479f29fa78e30e80dcd4ed41097b6d776d7436780ac099cafc4144"
         }
       },
       "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/guides.mdx"
     },
     {
       "fileId": "402d6134a2ab36413d167b749aea0541976b02ced3a479564a595cbb998c8e13",
-      "versionId": "3a0c52411b3ec32fe249e29d66678f3181de42b80e3fff39e948581aa454d34e",
+      "versionId": "d3b56749067248bc6c5482429f66035d6b2c70fde6c1ee8ad8d550f9649f06e1",
       "translations": {
-        "ru": {
-          "updatedAt": "2026-08-26T23:12:58.700Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "b6213e5761b458279ad2c7f65526df1c6be5fbe01544da80bbd0f892fbe99d26"
-        },
         "es": {
-          "updatedAt": "2026-08-26T23:12:58.707Z",
+          "updatedAt": "2026-09-16T09:55:43.428Z",
           "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "5ff1e0b54bca8f7f7131075fe25e86fb5996f2296783d5b3695fa02ddb0f1812"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T23:12:58.715Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "6bff4286f4a9c361e934d0404aa0da4cb680beb28101b2028225dddadb840f66"
+          "postProcessHash": "05737e326e9fbb2cec35d800e515504cc84f3659ea88aecf693cbd18918fe4f5"
         },
         "zh": {
-          "updatedAt": "2026-08-26T23:12:58.716Z",
+          "updatedAt": "2026-09-16T09:55:43.429Z",
           "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "dda0547dd06e1c512939b590c2cbe802060114c178612c17d49555f0093c08c1"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T23:12:58.720Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "bf55a0c8602f94d595bc10ef667cf3d61c6b6e0a826ed4f9ef91737ecb47b8dc"
+          "postProcessHash": "52ff3aab928ffe6c75195e12dfa1edcce8c4e4428a5a186bb66b01254f5aef87"
         },
         "ja": {
-          "updatedAt": "2026-08-26T23:12:58.722Z",
+          "updatedAt": "2026-09-16T09:55:43.700Z",
           "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "6ceb94d2f9df459ba09470988e35466ddd9c72504a14a748a204ee11cb78e731"
+          "postProcessHash": "722e35b0c818126b58b4a583c143c85e3e9aa52ce63f4a53a841a30273fbda1e"
         },
-        "fr": {
-          "updatedAt": "2026-08-26T23:12:58.751Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "92bf4a27a40444449f8329284688493483ac3586016301ebf66547778c46d7f5"
+        "ru": {
+          "updatedAt": "2026-09-16T09:55:43.701Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "ec8d94a739d0c07d358904f00381819157bb2aff2fae07e3be962afe709309aa"
         },
         "ar": {
-          "updatedAt": "2026-08-26T23:12:58.763Z",
+          "updatedAt": "2026-09-16T09:55:44.216Z",
           "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "2c2db92c67bc0ab228d5dfab911fac574a562e15eefd6cd31b54ad05e66c0b45"
+          "postProcessHash": "78f19f39a804c39443b854b14d22ad2734114a9ba80ad8dabbec15e0dca55441"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-16T09:55:44.219Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "319c13d94ed990e098daf8c04e5b8cd3c5e1d05139ad583f4212927c8541e952"
+        },
+        "fr": {
+          "updatedAt": "2026-09-16T09:55:44.682Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "1f92a18f5ebf17498c4c2d037b6a3904d3d81cd37baf227690d109d2dbd114c0"
+        },
+        "ko": {
+          "updatedAt": "2026-09-16T09:55:44.907Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "6c5d99a8988c4425719403ad53f2e8d88fb307d582ebcaff76e5658da1e9af4d"
         }
       },
       "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx"
@@ -97632,47 +97631,47 @@
     },
     {
       "fileId": "5ba7f14eef0794d5bbb77aeae25ba62fbc2f05a1d574278aabfb8614343b56b8",
-      "versionId": "c30acfa4837743f3379a11369cd4306d4e074883d285df3eb8454b9ee5c0a2f0",
+      "versionId": "1557b03520ee0cb5e75727ce931918d7b7f7b112429ccb914b6d7dbe9336531e",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-08-26T23:12:58.677Z",
+          "updatedAt": "2026-09-16T09:55:43.422Z",
           "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "793343d0bbb1ab4e1f60c610ace4431a7fe47ebdc9e84380f57db0e72aa4f6a5"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T23:12:58.691Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "000242fa0eaa02f974092582cd75198ef7c74f34c4754a725b50245f4283c4cf"
+          "postProcessHash": "07c67a3206c5788878877667de5338cc6a13e69cdd67059f3a739cc3e0be5e4e"
         },
         "ko": {
-          "updatedAt": "2026-08-26T23:12:58.692Z",
+          "updatedAt": "2026-09-16T09:55:43.428Z",
           "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "859d34dea0f1726a347529690c3641fea00f332a964b3c8961a57134541b0742"
+          "postProcessHash": "cd927cd19f35bd0e5001e8e60e9a91b8aa95cdcbad90cc4694e10fea81c90cd0"
         },
         "zh": {
-          "updatedAt": "2026-08-26T23:12:58.693Z",
+          "updatedAt": "2026-09-16T09:55:43.430Z",
           "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "4f341c9ff367ff85146b55b1eb513d3a8bf40a5f13dfac13b049c03198dbc74f"
+          "postProcessHash": "c4b93354c51c6cc7f69effb636c72c1eb89c13fe41ad96b6dd982e281719a965"
         },
         "ru": {
-          "updatedAt": "2026-08-26T23:12:58.697Z",
+          "updatedAt": "2026-09-16T09:55:43.431Z",
           "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "cfa1ef9d580e0f20ca670117e611df36e45e7a68d94976a6120ba9bd35266eca"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T23:12:58.714Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "1ba101decb80ff9fe35088e952a0e95cc753fd561607be4a976abcc73ca72a23"
+          "postProcessHash": "65befbc5cb05e42ba08722a8c6bcc0701cb27306b45d4d476f29d3b218fb3502"
         },
         "es": {
-          "updatedAt": "2026-08-26T23:12:58.753Z",
+          "updatedAt": "2026-09-16T09:55:44.215Z",
           "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "900f0806572c6ad33c9d87ec7a1aca3349eea4c3c07687b1b468d07302e7d69a"
+          "postProcessHash": "839fc69f108de36230c730d93579639b4170704b847f05cbb0728256987df736"
         },
         "ar": {
-          "updatedAt": "2026-08-26T23:12:58.756Z",
+          "updatedAt": "2026-09-16T09:55:44.217Z",
           "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "e3412656aac279c8739261e3ff04c6c0c24b9ccaaf38e9e158e6ca9d97c0458b"
+          "postProcessHash": "23db692dd11be202e4e4ad69a90f6cf7358bdbd4dd3716702f2a0149c88fc7c1"
+        },
+        "fr": {
+          "updatedAt": "2026-09-16T09:55:44.219Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "bec784b1a0faba9534126375ecd8f9b60ab6426c50a1b808ed4d00ba09681c32"
+        },
+        "ja": {
+          "updatedAt": "2026-09-16T09:55:44.220Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "01f65226846572642b284645296ad81269dc47ddc94a76c0e30fd010e3b04d53"
         }
       },
       "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx"
@@ -138933,6 +138932,53 @@
         }
       },
       "fileName": "clickstack/demo-days/2026/2026-09-10.mdx"
+    },
+    {
+      "fileId": "81a4bdd139f54e5334bd52f7a611945e52f0bce3ef346e6298d3ade3246cef7d",
+      "versionId": "5b16fcfffb7fc3e2cfc48185b47965de20ffe7f5bfbd58e3c01409d3220866d2",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-09-16T09:55:43.697Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "2babc17fbe8dcd529133d3b04a8aa40baa995ac6d2b0449833de962cacb03eee"
+        },
+        "fr": {
+          "updatedAt": "2026-09-16T09:55:43.697Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "4a3c0752d849a6ced93393d9b24b27bd0574d993fb9725e3f60ed975713efb5b"
+        },
+        "ar": {
+          "updatedAt": "2026-09-16T09:55:43.699Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "6d8a992356e30a95e6b56322e0dfb9afbc51792ddf9d8d47b92a273272909783"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-16T09:55:44.212Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "421f2510036f8fcaf9e861cca2eda14eed77d1dc531da01647d4f4dee111c44c"
+        },
+        "ja": {
+          "updatedAt": "2026-09-16T09:55:44.213Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "925663e2b57bfeabf8a8aacbb0964218c46ca20dec3ef1c8b23090a76a3354a9"
+        },
+        "ru": {
+          "updatedAt": "2026-09-16T09:55:44.214Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "89ba8e2385d43970b3ccba2cc6fd6bf6c03692cc182ca3c8dd4cbe199c8e89fc"
+        },
+        "zh": {
+          "updatedAt": "2026-09-16T09:55:44.444Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "b0e32c3d9d059e8fca5a359c19840d7854bb723707495d3954fccf2b728a442d"
+        },
+        "ko": {
+          "updatedAt": "2026-09-16T09:55:44.445Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx",
+          "postProcessHash": "a7b7a071d77bab296899b0944ff4f3c9c436efbc6e35a4c7fef432388fd258ef"
+        }
+      },
+      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform.mdx"
     }
   ]
 }
