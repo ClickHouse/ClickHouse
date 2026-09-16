@@ -506,6 +506,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     auto parent_snapshot_id = state.metadata_object->getValue<Int64>(f_current_snapshot_id);
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
+    /// TODO: make generateNextMetadata to accept SnapshotSummaryUpdate
     auto [new_snapshot, manifest_list_path] = MetadataGenerator{state.metadata_object}.generateNextMetadata(
         filename_generator,
         metadata_info.path,
@@ -533,7 +534,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parent snapshot {} has no summary", parent_snapshot_id);
 
     auto parent_summary = parent_snapshot->getObject(f_summary);
-    auto parsed_summary = SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/false, /*require_totals=*/true);
+    auto parsed_summary = SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/true, /*require_totals=*/true);
     if (!parsed_summary)
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -541,7 +542,9 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             parent_snapshot_id,
             parsed_summary.error());
 
-    new_snapshot->set(f_summary, SnapshotSummary{plan.snapshot_summary_update, parsed_summary->getTotals()}.toJSON());
+    /// TODO: copy refresh cursor explicitly
+    auto summary = SnapshotSummary{plan.snapshot_summary_update, parsed_summary->getTotals(), parsed_summary->getExtraFields()}.toJSON();
+    new_snapshot->set(f_summary, summary);
 
     const String storage_manifest_list_path = components.path_resolver.resolve(manifest_list_path);
     files_for_cleanup.push_back(storage_manifest_list_path);
