@@ -200,6 +200,7 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 class CustomDiskRegistration;
 using CustomDiskRegistrationPtr = std::shared_ptr<CustomDiskRegistration>;
+using CustomDiskRegistrations = std::vector<CustomDiskRegistrationPtr>;
 class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
@@ -1882,7 +1883,9 @@ public:
     /// Provides a disk defined inline with `disk(...)` in a table or database definition, creating
     /// it if it does not exist yet. The returned registration keeps the disk registered: the disk
     /// is unregistered and shut down once every table and database using it is gone.
-    std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(const String & name, DiskCreator creator) const;
+    /// `nested` are the registrations of the disks nested in the definition of this one; the
+    /// returned registration takes them over, so that they outlive it.
+    std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(const String & name, DiskCreator creator, CustomDiskRegistrations nested) const;
     /// A registration for a custom disk that already exists, or nullptr if `name` is not one.
     CustomDiskRegistrationPtr tryGetCustomDiskRegistration(const String & name) const;
     /// Unregisters a custom disk. Called by ~CustomDiskRegistration, do not call directly.

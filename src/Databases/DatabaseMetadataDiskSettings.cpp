@@ -25,7 +25,7 @@ struct DatabaseMetadataDiskSettingsImpl : public BaseSettings<DatabaseMetadataDi
 
     /// Keeps a disk defined inline with `disk = disk(...)` registered for as long as the database
     /// exists. The settings are a member of the database, so the disk is released on DROP or DETACH.
-    CustomDiskRegistrations custom_disk_registrations;
+    CustomDiskRegistrationPtr custom_disk_registration;
 };
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS, DatabaseMetadataDiskSettings, DatabaseMetadataDiskSetting)
@@ -51,7 +51,7 @@ void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, C
     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
     {
         auto custom_disk = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
-        custom_disk_registrations = std::move(custom_disk.registrations);
+        custom_disk_registration = std::move(custom_disk.registration);
         *value = custom_disk.disk_name;
     }
     else

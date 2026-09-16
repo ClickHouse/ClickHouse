@@ -127,10 +127,10 @@ struct MergeTreeSettings
 
     static bool isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes);
     /// Replaces an inline `disk(...)` definition with the name of the disk it describes, creating
-    /// that disk if needed. The returned registrations have to be kept for as long as the disk is
-    /// used; `loadFromQuery`, `applyChanges` and `applyChange` store them in the settings themselves.
-    static CustomDiskRegistrations resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
-    static CustomDiskRegistrations resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    /// that disk if needed. The returned registration has to be kept for as long as the disk is
+    /// used; `loadFromQuery`, `applyChanges` and `applyChange` store it in the settings themselves.
+    static CustomDiskRegistrationPtr resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    static CustomDiskRegistrationPtr resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
 
     /// Cloud only
     static bool isSMTReadonlySetting(const String & name);

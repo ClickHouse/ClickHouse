@@ -7450,7 +7450,7 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
-std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(const String & name, DiskCreator creator) const
+std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(const String & name, DiskCreator creator, CustomDiskRegistrations nested) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -7470,11 +7470,14 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(con
 
     /// The registration is created together with the disk and handed to the caller, so a disk is
     /// never left unregistered - and thus collectable - between its creation and its first use.
+    /// An existing registration already owns the registrations of the nested disks: the name of a
+    /// disk is derived from its definition with the nested definitions replaced by the names of
+    /// the disks they describe, so the same name means the same nested disks.
     auto & weak_registration = shared->custom_disk_registrations[name];
     auto registration = weak_registration.lock();
     if (!registration)
     {
-        registration = std::make_shared<CustomDiskRegistration>(name);
+        registration = std::make_shared<CustomDiskRegistration>(name, std::move(nested));
         weak_registration = registration;
     }
 
@@ -7529,9 +7532,13 @@ void Context::releaseCustomDisk(const String & name) const
 
     /// `shutdown` makes the disk reject further requests, so it may only be called when nothing can
     /// use the disk anymore. The disk is no longer reachable by name, so no new reference to it can
-    /// appear, and holding the only one left means there is no user of it either.
+    /// appear, and holding the only one left means there is no user of it either. A disk nested in
+    /// the definition of another one is referenced by that wrapper disk, and is released only after
+    /// the wrapper has been (see `CustomDiskRegistration`), so this holds for it as well.
     if (disk.use_count() == 1)
         disk->shutdown();
+    else
+        LOG_DEBUG(shared->log, "Custom disk {} is still referenced after being unregistered, it will not be shut down explicitly", backQuote(name));
 }
 
 StoragePolicyPtr Context::getStoragePolicy(const String & name) const

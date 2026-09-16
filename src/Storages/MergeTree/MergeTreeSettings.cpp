@@ -2587,7 +2587,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 
     /// Keeps a disk defined inline with `disk = disk(...)` registered for as long as these settings
     /// exist. A table holds its settings, so the disk is released on DROP or DETACH TABLE.
-    CustomDiskRegistrations custom_disk_registrations;
+    CustomDiskRegistrationPtr custom_disk_registration;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2634,10 +2634,10 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
-            auto registrations
+            auto registration
                 = MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
             if (changes.tryGet("disk"))
-                custom_disk_registrations = std::move(registrations);
+                custom_disk_registration = std::move(registration);
 
             for (const auto & [name, value, _] : changes)
             {
@@ -2977,36 +2977,37 @@ SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) c
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_changes = changes;
-    auto registrations = resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
+    auto registration = resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
     impl->applyChanges(resolved_changes);
     if (resolved_changes.tryGet("disk"))
-        impl->custom_disk_registrations = std::move(registrations);
+        impl->custom_disk_registration = std::move(registration);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_change = change;
-    auto registrations = resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
+    auto registration = resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
     impl->applyChange(resolved_change);
     if (resolved_change.name == "disk")
-        impl->custom_disk_registrations = std::move(registrations);
+        impl->custom_disk_registration = std::move(registration);
 }
 
-CustomDiskRegistrations MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
-    CustomDiskRegistrations registrations;
+    /// Only the `disk` setting yields a registration, and a setting occurs at most once.
+    CustomDiskRegistrationPtr registration;
     for (auto & change : changes)
     {
-        auto change_registrations = resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
-        registrations.insert(registrations.end(), change_registrations.begin(), change_registrations.end());
+        if (auto change_registration = resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database))
+            registration = std::move(change_registration);
     }
-    return registrations;
+    return registration;
 }
 
-CustomDiskRegistrations MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
     if (change.name != "disk")
-        return {};
+        return nullptr;
 
     CustomType custom;
     ASTPtr value_as_custom_ast = nullptr;
@@ -3018,23 +3019,20 @@ CustomDiskRegistrations MergeTreeSettings::resolveDiskSetting(SettingChange & ch
         auto custom_disk = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", custom_disk.disk_name);
         change.value = custom_disk.disk_name;
-        return std::move(custom_disk.registrations);
+        return std::move(custom_disk.registration);
     }
 
     if (!is_loading_from_existing_metadata)
     {
         DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
-        return {};
+        return nullptr;
     }
 
     /// The definition has already been flattened to a disk name, which happens when settings are
     /// re-applied to a table that is already using the disk (`ALTER TABLE ... MODIFY SETTING`, for
     /// one). Take a registration for it, so that the new settings keep the disk alive as the old
     /// ones did.
-    if (auto registration = context->tryGetCustomDiskRegistration(change.value.safeGet<String>()))
-        return {std::move(registration)};
-
-    return {};
+    return context->tryGetCustomDiskRegistration(change.value.safeGet<String>());
 }
 
 bool MergeTreeSettings::isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes)
