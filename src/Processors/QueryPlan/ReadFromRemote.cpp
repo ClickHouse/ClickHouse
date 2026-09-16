@@ -313,7 +313,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                 /// with `UUID` semantics, so the remote shard would reparse a different value from
                 /// `_CAST(<literal>, 'UUID2')`. `getFieldFromColumnForASTLiteral` serializes such a value as
                 /// canonical text instead.
-                literal = make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node->column, 0, node->result_type));
+                literal = make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node->column, 0, node->result_type, /*date_time_as_numbers=*/true));
             else
                 /// Other types keep their raw Field literal. In particular a DateTime serialized as local
                 /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
