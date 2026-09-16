@@ -3,3 +3,5 @@
 	tmp_settings	min_rows_to_keep	7	definition
 -- a filter on the current database leaves them out
 0
+-- and so does a filter naming another table
+0

@@ -12,4 +12,7 @@ ORDER BY name;
 SELECT '-- a filter on the current database leaves them out';
 SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'tmp_settings';
 
+SELECT '-- and so does a filter naming another table';
+SELECT count() FROM system.table_settings WHERE database = '' AND table = 'tmp_settings_other';
+
 DROP TEMPORARY TABLE tmp_settings;

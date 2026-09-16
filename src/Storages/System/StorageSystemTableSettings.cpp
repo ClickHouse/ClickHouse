@@ -112,6 +112,7 @@ public:
         SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
+        bool with_temporary_tables_,
         ExpressionActionsPtr table_filter_,
         TablesFilter tables_filter_,
         ContextPtr context_)
@@ -119,6 +120,7 @@ public:
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
+        , with_temporary_tables(with_temporary_tables_)
         , table_filter(std::move(table_filter_))
         , tables_filter(std::move(tables_filter_))
         , context(Context::createCopy(context_))
@@ -245,14 +247,20 @@ protected:
             }
         }
 
-        /// Phase 2: session temporary tables, once all catalog databases are consumed.
-        if (rows_count < max_block_size)
+        /// Phase 2: session temporary tables, once all catalog databases are consumed. They get the same two
+        /// filters the catalog tables get, because one table's settings are hundreds of rows: a predicate on
+        /// `database` decides whether any of them can match at all - they report an empty one, which
+        /// `with_temporary_tables` answers once - and a predicate on `table` is applied here, before the
+        /// settings are read rather than after.
+        if (with_temporary_tables && rows_count < max_block_size)
         {
             if (!external_tables_initialized)
             {
                 external_tables_initialized = true;
                 if (context->hasSessionContext())
                     external_tables = context->getSessionContext()->getExternalTables();
+                if (table_filter && !external_tables.empty())
+                    keepTablesAllowedByFilter(external_tables);
                 external_tables_it = external_tables.begin();
             }
 
@@ -274,6 +282,33 @@ private:
     /// The names come from `getLightweightTablesIterator`, not `getTablesIterator`: for an external database the
     /// latter already resolves storages (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`), so
     /// listing names through it would open every table and let one unresolvable table fail the lookup.
+    /// The same, for the session's temporary tables, which no database lists: drops every one the query's
+    /// `database`/`table` predicate excludes, so their settings are never read.
+    void keepTablesAllowedByFilter(Tables & tables) const
+    {
+        auto database_column = ColumnString::create();
+        auto table_column = ColumnString::create();
+        for (const auto & [table_name, storage] : tables)
+        {
+            database_column->insertDefault();
+            table_column->insert(table_name);
+        }
+
+        Block block
+        {
+            ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "database"),
+            ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "table"),
+        };
+        VirtualColumnUtils::filterBlockWithExpression(table_filter, block);
+
+        const auto & surviving = block.getByName("table").column;
+        NameSet allowed;
+        for (size_t i = 0; i < surviving->size(); ++i)
+            allowed.insert(String{surviving->getDataAt(i)});
+
+        std::erase_if(tables, [&allowed](const auto & entry) { return !allowed.contains(entry.first); });
+    }
+
     IDatabase::FilterByNameFunction tablesAllowedIn(const String & database_name) const
     {
         if (!table_filter)
@@ -306,6 +341,7 @@ private:
     std::vector<UInt8> column_mask;
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;
+    bool with_temporary_tables;
     ExpressionActionsPtr table_filter;
     TablesFilter tables_filter;
     ContextPtr context;
@@ -436,9 +472,25 @@ void ReadFromSystemTableSettings::initializePipeline(QueryPipelineBuilder & pipe
         VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, block);
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
+
+    /// The session's temporary tables are not in any database, and report an empty `database`. Ask the same
+    /// filter whether that value survives, so a query about one database does not read their settings.
+    bool with_temporary_tables = true;
+    if (virtual_columns_filter)
+    {
+        auto temporary_database_column = ColumnString::create();
+        temporary_database_column->insertDefault();
+        Block temporary_block
+        {
+            ColumnWithTypeAndName(std::move(temporary_database_column), std::make_shared<DataTypeString>(), "database"),
+        };
+        VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, temporary_block);
+        with_temporary_tables = temporary_block.getByPosition(0).column->size() > 0;
+    }
+
     pipeline.init(Pipe(std::make_shared<TableSettingsSource>(
         std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases),
-        table_filter, tables_filter, context)));
+        with_temporary_tables, table_filter, tables_filter, context)));
 }
 
 }
