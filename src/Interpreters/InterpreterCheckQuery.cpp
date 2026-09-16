@@ -108,8 +108,6 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
 class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
-    /// The caller must have checked `CHECK` access on `table_` already: building the task list
-    /// touches the table's parts, and its errors would otherwise leak to users without the privilege.
     TableCheckTask(StoragePtr table_, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
         : table(std::move(table_))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
