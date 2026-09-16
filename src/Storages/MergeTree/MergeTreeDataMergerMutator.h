@@ -142,7 +142,7 @@ private:
     /// discarded selection can be undone. See `rollbackTTLMergeTime`.
     struct TTLMergeTimeAdvance
     {
-        time_t installed;
+        time_t installed = 0;
         std::optional<time_t> previous;
     };
     std::unordered_map<String, TTLMergeTimeAdvance> last_delete_ttl_merge_time_advance;
