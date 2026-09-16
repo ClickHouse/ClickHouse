@@ -177,13 +177,16 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
         col.getNullMapData().resize_fill(std::as_const(col).getNestedColumn().size());
     }
 
-    if (col.getNullMapColumn().size() != col.getNestedColumn().size())
+    /// Size-only reads again: by now both the null map and the nested column may be referenced from
+    /// the substreams cache, so stay on the const accessors here as well.
+    const auto & const_col = std::as_const(col);
+    if (const_col.getNullMapColumn().size() != const_col.getNestedColumn().size())
         throw Exception(
             settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Sizes of nested column and null map of Nullable column are not equal after deserialization (null map size = {}, nested "
             "column size = {})",
-            col.getNullMapColumn().size(),
-            col.getNestedColumn().size());
+            const_col.getNullMapColumn().size(),
+            const_col.getNestedColumn().size());
 }
 
 

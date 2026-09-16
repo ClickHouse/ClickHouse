@@ -2066,31 +2066,55 @@ namespace
 
         void readRow(size_t row_num) override
         {
+            bool presence_inserted = false;
             if (presence_column)
             {
                 if (row_num < presence_column->size())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
                 presence_column->insert(presence_value);
+                presence_inserted = true;
             }
             if (nested_serializer)
-                nested_serializer->readRow(row_num);
+                readNestedWithRollback(presence_inserted, [&] { nested_serializer->readRow(row_num); });
         }
 
         void insertDefaults(size_t row_num) override
         {
             /// Sibling `oneof` wrappers share this column; another branch may have
             /// already inserted the value for the current row.
+            bool presence_inserted = false;
             if (row_num >= presence_column->size())
+            {
                 presence_column->insert(0);
+                presence_inserted = true;
+            }
 
             if (nested_serializer)
-                nested_serializer->insertDefaults(row_num);
+                readNestedWithRollback(presence_inserted, [&] { nested_serializer->insertDefaults(row_num); });
         }
 
         void resetState() override
         {
             if (nested_serializer)
                 nested_serializer->resetState();
+        }
+
+        /// The presence tag is published before the selected branch payload is read. If the nested
+        /// step throws, take the tag back so the presence column does not run one row ahead of the
+        /// branch columns (the same row-level rollback the `Nullable` and array serializers do).
+        template <typename F>
+        void readNestedWithRollback(bool presence_inserted, F && read_nested)
+        {
+            try
+            {
+                read_nested();
+            }
+            catch (...)
+            {
+                if (presence_inserted)
+                    presence_column->popBack(1);
+                throw;
+            }
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
