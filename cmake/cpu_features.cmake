@@ -38,6 +38,7 @@ if (ARCH_AARCH64)
         # rcpc:    Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
         #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton >=2, Azure and GCP instances.
         # bf16:    Bfloat16, a half-precision floating point format developed by Google Brain. Optional in v8.2, mandatory in v8.6.
+        #
         # [1]  https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
         # [2]  https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
         # [3]  https://mysqlonarm.github.io/ARM-LSE-and-MySQL/
@@ -52,6 +53,23 @@ if (ARCH_AARCH64)
         # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable
         list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16")
     endif ()
+
+    # Best-effort check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
+    # and the build machine is too old, i.e. doesn't satisfy above modern profile, then these intermediate binaries will not run (dump
+    # SIGILL). Even if they could run, the build machine wouldn't be able to run the ClickHouse binary. In that case, suggest to run the
+    # build with the compat profile.
+    if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)" AND NOT NO_ARMV81_OR_HIGHER)
+        # CPU features in /proc/cpuinfo and compiler flags don't align :( ... pick an obvious flag contained in the modern but not in the
+        # legacy profile (full Graviton 3 /proc/cpuinfo is "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm
+        # jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs paca pacg dcpodp svei8mm svebf16 i8mm
+        # bf16 dgh rng")
+        execute_process(
+            COMMAND grep -P "^(?=.*atomic)" /proc/cpuinfo
+            OUTPUT_VARIABLE FLAGS)
+        if (NOT FLAGS)
+            MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_ARMV81_OR_HIGHER=1")
+        endif()
+    endif()
 
 elseif (ARCH_PPC64LE)
     # By Default, build for power8 and up, allow building for power9 and up
