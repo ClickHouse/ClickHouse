@@ -182,7 +182,7 @@ public:
     /// `DateLUTImpl` for one of them costs ~4.6 MiB that is never released. Validators that want to
     /// reject a time zone name early call this in addition to `cctz::load_time_zone`, so that they
     /// cannot start accepting names that the lookup itself rejects. See the definition for details.
-    static bool isSupportedTimeZoneName(const std::string & time_zone_name);
+    static bool isSupportedTimeZoneName(std::string_view time_zone_name);
 
     /// The order of fields matters for alignment and sizeof.
     struct Values

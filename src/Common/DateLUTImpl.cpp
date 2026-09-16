@@ -24,8 +24,9 @@ namespace ErrorCodes
 }
 }
 
-/// Embedded timezones.
-std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
+/// Embedded timezones. The lookup is length-aware on purpose: a name is also the key of the
+/// `DateLUT` cache, so a name with an embedded `\0` must not match the zone that its prefix names.
+std::string_view getTimeZone(std::string_view name);  /// NOLINT(misc-use-internal-linkage)
 
 
 namespace
@@ -67,7 +68,7 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-bool DateLUTImpl::isSupportedTimeZoneName(const std::string & time_zone_name)
+bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
 {
     /// `cctz` resolves far more names than the time zone database has, and every name that gets loaded
     /// permanently costs ~4.6 MiB in the `DateLUT` cache, which never evicts anything because callers
@@ -86,6 +87,12 @@ bool DateLUTImpl::isSupportedTimeZoneName(const std::string & time_zone_name)
     ///   each, for one and the same zone.
     /// - `Fixed/UTC±HH:MM:SS`, synthesized without consulting the database for any offset up to
     ///   24 hours, which is 172801 distinct names.
+    ///
+    /// A name also has to be matched by length, not as a C string. Names reach us from
+    /// length-prefixed carriers - a SQL literal, `readStringBinary` in binary type decoding - so they
+    /// can carry an embedded `\0`, while the `DateLUT` cache keys on the whole byte string. Matching
+    /// `UTC\0<anything>` as `UTC` would load one zone under unboundedly many keys, which is why
+    /// `::getTimeZone` takes a `std::string_view`.
     ///
     /// So accept only the names of the time zone database that is linked into the binary - which is
     /// exactly what `system.time_zones` lists, and what the documentation of the `DateTime` type and of
@@ -107,7 +114,7 @@ bool DateLUTImpl::isSupportedTimeZoneName(const std::string & time_zone_name)
     if (time_zone_name.starts_with(fixed_zone_prefix))
     {
         /// The remainder has to be exactly `UTC±HH:MM:SS`, the only spelling `cctz` understands.
-        std::string_view offset_name = std::string_view{time_zone_name}.substr(fixed_zone_prefix.size());
+        std::string_view offset_name = time_zone_name.substr(fixed_zone_prefix.size());
         if (offset_name.size() != 12 || !offset_name.starts_with("UTC")
             || (offset_name[3] != '+' && offset_name[3] != '-') || offset_name[6] != ':' || offset_name[9] != ':')
             return false;
@@ -130,9 +137,10 @@ bool DateLUTImpl::isSupportedTimeZoneName(const std::string & time_zone_name)
     }
 
     /// `::getTimeZone` is also what loads the zone, so a name accepted here is one that can be loaded
-    /// without consulting the host at all. It is qualified because `DateLUTImpl` has a member with
-    /// the same name that returns the time zone of this instance.
-    return !::getTimeZone(time_zone_name.c_str()).empty();
+    /// without consulting the host at all, and one that cannot alias another name. It is qualified
+    /// because `DateLUTImpl` has a member with the same name that returns the time zone of this
+    /// instance.
+    return !::getTimeZone(time_zone_name).empty();
 }
 
 DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
@@ -666,7 +674,9 @@ namespace cctz_extension
             const std::string & name,
             const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> &)
         {
-            std::string_view tz_file = getTimeZone(name.data());
+            /// `name`, not `name.data()`: the name can carry an embedded `\0` and must not match the
+            /// zone that its prefix names, see `isSupportedTimeZoneName`.
+            std::string_view tz_file = getTimeZone(name);
 
             /// `cctz`'s own fallback is deliberately not used. It resolves a name as a path under the
             /// time zone database directory - or, for a `file:` prefix, as an arbitrary path - so it
