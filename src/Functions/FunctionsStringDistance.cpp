@@ -959,6 +959,23 @@ inline UInt16 jaroNeonMovemask(uint8x16_t input)
     return vgetq_lane_u16(vreinterpretq_u16_u8(bits), 0);
 }
 
+/// Compresses four 16-byte all-0/all-1 vectors into one bit per byte.
+inline UInt64 jaroNeonMovemask64(uint8x16_t m0, uint8x16_t m1, uint8x16_t m2, uint8x16_t m3)
+{
+    const uint8x16_t bit_per_lane = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128};
+    m0 = vandq_u8(m0, bit_per_lane);
+    m1 = vandq_u8(m1, bit_per_lane);
+    m2 = vandq_u8(m2, bit_per_lane);
+    m3 = vandq_u8(m3, bit_per_lane);
+
+    /// Pairwise reductions keep the four input masks in order in the low 64 bits.
+    uint8x16_t lo = vpaddq_u8(m0, m1);
+    const uint8x16_t hi = vpaddq_u8(m2, m3);
+    lo = vpaddq_u8(lo, hi);
+    lo = vpaddq_u8(lo, lo);
+    return vgetq_lane_u64(vreinterpretq_u64_u8(lo), 0);
+}
+
 /// Return one bit for every matching byte in the 64-byte block at `data`.
 inline UInt64 jaroNeonEqMask64(const unsigned char * data, uint8x16_t target)
 {
@@ -966,11 +983,11 @@ inline UInt64 jaroNeonEqMask64(const unsigned char * data, uint8x16_t target)
     const uint8x16_t c1 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + 16));
     const uint8x16_t c2 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + 32));
     const uint8x16_t c3 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + 48));
-    const UInt64 e0 = jaroNeonMovemask(vceqq_u8(c0, target));
-    const UInt64 e1 = jaroNeonMovemask(vceqq_u8(c1, target));
-    const UInt64 e2 = jaroNeonMovemask(vceqq_u8(c2, target));
-    const UInt64 e3 = jaroNeonMovemask(vceqq_u8(c3, target));
-    return e0 | (e1 << 16) | (e2 << 32) | (e3 << 48);
+    return jaroNeonMovemask64(
+        vceqq_u8(c0, target),
+        vceqq_u8(c1, target),
+        vceqq_u8(c2, target),
+        vceqq_u8(c3, target));
 }
 
 /// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo <= hi <= 64.
@@ -1026,11 +1043,11 @@ static double jaroSmall(const unsigned char * s1, int s1_len,
         if (lo >= hi)
             continue;
         const uint8x16_t target = vdupq_n_u8(s1[i]);
-        const UInt64 e0 = jaroNeonMovemask(vceqq_u8(target, s2v0));
-        const UInt64 e1 = jaroNeonMovemask(vceqq_u8(target, s2v1));
-        const UInt64 e2 = jaroNeonMovemask(vceqq_u8(target, s2v2));
-        const UInt64 e3 = jaroNeonMovemask(vceqq_u8(target, s2v3));
-        const UInt64 eq = e0 | (e1 << 16) | (e2 << 32) | (e3 << 48);
+        const UInt64 eq = jaroNeonMovemask64(
+            vceqq_u8(target, s2v0),
+            vceqq_u8(target, s2v1),
+            vceqq_u8(target, s2v2),
+            vceqq_u8(target, s2v3));
         const UInt64 cand = eq & jaroWindowMask(lo, hi) & valid & ~matched_s2;
         if (cand)
         {
