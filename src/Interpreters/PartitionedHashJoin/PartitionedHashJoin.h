@@ -100,7 +100,7 @@ public:
     JoinResultPtr joinBlock(Block block, size_t lane) override;
 
     /// Every parallel fill stream reports totals at its end-of-fill, so unlike the base class's
-    /// unsynchronized default these need a guard - as in `ConcurrentHashJoin`.
+    /// unsynchronized default these need a guard, as the parallel `HashJoin` layout has.
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
 
@@ -516,7 +516,7 @@ private:
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
-    /// The row store layout is derived from the first block, as `ConcurrentHashJoin` does.
+    /// The row store layout is derived from the first block, as `HashJoin` does.
     std::once_flag row_store_init_flag;
 
     size_t bits = 0;
