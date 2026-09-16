@@ -317,7 +317,6 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
-    std::swap(not_null_filters_derived_left, not_null_filters_derived_right);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -1417,9 +1416,8 @@ static void addSortingForMergeJoin(
             node->step->getOutputHeader(), key_names, join_settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_table_side);
         creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side), max_step_description_length);
 
-        auto * step_raw_ptr = creating_set_step.get();
         node = &nodes.emplace_back(QueryPlan::Node{std::move(creating_set_step), {node}});
-        return step_raw_ptr;
+        return static_cast<CreateSetAndFilterOnTheFlyStep *>(node->step.get());
     };
 
     const auto & join_clause = join_ptr->getTableJoin().getOnlyClause();
@@ -2626,8 +2624,6 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
-    result_step->not_null_filters_derived_left = not_null_filters_derived_left;
-    result_step->not_null_filters_derived_right = not_null_filters_derived_right;
 
     return result_step;
 }
