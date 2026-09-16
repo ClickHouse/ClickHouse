@@ -247,16 +247,16 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = 1, vend
     assert GATE_SETTING in error
 
 
-def create_with_session_flag(node, db_name, flag):
-    """`CREATE` without the database setting, with the session flag set to `flag`."""
+def create_legacy_database(node, db_name):
+    """`CREATE` through the proxy, pinned to the legacy implementation."""
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
     node.query(
         f"""
 CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{PROXY_URL}')
-SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity',
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = 0,
          vended_credentials = false, catalog_credential = '{PAT_TOKEN}'
         """,
-        settings={GATE_SETTING: "1", V2_SETTING: flag},
+        settings={GATE_SETTING: "1"},
     )
 
 
@@ -267,36 +267,11 @@ def assert_legacy_hides_iceberg(node, db_name):
     assert DELTA_TABLE in show_tables(node, db_name, "default%")
 
 
-def test_session_flag_is_persisted_on_create(started_cluster):
-    """The session flag is read once, on `CREATE`, and written into the database."""
-    node = started_cluster.instances["node1"]
-    db_name = unique_name("flag_on")
-    create_with_session_flag(node, db_name, "1")
-
-    assert f"{V2_SETTING} = 1" in node.query(f"SHOW CREATE DATABASE {db_name}")
-    assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
-
-    # The stored value wins over the session flag after a restart.
-    node.restart_clickhouse()
-    assert f"{V2_SETTING} = 1" in node.query(f"SHOW CREATE DATABASE {db_name}")
-    assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
-
-
-def test_session_flag_off_is_not_persisted(started_cluster):
-    """Without the flag nothing is written, so the database follows the default (legacy)."""
-    node = started_cluster.instances["node1"]
-    db_name = unique_name("flag_off")
-    create_with_session_flag(node, db_name, "0")
-
-    assert V2_SETTING not in node.query(f"SHOW CREATE DATABASE {db_name}")
-    assert_legacy_hides_iceberg(node, db_name)
-
-
 def test_alter_switches_implementation(started_cluster):
     """An existing legacy database is migrated with `ALTER DATABASE ... MODIFY SETTING`."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("alter_v2")
-    create_with_session_flag(node, db_name, "0")
+    create_legacy_database(node, db_name)
     assert_legacy_hides_iceberg(node, db_name)
 
     node.query(f"ALTER DATABASE {db_name} MODIFY SETTING {V2_SETTING} = 1")

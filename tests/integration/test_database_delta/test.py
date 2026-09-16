@@ -339,13 +339,11 @@ def execute_multiple_spark_queries(node, queries_list, retry_on_timeout=False):
 
 
 # The new Unity implementation must match the legacy one on an all-Delta
-# catalog, so every test runs with both. The session flag is persisted into
-# the database on CREATE.
+# catalog, so every test runs with both, chosen by the `use_unity_catalog_v2`
+# database setting in the CREATE DATABASE query.
 USE_V2_VALUES = ["0", "1"]
 
-
-def unity_settings(use_v2):
-    return {"allow_database_unity_catalog": "1", "use_unity_catalog_v2": use_v2}
+UNITY_SESSION_SETTINGS = {"allow_database_unity_catalog": "1"}
 
 
 @pytest.mark.parametrize("use_v2", USE_V2_VALUES)
@@ -355,8 +353,8 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel, use_v2)
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists unity_test_{test_uuid}")
     node1.query(
-        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
-        settings=unity_settings(use_v2),
+        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}, use_unity_catalog_v2={use_v2}",
+        settings=UNITY_SESSION_SETTINGS,
     )
     default_tables = list(
         sorted(
@@ -433,8 +431,8 @@ def test_check_database_unity(started_cluster, use_v2):
 
     # Create ClickHouse database pointing to Unity Catalog
     node1.query(
-        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings=unity_settings(use_v2),
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}",
+        settings=UNITY_SESSION_SETTINGS,
     )
 
     # Verify tables are visible
@@ -485,8 +483,8 @@ def test_multiple_schemes_tables(started_cluster, use_v2):
     execute_multiple_spark_queries(node1, queries)
 
     node1.query(
-        f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings=unity_settings(use_v2),
+        f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}",
+        settings=UNITY_SESSION_SETTINGS,
     )
     multi_schema_tables = list(
         sorted(
@@ -537,9 +535,9 @@ def test_complex_table_schema(started_cluster, use_delta_kernel, use_v2):
 drop database if exists complex_schema;
 create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}, use_unity_catalog_v2={use_v2}
         """,
-        settings=unity_settings(use_v2),
+        settings=UNITY_SESSION_SETTINGS,
     )
 
     complex_schema_tables = list(
@@ -603,9 +601,9 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel, use_v2):
 drop database if exists {table_name};
 create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}, use_unity_catalog_v2={use_v2}
         """,
-        settings=unity_settings(use_v2),
+        settings=UNITY_SESSION_SETTINGS,
     )
 
     ntz_tables = list(
@@ -751,9 +749,9 @@ def test_used_storages_in_query_log(started_cluster, use_v2):
 drop database if exists {db_name};
 create database {db_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}
         """,
-        settings=unity_settings(use_v2),
+        settings=UNITY_SESSION_SETTINGS,
     )
 
     query_id = str(uuid.uuid4()).replace("-", "")
@@ -831,9 +829,9 @@ TBLPROPERTIES (
 drop database if exists {db_name};
 create database {db_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}
         """,
-        settings=unity_settings(use_v2),
+        settings=UNITY_SESSION_SETTINGS,
     )
 
     # Validate data at version 1
@@ -1022,9 +1020,9 @@ DROP DATABASE IF EXISTS {db_name};
 CREATE DATABASE {db_name}
 ENGINE DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false,
-         allow_experimental_delta_kernel_rs = {use_delta_kernel}
+         allow_experimental_delta_kernel_rs = {use_delta_kernel}, use_unity_catalog_v2 = {use_v2}
         """,
-        settings=unity_settings(use_v2),
+        settings=UNITY_SESSION_SETTINGS,
     )
 
     tables = (
@@ -1228,11 +1226,8 @@ def test_create_delta_table_in_unity_catalog(started_cluster, use_v2):
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     write_settings = {
@@ -1277,11 +1272,8 @@ def test_create_delta_table_in_unity_catalog(started_cluster, use_v2):
         node1.query(
             f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
             "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-            "allow_experimental_delta_kernel_rs=1",
-            settings={
-                "allow_experimental_database_unity_catalog": "1",
-                "use_unity_catalog_v2": use_v2,
-            },
+            f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+            settings={"allow_experimental_database_unity_catalog": "1"},
         )
         tables_after = node1.query(
             f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'",
@@ -1323,11 +1315,8 @@ def test_register_existing_delta_table_in_unity_catalog(started_cluster, use_v2)
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     write_settings = {
@@ -1412,11 +1401,8 @@ def test_register_existing_delta_table_missing_namespace(started_cluster, use_v2
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     write_settings = {
@@ -1473,11 +1459,8 @@ def test_create_table_in_unity_catalog_rejects_default(started_cluster, use_v2):
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     write_settings = {
@@ -1532,11 +1515,8 @@ def test_register_existing_delta_table_preserves_raw_schema(started_cluster, use
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     write_settings = {
@@ -1604,11 +1584,8 @@ def test_register_existing_delta_table_rejects_column_mapping(started_cluster, u
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     write_settings = {
@@ -1657,11 +1634,8 @@ def test_register_existing_delta_table_rejects_char_varchar(started_cluster, use
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
 
     write_settings = {
@@ -1705,11 +1679,8 @@ def test_register_existing_delta_table_requires_kernel(started_cluster, use_v2):
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
         "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        "allow_experimental_delta_kernel_rs=1",
-        settings={
-            "allow_experimental_database_unity_catalog": "1",
-            "use_unity_catalog_v2": use_v2,
-        },
+        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
+        settings={"allow_experimental_database_unity_catalog": "1"},
     )
     try:
         # An existing Delta table on storage, not registered in Unity.

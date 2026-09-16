@@ -103,7 +103,6 @@ namespace Setting
 {
     extern const SettingsBool allow_database_iceberg;
     extern const SettingsBool allow_database_unity_catalog;
-    extern const SettingsBool use_unity_catalog_v2;
     extern const SettingsBool allow_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
@@ -1512,29 +1511,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
-        /// The session flag is read once, on CREATE, and persisted in the database so that the
-        /// implementation does not change on restart. Only `true` is written: a database without the
-        /// setting follows the default, which lets a later default flip migrate it. The setting is
-        /// added to the CREATE query itself, which is what the interpreter writes to the metadata file.
-        if (!args.create_query.attach
-            && database_settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::UNITY
-            && !database_settings[DatabaseDataLakeSetting::use_unity_catalog_v2].changed
-            && args.context->getSettingsRef()[Setting::use_unity_catalog_v2])
-        {
-            const String setting_name = "use_unity_catalog_v2";
-            const Field enabled(static_cast<UInt64>(1));
-            database_settings.applyChanges({{setting_name, enabled}});
-
-            ASTStorage * create_query_storage = args.create_query.storage;
-            if (!create_query_storage->settings)
-            {
-                auto settings_ast = make_intrusive<ASTSetQuery>();
-                settings_ast->is_standalone = false;
-                create_query_storage->set(create_query_storage->settings, settings_ast);
-            }
-            create_query_storage->settings->changes.setSetting(setting_name, enabled);
-        }
-
         const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
         /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
         /// gates below, which also self-skip on attach). An already-persisted database whose
@@ -1849,7 +1825,7 @@ The following settings are supported:
 | `catalog_type`          | Type of catalog: `glue`, `unity` (Delta, or Delta and Iceberg with `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
-| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set on `CREATE`, or seeded from the session setting of the same name. Change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
+| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
