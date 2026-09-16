@@ -38,13 +38,13 @@ const ReleaseSchedule = ({ releases = [] }) => {
         <tr>
           <th rowSpan={2} scope="col">الإصدار</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#fast-release-channel-early-upgrades">القناة السريعة</a>
+            <a href="/manage/updates#fast-release-channel-early-upgrades">القناة السريعة</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#regular-release-channel">القناة العادية</a>
+            <a href="/manage/updates#regular-release-channel">القناة العادية</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades">القناة البطيئة</a>
+            <a href="/manage/updates#slow-release-channel-deferred-upgrades">القناة البطيئة</a>
           </th>
         </tr>
         <tr>
