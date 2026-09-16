@@ -1429,7 +1429,7 @@ def test_first_runs_happen_in_declaration_order(janedoe_in_role_a):
             "LDAP synchronisation of directory .ldap. cannot run yet"
         )
         assert login(node_bad, "janedoe") == TSV([["janedoe"]])
-        assert login(node_bad, "johndoe") == TSV([["johndoe"]])
+        assert login(node_bad, "johndoe", "qwertz") == TSV([["johndoe"]])
     finally:
         restore_node_bad()
 
