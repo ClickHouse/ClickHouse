@@ -69,6 +69,15 @@ struct RowRef
     /// same on little- and big-endian systems: block_no (with INLINE_FLAG in its MSB) lands in the
     /// high half and row_no in the low half, matching the refWord* decoders below either way.
     UInt64 encode() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
+
+    /// The exact inverse of `encode`, `INLINE_FLAG` included, so re-encoding reproduces the word.
+    static RowRef fromWord(UInt64 word)
+    {
+        RowRef ref;
+        ref.row_no = static_cast<UInt32>(word);
+        ref.block_no = static_cast<UInt32>(word >> 32);
+        return ref;
+    }
 };
 
 static_assert(sizeof(RowRef) == 8, "RowRef must stay 8 bytes: it is the hash map cell payload");
@@ -95,11 +104,18 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 
 /// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
 ///   - bit 63 is 1: the key has exactly one row so far; the word IS the encoded RowRef (inline).
-///   - bit 63 is 0 and the word is not 0: a pointer (bits 47..0) to an arena-allocated `Batch` node,
-///     with the duplicate count packed into bits 62..48 (saturating; see COUNT_SAT). The count lets
-///     the probe loop read `rows` straight from the cell word without dereferencing the node.
-/// The node is allocated only when the first duplicate of a key arrives, so ALL-join cells are as
-/// small as ANY-join cells for every key type, and unique keys never touch the arena.
+///   - bit 63 is 0 and the word is not 0: an 8-aligned arena pointer in bits 47..3, a count in
+///     bits 62..48 (saturating; see COUNT_SAT), and a tag in bits 2..0 naming the layout:
+///       `TAG_BATCH` a `Batch` node (the standard `HashJoin` insert path, see below);
+///       `TAG_RUN`   a headerless block of `count` contiguous refs, `count` exact in [2, MAX_RANGE_REFS];
+///       `TAG_CHAIN` a newest-first chain of ranges; the pointer is the newest range's 16-byte header.
+///       `TAG_COUNT`, `TAG_FILL`, `TAG_FILL_H` are build-time words `PartitionedHashJoin` never publishes.
+/// Every layout keeps the same contract for the readers: `rows`, `firstWord` and `ForwardIterator`
+/// decode all of them, so `LazyOutput`, the used flags and the non-joined fillers never care which
+/// build produced the word. A `Batch` node is allocated only when the first duplicate of a key
+/// arrives, so ALL-join cells are as small as ANY-join cells for every key type, and unique keys never
+/// touch the arena. The run and chain layouts are written by `PartitionedHashJoin` (see `SpanWriter`);
+/// they store 8 bytes per row and a 16-byte header on every range after the key's first.
 struct RowRefList
 {
     /// Low 48 bits of a list word hold the node pointer; bits 62..48 hold the saturating count.
@@ -107,8 +123,39 @@ struct RowRefList
     /// contingency if user-space mappings ever cross the 47-bit boundary.
     static constexpr UInt64 PTR_MASK = (1ull << 48) - 1;
     static constexpr UInt32 COUNT_SHIFT = 48;
-    /// Sentinel stored in the count field meaning "count >= COUNT_SAT, load total_rows from the node".
+    /// Sentinel stored in the count field meaning "count >= COUNT_SAT, load the total from the node".
     static constexpr UInt32 COUNT_SAT = 0x7FFFu;
+    /// A range holds at most this many refs, so a published count equal to `COUNT_SAT` is never a run.
+    static constexpr UInt32 MAX_RANGE_REFS = COUNT_SAT - 1;
+
+    /// Bits 2..0 of a non-inline, non-zero word. Every pointed-at object is 8-aligned, so they are free.
+    static constexpr UInt64 TAG_MASK = 0x7;
+    static constexpr UInt64 TAG_BATCH = 0x0;
+    static constexpr UInt64 TAG_FILL = 0x2; /// build-time: cursor into the key's open span
+    static constexpr UInt64 TAG_COUNT = 0x3; /// build-time: n_items of the current pass
+    static constexpr UInt64 TAG_FILL_H = 0x4; /// build-time: the open chunk has a header
+    static constexpr UInt64 TAG_CHAIN = 0x5;
+    static constexpr UInt64 TAG_RUN = 0x6;
+    static constexpr UInt64 NODE_PTR_MASK = PTR_MASK & ~TAG_MASK;
+
+    /// 16-byte header in front of every range of a key except the key's first. The range's refs
+    /// follow the header directly (`refs`). The previous pointer names the previous range's header
+    /// when `prevHasHeader`, its refs otherwise.
+    struct RangeHeader
+    {
+        UInt64 len_total = 0; /// bits 63..48 own_len, bits 47..0 total (this range plus all older)
+        UInt64 prev = 0; /// bits 63..48 prev_len, bits 47..3 prev ptr, bit 2 prev_has_header
+
+        UInt32 ownLen() const { return static_cast<UInt32>(len_total >> COUNT_SHIFT); }
+        UInt64 total() const { return len_total & PTR_MASK; }
+        const UInt64 * refs() const { return reinterpret_cast<const UInt64 *>(this) + 2; }
+        static UInt32 prevLen(UInt64 prev_word) { return static_cast<UInt32>(prev_word >> COUNT_SHIFT); }
+        static const UInt64 * prevPtr(UInt64 prev_word)
+        {
+            return reinterpret_cast<const UInt64 *>(prev_word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+        }
+        static bool prevHasHeader(UInt64 prev_word) { return (prev_word >> 2) & 1; }
+    };
 
     /// A single 64-byte node. The cell word always points at the FIRST ("cell") node of a key.
     /// `head` and the local slots are one contiguous `refs` array (refs[0] is the head) so the
@@ -159,11 +206,99 @@ struct RowRefList
         return list;
     }
 
+    /// A headerless block of `count` refs, `count` in [2, MAX_RANGE_REFS]. A larger contribution is a
+    /// chain of chunks, each at most `MAX_RANGE_REFS`.
+    static RowRefList makeRun(const UInt64 * refs, size_t count)
+    {
+        chassert(count >= 2 && count <= MAX_RANGE_REFS);
+        return fromWord(checkedNodePointer(refs) | (static_cast<UInt64>(count) << COUNT_SHIFT) | TAG_RUN);
+    }
+
+    static RowRefList makeChain(const RangeHeader * header, UInt64 total)
+    {
+        const UInt64 count = total < COUNT_SAT ? total : COUNT_SAT;
+        return fromWord(checkedNodePointer(header) | (count << COUNT_SHIFT) | TAG_CHAIN);
+    }
+
+    /// Build-time: `n_items` of this pass (the previous published word counts as one item when
+    /// `has_prev`), owner-private until the pass finishes.
+    static RowRefList makeCount(UInt64 n_items, bool has_prev)
+    {
+        chassert(n_items < (1ull << 59));
+        return fromWord((n_items << 4) | (static_cast<UInt64>(has_prev) << 3) | TAG_COUNT);
+    }
+
+    /// Build-time: cursor at the next free slot of the key's span, `placed` refs in the open chunk.
+    static RowRefList makeFill(const UInt64 * cursor, UInt32 placed, bool has_header)
+    {
+        chassert(placed <= MAX_RANGE_REFS);
+        return fromWord(checkedNodePointer(cursor) | (static_cast<UInt64>(placed) << COUNT_SHIFT) | (has_header ? TAG_FILL_H : TAG_FILL));
+    }
+
+    /// `prev` is the previous range's header when `prev_has_header`, its refs otherwise.
+    static UInt64 makePrevWord(const void * prev, UInt32 prev_len, bool prev_has_header)
+    {
+        chassert(prev_len >= 1 && prev_len <= MAX_RANGE_REFS);
+        return checkedNodePointer(prev) | (static_cast<UInt64>(prev_len) << COUNT_SHIFT) | (static_cast<UInt64>(prev_has_header) << 2);
+    }
+
+    /// `w` is the key's previous published word: `TAG_RUN` or `TAG_CHAIN`.
+    static UInt64 makePrevWordFrom(UInt64 w)
+    {
+        const RowRefList list = fromWord(w);
+        if (list.isRun())
+            return makePrevWord(list.runRefs(), list.countField(), false);
+        const RangeHeader * header = list.chainHeader();
+        return makePrevWord(header, header->ownLen(), true);
+    }
+
     bool isInline() const { return refWordIsInline(word); }
+
+    bool hasTag(UInt64 t) const { return word != 0 && !isInline() && (word & TAG_MASK) == t; }
+    bool isBatch() const { return hasTag(TAG_BATCH); }
+    bool isRun() const { return hasTag(TAG_RUN); }
+    bool isChain() const { return hasTag(TAG_CHAIN); }
+    bool isCount() const { return hasTag(TAG_COUNT); }
+    bool isFill() const { return hasTag(TAG_FILL) || hasTag(TAG_FILL_H); }
+
+    /// The count field as stored: exact for runs, saturating for batches and chains.
+    UInt32 countField() const { return static_cast<UInt32>((word >> COUNT_SHIFT) & COUNT_SAT); }
+
+    UInt64 countItems() const
+    {
+        chassert(isCount());
+        return word >> 4;
+    }
+    bool hasPrev() const
+    {
+        chassert(isCount());
+        return (word >> 3) & 1;
+    }
+    void addItem()
+    {
+        chassert(isCount());
+        word += 1ull << 4;
+    }
+
+    UInt64 * fillCursor() /// NOLINT(readability-make-member-function-const)
+    {
+        chassert(isFill());
+        return reinterpret_cast<UInt64 *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+    }
+    UInt32 fillPlaced() const
+    {
+        chassert(isFill());
+        return countField();
+    }
+    bool fillHasHeader() const
+    {
+        chassert(isFill());
+        return (word & TAG_MASK) == TAG_FILL_H;
+    }
 
     const Batch * asBatch() const
     {
-        chassert(word != 0 && !isInline());
+        chassert(isBatch());
         return reinterpret_cast<const Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
@@ -172,24 +307,60 @@ struct RowRefList
     /// (overloads cannot differ only in the return type).
     Batch * asBatch() /// NOLINT(readability-make-member-function-const)
     {
-        chassert(word != 0 && !isInline());
+        chassert(isBatch());
         return reinterpret_cast<Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
+    /// The refs of a run; their number is `countField()`.
+    const UInt64 * runRefs() const
+    {
+        chassert(isRun());
+        return reinterpret_cast<const UInt64 *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+    }
+
+    const RangeHeader * chainHeader() const
+    {
+        chassert(isChain());
+        return reinterpret_cast<const RangeHeader *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+    }
+
     /// Total rows for this key, load-free unless the count saturated. Wider than the in-word
-    /// counter, because past saturation it comes from `Batch::total_rows`, which is 56 bits.
+    /// counter, because past saturation it comes from `Batch::total_rows`, which is 56 bits, or
+    /// from a chain header's total.
     size_t rows() const
     {
         if (isInline())
             return 1;
-        const UInt32 count = static_cast<UInt32>((word >> COUNT_SHIFT) & COUNT_SAT);
+        const UInt32 count = countField();
         if (count != COUNT_SAT)
             return count;
-        return asBatch()->total_rows;
+        switch (word & TAG_MASK)
+        {
+            case TAG_CHAIN: return chainHeader()->total();
+            case TAG_BATCH: return asBatch()->total_rows;
+            default: chassert(false && "a build-time word reached a reader"); return 0;
+        }
     }
 
-    /// Encoded ref word of the first row (any-row semantics, e.g. RightAny on MapsAll).
-    UInt64 firstWord() const { return isInline() ? word : asBatch()->refs[0]; }
+    /// Encoded ref word of the first-inserted row of the key (any-row semantics, e.g. RightAny on MapsAll).
+    UInt64 firstWord() const
+    {
+        if (isInline())
+            return word;
+        switch (word & TAG_MASK)
+        {
+            case TAG_RUN:
+                return runRefs()[0];
+            case TAG_CHAIN: {
+                UInt64 pending = chainHeader()->prev;
+                while (RangeHeader::prevHasHeader(pending))
+                    pending = reinterpret_cast<const RangeHeader *>(RangeHeader::prevPtr(pending))->prev;
+                return RangeHeader::prevPtr(pending)[0];
+            }
+            default:
+                return asBatch()->refs[0];
+        }
+    }
 
     void setRange(UInt64 start_word, size_t rows_, Arena & pool)
     {
@@ -313,6 +484,24 @@ struct RowRefList
                 return;
             }
 
+            switch (list.word & TAG_MASK)
+            {
+                case TAG_RUN:
+                    cur = list.runRefs();
+                    run_end = cur + list.countField();
+                    return;
+                case TAG_CHAIN: {
+                    const RangeHeader * header = list.chainHeader();
+                    cur = header->refs();
+                    run_end = cur + header->ownLen();
+                    pending = header->prev;
+                    return;
+                }
+                case TAG_BATCH:
+                    break;
+                default: chassert(false && "a build-time word reached a reader"); return;
+            }
+
             const Batch * b = list.asBatch();
             if (b->is_range)
             {
@@ -334,7 +523,7 @@ struct RowRefList
 
         void operator ++ ()
         {
-            if (cur) /// run mode - the hot path: only cur/run_end/next_node are live here
+            if (cur) /// run mode - the hot path: only cur/run_end and one next pointer are live here
             {
                 ++cur;
                 if (cur == run_end)
@@ -344,6 +533,22 @@ struct RowRefList
                         cur = &next_node->refs[1];
                         run_end = &next_node->refs[1] + next_node->size;
                         next_node = reinterpret_cast<const Batch *>(next_node->refs[0]); /// NOLINT(performance-no-int-to-ptr)
+                    }
+                    else if (pending != 0)
+                    {
+                        if (RangeHeader::prevHasHeader(pending))
+                        {
+                            const auto * header = reinterpret_cast<const RangeHeader *>(RangeHeader::prevPtr(pending));
+                            cur = header->refs();
+                            run_end = cur + header->ownLen();
+                            pending = header->prev;
+                        }
+                        else
+                        {
+                            cur = RangeHeader::prevPtr(pending);
+                            run_end = cur + RangeHeader::prevLen(pending);
+                            pending = 0;
+                        }
                     }
                     else
                         cur = nullptr; /// exhausted
@@ -362,11 +567,13 @@ struct RowRefList
         bool operator != (std::default_sentinel_t) const { return ok(); }
 
     private:
-        /// Run mode (eviction list): `cur` walks the current contiguous run bounded by `run_end`,
-        /// `next_node` is the next overflow node (newest-first). `cur == nullptr` => range mode or done.
+        /// Run mode: `cur` walks the current contiguous run bounded by `run_end`. For a `Batch` chain
+        /// `next_node` is the next overflow node (newest-first); for a range chain `pending` is the
+        /// header's previous-range word (0 when none). `cur == nullptr` => range mode or done.
         const UInt64 * cur = nullptr;
         const UInt64 * run_end = nullptr;
         const Batch * next_node = nullptr;
+        UInt64 pending = 0;
         /// Range mode: `range_word` is the current ref, `range_remaining` the count, as wide as
         /// `rows` because `Batch::total_rows` is 56 bits and a narrower counter would stop early.
         UInt64 range_word = 0;
@@ -377,20 +584,30 @@ struct RowRefList
     std::default_sentinel_t end() const { return {}; } /// NOLINT(readability-convert-member-functions-to-static)
 
 private:
+    /// An arena pointer that fits bits 47..3: below the 48-bit boundary and 8-aligned, so the tag
+    /// bits are free. Both violations are fatal, not recoverable.
+    static UInt64 checkedNodePointer(const void * p)
+    {
+        const UInt64 ptr = reinterpret_cast<UInt64>(p);
+        if (ptr & ~NODE_PTR_MASK) [[unlikely]]
+            throwRowRefPointerTooLarge();
+        return ptr;
+    }
+
     /// Repoint `word` at `b` with the saturating row count in bits 62..48. The cell-node pointer is
     /// stable across inserts, so this only rewrites the count bits of an already-resident cache line.
     void setListWord(Batch * b, UInt64 total_rows_)
     {
-        const UInt64 ptr = reinterpret_cast<UInt64>(b);
-        if (ptr & ~PTR_MASK) [[unlikely]]
-            throwRowRefPointerTooLarge();
+        const UInt64 ptr = checkedNodePointer(b);
         const UInt64 count = total_rows_ < COUNT_SAT ? total_rows_ : COUNT_SAT;
-        word = ptr | (count << COUNT_SHIFT);
+        word = ptr | (count << COUNT_SHIFT) | TAG_BATCH;
     }
 };
 
 static_assert(sizeof(RowRefList) == 8, "RowRefList must stay 8 bytes: it is the hash map cell payload");
 static_assert(sizeof(RowRefList::Batch) == 64, "RowRefList::Batch must stay one cache line");
+static_assert(alignof(RowRefList::Batch) == 8, "Batch pointers must leave the three tag bits free");
+static_assert(sizeof(RowRefList::RangeHeader) == 16 && alignof(RowRefList::RangeHeader) == 8);
 
 /// Number of rows an encoded cell / LazyOutput word represents (inline ref = 1, list = its count,
 /// range = its length), without spelling out a RowRefList at the call site. A zero word yields 0.
