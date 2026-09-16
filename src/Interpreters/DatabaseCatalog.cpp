@@ -1794,20 +1794,31 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
-                TableMarkedAsDropped table_to_delete_without_lock;
+                auto table_uuid = table_iterator->table_id.uuid;
+                auto table_name_for_logs = table_iterator->table_id.getNameForLogs();
+
+                {
+                    /// Destroy the storage object without holding the mutex, and before the drop
+                    /// is announced: `DROP TABLE ... SYNC` promises that everything the table
+                    /// owned is gone when it returns, including a disk defined inline in the table
+                    /// definition, which is unregistered when the storage releases it.
+                    TableMarkedAsDropped table_to_delete_without_lock;
+                    {
+                        std::lock_guard lock(tables_marked_dropped_mutex);
+                        table_to_delete_without_lock = std::move(*table_iterator);
+                    }
+                }
+
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
 
                     /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
-                    auto id_it = tables_marked_dropped_ids.find(table_iterator->table_id.uuid);
+                    auto id_it = tables_marked_dropped_ids.find(table_uuid);
                     chassert(id_it != tables_marked_dropped_ids.end());
                     if (id_it != tables_marked_dropped_ids.end())
                         tables_marked_dropped_ids.erase(id_it);
                     else
-                        LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being dropped, it's a bug",
-                                  table_iterator->table_id.getNameForLogs());
-
-                    table_to_delete_without_lock = std::move(*table_iterator);
+                        LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being dropped, it's a bug", table_name_for_logs);
 
                     wait_table_finally_dropped.notify_all();
                 }
