@@ -1,0 +1,27 @@
+basic product
+12	Float64
+negative values and zero
+-6
+0
+empty and nullable input
+0	Float64
+Nullable(Float64)	3
+Nullable(Float64)	\N
+filtered input
+8
+0
+nullable and filtered input
+10
+1
+filtered non-finite values
+0	6
+partial states
+120
+window aggregation
+2
+6
+24
+numeric result types
+Float64	Float64	Float64	Float64	Float64
+bounded floating point batch reduction
+1
