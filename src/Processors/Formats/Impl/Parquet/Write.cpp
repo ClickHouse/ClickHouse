@@ -1307,32 +1307,57 @@ void writeColumnImpl(
             }
 
             /// A converter that cannot be measured without doing the work bounds itself, and reports
-            /// how much of the batch it produced. Only for a column with no repetition levels: a
-            /// shorter batch has to stay a whole number of records when pages follow record
-            /// boundaries, and the values that would complete one have not been converted.
-            const bool converter_bounds_itself = s.max_rep == 0;
+            /// how much of the batch it produced.
             if constexpr (requires { converter.setByteBudget(size_t{}); })
-                converter.setByteBudget(converter_bounds_itself ? max_batch_bytes : 0);
+                converter.setByteBudget(max_batch_bytes);
 
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
 
             if constexpr (requires { converter.producedBatchSize(); })
             {
-                if (const size_t produced = converter.producedBatchSize(); produced < data_count)
+                if (size_t produced = converter.producedBatchSize(); produced < data_count)
                 {
-                    /// With no repetition levels a record is one value, so the batch can be cut at
-                    /// any of them; def_count follows the values that were produced.
-                    size_t def_count_kept = produced;
-                    if (s.max_def != 0)
+                    auto levels_holding = [&](size_t values)
                     {
+                        if (s.max_def == 0)
+                            return values;
+                        size_t levels = 0;
+                        for (size_t seen = 0; seen < values; ++levels)
+                            seen += s.def[next_def_offset + levels] == s.max_def;
+                        return levels;
+                    };
+                    auto values_in = [&](size_t levels)
+                    {
+                        if (s.max_def == 0)
+                            return levels;
                         size_t values = 0;
-                        for (def_count_kept = 0; values < produced; ++def_count_kept)
-                            values += s.def[next_def_offset + def_count_kept] == s.max_def;
-                    }
+                        for (size_t i = 0; i < levels; ++i)
+                            values += s.def[next_def_offset + i] == s.max_def;
+                        return values;
+                    };
 
-                    def_count = def_count_kept;
-                    data_count = produced;
+                    size_t def_count_kept = levels_holding(produced);
+
+                    /// A page starts on a record boundary while the page index describes it, so give
+                    /// back the tail of a record the converter stopped inside.
+                    if (pages_change_on_record_boundaries)
+                        while (def_count_kept > 0 && next_def_offset + def_count_kept < num_values
+                               && s.rep[next_def_offset + def_count_kept] != 0)
+                            --def_count_kept;
+
+                    if (def_count_kept == 0)
+                    {
+                        /// One record wants more than the budget and cannot be split, so it is
+                        /// converted whole after all.
+                        converter.setByteBudget(0);
+                        converted = converter.getBatch(next_data_offset, data_count);
+                    }
+                    else
+                    {
+                        def_count = def_count_kept;
+                        data_count = values_in(def_count_kept);
+                    }
                 }
             }
 
