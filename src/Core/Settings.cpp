@@ -6798,6 +6798,16 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_window_top_k_prefilter, true, R"(
+Toggles a query-plan-level optimization for queries that bound a `rank()` or `row_number()` window function, such as `WHERE rk <= 100`. Each stream below the window drops rows whose rank already exceeds the bound before the window's sort, partition reshuffle and merge see them. Rows tying with the bound are always kept, so results are unchanged. Speeds up "top N per group" queries, where the window otherwise sorts every row to compute ranks the filter discards.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_fuse_filter_into_array_join, true, R"(
 Toggles a query-plan-level optimization which fuses a filter on `ARRAY JOIN`ed element columns into the `ARRAY JOIN` step, filtering the arrays in element space before expansion so that filtered-out elements are never expanded or replicated.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
