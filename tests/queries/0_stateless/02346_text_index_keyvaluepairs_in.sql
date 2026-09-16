@@ -86,6 +86,21 @@ SELECT 'idx', id FROM tab WHERE m['level'] IN (SELECT 'error') ORDER BY id;
 SELECT 'scan', id FROM tab WHERE m['level'] IN (SELECT 'error') ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT 'no subquery index', id FROM tab WHERE m['level'] IN (SELECT 'error') ORDER BY id SETTINGS use_index_for_in_with_subqueries = 0;
 SELECT 'empty subquery', count() FROM tab WHERE m['level'] IN (SELECT 'error' WHERE 0);
+-- The set has no AST representation, so `convertNodeToAST` returns nothing and direct read is skipped
+-- altogether. Were it replaced by a virtual column, a part whose index is not materialized would have
+-- no default expression to fall back on. The `tab_partial` case below covers that part.
+SELECT 'skip index used', count() FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE m['level'] IN (SELECT 'error')) WHERE explain LIKE '%Name: idx%';
+SELECT 'not replaced', count() FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE m['level'] IN (SELECT 'error')) WHERE explain LIKE '%__text_index%';
+
+SELECT '-- a set from an ENGINE = Set table can change under the query, so the index must not answer it';
+DROP TABLE IF EXISTS live_set;
+CREATE TABLE live_set (v String) ENGINE = Set;
+INSERT INTO live_set VALUES ('error'), ('warn');
+SELECT 'idx', id FROM tab WHERE m['level'] IN live_set ORDER BY id;
+SELECT 'scan', id FROM tab WHERE m['level'] IN live_set ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'no skip index', count() FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE m['level'] IN live_set) WHERE explain LIKE '%Name: idx%';
+SELECT 'not replaced', count() FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE m['level'] IN live_set) WHERE explain LIKE '%__text_index%';
+DROP TABLE live_set;
 
 SELECT '-- an OR chain of equals is folded into IN by the analyzer';
 SELECT 'idx', id FROM tab WHERE m['level'] = 'error' OR m['level'] = 'warn' OR m['level'] = 'info' ORDER BY id;
@@ -169,5 +184,11 @@ SELECT 'some part has no materialized index', count() > 0 FROM system.parts WHER
 SELECT 'subcolumns=0', id FROM tab_partial WHERE m['level'] IN ('error', 'warn') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'subcolumns=1', id FROM tab_partial WHERE m['level'] IN ('error', 'warn') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT 'scan', id FROM tab_partial WHERE m['level'] IN ('error', 'warn') ORDER BY id SETTINGS use_skip_indexes = 0;
+
+-- A subquery set has no direct read, so the part without a materialized index is read as usual. This
+-- is the combination an accidental exact rewrite would break, because such a set has no AST to fall
+-- back on.
+SELECT 'subquery', id FROM tab_partial WHERE m['level'] IN (SELECT 'error' UNION ALL SELECT 'warn') ORDER BY id;
+SELECT 'subquery scan', id FROM tab_partial WHERE m['level'] IN (SELECT 'error' UNION ALL SELECT 'warn') ORDER BY id SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_partial;
