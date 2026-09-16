@@ -51,28 +51,20 @@ SET automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Rows are summed over the initiator and its replicas: the reads are spread over them, and the point
--- is that no more data is read in total than a single node reads.
+-- The initiating query's `SelectedRows` already covers what the replicas read, so it is read on its
+-- own: adding the replicas' own rows to it counts the same reads twice, which is only invisible when
+-- the local replica happens to do all the work.
 WITH
     (SELECT ProfileEvents['SelectedRows']
      FROM system.query_log
      WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-       AND event_date >= yesterday() AND log_comment = '05100_single_node') AS single_node_rows,
-    measured AS
-    (
-        SELECT query_id, ProfileEvents['ParallelReplicasUsedCount'] AS used
-        FROM system.query_log
-        WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-          AND event_date >= yesterday() AND log_comment = '05100_with_replicas'
-    )
+       AND event_date >= yesterday() AND log_comment = '05100_single_node') AS single_node_rows
 SELECT
-    (SELECT max(used) FROM measured) > 0 AS replicas_were_used,
-    (SELECT sum(ProfileEvents['SelectedRows'])
-     FROM system.query_log
-     WHERE type = 'QueryFinish' AND event_date >= yesterday()
-       AND (query_id IN (SELECT query_id FROM measured)
-            OR initial_query_id IN (SELECT query_id FROM measured))) <= single_node_rows
-    AS reads_no_more_than_a_single_node
+    max(ProfileEvents['ParallelReplicasUsedCount']) > 0 AS replicas_were_used,
+    max(ProfileEvents['SelectedRows']) <= single_node_rows AS reads_no_more_than_a_single_node
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+  AND event_date >= yesterday() AND log_comment = '05100_with_replicas'
 FORMAT TSVWithNames;
 
 DROP TABLE t_autopr_skip_index;
