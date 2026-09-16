@@ -241,6 +241,13 @@ void HedgedConnections::sendQuery(
             modified_settings[Setting::parallel_replica_offset] = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         }
 
+        /// The analyzer is the only query analysis this server has, but a replica in a rolling upgrade
+        /// can be older than 26.9 and have it switched off by its own profile. The setting is never
+        /// `changed` here anymore, so force it into the changed set to be sent: the initiator decides
+        /// how a query is analyzed on every server that takes part in it, and the two analyses do not
+        /// speak the same inter-server protocol.
+        modified_settings.set("allow_experimental_analyzer", true);
+
         /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
         /// servers of a distributed query must agree on it even when it comes only from server/profile
         /// defaults. Force it into the changed set, so it is always sent to the remote servers.

@@ -51,15 +51,12 @@ def test_two_new_versions(start_cluster):
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
 
-    assert (
-        current.query(
-            """
+    assert current.query(
+        """
 SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
 ORDER BY h settings serialize_query_plan=0;"""
-        )
-        == TSV([["backward", "true"], ["current", "true"]])
-    )
+    ) == TSV([["backward", "true"], ["current", "true"]])
 
     # The initiator turns the analyzer on explicitly on the old instance.
     analyzer_enabled = backward.query(
@@ -81,21 +78,25 @@ WHERE initial_query_id = '{query_id}';"""
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
 
-    # The other direction: the old initiator sends `allow_experimental_analyzer = 0` along with the
-    # query, because that is how it analyzes the query itself. Since 26.9 this instance has no other
-    # query analysis to fall back to, so it ignores the value instead of agreeing with the initiator.
-    # (The old version does not know the `enable_analyzer` alias, hence the canonical name here.)
-    assert (
-        backward.query(
-            """
+    # The price of ignoring it: the two analyses do not name the result columns the same way, and the
+    # initiator matches the block a shard returns by name. The analyzer resolves a function to its
+    # canonical name, so a shard that had to analyze the query the old way for the names to line up
+    # answers with `hostName()` where this initiator asked for `hostname()`. A cluster that runs with
+    # the old query analysis has to turn the analyzer on everywhere before a server is upgraded to
+    # 26.9, which is what the deprecation in 26.9 asked for.
+    assert "NOT_FOUND_COLUMN_IN_BLOCK" in backward.query_and_get_error(
+        """
 SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
 ORDER BY h;"""
-        )
-        == TSV([["backward", "false"], ["current", "true"]])
     )
 
-    # And the value it recorded for its part of the query says so.
+    # The other direction: the old initiator sends `allow_experimental_analyzer = 0` along with the
+    # query, because that is how it analyzes the query itself. Since 26.9 this instance has no other
+    # query analysis to fall back to, so it ignores the value instead of agreeing with the initiator,
+    # and the settings it recorded for its part of the query say so. (Asking the shards with
+    # `getSetting` would not: an initiator this old folds it to a constant before sending the query,
+    # so every shard would echo the initiator's own value.)
     analyzer_enabled = current.query(
         f"""
 SELECT
