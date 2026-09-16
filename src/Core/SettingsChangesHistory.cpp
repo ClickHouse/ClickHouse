@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.10",
+        {
+            {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+        });
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
@@ -52,7 +56,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
-            {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
