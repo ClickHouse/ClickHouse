@@ -2519,3 +2519,57 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
 
     assert int(node.query(f"SELECT count() FROM {table_ref}")) == 4000000
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_compression_argument_in_database_definition(started_cluster):
+    """The positional arguments of `CREATE DATABASE ... DataLakeCatalog(...)` become the
+    engine arguments of every table of the database verbatim, so a `compression_method`
+    there is subject to the same rule as on a table: rejected when the definition is
+    freshly supplied by the user, exempt when a persisted definition is replayed
+    (`ATTACH DATABASE` by hand or at server startup), so that a database created before
+    the argument was rejected keeps working after an upgrade."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_compression_in_db_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    db_name = f"test_compression_in_db_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    # Fill the table through a database with a clean definition.
+    num_rows = 10
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` "
+        f"SELECT NULL, 'AAPL', number, number, tuple('bot') FROM numbers({num_rows})",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    # `none` is a compression method that works on the exempt path, which is what makes the
+    # replay half of the test meaningful: the reads below must actually succeed.
+    create_query = f"""
+CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}', 'Parquet', 'none')
+SETTINGS catalog_type = 'rest', warehouse = 'demo', storage_endpoint = 'http://minio1:9001/warehouse-rest'
+"""
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    # The database engine validates its table engine definition lazily, on first use.
+    node.query(create_query, settings={"allow_database_iceberg": 1})
+
+    select_query = f"SELECT count() FROM {db_name}.`{root_namespace}.{table_name}`"
+
+    error = node.query_and_get_error(select_query)
+    assert "not supported by data lake engines" in error, error
+
+    # A user `ATTACH DATABASE` replays the persisted definition: no rejection, and the reads work.
+    node.query(f"DETACH DATABASE {db_name}")
+    node.query(f"ATTACH DATABASE {db_name}")
+    assert int(node.query(select_query)) == num_rows
+
+    # So does the server startup.
+    node.restart_clickhouse()
+    assert int(node.query(select_query)) == num_rows
+
+    node.query(f"DROP DATABASE {db_name}")

@@ -160,6 +160,10 @@ void StorageObjectStorageConfiguration::initialize(
         ///    `CREATE TABLE` text by `DatabaseReplicated::recoverLostReplica`. A fresh
         ///    `CREATE` in a `Replicated` database is still rejected, because the initiator runs
         ///    it as an initial query and therefore with `mode == CREATE`.
+        /// The tables of a catalog-backed database (`DataLakeCatalog`) derive their engine arguments
+        /// from the `CREATE DATABASE` query, so the database passes `CREATE` while it is the one
+        /// created in this server run and `ATTACH` once its definition is replayed from persisted
+        /// metadata (see `DatabaseDataLake::table_definition_mode`).
         /// The `is_restore_from_backup` guard is kept so that a restore is never rejected even
         /// if it is ever executed with another mode.
         if (mode == LoadingStrictnessLevel::CREATE
