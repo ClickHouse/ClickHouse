@@ -5,9 +5,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A lambda restored from `clickhouse_json` must be rejected before query analysis reads the children
-# it declares. Each shape below took the whole process down, so they run through `clickhouse-local`
-# rather than `${CLICKHOUSE_CLIENT}`, whose server is shared with the rest of the suite, and the
-# oracle asserts both that the expected error is reported and that the process was not signalled.
+# it declares. Most shapes below took the whole process down on the spot; the `CREATE FUNCTION` cores
+# that registration accepted did their damage later instead, at the first use of the function or at the
+# next load of the stored objects. They all run through `clickhouse-local` rather than
+# `${CLICKHOUSE_CLIENT}`, whose server is shared with the rest of the suite, and the oracle asserts
+# both that the expected error is reported and that the process was not signalled.
 
 run_json() { # $1 = expected error name, $2 = JSON AST
     local out rc
@@ -27,7 +29,7 @@ CONTROL=$(${CLICKHOUSE_LOCAL} -q "SELECT parseQueryToJSON('SELECT arrayMap(x -> 
 ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json -q "$CONTROL"
 
 # 2. `is_lambda_function` on a function with no `arguments` at all. `QueryTreeBuilder::buildExpression`
-#    takes the flag as proof of the `lambda(tuple(...), body)` shape and read the absent list.
+#    takes the flag as proof of the `lambda(tuple(...), body)` shape and reads the absent list.
 run_json BAD_ARGUMENTS '{"type":"SelectWithUnionQuery","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"lambda","is_lambda_function":true}]}}]}}'
 
 # 3. A skip index expression that is a `lambda` function with no `arguments`. No flag is involved
@@ -50,3 +52,7 @@ run_json BAD_ARGUMENTS '{"type":"CreateSQLFunctionQuery","function_name":{"type"
 # 6. A core that is well formed in every respect the validator checks except its own name. Registration
 #    is where it has to be rejected: the consequence lands later, as a `LOGICAL_ERROR` at first use.
 run_json BAD_ARGUMENTS '{"type":"CreateSQLFunctionQuery","function_name":{"type":"Identifier","name":"udf_name"},"function_core":{"type":"Function","name":"f","arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}}'
+
+# 7. A core that is well formed in every clause the validator checks except that its argument tuple is
+#    parametric. Registration is the gate: the core is persisted as text that does not parse back.
+run_json BAD_ARGUMENTS '{"type":"CreateSQLFunctionQuery","function_name":{"type":"Identifier","name":"udf_tuple_params"},"function_core":{"type":"Function","name":"lambda","arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","parameters":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":7}}]},"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}}'

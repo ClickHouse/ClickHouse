@@ -258,7 +258,7 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
 
     /// `is_lambda_function` marks the lambda definition shape `lambda(tuple(args...), body)`, and no
     /// parser producer of the flag sets it on a function of any other shape.
-    if (isLambdaFunction() && (parameters || !isASTLambdaFunction(*this)))
+    if (isLambdaFunction() && !isASTLambdaFunction(*this))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'is_lambda_function' requires the function to be of the form `lambda(tuple(...), body)` during AST JSON deserialization");
 
@@ -1187,7 +1187,8 @@ bool isASTLambdaFunction(const ASTFunction & function)
     if (function.name == "lambda" && function.arguments && function.arguments->children.size() == 2)
     {
         const auto * lambda_args_tuple = function.arguments->children.at(0)->as<ASTFunction>();
-        return lambda_args_tuple && lambda_args_tuple->name == "tuple" && lambda_args_tuple->arguments;
+        return lambda_args_tuple && lambda_args_tuple->name == "tuple" && lambda_args_tuple->arguments
+            && !lambda_args_tuple->parameters;
     }
 
     return false;
