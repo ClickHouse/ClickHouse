@@ -1664,17 +1664,7 @@ KeyCondition::KeyCondition(
     /// once more so such a group keeps pruning through its exact atoms.
     dropRelaxedAtomsFromNegatedMultiAtomGroups();
 
-    /// When a multi-atom group mixes an exact atom with relaxed siblings, the siblings make the
-    /// whole condition relaxed and force `can_be_false` to `true`, although the exact atom
-    /// already represents the predicate leaf exactly. Derive the exactness condition without
-    /// them, so that falsity consumers (see `exactnessCondition`) are not pessimized by atoms
-    /// that exist only for extra pruning.
-    if (auto exactness_rpn = dropCoveredRelaxedAtoms(rpn, /*only_negated_groups*/ false))
-    {
-        exactness_condition = std::make_shared<KeyCondition>(
-            ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
-        exactness_condition->rpn = std::move(*exactness_rpn);
-    }
+    updateExactnessCondition();
 }
 
 KeyCondition::KeyCondition(
@@ -1702,6 +1692,24 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
 {}
+
+void KeyCondition::updateExactnessCondition()
+{
+    /// When a multi-atom group mixes an exact atom with relaxed siblings, the siblings make the
+    /// whole condition relaxed and force `can_be_false` to `true`, although the exact atom
+    /// already represents the predicate leaf exactly. Derive the exactness condition without
+    /// them, so that falsity consumers (see `exactnessCondition`) are not pessimized by atoms
+    /// that exist only for extra pruning.
+    if (auto exactness_rpn = dropCoveredRelaxedAtoms(rpn, /*only_negated_groups*/ false))
+    {
+        exactness_condition = std::make_shared<KeyCondition>(
+            ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
+        exactness_condition->rpn = std::move(*exactness_rpn);
+        exactness_condition->key_order = key_order;
+    }
+    else
+        exactness_condition.reset();
+}
 
 void KeyCondition::dropRelaxedAtomsFromNegatedMultiAtomGroups()
 {
@@ -1826,6 +1834,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
         return false;
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
+    updateExactnessCondition();
     return true;
 }
 
@@ -8384,6 +8393,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
             if (j > 0)
                 target.rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
+        target.updateExactnessCondition();
     };
 
     if (!all_complex)

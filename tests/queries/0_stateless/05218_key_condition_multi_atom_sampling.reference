@@ -1,0 +1,64 @@
+asc, sparse=0, multiple_atoms=0, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 24/32
+128
+asc, sparse=0, multiple_atoms=0, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 21/32
+77
+asc, sparse=0, multiple_atoms=1, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 20/32
+128
+asc, sparse=0, multiple_atoms=1, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 17/32
+77
+asc, sparse=1, multiple_atoms=0, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 24/32
+128
+asc, sparse=1, multiple_atoms=0, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 21/32
+77
+asc, sparse=1, multiple_atoms=1, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 20/32
+128
+asc, sparse=1, multiple_atoms=1, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 17/32
+77
+desc, sparse=0, multiple_atoms=0, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 24/32
+128
+desc, sparse=0, multiple_atoms=0, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 21/32
+77
+desc, sparse=0, multiple_atoms=1, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 20/32
+128
+desc, sparse=0, multiple_atoms=1, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 17/32
+77
+desc, sparse=1, multiple_atoms=0, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 24/32
+128
+desc, sparse=1, multiple_atoms=0, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and((x in (-Inf, 223]), (x in [32, +Inf)))))
+Granules: 21/32
+77
+desc, sparse=1, multiple_atoms=1, SAMPLE 1/2 OFFSET 1/4
+Condition: and((x in (-Inf, 191]), and((x in [64, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 20/32
+128
+desc, sparse=1, multiple_atoms=1, SAMPLE 3/10 OFFSET 1/5
+Condition: and((x in (-Inf, 127]), and((x in [51, +Inf)), and(and((intDiv(x, 16) in (-Inf, 14]), (x in (-Inf, 223])), and((intDiv(x, 16) in [2, +Inf)), (x in [32, +Inf))))))
+Granules: 17/32
+77

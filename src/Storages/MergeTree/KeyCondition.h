@@ -801,6 +801,9 @@ private:
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
     bool unknownOrAlwaysTrue(bool unknown_any) const;
 
+    /// Rebuilds the derived exactness condition after changing the RPN, without modifying shared copies.
+    void updateExactnessCondition();
+
     /// In every multi-atom group that stands directly under `FUNCTION_NOT` and has at least one
     /// exact atom, drops the relaxed atoms: a relaxed atom forces the group's `can_be_false` to
     /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.

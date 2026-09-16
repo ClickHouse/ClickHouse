@@ -2337,6 +2337,20 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
+    /// The exactness condition supplies `can_be_false`; the full condition also supplies
+    /// pruning when the caller needs `can_be_true`. Saturated mask components need no evaluation.
+    const auto evaluate_key_condition = [&](const auto & evaluate, BoolMask initial_mask)
+    {
+        if (!key_condition_for_falsity || initial_mask.can_be_false)
+            return evaluate(key_condition, initial_mask);
+
+        BoolMask result = initial_mask.can_be_true
+            ? initial_mask
+            : evaluate(key_condition, BoolMask::consider_only_can_be_true);
+        result.can_be_false = evaluate(*key_condition_for_falsity, BoolMask::consider_only_can_be_false).can_be_false;
+        return result;
+    };
+
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -2395,41 +2409,17 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
 
-                if (!key_condition_for_falsity || initial_mask.can_be_false)
-                    return key_condition.checkInRange(
+                return evaluate_key_condition([&](const KeyCondition & condition, BoolMask mask)
+                {
+                    return condition.checkInRange(
                         used_key_indices,
                         sparse_key_left.data(),
                         sparse_key_right.data(),
                         sparse_key_types,
                         equal_boundaries_mask,
-                        initial_mask,
+                        mask,
                         &index_bounds);
-
-                /// The exactness condition supplies `can_be_false`; the full condition is
-                /// consulted only when the caller also needs `can_be_true`.
-                BoolMask result = initial_mask.can_be_true
-                    ? initial_mask
-                    : key_condition.checkInRange(
-                          used_key_indices,
-                          sparse_key_left.data(),
-                          sparse_key_right.data(),
-                          sparse_key_types,
-                          equal_boundaries_mask,
-                          BoolMask::consider_only_can_be_true,
-                          &index_bounds);
-
-                result.can_be_false = key_condition_for_falsity
-                    ->checkInRange(
-                        used_key_indices,
-                        sparse_key_left.data(),
-                        sparse_key_right.data(),
-                        sparse_key_types,
-                        equal_boundaries_mask,
-                        BoolMask::consider_only_can_be_false,
-                        &index_bounds)
-                    .can_be_false;
-
-                return result;
+                }, initial_mask);
             }
 
             if (range.end == marks_count)
@@ -2468,27 +2458,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
-            if (!key_condition_for_falsity || initial_mask.can_be_false)
-                return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
-
-            /// The exactness condition supplies `can_be_false`; the full condition is consulted
-            /// only when the caller also needs `can_be_true`.
-            BoolMask result = initial_mask.can_be_true
-                ? initial_mask
-                : key_condition.checkInRange(
-                      used_key_size, index_left.data(), index_right.data(), key_types, BoolMask::consider_only_can_be_true, &index_bounds);
-
-            result.can_be_false = key_condition_for_falsity
-                ->checkInRange(
-                    used_key_size,
-                    index_left.data(),
-                    index_right.data(),
-                    key_types,
-                    BoolMask::consider_only_can_be_false,
-                    &index_bounds)
-                .can_be_false;
-
-            return result;
+            return evaluate_key_condition([&](const KeyCondition & condition, BoolMask mask)
+            {
+                return condition.checkInRange(
+                    used_key_size, index_left.data(), index_right.data(), key_types, mask, &index_bounds);
+            }, initial_mask);
         };
 
         auto check_part_offset_condition = [&]()
