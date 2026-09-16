@@ -1899,7 +1899,7 @@ static void finalizeMutatedPart(
         if (codec_is_approximate)
             DB::writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, *out_comp);
         else
-            DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
+            DB::writeText(codec->getFullCodecDescription()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
