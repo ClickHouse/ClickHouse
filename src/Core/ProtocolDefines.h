@@ -116,9 +116,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// differently from the sender.
 /// Version 17 adds the `always_read_till_end` flag to `LimitByStep`.
 /// Version 18 registers the `Filling` step and adds the `WITH FILL` bounds (`FROM`, `TO`, `STEP`,
-/// Version 19 adds the `IntervalKind` of INTERVAL offsets in the `WindowStep` frame.
 /// `STALENESS` and the column alias) to a serialized sort description, so a plan with
 /// `ORDER BY ... WITH FILL` can be shipped in full.
+/// Version 19 adds the `IntervalKind` of INTERVAL offsets in the `WindowStep` frame.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
@@ -151,6 +151,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE
 /// First query-plan serialization version that carries the estimate-derived decisions of
 /// `JoinStepLogical`: the join order, and the runtime filter pass's small-probe decision.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS = 16;
+/// First query-plan serialization version that carries the `always_read_till_end` flag on `LimitByStep`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END = 17;
 /// First query-plan serialization version that registers a "Filling" step and carries the `WITH FILL`
 /// bounds in a serialized sort description. Gates `FillingStep::serialize` and the fill payload in
 /// `serializeSortDescription`.
