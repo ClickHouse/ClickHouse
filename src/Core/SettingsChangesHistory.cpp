@@ -152,6 +152,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
+            {"output_format_arrow_record_batch_size", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."},
+            {"output_format_arrow_record_batch_size_bytes", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
