@@ -5,7 +5,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts, ts2, ts3, ts_v6, ts_tags, ext_metric_families;
+DROP TABLE IF EXISTS ts, ts2, ts3, ts_v6, ts_v7, ts_tags, ext_metric_families;
 
 -- The inner tables use MergeTree, so the counts below don't depend on background merges.
 CREATE TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
@@ -90,14 +90,26 @@ INSERT INTO ts (metric_family, type, unit, help) VALUES ('m5', 'gauge', '', '');
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('m5', 'gauge', '', '');
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family = 'm5';
 
-SELECT '--- the tags table is not deduplicated if min_time and max_time are stored ---';
+SELECT '--- the same time series is written to the tags table once, the time ranges table gets every insert ---';
 INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
-INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]), ('http_requests', {'job': 'web'}, [(toDateTime64('2026-01-01 00:00:02', 3), 3.)]);
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts);
-ALTER TABLE ts MODIFY SETTING tags_deduplication_cache_size_bytes = 10; -- { serverError INVALID_SETTING_VALUE }
+SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
+SELECT min(min_time), max(max_time) FROM timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts)
+WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE tags['job'] = 'api');
+SYSTEM CLEAR TIME SERIES CACHES ts;
+INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:03', 3), 4.)]);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts);
+
+SELECT '--- the tags table of version 7 or earlier is not deduplicated if min_time and max_time are stored ---';
+CREATE TABLE ts_v7 ENGINE = TimeSeries SETTINGS version = 7 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
+INSERT INTO ts_v7 (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
+INSERT INTO ts_v7 (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_v7);
+ALTER TABLE ts_v7 MODIFY SETTING tags_deduplication_cache_size_bytes = 10; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT '--- the same time series is written to the tags table once if min_time and max_time are not stored ---';
-CREATE TABLE ts_tags ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
+CREATE TABLE ts_tags ENGINE = TimeSeries SETTINGS version = 7, store_min_time_and_max_time = 0 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
 INSERT INTO ts_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
 INSERT INTO ts_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]), ('http_requests', {'job': 'web'}, [(toDateTime64('2026-01-01 00:00:02', 3), 3.)]);
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_tags);
@@ -128,4 +140,4 @@ ALTER TABLE ext_metric_families DROP CONSTRAINT c;
 INSERT INTO ts2 (metric_family, type, unit, help) VALUES ('bad', 'gauge', '', '');
 SELECT count() FROM ext_metric_families WHERE metric_family = 'bad';
 
-DROP TABLE ts, ts2, ts3, ts_v6, ts_tags, ext_metric_families;
+DROP TABLE ts, ts2, ts3, ts_v6, ts_v7, ts_tags, ext_metric_families;

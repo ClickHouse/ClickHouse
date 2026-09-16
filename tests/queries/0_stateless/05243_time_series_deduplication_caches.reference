@@ -32,7 +32,12 @@ k4	2
 2
 --- the cache is enabled again by resetting its size, it starts empty ---
 3
---- the tags table is not deduplicated if min_time and max_time are stored ---
+--- the same time series is written to the tags table once, the time ranges table gets every insert ---
+2
+3
+2026-01-01 00:00:00.000	2026-01-01 00:00:01.000
+3
+--- the tags table of version 7 or earlier is not deduplicated if min_time and max_time are stored ---
 2
 --- the same time series is written to the tags table once if min_time and max_time are not stored ---
 2
