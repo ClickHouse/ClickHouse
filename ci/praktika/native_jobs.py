@@ -804,8 +804,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 )
             if (
                 "Regression" in workflow.additional_jobs
-                and "regression"
-                not in workflow_config.custom_data.get("ci_exclude_tags", [])
+                or "RegressionPR" in workflow.additional_jobs
+            ) and "regression" not in workflow_config.custom_data.get(
+                "ci_exclude_tags", []
             ):
                 extra_required.update(["CH_AMD_BINARY"])
                 if "aarch64" not in workflow_config.custom_data.get(
