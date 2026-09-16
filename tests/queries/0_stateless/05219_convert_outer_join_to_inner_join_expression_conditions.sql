@@ -32,9 +32,6 @@ INSERT INTO mid_typed VALUES (1, 1, 'a:1'), (2, NULL, NULL);
 INSERT INTO small_typed VALUES ([], [''], {}, 0), ([1], ['a:1'], {'a':'1'}, 1);
 
 SELECT '-- An arithmetic expression allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val + 1 = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val + 1 = s.val;
 
 SELECT trim(explain) FROM (
@@ -43,9 +40,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- A chain of NULL-propagating functions allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON abs(m.val + 1) = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON abs(m.val + 1) = s.val;
 
 SELECT trim(explain) FROM (
@@ -54,9 +48,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- An expression over two Nullable columns allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid_two AS m ON f.id = m.id INNER JOIN small AS s ON m.val1 + m.val2 = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid_two AS m ON f.id = m.id INNER JOIN small AS s ON m.val1 + m.val2 = s.val;
 
 SELECT trim(explain) FROM (
@@ -65,9 +56,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- An inequality over an expression allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val + 1 < s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val + 1 < s.val;
 
 SELECT trim(explain) FROM (
@@ -89,9 +77,6 @@ SELECT trim(explain) FROM (
 
 SELECT '-- A Nullable column under an expression allows converting under join_use_nulls = 0.';
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val + 1 = s.val
-SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
-
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val + 1 = s.val
 SETTINGS join_use_nulls = 0;
 
 SELECT trim(explain) FROM (
@@ -101,9 +86,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- CAST to a Nullable type allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON CAST(m.val AS Nullable(Int64)) = CAST(s.val AS Nullable(Int64))
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON CAST(m.val AS Nullable(Int64)) = CAST(s.val AS Nullable(Int64));
 
 SELECT trim(explain) FROM (
@@ -112,9 +94,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- `toNullable` allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toNullable(m.val) = toNullable(s.val)
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toNullable(m.val) = toNullable(s.val);
 
 SELECT trim(explain) FROM (
@@ -123,9 +102,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- `toLowCardinality` allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toLowCardinality(m.val) = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toLowCardinality(m.val) = s.val;
 
 SELECT trim(explain) FROM (

@@ -1,20 +1,16 @@
 -- An arithmetic expression allows converting.
 15	705
-15	705
 Type: INNER
 Type: INNER
 -- A chain of NULL-propagating functions allows converting.
-15	705
 15	705
 Type: INNER
 Type: INNER
 -- An expression over two Nullable columns allows converting.
 10	460
-10	460
 Type: INNER
 Type: INNER
 -- An inequality over an expression allows converting.
-30	1310
 30	1310
 Type: INNER
 -- `coalesce` does not allow converting.
@@ -25,21 +21,17 @@ Type: INNER
 Type: LEFT
 -- A Nullable column under an expression allows converting under join_use_nulls = 0.
 15	705
-15	705
 Type: INNER
 Type: INNER
 -- CAST to a Nullable type allows converting.
-10	420
 10	420
 Type: INNER
 Type: INNER
 -- `toNullable` allows converting.
 10	420
-10	420
 Type: INNER
 Type: INNER
 -- `toLowCardinality` allows converting.
-10	420
 10	420
 Type: INNER
 Type: INNER

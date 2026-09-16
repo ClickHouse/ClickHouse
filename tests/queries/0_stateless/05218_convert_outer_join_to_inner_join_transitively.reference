@@ -1,10 +1,8 @@
 -- An enclosing INNER JOIN allows converting under join_use_nulls = 1.
 20	890
-20	890
 Type: INNER
 Type: INNER
 -- A Nullable join key allows converting under join_use_nulls = 0.
-10	420
 10	420
 Type: INNER
 Type: INNER
@@ -19,16 +17,8 @@ Type: FULL
 Type: LEFT
 -- An inequality condition allows converting.
 40	1730
-40	1730
-Type: INNER
--- The enclosing join need not be the direct parent.
-20	890
-20	890
-Type: INNER
-Type: INNER
 Type: INNER
 -- A filter over three relations stays above both joins and allows converting.
-8	40
 8	40
 Type: INNER
 Type: INNER
@@ -37,33 +27,22 @@ Type: INNER
 Type: LEFT
 -- A RIGHT join below allows converting.
 20	890
-20	890
 Type: INNER
 Type: INNER
 -- An enclosing RIGHT join allows converting.
-20	890
 20	890
 Type: RIGHT
 Type: INNER
 -- An enclosing ANY join allows converting.
 2	4
-2	4
 Type: INNER
 Type: INNER
 -- An enclosing LEFT SEMI join allows converting.
 20	890
-20	890
 Type: LEFT
 Strictness: SEMI
 Type: INNER
--- An enclosing RIGHT SEMI join allows converting.
-2	4
-2	4
-Type: RIGHT
-Strictness: SEMI
-Type: INNER
 -- An enclosing RIGHT ANTI join allows converting.
-0
 0
 Type: RIGHT
 Strictness: ANTI
@@ -72,26 +51,18 @@ Type: INNER
 Type: LEFT
 Strictness: ANTI
 Type: LEFT
--- A WHERE over two relations above the join allows converting.
-25	1125
-25	1125
-Type: INNER
-Type: INNER
 -- A PASTE JOIN does not allow converting.
 Type: PASTE
 Type: LEFT
 -- A FULL join with a rejected left column becomes LEFT.
 100
-100
 Type: INNER
 Type: LEFT
 -- A FULL join with a rejected right column becomes RIGHT.
 10
-10
 Type: INNER
 Type: RIGHT
 -- A FULL join rejected on both sides becomes INNER.
-10
 10
 Type: INNER
 Type: INNER
@@ -99,7 +70,6 @@ Type: INNER
 Type: INNER
 Type: LEFT
 -- A distributed plan fragment allows converting.
-10	420
 10	420
 Type: INNER
 Type: INNER

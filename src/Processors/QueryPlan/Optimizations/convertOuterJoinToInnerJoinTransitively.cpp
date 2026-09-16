@@ -292,159 +292,177 @@ bool convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
     return join_operator.kind != kind;
 }
 
-void visit(QueryPlan::Node & node, NameSet null_rejected_columns)
+void visit(QueryPlan::Node & root)
 {
-    if (!node.step)
-        return;
-
-    if (!node.step->hasOutputHeader())
+    struct Frame
     {
-        for (auto * child : node.children)
-            visit(*child, {});
-        return;
-    }
-
-    /// Keep only the names this header carries exactly once.
-    std::unordered_map<String, size_t> occurrences;
-    for (const auto & column : *node.step->getOutputHeader())
-        ++occurrences[column.name];
-    std::erase_if(null_rejected_columns, [&](const auto & name) { return occurrences[name] != 1; });
-
-    const auto & step = *node.step;
-
-    if (auto * join = typeid_cast<JoinStepLogical *>(node.step.get()); join && node.children.size() == 2)
-    {
-        if (isPaste(join->getJoinOperator().kind))
-        {
-            visit(*node.children[0], {});
-            visit(*node.children[1], {});
-            return;
-        }
-
-        auto [left, right] = splitNullRejectedColumnsOnJoin(*join, null_rejected_columns);
-
-        convertJoinKind(*join, node, left, right);
-
-        /// NULLs on a side this join can still null-extend may be introduced here, so a constraint
-        /// observed above it is not guaranteed below it.
-        const auto kind = join->getJoinOperator().kind;
-        if (kind == JoinKind::Left || kind == JoinKind::Full)
-            right.clear();
-        if (kind == JoinKind::Right || kind == JoinKind::Full)
-            left.clear();
-
-        collectNullRejectedColumnsFromJoinConditions(*join, left, right);
-
-        visit(*node.children[0], std::move(left));
-        visit(*node.children[1], std::move(right));
-        return;
-    }
-
-    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-    {
-        auto child_null_rejected_columns = remapNullRejectedColumnsThroughActions(filter->getExpression(), null_rejected_columns);
-        collectNullRejectedColumnsFromFilter(*filter, child_null_rejected_columns);
-        visit(*node.children.front(), std::move(child_null_rejected_columns));
-        return;
-    }
-
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-    {
-        visit(*node.children.front(), remapNullRejectedColumnsThroughActions(expression->getExpression(), null_rejected_columns));
-        return;
-    }
-
-    auto filterNullRejectedColumnsBy = [&](const Names & allowed)
-    {
-        NameSet result;
-        for (const auto & name : allowed)
-            if (null_rejected_columns.contains(name))
-                result.insert(name);
-        return result;
+        QueryPlan::Node * node;
+        NameSet null_rejected_columns;
     };
 
-    /// The conditions below for propagating null rejected columns to inputs are a mirror
-    /// of the conditions in `tryPushDownFilter` in `filterPushDown.cpp`.
+    std::vector<Frame> stack;
+    stack.push_back({&root, {}});
 
-    /// Only the grouping keys, because a constraint on them deletes the whole group.
-    /// `GROUPING SETS` and `group_by_use_nulls` make the step emit NULL keys.
-    if (const auto * aggregating = typeid_cast<const AggregatingStep *>(&step))
+    while (!stack.empty())
     {
-        bool emits_null_keys = aggregating->isGroupingSets() || aggregating->isGroupByUseNulls();
-        visit(*node.children.front(), emits_null_keys ? NameSet{} : filterNullRejectedColumnsBy(aggregating->getParams().keys));
-        return;
-    }
+        auto frame = std::move(stack.back());
+        stack.pop_back();
 
-    if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(&step))
-    {
-        bool emits_null_keys = merging_aggregated->isGroupingSets();
-        visit(*node.children.front(), emits_null_keys ? NameSet{} : filterNullRejectedColumnsBy(merging_aggregated->getParams().keys));
-        return;
-    }
+        auto & node = *frame.node;
+        auto & null_rejected_columns = frame.null_rejected_columns;
 
-    /// Only the PARTITION BY columns: dropping a whole partition changes no window value on a surviving row.
-    if (const auto * window = typeid_cast<const WindowStep *>(&step))
-    {
-        Names partition_keys;
-        for (const auto & sort_column : window->getWindowDescription().partition_by)
-            partition_keys.push_back(sort_column.column_name);
-        visit(*node.children.front(), filterNullRejectedColumnsBy(partition_keys));
-        return;
-    }
+        if (!node.step || node.children.empty())
+            continue;
 
-    /// Only the LIMIT BY keys, and only when the step cannot empty a non-empty group.
-    if (const auto * limit_by = typeid_cast<const LimitByStep *>(&step))
-    {
-        bool can_empty_group = limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0;
-        visit(*node.children.front(), can_empty_group ? NameSet{} : filterNullRejectedColumnsBy(limit_by->getColumns()));
-        return;
-    }
+        if (!node.step->hasOutputHeader())
+        {
+            for (auto * child : node.children)
+                stack.push_back({child, {}});
+            continue;
+        }
 
-    if (typeid_cast<const CreatingSetsStep *>(&step))
-    {
-        visit(*node.children.front(), std::move(null_rejected_columns));
-        for (size_t i = 1; i < node.children.size(); ++i)
-            visit(*node.children[i], {});
-        return;
-    }
+        /// Keep only the names this header carries exactly once.
+        std::unordered_map<String, size_t> occurrences;
+        for (const auto & column : *node.step->getOutputHeader())
+            ++occurrences[column.name];
+        std::erase_if(null_rejected_columns, [&](const auto & name) { return occurrences[name] != 1; });
 
-    /// Everything but the array-join columns.
-    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(&step))
-    {
-        for (const auto & name : array_join->getColumns())
-            null_rejected_columns.erase(name);
-        visit(*node.children.front(), std::move(null_rejected_columns));
-        return;
-    }
+        const auto & step = *node.step;
 
-    /// Passthrough steps.
-    if (typeid_cast<const DelayedCreatingSetsStep *>(&step)
-        || typeid_cast<const DistinctStep *>(&step)
-        || typeid_cast<const BuildRuntimeFilterStep *>(&step)
-        || typeid_cast<const SortingStep *>(&step)
-        || typeid_cast<const CreateSetAndFilterOnTheFlyStep *>(&step))
-    {
-        visit(*node.children.front(), std::move(null_rejected_columns));
-        return;
-    }
+        if (auto * join = typeid_cast<JoinStepLogical *>(node.step.get()); join && node.children.size() == 2)
+        {
+            if (isPaste(join->getJoinOperator().kind))
+            {
+                stack.push_back({node.children[0], {}});
+                stack.push_back({node.children[1], {}});
+                continue;
+            }
 
-    /// Branches match the output by position, so a name carries over only when every branch header
-    /// is structurally equal to the output.
-    if (const auto * union_step = typeid_cast<const UnionStep *>(&step))
-    {
-        const auto & union_output = *union_step->getOutputHeader();
-        bool all_branches_match = std::ranges::all_of(
-            union_step->getInputHeaders(),
-            [&](const auto & input_header) { return blocksHaveEqualStructure(*input_header, union_output); });
+            auto [left, right] = splitNullRejectedColumnsOnJoin(*join, null_rejected_columns);
 
+            convertJoinKind(*join, node, left, right);
+
+            /// NULLs on a side this join can still null-extend may be introduced here, so a constraint
+            /// observed above it is not guaranteed below it.
+            const auto kind = join->getJoinOperator().kind;
+            if (kind == JoinKind::Left || kind == JoinKind::Full)
+                right.clear();
+            if (kind == JoinKind::Right || kind == JoinKind::Full)
+                left.clear();
+
+            collectNullRejectedColumnsFromJoinConditions(*join, left, right);
+
+            stack.push_back({node.children[0], std::move(left)});
+            stack.push_back({node.children[1], std::move(right)});
+            continue;
+        }
+
+        if (const auto * filter = typeid_cast<const FilterStep *>(&step))
+        {
+            auto child_null_rejected_columns = remapNullRejectedColumnsThroughActions(filter->getExpression(), null_rejected_columns);
+            collectNullRejectedColumnsFromFilter(*filter, child_null_rejected_columns);
+            stack.push_back({node.children.front(), std::move(child_null_rejected_columns)});
+            continue;
+        }
+
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        {
+            stack.push_back({node.children.front(), remapNullRejectedColumnsThroughActions(expression->getExpression(), null_rejected_columns)});
+            continue;
+        }
+
+        auto filterNullRejectedColumnsBy = [&](const Names & allowed)
+        {
+            NameSet result;
+            for (const auto & name : allowed)
+                if (null_rejected_columns.contains(name))
+                    result.insert(name);
+            return result;
+        };
+
+        /// The conditions below for propagating null rejected columns to inputs are a mirror
+        /// of the conditions in `tryPushDownFilter` in `filterPushDown.cpp`.
+
+        /// Only the grouping keys, because a constraint on them deletes the whole group.
+        /// `GROUPING SETS` and `group_by_use_nulls` make the step emit NULL keys.
+        if (const auto * aggregating = typeid_cast<const AggregatingStep *>(&step))
+        {
+            bool emits_null_keys = aggregating->isGroupingSets() || aggregating->isGroupByUseNulls();
+            stack.push_back({node.children.front(), emits_null_keys ? NameSet{} : filterNullRejectedColumnsBy(aggregating->getParams().keys)});
+            continue;
+        }
+
+        if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(&step))
+        {
+            bool emits_null_keys = merging_aggregated->isGroupingSets();
+            stack.push_back({node.children.front(), emits_null_keys ? NameSet{} : filterNullRejectedColumnsBy(merging_aggregated->getParams().keys)});
+            continue;
+        }
+
+        /// Only the PARTITION BY columns: dropping a whole partition changes no window value on a surviving row.
+        if (const auto * window = typeid_cast<const WindowStep *>(&step))
+        {
+            Names partition_keys;
+            for (const auto & sort_column : window->getWindowDescription().partition_by)
+                partition_keys.push_back(sort_column.column_name);
+            stack.push_back({node.children.front(), filterNullRejectedColumnsBy(partition_keys)});
+            continue;
+        }
+
+        /// Only the LIMIT BY keys, and only when the step cannot empty a non-empty group.
+        if (const auto * limit_by = typeid_cast<const LimitByStep *>(&step))
+        {
+            bool can_empty_group = limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0;
+            stack.push_back({node.children.front(), can_empty_group ? NameSet{} : filterNullRejectedColumnsBy(limit_by->getColumns())});
+            continue;
+        }
+
+        if (typeid_cast<const CreatingSetsStep *>(&step))
+        {
+            stack.push_back({node.children.front(), std::move(null_rejected_columns)});
+            for (size_t i = 1; i < node.children.size(); ++i)
+                stack.push_back({node.children[i], {}});
+            continue;
+        }
+
+        /// Everything but the array-join columns.
+        if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(&step))
+        {
+            for (const auto & name : array_join->getColumns())
+                null_rejected_columns.erase(name);
+            stack.push_back({node.children.front(), std::move(null_rejected_columns)});
+            continue;
+        }
+
+        /// Passthrough steps.
+        if (typeid_cast<const DelayedCreatingSetsStep *>(&step)
+            || typeid_cast<const DistinctStep *>(&step)
+            || typeid_cast<const BuildRuntimeFilterStep *>(&step)
+            || typeid_cast<const SortingStep *>(&step)
+            || typeid_cast<const CreateSetAndFilterOnTheFlyStep *>(&step))
+        {
+            stack.push_back({node.children.front(), std::move(null_rejected_columns)});
+            continue;
+        }
+
+        /// Branches match the output by position, so a name carries over only when every branch header
+        /// is structurally equal to the output.
+        if (const auto * union_step = typeid_cast<const UnionStep *>(&step))
+        {
+            const auto & union_output = *union_step->getOutputHeader();
+            bool all_branches_match = std::ranges::all_of(
+                union_step->getInputHeaders(),
+                [&](const auto & input_header) { return blocksHaveEqualStructure(*input_header, union_output); });
+
+            for (auto * child : node.children)
+                stack.push_back({child, all_branches_match ? null_rejected_columns : NameSet{}});
+            continue;
+        }
+
+        /// Unrecognized step.
         for (auto * child : node.children)
-            visit(*child, all_branches_match ? null_rejected_columns : NameSet{});
-        return;
+            stack.push_back({child, {}});
     }
-
-    /// Unrecognized step.
-    for (auto * child : node.children)
-        visit(*child, {});
 }
 
 }
@@ -454,7 +472,7 @@ void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings
     if (!optimization_settings.optimize_plan || !optimization_settings.convert_outer_join_to_inner_join_transitively)
         return;
 
-    visit(root, {});
+    visit(root);
 }
 
 }

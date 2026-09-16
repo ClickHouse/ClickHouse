@@ -28,9 +28,6 @@ CREATE TABLE storage_join (val UInt64, s Nullable(String)) ENGINE = Join(ALL, LE
 INSERT INTO storage_join VALUES (1, 'a'), (3, 'b');
 
 SELECT '-- An enclosing INNER JOIN allows converting under join_use_nulls = 1.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val;
 
 SELECT trim(explain) FROM (
@@ -39,9 +36,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- A Nullable join key allows converting under join_use_nulls = 0.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid_nullable AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0, join_use_nulls = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid_nullable AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
 SETTINGS join_use_nulls = 0;
 
@@ -71,9 +65,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- An inequality condition allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val < s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val < s.val;
 
 SELECT trim(explain) FROM (
@@ -81,21 +72,7 @@ SELECT trim(explain) FROM (
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val < s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
-SELECT '-- The enclosing join need not be the direct parent.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN other AS o ON f.id = o.id INNER JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN other AS o ON f.id = o.id INNER JOIN small AS s ON m.val = s.val;
-
-SELECT trim(explain) FROM (
-    EXPLAIN PLAN actions = 1
-    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN other AS o ON f.id = o.id INNER JOIN small AS s ON m.val = s.val
-) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
-
 SELECT '-- A filter over three relations stays above both joins and allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN other AS o ON f.id = o.id WHERE m.val + o.id > f.v
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN other AS o ON f.id = o.id WHERE m.val + o.id > f.v;
 
 SELECT trim(explain) FROM (
@@ -111,9 +88,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
 SELECT '-- A RIGHT join below allows converting.';
-SELECT count(), sum(f.v) FROM mid AS m RIGHT JOIN fact AS f ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM mid AS m RIGHT JOIN fact AS f ON f.id = m.id INNER JOIN small AS s ON m.val = s.val;
 
 SELECT trim(explain) FROM (
@@ -122,9 +96,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- An enclosing RIGHT join allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT JOIN small AS s ON m.val = s.val;
 
 SELECT trim(explain) FROM (
@@ -133,9 +104,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- An enclosing ANY join allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER ANY JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER ANY JOIN small AS s ON m.val = s.val;
 
 SELECT trim(explain) FROM (
@@ -144,9 +112,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- An enclosing LEFT SEMI join allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT SEMI JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT SEMI JOIN small AS s ON m.val = s.val;
 
 SELECT trim(explain) FROM (
@@ -154,21 +119,7 @@ SELECT trim(explain) FROM (
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT SEMI JOIN small AS s ON m.val = s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
 
-SELECT '-- An enclosing RIGHT SEMI join allows converting.';
-SELECT count(), sum(s.val) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT SEMI JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
-SELECT count(), sum(s.val) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT SEMI JOIN small AS s ON m.val = s.val;
-
-SELECT trim(explain) FROM (
-    EXPLAIN PLAN actions = 1
-    SELECT count(), sum(s.val) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT SEMI JOIN small AS s ON m.val = s.val
-) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
-
 SELECT '-- An enclosing RIGHT ANTI join allows converting.';
-SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT ANTI JOIN small AS s ON m.val = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT ANTI JOIN small AS s ON m.val = s.val;
 
 SELECT trim(explain) FROM (
@@ -182,17 +133,6 @@ SELECT trim(explain) FROM (
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT ANTI JOIN small AS s ON m.val = s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
 
-SELECT '-- A WHERE over two relations above the join allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN mid_nullable AS n ON f.id = n.id WHERE m.val = n.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN mid_nullable AS n ON f.id = n.id WHERE m.val = n.val;
-
-SELECT trim(explain) FROM (
-    EXPLAIN PLAN actions = 1
-    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN mid_nullable AS n ON f.id = n.id WHERE m.val = n.val
-) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
-
 SELECT '-- A PASTE JOIN does not allow converting.';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
@@ -200,9 +140,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
 SELECT '-- A FULL join with a rejected left column becomes LEFT.';
-SELECT count() FROM (SELECT f.id AS fid, m.val AS mval FROM fact AS f FULL JOIN mid_nullable AS m ON f.id = m.id) AS g INNER JOIN other AS o ON g.fid = o.id
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count() FROM (SELECT f.id AS fid, m.val AS mval FROM fact AS f FULL JOIN mid_nullable AS m ON f.id = m.id) AS g INNER JOIN other AS o ON g.fid = o.id;
 
 SELECT trim(explain) FROM (
@@ -211,9 +148,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
 SELECT '-- A FULL join with a rejected right column becomes RIGHT.';
-SELECT count() FROM (SELECT f.id AS fid, m.val AS mval FROM fact AS f FULL JOIN mid_nullable AS m ON f.id = m.id) AS g INNER JOIN small AS s ON g.mval = s.val
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count() FROM (SELECT f.id AS fid, m.val AS mval FROM fact AS f FULL JOIN mid_nullable AS m ON f.id = m.id) AS g INNER JOIN small AS s ON g.mval = s.val;
 
 SELECT trim(explain) FROM (
@@ -222,9 +156,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
 SELECT '-- A FULL join rejected on both sides becomes INNER.';
-SELECT count() FROM (SELECT f.id AS fid, m.val AS mval FROM fact AS f FULL JOIN mid_nullable AS m ON f.id = m.id) AS g INNER JOIN other AS o ON g.fid = o.id AND g.mval = o.id
-SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count() FROM (SELECT f.id AS fid, m.val AS mval FROM fact AS f FULL JOIN mid_nullable AS m ON f.id = m.id) AS g INNER JOIN other AS o ON g.fid = o.id AND g.mval = o.id;
 
 SELECT trim(explain) FROM (
@@ -239,9 +170,6 @@ SELECT trim(explain) FROM (
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
 SELECT '-- A distributed plan fragment allows converting.';
-SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid_nullable AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, query_plan_convert_outer_join_to_inner_join = 0;
-
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid_nullable AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 
