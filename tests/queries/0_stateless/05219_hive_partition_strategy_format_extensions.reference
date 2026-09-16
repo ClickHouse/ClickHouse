@@ -1,0 +1,7 @@
+jsonl lake:
+1	1
+csv lake:
+42	2
+jsonl lake after insert:
+1	1
+3	4

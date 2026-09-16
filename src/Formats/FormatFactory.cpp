@@ -28,6 +28,7 @@
 #include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <set>
 
 namespace DB
 {
@@ -968,6 +969,33 @@ void FormatFactory::setDocumentation(const String & name, Documentation document
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
 {
     file_extension_formats[boost::to_lower_copy(extension)] = format_name;
+}
+
+std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & format_name) const
+{
+    std::vector<String> format_names = {boost::to_lower_copy(format_name)};
+
+    /// A format registered via registerWithNamesAndTypes reads the files of its base format:
+    /// e.g. a lake of `.csv` files with a header row is read with the `CSVWithNames` format.
+    for (const std::string_view suffix : {"withnamesandtypes", "withnames"})
+    {
+        if (format_names.front().ends_with(suffix))
+        {
+            format_names.push_back(format_names.front().substr(0, format_names.front().size() - suffix.size()));
+            break;
+        }
+    }
+
+    /// The format name itself is registered as a file extension for every input and output
+    /// format, so the lowercased format name always ends up in the result.
+    std::set<String> extensions{format_names.front()};
+    for (const auto & [extension, extension_format] : file_extension_formats)
+    {
+        if (std::find(format_names.begin(), format_names.end(), boost::to_lower_copy(extension_format)) != format_names.end())
+            extensions.insert(extension);
+    }
+
+    return {extensions.begin(), extensions.end()};
 }
 
 std::optional<String> FormatFactory::tryGetFormatFromFileName(String file_name)

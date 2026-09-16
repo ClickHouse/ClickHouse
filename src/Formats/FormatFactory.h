@@ -340,6 +340,10 @@ public:
 
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);
+    /// All file extensions registered for the format or for its `WithNames`/`WithNamesAndTypes`
+    /// base format, in a deterministic order. The lowercased format name is always a part of
+    /// the result, because format names are registered as extensions of the format itself.
+    std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
     String getFormatFromFileName(String file_name);
     std::optional<String> tryGetFormatFromFileName(String file_name);
     String getFormatFromFileDescriptor(int fd);
