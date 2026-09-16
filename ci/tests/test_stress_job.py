@@ -35,6 +35,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.stress_job import (
+    get_additional_envs,
     process_results,
     read_test_results,
     sanitize_test_result_line,
@@ -243,6 +244,36 @@ def test_dpkg_progress_in_info_does_not_split_row(tmp_path):
         "Test script exit code",
     ]
     assert malformed == []
+
+
+@pytest.mark.parametrize(
+    "check_name",
+    [
+        "Stress test (amd_debug, cas s3 storage)",
+        "Stress test (amd_asan_ubsan, cas s3 storage)",
+        "Stress test (amd_tsan, cas s3 storage)",
+        "Stress test (amd_msan, cas s3 storage)",
+    ],
+)
+def test_cas_s3_env_is_exclusive_of_plain_s3(monkeypatch, check_name):
+    monkeypatch.setattr("ci.jobs.ci_utils.is_extended_run", lambda: False)
+    envs = get_additional_envs(None, check_name)
+    assert "USE_CAS_S3_STORAGE_FOR_MERGE_TREE=1" in envs
+    assert "USE_S3_STORAGE_FOR_MERGE_TREE=1" not in envs
+
+
+def test_plain_s3_env_is_unchanged(monkeypatch):
+    monkeypatch.setattr("ci.jobs.ci_utils.is_extended_run", lambda: False)
+    envs = get_additional_envs(None, "Stress test (arm_asan_ubsan, s3)")
+    assert "USE_S3_STORAGE_FOR_MERGE_TREE=1" in envs
+    assert "USE_CAS_S3_STORAGE_FOR_MERGE_TREE=1" not in envs
+
+
+def test_default_stress_env_has_neither_s3_flag(monkeypatch):
+    monkeypatch.setattr("ci.jobs.ci_utils.is_extended_run", lambda: False)
+    envs = get_additional_envs(None, "Stress test (amd_asan_ubsan)")
+    assert "USE_S3_STORAGE_FOR_MERGE_TREE=1" not in envs
+    assert "USE_CAS_S3_STORAGE_FOR_MERGE_TREE=1" not in envs
 
 
 if __name__ == "__main__":

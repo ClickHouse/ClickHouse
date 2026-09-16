@@ -350,6 +350,18 @@ function check_logs_for_critical_errors()
 
 function collect_query_and_trace_logs()
 {
+    # A writable open of a CAS disk claims the server-root and fails closed against the
+    # real server's owner uuid; read-only skips the claim, which is all a dump needs.
+    # `--follow-symlinks`: install.sh symlinks these configs. See dump_system_tables.
+    grep -Rl '<metadata_type>cas</metadata_type>' /etc/clickhouse-server/ 2>/dev/null \
+        | xargs -r sed -i --follow-symlinks 's|<metadata_type>cas</metadata_type>|<metadata_type>cas</metadata_type><readonly>true</readonly>|g'
+
+    # A declared but not read-only CAS disk means this scrape is about to die on ownership.
+    if grep -Rlq '<metadata_type>cas</metadata_type>' /etc/clickhouse-server/ 2>/dev/null \
+        && ! grep -Rlq '<metadata_type>cas</metadata_type><readonly>true</readonly>' /etc/clickhouse-server/ 2>/dev/null; then
+        echo "WARNING: a CAS disk is declared but the read-only marker was not inserted -- clickhouse-local will claim server-root ownership and this scrape will fail"
+    fi
+
     for table in query_log trace_log metric_log aggregated_zookeeper_log
     do
         # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local

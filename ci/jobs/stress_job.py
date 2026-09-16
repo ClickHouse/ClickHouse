@@ -1,6 +1,7 @@
 import csv
 import logging
 import os
+import shutil
 import socket
 import sys
 from pathlib import Path
@@ -142,7 +143,12 @@ def get_additional_envs(info, check_name: str) -> List[str]:
             "AZURE_STORAGE_ACCOUNT_URL=$AZURE_STORAGE_ACCOUNT_URL",
         ])
 
-    if "s3" in check_name:
+    # "cas s3" must win over the plain "s3" substring. Otherwise
+    # `USE_S3_STORAGE_FOR_MERGE_TREE=1` is also set and install.sh's
+    # if/elif chain installs the plain-S3 default policy instead of CAS.
+    if "cas s3" in check_name:
+        result.append("USE_CAS_S3_STORAGE_FOR_MERGE_TREE=1")
+    elif "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
     result.append(
@@ -307,6 +313,14 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     exit_code = Shell.run(run_command)
 
     Utils.fix_ownership_after_docker(temp_path, docker_image)
+
+    # ci/tmp is not uploaded. Copying here rather than from stress_runner.sh runs
+    # whatever the container's exit code, so a job that aborts early still publishes
+    # rustfs.log -- the only record of what the pool side did behind a CAS disk.
+    for helper_log in ("rustfs.log", "minio.log", "azurite.log", "kafka.log"):
+        src = temp_path / helper_log
+        if src.is_file():
+            shutil.copy(src, result_path / helper_log)
 
     core_files = ClickHouseService.collect_cores(cores_path)
 

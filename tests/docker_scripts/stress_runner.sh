@@ -52,6 +52,11 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config 
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
+if [[ "$USE_CAS_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    # CAS-over-S3 needs RustFS (enforced If-Match deletes). MinIO stays up for
+    # the non-CAS s3 disks that EXPORT_S3_STORAGE_POLICIES still installs.
+    cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_rustfs || { echo "Failed to start rustfs"; exit 1; }
+fi
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
 # do not leave behind broken StorageKafka tables whose background threads cause
@@ -100,7 +105,10 @@ clickhouse-client --query "SHOW TABLES FROM tpcds"
 clickhouse-client --query "SHOW TABLES FROM tpch"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+if [[ "$USE_CAS_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    TEMP_POLICY="cas_s3"
+    echo "Using cas_s3 storage policy"
+elif [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     TEMP_POLICY="s3_cache"
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     TEMP_POLICY="azure_cache"
@@ -314,6 +322,9 @@ rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 start_server 10 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
+
+# The server may be killed rather than shut down, so don't rely on the shutdown flush.
+clickhouse-client --receive_timeout 30 -q "SYSTEM FLUSH LOGS" ||:
 
 stop_server
 
