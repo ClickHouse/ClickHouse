@@ -11,6 +11,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 from .prometheus_test_utils import (
+    convert_metrics_metadata_to_protobuf,
     convert_read_request_to_protobuf,
     convert_time_series_to_protobuf,
     error_code,
@@ -264,6 +265,65 @@ def test_remote_write_accepts_a_column_level_insert_grant():
         ),
     )
     assert_eq_with_retry(node, series_count("column_grant_metric"), "1")
+
+
+@pytest.mark.parametrize(
+    "handler, told_to_the_allowed_caller",
+    [(BAD_ENGINE, "is not TimeSeries"), (COARSE, "DateTime64")],
+    ids=["wrong_engine", "wrong_samples_type"],
+)
+def test_remote_write_denies_before_it_classifies_the_target(
+    handler, told_to_the_allowed_caller
+):
+    """A caller that may see the name but holds no INSERT learns only that. Every refusal that
+    describes the target - its engine, its version, its columns, its shards - is asked after the
+    grant, so it cannot be used to tell one kind of target from another."""
+    series = convert_time_series_to_protobuf(
+        [({"__name__": "classify_metric", "host": "h0"}, {EVALUATION_TIME: 1.0})]
+    )
+    # The privileged caller is told what is wrong with the target, so the denial below is not vacuous.
+    allowed = get_response_to_remote_write(
+        node.ip_address, 9093, f"{handler}/write", series
+    )
+    assert allowed.status_code >= 400, allowed.text
+    assert told_to_the_allowed_caller in allowed.text, allowed.text
+
+    denied = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        f"{handler}/write{credentials_in_url(NO_INSERT_USER)}",
+        series,
+    )
+    assert denied.headers["X-ClickHouse-Exception-Code"] == error_code(
+        node, "ACCESS_DENIED"
+    )
+    assert denied.status_code == requests.codes.forbidden, denied.text
+    assert "Not enough privileges" in denied.text, denied.text
+    for fragment in SHARD_LOCAL_LEAK + ["is not TimeSeries", "does not declare column"]:
+        assert fragment not in denied.text, denied.text
+
+
+def test_remote_write_denies_metadata_before_the_schema_refusal():
+    """The same ordering for the refusal that names the metadata columns a narrow wrapper lacks."""
+    metadata = convert_metrics_metadata_to_protobuf(
+        [("classify_family", "GAUGE", "a help string", "a unit")]
+    )
+    allowed = get_response_to_remote_write(
+        node.ip_address, 9093, f"{COARSE}/write", metadata
+    )
+    assert allowed.status_code >= 400, allowed.text
+    assert "does not declare column" in allowed.text, allowed.text
+
+    denied = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        f"{COARSE}/write{credentials_in_url(NO_INSERT_USER)}",
+        metadata,
+    )
+    assert denied.headers["X-ClickHouse-Exception-Code"] == error_code(
+        node, "ACCESS_DENIED"
+    )
+    assert "does not declare column" not in denied.text, denied.text
 
 
 def test_dynamic_table_hides_whether_the_table_exists():

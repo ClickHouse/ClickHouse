@@ -269,6 +269,26 @@ Block makeBlock(
     return block;
 }
 
+/// The columns makeBlock() names. Derived from the request alone, so the grant it implies can be
+/// checked before anything that would describe the target table.
+Names columnsToWrite(
+    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
+    const String & samples_column_name)
+{
+    Names names;
+    if (!time_series.empty())
+        names.insert(names.end(), {TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags, samples_column_name});
+    if (!metrics_metadata.empty())
+        names.insert(
+            names.end(),
+            {TimeSeriesColumnNames::MetricFamily,
+             TimeSeriesColumnNames::Type,
+             TimeSeriesColumnNames::Unit,
+             TimeSeriesColumnNames::Help});
+    return names;
+}
+
 /// Delivered to the shards by the INSERT itself: a batch queued on the initiator, by the sink or the async
 /// insert queue, would be flushed after the shard-target check, into whatever answers to the name by then.
 void forceDeliveryToShards(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextMutablePtr & context)
@@ -373,28 +393,30 @@ void PrometheusRemoteWriteProtocol::write(
         time_series.size(),
         metrics_metadata.size());
 
-    /// Asked first, so a target of the wrong engine is named as such rather than as a missing column.
+    /// Nothing to write, so no grant to ask for, no target to classify and no shard to ask about.
+    if (time_series.empty() && metrics_metadata.empty())
+        return;
+
+    auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    /// A Distributed wrapper has no version of its own, so the column it declares names it.
+    const auto * samples_column_name
+        = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *metadata));
+    const auto columns_to_write = columnsToWrite(time_series, metrics_metadata, samples_column_name);
+    /// The grant the INSERT below makes, asked for before anything that classifies the target: a caller
+    /// without it is told it lacks the grant, and never which engine, version or columns the table has.
+    getContext()->checkAccess(AccessType::INSERT, storage_id, columns_to_write);
+
     const auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
     /// A shard-local table's version is checked by its own write on the shard.
     if (!distributed_target)
         checkTimeSeriesVersionIsWritable(*storagePtrToTimeSeries(time_series_storage));
 
-    auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     /// Refused before the shards are asked anything: no wrapper of that shape could take this request.
     if (!metrics_metadata.empty())
         checkTableAcceptsMetricsMetadata(*metadata, storage_id);
 
-    /// A Distributed wrapper has no version of its own, so the column it declares names it.
-    const auto * samples_column_name
-        = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *metadata));
     auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
-    /// Nothing to write, so no grant to ask for and no shard to ask about.
-    if (!block.rows())
-        return;
-
-    /// The grant the INSERT below makes, named column by column as it names them, and asked for before
-    /// the shard-target check can report on a shard-local table.
-    getContext()->checkAccess(AccessType::INSERT, storage_id, block.getNames());
+    chassert(block.getNames() == columns_to_write);
 
     if (distributed_target)
         forceDeliveryToShards(*time_series_storage, *metadata, getContext());
