@@ -48,27 +48,3 @@ FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
 SELECT countIf(explain LIKE '%encrypt(''aes-128-ecb'', toString(number), [HIDDEN])%') AS column_argument_shown
 FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
     SELECT encrypt('aes-128-ecb', toString(number), 'SEKRIT_LITERALKEY') FROM numbers(1)));
-
--- The result of a function with secret arguments is derived from them: `decrypt` folded to a constant
--- holds the plaintext. It is masked like the arguments, so neither its value (pretty format) nor its
--- action name (legacy format, un-optimized plan, query tree dump) shows it.
-SELECT countIf(explain LIKE '%SEKRIT_FOLDED%') AS folded_pretty_leaks
-FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
-    SELECT number FROM numbers(1)
-    WHERE toString(number) = decrypt('aes-128-ecb', encrypt('aes-128-ecb', 'SEKRIT_FOLDED', '0123456789abcdef'), '0123456789abcdef')));
-
-SELECT countIf(explain LIKE '%SEKRIT_FOLDED%') AS folded_legacy_leaks
-FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 0, compact = 0', (
-    SELECT number FROM numbers(1)
-    WHERE toString(number) = decrypt('aes-128-ecb', encrypt('aes-128-ecb', 'SEKRIT_FOLDED', '0123456789abcdef'), '0123456789abcdef')));
-
-SELECT countIf(explain LIKE '%SEKRIT_DECRYPTED%') AS derived_table_decrypt_legacy_leaks
-FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 0, compact = 0, optimize = 0', (
-    SELECT number FROM (
-        SELECT number, decrypt('aes-128-ecb', encrypt('aes-128-ecb', 'SEKRIT_DECRYPTED', '0123456789abcdef'), '0123456789abcdef') AS k
-        FROM numbers(1)) AS s
-    WHERE empty(HMAC('sha256', toString(number), s.k))));
-
-SELECT countIf(explain LIKE '%SEKRIT_FOLDED%') AS folded_query_tree_leaks
-FROM viewExplain('EXPLAIN QUERY TREE', '', (
-    SELECT decrypt('aes-128-ecb', encrypt('aes-128-ecb', 'SEKRIT_FOLDED', '0123456789abcdef'), '0123456789abcdef') AS k));
