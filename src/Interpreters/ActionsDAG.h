@@ -171,9 +171,6 @@ public:
 
     static Node createAlias(const Node & child, std::string alias);
 
-    /// Whether a column name is the placeholder the planner gives a masked secret constant.
-    static bool isMaskedSecretName(std::string_view name);
-
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
     const Node & addColumn(
