@@ -392,16 +392,22 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             {
                 arg.null_map = &column_nullable->getNullMapData();
                 arg.nested_column = &column_nullable->getNestedColumn();
-
-                if (initial_column->isNullable())
-                    initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
             }
+
+            /// The cast column can be not `Nullable` while this one is: a `Dynamic` common element type
+            /// cannot be, and the comparison below declares both element types without `Nullable`.
+            if (initial_column->isNullable())
+                initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
 
             /// In case the column was cast, we need to create an overflow mask for integer types.
             if (arg.nested_column != initial_column)
             {
-                const auto & nested_init_type = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
-                const auto & nested_cast_type = typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType();
+                /// The nested columns above are already unwrapped out of `ColumnNullable`, and `WhichDataType`
+                /// reports `Nullable` for `Nullable(T)`: both uses below need the element type without it.
+                const auto nested_init_type
+                    = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType());
+                const auto nested_cast_type
+                    = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType());
 
                 if (isInteger(nested_init_type)
                     || isDate(nested_init_type)
@@ -931,11 +937,11 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 
     FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 
-:::note
+<Note>
 The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
 as the set of all input elements which occur in an odd number of input sets.
 In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax symdiff_syntax = "arraySymmetricDifference(arr1, arr2, ... , arrN)";
     FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/reference/data-types/array)."}};

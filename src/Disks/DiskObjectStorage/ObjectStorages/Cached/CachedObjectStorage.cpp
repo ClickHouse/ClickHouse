@@ -167,10 +167,17 @@ void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeCacheIfExists(object.remote_path);
 }
 
-void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void CachedObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     for (const auto & object : objects)
+    {
         removeCacheIfExists(object.remote_path);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
@@ -184,14 +191,14 @@ void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
-void CachedObjectStorage::copyObject( // NOLINT
+String CachedObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+    return object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
 void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
