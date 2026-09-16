@@ -2,8 +2,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -12,9 +10,6 @@ namespace DB
 
 void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAndTypesList & columns)
 {
-    if (ast->as<ASTTableExpression>() || ast->as<ASTSelectWithUnionQuery>())
-        return;
-
     if (auto * identifier = ast->as<ASTIdentifier>())
     {
         if (columns.contains(identifier->getColumnName()))

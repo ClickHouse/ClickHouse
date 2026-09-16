@@ -19,22 +19,22 @@ namespace DB
   *   than number of running/sleeping threads, that has ever used object,
   *   and creation/destruction of objects is expensive).
   */
-template <typename T, typename Mutex = std::mutex>
+template <typename T>
 class SimpleObjectPool
 {
 protected:
 
     /// Hold all available objects in stack.
-    Mutex mutex;
+    std::mutex mutex;
     std::stack<std::unique_ptr<T>> stack;
 
     /// Specialized deleter for std::unique_ptr.
     /// Returns underlying pointer back to stack thus reclaiming its ownership.
     struct Deleter
     {
-        SimpleObjectPool * parent;
+        SimpleObjectPool<T> * parent;
 
-        Deleter(SimpleObjectPool * parent_ = nullptr) : parent{parent_} {} /// NOLINT
+        Deleter(SimpleObjectPool<T> * parent_ = nullptr) : parent{parent_} {} /// NOLINT
 
         void operator()(T * owning_ptr) const
         {

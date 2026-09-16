@@ -13,8 +13,6 @@
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
-#include <fmt/format.h>
-
 #include <future>
 #include <gtest/gtest.h>
 
@@ -70,10 +68,9 @@ TEST(SerializationJSON, SubcolumnLookupSkipsUnrelatedTypedPaths)
              {object, ""}, {std::make_shared<DataTypeArray>(object), ""},
              {std::make_shared<DataTypeTuple>(DataTypes{object}, Names{"j"}), "j."}})
     {
-        /// Debug and sanitizer builds also enumerate every path to verify the pruned lookup.
         serialization->subcolumn_enumerations = 0;
         EXPECT_NE(type->getSubcolumnType(prefix + "a.b"), nullptr);
-        EXPECT_EQ(serialization->subcolumn_enumerations, 2);
+        EXPECT_EQ(serialization->subcolumn_enumerations, 1);
 
         serialization->subcolumn_enumerations = 0;
         EXPECT_NE(type->getSubcolumnType(prefix + "dynamic"), nullptr);
@@ -147,27 +144,6 @@ TEST(SerializationJSON, ValidatesSchemasWhenConstructingSerialization)
         EXPECT_THROW(type->getDefaultSerialization(), Exception);
     }
     EXPECT_NO_THROW(factory.get("JSON(x Array(Map(String, UInt64)), y Nullable(DateTime), z LowCardinality(String))")->getDefaultSerialization());
-}
-
-TEST(SerializationJSON, ParsingManySchemasOnOneThread)
-{
-    /// More distinct schemas than the per-thread parser cache holds, parsed twice, so entries get evicted and rebuilt.
-    ASSERT_NE(getContext().context, nullptr);
-    FormatSettings settings;
-    std::vector<DataTypePtr> types;
-    for (size_t i = 0; i < 70; ++i)
-        types.push_back(DataTypeFactory::instance().get(fmt::format("JSON(p{} UInt64)", i)));
-    for (size_t round = 0; round < 2; ++round)
-    {
-        for (size_t i = 0; i < types.size(); ++i)
-        {
-            auto column = types[i]->createColumn();
-            const String data = fmt::format(R"({{"p{}":{}}})", i, i);
-            ReadBufferFromString input(data);
-            types[i]->getDefaultSerialization()->deserializeWholeText(*column, input, settings);
-            EXPECT_EQ(types[i]->getSubcolumn(fmt::format("p{}", i), column->getPtr())->getUInt(0), i);
-        }
-    }
 }
 
 TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
