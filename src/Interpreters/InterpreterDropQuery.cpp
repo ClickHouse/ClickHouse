@@ -513,7 +513,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
         /// the logic regarding finding suitable tables is a bit below
-        if (!truncate || !query.has_tables || !query.has_like)
+        if (!truncate || !query.has_tables || query.like.empty())
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
@@ -689,7 +689,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     }
 
     /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
-    if (truncate && query.has_tables && query.has_like)
+    if (truncate && query.has_tables && !query.like.empty())
     {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
@@ -709,7 +709,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
-            if (query.has_like)
+            if (!query.like.empty())
             {
                 bool match = matchesLikePattern(tname, query.like, query.case_insensitive_like);
                 if (query.not_like)
@@ -852,10 +852,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
+        /// `DROP`, `DETACH` and `TRUNCATE` of a database are all authorized by `DROP DATABASE`,
+        /// which is the single privilege `executeToDatabaseImpl` requires for each of them.
+        required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)
     {

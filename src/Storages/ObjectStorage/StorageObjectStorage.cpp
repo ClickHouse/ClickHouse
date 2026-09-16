@@ -85,32 +85,21 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         local_distributed_processing = false;
 
-    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
-    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
-    /// known. A glob in the member name requires opening the archive to enumerate its entries, but the sample
-    /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
-    /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
-    /// name is simply omitted from the sample instead of disabling the fast path.
-    const bool is_archive = configuration->isArchive();
-    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
-    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
-
     /// For non-glob paths, return directly without any S3 API calls.
-    /// Besides saving a request, this keeps hive partition inference working for an explicitly
-    /// specified key that does not exist (or is filtered out before reading): the path string
-    /// itself carries the partition columns, so it must not depend on the object being present.
-    if (!path.hasGlobs() && !local_distributed_processing)
-        return path.path + archive_suffix;
+    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
+        return path.path;
 
     /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
     /// we can expand the glob locally and return the first path without making any S3 API calls.
     /// This avoids a redundant HeadObject request that would otherwise be issued by
     /// creating a file iterator just to get a sample path string.
-    if (containsOnlyEnumGlobs(path.path))
+    /// Archives are excluded because they need the file iterator to return paths from inside
+    /// the archive (e.g. archive.zip::file.csv), not the raw archive path.
+    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
     {
         auto expanded = expandSelectionGlob(path.path);
         if (!expanded.empty())
-            return expanded.front() + archive_suffix;
+            return expanded.front();
     }
 
     auto query_settings = configuration->getQuerySettings(context);
@@ -171,6 +160,7 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+    configuration->check(context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
@@ -247,11 +237,6 @@ StorageObjectStorage::StorageObjectStorage(
 
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
     }
-
-    /// Validate the configuration before schema/format inference, so that e.g. the HTTP host/header
-    /// filters are enforced before any inference network request reads remote data. The `url` table
-    /// function does the same in `TableFunctionURL::getActualTableStructure`.
-    configuration->check(context);
 
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
@@ -396,18 +381,6 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
-}
-
-size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
-{
-    /// The key count of a globbed, archive, data lake or distributed read is unknown until the
-    /// storage is listed, which is too expensive at planning time, so report the request as is.
-    if (distributed_processing || configuration->isArchive() || configuration->supportsFileIterator()
-        || configuration->getPathForRead().hasGlobs())
-        return num_streams;
-
-    /// A static list of keys: the read creates at most one source per key.
-    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
 }
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -788,6 +761,18 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
+    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+}
+
+SinkToStoragePtr StorageObjectStorage::createSink(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const StorageID & storage_id,
+    const std::optional<FormatSettings> & format_settings,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & local_context)
+{
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 

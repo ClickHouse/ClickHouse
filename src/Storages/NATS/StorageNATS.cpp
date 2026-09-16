@@ -319,11 +319,40 @@ void StorageNATS::initializeConsumersFunc()
 
 void StorageNATS::createConsumersConnection()
 {
+    /// The NATS client library closes a connection for good once the server has rejected the same
+    /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
+    /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
+    /// the table would stay silently idle until it is detached and attached again.
+    if (consumers_connection && consumers_connection->isClosed())
+    {
+        /// The table name is in the logger. The error handler of the client library reports the
+        /// rejected credentials too, but it knows only the connection, so this is the line which
+        /// tells an operator which table lost its connection and why.
+        LOG_WARNING(
+            log,
+            "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
+            consumers_connection->connectionInfoForLog(),
+            consumers_connection->lastErrorForLog());
+
+        dropConsumers();
+        consumers_connection.reset();
+    }
+
     if (consumers_connection)
         return;
 
     auto connect_future = event_handler.createConnection(configuration);
     consumers_connection = connect_future.get();
+}
+
+void StorageNATS::dropConsumers()
+{
+    unsubscribeConsumers();
+
+    /// A consumer subscribes through the connection it was created with, so it cannot outlive it.
+    const size_t num_consumers_to_drop = num_created_consumers.exchange(0);
+    for (size_t i = 0; i < num_consumers_to_drop; ++i)
+        popConsumer();
 }
 
 void StorageNATS::createConsumers()
@@ -693,6 +722,31 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 void StorageNATS::threadFunc()
 {
     auto table_id = getStorageID();
+
+    /// A closed connection is dead for good, and the cycle below only waits for one to reconnect,
+    /// so build a new connection and new consumers here. Only the connection: whether the new
+    /// consumers subscribe is decided below, the same way as for any other cycle. A stopped or
+    /// paused table must hold no subscription - with core NATS a message delivered to it is
+    /// dropped, and in a queue group it is taken away from the members which are still running -
+    /// but it does keep its connection, so it can still run the one-shot cycle a `SYSTEM REFRESH`
+    /// entitles it to, and `SYSTEM START` finds it ready.
+    ///
+    /// No connection at all means a previous attempt dropped the closed one and then failed to
+    /// connect, so try again.
+    if (!shutdown_called && (!consumers_connection || consumers_connection->isClosed()))
+    {
+        try
+        {
+            createConsumersConnection();
+            createConsumers();
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Cannot reinitialize consumers: {}", getCurrentExceptionMessage(false));
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
+    }
 
     bool consumers_queues_are_empty = false;
 
@@ -1524,14 +1578,6 @@ CREATE TABLE nats_jet_stream (
 ```
 
 JetStream tables give at-least-once delivery: a message is acknowledged only after it has been inserted into the dependent materialized views, so a message whose insert fails or is interrupted stays unacknowledged and is redelivered. Core NATS (without JetStream) has no acknowledgement or replay, so it is at-most-once and an interrupted message is lost.
-
-## Data durability {#data-durability}
-
-This section applies to JetStream only. Core NATS has no acknowledgements and is at-most-once, as described above, so it has no window in which an acknowledged message can be lost.
-
-A JetStream table can silently lose already-consumed rows if the OS page cache is discarded before the inserted data is written to disk. After a batch is pushed to the dependent materialized views, the consumer acknowledges those messages, which lets the stream advance past them. The inserted rows, however, are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). If the page cache is lost after the acknowledgement but before the target part is fsynced, the messages are no longer redelivered, so the rows are lost with no error and `count()` is simply smaller. A plain process kill does not expose this, because the kernel keeps the page cache and eventually writes it back. A loss of the page cache does expose it; examples are a device-level power loss and an unclean host or kernel reset.
-
-For the recommended materialized-view consumption path (the acknowledgement is sent only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` tables makes the inserted parts durable before the acknowledgement is sent, which narrows this window substantially. The setting must be enabled on every `MergeTree` table the batch is inserted into, including cascaded materialized-view targets; any such table left at the default can still lose its part. Asynchronous intermediaries do not gain durability from this setting alone: for example a `Distributed` target inserts in the background when `distributed_foreground_insert = 0`, which is the default outside ClickHouse Cloud, so it needs its own durability settings or synchronous insertion. This mitigation also does not apply to a direct `INSERT ... SELECT ... FROM <nats_table>` with `nats_commit_on_select = 1`, where messages are acknowledged when the read reaches its end rather than after the destination has written a durable part.
 )DOCS_MD",
             .syntax = "ENGINE = NATS() SETTINGS nats_url = 'host:port', nats_subjects = 'subject', nats_format = 'format', ...",
             .related = {"Kafka", "RabbitMQ", "FileLog"}});

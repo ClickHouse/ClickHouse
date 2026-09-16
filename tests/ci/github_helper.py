@@ -52,7 +52,6 @@ class PullRequestInfo:
     """
 
     number: int
-    title: str
     head_ref: str
     base_ref: str
     label_names: List[str]
@@ -195,7 +194,6 @@ class GitHub(github.Github):
     # entry points below.
     _GRAPHQL_PR_FIELDS = """
         number
-        title
         headRefName
         baseRefName
         merged
@@ -224,7 +222,6 @@ class GitHub(github.Github):
         ]
         return PullRequestInfo(
             number=node["number"],
-            title=node["title"],
             head_ref=node["headRefName"],
             base_ref=node["baseRefName"],
             label_names=[label["name"] for label in node["labels"]["nodes"]],

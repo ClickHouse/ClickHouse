@@ -1,5 +1,4 @@
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/KeeperConstants.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <IO/WriteHelpers.h>
@@ -65,7 +64,6 @@ namespace ErrorCodes
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     DECLARE(Bool, compress_logs, false, "Write compressed coordination logs in ZSTD format", 0) \
     DECLARE(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
-    DECLARE(Int64, snapshot_zstd_compression_level, DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL, "ZSTD compression level for snapshots. Lower levels use less CPU but produce larger snapshots. Used only when compress_snapshots_with_zstd_format is enabled.", 0) \
     DECLARE(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0) \
     DECLARE(UInt64, max_log_file_size, 50 * 1024 * 1024, "Max size of the Raft log file. If possible, each created log file will preallocate this amount of bytes on disk. Set to 0 to disable the limit", 0) \
     DECLARE(UInt64, log_file_overallocate_size, 50 * 1024 * 1024, "If max_log_file_size is not set to 0, this value will be added to it for preallocating bytes on disk. If a log record is larger than this value, it could lead to uncaught out-of-space issues so a larger value is preferred", 0) \
@@ -93,8 +91,8 @@ namespace ErrorCodes
     DECLARE(UInt64, write_throttling_min_delay_us, 10000, "LSMT: when write throttling kicks in, this is the smallest delay added to a write, in microseconds. The delay grows exponentially (by write_throttling_factor) the further background work falls behind, up to write_throttling_max_delay_ms.", HOT_RELOAD) \
     DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
     DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Should be greater than 1. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
-    DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Deprecated, has no effect. The latest logs cache is bounded by latest_logs_cache_size_threshold alone.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum memory held by the in-memory cache of latest log entries, counting the per-entry allocation overhead and not just the entries themselves.", 0) \
+    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated. Used as the value of log_readahead_commit_window_bytes if that setting is not itself set.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \
@@ -131,7 +129,7 @@ namespace ErrorCodes
     DECLARE(UInt64, log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
     DECLARE(UInt64, log_readahead_serve_wait_timeout_ms, 200, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
     DECLARE(NonZeroUInt64, log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
-    DECLARE(UInt64, log_readahead_commit_window_bytes, 500_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
+    DECLARE(UInt64, log_readahead_commit_window_bytes, 16_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. This is a prefetch window, not a cache: entries are produced in order by one fill task and popped by the commit thread as it consumes them, so the window only has to cover the gap between the two rates, and a value in the tens of MiB is already hundreds of thousands of entries. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
     DECLARE(UInt64, log_startup_read_max_streams, 0, "Maximum number of changelog files read concurrently during Keeper startup. 0 = automatically use the number of CPU cores. 1 = use the serial (pre-parallel) startup read. Effective parallelism is capped by the number of changelog files that need to be read; consider lowering on seek-bound storage (HDD, IOPS-capped volumes).", 0) \
     DECLARE(NonZeroUInt64, log_startup_read_buffer_size, 8 * 1024 * 1024, "Per-stream read buffer size (bytes) used while reading changelogs at Keeper startup. Must be greater than 0. The buffer is additionally clamped to the file size.", 0) \
 
@@ -205,7 +203,7 @@ void CoordinationSettings::dump(WriteBufferFromOwnString & buf) const
         if (val.getType() == Field::Types::Bool)
             writeText(val.safeGet<UInt64>() ? "true" : "false", buf);
         else
-            writeText(field.getValueString(), buf);
+            writeText(field.getValueString(/* show_secrets */ true), buf);
         buf.write('\n');
     }
 }

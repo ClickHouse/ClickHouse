@@ -125,7 +125,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -424,8 +424,7 @@ IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
-     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES},
-     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS}})
+     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,

@@ -16,10 +16,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
@@ -78,51 +74,9 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
-/// projections are stored but not estimated yet, so report them instead of dropping them.
-/// whoever adds the estimate must also require SELECT on the projection's columns, the way
-/// evaluateIndex does, since it will read them
-void appendProjectionCandidates(
-    WhatIfResult & result, const HypotheticalObjectStore & store, const MergeTreeData & data, const ContextPtr & context)
-{
-    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
-    {
-        WhatIfCandidateResult r;
-        r.name = projection.name;
-        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
-        r.status = WhatIfCandidateResult::NotApplicable;
-        r.not_applicable_reason = "EXPLAIN WHATIF does not estimate hypothetical projections yet";
-
-        /// re-run the same ADD PROJECTION validation as CREATE did, so both a dropped column and a
-        /// later MODIFY SETTING that disables the projection's features surface as drift
-        try
-        {
-            checkHypotheticalProjectionIsAddable(data, metadata, projection.definition_ast, /*if_not_exists=*/false, context);
-        }
-        catch (const Exception &)
-        {
-            r.not_applicable_reason = "Hypothetical projection can no longer be added to this table: "
-                + getCurrentExceptionMessage(false);
-        }
-
-        result.candidates.push_back(std::move(r));
-    }
-}
-
-/// only when the store held nothing for this table
-void appendNoCandidatesRow(WhatIfResult & result)
-{
-    WhatIfCandidateResult none;
-    none.name = "(none)";
-    none.status = WhatIfCandidateResult::NotApplicable;
-    none.not_applicable_reason = "No hypothetical indexes or projections defined for this table. "
-        "Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.";
-    result.candidates.push_back(std::move(none));
-}
-
-/// nothing was scanned, so every candidate gets the same reason
+/// Nothing was scanned, so mark every candidate not-applicable with the same reason
 WhatIfResult buildResultWithoutScan(
-    const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason, const ContextPtr & context)
+    const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason)
 {
     WhatIfResult result;
     result.database = data.getStorageID().getDatabaseName();
@@ -136,9 +90,14 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
-    appendProjectionCandidates(result, store, data, context);
     if (result.candidates.empty())
-        appendNoCandidatesRow(result);
+    {
+        WhatIfCandidateResult none;
+        none.name = "(none)";
+        none.status = WhatIfCandidateResult::NotApplicable;
+        none.not_applicable_reason = "No hypothetical indexes defined for this table.";
+        result.candidates.push_back(std::move(none));
+    }
     return result;
 }
 
@@ -377,7 +336,7 @@ WhatIfResult estimateHypotheticalIndexes(
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)
-                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit", local_context);
+                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit");
 
             /// The plan answers the query without reading the table's parts at all: a trivial
             /// count, a minmax_count or exact-count projection, or a projection that selected no
@@ -400,8 +359,7 @@ WhatIfResult estimateHypotheticalIndexes(
             }
 
             return buildResultWithoutScan(
-                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read",
-                local_context);
+                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read");
         }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -485,6 +443,18 @@ WhatIfResult estimateHypotheticalIndexes(
     const auto & store = context->getHypotheticalObjectStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
 
+    if (hypo_indexes.empty())
+    {
+        WhatIfCandidateResult no_index;
+        no_index.name = "(none)";
+        no_index.status = WhatIfCandidateResult::NotApplicable;
+        no_index.not_applicable_reason = "No hypothetical indexes defined for this table. "
+            "Use CREATE HYPOTHETICAL INDEX to define one.";
+        result.candidates.push_back(std::move(no_index));
+        validate_forced_indices();
+        return result;
+    }
+
     String blanket_not_applicable_reason;
     if (query_with_final)
         blanket_not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
@@ -567,11 +537,6 @@ WhatIfResult estimateHypotheticalIndexes(
         combined.total_marks = combined_total_marks;
         result.candidates.push_back(std::move(combined));
     }
-
-    appendProjectionCandidates(result, store, data, context);
-
-    if (result.candidates.empty())
-        appendNoCandidatesRow(result);
 
     return result;
 }

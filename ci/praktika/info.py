@@ -1,7 +1,7 @@
 import json
 import os
 import traceback
-import urllib.parse
+import urllib
 from pathlib import Path
 from typing import Optional
 
@@ -44,15 +44,6 @@ class Info:
     @property
     def event_time(self):
         return self.env.EVENT_TIME
-
-    @property
-    def workflow_start_time(self):
-        """When the event created this workflow run, as GitHub's `created_at`.
-
-        The same value in every job of the run, and a rerun keeps it, unlike
-        the per-job start time.
-        """
-        return self.env.WORKFLOW_START_TIME
 
     @property
     def event_action(self):
@@ -208,7 +199,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -228,7 +219,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break

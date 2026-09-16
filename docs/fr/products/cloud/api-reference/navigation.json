@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "Organisation",
     "pages": [
       {
-        "group": "Organization",
+        "group": "Organisation",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -19,15 +19,14 @@
         ]
       },
       {
-        "group": "Billing",
+        "group": "Facturation",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
-          "products/cloud/api-reference/billing/active-balances-get",
-          "products/cloud/api-reference/billing/credit-balances-get"
+          "products/cloud/api-reference/billing/active-balances-get"
         ]
       },
       {
-        "group": "User management",
+        "group": "Gestion des utilisateurs",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +39,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "Gestion des rôles",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -74,7 +73,6 @@
       {
         "group": "Service",
         "pages": [
-          "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
           "POST /v1/organizations/{organizationId}/services",
           "GET /v1/organizations/{organizationId}/services/{serviceId}",
@@ -118,7 +116,7 @@
     ]
   },
   {
-    "group": "API keys",
+    "group": "OpenAPI",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -142,7 +140,6 @@
     "pages": [
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
       "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
-      "products/cloud/api-reference/clickpipes/click-pipes-service-context-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",

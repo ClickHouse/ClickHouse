@@ -357,24 +357,22 @@ namespace JSONUtils
 
     void writeFieldCompactDelimiter(WriteBuffer & out) { writeCString(", ", out); }
 
-    static void writeTitle(std::string_view title, WriteBuffer & out, size_t indent, std::string_view after_delimiter)
+    static void writeTitle(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
     {
         writeChar('\t', indent, out);
         writeChar('"', out);
-        out.write(title.data(), title.size());
-        out.write("\":", 2);
-        if (!after_delimiter.empty())
-            out.write(after_delimiter.data(), after_delimiter.size());
+        writeCString(title, out);
+        writeCString("\":", out);
+        writeCString(after_delimiter, out);
     }
 
-    static void writeTitlePretty(std::string_view title, WriteBuffer & out, const FormatSettings & settings, size_t indent, std::string_view after_delimiter)
+    static void writeTitlePretty(const char * title, WriteBuffer & out, const FormatSettings & settings, size_t indent, const char * after_delimiter)
     {
         writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, out);
         writeChar('"', out);
-        out.write(title.data(), title.size());
-        out.write("\":", 2);
-        if (!after_delimiter.empty())
-            out.write(after_delimiter.data(), after_delimiter.size());
+        writeCString(title, out);
+        writeCString("\":", out);
+        writeCString(after_delimiter, out);
     }
 
     void writeObjectStart(WriteBuffer & out, size_t indent, const char * title)
@@ -437,20 +435,20 @@ namespace JSONUtils
         bool yield_strings,
         const FormatSettings & settings,
         WriteBuffer & out,
-        std::optional<std::string_view> name,
+        const std::optional<String> & name,
         size_t indent,
-        std::string_view title_after_delimiter,
+        const char * title_after_delimiter,
         bool pretty_json)
     {
         if (name.has_value())
         {
             if (pretty_json)
             {
-                writeTitlePretty(*name, out, settings, indent, title_after_delimiter);
+                writeTitlePretty(name->data(), out, settings, indent, title_after_delimiter);
             }
             else
             {
-                writeTitle(*name, out, indent, title_after_delimiter);
+                writeTitle(name->data(), out, indent, title_after_delimiter);
             }
         }
 

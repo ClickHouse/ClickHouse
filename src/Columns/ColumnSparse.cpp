@@ -80,15 +80,6 @@ bool ColumnSparse::isDefaultAt(size_t n) const
     return getValueIndex(n) == 0;
 }
 
-bool ColumnSparse::hasOnlyTypeDefaults() const
-{
-    if (_size == 0)
-        return true;
-    /// All rows map to values[0] when offsets is empty, but values[0] may
-    /// not be the type-default (e.g. after deserialization), so verify it.
-    return getOffsetsData().empty() && values->isDefaultAt(0);
-}
-
 bool ColumnSparse::isNullAt(size_t n) const
 {
     return values->isNullAt(getValueIndex(n));
@@ -185,6 +176,11 @@ std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColu
 void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
+}
+
+void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
+{
+    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

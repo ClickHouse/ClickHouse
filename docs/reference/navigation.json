@@ -108,7 +108,6 @@
                 },
                 "reference/statements/create/masking-policy",
                 "reference/statements/create/function",
-                "reference/statements/create/handler",
                 "reference/statements/create/named-collection",
                 "reference/statements/create/quota",
                 "reference/statements/create/role",
@@ -139,7 +138,6 @@
             "reference/statements/explain",
             "reference/statements/grant",
             "reference/statements/hypothetical-index",
-            "reference/statements/hypothetical-projection",
             "reference/statements/in",
             "reference/statements/insert-into",
             "reference/statements/kill",
@@ -187,7 +185,8 @@
             "reference/statements/truncate",
             "reference/statements/undrop",
             "reference/statements/update",
-            "reference/statements/use"
+            "reference/statements/use",
+            "reference/statements/watch"
           ]
         },
         {
@@ -1067,7 +1066,6 @@
         "reference/system-tables/histogram_metric_log",
         "reference/system-tables/histogram_metrics",
         "reference/system-tables/hypothetical_indexes",
-        "reference/system-tables/hypothetical_projections",
         "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
@@ -1142,7 +1140,6 @@
         "reference/system-tables/settings_profile_elements",
         "reference/system-tables/settings_profiles",
         "reference/system-tables/stack_trace",
-        "reference/system-tables/statements",
         "reference/system-tables/stemmers",
         "reference/system-tables/storage_policies",
         "reference/system-tables/symbols",

@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
@@ -535,8 +534,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         all_const);
 }
 
-static const ActionsDAG::Node & addCastImpl(
-    ActionsDAG & dag, const ActionsDAG::Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context, CastType cast_kind)
+const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
 {
     Field cast_type_constant_value(cast_type->getName());
 
@@ -544,21 +542,11 @@ static const ActionsDAG::Node & addCastImpl(
     ColumnConstPtr column = type->createColumnConst(0, cast_type_constant_value);
     auto name = calculateConstantActionNodeName(cast_type_constant_value);
 
-    const auto * cast_type_constant_node = &dag.addColumn(std::move(column), std::move(type), std::move(name));
+    const auto * cast_type_constant_node = &addColumn(std::move(column), std::move(type), std::move(name));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, cast_kind, {}, context);
+    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, CastType::nonAccurate, {}, context);
 
-    return dag.addFunction(func_base_cast, std::move(children), result_name);
-}
-
-const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
-{
-    return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::nonAccurate);
-}
-
-const ActionsDAG::Node & ActionsDAG::addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
-{
-    return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::accurateOrNull);
+    return addFunction(func_base_cast, std::move(children), result_name);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
@@ -2206,19 +2194,6 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
-bool ActionsDAG::hasInputNameShadowedByComputedNode() const
-{
-    std::unordered_set<std::string_view> input_names;
-    for (const auto * input : inputs)
-        input_names.insert(input->result_name);
-
-    for (const auto & node : nodes)
-        if (node.type != ActionType::INPUT && input_names.contains(node.result_name))
-            return true;
-
-    return false;
-}
-
 void ActionsDAG::decorrelate()
 {
     for (auto & node : nodes)
@@ -2900,49 +2875,6 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
-std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoin() const
-{
-    const Node * array_join = nullptr;
-    for (const auto & node : nodes)
-        if (node.type == ActionType::ARRAY_JOIN)
-        {
-            array_join = &node;
-            break;
-        }
-    if (!array_join)
-        return {};
-
-    const std::string name = array_join->result_name;
-
-    /// One split gives both halves: the ARRAY_JOIN goes to `first`, so `second` (= after) is array-join-free
-    /// and consumes the join result as an input, matched to `first`'s output by the split itself (no names).
-    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true);
-    ActionsDAG after = std::move(split_res.second);
-
-    /// The ArrayJoinStep still explodes the column by name, so bail if another column crossing the step shares
-    /// the join's name (or the result is unused) - otherwise the passenger would be element-typed too.
-    size_t element_inputs = 0;
-    for (const auto * input : after.inputs)
-        element_inputs += (input->result_name == name);
-    if (element_inputs != 1)
-        return {};
-    ActionsDAG before = std::move(split_res.first);
-    const Node * aj_before = split_res.split_nodes_mapping.at(array_join);
-    const Node * arg_before = aj_before->children.at(0);
-
-    /// `before` computed the join result; output the array argument under the same name instead and drop the
-    /// ARRAY_JOIN node so the ArrayJoinStep does the expansion. Erase it directly - its only consumer was that
-    /// output, and removeUnusedActions never prunes an ARRAY_JOIN (it changes the number of rows).
-    const Node * arg_out = arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name);
-    for (auto & output : before.outputs)
-        if (output == aj_before)
-            output = arg_out;
-    before.nodes.remove_if([&](const Node & node) { return &node == aj_before; });
-    before.removeUnusedActions(/*allow_remove_inputs=*/false);
-
-    return SplitArrayJoinResult{std::move(before), std::move(after), name};
-}
-
 ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & array_joined_columns) const
 {
     std::unordered_set<std::string_view> array_joined_columns_set(array_joined_columns.begin(), array_joined_columns.end());
@@ -2987,8 +2919,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
 
             if (cur.next_child_to_visit == cur.node->children.size())
             {
-                /// An arrayJoin moved below another one would swap their nesting and change the row order, so it stays put.
-                bool depend_on_array_join = cur.node->type == ActionType::ARRAY_JOIN;
+                bool depend_on_array_join = false;
                 if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
@@ -3817,15 +3748,14 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             if (!removes_filter)
             {
                 /// Preserve the original type if the column is needed in the result.
-                /// A cast alone is not enough: `and` implicitly converts its arguments to booleans,
-                /// while a cast maps values like 256 or 0.1 to 0, which is inconsistent with e.g. "1 and 256".
-                /// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
-                if (!isBool(removeLowCardinalityAndNullable(child->result_type)))
+                if (isFloat(removeLowCardinalityAndNullable(child->result_type)))
                 {
-                    auto uint8_type = std::make_shared<DataTypeUInt8>();
-                    const auto & true_node = addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
-                    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-                    child = &addFunction(func_builder_and, {child, &true_node}, {});
+                    /// For floating point types, it's not enough to cast to just UInt8.
+                    /// Because counstants like 0.1 will be casted to 0, which is inconsistent with e.g. "1 and 0.1"
+                    DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
+                    if (isNullableOrLowCardinalityNullable(child->result_type))
+                        cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
+                    child = &addCast(*child, cast_type, {}, nullptr);
                 }
 
                 if (!child->result_type->equals(*predicate->result_type))

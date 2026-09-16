@@ -1242,7 +1242,6 @@ CONV_FN(ExprInType, ein)
             ExplainQueryToString(ret, ein.sel());
             ret += ")";
             break;
-        case InType::kEmptyList: ret += ein.empty_list() ? "[]" : "()"; break;
         default: ret += "1";
     }
 }
