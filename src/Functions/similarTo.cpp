@@ -37,8 +37,10 @@ When provided, the custom escape character replaces the default backslash for es
 metasymbols listed above, and the backslash loses its special meaning (i.e. it is treated as a
 literal character).
 
-A custom escape character must be followed by a `SIMILAR TO` special character or by itself; anything
-else is an error, since an escape before an ordinary character would have no effect. This strictness
+A custom escape character must be followed by a `SIMILAR TO` special character (`%`, `_`, `|`, `*`, `+`,
+`?`, `{`, `}`, `(`, `)`, `[`, `]`) or by itself; anything else - including `^`, `$`, `.` and the backslash,
+which are ordinary characters outside bracket expressions - is an error, since an escape before an
+ordinary character would have no effect. This strictness
 applies only to a custom escape character - the default backslash keeps the legacy `LIKE` behaviour
 and denotes a literal backslash when it precedes an ordinary character, so `'\\mabc' SIMILAR TO
 '%\\mabc%'` returns `1` while `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'` is rejected. Inside a bracket

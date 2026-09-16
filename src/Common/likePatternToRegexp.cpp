@@ -440,22 +440,19 @@ String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char e
 
 String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view pattern, char escape_char)
 {
-    /// Does `\c` denote a literal `c` in the standard (backslash-escape) SIMILAR TO grammar as
-    /// processed by `similarToPatternToRegexp`? True for the LIKE metacharacters (`%`, `_`), the
-    /// SIMILAR TO metacharacters excluded from LIKE (`| * + ? { } ( ) [ ]`), the characters that
-    /// SIMILAR TO always quotes for re2 (`^ $ .`), and backslash itself. For any other character a
-    /// leading backslash is not consumed as an escape, so the character is already a literal on its
-    /// own and must be emitted unescaped.
-    const auto needs_backslash_to_be_literal = [](char c) -> bool
+    /// Is `c` a special character of the SIMILAR TO grammar outside bracket expressions, i.e. one whose
+    /// special meaning a custom escape character may disable? These are the LIKE metacharacters
+    /// (`%`, `_`) and the SIMILAR TO metacharacters excluded from LIKE (`| * + ? { } ( ) [ ]`).
+    /// In the standard (backslash-escape) grammar processed by `similarToPatternToRegexp` each of
+    /// them is denoted literally as `\c`. Everything else - letters, digits, `^`, `$`, `.`, and the
+    /// backslash, which is an ordinary literal once a custom escape is in force - is already a
+    /// literal on its own, so an escape before it is never necessary.
+    const auto is_special = [](char c) -> bool
     {
         switch (c)
         {
             case '%':
             case '_':
-            case '^':
-            case '$':
-            case '.':
-            case '\\':
                 return true;
 #define CASES(x) case x:
             SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
@@ -495,14 +492,14 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
                 throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of SIMILAR TO pattern '{}'", pattern);
 
             /// The escape character must be followed by a character whose special meaning it can
-            /// disable, or by itself. An escape before an ordinary character (a letter, a digit, ...)
-            /// can never be necessary - such a character is already a literal - so accepting it would
-            /// only mask a typo. It would also mean something different from the same sequence under
+            /// disable, or by itself. An escape before an ordinary character (a letter, a digit, `^`,
+            /// `$`, `.`, a backslash, ...) can never be necessary - such a character is already a
+            /// literal - so accepting it would only mask a typo. It would also mean something different from the same sequence under
             /// the default backslash escape, where `\c` denotes a literal backslash followed by `c`
             /// (`SIMILAR TO '\m'` matches `\m`, not `m`) - silently changing what a pattern means
             /// depending on which escape character is in force. Reject it, exactly as
             /// `LIKE ... ESCAPE` does above.
-            if (*pos != escape_char && !needs_backslash_to_be_literal(*pos))
+            if (*pos != escape_char && !is_special(*pos))
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE,
                     "Invalid escape sequence '{}{}' in SIMILAR TO pattern '{}': the escape character must be "
@@ -510,8 +507,11 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
                     escape_char, *pos, pattern);
 
             /// Represent the literal in the standard grammar: `\c` for characters that would
-            /// otherwise be special, or the bare character otherwise.
-            if (needs_backslash_to_be_literal(*pos))
+            /// otherwise be special, or the bare character otherwise (an escape character that is
+            /// itself an ordinary character, escaped by itself). A backslash never gets here: it is
+            /// an ordinary literal under a custom escape, and a backslash escape character returns
+            /// early above.
+            if (is_special(*pos))
                 res += '\\';
             res += *pos;
             ++pos;

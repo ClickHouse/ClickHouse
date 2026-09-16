@@ -249,6 +249,17 @@ SELECT 'a-b'   SIMILAR TO 'a#-b' ESCAPE '#';       -- { serverError CANNOT_PARSE
 SELECT '-abc-' SIMILAR TO '%#mabc#M%' ESCAPE '#';  -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 SELECT 'mabcM' SIMILAR TO '%#mabc#M%' ESCAPE '#';  -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 
+SELECT '-- ^ $ . and the backslash are ordinary literals outside bracket expressions, so escaping them is an error too';
+SELECT 'a.b'   SIMILAR TO 'a#.b' ESCAPE '#';       -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT 'a^b'   SIMILAR TO 'a#^b' ESCAPE '#';       -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT 'a$b'   SIMILAR TO 'a#$b' ESCAPE '#';       -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT 'a\\b'  SIMILAR TO 'a#\\b' ESCAPE '#';      -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT 'a.b'   SIMILAR TO 'a.b' ESCAPE '#';        -- Returns: 1 (unescaped, they denote themselves)
+SELECT 'axb'   SIMILAR TO 'a.b' ESCAPE '#';        -- Returns: 0
+SELECT 'a^b$'  SIMILAR TO 'a^b$' ESCAPE '#';       -- Returns: 1
+SELECT '.'     SIMILAR TO '..' ESCAPE '.';         -- Returns: 1 (an escape character that is an ordinary character is escaped by itself)
+SELECT 'x'     SIMILAR TO '..' ESCAPE '.';         -- Returns: 0
+
 SELECT '-- The default backslash escape keeps its own rule: an unknown escape is a literal backslash';
 SELECT '\\mabc' SIMILAR TO '%\\mabc%';             -- Returns: 1
 SELECT 'mabc'   SIMILAR TO '%\\mabc%';             -- Returns: 0 (\\m is not a word boundary)
