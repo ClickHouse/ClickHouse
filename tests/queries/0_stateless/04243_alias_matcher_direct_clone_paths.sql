@@ -15,9 +15,7 @@ ORDER BY a;
 
 INSERT INTO alias_matcher_direct_clone_read_order (a) VALUES (1), (2);
 SELECT b FROM alias_matcher_direct_clone_read_order ORDER BY b
-SETTINGS allow_experimental_analyzer = 0, optimize_read_in_order = 1, optimize_respect_aliases = 1;
-SELECT b FROM alias_matcher_direct_clone_read_order ORDER BY b
-SETTINGS allow_experimental_analyzer = 1, optimize_read_in_order = 1, optimize_respect_aliases = 1;
+SETTINGS optimize_read_in_order = 1, optimize_respect_aliases = 1;
 
 CREATE TABLE alias_matcher_direct_clone_prewhere
 (
@@ -29,7 +27,7 @@ ORDER BY a;
 
 INSERT INTO alias_matcher_direct_clone_prewhere (a) VALUES (1), (2);
 SELECT b FROM alias_matcher_direct_clone_prewhere PREWHERE b != '' ORDER BY a
-SETTINGS allow_experimental_analyzer = 0, optimize_respect_aliases = 1;
+SETTINGS optimize_respect_aliases = 1;
 
 CREATE TABLE alias_matcher_direct_clone_merge_src
 (
@@ -47,8 +45,7 @@ CREATE TABLE alias_matcher_direct_clone_merge
 ENGINE = Merge(currentDatabase(), '^alias_matcher_direct_clone_merge_src$');
 
 INSERT INTO alias_matcher_direct_clone_merge_src (a) VALUES (1), (2);
-SELECT b FROM alias_matcher_direct_clone_merge ORDER BY a
-SETTINGS allow_experimental_analyzer = 0;
+SELECT b FROM alias_matcher_direct_clone_merge ORDER BY a;
 
 DROP TABLE alias_matcher_direct_clone_merge;
 DROP TABLE alias_matcher_direct_clone_merge_src;

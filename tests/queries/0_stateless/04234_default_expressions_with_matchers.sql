@@ -1,7 +1,4 @@
--- Use the analyzer: tuple field naming via `REPLACE` aliases depends on analyzer-side
--- handling, and only the analyzer produces the named-tuple output expected by this test.
--- The old-analyzer path is covered by 04757_default_expr_matcher_replace_legacy_analyzer.
-SET enable_analyzer = 1;
+-- Tuple field naming via `REPLACE` aliases produces the named-tuple output expected by this test.
 SET enable_named_columns_in_function_tuple = 1;
 
 DROP TABLE IF EXISTS default_expr_matchers_alias;
