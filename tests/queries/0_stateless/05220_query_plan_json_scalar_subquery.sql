@@ -44,6 +44,15 @@ WHERE v = (SELECT max(v) FROM t_scalar_05220 AS i WHERE i.k = o.k)
 SELECT (SELECT sum(v) FROM t_scalar_05220) + (SELECT count() FROM t_scalar_05220) AS s
     SETTINGS log_comment = '05220_folded' FORMAT Null;
 
+-- A subquery supplying LIMIT or OFFSET. The value is consumed by a step that holds no
+-- `ActionsDAG` -- `LimitStep` keeps its bound as a plain field -- so it cannot be linked the way
+-- every other consumer is, and the ids are put on the step directly instead. Both subqueries here
+-- land on the same `Limit` step, since one step carries both bounds.
+SELECT k FROM t_scalar_05220 ORDER BY k
+    LIMIT (SELECT count() FROM t_scalar_05220 WHERE k < 3)
+    OFFSET (SELECT count() FROM t_scalar_05220 WHERE k < 2)
+    SETTINGS log_comment = '05220_limit_offset' FORMAT Null;
+
 SET log_query_plans = 0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -70,7 +79,8 @@ SELECT
     arrayAll(q -> length(JSONExtractArrayRaw(q, 'ConsumedBy')) > 0, subqueries) AS all_linked
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05220_scalar', '05220_correlated', '05220_projected', '05220_folded')
+    AND log_comment IN ('05220_scalar', '05220_correlated', '05220_projected', '05220_folded',
+                        '05220_limit_offset')
 ORDER BY shape;
 
 DROP TABLE t_scalar_05220;
