@@ -21,7 +21,7 @@
 
 # 2026 Changelog
 
-### <a id="268"></a> ClickHouse release 26.8 LTS, 2026-08-27, FIXME (in progress)
+### <a id="268"></a> ClickHouse release 26.8 LTS, 2026-08-27. [Presentation](https://presentations.clickhouse.com/2026-release-26.8/), [Video](https://www.youtube.com/watch?v=5A9gRYE0v2M)
 
 #### Backward Incompatible Change
 * The `X-ClickHouse-Format` HTTP request header now explicitly selects the format of the response: it is an alias for the `output_format` setting, so it overrides the `FORMAT` clause of the query and the path extension. In previous versions, it only set the default when the output format was unspecified, like the `default_format` parameter. This provides an "out-of-band" option to request data in a desired format. It never changes how the request body of an `INSERT` is parsed - use `input_format` or `format` for that. [#105249](https://github.com/ClickHouse/ClickHouse/pull/105249) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
