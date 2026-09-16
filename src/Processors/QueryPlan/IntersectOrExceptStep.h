@@ -24,6 +24,11 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// Both inputs are hash-scattered by the whole row, so the output streams are disjoint by all columns.
+    /// Zero means the step was deserialized on a worker and takes the executing server's `max_threads`, which
+    /// is at least one; a single stream, whether from that or from the clamp on an extreme stream count, is
+    /// trivially disjoint, so the property holds either way.
+    bool isPartitioned() const { return max_threads != 1; }
     bool isSerializable() const override { return true; }
     void serialize(Serialization & ctx) const override;
     static QueryPlanStepPtr deserialize(Deserialization & ctx);

@@ -1,14 +1,28 @@
 <test>
     <!-- INTERSECT ALL / EXCEPT ALL build a multiset (occurrence counts) of the right side
          and decrement it while filtering the left side. The counting hash map is keyed on the
-         row value, exercising the key64 / keys128 / key_string dispatch. -->
+         row value, exercising the key64 / keys128 / key_string dispatch. With max_threads > 1
+         both inputs are hash-scattered by the row and the partitions are processed in parallel. -->
+
+    <substitutions>
+        <substitution>
+            <name>threads</name>
+            <values>
+                <value>1</value>
+                <value>8</value>
+            </values>
+        </substitution>
+    </substitutions>
 
     <!-- Single UInt64 key (key64). -->
-    <query>SELECT count() FROM (SELECT number FROM numbers(2500000) INTERSECT ALL SELECT number FROM numbers(2500000))</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(2500000) INTERSECT ALL SELECT number FROM numbers_mt(2500000)) SETTINGS max_threads = {threads}</query>
 
     <!-- Two fixed columns packed into a 128-bit key (keys128). -->
-    <query>SELECT count() FROM (SELECT number AS a, number + 1 AS b FROM numbers(2000000) INTERSECT ALL SELECT number AS a, number + 1 AS b FROM numbers(2000000))</query>
+    <query>SELECT count() FROM (SELECT number AS a, number + 1 AS b FROM numbers_mt(2000000) INTERSECT ALL SELECT number AS a, number + 1 AS b FROM numbers_mt(2000000)) SETTINGS max_threads = {threads}</query>
 
     <!-- String key (key_string). -->
-    <query>SELECT count() FROM (SELECT toString(number) AS s FROM numbers(2000000) EXCEPT ALL SELECT toString(number) AS s FROM numbers(1000000))</query>
+    <query>SELECT count() FROM (SELECT toString(number) AS s FROM numbers_mt(2000000) EXCEPT ALL SELECT toString(number) AS s FROM numbers_mt(1000000)) SETTINGS max_threads = {threads}</query>
+
+    <!-- DISTINCT: the final DISTINCT runs per partition without merging the streams. -->
+    <query>SELECT count() FROM (SELECT number % 1000000 AS n FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(2000000)) SETTINGS max_threads = {threads}</query>
 </test>

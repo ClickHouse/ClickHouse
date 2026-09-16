@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
@@ -19,6 +20,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
 
+#include <numeric>
 
 namespace DB
 {
@@ -138,8 +140,21 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         return pipeline;
     }
 
+    /// Zero means the step was deserialized on a worker; use the executing server's own setting.
+    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
+    size_t max_streams = 0;
+    for (const auto & cur_pipeline : pipelines)
+        max_streams = std::max(max_streams, cur_pipeline->getNumStreams());
+    const size_t num_partitions = clampScatterPartitions(new_max_threads, max_streams);
+
+    /// Both inputs have the same header after the conversion below, so equal rows land in the same partition.
+    ColumnNumbers key_columns(getOutputHeader()->columns());
+    std::iota(key_columns.begin(), key_columns.end(), 0);
+
     for (auto & cur_pipeline : pipelines)
     {
+        QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
+
         /// The check must be strict about constness (blocksHaveEqualStructure, not
         /// isCompatibleHeader): when a branch constant-folds, the common header
         /// materializes the column, and the converting expression must be applied to
@@ -149,7 +164,6 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         /// main streams and fails the per-stream structure check downstream.
         if (!blocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader()))
         {
-            QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputHeader()->getColumnsWithTypeAndName(),
@@ -161,21 +175,39 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
             {
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });
-
-            auto added_processors = collector.detachProcessors();
-            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
 
-        /// For the case of union.
-        cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));
+        if (num_partitions == 1)
+        {
+            cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));
+        }
+        else
+        {
+            scatterByPartition(*cur_pipeline, num_partitions, key_columns);
+        }
+        auto added_processors = collector.detachProcessors();
+        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
     }
 
-    /// Zero means the step was deserialized on a worker; use the executing server's own setting.
-    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
-    auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
-    processors.push_back(transform);
-    pipeline->addTransform(std::move(transform));
+
+    /// United ports are [left_0 .. left_{N-1}, right_0 .. right_{N-1}].
+    QueryPipelineProcessorsCollector collector(*pipeline, this);
+    pipeline->transform([&](OutputPortRawPtrs ports)
+    {
+        chassert(ports.size() == 2 * num_partitions);
+        Processors result;
+        for (size_t i = 0; i < num_partitions; ++i)
+        {
+            auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator, /*read_left_input_first_=*/ num_partitions == 1);
+            connect(*ports[i], transform->getInputs().front());
+            connect(*ports[num_partitions + i], transform->getInputs().back());
+            result.push_back(std::move(transform));
+        }
+        return result;
+    });
+    auto added_processors = collector.detachProcessors();
+    processors.insert(processors.end(), added_processors.begin(), added_processors.end());
 
     return pipeline;
 }
