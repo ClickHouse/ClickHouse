@@ -2,6 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingFieldASTFunction.h>
+#include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
 
 
@@ -16,6 +17,7 @@ struct TimeSeriesSettingsImpl;
 #define TIMESERIES_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ASTFunction) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, DataType) \
     M(CLASS_NAME, Map) \
     M(CLASS_NAME, UInt64) \
 
