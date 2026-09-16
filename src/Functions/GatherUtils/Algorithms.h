@@ -257,9 +257,8 @@ void NO_INLINE insertConstantPositionImpl(Source && array_source, ValueSource &&
     }
 }
 
-template <typename Source, typename ValueSource, typename Sink>
-void NO_INLINE insertDynamicPositionImpl(
-    Source && array_source, ValueSource && value_source, Sink && sink, const IColumn & position_column, bool position_is_unsigned)
+template <bool position_is_unsigned, typename Source, typename ValueSource, typename Sink>
+void insertDynamicPositionImpl(Source && array_source, ValueSource && value_source, Sink && sink, const IColumn & position_column)
 {
     sink.reserve(array_source.getSizeForReserve() + value_source.getSizeForReserve());
 
@@ -267,9 +266,11 @@ void NO_INLINE insertDynamicPositionImpl(
     {
         const auto row_num = array_source.rowNum();
         const auto array_size = array_source.getElementSize();
-        const size_t insert_position = position_is_unsigned
-            ? normalizeInsertPosition(position_column.getUInt(row_num), array_size)
-            : normalizeInsertPosition(position_column.getInt(row_num), array_size);
+        size_t insert_position;
+        if constexpr (position_is_unsigned)
+            insert_position = normalizeInsertPosition(position_column.getUInt(row_num), array_size);
+        else
+            insert_position = normalizeInsertPosition(position_column.getInt(row_num), array_size);
 
         writeSlice(array_source.getSliceFromLeft(0, insert_position), sink);
         writeSlice(value_source.getWhole(), sink);
@@ -279,6 +280,16 @@ void NO_INLINE insertDynamicPositionImpl(
         array_source.next();
         value_source.next();
     }
+}
+
+template <typename Source, typename ValueSource, typename Sink>
+void NO_INLINE insertDynamicPositionImpl(
+    Source && array_source, ValueSource && value_source, Sink && sink, const IColumn & position_column, bool position_is_unsigned)
+{
+    if (position_is_unsigned)
+        insertDynamicPositionImpl<true>(array_source, value_source, sink, position_column);
+    else
+        insertDynamicPositionImpl<false>(array_source, value_source, sink, position_column);
 }
 
 template <typename Source, typename Sink>
