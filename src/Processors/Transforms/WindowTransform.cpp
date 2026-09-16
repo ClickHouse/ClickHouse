@@ -245,13 +245,11 @@ static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
         nest_reference_column.get(), reference_row, _offset, offset_is_preceding);
 }
 
-// A variant of compareValuesWithOffset for intervals without a fixed length.
-// The offset is in months for Date/Date32 keys and in days for DateTime keys.
-// The frame search only moves boundaries forward, so it needs the shifted value
-// to be non-decreasing. addDays on a DateTime breaks this only inside a DST gap
-// or overlap hour, where the boundary may lag by up to that hour; this matches
-// subtractDays and is accepted. addMonths on a DateTime would reorder shifted
-// values by whole days (day-of-month clamping), so it is rejected.
+// A variant of compareValuesWithOffset for calendar intervals: the offset is in
+// months for Date/Date32 keys and in days for DateTime keys. The frame search
+// needs the shifted value to be non-decreasing; addDays on a DateTime only
+// violates this inside a DST gap or overlap hour, which is accepted (same as
+// subtractDays). addMonths on a DateTime would be off by whole days, so it is rejected.
 template <typename ColumnType>
 static int compareValuesWithOffsetCalendar(const IColumn * _compared_column,
     size_t compared_row, const IColumn * _reference_column,
@@ -330,11 +328,9 @@ static WindowTransform::CompareValuesWithOffset makeCalendarComparator(const ICo
 }
 
 // Converts an INTERVAL offset into the units of the ORDER BY key: days for
-// Date/Date32, seconds for DateTime. Kinds without a fixed length set `is_calendar`
-// and are converted to months (MONTH/QUARTER/YEAR, Date keys only) or to days
-// (DAY/WEEK on a DateTime key in a time zone with a variable UTC offset), see
-// compareValuesWithOffsetCalendar. In a fixed-offset time zone a day is always
-// 86400 seconds and the plain arithmetic comparator is used.
+// Date/Date32, seconds for DateTime. Calendar kinds set `is_calendar` and return
+// months (MONTH/QUARTER/YEAR, Date keys only) or days (DAY/WEEK on a DateTime
+// key in a time zone with DST).
 static Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataTypePtr & key_type,
     const DateLUTImpl & time_zone, bool & is_calendar)
 {
@@ -532,7 +528,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         compare_values_with_end_offset = compare_values_with_offset;
 
         const auto key_type = removeNullable(entry.type);
-        // Calendar arithmetic follows the time zone of the DateTime column; Date keys have none.
+        // Calendar arithmetic uses the time zone of the DateTime column.
         const DateLUTImpl & time_zone = WhichDataType(key_type).isDateTime()
             ? assert_cast<const DataTypeDateTime &>(*key_type).getTimeZone()
             : DateLUT::instance();
