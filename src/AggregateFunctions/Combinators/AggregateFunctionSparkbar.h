@@ -65,6 +65,10 @@ private:
     /// `begin_x`/`end_x`, where keys are rescaled up so that all three are in the same unit.
     Key    key_multiplier;
 
+    /// The key column is `Nullable` when the factory did not wrap this function into the `Null`
+    /// combinator (nested functions with `is_window_function` set). Rows with a `NULL` key are skipped.
+    bool key_is_nullable;
+
     size_t align_of_data;
     size_t size_of_data;
 
@@ -180,6 +184,7 @@ public:
         , begin_x{begin_x_}
         , end_x{end_x_}
         , key_multiplier{key_multiplier_}
+        , key_is_nullable{arguments[0]->isNullable()}
         , align_of_data{nested_function->alignOfData()}
         , size_of_data{(nested_function->sizeOfData() + align_of_data - 1) / align_of_data * align_of_data}
     {
@@ -249,11 +254,20 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
+        const IColumn * key_column = columns[0];
+        if (key_is_nullable)
+        {
+            const auto & nullable = assert_cast<const ColumnNullable &>(*key_column);
+            if (nullable.isNullAt(row_num))
+                return;
+            key_column = &nullable.getNestedColumn();
+        }
+
         /// Always read via getInt: ColumnDecimal (DateTime64) implements getInt but not getUInt.
         /// For unsigned Key types the static_cast is safe because valid x-axis values fit in
         /// the chosen unsigned type (UInt64 for Date/DateTime/DateTime64/UInt*, Int32/Int64 for
         /// the signed branches).
-        Key key = static_cast<Key>(columns[0]->getInt(row_num));
+        Key key = static_cast<Key>(key_column->getInt(row_num));
 
         /// Rescale the key up to the working scale of begin_x/end_x (DateTime64 with a coarser
         /// column scale). If the rescaled key overflows the Key type it cannot lie inside the

@@ -119,7 +119,14 @@ public:
                     getName(), nested_function->getName(), nested_function->getResultType()->getName());
         }
 
-        WhichDataType which{arguments[0]};
+        /// The bucket key may arrive here still wrapped in `Nullable`. `AggregateFunctionFactory::get`
+        /// normally strips `Nullable` from every argument and wraps the whole function into the `Null`
+        /// combinator, but it skips that step for nested functions whose properties set
+        /// `is_window_function` (`anyRespectNulls`, `anyLastRespectNulls`, ...), because those handle
+        /// `NULL`s in their own arguments themselves. The key is not their argument, though, so the
+        /// combinator has to handle a `NULL` key on its own: rows with a `NULL` key are skipped in `add`.
+        const DataTypePtr key_type = removeNullable(arguments[0]);
+        WhichDataType which{key_type};
 
         if (which.isNativeUInt() || which.isDate() || which.isDateTime())
         {
@@ -132,7 +139,7 @@ public:
 
         if (which.isDateTime64())
         {
-            const UInt32 col_scale = typeid_cast<const DataTypeDateTime64 &>(*arguments[0]).getScale();
+            const UInt32 col_scale = typeid_cast<const DataTypeDateTime64 &>(*key_type).getScale();
 
             const auto & begin_dec = params[n - 2].safeGet<DecimalField<DateTime64>>();
             const auto & end_dec   = params[n - 1].safeGet<DecimalField<DateTime64>>();
@@ -171,8 +178,8 @@ public:
 
         if (which.isDate32())
         {
-            const Int32 begin_x = getSignedBound<Int32>(params[n - 2], "begin_x", *arguments[0], getName());
-            const Int32 end_x   = getSignedBound<Int32>(params[n - 1], "end_x", *arguments[0], getName());
+            const Int32 begin_x = getSignedBound<Int32>(params[n - 2], "begin_x", *key_type, getName());
+            const Int32 end_x   = getSignedBound<Int32>(params[n - 1], "end_x", *key_type, getName());
 
             return std::make_shared<AggregateFunctionSparkbar<Int32>>(
                 nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
@@ -185,8 +192,8 @@ public:
         /// x-axis must be converted to a number explicitly by the query.
         if (which.isNativeInt() || which.isEnum())
         {
-            const Int64 begin_x = getSignedBound<Int64>(params[n - 2], "begin_x", *arguments[0], getName());
-            const Int64 end_x   = getSignedBound<Int64>(params[n - 1], "end_x", *arguments[0], getName());
+            const Int64 begin_x = getSignedBound<Int64>(params[n - 2], "begin_x", *key_type, getName());
+            const Int64 end_x   = getSignedBound<Int64>(params[n - 1], "end_x", *key_type, getName());
 
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
                 nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
