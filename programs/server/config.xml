@@ -905,12 +905,14 @@
                          LDAP server proactively: a background job enumerates the directory under the server's 'lookup_bind_dn'
                          (required) and applies the result to the directory, and SYSTEM RELOAD USERS runs one synchronization
                          immediately. In a synchronized directory a login verifies the password only; roles come from the
-                         synchronization. Read at startup only.
+                         synchronization. Read at startup only. A synchronized directory must be the only 'ldap' directory
+                         in 'user_directories', whatever the order (the server refuses to start otherwise): another 'ldap'
+                         directory cannot tell the synchronization which names it will serve, so a user matching both would
+                         change directory with the timing of the runs. Directories of other types may precede or follow it;
+                         a name defined in a preceding one is left to it and never synchronized.
                     interval - seconds between two runs, 900 by default. The first run starts after a random delay of up to a
-                             tenth of the interval, and, for a directory declared after another synchronized 'ldap'
-                             directory, only once the first run of that directory has finished; a failed run is retried
-                             after min(interval, 60) seconds. 0 runs the synchronization at startup and on
-                             SYSTEM RELOAD USERS only. At most 315360000 (ten years).
+                             tenth of the interval; a failed run is retried after min(interval, 60) seconds. 0 runs the
+                             synchronization at startup and on SYSTEM RELOAD USERS only. At most 315360000 (ten years).
                     base_dn - base DN of the search that lists the users. Mandatory; must not contain '{user_name}',
                              '{bind_dn}' or '{user_dn}'.
                     scope - scope of that search: 'base', 'one_level', 'children', 'subtree' (the default).
