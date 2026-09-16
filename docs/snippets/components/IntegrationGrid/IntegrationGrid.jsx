@@ -566,7 +566,6 @@ function useCMSIntegrations() {
           -webkit-backdrop-filter: blur(4px);
           border-radius: 0.75rem;
           opacity: 0;
-          transition: opacity 0.2s ease;
           pointer-events: none;
           z-index: 1;
         }

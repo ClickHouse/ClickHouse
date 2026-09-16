@@ -107,7 +107,7 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromAzureBlobStorage was canceled."
+                "WriteBufferFromAzureBlobStorage was canceled. "
                 "The file might not be written to AzureBlobStorage. "
                 "{}.",
                 blob_path);
@@ -321,6 +321,8 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     LOG_TRACE(limited_log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
+
+    WriteBufferFromFileBase::finalizeImpl();
 
     if (!is_prefinalized)
         preFinalize();
