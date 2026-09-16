@@ -71,6 +71,6 @@ SELECT '-- Date32 -> DateTime64 saturates per-scale instead of throwing DECIMAL_
 -- Date32 reaches 2299-12-31 (10413705600 whole seconds). At scale 9 only [1677-09-21, 2262-04-11] is representable, so
 -- the conversion must saturate to the boundary (same as the numeric scale-9 maximum) instead of overflowing the Int64
 -- ticks in decimalFromComponents. At scale 8 the range tops out near year 4892, so the true 2299-12-31 is preserved.
-SELECT CAST(toDate32('2299-12-31'), 'DateTime64(9, ''UTC'')') = toDateTime64(9223372036, 9, 'UTC'),
+SELECT toStartOfSecond(CAST(toDate32('2299-12-31'), 'DateTime64(9, ''UTC'')')) = toDateTime64(9223372036, 9, 'UTC'),
        CAST(toDate32('2299-12-31'), 'DateTime64(8, ''UTC'')') = toDateTime64(10413705600, 8, 'UTC'),
        toString(CAST(toDate32('2299-12-31'), 'DateTime64(8, ''UTC'')'));

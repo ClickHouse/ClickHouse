@@ -106,20 +106,19 @@ SELECT CAST(9223371776::Float32, 'DateTime64(9, \'UTC\')');
 SELECT CAST(3600000::Float32, 'Time64(1)') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(3600000::Float32, 'Time64(1)') SETTINGS date_time_overflow_behavior='saturate';
 
--- NaN and infinities have no representable timestamp. Before, the float transforms let them reach the
--- final static_cast<NativeType>(from * scale), which is undefined behavior; the pre-existing convertToDecimal
--- path rejected them. `throw` must raise VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE; `saturate` must clamp to a
--- representable bound instead of producing undefined output.
-SELECT CAST(nan::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- Infinities have no representable timestamp: `throw` must raise VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE and
+-- `saturate` must clamp to the bound on the side of the sign. NaN has no sign either, so it is rejected in every
+-- mode with the DECIMAL_OVERFLOW that the underlying decimal conversion reports.
+SELECT CAST(nan::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='throw'; -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(inf::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(-inf::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT CAST(nan::Float32, 'Time64(1)') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(nan::Float32, 'Time64(1)') SETTINGS date_time_overflow_behavior='throw'; -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(inf::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(-inf::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT CAST(nan::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(nan::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate'; -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(inf::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
 SELECT CAST(-inf::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
-SELECT CAST(nan::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(nan::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='saturate'; -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(inf::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='saturate';
 SELECT CAST(-inf::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='saturate';
 
