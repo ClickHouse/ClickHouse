@@ -123,6 +123,7 @@
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
     M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(DeltaLakeDeltaLogExistenceChecks, "Number of object-storage listings issued to check whether a DeltaLake `_delta_log` exists (e.g. during CREATE TABLE).", ValueType::Number) \
     M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
     M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \
     M(OneLakeAccessTokenRequestMicroseconds, "Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.", ValueType::Microseconds) \
@@ -1266,7 +1267,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheObjectStorageWriteMicroseconds, "Distributed Cache write buffer event. Time spent writing to object storage", ValueType::Microseconds) \
     M(DistrCacheObjectStorageWriteBytes, "Distributed Cache write buffer event. Number of bytes written to object storage", ValueType::Bytes) \
     M(DistrCacheBackgroundWrites, "Distributed Cache write buffer event. Number of cache writes that ran on a background thread (a background write slot was acquired)", ValueType::Number) \
-    M(DistrCacheInlineWrites, "Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (no background write slot was free, or the write was for temporary data)", ValueType::Number) \
+    M(DistrCacheInlineWrites, "Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (writes of temporary data, which has no object storage write to overlap with)", ValueType::Number) \
+    M(DistrCacheSkippedWrites, "Distributed Cache write buffer event. Number of write buffers that skipped the write-through cache write because no background write slot was free (the limit set by the `distributed_cache_write_pool_size` server setting was reached) or a background write could not be started. The data is still written to object storage", ValueType::Number) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
     M(DistrCacheConnectErrors, "Distributed Cache client event. Number of failures to connect to a distributed cache server before making a request (counted once per request, after all connect attempts are exhausted, unlike per-attempt DistrCacheUnsuccessfulConnectAttempts). A timeout while waiting for a free pooled connection is counted here as well. Failures to reconnect during request creation are counted in DistrCacheMakeRequestErrors instead", ValueType::Number) \

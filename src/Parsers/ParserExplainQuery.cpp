@@ -23,7 +23,7 @@
 #include <algorithm>
 
 #if !defined(CLICKHOUSE_PARSER_NO_DCL)
-  #include <Parsers/Access/ASTExecuteAsQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #endif
 
 namespace DB
