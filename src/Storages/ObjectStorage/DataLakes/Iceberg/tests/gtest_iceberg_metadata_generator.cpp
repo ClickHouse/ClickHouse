@@ -44,12 +44,13 @@ Poco::JSON::Object::Ptr makeMinimalV2Metadata()
     return metadata;
 }
 
-void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1)
+/// Append one data snapshot and return its snapshot id, so it can serve as the parent of a later update.
+Int64 appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
     auto metadata_info = generator.generateMetadataPathWithInfo();
-    MetadataGenerator(metadata).generateNextMetadata(
+    auto result = MetadataGenerator(metadata).generateNextMetadata(
         generator,
         metadata_info.path,
         parent_snapshot_id,
@@ -59,12 +60,16 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
             .added_files_size = 100,
             .num_partitions = 1,
         });
+    return result.snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
 }
 
 /// Generate one snapshot with a typed summary update and return its `operation` summary field.
+/// Only an append may start from an empty table: `SnapshotSummary` derives the `total-*` fields of
+/// an overwrite / delete / replace from the parent snapshot, so those need a real parent.
 String snapshotOperation(
     Poco::JSON::Object::Ptr metadata,
-    Iceberg::SnapshotSummaryUpdate update)
+    Iceberg::SnapshotSummaryUpdate update,
+    Int64 parent_snapshot_id = -1)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
@@ -72,7 +77,7 @@ String snapshotOperation(
     auto result = MetadataGenerator(metadata).generateNextMetadata(
         generator,
         metadata_info.path,
-        /*parent_snapshot_id=*/ -1,
+        parent_snapshot_id,
         std::move(update));
     return result.snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_operation);
 }
@@ -99,16 +104,21 @@ TEST(IcebergMetadataGenerator, AppendOperationForInsert)
 TEST(IcebergMetadataGenerator, OverwriteOperationForDelete)
 {
     auto metadata = makeMinimalV2Metadata();
-    EXPECT_EQ(snapshotOperation(metadata, Iceberg::SnapshotSummaryUpdateOverwrite{.added_delete_files = 1, .added_position_deletes = 5}), Iceberg::f_overwrite);
+    const Int64 parent_snapshot_id = appendSnapshot(metadata);
+    EXPECT_EQ(
+        snapshotOperation(
+            metadata, Iceberg::SnapshotSummaryUpdateOverwrite{.added_delete_files = 1, .added_position_deletes = 5}, parent_snapshot_id),
+        Iceberg::f_overwrite);
 }
 
 /// An explicit `Replace` (manifest rewrite / compaction) stays `replace` regardless of delete counters.
 TEST(IcebergMetadataGenerator, ReplaceOperationIsPreserved)
 {
     auto metadata = makeMinimalV2Metadata();
+    const Int64 parent_snapshot_id = appendSnapshot(metadata);
     EXPECT_EQ(
         snapshotOperation(
-            metadata, Iceberg::SnapshotSummaryUpdateReplace{.added_delete_files = 1, .added_position_deletes = 5}),
+            metadata, Iceberg::SnapshotSummaryUpdateReplace{.added_delete_files = 1, .added_position_deletes = 5}, parent_snapshot_id),
         Iceberg::f_replace);
 }
 
