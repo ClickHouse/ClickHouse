@@ -637,19 +637,20 @@ void considerEnablingParallelReplicas(
                 /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
                 /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
                 /// apply a mismatched analysis.
+                if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Parallel replicas branch read is for table {} but the single-node plan reads {}",
+                        local_replica_plan_reading_step->getStorageID().getNameForLogs(),
+                        source_reading_step->getStorageID().getNameForLogs());
+                }
+
                 if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);
                     if (!local_replica_plan_reading_step->getIndexes())
                         local_replica_plan_reading_step->setIndexes(source_reading_step->getIndexes());
-                }
-                else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
-                        local_replica_plan_reading_step->getStorageID().getNameForLogs(),
-                        source_reading_step->getStorageID().getNameForLogs());
                 }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
