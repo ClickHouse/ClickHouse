@@ -22,8 +22,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('RENAME DATABASE a TO b'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01/\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'));
-SELECT formatQueryFromJSON(parseQueryToJSON('SELECT lambda(tuple(x), x + 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT lambda(tuple(), 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT arrayMap(() -> 1, [1])'));
 
 -- ---------------------------------------------------------------------------
 -- ASTAlterCommand: parser-owned children are restored by concrete type. `col_decl` must be an

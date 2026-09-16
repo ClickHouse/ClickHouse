@@ -35,3 +35,9 @@ run_json BAD_ARGUMENTS '{"type":"SelectWithUnionQuery","list_of_selects":{"type"
 #    name alone, for any index expression.
 INDEX_JSON=$(${CLICKHOUSE_LOCAL} -q "SELECT replace(parseQueryToJSON('CREATE TABLE t (a UInt8, INDEX idx lambda TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY a'), '\"type\":\"Identifier\",\"name\":\"lambda\"', '\"type\":\"Function\",\"name\":\"lambda\"') FORMAT TSVRaw")
 run_json NUMBER_OF_ARGUMENTS_DOESNT_MATCH "$INDEX_JSON"
+
+# 4. The same collection reads the argument tuple's own argument list, which a `tuple` node restored
+#    without one does not have. Written in function-call syntax, so the node carries no
+#    `is_lambda_function` and the boundary check on that flag never inspects it.
+INDEX_JSON_TUPLE=$(${CLICKHOUSE_LOCAL} -q "SELECT replace(parseQueryToJSON('CREATE TABLE t (a UInt8, INDEX idx lambda(tuple(a), a) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY a'), '\"name\":\"tuple\",\"arguments\":{\"type\":\"ExpressionList\",\"children\":[{\"type\":\"Identifier\",\"name\":\"a\"}]}', '\"name\":\"tuple\"') FORMAT TSVRaw")
+run_json TYPE_MISMATCH "$INDEX_JSON_TUPLE"
