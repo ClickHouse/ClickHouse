@@ -124,6 +124,9 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
         if (info.deletion_vector.has_value())
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Multiple deletion vectors apply to the same Iceberg data file");
 
+        /// There may be a mix of position delete files and deletion vectors (this happens if the table started as V2
+        /// and then got updated to V3). Per the spec, apply only the deletion vector and disregard any position
+        /// delete files.
         info.position_deletes_objects.clear();
         info.deletion_vector = Iceberg::DeletionVectorObject{
             resolved_storage_path,
