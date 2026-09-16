@@ -2052,7 +2052,7 @@ private:
 
             /// Ownership uses the routed bucket. `iteratorAt` / `offsetInternalAtBucket`
             /// take the physical impls index (`getBucket()`, always 0 on flat storage).
-            auto skipToNextOwnedBucket = [&]() -> bool
+            auto skip_to_next_owned_bucket = [&]() -> bool
             {
                 while (it != end && !isBucketOwnedByStream(it.getRoutedBucket()))
                 {
@@ -2072,7 +2072,7 @@ private:
                 return it != end;
             };
 
-            if (!skipToNextOwnedBucket())
+            if (!skip_to_next_owned_bucket())
                 return rows_added;
 
             while (it != end && rows_added < max_block_size)
@@ -2095,7 +2095,7 @@ private:
 
                 ++it;
 
-                if (it != end && !isBucketOwnedByStream(it.getRoutedBucket()) && !skipToNextOwnedBucket())
+                if (it != end && !isBucketOwnedByStream(it.getRoutedBucket()) && !skip_to_next_owned_bucket())
                     break;
             }
         }

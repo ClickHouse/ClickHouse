@@ -774,7 +774,7 @@ public:
         /// order, each list in insertion order. `started` is what tells "not begun" from
         /// "exhausted" - both leave `position` empty, and an emitter that confuses them restarts at
         /// worker 0 and emits forever.
-        template <typename List, List WorkerStoredData::* Member>
+        template <typename List, List WorkerStoredData::* member>
         struct WorkerListCursor
         {
             size_t worker = 0;
@@ -785,10 +785,10 @@ public:
             void seek(const std::vector<WorkerStoredData> & all_workers)
             {
                 started = true;
-                while (worker < all_workers.size() && (all_workers[worker].*Member).empty())
+                while (worker < all_workers.size() && (all_workers[worker].*member).empty())
                     ++worker;
                 if (worker < all_workers.size())
-                    position = (all_workers[worker].*Member).begin();
+                    position = (all_workers[worker].*member).begin();
                 else
                     position.reset();
             }
@@ -797,7 +797,7 @@ public:
             /// partially filled block resume where the previous one stopped.
             typename List::const_iterator & current() { return *position; }
 
-            const List & currentList(const std::vector<WorkerStoredData> & all_workers) const { return all_workers[worker].*Member; }
+            const List & currentList(const std::vector<WorkerStoredData> & all_workers) const { return all_workers[worker].*member; }
         };
 
         using StoredBlocksCursor = WorkerListCursor<StoredBlocksList, &WorkerStoredData::columns>;
