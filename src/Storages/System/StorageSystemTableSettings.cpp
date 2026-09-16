@@ -275,15 +275,9 @@ protected:
     }
 
 private:
-    /// Which of a database's tables the query can still be about. A table's settings are hundreds of rows, so
-    /// `WHERE table = ...` - the query `SHOW TABLE SETTINGS` generates - must not read every table to discard
-    /// the rest: the names are filtered first, and the real iterator is asked only for the survivors.
-    ///
-    /// The names come from `getLightweightTablesIterator`, not `getTablesIterator`: for an external database the
-    /// latter already resolves storages (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`), so
-    /// listing names through it would open every table and let one unresolvable table fail the lookup.
-    /// The same, for the session's temporary tables, which no database lists: drops every one the query's
-    /// `database`/`table` predicate excludes, so their settings are never read.
+    /// Drops from the session's temporary tables, which no database lists, every one the query's `table`
+    /// predicate excludes, so their settings are never read. Only that predicate: one on `database` alone
+    /// builds no `table_filter` and is answered once by `with_temporary_tables`, before this is called.
     void keepTablesAllowedByFilter(Tables & tables) const
     {
         auto database_column = ColumnString::create();
@@ -309,6 +303,13 @@ private:
         std::erase_if(tables, [&allowed](const auto & entry) { return !allowed.contains(entry.first); });
     }
 
+    /// Which of a database's tables the query can still be about. A table's settings are hundreds of rows, so
+    /// `WHERE table = ...` - the query `SHOW TABLE SETTINGS` generates - must not read every table to discard
+    /// the rest: the names are filtered first, and the real iterator is asked only for the survivors.
+    ///
+    /// The names come from `getLightweightTablesIterator`, not `getTablesIterator`: for an external database the
+    /// latter already resolves storages (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`), so
+    /// listing names through it would open every table and let one unresolvable table fail the lookup.
     IDatabase::FilterByNameFunction tablesAllowedIn(const String & database_name) const
     {
         if (!table_filter)

@@ -12,6 +12,9 @@ ORDER BY name;
 SELECT '-- a filter on the current database leaves them out';
 SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'tmp_settings';
 
+-- The rows are the same whether or not `system.table_settings` filters the temporary tables before reading
+-- their settings (`92a5af36f0b`): what changes is the work done, which no assertion here can see. This case
+-- pins the result of a predicate naming another table; it cannot catch the filter keeping too much.
 SELECT '-- and so does a filter naming another table';
 SELECT count() FROM system.table_settings WHERE database = '' AND table = 'tmp_settings_other';
 
