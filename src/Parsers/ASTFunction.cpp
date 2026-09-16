@@ -256,8 +256,7 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'kind' = 'LAMBDA_FUNCTION' requires 'is_lambda_function' to be true during AST JSON deserialization");
 
-    /// `is_lambda_function` marks the lambda definition shape `lambda(tuple(args...), body)`, and no
-    /// parser producer of the flag sets it on a function of any other shape.
+    /// No parser producer of `is_lambda_function` sets it on a function of any other shape.
     if (isLambdaFunction() && !isASTLambdaFunction(*this))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'is_lambda_function' requires the function to be of the form `lambda(tuple(...), body)` during AST JSON deserialization");
