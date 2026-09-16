@@ -97,7 +97,8 @@ Using this approach, customers can manage all access to their Kinesis data strea
          "Effect": "Allow",
          "Action": [
            "kinesis:SubscribeToShard",
-           "kinesis:DescribeStreamConsumer"
+           "kinesis:DescribeStreamConsumer",
+           "kinesis:DeregisterStreamConsumer"
          ],
          "Resource": [
            "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}/*"
