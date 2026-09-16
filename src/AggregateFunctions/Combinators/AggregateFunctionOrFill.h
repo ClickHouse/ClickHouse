@@ -191,6 +191,7 @@ public:
         }
     }
 
+    /// Preserve nested aggregate sparse semantics, including input order for order-sensitive aggregates.
     void addBatchSparse(
         size_t row_begin,
         size_t row_end,

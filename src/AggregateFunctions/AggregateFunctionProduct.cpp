@@ -183,25 +183,6 @@ public:
         }
     }
 
-    void addBatchSparse(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        auto offset_it = column_sparse.getIterator(row_begin);
-
-        for (size_t row = row_begin; row < row_end; ++row, ++offset_it)
-        {
-            if (places[offset_it.getCurrentRow()])
-                add(places[offset_it.getCurrentRow()] + place_offset, &values, offset_it.getValueIndex(), arena);
-        }
-    }
-
     void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -337,7 +318,7 @@ FROM VALUES('x Float64', (1.5), (2), (4));
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 

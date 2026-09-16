@@ -5,6 +5,8 @@ negative values and zero
 0
 empty and nullable input
 0	Float64
+Nullable(Float64)	\N
+Float64	0
 Nullable(Float64)	3
 Nullable(Float64)	\N
 filtered input
