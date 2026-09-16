@@ -114,7 +114,7 @@ private:
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
     std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
 
-    /// Avoid parallel `TTLClearIndex` merges in one partition.
+    /// Avoid parallel `TTLClearIndex` merges for one table.
     std::unordered_set<String> currently_executing_ttl_clear_index_partitions;
 
     /** What will be the set of active parts after executing all log entries up to log_pointer.

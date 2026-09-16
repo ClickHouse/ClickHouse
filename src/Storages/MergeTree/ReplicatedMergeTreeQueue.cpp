@@ -1863,16 +1863,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             ignore_max_size = max_source_parts_size == (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
 
-            if (entry.merge_type == MergeType::TTLClearIndex)
+            if (entry.merge_type == MergeType::TTLClearIndex
+                && !currently_executing_ttl_clear_index_partitions.empty())
             {
-                const auto partition_id = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version).getPartitionId();
-                if (currently_executing_ttl_clear_index_partitions.contains(partition_id))
-                {
-                    constexpr auto fmt_string
-                        = "Not executing log entry {} for part {} because another TTLClearIndex merge is executing in partition {}.";
-                    LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, partition_id);
-                    return false;
-                }
+                constexpr auto fmt_string
+                    = "Not executing log entry {} for part {} because another TTLClearIndex merge is executing for this table.";
+                LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name);
+                return false;
             }
 
             if (isTTLMergeType(entry.merge_type))
@@ -2075,8 +2072,8 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
     if (entry->type == LogEntry::MERGE_PARTS && entry->merge_type == MergeType::TTLClearIndex)
     {
         const auto partition_id = MergeTreePartInfo::fromPartName(entry->new_part_name, queue.format_version).getPartitionId();
-        [[maybe_unused]] const bool inserted = queue.currently_executing_ttl_clear_index_partitions.emplace(partition_id).second;
-        chassert(inserted);
+        chassert(queue.currently_executing_ttl_clear_index_partitions.empty());
+        queue.currently_executing_ttl_clear_index_partitions.emplace(partition_id);
     }
     entry->currently_executing = true;
     ++entry->num_tries;

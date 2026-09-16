@@ -300,10 +300,11 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.recompression_ttl_info->will_change_codec;
 }
 
-/// A successful merge removes the files that made the part selectable. The caller also excludes
-/// partitions with an outstanding clear-index merge.
-TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_)
+/// A successful merge removes the files that made the part selectable. Allow only one outstanding
+/// clear-index merge per table so one table cannot occupy the entire shared TTL-merge pool.
+TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(bool merge_in_progress_, time_t current_time_)
     : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
+    , merge_in_progress(merge_in_progress_)
 {
 }
 
@@ -312,7 +313,7 @@ PartsRanges TTLIndexClearMergeSelector::select(
     const MergeConstraints & merge_constraints,
     const RangeFilter & range_filter) const
 {
-    if (merge_constraints.empty())
+    if (merge_in_progress || merge_constraints.empty())
         return {};
 
     PartsRanges result;

@@ -123,6 +123,7 @@ namespace FailPoints
     extern const char merge_task_projection_stage_pause[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
     extern const char merge_task_pause_before_precommit[];
+    extern const char merge_task_pause_before_ttl_state[];
 }
 
 namespace Setting
@@ -774,6 +775,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
     if (!(*global_ctx->new_data_part->storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         global_ctx->new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
+    FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_before_precommit);
+    global_ctx->checkOperationIsNotCanceled();
+    if (global_ctx->ttl_merges_blocker->isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
     dst_storage.precommitTransaction();
 
     ProfileEvents::increment(ProfileEvents::TTLClearIndexMetadataOnlyMerges);
@@ -885,6 +890,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
+
+    if (global_ctx->future_part->merge_type == MergeType::TTLClearIndex)
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_before_ttl_state);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -2764,8 +2772,11 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     const auto check_ttl_cleanup_not_cancelled = [&]
     {
         global_ctx->checkOperationIsNotCanceled();
-        if (global_ctx->clear_expired_indexes && global_ctx->ttl_merges_blocker->isCancelled())
+        if ((global_ctx->future_part->merge_type == MergeType::TTLClearIndex || global_ctx->clear_expired_indexes)
+            && global_ctx->ttl_merges_blocker->isCancelled())
+        {
             throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
+        }
     };
 
     check_ttl_cleanup_not_cancelled();
@@ -2807,7 +2818,8 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     global_ctx->new_data_part->getDataPartStorage().setPreferredFileOrder(
         global_ctx->new_data_part->getPreferredFileOrder());
 
-    FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_before_precommit);
+    if (!global_ctx->parent_part && global_ctx->future_part->merge_type == MergeType::TTLClearIndex)
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_before_precommit);
     check_ttl_cleanup_not_cancelled();
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));

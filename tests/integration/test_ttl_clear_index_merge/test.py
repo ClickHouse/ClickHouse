@@ -347,8 +347,72 @@ def test_metadata_only_clear_preserves_unchanged_packed_index(started_cluster):
     node1.query(f"DROP TABLE {table} SYNC")
 
 
-def test_stop_ttl_merges_during_projection_finalization(started_cluster):
-    table = "ttl_clear_index_late_stop"
+def test_one_clear_index_merge_per_table(started_cluster):
+    table = "ttl_clear_index_table_limit"
+    node1.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            p UInt8,
+            d Date,
+            k UInt64,
+            INDEX idx k TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        PARTITION BY p
+        ORDER BY k
+        TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS
+            index_granularity = 64,
+            max_number_of_merges_with_ttl_in_pool = 2,
+            merge_with_ttl_timeout = 86400,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+        """
+    )
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT 1, toDate('2000-01-01'), number FROM numbers(10000)")
+    node1.query(f"INSERT INTO {table} SELECT 2, toDate('2000-01-01'), number FROM numbers(10000)")
+    merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+
+    node1.query("SYSTEM ENABLE FAILPOINT merge_task_pause_before_precommit")
+    try:
+        node1.query(f"SYSTEM START TTL MERGES {table}")
+        node1.query(
+            "SYSTEM WAIT FAILPOINT merge_task_pause_before_precommit PAUSE",
+            timeout=60,
+        )
+        node1.query("SELECT sleep(2)")
+        assert (
+            node1.query(
+                "SELECT count() FROM system.merges "
+                f"WHERE database = currentDatabase() AND table = '{table}' "
+                "AND merge_type = 'TTLClearIndex'"
+            )
+            == "1\n"
+        )
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT merge_task_pause_before_precommit")
+
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(value) >= {} FROM system.events "
+        "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(merges_before + 2),
+        "1",
+        retry_count=60,
+    )
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(secondary_indices_compressed_bytes) FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active",
+        "0",
+        retry_count=60,
+    )
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_stop_ttl_merges_before_metadata_only_precommit(started_cluster):
+    table = "ttl_clear_index_fast_late_stop"
     node1.query(
         f"""
         CREATE TABLE {table}
@@ -356,8 +420,7 @@ def test_stop_ttl_merges_during_projection_finalization(started_cluster):
             d Date,
             k UInt64,
             v UInt64,
-            INDEX idx v TYPE minmax GRANULARITY 1,
-            PROJECTION by_v (SELECT k, v ORDER BY v)
+            INDEX idx v TYPE minmax GRANULARITY 1
         )
         ENGINE = MergeTree
         ORDER BY k
@@ -373,44 +436,9 @@ def test_stop_ttl_merges_during_projection_finalization(started_cluster):
         f"INSERT INTO {table} SELECT toDate('2000-01-01'), number, number "
         "FROM numbers(10000)"
     )
-    node1.query(f"ALTER TABLE {table} MODIFY SETTING assign_part_uuids = 1")
     part_before = node1.query(
         "SELECT name FROM system.parts WHERE database = currentDatabase() "
         f"AND table = '{table}' AND active"
-    )
-
-    node1.query("SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause")
-    try:
-        node1.query(f"SYSTEM START TTL MERGES {table}")
-        node1.query(
-            "SYSTEM WAIT FAILPOINT merge_task_projection_stage_pause PAUSE",
-            timeout=60,
-        )
-        node1.query(f"SYSTEM STOP TTL MERGES {table}")
-    finally:
-        node1.query("SYSTEM DISABLE FAILPOINT merge_task_projection_stage_pause")
-
-    assert_eq_with_retry(
-        node1,
-        "SELECT count() FROM system.merges "
-        f"WHERE database = currentDatabase() AND table = '{table}'",
-        "0",
-        retry_count=60,
-    )
-    assert (
-        node1.query(
-            "SELECT name FROM system.parts WHERE database = currentDatabase() "
-            f"AND table = '{table}' AND active"
-        )
-        == part_before
-    )
-    assert (
-        node1.query(
-            "SELECT sum(secondary_indices_compressed_bytes) > 0 "
-            "FROM system.parts WHERE database = currentDatabase() "
-            f"AND table = '{table}' AND active"
-        )
-        == "1\n"
     )
 
     node1.query("SYSTEM ENABLE FAILPOINT merge_task_pause_before_precommit")
@@ -419,6 +447,14 @@ def test_stop_ttl_merges_during_projection_finalization(started_cluster):
         node1.query(
             "SYSTEM WAIT FAILPOINT merge_task_pause_before_precommit PAUSE",
             timeout=60,
+        )
+        assert (
+            node1.query(
+                "SELECT count() FROM system.merges "
+                f"WHERE database = currentDatabase() AND table = '{table}' "
+                "AND merge_type = 'TTLClearIndex'"
+            )
+            == "1\n"
         )
         node1.query(f"SYSTEM STOP TTL MERGES {table}")
     finally:
@@ -446,6 +482,118 @@ def test_stop_ttl_merges_during_projection_finalization(started_cluster):
         )
         == "1\n"
     )
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_stop_ttl_merges_during_rewrite(started_cluster):
+    table = "ttl_clear_index_late_stop"
+    node1.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            d Date,
+            k UInt64,
+            v UInt64,
+            INDEX idx v TYPE minmax GRANULARITY 1,
+            PROJECTION by_v (SELECT k, v ORDER BY v)
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS
+            index_granularity = 64,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+        """
+    )
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(
+        f"INSERT INTO {table} SELECT toDate('2000-01-01'), number, number "
+        "FROM numbers(10000)"
+    )
+    part_before = node1.query(
+        "SELECT name FROM system.parts WHERE database = currentDatabase() "
+        f"AND table = '{table}' AND active"
+    )
+
+    def assert_cleanup_running():
+        assert (
+            node1.query(
+                "SELECT count() FROM system.merges "
+                f"WHERE database = currentDatabase() AND table = '{table}' "
+                "AND merge_type = 'TTLClearIndex'"
+            )
+            == "1\n"
+        )
+
+    def assert_cleanup_cancelled():
+        assert_eq_with_retry(
+            node1,
+            "SELECT count() FROM system.merges "
+            f"WHERE database = currentDatabase() AND table = '{table}'",
+            "0",
+            retry_count=60,
+        )
+        assert (
+            node1.query(
+                "SELECT name FROM system.parts WHERE database = currentDatabase() "
+                f"AND table = '{table}' AND active"
+            )
+            == part_before
+        )
+        assert (
+            node1.query(
+                "SELECT sum(secondary_indices_compressed_bytes) > 0 "
+                "FROM system.parts WHERE database = currentDatabase() "
+                f"AND table = '{table}' AND active"
+            )
+            == "1\n"
+        )
+
+    # Part UUIDs force these checks through the rewriting path.
+    node1.query(f"ALTER TABLE {table} MODIFY SETTING assign_part_uuids = 1")
+
+    node1.query("SYSTEM ENABLE FAILPOINT merge_task_pause_before_ttl_state")
+    try:
+        node1.query(f"SYSTEM START TTL MERGES {table}")
+        node1.query(
+            "SYSTEM WAIT FAILPOINT merge_task_pause_before_ttl_state PAUSE",
+            timeout=60,
+        )
+        assert_cleanup_running()
+        node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT merge_task_pause_before_ttl_state")
+
+    assert_cleanup_cancelled()
+
+    node1.query("SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause")
+    try:
+        node1.query(f"SYSTEM START TTL MERGES {table}")
+        node1.query(
+            "SYSTEM WAIT FAILPOINT merge_task_projection_stage_pause PAUSE",
+            timeout=60,
+        )
+        assert_cleanup_running()
+        node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT merge_task_projection_stage_pause")
+
+    assert_cleanup_cancelled()
+
+    node1.query("SYSTEM ENABLE FAILPOINT merge_task_pause_before_precommit")
+    try:
+        node1.query(f"SYSTEM START TTL MERGES {table}")
+        node1.query(
+            "SYSTEM WAIT FAILPOINT merge_task_pause_before_precommit PAUSE",
+            timeout=60,
+        )
+        assert_cleanup_running()
+        node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT merge_task_pause_before_precommit")
+
+    assert_cleanup_cancelled()
     node1.query(f"DROP TABLE {table} SYNC")
 
 

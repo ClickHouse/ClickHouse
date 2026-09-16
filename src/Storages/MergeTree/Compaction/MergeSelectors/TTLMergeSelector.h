@@ -130,7 +130,7 @@ private:
 class TTLIndexClearMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLIndexClearMergeSelector(time_t current_time_);
+    TTLIndexClearMergeSelector(bool merge_in_progress_, time_t current_time_);
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
@@ -140,6 +140,8 @@ public:
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
     bool canConsiderPart(const PartProperties & part) const override;
+
+    const bool merge_in_progress;
 };
 
 }

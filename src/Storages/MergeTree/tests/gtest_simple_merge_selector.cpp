@@ -125,7 +125,7 @@ TEST(SimpleMergeSelector, TestRowsConstraint)
 TEST(TTLIndexClearMergeSelector, SkipsIncompleteTTLMetadata)
 {
     const time_t current_time = 100;
-    TTLIndexClearMergeSelector selector(current_time);
+    TTLIndexClearMergeSelector selector(/*merge_in_progress_=*/false, current_time);
 
     PartProperties part{
         .name = "all_0_0_0",
@@ -146,7 +146,7 @@ TEST(TTLIndexClearMergeSelector, SkipsIncompleteTTLMetadata)
 TEST(TTLIndexClearMergeSelector, TestRowsConstraint)
 {
     const time_t current_time = 100;
-    TTLIndexClearMergeSelector selector(current_time);
+    TTLIndexClearMergeSelector selector(/*merge_in_progress_=*/false, current_time);
 
     auto make_part = [&](bool can_preserve_files_for_index_clear)
     {
@@ -171,10 +171,10 @@ TEST(TTLIndexClearMergeSelector, TestRowsConstraint)
     }
 }
 
-TEST(TTLIndexClearMergeSelector, SkipsPartitionWithClearInProgress)
+TEST(TTLIndexClearMergeSelector, LimitsTableToOneOutstandingMerge)
 {
     const time_t current_time = 100;
-    TTLIndexClearMergeSelector selector(current_time);
+    TTLIndexClearMergeSelector selector(/*merge_in_progress_=*/true, current_time);
 
     const auto make_part = [&](const String & name)
     {
@@ -189,15 +189,15 @@ TEST(TTLIndexClearMergeSelector, SkipsPartitionWithClearInProgress)
         };
     };
 
-    const std::unordered_set<String> partitions_with_ttl_clear_index_merges{"p1"};
-    const auto range_filter
-        = [&](PartsRangeView range) { return !partitions_with_ttl_clear_index_merges.contains(range.front().info.getPartitionId()); };
+    const PartsRanges parts_ranges{
+        PartsRange{make_part("p1_0_0_0")},
+        PartsRange{make_part("p2_0_0_0")},
+    };
     std::vector<MergeConstraint> constraints{{1000, 1000}};
-    auto selected = selector.select({PartsRange{make_part("p1_0_0_0")}, PartsRange{make_part("p2_0_0_0")}}, constraints, range_filter);
+    EXPECT_TRUE(selector.select(parts_ranges, constraints, nullptr).empty());
 
-    ASSERT_EQ(selected.size(), 1);
-    ASSERT_EQ(selected.front().size(), 1);
-    EXPECT_EQ(selected.front().front().info.getPartitionId(), "p2");
+    TTLIndexClearMergeSelector selector_after_completion(/*merge_in_progress_=*/false, current_time);
+    EXPECT_EQ(selector_after_completion.select(parts_ranges, constraints, nullptr).size(), 1);
 }
 
 TEST(SimpleMergeSelector, ForceMergeByPartitionAge)

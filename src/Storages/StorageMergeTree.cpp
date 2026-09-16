@@ -916,12 +916,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     future_part->updatePath(storage, reserved_space.get());
 
     if (future_part->merge_type == MergeType::TTLClearIndex
-        && storage.partitions_with_ttl_clear_index_merges.contains(future_part->part_info.getPartitionId()))
+        && !storage.partitions_with_ttl_clear_index_merges.empty())
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Tagging a second TTLClearIndex merge in partition {}. This is a bug.",
-            future_part->part_info.getPartitionId());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging a second TTLClearIndex merge for one table. This is a bug.");
     }
 
     for (const auto & part : future_part->parts)

@@ -1,4 +1,5 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings: dedicated clear-index generation must remain disabled until the explicit rewrite.
 -- no-random-merge-tree-settings: the source part must otherwise be eligible for file-preserving index cleanup.
 
 DROP TABLE IF EXISTS ttl_clear_index_recompression_metadata;
@@ -40,7 +41,7 @@ WHERE database = currentDatabase()
 
 SYSTEM START TTL MERGES ttl_clear_index_recompression_metadata;
 OPTIMIZE TABLE ttl_clear_index_recompression_metadata FINAL
-SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
+SETTINGS optimize_skip_merged_partitions = 1;
 
 -- Explicit `OPTIMIZE FINAL` performs a regular rewrite that recalculates all TTL metadata
 -- and clears the expired index instead of preserving files.

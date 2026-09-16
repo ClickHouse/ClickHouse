@@ -125,16 +125,11 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         && ctx.metadata_snapshot.hasAnyIndexClearTTL()
         && ctx.can_generate_ttl_clear_index_merges)
     {
-        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time);
-        /// Slow clears cannot stack up within one partition, while fast clears can drain a backlog without a fixed delay.
-        const auto range_filter = [&](PartsRangeView range)
-        {
-            chassert(!range.empty());
-            return !ctx.partitions_with_ttl_clear_index_merges.contains(range.front().info.getPartitionId())
-                && (!ctx.range_filter || ctx.range_filter(range));
-        };
+        TTLIndexClearMergeSelector index_clear_ttl_selector(
+            /*merge_in_progress_=*/!ctx.partitions_with_ttl_clear_index_merges.empty(),
+            ctx.current_time);
 
-        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
         {
             MergeSelectorChoices choices;
             choices.reserve(merge_ranges.size());
