@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Preserve runtime `Map` types in both dynamic paths and shared data.
+# Remove the `basic` map serialization pins after https://github.com/ClickHouse/ClickHouse/pull/118577 is merged.
 for max_paths in 0 1024; do
     for paths in "[]" "['m.a', 's', 'typed']"; do
         json_type="JSON(max_dynamic_paths = ${max_paths}, typed Map(String, UInt64))"
@@ -18,7 +19,8 @@ CREATE TABLE json_bf_dynamic_map
     j ${json_type},
     INDEX bf j TYPE jsonbf_v1(include_paths = ${paths}) GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1,
+    map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 INSERT INTO json_bf_dynamic_map
 SELECT * FROM format(RowBinary, 'id UInt64, j ${json_type}', concat(
     formatRowNoNewline('RowBinary', toUInt64(1)),

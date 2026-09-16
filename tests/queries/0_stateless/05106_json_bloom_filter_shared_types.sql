@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS json_bf_shared_types;
 CREATE TABLE json_bf_shared_types (id UInt64, j JSON(max_dynamic_paths = 0), INDEX bf j TYPE jsonbf_v1() GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+-- Remove the `basic` map serialization pins after https://github.com/ClickHouse/ClickHouse/pull/118577 is merged.
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+    map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 -- Preserve runtime types in shared data, including scalars and recursive values.
 INSERT INTO json_bf_shared_types
