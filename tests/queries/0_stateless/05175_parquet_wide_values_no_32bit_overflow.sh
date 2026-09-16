@@ -55,11 +55,23 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 # column and are ~100 KB each once serialized. The converter has to bound the batch itself, and the
 # result still has to round-trip.
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
-    SELECT concat('{', arrayStringConcat(arrayMap(i -> concat('\"', repeat('k', 2000), toString(i), '\":', toString(number)), range(50)), ','), '}')::JSON AS o
+    SELECT concat('{', arrayStringConcat(arrayMap(i -> concat(char(34), repeat('k', 2000), toString(i), char(34), ':', toString(number)), range(50)), ','), '}')::JSON AS o
     FROM numbers(1024)
     FORMAT Parquet
 " > "$FILE"
 
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT count(), sum(length(toString(o))), uniqExact(cityHash64(toString(o))) FROM file('$FILE', Parquet)
+"
+
+# The same `JSON` carried inside an `Array`, which reaches the writer with repetition levels. The
+# batch still has to be bounded by the converter, but it can only be cut where a record ends.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT [concat('{', arrayStringConcat(arrayMap(i -> concat(char(34), repeat('k', 2000), toString(i), char(34), ':', toString(number)), range(50)), ','), '}')::JSON] AS a
+    FROM numbers(1024)
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(toString(a[1]))), uniqExact(cityHash64(toString(a[1]))) FROM file('$FILE', Parquet)
 "
