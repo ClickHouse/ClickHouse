@@ -339,7 +339,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                     limits,
                     0,
                     result_header->getNames(),
-                    true);
+                    true,
+                    settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+                    settings[Setting::distinct_bloom_filter_bytes],
+                    settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+                    settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]);
                 pre_distinct_step->setStepDescription("Preliminary DISTINCT");
                 query_plan.addStep(std::move(pre_distinct_step));
             }
