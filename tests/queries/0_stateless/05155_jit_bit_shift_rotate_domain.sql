@@ -44,7 +44,14 @@ FROM t_jit_bits ORDER BY c0 SETTINGS compile_expressions = 1, min_count_to_compi
 SELECT bitShiftLeft(bitNot(c0), toUInt16(8)), bitShiftRight(bitNot(c0), toUInt16(8))
 FROM t_jit_bits ORDER BY c0 SETTINGS compile_expressions = 0;
 
-SELECT bitShiftRight(toInt8(-1) + toInt8(0), toUInt16(8)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
-SELECT bitShiftRight(toInt8(-1) + toInt8(0), toUInt16(8)) SETTINGS compile_expressions = 0;
+-- A signed left operand narrower than the result: the compiled body sign-extends it to the result
+-- width before shifting, so without the clamp `-1` shifted right by 8 stayed `-1` and shifted left
+-- became `-256`, where the interpreted path answers 0 for both.
+
+SELECT bitShiftRight(neg, toUInt16(8)), bitShiftLeft(neg, toUInt16(8)), bitShiftRight(neg, toUInt16(15)), bitShiftRight(neg, toUInt16(7))
+FROM t_jit_bits ORDER BY neg SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
+
+SELECT bitShiftRight(neg, toUInt16(8)), bitShiftLeft(neg, toUInt16(8)), bitShiftRight(neg, toUInt16(15)), bitShiftRight(neg, toUInt16(7))
+FROM t_jit_bits ORDER BY neg SETTINGS compile_expressions = 0;
 
 DROP TABLE t_jit_bits;
