@@ -544,6 +544,13 @@ try
             std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
             names_and_types.end());
 
+        if (names_and_types.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "The table structure cannot be extracted from a {} format file: all inferred column names are empty. "
+                "You can specify the structure manually",
+                *format_name);
+
         return {ColumnsDescription(names_and_types), *format_name};
     }
 
