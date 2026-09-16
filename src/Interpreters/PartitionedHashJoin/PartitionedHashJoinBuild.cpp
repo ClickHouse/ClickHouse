@@ -1347,7 +1347,7 @@ void PartitionedHashJoin::createHashJoinTable()
 
 bool PartitionedHashJoin::partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree) const
 {
-    /// Without a spill budget nothing bounds the peak but the query's own memory limit, as for
+    /// Without a memory budget nothing bounds the peak but the query's own memory limit, as for
     /// `parallel_hash`, whose per-slot tables are never budgeted either.
     if (max_bytes_before_external_join == 0)
         return true;
@@ -1957,7 +1957,7 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
         ReadableSize(grouped_floor),
         post_build_plan == PostBuildPlan::Fits ? "ungrouped scatter"
             : post_build_plan == PostBuildPlan::Grouped ? "grouped scatter"
-                                                        : "switch to grace");
+                                                        : "over budget");
     return post_build_plan;
 }
 
@@ -2127,9 +2127,9 @@ bool PartitionedHashJoin::postBuildPartitioned()
             while (end < build_blocks.size() && chunkBytesForBlockRange(b, end + 1) <= headroom)
                 ++end;
             /// A range is never empty: the loop has to make progress, and a single block's chunk is
-            /// bounded by its row count, so the overshoot is at most that block. The threshold
-            /// triggers spilling; `max_memory_usage` is the cap. This path is only for when the
-            /// actuals drifted past the gate's prediction.
+            /// bounded by its row count, so the overshoot is at most that block. The budget is a
+            /// target, `max_memory_usage` is the cap. This path is only for when the actuals drifted
+            /// past the gate's prediction.
             chunk = chunkBytesForBlockRange(b, end);
             one_block = chunkBytesForBlockRange(b, b + 1);
             if (chunk > headroom)

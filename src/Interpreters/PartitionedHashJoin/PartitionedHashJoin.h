@@ -251,7 +251,7 @@ public:
     {
         Fits, /// ungrouped scatter
         Grouped, /// in-memory scatter over block ranges
-        MustSpill, /// even the resident data does not fit; the caller must switch to grace
+        MustSpill, /// even the resident data does not fit the budget
     };
     PostBuildPlan planPostBuild();
 
@@ -332,7 +332,6 @@ private:
     /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
     /// filtered rows for RIGHT/FULL output.
     void storeBlockInRowStore(FillBlock & fill);
-    /// The saved-block form of one stored block, for the drains that hand blocks to another join.
 
     /// Both return whether every inserted key was unique, which drives the RightAny promotion.
     bool postBuildPartitioned();
@@ -386,7 +385,7 @@ private:
 
     void measureGenericKeyBytes();
     void createHashJoinTable();
-    /// The partition floor's memory guard: the scatter transient it introduces has to fit the spill
+    /// The partition floor's memory guard: the scatter transient it introduces has to fit the memory
     /// budget next to what is resident already (the post-build gate's ungrouped peak).
     bool partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree) const;
     void reduceWorkerHistogram();

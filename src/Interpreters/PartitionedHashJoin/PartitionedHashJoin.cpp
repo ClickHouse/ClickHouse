@@ -483,7 +483,7 @@ void PartitionedHashJoin::decidePartitionPlan()
             /// Every range keeps at least 2^10 cells, so the table widens for the floor where the
             /// estimate alone sized it smaller (2^12 cells over 1024 keys become 2^13 for 8 workers).
             /// The scatter the floor introduces holds a locator and the keys of every row at once; a
-            /// spill budget that cannot absorb that keeps the serial insert instead.
+            /// memory budget that cannot absorb that keeps the serial insert instead.
             constexpr size_t min_range_bits = 10;
             const size_t floor_degree = std::max(size_degree, floor_bits + min_range_bits);
             if (partitionFloorFitsMemory(floor_bits, floor_degree))
