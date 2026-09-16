@@ -1,6 +1,5 @@
--- Tags: no-old-analyzer, no-fasttest
+-- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
--- no-fasttest: inserting into a `TimeSeries` table through its `time_series` column is not available in the fast-test build.
 
 -- Stress test for the `make_distributed_plan` fallback decision.
 -- A plan that falls back to local execution must never
@@ -54,7 +53,9 @@ CREATE VIEW v3_dpc AS SELECT (SELECT count() FROM t_dpc WHERE x IN (SELECT x FRO
 CREATE MATERIALIZED VIEW mv_dpc TO sink_dpc AS SELECT x FROM src_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) GROUP BY x;
 -- An external tags table gives the `TimeSeries` inner table a stable name for `additional_table_filters`.
 CREATE TABLE ts_dpc_tags (`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC')))) ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
-CREATE TABLE ts_dpc (time_series Array(Tuple(DateTime64(3, 'UTC'), Float32))) ENGINE = TimeSeries TAGS ts_dpc_tags;
+-- Schema version 2 names the outer samples column `time_series` (version 3 renamed it to `samples`); pinned so the rows
+-- below do not track the engine's schema.
+CREATE TABLE ts_dpc (time_series Array(Tuple(DateTime64(3, 'UTC'), Float32))) ENGINE = TimeSeries SETTINGS version = 2 TAGS ts_dpc_tags;
 INSERT INTO ts_dpc (metric_name, tags, time_series)
     SELECT 'm' || toString(number % 3), map('k', toString(number)), [(toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'), toFloat32(number))] FROM numbers(100);
 
@@ -104,6 +105,11 @@ SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM t_dpc WHERE x IN (
 SELECT count() > 0 FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) SETTINGS log_comment = '05185_dpc_30_explain_estimate';
 ALTER TABLE mut_dpc DELETE WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) SETTINGS mutations_sync = 2, log_comment = '05185_dpc_31_alter_delete';
 SELECT count() FROM mut_dpc;
+-- Assert mutations with their in set follow the fallback mechanism
+ALTER TABLE mut_dpc DELETE WHERE x + 1 IN (SELECT x FROM v_dpc) SETTINGS mutations_sync = 2, log_comment = '05185_dpc_31b_alter_delete_set_over_view';
+SELECT count() FROM mut_dpc;
+ALTER TABLE mut_dpc DELETE WHERE x IN (SELECT x FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x >= 60000)) SETTINGS mutations_sync = 2, log_comment = '05185_dpc_31c_alter_delete_nested_set';
+SELECT count() FROM mut_dpc;
 
 -- A `TimeSeries` read: the outer plan always falls back, the generated sub-plan must come out local (no exchanges, no
 -- logical joins), and an IN set inside it, applied through `additional_table_filters` on the tags table, must be built locally.
@@ -124,7 +130,8 @@ SYSTEM FLUSH LOGS query_log, text_log;
 
 -- Every fallen-back query: no distributed-plan task may have been spawned anywhere under its log_comment, and the
 -- reasons logged on the initiator and on the shard queries are printed.
-WITH (SELECT groupArray(query_id) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '05185_dpc_%') AS run_ids,
+WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 't_dpc') AS run_start,
+    (SELECT groupArray(query_id) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '05185_dpc_%' AND event_time >= run_start) AS run_ids,
     family AS (
         SELECT query_id, log_comment, is_initial_query, ProfileEvents['DistributedPlanRemoteTasks'] AS tasks
         FROM system.query_log
@@ -135,7 +142,8 @@ WITH (SELECT groupArray(query_id) FROM system.query_log WHERE current_database =
                 '^make_distributed_plan (does not support |cannot distribute this query: it contains the step )', ''),
                 '( which could not execute remotely|: the limit cannot.*)$', '') AS reason
         FROM system.text_log AS t INNER JOIN family AS f ON t.query_id = f.query_id
-        WHERE t.event_date >= yesterday() AND t.event_time >= now() - 600 AND t.logger_name = 'makeDistributedPlan' AND t.message LIKE '%falling back to local execution%')
+        -- Checks only runs from run_start, so it is fixed to this run
+        WHERE t.event_date >= toDate(run_start) AND t.event_time >= run_start AND t.logger_name = 'makeDistributedPlan' AND t.message LIKE '%falling back to local execution%')
 SELECT f.log_comment, sum(f.tasks) AS remote_tasks,
     (SELECT arraySort(groupUniqArray(reason)) FROM reasons WHERE reasons.log_comment = f.log_comment AND is_initial_query) AS initiator_fell_back_on,
     (SELECT arraySort(groupUniqArray(reason)) FROM reasons WHERE reasons.log_comment = f.log_comment AND NOT is_initial_query) AS shards_fell_back_on
@@ -144,7 +152,8 @@ GROUP BY f.log_comment
 ORDER BY f.log_comment;
 
 -- The positive controls did spawn tasks, so the counter really measures what we think it measures.
-WITH (SELECT groupArray(query_id) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '05185_dpc_positive_%') AS run_ids
+WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 't_dpc') AS run_start,
+    (SELECT groupArray(query_id) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '05185_dpc_positive_%' AND event_time >= run_start) AS run_ids
 SELECT log_comment, sum(ProfileEvents['DistributedPlanRemoteTasks']) > 0 AS distributed
 FROM system.query_log
 WHERE type = 'QueryFinish' AND has(run_ids, initial_query_id) AND log_comment LIKE '05185_dpc_positive_%'
