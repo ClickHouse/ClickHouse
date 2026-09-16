@@ -11,6 +11,12 @@ SELECT tuple(42::UInt64::Variant(UInt64, String)) FROM remote('127.0.0.1', syste
 SELECT map('k', 42::UInt64::Variant(UInt64, String)) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 SELECT [[(0., 0.)::Point::Geometry]] FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 
+-- An empty container has no member to name, and `map()` is inferred as `Map(Nothing, Nothing)`, which is not
+-- convertible to a map type carrying a `Variant`: it has to keep the plain empty literal, in either position.
+SELECT mapExtractKeyLike(map('k', 42::UInt64::Variant(UInt64, String)), 'z%') FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
+SELECT mapFilter((k, v) -> false, map(42::UInt64::Variant(UInt64, String), 'x')) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
+SELECT arrayFilter(x -> false, [42::UInt64::Variant(UInt64, String)]) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
+
 -- A `DateTime` member is exact only as its raw Unix timestamp: both epochs below format to the local
 -- text `2023-10-29 02:10:00` in the DST overlap, so the text form comes back an hour early.
 SELECT arrayMap(x -> toUnixTimestamp(assumeNotNull(variantElement(x, 'DateTime(\'Europe/Berlin\')'))), [toDateTime(1698541800, 'Europe/Berlin')::Variant(DateTime('Europe/Berlin'), String)]) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;

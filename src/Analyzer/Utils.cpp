@@ -1756,6 +1756,10 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             const auto & values = map_column.getNestedData().getColumnPtr(1);
             size_t start = offsets[static_cast<ssize_t>(row) - 1];
             size_t end = offsets[row];
+            /// An empty map has no leaf to serialize, and `map()` is inferred as `Map(Nothing, Nothing)`,
+            /// which cannot be converted to a map type carrying a `Variant`.
+            if (start == end)
+                return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
             ASTs elements;
             for (size_t i = start; i < end; ++i)
             {
