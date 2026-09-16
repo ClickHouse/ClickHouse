@@ -72,9 +72,10 @@ ALWAYS_INLINE inline UInt64 hashJoinTableMix(size_t hash_value)
   *
   * `Cell` and `Hash` are the standard join map's, taken from `HashJoin::MapsTemplate`. The cells
   * are bit-identical to `HashJoin`'s. Every key getter works on this table unchanged: it provides
-  * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. There is no
-  * `emplace`: the build claims cells through `claim` under its own ownership protocol. The table's
-  * size is published once at the end. The zero key lives in the standard zero-value cell.
+  * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. The partitioned
+  * build does not `emplace`: it claims cells through `claim` under its own ownership protocol. The
+  * table's size is published once at the end. `emplace` exists for the Join table engine alone, whose
+  * table has one range and grows as rows arrive. The zero key lives in the standard zero-value cell.
   *
   * Memory: the buffer is one reservation (`RangeCommittedBuffer`). A range is committed and charged
   * when its owner first touches it. During post-build the table's charge rises as the scattered
@@ -258,6 +259,102 @@ public:
         return this->zeroValue();
     }
 
+    /// The Join table engine's insert: the classic insert-or-find of `HashTable::emplace`, over the one
+    /// range of a single-partition table, doubling at the standard load factor (`maxFill`). Both
+    /// signatures `ColumnsHashing` calls; the mapped value of a new cell is left for the caller to
+    /// construct, as the standard table does. `it` is refreshed after a grow, so it always points at
+    /// the live buffer.
+    template <typename KeyHolder>
+    ALWAYS_INLINE void emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
+    {
+        emplace(key_holder, it, inserted, hash(keyHolderGetKey(key_holder)));
+    }
+
+    template <typename KeyHolder>
+    ALWAYS_INLINE void emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        const auto & key = keyHolderGetKey(key_holder);
+        if (Cell::isZero(key, state))
+        {
+            inserted = !this->hasZero();
+            if (inserted)
+            {
+                claimZero(hash_value);
+                ++m_size;
+            }
+            it = this->zeroValue();
+            return;
+        }
+
+        size_t pos = place(hash_value);
+        while (!buf[pos].isZero(state))
+        {
+            if (buf[pos].keyEquals(key, hash_value, state))
+            {
+                keyHolderDiscardKey(key_holder);
+                it = buf + pos;
+                inserted = false;
+                return;
+            }
+            pos = next(pos);
+        }
+
+        it = claim(pos, key_holder, hash_value);
+        inserted = true;
+        ++m_size;
+        if (m_size > maxFill()) [[unlikely]]
+        {
+            growSingleRange();
+            it = find(keyHolderGetKey(key_holder), hash_value);
+        }
+    }
+
+    /// Walks the zero-value cell first, then the occupied buffer cells in position order; `SELECT`
+    /// from a Join table reads the rows through it. The position is the cell's used-flags offset
+    /// (`offsetInternal`): 0 is the zero-value cell, `p + 1` buffer cell `p`.
+    class const_iterator
+    {
+    public:
+        const_iterator() = default;
+        const_iterator(const HashJoinTable * table_, size_t offset_) : table(table_), offset(offset_) { }
+
+        const Cell & operator*() const { return *getPtr(); }
+        const Cell * operator->() const { return getPtr(); }
+        const Cell * getPtr() const { return offset == 0 ? table->zeroValue() : table->buf + (offset - 1); }
+
+        const_iterator & operator++()
+        {
+            advance();
+            return *this;
+        }
+
+        bool operator==(const const_iterator & rhs) const { return offset == rhs.offset; }
+        bool operator!=(const const_iterator & rhs) const { return offset != rhs.offset; }
+
+        /// To the next occupied buffer cell, or to the end.
+        void advance()
+        {
+            const size_t cells = table->cellCount();
+            do
+                ++offset;
+            while (offset <= cells && table->buf[offset - 1].isZero(table->state));
+        }
+
+    private:
+        const HashJoinTable * table = nullptr;
+        size_t offset = 0;
+    };
+
+    const_iterator begin() const
+    {
+        const_iterator it(this, 0);
+        if (!this->hasZero())
+            it.advance();
+        return it;
+    }
+
+    const_iterator end() const { return const_iterator(this, cellCount() + 1); }
+
     /// The probe lookup: `HashMapTable::find` over one buffer.
     ALWAYS_INLINE LookupResult find(const Key & key) { return find(key, hash(key)); }
     ALWAYS_INLINE ConstLookupResult find(const Key & key) const { return find(key, hash(key)); }
@@ -293,6 +390,33 @@ public:
     }
 
 private:
+    /// The doubling behind `emplace`: every cell is re-placed into a buffer of twice the cells with the
+    /// global mask, its mapped value moved over, and the old buffer released without destructors. Only
+    /// a single-partition table may do this; a partitioned one is grown by its build.
+    void growSingleRange()
+    {
+        if (partition_bits != 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "HashJoinTable: emplace can only grow a single-partition table, this one has {} partition bits",
+                partition_bits);
+
+        beginRehash(size_degree + 1);
+        commitNewRange(0);
+        for (Cell * cell = buf, * end = buf + cellCount(); cell != end; ++cell)
+        {
+            if (cell->isZero(state))
+                continue;
+            const size_t hash_value = cellHash(cell);
+            size_t pos = newPlace(hash_value);
+            while (!new_buf[pos].isZero(state))
+                pos = newNext(pos);
+            Cell * moved = claimPersisted(new_buf + pos, Cell::getKey(cell->getValue()), hash_value);
+            new (&moved->getMapped()) mapped_type(std::move(cell->getMapped()));
+        }
+        adoptRehash();
+    }
+
     /// Validated before any member derives a shift or a buffer size from it.
     static size_t checkedSizeDegree(size_t size_degree_, size_t partition_bits_)
     {
