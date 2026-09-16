@@ -550,7 +550,7 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
     NameAndTypePair column{ctx.column.name + "." + *subcolumn_name, result_type};
 
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
-        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
+        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, column.name)
             || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
             || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
             return;
