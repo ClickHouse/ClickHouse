@@ -4,3 +4,5 @@ clear_missing_if_exists_noop
 state_intact	2	[[10],[11]]	[[20],[21]]
 clear_parent_no_share_noop
 state_intact_no_share	1	10
+clear_parent_dotted_alias_noop
+state_intact_alias	1	1

@@ -41,3 +41,17 @@ ALTER TABLE uk_clear_no_share CLEAR COLUMN IF EXISTS n IN PARTITION ID 'all';
 SELECT 'state_intact_no_share', * FROM uk_clear_no_share;
 
 DROP TABLE uk_clear_no_share;
+
+-- A dotted ALIAS is not stored, so `CLEAR COLUMN IF EXISTS n` must stay a no-op even
+-- with default `share_nested_offsets` (hasNested is a raw prefix match over all kinds).
+DROP TABLE IF EXISTS uk_clear_dotted_alias;
+CREATE TABLE uk_clear_dotted_alias (id UInt32, `n.x` UInt32 ALIAS id)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id);
+
+INSERT INTO uk_clear_dotted_alias (id) VALUES (1);
+
+SELECT 'clear_parent_dotted_alias_noop' AS step;
+ALTER TABLE uk_clear_dotted_alias CLEAR COLUMN IF EXISTS n IN PARTITION ID 'all';
+SELECT 'state_intact_alias', id, `n.x` FROM uk_clear_dotted_alias;
+
+DROP TABLE uk_clear_dotted_alias;
