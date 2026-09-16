@@ -171,7 +171,10 @@ SETTINGS
     max_threads = 20,
     allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
     max_streams_for_merge_tree_reading = 60,
-    optimize_read_in_order = 0;
+    optimize_read_in_order = 0,
+    -- Keep a single merge node so the displayed full-sort pipeline stays focused
+    -- on how the data is read.
+    max_streams_per_hierarchical_merge = 0;
 
 ┌─explain──────────────────────────────┐
 │ (Expression)                         │
@@ -187,4 +190,3 @@ SETTINGS
 └──────────────────────────────────────┘
 
 ```
-

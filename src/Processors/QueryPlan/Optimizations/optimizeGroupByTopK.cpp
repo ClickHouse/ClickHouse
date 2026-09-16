@@ -167,11 +167,14 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         for (const auto & key : params.keys)
             sort_description.emplace_back(key, /*direction=*/ 1, /*nulls_direction=*/ 1);
 
+        SortingStep::Settings sort_settings(settings.max_block_size);
+        sort_settings.max_streams_per_hierarchical_merge = settings.max_streams_per_hierarchical_merge;
+
         auto synthesized_sort = std::make_unique<SortingStep>(
             aggregating_node->step->getOutputHeader(),
             std::move(sort_description),
             limit,
-            SortingStep::Settings(settings.max_block_size));
+            sort_settings);
         synthesized_sort->setStepDescription("Sorting for GROUP BY top-K", settings.max_step_description_length);
 
         auto & sort_node = nodes.emplace_back();
