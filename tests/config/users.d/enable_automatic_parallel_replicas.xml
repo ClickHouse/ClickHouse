@@ -17,6 +17,15 @@
                  node count, so the cost model would divide the read by 11 and judge parallel replicas
                  about 11x better than they are on a real cluster. Pin a realistic replica count. -->
             <max_parallel_replicas>3</max_parallel_replicas>
+            <!-- The cost model divides the read by `min(max_threads [* replicas], input_bytes /
+                 merge_tree_min_bytes_per_task_for_remote_reading + 1)`. At the 2 MiB default that second
+                 term clamps BOTH sides to the same value for any read below a few MiB, the comparison
+                 collapses to `0 > output_bytes / replicas`, and the answer is "no" before the cost model
+                 looks at anything. In the first run of these jobs that was 7280 of 7366 evaluations -
+                 98.8% decided in advance, 0 of them switching, while the 86 that escaped the clamp
+                 switched 88% of the time. Lower it so the cost model, not the clamp, makes the decision
+                 on the table sizes stateless tests actually use. -->
+            <merge_tree_min_bytes_per_task_for_remote_reading>16384</merge_tree_min_bytes_per_task_for_remote_reading>
             <parallel_replicas_local_plan>1</parallel_replicas_local_plan>
             <parallel_replicas_for_non_replicated_merge_tree>1</parallel_replicas_for_non_replicated_merge_tree>
         </default>
