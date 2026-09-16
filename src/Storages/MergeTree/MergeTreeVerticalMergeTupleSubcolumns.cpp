@@ -136,6 +136,23 @@ bool anyLeafHasDynamicSubcolumns(const std::vector<NameAndTypePair> & leaves)
     return false;
 }
 
+bool anyLeafNameIsAmbiguous(const DataTypePtr & parent_type, const std::vector<NameAndTypePair> & leaves)
+{
+    /// `getSubcolumnNames` preserves duplicate spellings from distinct serialization paths,
+    /// while subcolumn lookup keeps only the first match. A gathering leaf stores only the
+    /// spelling, so it is safe to use only when that spelling identifies exactly one path.
+    std::unordered_map<String, size_t> subcolumn_name_counts;
+    for (const auto & subcolumn_name : parent_type->getSubcolumnNames())
+        ++subcolumn_name_counts[subcolumn_name];
+
+    for (const auto & leaf : leaves)
+    {
+        if (subcolumn_name_counts[leaf.getSubcolumnName()] != 1)
+            return true;
+    }
+    return false;
+}
+
 bool partCanReadLeafDirectly(const IMergeTreeDataPart & part, const NameAndTypePair & leaf, const String & parent)
 {
     auto column = part.tryGetColumn(leaf.name);
@@ -248,6 +265,12 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     for (const auto & leaf : leaves)
         leaf_names.push_back(leaf.name);
     const NameSet leaf_name_set(leaf_names.begin(), leaf_names.end());
+
+    if (anyLeafNameIsAmbiguous(column.type, leaves))
+    {
+        result.reason = "ambiguous_leaf_name";
+        return result;
+    }
 
     if (leafNameCollides(leaf_names, storage_names, column.name))
     {
