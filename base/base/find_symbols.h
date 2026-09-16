@@ -29,8 +29,8 @@
   * - if not found, returns pointer to end instead of nullptr;
   * - maximum number of symbols to search is 16.
   *
-  * Uses SSE 2 in case of small number of symbols for search and AVX2 for 1-4 compile-time symbols in sufficiently
-  *  long x86-v3 ranges. SSE 4.2 is used in the case of large number of symbols, with more than 2x performance
+  * Uses SSE 2 in case of small number of symbols for search and AVX2 for 1-4 compile-time symbols on x86-v3 builds.
+  * SSE 4.2 is used in the case of large number of symbols, with more than 2x performance
   *  advantage over trivial loop
   *  in the case of parsing tab-separated dump with (probably escaped) string fields.
   * In the case of parsing tab separated dump with short strings, there is no performance degradation over trivial loop.
@@ -346,34 +346,17 @@ inline const char * find_first_symbols_avx2_block(const char * pos)
 }
 
 template <bool positive, ReturnMode return_mode, char... symbols>
-[[gnu::noinline]] const char * find_first_symbols_avx2(const char * const begin, const char * const end)
+inline const char * find_first_symbols_avx2(const char * const begin, const char * const end)
 {
     const char * pos = begin;
 
-    for (; end - pos >= 64; pos += 64)
+    /// Keep the first block on the low-latency SSE2 path. This avoids paying the AVX2 setup cost for the common
+    /// case where a delimiter appears near the beginning, while still allowing long scans to use AVX2 immediately.
+    if (end - pos >= 16)
     {
-        __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
-        __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32));
-
-        __m256i eq0 = mm256_is_in<symbols...>(bytes0);
-        __m256i eq1 = mm256_is_in<symbols...>(bytes1);
-
-        __m256i combined;
-        if constexpr (positive)
-            combined = _mm256_or_si256(eq0, eq1);
-        else
-            combined = _mm256_and_si256(eq0, eq1);
-
-        uint32_t combined_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined)));
-        if (!combined_mask)
-            continue;
-
-        uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
-        if (mask0)
-            return pos + __builtin_ctz(mask0);
-
-        uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
-        return pos + 32 + __builtin_ctz(mask1);
+        if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
+            return found;
+        pos += 16;
     }
 
     for (; end - pos >= 32; pos += 32)
@@ -711,17 +694,7 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 {
 #if defined(__AVX2__)
     if constexpr (sizeof...(symbols) >= 1 && sizeof...(symbols) <= 4)
-    {
-        if (end - begin >= 1024) [[unlikely]]
-        {
-            constexpr size_t prefix_size = 512;
-            const char * const prefix_end = begin + prefix_size;
-            for (const char * pos = begin; pos != prefix_end; pos += 16)
-                if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
-                    return found;
-            return find_first_symbols_avx2<positive, return_mode, symbols...>(prefix_end, end);
-        }
-    }
+        return find_first_symbols_avx2<positive, return_mode, symbols...>(begin, end);
 #endif
 #if defined(__SSE4_2__)
     if (sizeof...(symbols) >= 5)
