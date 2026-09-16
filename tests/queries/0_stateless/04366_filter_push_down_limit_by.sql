@@ -110,7 +110,7 @@ FROM (
     ) WHERE key IN (SELECT k FROM t_04366_keys)
 );
 
--- Live-oracle control: `0` means no limit, the behaviour of 26.7 and 26.8, so the same query pushes again.
+-- Live-oracle control: `0` means no limit, the behaviour of 26.7 to 26.9, so the same query pushes again.
 SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
 FROM (
     EXPLAIN indexes = 1
