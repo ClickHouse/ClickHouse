@@ -12,8 +12,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-String likePatternToRegexp(std::string_view pattern)
+String likePatternToRegexp(std::string_view pattern, bool * has_end_anchor)
 {
+    if (has_end_anchor)
+        *has_end_anchor = false;
+
     String res;
     res.reserve(pattern.size() * 2);
 
@@ -85,6 +88,9 @@ String likePatternToRegexp(std::string_view pattern)
         }
         ++pos;
     }
+
+    if (has_end_anchor)
+        *has_end_anchor = true;
 
     res += '$';
     return res;
