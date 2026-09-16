@@ -618,7 +618,10 @@ struct ConverterJSON
     const ColumnObject & column;
     DataTypePtr data_type;
     PODArray<parquet::ByteArray> buf;
-    std::vector<String> stash;
+    /// The serialized values back to back, with their lengths, rather than a string each: the batch
+    /// is bounded by bytes, so neither can be sized from the number of values that were asked for.
+    PODArray<char> chars;
+    PODArray<size_t> lengths;
     const FormatSettings & format_settings;
 
     explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
@@ -637,30 +640,36 @@ struct ConverterJSON
 
     const parquet::ByteArray * getBatch(size_t offset, size_t count)
     {
-        buf.resize(count);
-        stash.clear();
-        stash.reserve(count);
+        chars.clear();
+        lengths.clear();
 
         auto serialization = data_type->getDefaultSerialization();
 
-        size_t bytes = 0;
         produced = count;
         for (size_t i = 0; i < count; ++i)
         {
             WriteBufferFromOwnString wb;
             serialization->serializeTextJSON(column, offset + i, wb, format_settings);
 
-            stash.emplace_back(std::move(wb.str()));
-            const String & s = stash.back();
+            const String s = wb.str();
+            chars.insert(s.data(), s.data() + s.size());
+            lengths.push_back(s.size());
 
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
-
-            bytes += s.size();
-            if (byte_budget != 0 && bytes >= byte_budget)
+            if (byte_budget != 0 && chars.size() >= byte_budget)
             {
                 produced = i + 1;
                 break;
             }
+        }
+
+        /// Only now that `chars` has stopped growing do the values get pointers into it.
+        buf.resize(lengths.size());
+        size_t offset_in_chars = 0;
+        for (size_t i = 0; i < lengths.size(); ++i)
+        {
+            buf[i] = parquet::ByteArray(
+                static_cast<UInt32>(lengths[i]), reinterpret_cast<const uint8_t *>(chars.data() + offset_in_chars));
+            offset_in_chars += lengths[i];
         }
         return buf.data();
     }
@@ -1394,6 +1403,17 @@ void writeColumnImpl(
             {
                 batch_byte_size = limit_batch_by_bytes(
                     next_def_offset, def_count, data_count, 0, [&](size_t) { return converter.fixedStringSize(); });
+            }
+            else
+            {
+                /// The remaining physical types are written back to back at a fixed width. A record
+                /// of enough of them still outgrows a page - `Array(UInt64)` needs 2^28 elements -
+                /// so they are budgeted the same way. A batch of `write_batch_size` of them is a few
+                /// kilobytes, far below the budget, so ordinary columns never reach the cut.
+                /// Booleans are bit-packed rather than byte-packed, which only over-counts.
+                batch_byte_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, 0,
+                    [](size_t) { return sizeof(typename ParquetDType::c_type); });
             }
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
