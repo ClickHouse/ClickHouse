@@ -2089,6 +2089,17 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const String & function_name,
     RPNElement & out) const
 {
+    /// The set is read once, here, and the decision derived from it is never revisited, while an
+    /// `ENGINE = Set` table keeps inserting into the very set held by the query. Exact direct read makes
+    /// the tokens the whole answer, so a value inserted afterwards would never match. See
+    /// `FutureSet::isMutableDuringQuery`, which states this requirement, and
+    /// `prepareSetsForDefaultValueEvaluation`, which refuses such a set for a weaker decision.
+    ///
+    /// The element checks below refuse a mutable set today anyway, because `StorageSet` keeps no
+    /// explicit elements, but that is a property of that storage rather than a rule of this analysis.
+    if (auto future_set = rhs.tryGetPreparedSet(); future_set && future_set->isMutableDuringQuery())
+        return false;
+
     /// The generic path below tokenizes every set element as a string, which can never produce a token
     /// in the pair format. Partition hard, as `traverseFunctionNode` does.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)

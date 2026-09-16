@@ -1013,6 +1013,7 @@ The following restrictions apply:
   Other map searches, such as `mapContainsKey`, `mapContainsValue` and their `*Like` variants, fall back to a brute-force scan.
 - `map['key'] IN (...)` uses the index only when the map element is compared on its own: `(map['key'], id) IN (('error', 1))` falls back to a brute-force scan, because a token union cannot tell whether a row matched the other tuple components of the same set element.
   A set that comes from a subquery is used to skip granules, but not for direct read.
+  A set that comes from an `ENGINE = Set` table is not used at all, because a concurrent `INSERT` into that table changes the set while the query runs.
 - `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.
   Such a predicate falls back to a brute-force scan, as does an `IN` list that contains the empty string.
 - If a row contains the same key more than once, `map['key']` is the value of its first occurrence, and the index matches that occurrence.
