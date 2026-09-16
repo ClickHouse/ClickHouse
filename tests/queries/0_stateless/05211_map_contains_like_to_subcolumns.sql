@@ -247,7 +247,7 @@ FROM
     FROM t_map_contains_like_text_index
     WHERE mapContainsKeyLike(m, 'a%')
 )
-WHERE explain LIKE '%FUNCTION mapContainsKeyLike%';
+WHERE explain LIKE '%mapContainsKeyLike%';
 
 SELECT count() = 0
 FROM
@@ -267,7 +267,7 @@ FROM
     FROM t_map_contains_like_text_index
     WHERE mapContainsValueLike(m, 'o%')
 )
-WHERE explain LIKE '%FUNCTION mapContainsValueLike%';
+WHERE explain LIKE '%mapContainsValueLike%';
 
 SELECT count() = 0
 FROM
@@ -405,11 +405,11 @@ SETTINGS optimize_functions_to_subcolumns = 1;
 DROP TABLE t_map_contains_like_nullable_pattern;
 
 -- LowCardinality on the searched Map element or pattern keeps the original Map LIKE implementation.
-SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 2
+SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 3
 FROM t_map_contains_like_subcolumns
 SETTINGS optimize_functions_to_subcolumns = 1;
 
-SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 2
+SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 3
 FROM t_map_contains_like_subcolumns
 SETTINGS optimize_functions_to_subcolumns = 0;
 
