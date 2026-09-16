@@ -917,7 +917,7 @@ This is equivalent to declaring the timestamp and value column types in the samp
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -951,8 +951,9 @@ The _samples_ table must have columns:
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
 Columns the engine creates itself get time-series compression codecs:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
+`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ALP, ZSTD(3))`. Near-monotonic timestamps barely
 compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
+The engine enables `ALP` for its inner samples table without requiring `enable_alp_codec` to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 ### Recent samples table {#recent-samples-table}
@@ -960,6 +961,7 @@ See also [Adjusting types of columns](#adjusting-column-types).
 The _recent samples_ table is optional and enabled by default (see the [recent_samples_ttl_seconds](#settings) setting;
 setting it to zero disables the table). It contains a copy of the samples newer than the TTL defined by that setting,
 and it must have the same columns as the [samples](#samples-table) table.
+The generated `value` column uses `CODEC(ZSTD(3))`.
 
 Every inserted sample is written both to the samples table and to the recent samples table.
 Queries whose time range fits in the TTL window read from the recent samples table instead of the main samples table
@@ -1024,7 +1026,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
@@ -1068,7 +1070,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -1146,7 +1148,7 @@ You can adjust the types of columns in the inner target tables using the `INNER 
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Specifying inner columns without codecs means using the default codec for them:

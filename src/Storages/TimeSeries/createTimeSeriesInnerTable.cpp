@@ -54,6 +54,9 @@ void createTimeSeriesInnerTable(
     ContextPtr context)
 {
     auto create_context = Context::createCopy(context);
+    /// The default samples codec uses `ALP` independently of the query setting.
+    if (inner_table_kind == ViewTarget::Samples)
+        create_context->setSetting("enable_alp_codec", true);
 
     auto manual_create_query = getInnerTableCreateQuery(
         inner_table_kind, inner_table_uuid, inner_columns,

@@ -635,7 +635,11 @@ namespace
                 {
                     if (!is_scalar_type(*type))
                         return false;
-                    return !codec || is_version_0 || (codec->formatWithSecretsOneLine() == "CODEC(ZSTD(3))");
+                    if (!codec || is_version_0)
+                        return true;
+                    auto codec_name = codec->formatWithSecretsOneLine();
+                    return (codec_name == "CODEC(ZSTD(3))")
+                        || ((inner_table_kind == ViewTarget::Samples) && (codec_name == "CODEC(ALP, ZSTD(3))"));
                 }
 
                 return false;
@@ -934,17 +938,20 @@ namespace
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
-                /// Auto-created "timestamp" and "value" columns get compression codecs: under generic LZ4
-                /// near-monotonic millisecond timestamps barely compress and dominate the table size
-                /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
-                /// above are compatible with DoubleDelta (DateTime64/DateTime/UInt32). The "value" column
-                /// gets plain ZSTD(3): specialized floating-point codecs such as Gorilla proved unreliable
-                /// in practice. Explicitly declared columns keep whatever the user wrote.
+                /// Generated `timestamp` columns use `DoubleDelta` followed by `ZSTD`.
+                /// The main samples table also uses `ALP` for `value`; recent samples keep plain `ZSTD`.
+                /// Explicitly declared columns keep the user's codecs.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
                     timestamp_decl->setCodec(makeASTFunction(
                         "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    value_decl->setCodec(makeASTFunction("CODEC", makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
+                {
+                    auto zstd = makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}));
+                    if (inner_table_kind == ViewTarget::Samples)
+                        value_decl->setCodec(makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), zstd));
+                    else
+                        value_decl->setCodec(makeASTFunction("CODEC", zstd));
+                }
 
                 break;
             }
