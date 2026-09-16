@@ -8,7 +8,6 @@ workflow = Workflow.Config(
     name="BackportPR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *[
             job
