@@ -83,6 +83,8 @@ public:
     /// Pipeline threads bind the query-scoped spill controller once their ThreadGroup exists.
     void setMemorySpillScheduler(const std::shared_ptr<MemorySpillScheduler> & scheduler);
 
+    const Settings & getSettings() const { return settings; }
+
 private:
     void throwIfNeeded();
 
