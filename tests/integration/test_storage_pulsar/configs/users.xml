@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_pulsar_storage_engine>1</allow_experimental_pulsar_storage_engine>
+            <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
+        </default>
+    </profiles>
+</clickhouse>

@@ -70,6 +70,7 @@ if (OS_WASM)
     set (ENABLE_KAFKA OFF CACHE INTERNAL "")
     set (ENABLE_AMQPCPP OFF CACHE INTERNAL "")
     set (ENABLE_NATS OFF CACHE INTERNAL "")
+    set (ENABLE_PULSAR OFF CACHE INTERNAL "")
     set (ENABLE_CASSANDRA OFF CACHE INTERNAL "")
     # Raw sockets like the rest, and its `mlib` has an explicit #error for platforms
     # it does not recognize (`mlib/time_point.h`: "We do not know how to get the

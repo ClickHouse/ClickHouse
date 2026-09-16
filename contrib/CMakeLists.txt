@@ -293,6 +293,8 @@ add_contrib (silk-cmake silk)
 
 add_contrib (sz3-cmake sz3)
 
+add_contrib (pulsar-client-cpp-cmake pulsar-client-cpp)
+
 # cuDF and friends. Guarded by ENABLE_GPU inside each -cmake file, and listed in
 # dependency order: cccl before cuCollections, spdlog before rapids-logger before rmm.
 add_contrib (cccl-cmake cccl)
