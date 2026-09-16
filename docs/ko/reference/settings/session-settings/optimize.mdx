@@ -156,8 +156,9 @@ WHERE, PREWHERE, ON, HAVING 및 QUALIFY 표현식의 OR 결합에서 공통 표�
 * [count](/ko/reference/functions/aggregate-functions/count)를 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼을 읽도록 변환합니다.
 * [mapKeys](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys)를 [keys](/ko/reference/data-types/map#reading-subcolumns-of-map) 서브컬럼을 읽도록 변환합니다.
 * [mapValues](/ko/reference/functions/regular-functions/tuple-map-functions#mapValues)를 [values](/ko/reference/data-types/map#reading-subcolumns-of-map) 서브컬럼을 읽도록 변환합니다.
+* `Map`에 대한 [has](/ko/reference/functions/regular-functions/array-functions#has) 및 [notHas](/ko/reference/functions/regular-functions/array-functions#notHas)를 [keys](/ko/reference/data-types/map#reading-subcolumns-of-map) 서브컬럼을 읽도록 변환합니다.
 
-Possible values:
+가능한 값:
 
 * 0 — 최적화가 비활성화됩니다.
 * 1 — 최적화가 활성화됩니다.

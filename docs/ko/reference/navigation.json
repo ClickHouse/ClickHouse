@@ -742,7 +742,7 @@
             "ko/reference/functions/table-functions/s3Cluster",
             "ko/reference/functions/table-functions/sqlite",
             "ko/reference/functions/table-functions/timeSeriesData",
-            "ko/reference/functions/table-functions/timeSeriesMetrics",
+            "ko/reference/functions/table-functions/timeSeriesMetricFamilies",
             "ko/reference/functions/table-functions/timeSeriesSamples",
             "ko/reference/functions/table-functions/timeSeriesSelector",
             "ko/reference/functions/table-functions/timeSeriesTags",

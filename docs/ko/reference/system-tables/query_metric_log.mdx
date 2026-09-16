@@ -92,7 +92,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_MMappedFileCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — MMap 캐시(&#39;mmap&#39; read&#95;method용)에서 파일을 찾은 횟수로, 다시 mmap할 필요가 없었던 경우입니다.
 * `ProfileEvent_MMappedFileCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — MMap 캐시(&#39;mmap&#39; read&#95;method용)에서 파일을 찾지 못한 횟수로, 다시 mmap해야 했던 경우입니다.
 * `ProfileEvent_OpenedFileCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — opened file cache에서 파일을 찾은 횟수로, 다시 열 필요가 없었던 경우입니다.
-* `ProfileEvent_OpenedFileCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — opened file cache에서 파일을 찾지 못한 횟수로, 다시 열어야 했던 경우입니다.
+* `ProfileEvent_OpenedFileCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — opened file cache에서 파일을 찾은 횟수로, 다시 열어야 했던 경우입니다.
 * `ProfileEvent_OpenedFileCacheMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — OpenedFileCache 메서드 실행에 소요된 시간입니다.
 * `ProfileEvent_AIOWrite` ([UInt64](/ko/reference/data-types/int-uint)) — Linux 또는 FreeBSD AIO 인터페이스를 사용한 쓰기 횟수입니다
 * `ProfileEvent_AIOWriteBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Linux 또는 FreeBSD AIO 인터페이스를 사용해 기록한 바이트 수입니다
@@ -132,6 +132,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ko/reference/data-types/int-uint)) — iceberg iterator에서 반환된 객체 정보의 총개수.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파티셔닝 및 시퀀스 번호 기준으로 적합한 쌍 가운데 minmax 분석에서 허용된 data files-position delete file 쌍의 총개수.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파티셔닝 및 시퀀스 번호 기준으로 적합한 쌍 가운데 minmax 분석에서 허용된 data files-position delete file 쌍의 총개수.
+* `ProfileEvent_DeltaLakeDeltaLogExistenceChecks` ([UInt64](/ko/reference/data-types/int-uint)) — DeltaLake `_delta_log`의 존재 여부를 확인하기 위해 수행한 객체 스토리지 목록 조회 수입니다(예: CREATE TABLE 중).
 * `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/ko/reference/data-types/int-uint)) — OneLake 카탈로그가 Entra ID 새로 고침 토큰 grant를 통해 발급한 액세스 토큰 요청 수입니다.
 * `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/ko/reference/data-types/int-uint)) — OneLake 카탈로그가 Entra ID 새로 고침 토큰 grant를 통해 발급했지만 실패한 액세스 토큰 요청 수입니다(만료되었거나 취소된 새로 고침 토큰 포함).
 * `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — OneLake 카탈로그에서 Entra ID 새로 고침 토큰 grant를 통해 액세스 토큰을 요청하는 데 소요된 총 시간입니다.
@@ -1178,7 +1179,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheObjectStorageWriteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 쓰기 버퍼 이벤트. 객체 스토리지에 쓰는 데 소요된 시간
 * `ProfileEvent_DistrCacheObjectStorageWriteBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 쓰기 버퍼 이벤트. 객체 스토리지에 기록된 바이트 수
 * `ProfileEvent_DistrCacheBackgroundWrites` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 쓰기 버퍼 이벤트. 백그라운드 스레드에서 실행된 캐시 쓰기 횟수(백그라운드 쓰기 슬롯을 획득한 경우)
-* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 쓰기 버퍼 이벤트. 호출 스레드에서 인라인으로 실행된 캐시 쓰기 횟수(사용 가능한 백그라운드 쓰기 슬롯이 없거나 쓰기 대상이 임시 데이터인 경우)
+* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 쓰기 버퍼 이벤트. 호출 스레드에서 인라인으로 실행된 캐시 쓰기 횟수(객체 스토리지 쓰기와 겹칠 수 없는 임시 데이터 쓰기)
+* `ProfileEvent_DistrCacheSkippedWrites` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 쓰기 버퍼 이벤트. 사용 가능한 백그라운드 쓰기 슬롯이 없거나(`distributed_cache_write_pool_size` 서버 설정으로 지정된 한도에 도달한 경우) 백그라운드 쓰기를 시작할 수 없어 write-through 캐시 쓰기를 건너뛴 쓰기 버퍼 수입니다. 데이터는 여전히 객체 스토리지에 기록됩니다.
 * `ProfileEvent_DistrCacheGetResponseMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. Distributed Cache의 응답을 기다리는 데 소요된 시간
 * `ProfileEvent_DistrCacheConnectErrors` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 요청을 보내기 전에 Distributed Cache 서버에 연결하지 못한 횟수입니다(시도별로 집계하는 DistrCacheUnsuccessfulConnectAttempts와 달리, 모든 연결 시도가 소진된 후 요청당 한 번 집계됩니다). 사용 가능한 풀 연결을 기다리는 동안 발생한 타임아웃도 여기에 집계됩니다. 요청 생성 중 재연결에 실패한 경우에는 DistrCacheMakeRequestErrors에 집계됩니다
 * `ProfileEvent_DistrCacheMakeRequestErrors` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 요청을 보낼 때 발생한 Distributed Cache 오류 횟수

@@ -16,13 +16,15 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 ## allow_experimental_analyzer {#allow_experimental_analyzer}
 
-**Alias**: `enable_analyzer`
+**Aliases**: `enable_analyzer`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Habilita el analizador y el planificador de forma predeterminada."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "El ajuste es obsoleto: el analizador es obligatorio y el antiguo análisis de consultas ya no es compatible. Su desactivación se rechaza en lugar de ignorarse, y `compatibility` con una versión inferior a 24.3 ya no lo revierte."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Habilita el analizador y el planificador de forma predeterminada."}]}]} />
 
-Habilita el analizador.
+Obsoleto desde v26.9: el analizador ya no se puede desactivar.
+
+El analizador es la infraestructura de análisis y planificación de consultas que se utiliza de forma predeterminada desde v26.9...
 
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 

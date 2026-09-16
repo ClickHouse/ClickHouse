@@ -127,6 +127,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/zh/reference/data-types/int-uint)) — Iceberg 迭代器返回的对象信息总数。
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在按分区和序列号筛选后符合条件的配对中，经 minmax 分析接受的数据文件-位置删除文件对总数。
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在按分区和序列号筛选后符合条件的配对中，经 minmax 分析接受的数据文件-位置删除文件对总数。
+* `ProfileEvent_DeltaLakeDeltaLogExistenceChecks` ([UInt64](/zh/reference/data-types/int-uint)) — 为检查 DeltaLake `_delta_log` 是否存在而发起的对象存储列表请求数量 (例如在 CREATE TABLE 期间) 。
 * `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/zh/reference/data-types/int-uint)) — OneLake catalog 通过 Entra ID 刷新令牌授权发起的访问令牌请求数量。
 * `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/zh/reference/data-types/int-uint)) — OneLake catalog 通过 Entra ID 刷新令牌授权发起的失败访问令牌请求数量 (包括已过期或已撤销的刷新令牌) 。
 * `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — OneLake catalog 通过 Entra ID 刷新令牌授权请求访问令牌所花费的总时间。
@@ -1173,7 +1174,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheObjectStorageWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入对象存储所花费的时间
 * `ProfileEvent_DistrCacheObjectStorageWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入对象存储的字节数
 * `ProfileEvent_DistrCacheBackgroundWrites` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在后台线程中执行的缓存写入次数 (已获取后台写入插槽)
-* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在调用线程中以内联方式执行的缓存写入次数 (没有可用的后台写入插槽，或该写入用于临时数据)
+* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在调用线程中以内联方式执行的缓存写入次数 (写入临时数据，此类写入没有可与之重叠的对象存储写入)
+* `ProfileEvent_DistrCacheSkippedWrites` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。因没有空闲的后台写入插槽 (已达到 `distributed_cache_write_pool_size` 服务器设置所设定的限制) 或无法启动后台写入而跳过写穿透缓存写入的写入缓冲区数量。数据仍会写入对象存储
 * `ProfileEvent_DistrCacheGetResponseMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。等待分布式缓存响应所花费的时间
 * `ProfileEvent_DistrCacheConnectErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。在发起请求前连接分布式缓存服务器失败的次数 (每个请求仅计一次，在所有连接尝试均耗尽后计数；不同于按每次尝试计数的 DistrCacheUnsuccessfulConnectAttempts) 。等待连接池中空闲连接时发生的超时也计入此处。请求创建期间重新连接失败则计入 DistrCacheMakeRequestErrors
 * `ProfileEvent_DistrCacheMakeRequestErrors` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。发起请求时发生的分布式缓存错误次数

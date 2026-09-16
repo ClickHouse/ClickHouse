@@ -2817,12 +2817,12 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
 
 ## getSetting {#getSetting}
 
-Introduit dans : v20.7.0
+Introduit dans : v20.7.0
 
 Renvoie la valeur actuelle d’un paramètre.
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -2844,18 +2844,19 @@ Renvoie la valeur actuelle du paramètre. [`Any`](/fr/reference/data-types/index
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT getSetting('enable_analyzer');
-SET enable_analyzer = false;
-SELECT getSetting('enable_analyzer');
+SET optimize_move_to_prewhere = false;
+SELECT getSetting('optimize_move_to_prewhere');
+SET optimize_move_to_prewhere = true;
+SELECT getSetting('optimize_move_to_prewhere');
 ```
 
 ```response title=Response
-┌─getSetting('enable_analyzer')─┐
-│ true                          │
-└───────────────────────────────┘
-┌─getSetting('enable_analyzer')─┐
-│ false                         │
-└───────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ false                                   │
+└─────────────────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ true                                    │
+└─────────────────────────────────────────┘
 ```
 
 ## getSettingOrDefault {#getSettingOrDefault}

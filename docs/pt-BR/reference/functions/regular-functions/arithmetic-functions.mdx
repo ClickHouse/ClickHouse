@@ -1340,8 +1340,8 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 Introduzido em: v20.3.0
 
-Semelhante a `modulo`, mas retorna zero quando o divisor é zero, em vez de
-lançar uma exceção, como ocorre com a função `modulo`.
+Semelhante a `modulo`, mas retorna zero em vez de lançar uma exceção para resultados inteiros quando, de outro modo, a operação geraria uma
+exceção. Para resultados de ponto flutuante, um divisor zero produz `NaN`.
 
 **Sintaxe**
 
@@ -1356,11 +1356,12 @@ moduloOrZero(a, b)
 
 **Valor retornado**
 
-Retorna o resto de `a % b`, ou `0` quando o divisor é `0`.
+Retorna o resto de `a % b`. Para resultados inteiros, retorna `0` quando a operação, de outra forma, lançaria uma exceção.
+Para resultados de ponto flutuante, um divisor zero produz `NaN`.
 
 **Exemplos**
 
-**Exemplo de uso**
+**Divisor zero inteiro**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1368,6 +1369,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**Divisor zero de ponto flutuante**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

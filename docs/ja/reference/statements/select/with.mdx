@@ -57,7 +57,7 @@ CTE がコードの一部ではなく、結果そのものを正確に受け渡�
 
 <Note>
   マテリアライズド CTE は **実験的** な機能です。
-  利用するには、[アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) が必要であり、設定 `enable_materialized_cte` も有効になっている必要があります。
+  利用するには、設定 `enable_materialized_cte` が有効になっている必要があります。
   設定が無効の場合、`MATERIALIZED` キーワードは無視されます。CTE は通常の CTE と同様に参照ごとにインライン展開され、警告がログに記録されます。
 </Note>
 
@@ -167,7 +167,6 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ### 制限事項 {#materialized-cte-restrictions}
 
 * **実験的な設定が必要**: 設定 `enable_materialized_cte` を有効にする必要があります。無効の場合、`MATERIALIZED` キーワードは無視され、CTE は通常の CTE と同様に参照ごとにインライン展開され、警告が記録されます。
-* **アナライザが必要**: マテリアライズド CTE は、[アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) が有効な場合にのみ動作します (`enable_analyzer = 1`) 。
 * **`RECURSIVE` では未サポート**: `MATERIALIZED` キーワードと `RECURSIVE` キーワードを組み合わせることはできず、`UNSUPPORTED_METHOD` 例外が発生します。
 * **相関 CTE は使用不可**: マテリアライズド CTE では、外側のクエリスコープのカラムを参照できません。
 
@@ -179,7 +178,7 @@ ClickHouse では、`WITH` 句で任意のスカラ式に別名を定義でき�
 <Note>
   共通スカラ式が定数リテラル以外を参照している場合、その式によって [自由変数](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables) が生じることがあります。
   ClickHouse はあらゆる識別子を可能な限り最も近いスコープで解決するため、名前の衝突があると、自由変数が意図しないエンティティを参照したり、相関サブクエリにつながったりする場合があります。
-  式中の識別子解決をより予測しやすくするには、使用するすべての識別子を束縛した [ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda) として CSE を定義することを推奨します (これは [アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) が有効な場合にのみ可能です) 。
+  式中の識別子解決をより予測しやすくするには、使用するすべての識別子を束縛した [ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda) として CSE を定義することを推奨します。
 </Note>
 
 ### 構文 {#common-scalar-expressions-syntax}
@@ -321,8 +320,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-  再帰 CTE は、バージョン **`24.3`** で導入された [クエリアナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) に依存しています。**`24.3+`** を使用していて **`(UNKNOWN_TABLE)`** または **`(UNSUPPORTED_METHOD)`** 例外が発生する場合は、インスタンス、ロール、またはプロファイルでアナライザが無効になっている可能性があります。アナライザを有効にするには、設定 **`allow_experimental_analyzer`** を有効にするか、**`compatibility`** 設定をより新しいバージョンに更新してください。
-  バージョン `24.8` 以降、アナライザは正式機能となり、設定 `allow_experimental_analyzer` は `enable_analyzer` に名称変更されました。
+  再帰 CTE は、バージョン **`24.3`** で導入された [クエリアナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) に依存しています。クエリアナライザは、そのバージョン以降はデフォルトで有効であり、**`26.9`** 以降は必須です。インスタンス、ロール、またはプロファイルでアナライザが無効になっている古いバージョンでは、再帰 CTE は **`(UNKNOWN_TABLE)`** または **`(UNSUPPORTED_METHOD)`** 例外を送出します。その場合は `enable_analyzer` 設定を有効にするか、アップグレードしてください。
 </Note>
 
 再帰 `WITH` クエリの一般的な形式は、常に非再帰項、続いて `UNION ALL`、その後に再帰項が続く形です。このうち、クエリ自身の出力への参照を含められるのは再帰項だけです。再帰 CTE クエリは次のように実行されます。
@@ -332,9 +330,9 @@ SELECT sum(number) FROM test_table;
    1. 再帰項を評価し、再帰的な自己参照を作業テーブルの現在の内容に置き換えます。再帰項クエリの結果を一時的な中間テーブルに格納します。
    2. 作業テーブルの内容を中間テーブルの内容で置き換え、その後、中間テーブルを空にします。
 
-再帰クエリは通常、階層データや木構造データを扱うために使用されます。たとえば、木の走査を行うクエリを記述できます。
+再帰クエリは通常、階層データや木構造データを扱うために使用されます。たとえば、木構造の走査を行うクエリを記述できます。
 
-**例:** 木の走査
+**例:** 木構造の走査
 
 まず、木構造のテーブルを作成します。
 

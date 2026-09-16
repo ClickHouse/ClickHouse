@@ -613,7 +613,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para aplicar cortocircuito a un JOIN con una condición ON falsa constante, de modo que no se lea el lado que no aporta resultados. previous_value=false permite que `compatibility` con versiones anteriores a la 26.8 restaure el comportamiento anterior (sin cortocircuito)."}]}]} />
 
-Aplica cortocircuito a un `JOIN` cuya condición `ON` se reduce a una constante falsa, sustituyendo por una fuente vacía cada lado de entrada que no puede aportar ninguna fila (ambos lados para `INNER`/`CROSS`/`SEMI` y el lado no preservado para `LEFT`/`RIGHT`), de modo que no se lea el lado que no aporta resultados. Se aplica al analizador (`enable_analyzer = 1`) y a planes no distribuidos.
+Aplica cortocircuito a un `JOIN` cuya condición `ON` se reduce a una constante falsa, sustituyendo por una fuente vacía cada lado de entrada que no puede aportar ninguna fila (ambos lados para `INNER`/`CROSS`/`SEMI` y el lado no preservado para `LEFT`/`RIGHT`), de modo que no se lea el lado que no aporta resultados. Se aplica a planes no distribuidos.
 
 ## query_plan_split_filter {#query_plan_split_filter}
 

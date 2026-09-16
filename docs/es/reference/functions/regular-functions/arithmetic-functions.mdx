@@ -1341,8 +1341,8 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 Introducido en: v20.3.0
 
-Como `modulo`, pero devuelve cero cuando el divisor es cero, en lugar de
-generar una excepción con la función `modulo`.
+Como `modulo`, pero devuelve cero en lugar de una excepción para resultados enteros cuando la operación generaría una
+excepción. Para resultados de coma flotante, un divisor cero produce `NaN`.
 
 **Sintaxis**
 
@@ -1357,11 +1357,12 @@ moduloOrZero(a, b)
 
 **Valor devuelto**
 
-Devuelve el resto de a % b, o `0` si el divisor es `0`.
+Devuelve el resto de `a % b`. Para resultados enteros, devuelve `0` en los casos en que la operación generaría una excepción.
+Para resultados de coma flotante, un divisor cero produce `NaN`.
 
 **Ejemplos**
 
-**Ejemplo de uso**
+**Divisor cero entero**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1369,6 +1370,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**Divisor cero de coma flotante**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

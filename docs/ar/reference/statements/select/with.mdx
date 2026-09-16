@@ -57,7 +57,7 @@ WHERE num IN (SELECT num FROM cte_numbers)
 
 <Note>
   تُعد Materialized CTEs ميزة **تجريبية**.
-  ويتطلب استخدامها تفعيل [المحلّل](/ar/guides/clickhouse/performance-and-monitoring/analyzer) والإعداد `enable_materialized_cte`.
+  ويتطلب استخدامها تفعيل الإعداد `enable_materialized_cte`.
   وإذا كان الإعداد معطّلًا، يتم تجاهل الكلمة المفتاحية `MATERIALIZED`: حيث يُضمَّن CTE في كل موضع إشارة إليه كأي CTE عادي، ويُسجَّل تحذير في السجل.
 </Note>
 
@@ -167,7 +167,6 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ### القيود {#materialized-cte-restrictions}
 
 * **يتطلب إعدادًا تجريبيًا**: يجب تمكين الإعداد `enable_materialized_cte`. وإذا كان معطّلًا، فسيتم تجاهل الكلمة المفتاحية `MATERIALIZED`: إذ تُضمَّن عبارة CTE في كل إشارة إليها كعبارة CTE عادية، ويُسجَّل تحذير.
-* **المحلِّل مطلوب**: لا تعمل تعبيرات الجدول الشائعة المُجَّسد إلا عند تمكين [المحلِّل](/ar/guides/clickhouse/performance-and-monitoring/analyzer) (`enable_analyzer = 1`).
 * **غير مدعوم مع `RECURSIVE`**: لا يُسمح بالجمع بين الكلمتين المفتاحيتين `MATERIALIZED` و`RECURSIVE`، وينتج عن ذلك استثناء `UNSUPPORTED_METHOD`.
 * **عبارات CTE المرتبطة غير مسموح بها**: لا يمكن لتعبير الجدول الشائع المُجَّسد أن تُشير إلى أعمدة من نطاقات الاستعلام الخارجية.
 
@@ -177,9 +176,9 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ويمكن الرجوع إلى التعبيرات القياسية الشائعة في أي موضع ضمن الاستعلام.
 
 <Note>
-  إذا كان التعبير القياسي المشترك يشير إلى شيء غير قيمة حرفية ثابتة، فقد يؤدي ذلك إلى وجود [متغيرات حرة](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
+  إذا كان التعبير القياسي الشائع يشير إلى شيء غير قيمة حرفية ثابتة، فقد يؤدي ذلك إلى وجود [متغيرات حرة](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
   يحلّ ClickHouse أي معرّف ضمن أقرب نطاق ممكن، ما يعني أن المتغيرات الحرة قد تشير إلى كيانات غير متوقعة في حال تعارض الأسماء، أو قد تؤدي إلى استعلام فرعي مترابط.
-  يوصى بتعريف CSE على شكل [دالة لامبدا](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (وذلك ممكن فقط عند تمكين [المحلّل](/ar/guides/clickhouse/performance-and-monitoring/analyzer))، مع ربط جميع المعرّفات المستخدمة، لتحقيق سلوك أكثر قابلية للتنبؤ عند حلّ معرّفات التعبير.
+  يوصى بتعريف CSE على شكل [دالة لامبدا](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda) مع ربط جميع المعرّفات المستخدمة، لتحقيق سلوك أكثر قابلية للتنبؤ عند حلّ معرّفات التعبير.
 </Note>
 
 ### الصيغة {#common-scalar-expressions-syntax}
@@ -321,8 +320,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-  تعتمد تعبيرات CTE التكرارية على [محلل الاستعلام](/ar/guides/clickhouse/performance-and-monitoring/analyzer) الذي طُرح في الإصدار **`24.3`**. إذا كنت تستخدم الإصدار **`24.3+`** وواجهت الاستثناء **`(UNKNOWN_TABLE)`** أو **`(UNSUPPORTED_METHOD)`**، فهذا يشير إلى أن المحلل معطّل على المثيل أو الدور أو ملف التعريف لديك. لتفعيل المحلل، فعِّل الإعداد **`allow_experimental_analyzer`** أو حدِّث إعداد **`compatibility`** إلى إصدار أحدث.
-  واعتبارًا من الإصدار `24.8`، أصبح المحلل معتمدًا بالكامل للاستخدام في بيئات production، وأُعيدت تسمية الإعداد `allow_experimental_analyzer` إلى `enable_analyzer`.
+  تعتمد تعبيرات CTE التكرارية على [محلل الاستعلام](/ar/guides/clickhouse/performance-and-monitoring/analyzer) الذي طُرح في الإصدار **`24.3`**، وهو الإعداد الافتراضي منذ ذلك الإصدار وإلزامي منذ **`26.9`**. في الإصدارات الأقدم التي لا يزال فيها المحلل معطّلًا على المثيل أو الدور أو ملف التعريف، يؤدي CTE تكراري إلى ظهور الاستثناء **`(UNKNOWN_TABLE)`** أو **`(UNSUPPORTED_METHOD)`**؛ فعِّل إعداد `enable_analyzer` هناك أو قم بالترقية.
 </Note>
 
 تكون الصيغة العامة لاستعلام `WITH` التكراري دائمًا على النحو التالي: عبارة غير تكرارية، ثم `UNION ALL`، ثم عبارة تكرارية، ولا يجوز إلا للعبارة التكرارية أن تتضمن مرجعًا إلى مخرجات الاستعلام نفسه. ويُنفَّذ استعلام CTE التكراري كما يلي:

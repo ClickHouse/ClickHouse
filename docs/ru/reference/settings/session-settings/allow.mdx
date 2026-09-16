@@ -144,6 +144,16 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать реализацию `delta-kernel-rs` для чтения таблиц Delta Lake.
 
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка: разрешает создание новой таблицы DeltaLake с помощью delta-kernel-rs или регистрацию существующей таблицы в каталоге."}]}]} />
+
+Разрешает создание новой таблицы DeltaLake с помощью delta-kernel-rs или регистрацию существующей таблицы в каталоге. Создание партиционированной таблицы (`PARTITION BY`) пока не поддерживается. В базе данных `DataLakeCatalog` таблица регистрируется со своей схемой Delta, поэтому объявленные типы ClickHouse, которым соответствует более широкий тип Delta (например, `UInt8` -&gt; `short`, `FixedString(N)` -&gt; `string`), при чтении возвращаются как тип из сопоставления Delta, а не как объявленный.
+
 ## allow_delta_lake_writes {#allow_delta_lake_writes}
 
 <BetaBadge />

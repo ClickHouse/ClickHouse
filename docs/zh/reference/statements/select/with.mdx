@@ -57,7 +57,7 @@ WHERE num IN (SELECT num FROM cte_numbers)
 
 <Note>
   物化 CTE 是一项 **Experimental** 功能。
-  它要求启用 [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer) 以及设置 `enable_materialized_cte`。
+  它要求启用设置 `enable_materialized_cte`。
   如果该设置被禁用，`MATERIALIZED` 关键字将被忽略：CTE 会像普通 CTE 一样在每处引用时被内联，并记录一条警告日志。
 </Note>
 
@@ -167,7 +167,6 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ### 限制 {#materialized-cte-restrictions}
 
 * **需要启用 Experimental 设置**：必须启用设置 `enable_materialized_cte`。如果该设置被禁用，`MATERIALIZED` 关键字将被忽略：该 CTE 会像普通 CTE 一样在每个引用处内联，并记录一条警告日志。
-* **需要启用 analyzer**：物化 CTE 仅在启用 [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer) (`enable_analyzer = 1`) 后才能使用。
 * **不支持与 `RECURSIVE` 一起使用**：不允许同时使用 `MATERIALIZED` 和 `RECURSIVE` 关键字，否则会引发 `UNSUPPORTED_METHOD` 异常。
 * **禁止使用关联 CTE**：物化 CTE 不能引用外层查询作用域中的列。
 
@@ -179,7 +178,7 @@ ClickHouse 允许你在 `WITH` 子句中将任意标量 expression 声明为别�
 <Note>
   如果通用标量表达式引用的不是常量字面量，而是其他内容，则该 expression 可能会引入[自由变量](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables)。
   ClickHouse 会在尽可能最近的作用域中解析任意标识符，这意味着在名称冲突时，自由变量可能会引用到意料之外的实体，或者导致关联子查询。
-  建议将 CSE 定义为 [lambda function](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (仅在启用 [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer) 时可用) ，并绑定所有用到的标识符，以获得更可预测的表达式标识符解析行为。
+  建议将 CSE 定义为 [Lambda 函数](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)，并绑定所有用到的标识符，以获得更可预测的表达式标识符解析行为。
 </Note>
 
 ### 语法 {#common-scalar-expressions-syntax}
@@ -321,8 +320,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-  递归 CTE 依赖于在版本 **`24.3`** 中引入的[查询分析器](/zh/guides/clickhouse/performance-and-monitoring/analyzer)。如果你使用的是 **`24.3+`** 版本并遇到 **`(UNKNOWN_TABLE)`** 或 **`(UNSUPPORTED_METHOD)`** 异常，这说明查询分析器在你的 instance、Role 或 profile 上被禁用了。要启用查询分析器，请开启 **`allow_experimental_analyzer`** 设置，或将 **`compatibility`** 设置更新到更新的版本。
-  从 `24.8` 版本开始，analyzer 已正式升级为生产可用，`allow_experimental_analyzer` 设置也已重命名为 `enable_analyzer`。
+  递归 CTE 依赖于在版本 **`24.3`** 中引入的[查询分析器](/zh/guides/clickhouse/performance-and-monitoring/analyzer)，自该版本起默认启用，并从 **`26.9`** 起强制启用。在实例、角色或 profile 中仍禁用 analyzer 的旧版本上，递归 CTE 会引发 **`(UNKNOWN_TABLE)`** 或 **`(UNSUPPORTED_METHOD)`** 异常；请在相应位置启用 `enable_analyzer` 设置，或进行升级。
 </Note>
 
 递归 `WITH` 查询的一般形式始终为：先是一个非递归项，然后是 `UNION ALL`，最后是一个递归项，其中只有递归项可以包含对查询自身输出的引用。递归 CTE 查询的执行方式如下：

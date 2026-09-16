@@ -144,6 +144,16 @@ S&#39;il est défini sur true, l&#39;utilisateur est autorisé à exécuter des 
 
 Autorise l’utilisation de l’implémentation `delta-kernel-rs` pour lire les tables Delta Lake.
 
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre : permet de créer une nouvelle table DeltaLake à l'aide de delta-kernel-rs ou d'en enregistrer une existante dans un catalog."}]}]} />
+
+Permet de créer une nouvelle table DeltaLake à l&#39;aide de delta-kernel-rs ou d&#39;en enregistrer une existante dans un catalog. La création d&#39;une table partitionnée (`PARTITION BY`) n&#39;est pas encore prise en charge. Dans une base de données `DataLakeCatalog`, la table est enregistrée avec son schéma Delta ; par conséquent, les types ClickHouse déclarés qui correspondent à un type Delta plus large (par exemple `UInt8` -&gt; `short`, `FixedString(N)` -&gt; `string`) sont relus sous la forme du type Delta associé et non du type déclaré.
+
 ## allow_delta_lake_writes {#allow_delta_lake_writes}
 
 <BetaBadge />

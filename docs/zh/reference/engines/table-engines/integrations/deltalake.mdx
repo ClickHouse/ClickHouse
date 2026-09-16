@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 ## 创建 DeltaLake 表 {#create-table}
 
-要创建 DeltaLake 表，该表必须已存在于 S3、GCP 或 Azure 存储中。以下命令不接受用于创建新表的 DDL 参数。
+默认情况下，Delta Lake 表必须已存在于 S3、GCP 或 Azure 存储中，以下命令会在不提供 DDL 列定义的情况下附加到该表。设置 `allow_delta_lake_create_table = 1` 后，对不含 `_delta_log` 的位置执行带显式列定义的 `CREATE TABLE` 会改为通过 `delta-kernel-rs` 写入初始提交以创建新的 Delta Lake 表 (尚不支持创建分区表) ；而在 Unity `DataLakeCatalog` 数据库中，该表还会注册到目录中。
 
 <Tabs>
   <Tab title="S3">

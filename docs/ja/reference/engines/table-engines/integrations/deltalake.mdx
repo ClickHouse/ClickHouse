@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 ## Delta Lake テーブルを作成する {#create-table}
 
-Delta Lake テーブルを作成するには、そのテーブルがあらかじめ S3、GCP、または Azure ストレージ上に存在している必要があります。以下のコマンドでは、新しいテーブルを作成するための DDL パラメータは指定できません。
+デフォルトでは、Delta Lake テーブルはあらかじめ S3、GCP、または Azure ストレージ上に存在している必要があり、以下のコマンドは DDL のカラム定義なしでそのテーブルにアタッチします。`allow_delta_lake_create_table = 1` を設定している場合、`_delta_log` が存在しない場所に対して明示的なカラムを指定した `CREATE TABLE` を実行すると、代わりに `delta-kernel-rs` を通じて初期コミットを書き込むことで新しい Delta Lake テーブルが作成されます (パーティション分割されたテーブルの作成はまだサポートされていません)。また、Unity の `DataLakeCatalog` データベース内では、そのテーブルはカタログにも登録されます。
 
 <Tabs>
   <Tab title="S3">

@@ -2833,7 +2833,7 @@ getSetting(setting_name)
 
 **参数**
 
-* `setting_Name` — 设置名。[`const String`](/zh/reference/data-types/string)
+* `setting_Name` — 设置名称。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -2844,18 +2844,19 @@ getSetting(setting_name)
 **使用示例**
 
 ```sql title=Query
-SELECT getSetting('enable_analyzer');
-SET enable_analyzer = false;
-SELECT getSetting('enable_analyzer');
+SET optimize_move_to_prewhere = false;
+SELECT getSetting('optimize_move_to_prewhere');
+SET optimize_move_to_prewhere = true;
+SELECT getSetting('optimize_move_to_prewhere');
 ```
 
 ```response title=Response
-┌─getSetting('enable_analyzer')─┐
-│ true                          │
-└───────────────────────────────┘
-┌─getSetting('enable_analyzer')─┐
-│ false                         │
-└───────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ false                                   │
+└─────────────────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ true                                    │
+└─────────────────────────────────────────┘
 ```
 
 ## getSettingOrDefault {#getSettingOrDefault}

@@ -800,6 +800,11 @@ TTL 設定に基づいて有効期限が切れた行のみが削除されます�
 `ttl_only_drop_parts` が有効な場合、
 `TTL` 設定に従ってそのパーツ内のすべての行の有効期限が切れていれば、パーツ全体が削除されます。
 
+これは行を削除する TTL にのみ適用されます。カラムの `TTL` はパーツを書き換えることでしか
+適用できないため、この設定が有効な場合でも、有効期限の切れたカラムを消去するマージは
+引き続き割り当てられます。そのようなマージはいずれにせよパーツを書き換えるため、
+その中で有効期限が切れた行も併せて削除されます。
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />

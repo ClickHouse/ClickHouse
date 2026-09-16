@@ -1318,7 +1318,7 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 導入バージョン: v20.3.0
 
-modulo と同様ですが、除数が 0 の場合は、modulo 関数のように例外を返すのではなく、0 を返します。
+modulo と同様ですが、整数の結果において本来であれば例外が発生する場合に、例外ではなく 0 を返します。浮動小数点の結果の場合、除数が 0 だと `NaN` になります。
 
 **構文**
 
@@ -1333,11 +1333,12 @@ moduloOrZero(a, b)
 
 **戻り値**
 
-a % b の剰余を返します。除数が `0` の場合は `0` を返します。
+`a % b` の剰余を返します。整数の結果の場合、本来であれば例外が発生する状況でも `0` を返します。
+浮動小数点の結果の場合、除数が 0 であれば `NaN` になります。
 
 **例**
 
-**使用例**
+**整数で除数が 0 の場合**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1345,6 +1346,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**浮動小数点の 0 除数**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

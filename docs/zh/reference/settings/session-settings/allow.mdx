@@ -144,6 +144,16 @@ Cloud default value: `1`。
 
 允许使用 `delta-kernel-rs` 实现读取 Delta Lake 表。
 
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：允许使用 delta-kernel-rs 创建新的 DeltaLake 表，或将已有表注册到 catalog 中。"}]}]} />
+
+允许使用 delta-kernel-rs 创建新的 DeltaLake 表，或将已有表注册到 catalog 中。目前尚不支持创建分区表 (`PARTITION BY`) 。在 `DataLakeCatalog` 数据库中，表是按其 Delta schema 注册的，因此若声明的 ClickHouse 类型映射到范围更宽的 Delta 类型 (例如 `UInt8` -&gt; `short`、`FixedString(N)` -&gt; `string`) ，读取时得到的是 Delta 映射后的类型，而非所声明的类型。
+
 ## allow_delta_lake_writes {#allow_delta_lake_writes}
 
 <BetaBadge />

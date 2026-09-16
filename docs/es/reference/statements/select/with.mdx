@@ -57,7 +57,7 @@ Esto resulta especialmente útil cuando se hace referencia a la misma CTE varias
 
 <Note>
   Las CTE materializadas son una característica **experimental**.
-  Requieren que el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) y la configuración `enable_materialized_cte` estén habilitados.
+  Requieren que la configuración `enable_materialized_cte` esté habilitada.
   Si la configuración está deshabilitada, se ignora la palabra clave `MATERIALIZED`: la CTE se inserta en línea en cada referencia como una CTE normal y se registra una advertencia.
 </Note>
 
@@ -167,7 +167,6 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ### Restricciones {#materialized-cte-restrictions}
 
 * **Se requiere una configuración experimental**: La configuración `enable_materialized_cte` debe estar habilitada. Si está deshabilitada, se ignora la palabra clave `MATERIALIZED`: el CTE se inserta en línea en cada referencia como un CTE normal y se registra una advertencia.
-* **Se requiere el analizador**: Los CTE materializados solo funcionan con el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) habilitado (`enable_analyzer = 1`).
 * **No compatible con `RECURSIVE`**: No se permite combinar las palabras clave `MATERIALIZED` y `RECURSIVE`, y ello da lugar a una excepción `UNSUPPORTED_METHOD`.
 * **Los CTE correlacionados no están permitidos**: Un CTE materializado no puede hacer referencia a columnas de ámbitos externos de la consulta.
 
@@ -179,7 +178,7 @@ Las expresiones escalares comunes pueden usarse en cualquier parte de la consult
 <Note>
   Si una expresión escalar común hace referencia a algo distinto de un literal constante, puede dar lugar a la presencia de [variables libres](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
   ClickHouse resuelve cualquier identificador en el ámbito más cercano posible, lo que significa que las variables libres pueden hacer referencia a entidades inesperadas en caso de conflictos de nombres o dar lugar a una subconsulta correlacionada.
-  Se recomienda definir CSE como una [función lambda](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (solo es posible con el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) habilitado), vinculando todos los identificadores usados para lograr un comportamiento más predecible en la resolución de los identificadores de la expresión.
+  Se recomienda definir CSE como una [función lambda](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda), vinculando todos los identificadores usados para lograr un comportamiento más predecible en la resolución de los identificadores de la expresión.
 </Note>
 
 ### Sintaxis {#common-scalar-expressions-syntax}
@@ -321,8 +320,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-  Los CTE recursivos dependen del [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer), introducido en la versión **`24.3`**. Si usas la versión **`24.3+`** y aparece una excepción **`(UNKNOWN_TABLE)`** o **`(UNSUPPORTED_METHOD)`**, esto sugiere que el analizador está deshabilitado en tu instancia, rol o perfil. Para activar el analizador, habilita la configuración **`allow_experimental_analyzer`** o actualiza la configuración **`compatibility`** a una versión más reciente.
-  A partir de la versión `24.8`, el analizador se ha promovido completamente a producción, y la configuración `allow_experimental_analyzer` ha pasado a llamarse `enable_analyzer`.
+  Los CTE recursivos dependen del [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer), introducido en la versión **`24.3`**, que es el predeterminado desde esa versión y obligatorio desde la **`26.9`**. En versiones anteriores en las que el analizador siga deshabilitado en la instancia, el rol o el perfil, un CTE recursivo genera una excepción **`(UNKNOWN_TABLE)`** o **`(UNSUPPORTED_METHOD)`**; habilita allí la configuración `enable_analyzer` o actualiza la versión.
 </Note>
 
 La forma general de una consulta `WITH` recursiva consta siempre de un término no recursivo, luego `UNION ALL` y, después, un término recursivo, donde solo el término recursivo puede contener una referencia a la propia salida de la consulta. Una consulta CTE recursiva se ejecuta de la siguiente manera:

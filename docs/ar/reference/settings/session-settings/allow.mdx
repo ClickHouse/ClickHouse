@@ -144,6 +144,16 @@ Cloud default value: `1`.
 
 يسمح باستخدام تنفيذ `delta-kernel-rs` لقراءة جداول Delta Lake.
 
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."}]}]} />
+
+يسمح بإنشاء جدول DeltaLake جديد باستخدام delta-kernel-rs أو بتسجيل جدول موجود في catalog. أما إنشاء جدول مقسَّم (`PARTITION BY`) فغير مدعوم بعد. في قاعدة بيانات `DataLakeCatalog`، يُسجَّل الجدول بمخطط Delta الخاص به، لذا فإن أنواع ClickHouse المعلنة التي تُقابل نوع Delta أوسع (مثل `UInt8` -&gt; `short`، و`FixedString(N)` -&gt; `string`) تُقرأ بالنوع المقابل في Delta لا بالنوع المعلن.
+
 ## allow_delta_lake_writes {#allow_delta_lake_writes}
 
 <BetaBadge />

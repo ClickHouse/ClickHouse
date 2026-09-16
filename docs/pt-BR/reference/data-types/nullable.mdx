@@ -31,7 +31,7 @@ Para armazenar valores do tipo `Nullable` em uma coluna de tabela, o ClickHouse 
 
 ## Encontrando NULL {#finding-null}
 
-É possível localizar valores `NULL` em uma coluna usando a subcoluna `null`, sem precisar ler a coluna inteira. Ela retorna `1` se o valor correspondente for `NULL` e `0`, caso contrário.
+É possível localizar valores `NULL` em uma coluna usando a subcoluna `null`, sem precisar ler a coluna inteira. Ela retorna o byte armazenado da máscara `NULL`: `0` se o valor correspondente estiver presente e um byte diferente de zero, canonicamente `1`, se for `NULL`. Use `isNull` quando for necessário obter estritamente `0` ou `1`.
 
 **Exemplo**
 

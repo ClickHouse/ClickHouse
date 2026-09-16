@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 同じ式に対する複数の `OR LIKE/ILIKE/match` 述語を、単一の `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (純粋な部分文字列 `%needle%` パターン用) または `multiMatchAny` (その他のパターン用。Hyperscan/Vectorscan が許可されている場合) に最適化します。どちらの高速パスも適用できない場合 — たとえば、Hyperscan が無効または利用不可である場合、またはパターンが生の `match` 正規表現である場合、UTF-8 として不正な場合、埋め込み NUL を含む場合、末尾がアンカーされている場合 (エスケープされていない `%` で終わらない場合。Vectorscan は末尾の改行の前で `$` に一致するため、書き換えると filter が広がってしまいます)、あるいは検索対象文字列が `FixedString`/`Enum` である場合 — は、元の `OR` チェーンがそのまま保持されます。これは、RE2 上で結合した `match` のオルタネーションは、元の short-circuit `OR` より一貫して遅いためです。
 
-この最適化は、アナライザ (`enable_analyzer = 1`、デフォルト) を使用している場合にのみ適用されます。古いアナライザ (`enable_analyzer = 0`) では、`OR` チェーンはそのままです。純粋な `LIKE`/`ILIKE`/`match` の `OR` チェーンでは、索引解析を可能にするため、元の式が `indexHint()` 内に保持されます。`LIKE` 以外の分岐を含む混在 `OR` チェーンでは、`LIKE` 以外の分岐にのみ一致する範囲が prune されないよう、意図的に `indexHint()` でラップしません。`multiMatchAny` への書き換えでは、`allow_hyperscan`、`max_hyperscan_regexp_length`、`max_hyperscan_regexp_total_length`、`reject_expensive_hyperscan_regexps` が考慮されます。
+純粋な `LIKE`/`ILIKE`/`match` の `OR` チェーンでは、索引解析を可能にするため、元の式が `indexHint()` 内に保持されます。`LIKE` 以外の分岐を含む混在 `OR` チェーンでは、`LIKE` 以外の分岐にのみ一致する範囲が prune されないよう、意図的に `indexHint()` でラップしません。`multiMatchAny` への書き換えでは、`allow_hyperscan`、`max_hyperscan_regexp_length`、`max_hyperscan_regexp_total_length`、`reject_expensive_hyperscan_regexps` が考慮されます。
 
 チェーンが書き換えられるのは、同じ左辺式を共有する分岐が十分な数あり、その書き換えが short-circuit `OR` 評価より確実に高速になる場合に限られます。`multiSearchAny` 経路では少なくとも `optimize_or_like_chain_min_substrings` 分岐、`multiMatchAny` 経路では少なくとも `optimize_or_like_chain_min_patterns` 分岐が必要です。
 

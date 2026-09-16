@@ -817,6 +817,11 @@ caducado según su configuración de `TTL`.
 Cuando `ttl_only_drop_parts` está habilitado, se elimina la parte completa si todas las
 filas de esa parte han caducado según su configuración de `TTL`.
 
+Esto se aplica únicamente a los TTL que eliminan filas. Un `TTL` de columna solo puede
+aplicarse reescribiendo la parte, por lo que las fusiones que limpian las columnas caducadas
+se siguen asignando cuando esta configuración está habilitada. De todos modos, dicha fusión reescribe
+la parte y, por lo tanto, también elimina las filas que hayan caducado en ella.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milisegundos" default_value="0" />

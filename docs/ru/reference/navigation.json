@@ -742,7 +742,7 @@
             "ru/reference/functions/table-functions/s3Cluster",
             "ru/reference/functions/table-functions/sqlite",
             "ru/reference/functions/table-functions/timeSeriesData",
-            "ru/reference/functions/table-functions/timeSeriesMetrics",
+            "ru/reference/functions/table-functions/timeSeriesMetricFamilies",
             "ru/reference/functions/table-functions/timeSeriesSamples",
             "ru/reference/functions/table-functions/timeSeriesSelector",
             "ru/reference/functions/table-functions/timeSeriesTags",

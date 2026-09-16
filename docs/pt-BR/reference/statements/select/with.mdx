@@ -57,7 +57,7 @@ Isso é especialmente útil quando a mesma CTE é referenciada várias vezes em 
 
 <Note>
   CTEs materializadas são um recurso **experimental**.
-  Elas exigem que o [analisador](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer) e a configuração `enable_materialized_cte` estejam habilitados.
+  Elas exigem que a configuração `enable_materialized_cte` esteja habilitada.
   Se a configuração estiver desabilitada, a palavra-chave `MATERIALIZED` é ignorada: a CTE é incorporada em cada referência como uma CTE comum, e um aviso é registrado no log.
 </Note>
 
@@ -167,7 +167,6 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ### Restrições {#materialized-cte-restrictions}
 
 * **Configuração experimental obrigatória**: A configuração `enable_materialized_cte` deve estar habilitada. Se estiver desabilitada, a palavra-chave `MATERIALIZED` é ignorada: a CTE é incorporada em cada referência como uma CTE comum, e um aviso é registrado no log.
-* **Analisador obrigatório**: CTEs materializadas só funcionam com o [analisador](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer) habilitado (`enable_analyzer = 1`).
 * **Sem suporte a `RECURSIVE`**: Não é permitido combinar as palavras-chave `MATERIALIZED` e `RECURSIVE`, e isso resulta em uma exceção `UNSUPPORTED_METHOD`.
 * **CTEs correlacionadas são proibidas**: Uma CTE materializada não pode referenciar colunas de escopos externos da consulta.
 
@@ -179,7 +178,7 @@ Expressões escalares comuns podem ser referenciadas em qualquer ponto da consul
 <Note>
   Se uma expressão escalar comum fizer referência a algo diferente de um literal constante, ela poderá levar à presença de [variáveis livres](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
   O ClickHouse resolve qualquer identificador no escopo mais próximo possível, o que significa que variáveis livres podem referenciar entidades inesperadas em caso de conflito de nomes ou levar a uma subconsulta correlacionada.
-  Recomenda-se definir a CSE como uma [função lambda](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (possível apenas com o [analisador](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer) habilitado), vinculando todos os identificadores usados para obter um comportamento mais previsível na resolução dos identificadores da expressão.
+  Recomenda-se definir a CSE como uma [função lambda](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda), vinculando todos os identificadores usados para obter um comportamento mais previsível na resolução dos identificadores da expressão.
 </Note>
 
 ### Sintaxe {#common-scalar-expressions-syntax}
@@ -321,8 +320,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-  As CTEs recursivas dependem do [analisador de consultas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer), introduzido na versão **`24.3`**. Se você estiver usando a versão **`24.3+`** e encontrar uma exceção **`(UNKNOWN_TABLE)`** ou **`(UNSUPPORTED_METHOD)`**, isso sugere que o analisador está desabilitado na sua instância, role ou perfil. Para ativar o analisador, habilite a configuração **`allow_experimental_analyzer`** ou atualize a configuração **`compatibility`** para uma versão mais recente.
-  A partir da versão `24.8`, o analisador foi oficialmente promovido para produção, e a configuração `allow_experimental_analyzer` foi renomeada para `enable_analyzer`.
+  As CTEs recursivas dependem do [analisador de consultas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer), introduzido na versão **`24.3`**, que é o padrão desde essa versão e obrigatório desde **`26.9`**. Em versões mais antigas, se o analisador ainda estiver desabilitado na instância, na função ou no perfil, uma CTE recursiva gera uma exceção **`(UNKNOWN_TABLE)`** ou **`(UNSUPPORTED_METHOD)`**; nesses casos, habilite a configuração `enable_analyzer` ou faça o upgrade.
 </Note>
 
 A forma geral de uma consulta `WITH` recursiva é sempre: um termo não recursivo, depois `UNION ALL` e, em seguida, um termo recursivo, em que apenas o termo recursivo pode conter uma referência à própria saída da consulta. A consulta de CTE recursiva é executada da seguinte forma:

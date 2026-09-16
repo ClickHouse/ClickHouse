@@ -51,7 +51,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_*",
-      count: 50,
+      count: 51,
       settings: [
         { name: "allow_aggregate_partitions_independently", path: "/allow#allow_aggregate_partitions_independently", default: "1" },
         { name: "allow_archive_path_syntax", path: "/allow#allow_archive_path_syntax", default: "1" },
@@ -67,6 +67,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_database_unity_catalog", path: "/allow#allow_database_unity_catalog", default: "0" },
         { name: "allow_ddl", path: "/allow#allow_ddl", default: "1" },
         { name: "allow_delta_kernel_rs", path: "/allow#allow_delta_kernel_rs", default: "1" },
+        { name: "allow_delta_lake_create_table", path: "/allow#allow_delta_lake_create_table", default: "0" },
         { name: "allow_delta_lake_writes", path: "/allow#allow_delta_lake_writes", default: "0" },
         { name: "allow_distinct_partitions_independently", path: "/allow#allow_distinct_partitions_independently", default: "1" },
         { name: "allow_distributed_ddl", path: "/allow#allow_distributed_ddl", default: "1" },
@@ -583,8 +584,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "delta_lake_*",
-      count: 10,
+      count: 11,
       settings: [
+        { name: "delta_lake_accurate_write_cast", path: "/delta-lake#delta_lake_accurate_write_cast", default: "1" },
         { name: "delta_lake_enable_engine_predicate", path: "/delta-lake#delta_lake_enable_engine_predicate", default: "1" },
         { name: "delta_lake_enable_expression_visitor_logging", path: "/delta-lake#delta_lake_enable_expression_visitor_logging", default: "0" },
         { name: "delta_lake_insert_max_bytes_in_data_file", path: "/delta-lake#delta_lake_insert_max_bytes_in_data_file", default: "1073741824" },
@@ -2978,9 +2980,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "validate_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "validate_enum_literals_in_operators", path: "/validate#validate_enum_literals_in_operators", default: "0" },
+        { name: "validate_group_by_all_key_types", path: "/validate#validate_group_by_all_key_types", default: "1" },
         { name: "validate_mutation_query", path: "/validate#validate_mutation_query", default: "1" },
         { name: "validate_polygons", path: "/validate#validate_polygons", default: "1" }
       ],
@@ -3178,17 +3181,48 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     allow_database_glue_catalog: ["allow_experimental_database_glue_catalog"],
     allow_database_iceberg: ["allow_experimental_database_iceberg"],
     allow_database_unity_catalog: ["allow_experimental_database_unity_catalog"],
+    allow_delta_kernel_rs: ["allow_experimental_delta_kernel_rs"],
     allow_delta_lake_writes: ["allow_experimental_delta_lake_writes"],
+    allow_experimental_analyzer: ["enable_analyzer"],
+    allow_experimental_parallel_reading_from_replicas: ["enable_parallel_replicas"],
     allow_geo_types_in_iceberg: ["allow_experimental_geo_types_in_iceberg"],
+    allow_insert_into_iceberg: ["allow_experimental_insert_into_iceberg"],
     allow_join_right_table_sorting: ["allow_experimental_join_right_table_sorting"],
     allow_kafka_offsets_storage_in_keeper: ["allow_experimental_kafka_offsets_storage_in_keeper"],
+    allow_statistics: ["allow_experimental_statistics"],
+    allow_statistics_optimize: ["allow_statistic_optimize"],
     allow_url_wildcard_from_index_pages: ["allow_experimental_url_wildcard_from_index_pages"],
+    alter_sync: ["replication_alter_partitions_sync"],
+    async_insert_busy_timeout_max_ms: ["async_insert_busy_timeout_ms"],
+    distributed_background_insert_batch: ["distributed_directory_monitor_batch_inserts"],
+    distributed_background_insert_max_sleep_time_ms: ["distributed_directory_monitor_max_sleep_time_ms"],
+    distributed_background_insert_sleep_time_ms: ["distributed_directory_monitor_sleep_time_ms"],
+    distributed_background_insert_split_batch_on_failure: ["distributed_directory_monitor_split_batch_on_failure"],
+    distributed_background_insert_timeout: ["insert_distributed_timeout"],
+    distributed_foreground_insert: ["insert_distributed_sync"],
+    enable_full_text_index: ["allow_experimental_full_text_index"],
     enable_funnel_functions: ["allow_experimental_funnel_functions"],
     enable_json_lazy_type_hints: ["allow_experimental_json_lazy_type_hints"],
+    enable_lightweight_delete: ["allow_experimental_lightweight_delete"],
+    enable_lightweight_update: ["allow_experimental_lightweight_update"],
     enable_materialized_postgresql_table: ["allow_experimental_materialized_postgresql_table"],
     enable_nullable_tuple_type: ["allow_experimental_nullable_tuple_type"],
-    enable_trino_dialect: ["allow_experimental_trino_dialect"],
-    enable_unique_key: ["allow_experimental_unique_key"]
+    enable_time_series_aggregate_functions: ["allow_experimental_ts_to_grid_aggregate_function", "allow_experimental_time_series_aggregate_functions"],
+    enable_time_series_table: ["allow_experimental_time_series_table"],
+    enable_time_time64_type: ["allow_experimental_time_time64_type"],
+    enable_unique_key: ["allow_experimental_unique_key"],
+    extract_key_value_pairs_max_pairs_per_row: ["extract_kvp_max_pairs_per_row"],
+    filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit: ["skip_download_if_exceeds_query_cache"],
+    iceberg_manifest_decode_concurrency: ["iceberg_delete_manifest_decode_concurrency"],
+    max_insert_block_size: ["max_insert_block_size_rows"],
+    merge_tree_min_bytes_per_task_for_remote_reading: ["filesystem_prefetch_min_bytes_for_single_read_task"],
+    optimize_use_projections: ["allow_experimental_projection_optimization"],
+    os_threads_nice_value_query: ["os_thread_priority"],
+    promql_evaluation_time: ["evaluation_time"],
+    query_plan_reuse_storage_ordering_for_window_functions: ["optimize_read_in_window_order"],
+    text_index_lazy_intersection_density_threshold: ["text_index_density_threshold"],
+    use_partition_pruning: ["use_partition_key"],
+    vector_search_index_fetch_multiplier: ["vector_search_postfilter_multiplier"]
   }))
   const [allGroupKeys] = useState(() => {
     const collectGroupKeys = (items, path = []) =>
@@ -3371,13 +3405,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} {matchingCount === 1 ? "إعداد مطابق" : "إعدادات مطابقة"}
+            {matchingCount} مطابقة {matchingCount === 1 ? "إعداد" : "إعدادات"}
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/session-settings</div>
+          <div className="min-w-max font-semibold">/session-إعدادات</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "طي الكل" : "توسيع الكل"}

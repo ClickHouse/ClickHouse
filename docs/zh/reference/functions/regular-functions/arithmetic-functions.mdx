@@ -1315,8 +1315,8 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 首次引入版本：v20.3.0
 
-与 modulo 类似，但当除数为零时会返回零，而不是像
-modulo 函数那样抛出异常。
+与 modulo 类似，但对于整数结果，当操作原本会引发
+异常时会返回零而不是异常。对于浮点结果，零除数会产生 `NaN`。
 
 **语法**
 
@@ -1331,11 +1331,12 @@ moduloOrZero(a, b)
 
 **返回值**
 
-返回 a % b 的余数；当除数为 `0` 时，返回 `0`。
+返回 `a % b` 的余数。对于整数结果，如果该操作原本会引发异常，则返回 `0`。
+对于浮点结果，除数为零时会产生 `NaN`。
 
 **示例**
 
-**使用示例**
+**整数除数为零**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1343,6 +1344,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**浮点零除数**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

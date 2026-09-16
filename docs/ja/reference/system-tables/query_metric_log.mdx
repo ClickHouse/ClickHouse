@@ -133,6 +133,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg イテレーターから返されたオブジェクト情報の総数。
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ja/reference/data-types/int-uint)) — パーティション化と sequence number によって適合と判断された組のうち、minmax 解析で受理された data files と position delete file の組の総数。
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ja/reference/data-types/int-uint)) — パーティション化と sequence number によって適合と判断された組のうち、minmax 解析で受理された data files と position delete file の組の総数。
+* `ProfileEvent_DeltaLakeDeltaLogExistenceChecks` ([UInt64](/ja/reference/data-types/int-uint)) — Delta Lake の `_delta_log` が存在するかを確認するために実行されたオブジェクトストレージの一覧取得回数 (例: CREATE TABLE 中)。
 * `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/ja/reference/data-types/int-uint)) — OneLake カタログが Entra ID のリフレッシュトークン付与を通じて発行したアクセストークンリクエスト数。
 * `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/ja/reference/data-types/int-uint)) — OneLake カタログが Entra ID のリフレッシュトークン付与を通じて発行した、失敗したアクセストークンリクエスト数 (期限切れまたは取り消されたリフレッシュトークンを含む) 。
 * `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — OneLake カタログで Entra ID のリフレッシュトークン付与を通じてアクセストークンを要求するのに費やした合計時間。
@@ -1179,7 +1180,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheObjectStorageWriteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの書き込みバッファに関するイベント。オブジェクトストレージへの書き込みに費やした時間
 * `ProfileEvent_DistrCacheObjectStorageWriteBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの書き込みバッファに関するイベント。オブジェクトストレージに書き込まれたバイト数
 * `ProfileEvent_DistrCacheBackgroundWrites` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの書き込みバッファに関するイベント。バックグラウンドスレッドで実行された cache 書き込み数 (バックグラウンド書き込みスロットを取得した場合)
-* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの書き込みバッファに関するイベント。呼び出し元スレッドでインライン実行された cache 書き込み数 (空きのバックグラウンド書き込みスロットがなかった場合、または一時データへの書き込みの場合)
+* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの書き込みバッファに関するイベント。呼び出し元スレッドでインライン実行された cache 書き込み数 (オブジェクトストレージへの書き込みと並行できない一時データへの書き込み)
+* `ProfileEvent_DistrCacheSkippedWrites` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュの書き込みバッファに関するイベント。空きのバックグラウンド書き込みスロットがない (`distributed_cache_write_pool_size` サーバー設定で定義された上限に達した) 、またはバックグラウンド書き込みを開始できなかったために、ライトスルーcache への書き込みをスキップした書き込みバッファ数。データは引き続きオブジェクトストレージに書き込まれます
 * `ProfileEvent_DistrCacheGetResponseMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュのクライアントイベント。分散キャッシュからのレスポンス待機に費やした時間
 * `ProfileEvent_DistrCacheConnectErrors` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュのクライアントイベント。リクエスト作成前に分散キャッシュサーバーへの接続に失敗した回数 (試行ごとにカウントされる DistrCacheUnsuccessfulConnectAttempts とは異なり、すべての接続試行が尽きた後にリクエストごとに 1 回カウントされます) 。プール内の空き接続の待機中にタイムアウトした場合もここでカウントされます。リクエスト作成中の再接続失敗は、代わりに DistrCacheMakeRequestErrors でカウントされます
 * `ProfileEvent_DistrCacheMakeRequestErrors` ([UInt64](/ja/reference/data-types/int-uint)) — 分散キャッシュのクライアントイベント。リクエスト作成時に発生した分散キャッシュのエラー数

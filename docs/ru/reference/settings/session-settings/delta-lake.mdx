@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="delta_lake_enable_engine_predicate">
-  ## delta_lake_enable_engine_predicate
-</div>
+## delta_lake_accurate_write_cast {#delta_lake_accurate_write_cast}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка: приводить записываемые значения к типу из write-схемы Delta с помощью точного приведения, которое генерирует исключение, если значение не укладывается в целевой тип, вместо молчаливого усечения; при значении `compatibility` ниже 26.9 используется обычное приведение, не генерирующее исключение."}]}]} />
+
+При записи в таблицу DeltaLake приводить каждое значение к типу из write-схемы Delta с помощью точного приведения, которое генерирует исключение, если значение не укладывается в целевой тип, вместо обычного приведения, молча усекающего его (например, `300`, записываемое в столбец Delta типа `byte`). Установите значение `false` или задайте настройку `compatibility` ниже 26.9, чтобы использовалось обычное приведение без генерации исключения.
+
+## delta_lake_enable_engine_predicate {#delta_lake_enable_engine_predicate}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +29,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Включает внутренний механизм отсечения данных в delta-kernel.
 
-<div id="delta_lake_enable_expression_visitor_logging">
-  ## delta_lake_enable_expression_visitor_logging
-</div>
+## delta_lake_enable_expression_visitor_logging {#delta_lake_enable_expression_visitor_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +37,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Включает логирование уровня Test для визитора выражений DeltaLake. Эти журналы могут быть слишком подробными даже для тестового логирования.
 
-<div id="delta_lake_insert_max_bytes_in_data_file">
-  ## delta_lake_insert_max_bytes_in_data_file
-</div>
+## delta_lake_insert_max_bytes_in_data_file {#delta_lake_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -43,9 +45,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Определяет предельный размер в байтах для одного файла данных, создаваемого при вставке в delta lake.
 
-<div id="delta_lake_insert_max_rows_in_data_file">
-  ## delta_lake_insert_max_rows_in_data_file
-</div>
+## delta_lake_insert_max_rows_in_data_file {#delta_lake_insert_max_rows_in_data_file}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
 
@@ -53,9 +53,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Определяет ограничение на количество строк в одном файле данных, вставляемом в Delta Lake.
 
-<div id="delta_lake_log_metadata">
-  ## delta_lake_log_metadata
-</div>
+## delta_lake_log_metadata {#delta_lake_log_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -63,9 +61,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Включает запись файлов метаданных Delta Lake в системную таблицу.
 
-<div id="delta_lake_reload_schema_for_consistency">
-  ## delta_lake_reload_schema_for_consistency
-</div>
+## delta_lake_reload_schema_for_consistency {#delta_lake_reload_schema_for_consistency}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,9 +70,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Если параметр включен, схема перед выполнением каждого запроса повторно загружается из метаданных DeltaLake, чтобы обеспечить
 согласованность между схемой, используемой при анализе запроса, и схемой, используемой во время выполнения.
 
-<div id="delta_lake_snapshot_end_version">
-  ## delta_lake_snapshot_end_version
-</div>
+## delta_lake_snapshot_end_version {#delta_lake_snapshot_end_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -84,9 +78,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Конечная версия снимка Delta Lake, которую нужно прочитать. Значение -1 означает чтение последней версии (значение 0 является допустимой версией снимка).
 
-<div id="delta_lake_snapshot_start_version">
-  ## delta_lake_snapshot_start_version
-</div>
+## delta_lake_snapshot_start_version {#delta_lake_snapshot_start_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -94,9 +86,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Начальная версия снимка Delta Lake, который нужно прочитать. Значение -1 означает чтение последней версии (значение 0 является допустимой версией снимка).
 
-<div id="delta_lake_snapshot_version">
-  ## delta_lake_snapshot_version
-</div>
+## delta_lake_snapshot_version {#delta_lake_snapshot_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -104,9 +94,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Версия снимка Delta Lake для чтения. Значение -1 означает чтение последней версии (значение 0 — допустимая версия снимка).
 
-<div id="delta_lake_throw_on_engine_predicate_error">
-  ## delta_lake_throw_on_engine_predicate_error
-</div>
+## delta_lake_throw_on_engine_predicate_error {#delta_lake_throw_on_engine_predicate_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

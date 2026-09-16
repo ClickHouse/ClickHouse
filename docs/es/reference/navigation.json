@@ -742,7 +742,7 @@
             "es/reference/functions/table-functions/s3Cluster",
             "es/reference/functions/table-functions/sqlite",
             "es/reference/functions/table-functions/timeSeriesData",
-            "es/reference/functions/table-functions/timeSeriesMetrics",
+            "es/reference/functions/table-functions/timeSeriesMetricFamilies",
             "es/reference/functions/table-functions/timeSeriesSamples",
             "es/reference/functions/table-functions/timeSeriesSelector",
             "es/reference/functions/table-functions/timeSeriesTags",

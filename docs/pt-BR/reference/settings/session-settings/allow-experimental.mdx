@@ -20,9 +20,11 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Ativa o analisador e o planejador por padrão."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "A configuração está obsoleta: o analisador é obrigatório e a antiga análise de consultas não é mais compatível. Desabilitá-lo é recusado em vez de ignorado, e a `compatibility` com uma versão anterior à 24.3 não o reverte mais."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Habilita o analisador e o planner por padrão."}]}]} />
 
-Ativa o analisador.
+Obsoleto desde a v26.9: o analisador não pode mais ser desabilitado.
+
+O analisador é a infraestrutura de análise e planejamento de consultas adotada por padrão desde a v24.3. Na v26.9, a antiga análise de consultas foi descontinuada e esta configuração foi congelada em seu único valor compatível, `1`: qualquer tentativa de defini-la como `0` é rejeitada, e a configuração `compatibility` não a reverte mais. Remova `enable_analyzer = 0` de consultas, configurações de sessão, settings profiles e configurações de client. Para comparar o comportamento ou o desempenho de uma consulta com a antiga análise de consultas, use uma versão do ClickHouse anterior à v26.9.
 
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 

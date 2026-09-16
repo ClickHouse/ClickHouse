@@ -29,7 +29,7 @@ Contiene información sobre las trazas de pila de los errores fatales. La tabla 
 * `thread_id` ([UInt64](/es/reference/data-types/int-uint)) — ID del hilo.
 * `query_id` ([String](/es/reference/data-types/string)) — ID de consulta.
 * `query` ([String](/es/reference/data-types/string)) — Texto de la consulta que se estaba ejecutando cuando ocurrió el fallo.
-* `trace` ([Array(UInt64)](/es/reference/data-types/array)) — Traza de pila en el momento del fallo. Cada elemento es una dirección de memoria virtual dentro del proceso del servidor ClickHouse.
+* `trace` ([Array(UInt64)](/es/reference/data-types/array)) — Traza de pila en el momento del fallo. En plataformas ELF, excepto FreeBSD, las direcciones dentro del binary principal de ClickHouse se almacenan como desplazamientos físicos del archivo, y las demás direcciones son direcciones de memoria virtual dentro del proceso del servidor ClickHouse.
 * `trace_full` ([Array(String)](/es/reference/data-types/array)) — Traza de pila en el momento del fallo. Cada elemento contiene un método llamado dentro del proceso del servidor ClickHouse.
 * `fault_address` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Dirección de memoria que causó el fallo.
 * `fault_access_type` ([String](/es/reference/data-types/string)) — Tipo de acceso a memoria que causó el fallo (p. ej., &#39;read&#39;, &#39;write&#39;).

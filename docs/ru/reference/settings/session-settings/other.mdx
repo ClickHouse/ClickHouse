@@ -965,7 +965,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "1"},{"label": "Новая настройка"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "Новая настройка"}]}]} />
 
-Если параметр включен, таблицы MongoDB возвращают ошибку, когда не удается сформировать запрос MongoDB. В противном случае ClickHouse читает всю таблицу и обрабатывает ее локально. Этот параметр не действует, если `allow_experimental_analyzer=0`.
+Если параметр включен, таблицы MongoDB возвращают ошибку, когда не удается сформировать запрос MongoDB. В противном случае ClickHouse читает всю таблицу и обрабатывает ее локально.
 
 ## multiple_joins_try_to_keep_original_names {#multiple_joins_try_to_keep_original_names}
 

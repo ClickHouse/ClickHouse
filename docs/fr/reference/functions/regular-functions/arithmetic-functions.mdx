@@ -1333,10 +1333,10 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 ## moduloOrZero {#moduloOrZero}
 
-Introduit dans : v20.3.0
+Introduit dans : v20.3.0
 
-Comme modulo, mais renvoie zéro lorsque le diviseur vaut zéro, au lieu de lever une
-exception avec la fonction modulo.
+Comme modulo, mais renvoie zéro au lieu d&#39;une exception pour les résultats integer lorsque l&#39;opération lèverait
+sinon une exception. Pour les résultats à virgule flottante, un diviseur nul produit `NaN`.
 
 **Syntaxe**
 
@@ -1351,11 +1351,12 @@ moduloOrZero(a, b)
 
 **Valeur renvoyée**
 
-Renvoie le reste de `a % b`, ou `0` lorsque le diviseur est `0`.
+Renvoie le reste de `a % b`. Pour les résultats integer, renvoie `0` là où l&#39;opération lèverait normalement une exception.
+Pour les résultats en virgule flottante, un diviseur nul produit `NaN`.
 
 **Exemples**
 
-**Exemple d&#39;utilisation**
+**Diviseur entier nul**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1363,6 +1364,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**Diviseur à virgule flottante nul**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

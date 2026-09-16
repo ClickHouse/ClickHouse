@@ -13,7 +13,7 @@ Este motor fornece integração com tabelas [Delta Lake](https://github.com/delt
 
 ## Criar uma tabela DeltaLake {#create-table}
 
-Para criar uma tabela DeltaLake, ela já deve existir no armazenamento S3, GCP ou Azure. Os comandos abaixo não aceitam parâmetros DDL para criar uma nova tabela.
+Por padrão, a tabela Delta Lake já deve existir no armazenamento S3, GCP ou Azure, e os comandos abaixo se conectam a ela sem definições de colunas DDL. Com `allow_delta_lake_create_table = 1`, um `CREATE TABLE` com colunas explícitas em um local que não tenha `_delta_log` cria uma nova tabela Delta Lake gravando o commit inicial por meio de `delta-kernel-rs` (a criação de uma tabela particionada ainda não é compatível) e, dentro de um banco de dados Unity `DataLakeCatalog`, a tabela também é registrada no catálogo.
 
 <Tabs>
   <Tab title="S3">

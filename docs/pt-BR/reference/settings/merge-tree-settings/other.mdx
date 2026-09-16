@@ -817,6 +817,11 @@ expiraram com base em suas configurações de `TTL` são removidas.
 Quando `ttl_only_drop_parts` está habilitado, a parte inteira é removida se todas as
 linhas dessa parte tiverem expirado de acordo com suas configurações de `TTL`.
 
+Isso se aplica apenas aos TTLs que excluem linhas. Um `TTL` de coluna só pode ser
+respeitado com a reescrita da parte, portanto as mesclagens que limpam colunas expiradas
+continuam sendo atribuídas quando esta configuração está habilitada. Essa mesclagem reescreve a parte
+de qualquer forma e, por isso, também remove as linhas que nela expiraram.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milissegundos" default_value="0" />

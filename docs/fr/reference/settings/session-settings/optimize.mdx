@@ -146,7 +146,7 @@ Permet d&#39;extraire des expressions communes de disjonctions dans les expressi
 
 Active ou désactive l’optimisation qui consiste à transformer certaines fonctions en lecture de sous-colonnes. Cela réduit la quantité de données à lire.
 
-Ces fonctions peuvent être transformées :
+Ces fonctions peuvent être transformées :
 
 * [length](/fr/reference/functions/regular-functions/array-functions#length) pour lire la sous-colonne [size0](/fr/reference/data-types/array#array-size).
 * [empty](/fr/reference/functions/regular-functions/array-functions#empty) pour lire la sous-colonne [size0](/fr/reference/data-types/array#array-size).
@@ -156,8 +156,9 @@ Ces fonctions peuvent être transformées :
 * [count](/fr/reference/functions/aggregate-functions/count) pour lire la sous-colonne [null](/fr/reference/data-types/nullable#finding-null).
 * [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) pour lire la sous-colonne [keys](/fr/reference/data-types/map#reading-subcolumns-of-map).
 * [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues) pour lire la sous-colonne [values](/fr/reference/data-types/map#reading-subcolumns-of-map).
+* [has](/fr/reference/functions/regular-functions/array-functions#has) et [notHas](/fr/reference/functions/regular-functions/array-functions#notHas) pour `Map` afin de lire la sous-colonne [keys](/fr/reference/data-types/map#reading-subcolumns-of-map).
 
-Valeurs possibles :
+Valeurs possibles :
 
 * 0 — Optimisation désactivée.
 * 1 — Optimisation activée.

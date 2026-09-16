@@ -142,7 +142,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1"},{"label": "الإعداد مُمكَّن افتراضيًا"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1"},{"label": "الإعداد مُمكَّن افتراضيًا"}]}]} />
 
 يُمكّن هذا الإعداد التحسين أو يعطّله عبر تحويل بعض الدوال بحيث تقرأ الأعمدة الفرعية، مما يقلل كمية البيانات المطلوب قراءتها.
 
@@ -156,11 +156,12 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [count](/ar/reference/functions/aggregate-functions/count) لقراءة العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null).
 * [mapKeys](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) لقراءة العمود الفرعي [keys](/ar/reference/data-types/map#reading-subcolumns-of-map).
 * [mapValues](/ar/reference/functions/regular-functions/tuple-map-functions#mapValues) لقراءة العمود الفرعي [values](/ar/reference/data-types/map#reading-subcolumns-of-map).
+* [has](/ar/reference/functions/regular-functions/array-functions#has) و[notHas](/ar/reference/functions/regular-functions/array-functions#notHas) للنوع `Map` لقراءة العمود الفرعي [keys](/ar/reference/data-types/map#reading-subcolumns-of-map).
 
 القيم الممكنة:
 
 * 0 — التحسين معطّل.
-* 1 — التحسين مُمكَّن.
+* 1 — التحسين مُمكَّن.
 
 ## optimize_inverse_dictionary_lookup {#optimize_inverse_dictionary_lookup}
 

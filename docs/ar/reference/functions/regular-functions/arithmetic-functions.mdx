@@ -1337,12 +1337,12 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 ## moduloOrZero {#moduloOrZero}
 
-استُحدثت في: v20.3.0
+أُضيف في: v20.3.0
 
-تشبه modulo، لكنها تُرجع صفرًا عندما يكون القاسم صفرًا، بدلًا من إرجاع
-استثناء كما في الدالة modulo.
+تشبه modulo، لكنها تُرجع صفرًا بدلًا من استثناء للنتائج الصحيحة عندما كانت العملية ستُطلق
+استثناءً لولا ذلك. أما بالنسبة إلى النتائج ذات الفاصلة العائمة، فإن المقسوم عليه الصفري ينتج `NaN`.
 
-**البنية**
+**الصيغة**
 
 ```sql
 moduloOrZero(a, b)
@@ -1351,15 +1351,16 @@ moduloOrZero(a, b)
 **الوسيطات**
 
 * `a` — المقسوم. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
-* `b` — المقسوم عليه (modulus). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `b` — المقسوم عليه (موديولس). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 
-ترجع باقي قسمة `a % b`، أو `0` إذا كان المقسوم عليه `0`.
+ترجع باقي قسمة `a % b`. بالنسبة إلى النتائج من النوع الصحيح، تُرجع `0` إذا كانت العملية ستُطلق استثناءً لولا ذلك.
+بالنسبة إلى النتائج ذات الفاصلة العائمة، ينتج عن المقسوم عليه الصفري `NaN`.
 
 **أمثلة**
 
-**مثال على الاستخدام**
+**المقسوم عليه الصفري من النوع الصحيح**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1367,6 +1368,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**مقسوم عليه صفري بفاصلة عائمة**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

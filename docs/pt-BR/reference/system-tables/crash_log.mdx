@@ -29,7 +29,7 @@ Contém informações sobre stack traces de erros fatais. A tabela não existe n
 * `thread_id` ([UInt64](/pt-BR/reference/data-types/int-uint)) — ID da thread.
 * `query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta.
 * `query` ([String](/pt-BR/reference/data-types/string)) — Texto da consulta que estava sendo executada quando a falha ocorreu.
-* `trace` ([Array(UInt64)](/pt-BR/reference/data-types/array)) — Stack trace no momento da falha. Cada elemento é um endereço de memória virtual dentro do processo do servidor ClickHouse.
+* `trace` ([Array(UInt64)](/pt-BR/reference/data-types/array)) — Stack trace no momento da falha. Em plataformas ELF, exceto FreeBSD, os endereços dentro do binário principal do ClickHouse são armazenados como offsets físicos de arquivo, e os demais endereços são endereços de memória virtual dentro do processo do servidor ClickHouse.
 * `trace_full` ([Array(String)](/pt-BR/reference/data-types/array)) — Stack trace no momento da falha. Cada elemento contém um método invocado dentro do processo do servidor ClickHouse.
 * `fault_address` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Endereço de memória que causou a falha.
 * `fault_access_type` ([String](/pt-BR/reference/data-types/string)) — Tipo de acesso à memória que causou a falha (por exemplo, &#39;read&#39;, &#39;write&#39;).

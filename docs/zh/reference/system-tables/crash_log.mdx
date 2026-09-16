@@ -29,7 +29,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `thread_id` ([UInt64](/zh/reference/data-types/int-uint)) — 线程 ID。
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询 ID。
 * `query` ([String](/zh/reference/data-types/string)) — 崩溃发生时正在执行的查询文本。
-* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 崩溃发生瞬间的堆栈跟踪。每个元素都是 ClickHouse server 进程中的一个虚拟内存地址。
+* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 崩溃发生瞬间的堆栈跟踪。在 FreeBSD 以外的 ELF 平台上，主 ClickHouse 二进制文件内的地址存储为物理文件偏移量，其他地址则是 ClickHouse server 进程中的虚拟内存地址。
 * `trace_full` ([Array(String)](/zh/reference/data-types/array)) — 崩溃发生瞬间的堆栈跟踪。每个元素都包含 ClickHouse server 进程中的一个被调用方法。
 * `fault_address` ([Nullable(UInt64)](/zh/reference/data-types/nullable)) — 导致故障的内存地址。
 * `fault_access_type` ([String](/zh/reference/data-types/string)) — 导致故障的内存访问类型 (例如 &#39;read&#39;、&#39;write&#39;) 。

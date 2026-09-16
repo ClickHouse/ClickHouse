@@ -774,14 +774,18 @@ tmp&#95; 目录会保留多少秒。不要调低此值，
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-控制在 MergeTree 表中，当某个数据parts内的所有
-行都已根据其 `TTL` 设置过期时，是否直接删除整个数据parts。
+控制在 MergeTree 表中，当某个数据分区片段内的所有
+行都已根据其 `TTL` 设置过期时，是否直接删除整个数据分区片段。
 
 当 `ttl_only_drop_parts` 被禁用时 (默认) ，只会移除那些
 已根据其 `TTL` 设置过期的行。
 
-当 `ttl_only_drop_parts` 被启用时，如果某个数据parts内的所有
-行都已根据其 `TTL` 设置过期，则会删除整个数据parts。
+当 `ttl_only_drop_parts` 被启用时，如果某个数据分区片段内的所有
+行都已根据其 `TTL` 设置过期，则会删除整个数据分区片段。
+
+这仅适用于删除行的 TTL。列级 `TTL` 只能通过重写该 part 来生效，
+因此即使启用了此设置，用于清理过期列的合并仍然会被分配。此类合并
+无论如何都会重写该 part，因而也会移除其中已过期的行。
 
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 

@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="delta_lake_enable_engine_predicate">
-  ## delta_lake_enable_engine_predicate
-</div>
+## delta_lake_accurate_write_cast {#delta_lake_accurate_write_cast}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración: convierte los valores escritos al tipo del esquema de escritura de Delta mediante una conversión precisa que lanza una excepción cuando un valor no cabe en el tipo de destino, en lugar de truncarlo silenciosamente; con `compatibility` inferior a 26.9 se usa la conversión simple, que no lanza excepciones."}]}]} />
+
+Al escribir en una tabla DeltaLake, convierte cada valor al tipo del esquema de escritura de Delta mediante una conversión precisa que lanza una excepción cuando un valor no cabe en el tipo de destino, en lugar de una conversión simple que lo trunca silenciosamente (por ejemplo, `300` escrito en una columna `byte` de Delta). Establézcalo en `false`, o use un valor de `compatibility` inferior a 26.9, para obtener la conversión simple, que no lanza excepciones.
+
+## delta_lake_enable_engine_predicate {#delta_lake_enable_engine_predicate}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +29,7 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Habilita la poda interna de datos de delta-kernel.
 
-<div id="delta_lake_enable_expression_visitor_logging">
-  ## delta_lake_enable_expression_visitor_logging
-</div>
+## delta_lake_enable_expression_visitor_logging {#delta_lake_enable_expression_visitor_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +37,7 @@ Habilita la poda interna de datos de delta-kernel.
 
 Habilita los logs de nivel Test del visitante de expresiones de DeltaLake. Estos logs pueden ser demasiado detallados, incluso para el logging de prueba.
 
-<div id="delta_lake_insert_max_bytes_in_data_file">
-  ## delta_lake_insert_max_bytes_in_data_file
-</div>
+## delta_lake_insert_max_bytes_in_data_file {#delta_lake_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -43,9 +45,7 @@ Habilita los logs de nivel Test del visitante de expresiones de DeltaLake. Estos
 
 Establece un límite de bytes para un único archivo de datos insertado en Delta Lake.
 
-<div id="delta_lake_insert_max_rows_in_data_file">
-  ## delta_lake_insert_max_rows_in_data_file
-</div>
+## delta_lake_insert_max_rows_in_data_file {#delta_lake_insert_max_rows_in_data_file}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
 
@@ -53,9 +53,7 @@ Establece un límite de bytes para un único archivo de datos insertado en Delta
 
 Define el límite de filas para un único archivo de datos insertado en Delta Lake.
 
-<div id="delta_lake_log_metadata">
-  ## delta_lake_log_metadata
-</div>
+## delta_lake_log_metadata {#delta_lake_log_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -63,9 +61,7 @@ Define el límite de filas para un único archivo de datos insertado en Delta La
 
 Habilita el registro de archivos de metadatos de Delta Lake en la tabla del sistema.
 
-<div id="delta_lake_reload_schema_for_consistency">
-  ## delta_lake_reload_schema_for_consistency
-</div>
+## delta_lake_reload_schema_for_consistency {#delta_lake_reload_schema_for_consistency}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,9 +70,7 @@ Habilita el registro de archivos de metadatos de Delta Lake en la tabla del sist
 Si está habilitado, el esquema se vuelve a cargar desde los metadatos de DeltaLake antes de cada ejecución de la consulta para garantizar
 la consistencia entre el esquema utilizado durante el análisis de la consulta y el esquema utilizado durante la ejecución.
 
-<div id="delta_lake_snapshot_end_version">
-  ## delta_lake_snapshot_end_version
-</div>
+## delta_lake_snapshot_end_version {#delta_lake_snapshot_end_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -84,9 +78,7 @@ la consistencia entre el esquema utilizado durante el análisis de la consulta y
 
 Versión final de la instantánea de Delta Lake que se leerá. El valor `-1` significa leer la versión más reciente (el valor `0` es una versión de instantánea válida).
 
-<div id="delta_lake_snapshot_start_version">
-  ## delta_lake_snapshot_start_version
-</div>
+## delta_lake_snapshot_start_version {#delta_lake_snapshot_start_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -94,9 +86,7 @@ Versión final de la instantánea de Delta Lake que se leerá. El valor `-1` sig
 
 Versión inicial de la instantánea de Delta Lake que se leerá. El valor -1 significa que se leerá la versión más reciente (el valor 0 es una versión válida de la instantánea).
 
-<div id="delta_lake_snapshot_version">
-  ## delta_lake_snapshot_version
-</div>
+## delta_lake_snapshot_version {#delta_lake_snapshot_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -104,9 +94,7 @@ Versión inicial de la instantánea de Delta Lake que se leerá. El valor -1 sig
 
 Versión de la instantánea de Delta Lake que se debe leer. El valor -1 significa que se leerá la versión más reciente (el valor 0 es una versión de instantánea válida).
 
-<div id="delta_lake_throw_on_engine_predicate_error">
-  ## delta_lake_throw_on_engine_predicate_error
-</div>
+## delta_lake_throw_on_engine_predicate_error {#delta_lake_throw_on_engine_predicate_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

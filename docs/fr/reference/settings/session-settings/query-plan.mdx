@@ -612,7 +612,7 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de court-circuiter un JOIN dont la condition ON est une constante false, afin de ne pas lire le côté qui ne contribue pas au résultat. previous_value=false permet à `compatibility` avec des versions antérieures à 26.8 de restaurer le comportement précédent (sans court-circuit)."}]}]} />
 
-Court-circuite un `JOIN` dont la condition `ON` est réduite à une constante false en remplaçant par une source vide chaque côté d&#39;entrée qui ne peut contribuer aucune ligne (les deux côtés pour `INNER`/`CROSS`/`SEMI`, le côté non préservé pour `LEFT`/`RIGHT`), afin de ne pas lire le côté qui ne contribue pas au résultat. S&#39;applique à l&#39;analyseur (`enable_analyzer = 1`) et aux plans non distribués.
+Court-circuite un `JOIN` dont la condition `ON` est réduite à une constante false en remplaçant par une source vide chaque côté d&#39;entrée qui ne peut contribuer aucune ligne (les deux côtés pour `INNER`/`CROSS`/`SEMI`, le côté non préservé pour `LEFT`/`RIGHT`), afin de ne pas lire le côté qui ne contribue pas au résultat. S&#39;applique aux plans non distribués.
 
 ## query_plan_split_filter {#query_plan_split_filter}
 

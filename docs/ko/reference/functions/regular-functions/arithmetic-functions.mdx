@@ -1321,8 +1321,8 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 도입 버전: v20.3.0
 
-`modulo`와 유사하지만, 나누는 수가 0이면 `modulo` 함수처럼
-예외가 발생하지 않고 0을 반환합니다.
+`modulo`와 유사하지만, 정수 결과에서 연산이 예외를 발생시킬 상황에서는
+예외 대신 0을 반환합니다. 부동 소수점 결과에서는 제수가 0이면 `NaN`이 반환됩니다.
 
 **구문**
 
@@ -1337,11 +1337,12 @@ moduloOrZero(a, b)
 
 **반환 값**
 
-a % b의 나머지를 반환합니다. 제수가 `0`이면 `0`을 반환합니다.
+`a % b`의 나머지를 반환합니다. 정수 결과에서는 원래라면 예외가 발생할 연산에 대해 `0`을 반환합니다.
+부동소수점 결과에서는 제수가 0이면 `NaN`이 반환됩니다.
 
 **예시**
 
-**사용 예시**
+**정수 제수가 0인 경우**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1349,6 +1350,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**부동소수점 제수가 0인 경우**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

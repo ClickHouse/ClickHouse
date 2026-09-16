@@ -144,6 +144,16 @@ true に設定すると、ユーザーは DDL クエリを実行できます。
 
 Delta Lake テーブルの読み取りに `delta-kernel-rs` 実装を使用できるようにします。
 
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新しい設定: delta-kernel-rs を使用した新しい Delta Lake テーブルの作成、または既存テーブルのカタログへの登録を許可します。"}]}]} />
+
+delta-kernel-rs を使用した新しい Delta Lake テーブルの作成、または既存テーブルのカタログへの登録を許可します。パーティション化されたテーブル (`PARTITION BY`) の作成はまだサポートされていません。`DataLakeCatalog` データベースでは、テーブルは Delta スキーマとして登録されるため、より広い Delta 型にマッピングされる ClickHouse 型を宣言した場合 (例: `UInt8` -&gt; `short`、`FixedString(N)` -&gt; `string`) 、読み出し時には宣言した型ではなく Delta 側でマッピングされた型になります。
+
 ## allow_delta_lake_writes {#allow_delta_lake_writes}
 
 <BetaBadge />

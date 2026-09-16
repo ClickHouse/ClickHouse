@@ -605,7 +605,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "ON 条件が定数 false となる JOIN を短絡評価し、結果に寄与しない側を読み取らないための新しい設定。previous_value=false のため、26.8 より前のバージョンとの `互換性設定` では従来の動作（短絡評価なし）が復元されます。"}]}]} />
 
-`ON` 条件が定数 false に畳み込まれる `JOIN` を短絡評価します。行を生成できない各入力側 (`INNER`/`CROSS`/`SEMI` では両側、`LEFT`/`RIGHT` では保持されない側) を空のソースに置き換えることで、結果に寄与しない側を読み取りません。アナライザ (`enable_analyzer = 1`) および非分散プランに適用されます。
+`ON` 条件が定数 false に畳み込まれる `JOIN` を短絡評価します。行を生成できない各入力側 (`INNER`/`CROSS`/`SEMI` では両側、`LEFT`/`RIGHT` では保持されない側) を空のソースに置き換えることで、結果に寄与しない側を読み取りません。非分散プランに適用されます。
 
 ## query_plan_split_filter {#query_plan_split_filter}
 

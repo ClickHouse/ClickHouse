@@ -16,13 +16,15 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 ## allow_experimental_analyzer {#allow_experimental_analyzer}
 
-**Alias** : `enable_analyzer`
+**Aliases** : `enable_analyzer`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Active l’analyseur et le planificateur par défaut."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Le paramètre est obsolète : l'analyseur est obligatoire et l'ancienne analyse de requête n'est plus prise en charge. Sa désactivation est refusée au lieu d'être ignorée, et `compatibility` avec une version antérieure à 24.3 ne le rétablit plus."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Active l'analyseur et le planner par défaut."}]}]} />
 
-Autorise l’utilisation de l’analyseur.
+Obsolète depuis la v26.9 : l&#39;analyseur ne peut plus être désactivé.
+
+L&#39;analyseur est l&#39;infrastructure d&#39;analyse et de planification des requêtes utilisée par défaut depuis la v24.3. Dans la v26.9, l&#39;ancienne analyse de requête a été dépréciée et ce paramètre a été figé sur sa seule valeur prise en charge, `1` : toute tentative de le définir à `0` est rejetée, et le paramètre `compatibility` ne le rétablit plus. Supprimez `enable_analyzer = 0` de vos requêtes, de vos paramètre de session, de vos settings profile et de vos configurations client. Pour comparer le comportement ou les performances d&#39;une requête avec l&#39;ancienne analyse de requête, utilisez une version de ClickHouse antérieure à la v26.9.
 
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 

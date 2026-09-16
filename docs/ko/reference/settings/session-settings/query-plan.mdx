@@ -606,7 +606,7 @@ JOIN 작업에서 왼쪽 테이블의 순서를 유지하며 계속 읽고, 이�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "ON 조건이 상수 false인 JOIN을 단락 평가하여 결과에 기여하지 않는 쪽을 읽지 않도록 하는 새로운 설정입니다. previous_value=false이므로 26.8 이전 버전의 `compatibility`를 사용하면 기존 동작(단락 평가 없음)으로 복원됩니다."}]}]} />
 
-`ON` 조건이 상수 false로 폴딩되는 `JOIN`에서 행을 생성할 수 없는 각 입력 측(`INNER`/`CROSS`/`SEMI`에서는 양쪽, `LEFT`/`RIGHT`에서는 보존되지 않는 쪽)을 빈 소스로 대체하여 단락 평가합니다. 이렇게 하면 결과에 기여하지 않는 쪽을 읽지 않습니다. 분석기(`enable_analyzer = 1`) 및 비분산 계획에 적용됩니다.
+`ON` 조건이 상수 false로 폴딩되는 `JOIN`에서 행을 생성할 수 없는 각 입력 측(`INNER`/`CROSS`/`SEMI`에서는 양쪽, `LEFT`/`RIGHT`에서는 보존되지 않는 쪽)을 빈 소스로 대체하여 단락 평가합니다. 이렇게 하면 결과에 기여하지 않는 쪽을 읽지 않습니다. 비분산 계획에 적용됩니다.
 
 ## query_plan_split_filter {#query_plan_split_filter}
 

@@ -144,6 +144,16 @@ Se estiver definido como true, o usuário poderá executar consultas DDL.
 
 Permite usar a implementação `delta-kernel-rs` para ler tabelas Delta Lake.
 
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração: permite criar uma nova tabela DeltaLake usando delta-kernel-rs ou registrar uma tabela existente em um catalog."}]}]} />
+
+Permite criar uma nova tabela DeltaLake usando delta-kernel-rs ou registrar uma tabela existente em um catalog. A criação de tabelas particionadas (`PARTITION BY`) ainda não é suportada. Em um banco de dados `DataLakeCatalog`, a tabela é registrada com seu schema Delta, de modo que tipos ClickHouse declarados que mapeiam para um tipo Delta mais amplo (por exemplo, `UInt8` -&gt; `short`, `FixedString(N)` -&gt; `string`) são lidos como o tipo mapeado pelo Delta, e não como o tipo declarado.
+
 ## allow_delta_lake_writes {#allow_delta_lake_writes}
 
 <BetaBadge />

@@ -793,7 +793,7 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Détermine si les parts de données sont entièrement supprimées dans les tables MergeTree lorsque toutes
+Détermine si les parts sont entièrement supprimées dans les tables MergeTree lorsque toutes
 les lignes de cette part ont expiré conformément à leurs paramètres `TTL`.
 
 Lorsque `ttl_only_drop_parts` est désactivé (par défaut), seules les lignes ayant
@@ -801,6 +801,11 @@ expiré selon leurs paramètres `TTL` sont supprimées.
 
 Lorsque `ttl_only_drop_parts` est activé, la part entière est supprimée si toutes
 les lignes de cette part ont expiré conformément à leurs paramètres `TTL`.
+
+Cela ne s&#39;applique qu&#39;aux TTL qui suppriment des lignes. Un `TTL` de colonne ne peut être
+honoré qu&#39;en réécrivant la part ; les fusions qui purgent les colonnes expirées sont
+donc toujours affectées lorsque ce paramètre est activé. Une telle fusion réécrit la part
+de toute façon, et supprime donc également les lignes qui y ont expiré.
 
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 

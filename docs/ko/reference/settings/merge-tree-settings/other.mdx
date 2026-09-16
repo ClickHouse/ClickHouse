@@ -770,6 +770,8 @@ tmp&#95;-directories를 유지하는 기간(초)입니다. 이 값을 낮추지 
 
 `ttl_only_drop_parts`가 활성화된 경우, 해당 파트의 모든 행이 `TTL` 설정에 따라 만료되면 파트 전체가 삭제됩니다.
 
+이는 행을 삭제하는 TTL에만 적용됩니다. 컬럼 `TTL`은 파트를 재작성해야만 적용할 수 있으므로, 이 설정이 활성화되어 있어도 만료된 컬럼을 정리하는 머지는 여전히 할당됩니다. 이러한 머지는 어차피 파트를 재작성하므로, 해당 파트에서 만료된 행도 함께 삭제됩니다.
+
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />

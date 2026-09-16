@@ -609,7 +609,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：当 JOIN 的 ON 条件为常量 false 时进行短路，避免读取无法产生结果的一侧。previous_value=false，因此将 `compatibility` 设为 26.8 之前的版本可恢复原有行为（不进行短路）。"}]}]} />
 
-对于 `ON` 条件可折叠为常量 false 的 `JOIN`，将无法产生行的每个输入侧替换为空源 (`INNER`/`CROSS`/`SEMI` 为两侧，`LEFT`/`RIGHT` 为非保留侧) ，从而避免读取无法产生结果的一侧。适用于 analyzer (`enable_analyzer = 1`) 和非分布式查询计划。
+对于 `ON` 条件可折叠为常量 false 的 `JOIN`，将无法产生行的每个输入侧替换为空源 (`INNER`/`CROSS`/`SEMI` 为两侧，`LEFT`/`RIGHT` 为非保留侧) ，从而避免读取无法产生结果的一侧。适用于非分布式查询计划。
 
 ## query_plan_split_filter {#query_plan_split_filter}
 

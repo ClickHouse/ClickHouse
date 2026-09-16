@@ -31,7 +31,7 @@ Pour stocker des valeurs de type `Nullable` dans une colonne d&#39;une table, Cl
 
 ## Trouver des valeurs NULL {#finding-null}
 
-Il est possible de trouver des valeurs `NULL` dans une colonne en utilisant la sous-colonne `null` sans lire l’intégralité de la colonne. Elle renvoie `1` si la valeur correspondante est `NULL`, et `0` sinon.
+Il est possible de trouver des valeurs `NULL` dans une colonne en utilisant la sous-colonne `null` sans lire l’intégralité de la colonne. Elle renvoie l’octet du masque `NULL` stocké : `0` si la valeur correspondante est présente, et un octet non nul, canoniquement `1`, si elle est `NULL`. Utilisez `isNull` lorsqu’un `0` ou `1` strict est nécessaire.
 
 **Exemple**
 

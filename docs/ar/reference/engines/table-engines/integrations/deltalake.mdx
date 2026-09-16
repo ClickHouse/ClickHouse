@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 ## إنشاء جدول DeltaLake {#create-table}
 
-لإنشاء جدول DeltaLake، يجب أن يكون الجدول موجودًا مسبقًا في S3 أو GCP أو Azure Storage. لا تقبل الأوامر أدناه معلمات DDL لإنشاء جدول جديد.
+افتراضيًا، يجب أن يكون جدول Delta Lake موجودًا مسبقًا في S3 أو GCP أو Azure Storage، وتُرفق به الأوامر أدناه دون تعريفات أعمدة DDL. عند ضبط `allow_delta_lake_create_table = 1`، يؤدي استخدام `CREATE TABLE` بأعمدة صريحة مع موقع لا يحتوي على `_delta_log` إلى إنشاء جدول Delta Lake جديد بدلًا من ذلك، عبر كتابة الالتزام الأولي باستخدام `delta-kernel-rs` (لا يُدعم إنشاء الجداول المقسّمة إلى أقسام بعد). كما يُسجَّل الجدول في الكتالوج عند وجوده داخل قاعدة بيانات Unity `DataLakeCatalog`.
 
 <Tabs>
   <Tab title="S3">
