@@ -360,8 +360,9 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
 bool GraceHashJoin::spillForMemoryReservation()
 {
     std::lock_guard lock(hash_join_mutex);
-    /// Probing uses a stable table and bucket layout. Only the build phase can rehash.
-    if (build_finished || !current_bucket || !hash_join || hash_join->getTotalRowCount() < 2)
+    /// During normal probing the current hash table is immutable. Delayed-bucket loading is a
+    /// second build phase, so reservation recovery may rebucket only while that phase is active.
+    if ((build_finished && !delayed_bucket_loading) || !current_bucket || !hash_join || hash_join->getTotalRowCount() < 2)
         return false;
     rehashCurrentBucket({}, hash_join->getTotalRowCount());
     return true;
@@ -817,9 +818,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
-    {
         prev_keys_num = hash_join->getTotalRowCount();
-    }
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
     {
@@ -830,20 +829,53 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
-        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
         auto right_reader = current_bucket->startJoining();
-        size_t num_rows = 0; /// count rows that were written and rehashed
-        for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
-            num_rows += block.rows();
-            addBlockToJoinImpl(std::move(block));
+            std::lock_guard lock(hash_join_mutex);
+            hash_join.reset();
         }
-        hash_join->onBuildPhaseFinish();
 
-        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
-            bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
+        auto next_hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
+        {
+            std::lock_guard lock(hash_join_mutex);
+            hash_join = std::move(next_hash_join);
+            delayed_bucket_loading = true;
+        }
 
-        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
+        try
+        {
+            size_t num_rows = 0; /// count rows that were written and rehashed
+            for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
+            {
+                num_rows += block.rows();
+                addBlockToJoinImpl(std::move(block));
+            }
+
+            InMemoryJoinPtr loaded_hash_join;
+            size_t loaded_rows = 0;
+            size_t loaded_bytes = 0;
+            {
+                std::lock_guard lock(hash_join_mutex);
+                hash_join->onBuildPhaseFinish();
+                delayed_bucket_loading = false;
+                force_spill = false;
+                loaded_rows = hash_join->getTotalRowCount();
+                loaded_bytes = hash_join->getTotalByteCount();
+                loaded_hash_join = hash_join;
+            }
+
+            LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
+                bucket_idx, loaded_rows, num_rows, ReadableSize(loaded_bytes));
+
+            return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, std::move(loaded_hash_join), left_key_names, right_key_names);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(hash_join_mutex);
+            delayed_bucket_loading = false;
+            force_spill = false;
+            throw;
+        }
     }
 
     LOG_TRACE(log, "Finished loading all {} buckets", buckets.size());
