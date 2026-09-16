@@ -1,104 +1,41 @@
 ---
-title: Resolving the "Too many parts" exception in ClickHouse
-description: Learn how to diagnose and resolve the "Too many parts" exception by batching inserts, using asynchronous inserts, and choosing an appropriate partitioning key.
+title: Resolving "Too Many Parts" error in ClickHouse
+description: Learn how to address the "Too many parts" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.
 date: 2023-03-20
 tags: ['Errors and Exceptions']
 keywords: ['Too many parts']
 ---
 
-## What the exception means {#what-the-exception-means}
+{frontMatter.description}
+{/* truncate */}
 
-ClickHouse throws the `Too many parts` exception when an `INSERT` would exceed a configured limit on the number of active data parts in a `MergeTree` table. The exception often includes the message `Merges are processing significantly slower than inserts`.
+## DB::Exception: Too many parts (Error: 252). Merges are processing significantly slower than inserts {#dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts}
+You reached the `parts_to_throw_insert` setting on a MergeTree table.
 
-Each synchronous `INSERT` creates at least one data part. If an insert contains rows for several partition values, ClickHouse can create one part for each affected partition. Background merges combine smaller parts into larger parts, but if new parts are created faster than ClickHouse can merge them, the number of active parts continues to grow.
-
-The exception can be triggered by either of these settings:
-
-- [`parts_to_throw_insert`](/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert), which limits the number of active parts in a single partition.
-- [`max_parts_in_total`](/reference/settings/merge-tree-settings/max-parts#max_parts_in_total), which limits the total number of active parts in a table.
-
-## Diagnose the cause {#diagnose-the-cause}
-
-Use the following query to find partitions with the most active parts:
+You can monitor the number of active parts for a given table with:
 
 ```sql
-SELECT
-    database,
-    table,
-    partition_id,
-    count() AS active_parts,
-    sum(rows) AS rows,
-    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
-FROM system.parts
-WHERE active
-  AND database = '<database_name>'
-  AND table = '<table_name>'
-GROUP BY
-    database,
-    table,
-    partition_id
-ORDER BY active_parts DESC;
+select count(*) from system.parts where table = '<table_name>' and active == 1
 ```
 
-To check the table-wide limit enforced by `max_parts_in_total`, count all active parts in the table:
+The main requirement about inserting into Clickhouse: you should never send too many `INSERT` statements per second. Ideally - one insert per second / per few seconds.
 
-```sql
-SELECT
-    database,
-    table,
-    count() AS active_parts,
-    sum(rows) AS rows,
-    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
-FROM system.parts
-WHERE active
-  AND database = '<database_name>'
-  AND table = '<table_name>'
-GROUP BY
-    database,
-    table;
-```
+So you can insert 100K rows per second but only with one big bulk `INSERT` statement. When you send hundreds / thousands insert statements per second to *MergeTree table you will always get some errors, and it can not be changed by adjusting some settings.
 
-Common causes include:
+If you can't combine lot of inserts into one big bulk insert statement outside - then you should create Buffer table before *MergeTree table.
 
-- Frequent, small synchronous inserts.
-- A high-cardinality partitioning key.
-- Inserts that contain rows for many partition values.
-- Background merges that cannot keep up because of limited storage throughput, insufficient free disk space, or other resource contention.
+1. Each insert create a folder in  `/var/lib/clickhouse/.../table_name/`. Inside that folder there are 2 files per each column - one with data (compressed), second with index. Data is physically sorted by primary key inside those files. Those folders are called '**parts**'.
 
-You can inspect currently running merges in [`system.merges`](/reference/system-tables/merges) and review the server logs for merge failures.
+2. ClickHouse merges those smaller parts to bigger parts in the background. It chooses parts to merge according to some rules. After merging two (or more) parts one bigger part is being created and old parts are queued to be removed. The settings you list allow finetuning the rules of merging parts. The goal of merging process - is to leave one big part for each partition (or few big parts per partition which are not worth to merge because they are too big). Please check also that [comment](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726).
 
-## Resolve the exception {#resolve-the-exception}
+3. If you create new parts too fast (for example by doing lot of small inserts) and ClickHouse is not able to merge them with proper speed (so new parts come faster than ClickHouse can merge them) - then you get the exception 'Merges are processing significantly slower than inserts'. You can try to increase the limit but you can get the situation then you get filesystem problems caused by the too big number of files / directories (like inodes limit).
 
-### Batch synchronous inserts {#batch-synchronous-inserts}
+4. If you insert to lot of partitions at once the problem is multiplied by the number of partitions affected by insert.
 
-Batch rows on the client before inserting them. Each batch should contain at least 1,000 rows and ideally 10,000–100,000 rows. Aim for approximately one synchronous `INSERT` per second. Fewer, larger inserts create fewer parts and reduce the work required from background merges.
+5. You can try to adjust the behaviour of clickhouse with one of the listed settings, or with max_insert_block_size / max_block_size  / insert_format_max_block_size / max_client_network_bandwidth.  But: the better solution is just to insert data in expected tempo. The expected tempo is: **one insert per 1-2 sec, each insert containing 10K-500K rows of data**.
 
-### Use asynchronous inserts {#use-asynchronous-inserts}
+6. So proper solution to solve "Merges are processing significantly slower than inserts"  is to adjust the number of inserts per second and number of rows in each insert. Use batch insert to combine small inserts into one bigger if data comes row-by-row. Throttle huge inserts if you have too much data to insert at once. Don't change clickhouse internals, unless you really understand well what does they it mean.
 
-If client-side batching is not practical, use [asynchronous inserts](/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) so that ClickHouse can batch incoming data on the server:
+7. If your data comes faster than 500K rows per second - most probably you need more servers in the cluster to serve that traffic, not the adjustment of settings.
 
-```sql
-INSERT INTO <table_name>
-SETTINGS
-    async_insert = 1,
-    wait_for_async_insert = 1
-VALUES (...);
-```
-
-Keep `wait_for_async_insert = 1` so that ClickHouse acknowledges an insert only after the data has been written successfully.
-
-### Review the partitioning key {#review-the-partitioning-key}
-
-Use a low-cardinality partitioning key and avoid partitioning by values such as user or request identifiers. ClickHouse merges parts only within the same partition, so a large number of partitions prevents effective merging. For guidance, see [Choosing a partitioning key](/concepts/best-practices/partitioning-keys).
-
-### Investigate merge bottlenecks {#investigate-merge-bottlenecks}
-
-If inserts are already batched appropriately, check storage performance, available disk space, and competing background tasks. The merge rate depends on the storage system, the table engine, the sorting key, compression, and the available CPU and I/O capacity.
-
-### Avoid increasing part limits as the primary fix {#avoid-increasing-part-limits-as-the-primary-fix}
-
-Increasing `parts_to_throw_insert` or `max_parts_in_total` does not address the cause of excessive part creation. Higher limits can delay the exception, but they can also increase filesystem and metadata overhead and reduce query performance. Change these settings only after identifying the cause and confirming that the system has enough capacity.
-
-## Verify the recovery {#verify-the-recovery}
-
-Run the diagnostic query again after changing the insert strategy or partitioning scheme. The number of active parts should stabilize and then decrease as background merges catch up. Continue monitoring insert failures, free disk space, and [`system.merges`](/reference/system-tables/merges) until the backlog has cleared.
+8. The speed of background merges usually depends on storage speed, used compression settings, the MergeTree option (the merge algorithm - plain merge/aggregating/summing/collapsing, etc.), and the used sorting key.

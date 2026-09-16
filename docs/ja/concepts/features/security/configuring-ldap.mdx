@@ -14,7 +14,9 @@ import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
 ClickHouse は、ClickHouse のデータベースユーザーの認証に LDAP を使用するよう設定できます。このガイドでは、公開されているディレクトリに対して認証を行う LDAP システムと ClickHouse を統合する簡単な例を紹介します。
 
 <Steps>
-  <Step title="ClickHouse で LDAP 接続設定を行う" id="1-configure-ldap-connection-settings-in-clickhouse">
+  <Step>
+    ## ClickHouse で LDAP 接続設定を行う
+
     1. この公開 LDAP サーバーへの接続をテストします。
 
        ```bash
@@ -114,7 +116,9 @@ ClickHouse は、ClickHouse のデータベースユーザーの認証に LDAP �
     4. 設定を反映するために ClickHouse server を再起動します。
   </Step>
 
-  <Step title="ClickHouse データベースのロールと権限を設定する" id="2-configure-clickhouse-database-roles-and-permissions">
+  <Step>
+    ## ClickHouse データベースのロールと権限を設定する
+
     <Note>
       このセクションの手順では、ClickHouse で SQL Access Control and Account Management が有効になっていることを前提としています。有効にするには、[SQL Users and Roles ガイド](/ja/concepts/features/security/access-rights)を参照してください。
     </Note>
@@ -130,7 +134,9 @@ ClickHouse は、ClickHouse のデータベースユーザーの認証に LDAP �
        ```
   </Step>
 
-  <Step title="LDAP 設定をテストする" id="3-test-the-ldap-configuration">
+  <Step>
+    ## LDAP 設定をテストする
+
     1. ClickHouse clientでログインします
        ```bash
        $ clickhouse-client --user einstein --password password

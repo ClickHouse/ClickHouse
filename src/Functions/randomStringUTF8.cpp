@@ -104,7 +104,7 @@ public:
                 return code_point;
             }
 
-            if (UTF8::isSurrogateCodePoint(code_point))
+            if (0xD7FF < code_point && code_point < 0xE000) // this range will not be valid in isValidUTF8
             {
                 /// The distribution will be slightly non-uniform but we don't care.
                 return 0u;

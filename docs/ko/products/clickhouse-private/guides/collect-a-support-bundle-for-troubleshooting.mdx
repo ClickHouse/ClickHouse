@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "문제 해결을 위한 지원 번들 수집"
+sidebarTitle: "지원 번들 수집"
+description: "support-bundle Helm 차트를 사용하여 ClickHouse Private 클러스터에서 진단 데이터를 수집합니다."
+---
+
+`support-bundle` Helm 차트를 사용하여 ClickHouse Private 클러스터에서 진단 데이터를 수집합니다. 생성된 아카이브를 ClickHouse 지원팀과 공유하면 장애 해결 속도를 높일 수 있습니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+이 차트를 사용하려면 클러스터 진단용 kubectl 플러그인인 [Troubleshoot](https://troubleshoot.sh/)가 필요합니다. [Krew](https://krew.sigs.k8s.io/)를 통해 설치하십시오:
+
+```bash
+kubectl krew install support-bundle
+```
+
+또는 다른 설치 방법은 [Troubleshoot 문서](https://troubleshoot.sh/docs/)를 참고하십시오.
+
+<div id="generating-and-running-the-bundle">
+  ## 번들 생성 및 실행
+</div>
+
+이 차트는 클러스터에 어떤 리소스도 설치하지 않습니다. 대신 `kubectl support-bundle` plugin에서 사용하는 `SupportBundle` 매니페스트를 렌더링합니다.
+
+`default-xx-01`이라는 이름의 ClickHouse 클러스터를 기준으로, 차트를 로컬에서 렌더링한 다음 번들을 실행하십시오:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  --set-json='supportBundle.clickhouseClusterName="default-xx-01"' > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+플러그인이 데이터를 수집하고 현재 디렉터리에 `tar.gz` 아카이브를 생성합니다.
+
+<div id="what-is-collected">
+  ## 수집되는 항목
+</div>
+
+이 번들은 두 가지 소스에서 데이터를 수집합니다. 즉, ClickHouse Operator 네임스페이스와 클러스터 네임스페이스(`ns-<cluster-name>` 형식으로 파생됨)입니다.
+
+**ClickHouse Operator** (`supportBundle.collectors.operator.enabled`로 토글):
+
+* 연산자 배포의 컨테이너 로그
+* 연산자 네임스페이스의 Kubernetes 리소스(파드, 서비스, ConfigMaps, 이벤트 등)
+* 연산자 네임스페이스에 설치된 chart의 helm 릴리스 values
+
+**ClickHouse Cluster** (`supportBundle.collectors.clickhouseCluster.enabled`로 토글):
+
+* ClickHouse 서버 컨테이너 로그
+* ClickHouse Keeper 컨테이너 로그
+* 클러스터 네임스페이스의 Kubernetes 리소스
+* 클러스터 네임스페이스에 설치된 chart의 helm 릴리스 values
+* 첫 번째 ClickHouse 서버 파드의 `SELECT version()` 출력
+* 첫 번째 Keeper 파드의 Keeper `mntr` 명령 출력
+
+비밀번호, S3 자격 증명, 클러스터 시크릿, 비밀번호 해시를 포함한 민감한 데이터는 자동으로 마스킹됩니다.
+
+<div id="customizing-collection">
+  ## 수집 설정 사용자 지정
+</div>
+
+기본값은 대부분의 환경에 맞게 조정되어 있지만, 필요에 따라 변경할 수 있습니다. 예를 들어, 최근 24시간의 로그만 수집하고 연산자 데이터는 제외하려면 다음과 같이 설정합니다:
+
+```yaml
+supportBundle:
+  clickhouseClusterName: "default-xx-01"
+  collectors:
+    operator:
+      enabled: false
+    clickhouseCluster:
+      enabled: true
+      logs:
+        maxAge: "24h"
+        maxLines: 50000
+```
+
+사용자 지정 values 파일로 렌더링합니다:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  -f custom-values.yaml > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+ClickHouse Operator가 기본 네임스페이스가 아닌 곳에 설치된 경우, `supportBundle.collectors.operator.namespace`를 이에 맞게 설정하십시오.

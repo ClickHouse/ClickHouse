@@ -1,0 +1,462 @@
+---
+title: '性能指南'
+sidebarTitle: '性能指南'
+slug: /chdb/guides/pandas-performance
+description: 'DataStore 相较于 pandas 的性能优化技巧'
+keywords: ['chdb', 'datastore', 'pandas', 'performance', 'benchmark', 'optimization']
+doc_type: 'guide'
+---
+
+在许多操作中，DataStore 的性能较 pandas 有显著提升。本指南将说明其原因，并介绍如何优化工作负载。
+
+<div id="why-faster">
+  ## DataStore 为何更快
+</div>
+
+<div id="sql-pushdown">
+  ### 1. SQL 下推
+</div>
+
+相关操作会下推到数据源：
+
+```python
+# pandas：加载所有数据，然后在内存中过滤
+df = pd.read_csv("huge.csv")       # 加载 10GB
+df = df[df['year'] == 2024]        # 在 Python 中过滤
+
+# DataStore：在数据源处过滤
+ds = pd.read_csv("huge.csv")       # 仅获取元数据
+ds = ds[ds['year'] == 2024]        # 在 SQL 中过滤
+df = ds.to_df()                    # 仅加载过滤后的数据
+```
+
+<div id="column-pruning">
+  ### 2. 列裁剪
+</div>
+
+仅读取所需的列：
+
+```python
+# DataStore：仅读取 name 和 age 列
+ds = pd.read_parquet("wide_table.parquet")
+result = ds.select('name', 'age').to_df()
+
+# 相比 pandas：会先读取全部 100 列，再进行选择
+```
+
+<div id="lazy-evaluation">
+  ### 3. 惰性求值
+</div>
+
+多个操作会被编译成一个查询：
+
+```python
+# DataStore：一条优化后的 SQL 查询
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# 转换为：
+# SELECT region, SUM(amount) FROM data
+# WHERE amount > 100
+# GROUP BY region ORDER BY sum DESC LIMIT 10
+```
+
+***
+
+<div id="benchmark">
+  ## 基准测试：DataStore 与 pandas
+</div>
+
+<div id="test-environment">
+  ### 测试环境
+</div>
+
+* 数据量：1000 万行
+* 硬件：标准笔记本电脑
+* 文件格式：CSV
+
+<div id="results">
+  ### 结果
+</div>
+
+| 操作            | pandas (ms) | DataStore (ms) | 胜出方                    |
+| ------------- | ----------- | -------------- | ---------------------- |
+| GroupBy 计数    | 347         | 17             | **DataStore (19.93x)** |
+| 组合操作          | 1,535       | 234            | **DataStore (6.56x)**  |
+| 复杂管道          | 2,047       | 380            | **DataStore (5.39x)**  |
+| 多重过滤+排序+Head  | 1,963       | 366            | **DataStore (5.36x)**  |
+| 过滤+排序+Head    | 1,537       | 350            | **DataStore (4.40x)**  |
+| Head/Limit    | 166         | 45             | **DataStore (3.69x)**  |
+| 超复杂 (10+ 操作)  | 1,070       | 338            | **DataStore (3.17x)**  |
+| GroupBy 聚合    | 406         | 141            | **DataStore (2.88x)**  |
+| Select+过滤+排序  | 1,217       | 443            | **DataStore (2.75x)**  |
+| 过滤+GroupBy+排序 | 466         | 184            | **DataStore (2.53x)**  |
+| 过滤+Select+排序  | 1,285       | 533            | **DataStore (2.41x)**  |
+| 排序 (单次)       | 1,742       | 1,197          | **DataStore (1.45x)**  |
+| 过滤 (单次)       | 276         | 526            | 相当                     |
+| 排序 (多次)       | 947         | 1,477          | 相当                     |
+
+<div id="insights">
+  ### 关键结论
+</div>
+
+1. **GroupBy 操作**：DataStore **最高快达 19.93 倍**
+2. **复杂管道**：DataStore **快 5–6 倍** (得益于 SQL 下推)
+3. **简单切片操作**：性能相当，差异可忽略不计
+4. **最佳适用场景**：带有 groupby/聚合的多步操作
+5. **零拷贝**：`to_df()` 没有数据转换开销
+
+***
+
+<div id="when-datastore-wins">
+  ## DataStore 更具优势的场景
+</div>
+
+<div id="heavy-aggregations">
+  ### 重度聚合
+</div>
+
+```python
+# DataStore 表现出色：速度提升 19.93 倍
+result = ds.groupby('category')['amount'].sum()
+```
+
+<div id="complex-pipelines">
+  ### 复杂管道
+</div>
+
+```python
+# DataStore 表现卓越：速度提升 5-6 倍
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean', 'count']})
+    .sort('sum', ascending=False)
+    .head(20)
+)
+```
+
+<div id="large-file-processing">
+  ### 大文件处理
+</div>
+
+```python
+# DataStore：仅加载所需数据
+ds = pd.read_parquet("huge_file.parquet")
+result = ds.filter(ds['id'] == 12345).to_df()  # 快速！
+```
+
+<div id="multiple-column-operations">
+  ### 多列操作
+</div>
+
+```python
+# DataStore：合并为单个 SQL
+ds['total'] = ds['price'] * ds['quantity']
+ds['is_large'] = ds['total'] > 1000
+ds = ds.filter(ds['is_large'])
+```
+
+***
+
+<div id="when-pandas-wins">
+  ## pandas 何时表现相当
+</div>
+
+在大多数场景下，DataStore 的性能与 pandas 相当或更优。不过，在以下几种特定情况下，pandas 可能会稍快一些：
+
+<div id="small-datasets">
+  ### 小型数据集 (少于 1,000 行)
+</div>
+
+```python
+# 对于非常小的数据集，两者的开销都微乎其微
+# 性能差异可忽略不计
+small_df = pd.DataFrame({'x': range(100)})
+```
+
+<div id="simple-slice-operations">
+  ### 基本切片操作
+</div>
+
+```python
+# 不含聚合的单次切片操作
+df = df[df['x'] > 10]  # pandas 略快
+ds = ds[ds['x'] > 10]  # DataStore 性能相当
+```
+
+<div id="custom-python-functions">
+  ### 自定义 Python Lambda 函数
+</div>
+
+```python
+# 自定义 Python 代码需要 pandas
+def complex_function(row):
+    return custom_logic(row)
+
+df['result'] = df.apply(complex_function, axis=1)
+```
+
+<Info>
+  **重要**
+
+  即使在 DataStore “较慢” 的场景下，其性能通常也**与 pandas 不相上下**——对实际使用来说，这种差异几乎可以忽略不计。与这些边缘情况相比，DataStore 在复杂操作中的优势要大得多。
+
+  如需更细粒度地控制执行过程，请参阅[执行引擎配置](/zh/products/chdb/configuration/execution-engine)。
+</Info>
+
+***
+
+<div id="zero-copy">
+  ## 零拷贝 DataFrame 集成
+</div>
+
+DataStore 在读取和写入 pandas DataFrame 时采用 **zero-copy**。这意味着：
+
+```python
+# to_df() 不会复制数据——这是一个零拷贝操作
+result = ds.filter(ds['x'] > 10).to_df()  # 无数据转换开销
+
+# 从 DataFrame 创建 DataStore 同理
+ds = DataStore(existing_df)  # 无数据复制
+```
+
+**关键影响：**
+
+* `to_df()` 几乎没有开销——无需序列化或复制内存
+* 从 pandas DataFrame 创建 DataStore 几乎是瞬时完成的
+* DataStore 与 pandas 视图共享内存
+
+***
+
+<div id="tips">
+  ## 优化建议
+</div>
+
+<div id="use-performance-mode">
+  ### 1. 为重负载启用性能模式
+</div>
+
+对于聚合密集型工作负载，如果你不需要精确的 pandas 输出格式 (行顺序、MultiIndex 列、dtype 校正) ，请启用性能模式以获得最高吞吐量：
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# 现在所有操作均采用 SQL 优先执行，无 pandas 额外开销：
+# - 并行 Parquet 读取（无 preserve_order）
+# - 单条 SQL 聚合（过滤器+groupby 合并为一个查询）
+# - 无行序保留开销
+# - 无 MultiIndex，无 dtype 修正
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean', 'count']})
+)
+```
+
+**预期提升**：对于 `filter+groupby` 工作负载，速度最高可提升 2–8 倍，并降低大型 Parquet 文件的内存占用。
+
+完整详情请参见 [Performance Mode](/zh/products/chdb/configuration/performance-mode)。
+
+<div id="use-parquet">
+  ### 2. 使用 Parquet 代替 CSV
+</div>
+
+```python
+# CSV：较慢，读取整个文件
+ds = pd.read_csv("data.csv")
+
+# Parquet：更快，列式存储，已压缩
+ds = pd.read_parquet("data.parquet")
+
+# 一次转换，长期受益
+df = pd.read_csv("data.csv")
+df.to_parquet("data.parquet")
+```
+
+**预期效果**：读取速度提升 3-10 倍
+
+<div id="filter-early">
+  ### 3. 尽早进行过滤
+</div>
+
+```python
+# 好的做法：先过滤，再聚合
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')  # 尽早缩减数据量
+    .groupby('category')['amount'].sum()
+)
+
+# 次优做法：处理全量数据
+result = (ds
+    .groupby('category')['amount'].sum()
+    .filter(ds['sum'] > 1000)  # 过滤时机太晚
+)
+```
+
+<div id="select-only-needed-columns">
+  ### 4. 仅选择必要的列
+</div>
+
+```python
+# 良好：列裁剪
+result = ds.select('name', 'amount').filter(ds['amount'] > 100)
+
+# 次优：加载所有列
+result = ds.filter(ds['amount'] > 100)  # 加载所有列
+```
+
+<div id="leverage-sql-aggregations">
+  ### 5. 善用 SQL 聚合
+</div>
+
+```python
+# GroupBy 正是 DataStore 的强项所在
+# 最高可提速 20 倍！
+result = ds.groupby('category').agg({
+    'amount': ['sum', 'mean', 'count', 'max'],
+    'quantity': 'sum'
+})
+```
+
+<div id="use-head">
+  ### 6. 使用 head() 而非完整查询
+</div>
+
+```python
+# 如果只需要样本，不要加载整个结果
+result = ds.filter(ds['type'] == 'A').head(100)  # LIMIT 100
+
+# 对于大型结果集，避免使用此方式
+# result = ds.filter(ds['type'] == 'A').to_df()  # 加载所有数据
+```
+
+<div id="batch-operations">
+  ### 7. 批次操作
+</div>
+
+```python
+# 好的做法：单次执行
+result = ds.filter(ds['x'] > 10).filter(ds['y'] < 100).to_df()
+
+# 不好的做法：多次执行
+result1 = ds.filter(ds['x'] > 10).to_df()  # 执行
+result2 = result1[result1['y'] < 100]       # 再次执行
+```
+
+<div id="use-explain">
+  ### 8. 使用 explain() 优化
+</div>
+
+```python
+# 在执行前查看查询计划
+query = ds.filter(...).groupby(...).agg(...)
+query.explain()  # 检查操作是否已下推
+
+# 然后执行
+result = query.to_df()
+```
+
+***
+
+<div id="profiling">
+  ## 分析工作负载性能
+</div>
+
+<div id="enable-profiling">
+  ### 启用性能分析
+</div>
+
+```python
+from chdb.datastore.config import config, get_profiler
+
+config.enable_profiling()
+
+# 运行您的工作负载
+result = your_pipeline()
+
+# 查看报告
+profiler = get_profiler()
+profiler.report()
+```
+
+<div id="identify-bottlenecks">
+  ### 找出瓶颈
+</div>
+
+```text
+性能报告
+==================
+步骤                    耗时        总占比
+----                    --------    -------
+SQL 执行                2.5s        62.5%     <- 瓶颈！
+read_csv                1.2s        30.0%
+其他                    0.3s        7.5%
+```
+
+<div id="compare-approaches">
+  ### 方法对比
+</div>
+
+```python
+# 测试方法 1
+profiler.reset()
+result1 = approach1()
+time1 = profiler.get_steps()[-1]['duration_ms']
+
+# 测试方法 2
+profiler.reset()
+result2 = approach2()
+time2 = profiler.get_steps()[-1]['duration_ms']
+
+print(f"Approach 1: {time1:.0f}ms")
+print(f"Approach 2: {time2:.0f}ms")
+```
+
+***
+
+<div id="summary">
+  ## 最佳实践摘要
+</div>
+
+| 做法            | 影响              |
+| ------------- | --------------- |
+| 启用性能模式        | 聚合工作负载可提速 2-8 倍 |
+| 使用 Parquet 文件 | 读取速度可提升 3-10 倍  |
+| 尽早使用过滤器       | 减少数据处理量         |
+| 只选择所需列        | 减少 I/O 和内存占用    |
+| 使用 GroupBy/聚合 | 最多可提速 20 倍      |
+| 批次操作          | 避免重复执行          |
+| 优化前先做性能分析     | 找出真正的瓶颈         |
+| 使用 explain()  | 验证查询优化效果        |
+| 对样本使用 head()  | 避免全表扫描          |
+
+***
+
+<div id="decision">
+  ## 快速决策指南
+</div>
+
+| 你的工作负载                | 建议               |
+| --------------------- | ---------------- |
+| GroupBy/聚合            | 使用 DataStore     |
+| 复杂的多步骤管道              | 使用 DataStore     |
+| 带过滤条件的大文件             | 使用 DataStore     |
+| 简单切片操作                | 两者均可 (性能相近)      |
+| 自定义 Python lambda 函数  | 使用 pandas 或稍后再转换 |
+| 非常小的数据 (&lt;1,000 行)  | 两者均可 (差异可忽略不计)   |
+
+<Tip>
+  如需自动选择最优执行引擎，请使用 `config.set_execution_engine('auto')` (默认) 。
+  如需在聚合类工作负载上获得最大吞吐量，请使用 `config.use_performance_mode()`。
+  详情请参见[执行引擎](/zh/products/chdb/configuration/execution-engine)和[性能模式](/zh/products/chdb/configuration/performance-mode)。
+</Tip>
