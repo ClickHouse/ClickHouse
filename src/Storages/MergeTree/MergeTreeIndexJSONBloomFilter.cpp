@@ -596,7 +596,12 @@ private:
             for (const auto & [path, type] : typed_path_types)
             {
                 const auto & column = typed_path_columns.at(path);
-                const auto full_type = recursiveRemoveLowCardinality(type);
+                const auto * map_type = typeid_cast<const DataTypeMap *>(type.get());
+                /// Keep the dictionary for repeated string map keys; other nested types still use range expansion.
+                const bool dictionary_map = map_type && map_type->getKeyType()->lowCardinality()
+                    && isString(removeLowCardinality(map_type->getKeyType()))
+                    && isString(removeLowCardinality(map_type->getValueType()));
+                const auto full_type = dictionary_map ? type : recursiveRemoveLowCardinality(type);
                 const auto value_type = removeNullableOrLowCardinalityNullable(full_type);
                 const bool is_dynamic = DB::isDynamic(value_type);
                 auto logical_path = appendPath(logical_prefix, path);
@@ -849,13 +854,14 @@ private:
                 should_index);
     }
 
-    void emitMap(
+    void emitMapRange(
         std::string_view hash_path,
         std::string_view logical_path,
         JSONBloomRole role,
         const DataTypeMap & map_type,
         const ColumnMap & map_column,
-        size_t row,
+        size_t begin_row,
+        size_t end_row,
         bool is_dynamic,
         bool should_index)
     {
@@ -869,17 +875,44 @@ private:
         const auto & value_type = map_type.getValueType();
         const auto & tuple = map_column.getNestedData();
         const auto & keys = tuple.getColumn(0);
-        const auto full_keys = keys.convertToFullColumnIfLowCardinality();
         const auto & values = tuple.getColumn(1);
         const auto & offsets = map_column.getNestedColumn().getOffsets();
-        const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
-        const size_t end = offsets[row];
+        const size_t begin = offsets[static_cast<ssize_t>(begin_row) - 1];
+        const size_t end = offsets[end_row - 1];
+        if (begin == end)
+            return;
         const auto & value_type_info = getTypeInfo(removeJSONBloomWrappers(value_type));
         const auto key_type_name = key_type->getName();
         const auto key_serialization = key_type->getDefaultSerialization();
         WriteBufferFromOwnString encoded_key;
         WriteBufferFromOwnString key_path;
 
+        if (should_index && isString(removeLowCardinality(value_type)))
+        {
+            auto & tokens = path_filters[String(logical_path)];
+            const auto * lc_keys = map_type.getKeyType()->lowCardinality() && isString(key_type)
+                ? &assert_cast<const ColumnLowCardinality &>(keys) : nullptr;
+            const auto full_keys = lc_keys ? lc_keys->getDictionary().getNestedColumn() : keys.convertToFullColumnIfLowCardinality();
+            VectorWithMemoryTracking<std::optional<UInt64>> seeds(lc_keys ? full_keys->size() : 0);
+            for (size_t element = begin; element != end; ++element)
+            {
+                const size_t key_index = lc_keys ? lc_keys->getIndexAt(element) : element;
+                std::optional<UInt64> uncached_seed;
+                auto & seed = lc_keys ? seeds[key_index] : uncached_seed;
+                if (!seed)
+                {
+                    const auto path = appendMapKey(
+                        hash_path, *key_serialization, key_type_name, *full_keys, key_index, encoded_key, key_path, format_settings);
+                    seed = hashToken(path, JSONBloomRole::MapValue, JSONBloomDomain::Typed, value_type_info.name, {});
+                }
+                tokens.values.insert(hashTypedValue(
+                    *seed, *value_type_info.serialization, value_type_info.which, value_type_info.raw_value,
+                    values, element, value_buffer, format_settings));
+            }
+            return;
+        }
+
+        const auto full_keys = keys.convertToFullColumnIfLowCardinality();
         for (size_t element = begin; element != end; ++element)
             emitValue(
                 appendMapKey(hash_path, *key_serialization, key_type_name, *full_keys, element, encoded_key, key_path, format_settings),
@@ -972,6 +1005,16 @@ private:
                 is_dynamic || isDynamic(nested_type), nested_info, index_path);
             return;
         }
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        {
+            if (is_dynamic && !index_path)
+                return;
+            if (is_dynamic)
+                path_filters[String(logical_path)].presence.insert(dynamicComplexPresenceHash(hash_path, role));
+            emitMapRange(hash_path, logical_path, role, *map_type, assert_cast<const ColumnMap &>(column),
+                begin, end, is_dynamic, index_path);
+            return;
+        }
         for (size_t row = begin; row != end; ++row)
             emitValue(hash_path, logical_path, role, type, column, row, is_dynamic, info, index_path);
     }
@@ -1052,7 +1095,7 @@ private:
         {
             if (is_dynamic && !index_path)
                 return;
-            emitMap(hash_path, logical_path, role, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic, index_path);
+            emitMapRange(hash_path, logical_path, role, *map_type, assert_cast<const ColumnMap &>(column), row, row + 1, is_dynamic, index_path);
             return;
         }
 

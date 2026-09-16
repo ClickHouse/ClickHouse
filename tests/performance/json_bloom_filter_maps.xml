@@ -1,0 +1,17 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>CREATE TABLE json_bf_map_source (j JSON(max_dynamic_paths = 0, m Map(LowCardinality(String), LowCardinality(String)))) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE json_bf_map_target AS json_bf_map_source ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_map_target ADD INDEX idx j TYPE jsonbf_v1(false_positive_rate = 0.01) GRANULARITY 3</create_query>
+    <create_query>SYSTEM STOP MERGES json_bf_map_target</create_query>
+    <fill_query>INSERT INTO json_bf_map_source SELECT ('{{"m":' || toJSONString(mapFromArrays(arrayMap(k -> 'flag-' || toString(k), range(8)), arrayMap(k -> 'value-' || toString((number + k) % 100), range(8)))) || '}}')::JSON(max_dynamic_paths = 0, m Map(LowCardinality(String), LowCardinality(String))) FROM numbers(200000)</fill_query>
+
+    <query>INSERT INTO json_bf_map_target SELECT * FROM json_bf_map_source</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_bf_map_target</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_map_source</drop_query>
+</test>
