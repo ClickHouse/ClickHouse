@@ -63,7 +63,7 @@ Upcoming meetups
 * [Open House Munich](https://luma.com/6xorx3qw) - October 6th, 2026
 * [SF Tech Week AI Night](https://luma.com/clickh-zngw) - October 6th, 2026
 * [AI Builders and Databases Stockholm](https://luma.com/clickh-ku2p) - October 8th, 2026
-* [Mountain view Meetup](https://luma.com/clickh-5ms6) - October 8th, 2026
+* [Mountain View Meetup](https://luma.com/clickh-5ms6) - October 8th, 2026
 
 
 Recent meetups
