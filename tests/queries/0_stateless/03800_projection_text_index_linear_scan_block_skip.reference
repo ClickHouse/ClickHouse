@@ -1,0 +1,37 @@
+Test 1: Dense token, narrow query range — block skip effectiveness
+1
+2500
+Test 2: Brute-force AND with two dense multi-block tokens
+1000
+0	1998
+Test 3: linearOr across multiple large blocks with partial overlap
+3000
+4498500
+Test 4: Query range aligned to packed block boundaries
+4
+0
+128
+256
+384
+Test 5: Query range spanning single packed block
+2
+65
+66
+Test 6: Query range covering all packed blocks (no skip)
+600
+0	599
+Test 7: Brute-force AND with narrow-range second token
+3
+1999
+2000
+2001
+Test 8: Mixed embedded + large posting list in OR
+2000
+500
+1500
+Test 9: Three-way AND with different densities across many blocks
+750
+0	2996
+Test 10: Large posting list after merge — block skip still works
+30
+0	2900

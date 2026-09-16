@@ -2824,6 +2824,15 @@ ORDER BY (event_id);
 
 </details>
 
+A [text projection index](/reference/engines/table-engines/mergetree-family/mergetree#projection-index-text) is created with `TYPE text(...)` and requires the experimental setting `allow_experimental_projection_text_index`:
+
+```sql
+SET allow_experimental_projection_text_index = 1;
+
+ALTER TABLE events ADD PROJECTION huge_string_text INDEX huge_string TYPE text(tokenizer = 'splitByNonAlpha');
+ALTER TABLE events MATERIALIZE PROJECTION huge_string_text;
+```
+
 Inserting some sample data:
 
 ```sql

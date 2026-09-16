@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -65,6 +66,15 @@ bool hasMaterializedTextIndex(
         if (index_desc.type == "text" && index_desc.name == text_index_name)
             if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
                 return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
+    }
+
+    /// Also check projection-based text indexes. A projection with a non-null `index` field
+    /// and whose name matches the text index name is a projection text index.
+    for (const auto & projection : storage_snapshot->metadata->getProjections())
+    {
+        if (projection.index && projection.name == text_index_name)
+            if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
+                return loaded_part->getDataPart()->hasProjection(text_index_name);
     }
 
     return false;
