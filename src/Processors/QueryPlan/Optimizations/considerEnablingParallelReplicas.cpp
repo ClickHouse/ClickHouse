@@ -551,6 +551,27 @@ void considerEnablingParallelReplicas(
                     final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
                     if (!final_node_in_replica_plan)
                         return;
+
+                    /// Everything below - `source_reading_step`, `analysis`, the cost the decision was
+                    /// made on - hangs off the match against the probe, and the probe saw its `GLOBAL IN`
+                    /// / `GLOBAL JOIN` temporary tables empty. Join order is chosen from row counts, so
+                    /// filling them can legitimately reorder the rebuilt plan, and `findReadingStep`
+                    /// descends by position: a reordered join hands back a different read. Re-match and
+                    /// decline unless the rebuilt plan lands on the same node, rather than carry a match
+                    /// that describes a plan that no longer exists.
+                    const auto [rematched_node, rematched_hash] = findCorrespondingNodeInSingleNodePlan(
+                        *final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+                    if (rematched_node != corresponding_node_in_single_replica_plan
+                        || rematched_hash != single_replica_plan_node_hash)
+                    {
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "Materializing the subqueries changed which node the parallel replicas plan matches "
+                            "(hash {} against {}). Not enabling parallel replicas reading",
+                            rematched_hash,
+                            single_replica_plan_node_hash);
+                        return;
+                    }
                 }
 
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
