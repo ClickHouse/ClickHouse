@@ -818,6 +818,111 @@ TEST(SimpleMergeSelector, SmallPartsMinCountDoesNotLiftCapForForceMergeEligibleP
     ASSERT_EQ(selected[0].size(), 3);
 }
 
+namespace
+{
+
+/// Eight equal parts of `size` bytes and `age` seconds in a partition reported as nearly full
+/// (2990 of 3000 parts), so the default-on fullness heuristic lowers the effective max-parts
+/// cap to 3 (see SmallPartsMinCountSurvivesLoweredMaxPartsCap for the arithmetic).
+PartsRanges selectEightPartsOnNearlyFullPartition(SimpleMergeSelector::Settings settings, size_t size, time_t age, time_t partition_min_age)
+{
+    PartsRange parts;
+    for (int64_t i = 0; i < 8; ++i)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", i);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    }
+
+    PartitionsStatistics statistics;
+    statistics["all"] = PartitionStatistics{
+        .min_age = partition_min_age,
+        .part_count = 2990,
+        .total_size = 2990ULL * size,
+    };
+    settings.partitions_stats = &statistics;
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    return selector.select({parts}, constraints, nullptr);
+}
+
+}
+
+TEST(SimpleMergeSelector, MinPartsToMergeAtOnceSurvivesLoweredMaxPartsCap)
+{
+    SimpleMergeSelector::Settings settings;
+    /// base = 2 so the 8-part equal-size range passes the base-ratio check in `allow`.
+    settings.base = 2;
+    /// The small-parts gate is disabled: this is about the pre-existing floor alone.
+    settings.small_parts_min_count = 0;
+    settings.min_parts_to_merge_at_once = 8;
+
+    /// Eight fresh 1 MiB parts, nothing else. The lowered cap of 3 is below the floor of 8,
+    /// so without compensation `allow` only ever sees widths 2..3, rejects them all, and the
+    /// partition cannot merge until a force-merge setting fires.
+    PartsRanges selected = selectEightPartsOnNearlyFullPartition(settings, 1024 * 1024, /*age=*/1, /*partition_min_age=*/1);
+
+    ASSERT_EQ(selected.size(), 1)
+        << "the lowered max-parts cap must not make min_parts_to_merge_at_once unattainable";
+    ASSERT_EQ(selected[0].size(), 8);
+}
+
+
+TEST(SimpleMergeSelector, MinPartsToMergeAtOnceCapCompensationStopsAtTheFloor)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 2;
+    settings.min_parts_to_merge_at_once = 5;
+
+    /// Compensation enumerates only up to the floor: the emitted range is exactly 5 parts wide,
+    /// not the 8 parts that the uncapped selector would pick.
+    PartsRanges selected = selectEightPartsOnNearlyFullPartition(settings, 1024 * 1024, /*age=*/1, /*partition_min_age=*/1);
+
+    ASSERT_EQ(selected.size(), 1);
+    ASSERT_EQ(selected[0].size(), 5);
+}
+
+
+TEST(SimpleMergeSelector, MinPartsToMergeAtOnceDoesNotLiftCapForForceMergeEligibleParts)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 2;
+    settings.min_parts_to_merge_at_once = 8;
+    /// Old enough to be force merged.
+    settings.min_age_to_force_merge = 100;
+
+    PartsRanges selected = selectEightPartsOnNearlyFullPartition(settings, 1024 * 1024, /*age=*/200, /*partition_min_age=*/200);
+
+    /// `allow` accepts these ranges through `min_age_to_force_merge` before the floor is ever
+    /// evaluated, so the floor is not what blocks the capped candidate and the cap extension
+    /// must not fire: the force merge stays 3 parts wide on a saturated partition.
+    ASSERT_EQ(selected.size(), 1);
+    ASSERT_EQ(selected[0].size(), 3);
+}
+
+
+TEST(SimpleMergeSelector, MinPartsToMergeAtOnceDoesNotLiftCapForPartitionAgeForceMerge)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 2;
+    settings.min_parts_to_merge_at_once = 8;
+    /// The partition stopped receiving inserts long ago, so every range in it is force merged.
+    settings.min_partition_age_to_force_merge = 3600;
+
+    PartsRanges selected = selectEightPartsOnNearlyFullPartition(settings, 1024 * 1024, /*age=*/7200, /*partition_min_age=*/7200);
+
+    /// Same precedence as for `min_age_to_force_merge`: forcing by partition age waives the
+    /// floor in `allow`, so the lowered cap is kept and the force merge is 3 parts wide.
+    ASSERT_EQ(selected.size(), 1);
+    ASSERT_EQ(selected[0].size(), 3);
+}
+
 TEST(SimpleMergeSelector, ForceMergeByPartitionAge)
 {
     /// A large part with a small one after it is not merged by the base heuristic.

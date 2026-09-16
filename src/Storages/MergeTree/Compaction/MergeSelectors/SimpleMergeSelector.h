@@ -188,12 +188,16 @@ public:
           * enumerates the first all-small, all-fresh candidate of that width even when the
           * heuristic has lowered its cap. This is the only case where the setting can add a
           * candidate; stale or large ranges retain the lowered cap, and so do ranges that
-          * already qualify for force merge (min_age >= min_age_to_force_merge), because for
-          * those `allow` short-circuits before the gate and the cap is not what blocks them.
+          * already qualify for force merge (by min_age_to_force_merge or
+          * min_partition_age_to_force_merge), because for those `allow` short-circuits
+          * before the gate and the cap is not what blocks them. The same compensation
+          * applies to the pre-existing min_parts_to_merge_at_once floor, which `allow`
+          * requires of every range: the lowered cap enumerates up to that width as well.
           * An explicitly configured max_parts_to_merge_at_once still takes precedence: setting
           * it below small_parts_min_count is a contradictory configuration in which small
           * fresh parts merge only once small_parts_max_age (or min_age_to_force_merge) lifts
-          * the gate.
+          * the gate, and setting it below min_parts_to_merge_at_once blocks merges until a
+          * force-merge setting fires.
           *
           * Interaction with the window: enumeration also starts no earlier than
           * parts_count - window_size, so a window_size below small_parts_min_count is
