@@ -614,13 +614,12 @@ private:
         const Field & const_value,
         RPN & out);
     /// The shared core of comparison-atom extraction; the comparison is already in
-    /// `key_expr <op> const` form, and the constant is not NULL or NaN.
+    /// `key_expr <op> const` form. `constant` holds a `ColumnConst` whose value is neither NULL nor NaN.
     void extractComparisonAtomsForKeyArgument(
         const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
         const std::string & func_name,
-        const Field & const_value,
-        const DataTypePtr & const_type,
+        const ColumnWithTypeAndName & constant,
         bool allow_relaxed_pruning,
         RPN & out);
 
@@ -672,8 +671,7 @@ private:
     std::vector<TransformedConstant> transformConstantByMonotonicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
-        const Field & value,
-        const DataTypePtr & type,
+        const ColumnWithTypeAndName & constant,
         std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
     /// This is the same transformation (including the single-key-column behavior of
@@ -684,8 +682,7 @@ private:
     std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
-        const Field & value,
-        const DataTypePtr & type) const;
+        const ColumnWithTypeAndName & constant) const;
 
     /// This is a key-side recipe like `KeyWrappingChain`, except that the computation
     /// is an arbitrary deterministic sub-DAG instead of a chain of single-argument

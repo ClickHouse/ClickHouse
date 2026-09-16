@@ -2128,8 +2128,7 @@ static bool zeroPaddedFixedStringConstantLosesPadding(
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByMonotonicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
-    const Field & value,
-    const DataTypePtr & type,
+    const ColumnWithTypeAndName & constant,
     std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
 {
     String expr_name = node.getColumnName();
@@ -2138,9 +2137,6 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     /// replacement: the case `f(modulo(...))` for totally monotonic `f` is considered
     /// to be rare.
     if (!info.key_subexpr_names.contains(expr_name))
-        return {};
-
-    if (value.isNull())
         return {};
 
     /// With the multiple-key-columns analysis disabled, only the first key-wrapping chain is even
@@ -2156,19 +2152,20 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     std::vector<TransformedConstant> result;
     result.reserve(chains.size());
 
+    const Field value = (*constant.column)[0];
+
     for (const auto & chain : chains)
     {
         /// The chain casts the constant to the argument type of its first function.
         if (!chain.functions_chain.empty() && !chain.functions_chain.front()->getArgumentTypes().empty()
             && zeroPaddedFixedStringConstantLosesPadding(
-                value, type, getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front())))
+                value, constant.type, getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front())))
             continue;
-
-        ColumnPtr const_column = type->createColumnConst(1, value);
 
         ColumnPtr transformed_const_column;
         DataTypePtr transformed_const_type;
-        if (!applyFunctionChainToColumn(const_column, type, chain.functions_chain, transformed_const_column, transformed_const_type))
+        if (!applyFunctionChainToColumn(
+                constant.column, constant.type, chain.functions_chain, transformed_const_column, transformed_const_type))
             continue;
 
         result.push_back(
@@ -2662,8 +2659,7 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
-    const Field & value,
-    const DataTypePtr & type) const
+    const ColumnWithTypeAndName & constant) const
 {
     String expr_name = node.getColumnName();
 
@@ -2673,9 +2669,6 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         if (!info.key_subexpr_names.contains(expr_name))
             return {};
     }
-
-    if (value.isNull())
-        return {};
 
     /// With the multiple-key-columns analysis disabled, only the first key-wrapping sub-DAG is
     /// even extracted; if pushing the constant through it fails, no candidate is produced.
@@ -2688,13 +2681,13 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     std::vector<TransformedConstant> result;
     result.reserve(dags.size());
 
+    const Field value = (*constant.column)[0];
+
     for (auto & candidate : dags)
     {
         /// The DAG casts the constant to its input type.
-        if (zeroPaddedFixedStringConstantLosesPadding(value, type, candidate.dag.input_type))
+        if (zeroPaddedFixedStringConstantLosesPadding(value, constant.type, candidate.dag.input_type))
             continue;
-
-        ColumnPtr const_column = type->createColumnConst(1, value);
 
         /// Conversion to the transform's input type can turn a `String` constant into a NaN.
         /// Inspect that value before applying the key expression.
@@ -2702,7 +2695,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         DataTypePtr transform_input_type;
         bool transform_applied = false;
         if (!convertColumnForDeterministicDag(
-                const_column, type, expr_name, candidate.dag,
+                constant.column, constant.type, expr_name, candidate.dag,
                 transform_input_column, transform_input_type, transform_applied))
             continue;
 
@@ -4756,8 +4749,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
     const Field * rewritten_const_value,
     const DataTypePtr & rewritten_const_type)
 {
-    Field const_value;
-    DataTypePtr const_type;
+    ColumnWithTypeAndName constant;
 
     /// Looking for func(key, const) or func(const, key).
     size_t const_arg_pos = 0;
@@ -4765,16 +4757,24 @@ void KeyCondition::extractBinaryComparisonAtoms(
     {
         /// `like(col, pattern, escape)` rewritten to `like(col, rewritten_pattern)` by the caller:
         /// the key is at position 0, the rewritten pattern is the constant.
-        const_value = *rewritten_const_value;
-        const_type = rewritten_const_type;
+        constant.type = rewritten_const_type;
+        constant.column = constant.type->createColumnConst(1, *rewritten_const_value);
         const_arg_pos = 1;
     }
-    else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+    else if (func.getArgumentAt(1).isConstant())
+    {
+        constant = func.getArgumentAt(1).getConstantColumn();
         const_arg_pos = 1;
-    else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
+    }
+    else if (func.getArgumentAt(0).isConstant())
+    {
+        constant = func.getArgumentAt(0).getConstantColumn();
         const_arg_pos = 0;
+    }
     else
         return;
+
+    const Field const_value = (*constant.column)[0];
 
     /// If the const operand is NULL, the atom will be always false.
     if (const_value.isNull())
@@ -4831,7 +4831,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
         key_side_func_name = reversed;
     }
 
-    extractComparisonAtomsForKeyArgument(key_arg, info, key_side_func_name, const_value, const_type, allow_relaxed_pruning, out);
+    extractComparisonAtomsForKeyArgument(key_arg, info, key_side_func_name, constant, allow_relaxed_pruning, out);
 }
 
 /// `key <=> NULL` is "key IS NULL", so it is analyzed with the `isNull` atom. That atom
@@ -4879,11 +4879,20 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
     const RPNBuilderTreeNode & key_arg,
     const BuildInfo & info,
     const std::string & func_name,
-    const Field & const_value,
-    const DataTypePtr & const_type,
+    const ColumnWithTypeAndName & constant,
     bool allow_relaxed_pruning,
     RPN & out)
 {
+    const Field const_value = (*constant.column)[0];
+    const DataTypePtr const_type = removeNullable(constant.type);
+    chassert(!const_value.isNull() && !const_value.isNaN());
+
+    /// Keep the original column: rebuilding a `Dynamic` or `Variant` from its `Field` loses the
+    /// active alternative, such as an enum whose stored number differs from its string label.
+    /// A constant AST literal can have a zero-sized wrapper, so give transforms its single data row.
+    ColumnWithTypeAndName transform_constant = constant;
+    transform_constant.column = assert_cast<const ColumnConst &>(*constant.column).getDataColumnPtr();
+
     /// A candidate describes one possible atom of this comparison: a key column to
     /// compare against, together with the constant in that column's key space.
     struct ComparisonAtomCandidate
@@ -5002,8 +5011,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
         auto transformed_candidates = transformConstantByMonotonicKeyFunctions(
             key_arg,
             info,
-            const_value,
-            const_type,
+            transform_constant,
             [this](const IFunctionBase & func_base, const IDataType & type) -> bool
             {
                 if (!func_base.hasInformationAboutMonotonicity())
@@ -5095,7 +5103,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
         && source_may_contribute())
     {
         auto transformed_candidates = transformConstantByDeterministicKeyFunctions(
-            key_arg, info, const_value, const_type);
+            key_arg, info, transform_constant);
 
         for (const auto & transformed : transformed_candidates)
             add_transformed_constant_candidate(transformed, /*is_relaxed*/ !transformed.atom_is_exact);
@@ -5197,7 +5205,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
                     /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
                     /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
                     /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
-                    /// bytes and comparison semantics. `tryGetConstant` only peels an outer `Nullable`, so
+                    /// bytes and comparison semantics. Direct candidates only peel an outer `Nullable`, so
                     /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
                     /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
                     /// type is already `LowCardinality`/`Nullable`-stripped above).
@@ -5416,12 +5424,13 @@ void KeyCondition::extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, con
 
     /// `notEquals` is in `no_relaxed_atom_functions`, so the relaxed monotonic constant
     /// transform must stay disabled, same as for the explicit predicate.
+    const auto zero_type = std::make_shared<DataTypeUInt8>();
+    const ColumnWithTypeAndName zero{zero_type->createColumnConst(1, Field(UInt64(0))), zero_type, {}};
     extractComparisonAtomsForKeyArgument(
         node,
         info,
         "notEquals",
-        Field(UInt64(0)),
-        std::make_shared<DataTypeUInt8>(),
+        zero,
         /*allow_relaxed_pruning=*/ false,
         out);
 }
