@@ -117,7 +117,7 @@ public:
             if (service_delta != 0) // common case real == estimate: both adds are no-ops, skip the RMWs
             {
                 scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
-                scheduling.state->vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
+                scheduling.state->fair.vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
             }
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);

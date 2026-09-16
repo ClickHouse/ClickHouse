@@ -91,10 +91,10 @@ struct Fixture
         const Int64 delta = static_cast<Int64>(real) - static_cast<Int64>(estimate);
         auto * s = ctx->resourceState(0);
         s->attained_cost.fetch_add(delta, std::memory_order_relaxed);
-        s->vruntime_correction.fetch_add(delta, std::memory_order_relaxed);
+        s->fair.vruntime_correction.fetch_add(delta, std::memory_order_relaxed);
     }
 
-    double vruntimeOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->vruntime; }
+    double vruntimeOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->fair.vruntime; }
     Int64 attainedOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->attained_cost.load(); }
 };
 
@@ -164,18 +164,18 @@ TEST(RequestQueue, FairRollsVirtualTimeAtBusyPeriodEnd)
 TEST(RequestQueue, DrainVruntimeCorrectionClampsAndCarries)
 {
     ResourceQueryState s;
-    EXPECT_EQ(s.drainVruntimeCorrection(100), 100);       // no correction → identity
-    s.vruntime_correction.fetch_add(50);
-    EXPECT_EQ(s.drainVruntimeCorrection(100), 150);       // under-estimate → charge extra
-    EXPECT_EQ(s.vruntime_correction.load(), 0);
-    s.vruntime_correction.fetch_add(-30);
-    EXPECT_EQ(s.drainVruntimeCorrection(100), 70);        // over-estimate → charge less
-    EXPECT_EQ(s.vruntime_correction.load(), 0);
-    s.vruntime_correction.fetch_add(-150);
-    EXPECT_EQ(s.drainVruntimeCorrection(100), 0);         // big refund → clamp to 0 (never negative)
-    EXPECT_EQ(s.vruntime_correction.load(), -50);         // carry the unspent -50 forward
-    EXPECT_EQ(s.drainVruntimeCorrection(100), 50);        // applied to the next request
-    EXPECT_EQ(s.vruntime_correction.load(), 0);
+    EXPECT_EQ(s.fair.drainVruntimeCorrection(100), 100);       // no correction → identity
+    s.fair.vruntime_correction.fetch_add(50);
+    EXPECT_EQ(s.fair.drainVruntimeCorrection(100), 150);       // under-estimate → charge extra
+    EXPECT_EQ(s.fair.vruntime_correction.load(), 0);
+    s.fair.vruntime_correction.fetch_add(-30);
+    EXPECT_EQ(s.fair.drainVruntimeCorrection(100), 70);        // over-estimate → charge less
+    EXPECT_EQ(s.fair.vruntime_correction.load(), 0);
+    s.fair.vruntime_correction.fetch_add(-150);
+    EXPECT_EQ(s.fair.drainVruntimeCorrection(100), 0);         // big refund → clamp to 0 (never negative)
+    EXPECT_EQ(s.fair.vruntime_correction.load(), -50);         // carry the unspent -50 forward
+    EXPECT_EQ(s.fair.drainVruntimeCorrection(100), 50);        // applied to the next request
+    EXPECT_EQ(s.fair.vruntime_correction.load(), 0);
 }
 
 /// fair: a query whose first request under-estimated its cost has the shortfall folded into its

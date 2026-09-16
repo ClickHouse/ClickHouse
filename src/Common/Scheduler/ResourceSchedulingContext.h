@@ -26,31 +26,33 @@ struct ResourceQueryState
     /// by `las` (level) and `fair` (weight-lowering thresholds).
     std::atomic<Int64> attained_cost{0};
 
-    /// `fair` only, leaf thread only: SFQ virtual runtime, a cached effective weight, and a one-way
-    /// latch — `effective_weight` is finalized on the first push when lowering is disabled, otherwise
-    /// recomputed each push until a `weight_lowering_*` threshold trips, then frozen.
-    double vruntime = 0.0;
-    double effective_weight = 0.0;
-    bool weight_lowered = false;
-
-    /// `fair` only: pending `real - estimate` correction for `vruntime`, kept separate from
-    /// `attained_cost` so the two are independent. `finish()` adds the delta (consumer thread, hence
-    /// atomic); `fair::push` folds it into the next request's charge and drains it.
-    std::atomic<Int64> vruntime_correction{0};
-
-    /// Fold the pending correction into `base_cost` for `fair`'s vruntime charge. Never negative
-    /// (vruntime is monotonic): an over-estimate is realized by charging less on later requests,
-    /// carrying the negative remainder forward until it converges. `fetch_sub` composes with a
-    /// concurrent `finish()` `fetch_add`.
-    ResourceCost drainVruntimeCorrection(ResourceCost base_cost)
+    /// `fair`-only state (leaf thread only), grouped so the other algorithms don't touch it: SFQ
+    /// virtual runtime; a cached effective weight with a one-way latch (`effective_weight` is
+    /// finalized on the first push when lowering is disabled, otherwise recomputed each push until a
+    /// `weight_lowering_*` threshold trips, then frozen); and the pending `real - estimate` vruntime
+    /// correction, kept separate from `attained_cost` so the two are independent (`finish()` adds the
+    /// delta on the consumer thread, hence atomic; `push()` folds it into the next request's charge).
+    struct
     {
-        Int64 corr = vruntime_correction.load(std::memory_order_relaxed);
-        Int64 effective = static_cast<Int64>(base_cost) + corr;
-        Int64 remainder = effective < 0 ? effective : 0; // negative part carried to the future
-        if (Int64 delta = corr - remainder; delta != 0) // no pending correction (common) → skip the RMW
-            vruntime_correction.fetch_sub(delta, std::memory_order_relaxed);
-        return static_cast<ResourceCost>(effective - remainder); // >= 0
-    }
+        double vruntime = 0.0;
+        double effective_weight = 0.0;
+        bool weight_lowered = false;
+        std::atomic<Int64> vruntime_correction{0};
+
+        /// Fold the pending correction into `base_cost` for the vruntime charge. Never negative
+        /// (vruntime is monotonic): an over-estimate is realized by charging less on later requests,
+        /// carrying the negative remainder forward until it converges. `fetch_sub` composes with a
+        /// concurrent `finish()` `fetch_add`.
+        ResourceCost drainVruntimeCorrection(ResourceCost base_cost)
+        {
+            Int64 corr = vruntime_correction.load(std::memory_order_relaxed);
+            Int64 effective = static_cast<Int64>(base_cost) + corr;
+            Int64 remainder = effective < 0 ? effective : 0; // negative part carried to the future
+            if (Int64 delta = corr - remainder; delta != 0) // no pending correction (common) → skip the RMW
+                vruntime_correction.fetch_sub(delta, std::memory_order_relaxed);
+            return static_cast<ResourceCost>(effective - remainder); // >= 0
+        }
+    } fair;
 };
 
 /// Per-query scheduling context: the query-global config the schedulers read (weight, thresholds,

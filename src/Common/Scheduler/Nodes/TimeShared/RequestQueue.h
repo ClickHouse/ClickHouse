@@ -154,12 +154,12 @@ public:
         // Charge the declared cost plus any pending real-vs-estimate correction — folded here from
         // fair's own accumulator, independent of attained_cost; never negative, so vruntime only
         // moves forward.
-        ResourceCost charge = state.drainVruntimeCorrection(request->scheduling.cost);
-        double vstart = std::max(system_vruntime, state.vruntime);
+        ResourceCost charge = state.fair.drainVruntimeCorrection(request->scheduling.cost);
+        double vstart = std::max(system_vruntime, state.fair.vruntime);
         double increment = static_cast<double>(charge) / effective_weight;
-        state.vruntime = vstart + increment;
+        state.fair.vruntime = vstart + increment;
         request->scheduling.vruntime_increment = increment; // kept so cancel() can undo this projection
-        max_vruntime = std::max(max_vruntime, state.vruntime);
+        max_vruntime = std::max(max_vruntime, state.fair.vruntime);
         request->scheduling.key = {vstart, next_seq++};
         requests.insert(*request);
     }
@@ -220,7 +220,7 @@ private:
     /// is not restored either; kept simple.)
     static void rollbackProjection(ResourceRequest * request)
     {
-        request->scheduling.state->vruntime -= request->scheduling.vruntime_increment;
+        request->scheduling.state->fair.vruntime -= request->scheduling.vruntime_increment;
     }
 
     /// Fair effective weight: the query's `weight`, lowered once by `weight_lowering_factor` the
@@ -232,7 +232,7 @@ private:
     /// on pop()).
     double updateEffectiveWeight(const ResourceSchedulingContext & ctx, ResourceQueryState & state) const
     {
-        if (!state.weight_lowered)
+        if (!state.fair.weight_lowered)
         {
             // Fast path: when lowering can never change the weight — the factor is 1 (disabled) or no
             // threshold is set — finalize `effective_weight` on the first push and skip the per-push
@@ -242,21 +242,21 @@ private:
                     && ctx.weight_lowering_io_bytes <= 0);
             if (lowering_disabled)
             {
-                state.weight_lowered = true;
-                state.effective_weight = ctx.weight > 0 ? ctx.weight : 1e-9;
+                state.fair.weight_lowered = true;
+                state.fair.effective_weight = ctx.weight > 0 ? ctx.weight : 1e-9;
             }
             else if (weightLoweringThresholdCrossed(ctx, state))
             {
-                state.weight_lowered = true;
+                state.fair.weight_lowered = true;
                 double weight = ctx.weight * ctx.weight_lowering_factor;
-                state.effective_weight = weight > 0 ? weight : 1e-9; // guard against division by zero
+                state.fair.effective_weight = weight > 0 ? weight : 1e-9; // guard against division by zero
             }
             else
             {
-                state.effective_weight = ctx.weight > 0 ? ctx.weight : 1e-9;
+                state.fair.effective_weight = ctx.weight > 0 ? ctx.weight : 1e-9;
             }
         }
-        return state.effective_weight;
+        return state.fair.effective_weight;
     }
 
     /// True once the query's real cumulative service crosses a `weight_lowering_*` threshold.
@@ -666,7 +666,7 @@ public:
         // real accrued service and is kept.
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
-                request->scheduling.state->vruntime = 0.0;
+                request->scheduling.state->fair.vruntime = 0.0;
         for (ResourceRequest * request : pending)
             algo->push(request);
     }
