@@ -3,6 +3,7 @@
 #include <Common/OSThreadNiceValue.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
+#include <Common/MemoryTrackerSwitcher.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -106,29 +107,41 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 }
 
-ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
+ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , query_context(query_context_)
-    , global_context(query_context_->getGlobalContext())
-    , fatal_error_callback(fatal_error_callback_)
-    , os_threads_nice_value(os_threads_nice_value_)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]))
 {
-    shared_data.query_is_canceled_predicate = [this] () -> bool {
-            if (auto context_locked = query_context.lock())
-            {
-                return context_locked->isCurrentQueryKilled();
-            }
-            return false;
-    };
-    shared_data.throw_if_query_canceled_predicate = [this] ()
+}
+
+void ThreadGroup::initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_)
+{
+    std::lock_guard lock(mutex);
+    chassert(query_context.expired());
+    chassert(active_thread_count == 0);
+    query_context = query_context_;
+    global_context = query_context_->getGlobalContext();
+    fatal_error_callback = std::move(fatal_error_callback_);
+    os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
+    memory_spill_scheduler = std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
+    memory_tracker.setDescription("Query");
+    shared_data.query_is_canceled_predicate = [this]()
     {
         if (auto context_locked = query_context.lock())
-        {
+            return context_locked->isCurrentQueryKilled();
+        return false;
+    };
+    shared_data.throw_if_query_canceled_predicate = [this]()
+    {
+        if (auto context_locked = query_context.lock())
             if (auto elem = context_locked->getProcessListElementSafe())
                 elem->throwIfKilled();
-        }
     };
+}
+
+ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
+    : ThreadGroup()
+{
+    initializeQuery(query_context_, std::move(fatal_error_callback_));
+    os_threads_nice_value = os_threads_nice_value_;
 }
 
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
@@ -290,6 +303,8 @@ void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_has
 
 void ThreadStatus::attachQueryForLog(const String & query_)
 {
+    /// Both thread and group copies are released after query detachment.
+    MemoryTrackerSwitcher metadata_memory_scope(&total_memory_tracker);
     local_data.query_for_logs = query_;
     local_data.normalized_query_hash = normalizedQueryHash(query_, false);
 
@@ -354,6 +369,8 @@ void ThreadStatus::applyQuerySettings()
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
     {
+        /// The thread retains this buffer between queries.
+        MemoryTrackerSwitcher query_id_memory_scope(&total_memory_tracker);
         SignalUnsafeMutationGuard guard(is_query_id_usable);
         query_id = query_context_ptr->getCurrentQueryId();
     }
@@ -398,9 +415,12 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
         query_context = thread_group->query_context;
         global_context = thread_group->global_context;
 
-        fatal_error_callback = thread_group->fatal_error_callback;
-
-        local_data = thread_group->getSharedData();
+        {
+            /// These copies are cleared after the thread returns to global accounting.
+            MemoryTrackerSwitcher metadata_memory_scope(&total_memory_tracker);
+            fatal_error_callback = thread_group->fatal_error_callback;
+            local_data = thread_group->getSharedData();
+        }
 
         applyGlobalSettings();
         applyQuerySettings();
@@ -561,6 +581,8 @@ void ThreadStatus::initPerformanceCounters()
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
 
+    /// Perf counters, their TLS destructor registration, and procfs readers outlive queries.
+    MemoryTrackerSwitcher counters_memory_scope(&total_memory_tracker);
     if (auto query_context_ptr = query_context.lock())
     {
         const Settings & settings = query_context_ptr->getSettingsRef();
@@ -619,15 +641,19 @@ void ThreadStatus::finalizePerformanceCounters()
     if (auto global_context_ptr = global_context.lock())
         close_perf_descriptors = !global_context_ptr->getSettingsRef()[Setting::metrics_perf_events_enabled];
 
-    try
     {
-        current_thread_counters.finalizeProfileEvents(performance_counters);
-        if (close_perf_descriptors)
-            current_thread_counters.closeEventDescriptors();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
+        /// Even disabled perf counters first register their TLS destructor here.
+        MemoryTrackerSwitcher counters_memory_scope(&total_memory_tracker);
+        try
+        {
+            current_thread_counters.finalizeProfileEvents(performance_counters);
+            if (close_perf_descriptors)
+                current_thread_counters.closeEventDescriptors();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
     }
 
     try
@@ -659,6 +685,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
     *last_rusage = RUsageCounters::current();
     if (taskstats)
     {
+        MemoryTrackerSwitcher counters_memory_scope(&total_memory_tracker);
         try
         {
             (*taskstats).reset();

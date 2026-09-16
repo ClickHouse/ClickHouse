@@ -9,6 +9,7 @@ namespace DB
 {
 
 class ThreadGroup;
+struct MemoryTrackerSwitcher;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 /// Initializes query with current thread as master thread in constructor, and detaches it in destructor.
@@ -17,8 +18,10 @@ class QueryScope
 {
 private:
     explicit QueryScope(bool initialized_);
+    ThreadGroupPtr setup_group;
+    std::unique_ptr<MemoryTrackerSwitcher> setup_memory_scope;
 public:
-    QueryScope() = default;
+    QueryScope();
     QueryScope(QueryScope & other) = delete;
     QueryScope(QueryScope && other) noexcept;
     QueryScope & operator=(QueryScope & other) = delete;
@@ -26,6 +29,10 @@ public:
 
     static QueryScope create(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
     static QueryScope create(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
+    /// Declare this scope before the query context, so failed setup frees it before restoring the tracker.
+    /// Setup uses unbatched accounting; attachment applies the final query's batching settings.
+    static QueryScope createForQueryContext();
+    void attachToQueryContext(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
     static QueryScope createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent);
 
     ~QueryScope();
