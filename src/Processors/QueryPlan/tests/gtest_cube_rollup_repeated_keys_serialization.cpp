@@ -48,20 +48,23 @@ Aggregator::Params makeParams()
         /*enable_packed_string_keys=*/true);
 }
 
-/// Serialize a step through the production path at `version` and return its byte stream.
+/// Serialize a step through the production path at the given Cube/Rollup step serialization version
+/// and return its byte stream. Version 1 carries the repeated-key positions; version 0 is the older
+/// format without them.
 template <typename Step>
-String serializeStep(const Step & step, UInt64 version)
+String serializeStep(const Step & step, UInt64 step_version = 1)
 {
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry};
-    ctx.version = version;
+    ctx.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    ctx.step_version = step_version;
     step.serialize(ctx);
     return out.str();
 }
 
 template <typename Deserializer>
-QueryPlanStepPtr deserializeStep(Deserializer deserializer, const String & bytes, UInt64 version)
+QueryPlanStepPtr deserializeStep(Deserializer deserializer, const String & bytes, UInt64 step_version = 1)
 {
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
@@ -71,7 +74,7 @@ QueryPlanStepPtr deserializeStep(Deserializer deserializer, const String & bytes
     ContextPtr context = getContext().context;
 
     IQueryPlanStep::Deserialization ctx{
-        in, registry, {}, context, input_headers, header, settings, 0, version, false};
+        in, registry, {}, context, input_headers, header, settings, 0, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, step_version, false};
 
     return deserializer(ctx);
 }
@@ -89,31 +92,31 @@ TEST(CubeRollupRepeatedKeysSerialization, OrderedPositionsSurviveRoundTrip)
     tryRegisterAggregateFunctions();
 
     CubeStep cube(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, repeated_positions);
-    const String first = serializeStep(cube, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    auto restored = deserializeStep(&CubeStep::deserialize, first, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    const String first = serializeStep(cube);
+    auto restored = deserializeStep(&CubeStep::deserialize, first);
     ASSERT_NE(restored, nullptr);
-    EXPECT_EQ(first, serializeStep(*assert_cast<CubeStep *>(restored.get()), DBMS_QUERY_PLAN_SERIALIZATION_VERSION));
+    EXPECT_EQ(first, serializeStep(*assert_cast<CubeStep *>(restored.get())));
 
     RollupStep rollup(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, repeated_positions);
-    const String rollup_first = serializeStep(rollup, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    auto rollup_restored = deserializeStep(&RollupStep::deserialize, rollup_first, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    const String rollup_first = serializeStep(rollup);
+    auto rollup_restored = deserializeStep(&RollupStep::deserialize, rollup_first);
     ASSERT_NE(rollup_restored, nullptr);
     EXPECT_EQ(
-        rollup_first, serializeStep(*assert_cast<RollupStep *>(rollup_restored.get()), DBMS_QUERY_PLAN_SERIALIZATION_VERSION));
+        rollup_first, serializeStep(*assert_cast<RollupStep *>(rollup_restored.get())));
 }
 
-/// A peer below the minimum version would expand from the deduplicated key list and answer with the
-/// grouping sets this change corrects, so the sender refuses rather than downgrading in silence.
-TEST(CubeRollupRepeatedKeysSerialization, RepeatedKeysBelowMinVersionThrow)
+/// Toward a peer below the step version that carries the positions (step version 0), the sender
+/// would expand from the deduplicated key list and answer with the grouping sets this change
+/// corrects, so it refuses rather than downgrading in silence.
+TEST(CubeRollupRepeatedKeysSerialization, RepeatedKeysBelowStepVersionThrow)
 {
     tryRegisterAggregateFunctions();
-    constexpr UInt64 too_old = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS - 1;
 
     CubeStep cube(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, repeated_positions);
-    EXPECT_THROW(serializeStep(cube, too_old), Exception);
+    EXPECT_THROW(serializeStep(cube, /*step_version=*/0), Exception);
 
     RollupStep rollup(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, repeated_positions);
-    EXPECT_THROW(serializeStep(rollup, too_old), Exception);
+    EXPECT_THROW(serializeStep(rollup, /*step_version=*/0), Exception);
 }
 
 /// A payload whose positions do not reference every deduplicated key is not one the sender could
@@ -128,14 +131,14 @@ TEST(CubeRollupRepeatedKeysSerialization, PositionsNotCoveringEveryKeyAreRejecte
     const std::vector<size_t> not_covering{0, 0};
 
     CubeStep cube(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, not_covering);
-    const String cube_bytes = serializeStep(cube, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    const String cube_bytes = serializeStep(cube);
     EXPECT_THROW(
-        deserializeStep(&CubeStep::deserialize, cube_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+        deserializeStep(&CubeStep::deserialize, cube_bytes), Exception);
 
     RollupStep rollup(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, not_covering);
-    const String rollup_bytes = serializeStep(rollup, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    const String rollup_bytes = serializeStep(rollup);
     EXPECT_THROW(
-        deserializeStep(&RollupStep::deserialize, rollup_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+        deserializeStep(&RollupStep::deserialize, rollup_bytes), Exception);
 }
 
 /// First appearances of key indexes must arrive as 0, 1, 2, ...: the planner assigns a new index to
@@ -150,26 +153,25 @@ TEST(CubeRollupRepeatedKeysSerialization, PositionsOutOfFirstOccurrenceOrderAreR
     const std::vector<size_t> out_of_order{1, 0};
 
     CubeStep cube(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, out_of_order);
-    const String cube_bytes = serializeStep(cube, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    const String cube_bytes = serializeStep(cube);
     EXPECT_THROW(
-        deserializeStep(&CubeStep::deserialize, cube_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+        deserializeStep(&CubeStep::deserialize, cube_bytes), Exception);
 
     RollupStep rollup(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, out_of_order);
-    const String rollup_bytes = serializeStep(rollup, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    const String rollup_bytes = serializeStep(rollup);
     EXPECT_THROW(
-        deserializeStep(&RollupStep::deserialize, rollup_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+        deserializeStep(&RollupStep::deserialize, rollup_bytes), Exception);
 }
 
 /// The refusal is keyed on the payload, not on the version, so a plan whose GROUP BY list repeats
-/// nothing still ships to that same older peer.
+/// nothing still ships at step version 0 to that same older peer.
 TEST(CubeRollupRepeatedKeysSerialization, WithoutRepeatedKeysOlderPeersStillAccepted)
 {
     tryRegisterAggregateFunctions();
-    constexpr UInt64 too_old = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS - 1;
 
     CubeStep cube(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, /*key_positions=*/{});
-    EXPECT_NO_THROW(serializeStep(cube, too_old));
+    EXPECT_NO_THROW(serializeStep(cube, /*step_version=*/0));
 
     RollupStep rollup(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, /*key_positions=*/{});
-    EXPECT_NO_THROW(serializeStep(rollup, too_old));
+    EXPECT_NO_THROW(serializeStep(rollup, /*step_version=*/0));
 }

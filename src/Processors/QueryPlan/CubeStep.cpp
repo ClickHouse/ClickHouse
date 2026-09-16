@@ -169,19 +169,19 @@ void CubeStep::serialize(Serialization & ctx) const
     /// `serializeAggregateDescriptions` rejects.
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
 
-    /// A peer too old for the positions would expand from the deduplicated key list and answer a
-    /// repeated-key CUBE or ROLLUP with the grouping sets this change exists to correct. Dropping
-    /// them silently is a wrong result on a mixed-version cluster, so fail instead - and only when
-    /// the query actually repeats a key, which leaves every other plan shippable as before.
-    if (!key_positions.empty() && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    /// The positions were added as "Cube" step serialization version 1. Toward a peer below the
+    /// global version that carries per-step versions the step is written at version 0 without them,
+    /// so a repeated-key CUBE would expand from the deduplicated key list and answer with the
+    /// grouping sets this change exists to correct. Dropping them silently is a wrong result on a
+    /// mixed-version cluster, so fail instead - and only when the query actually repeats a key,
+    /// which leaves every other plan shippable as before.
+    if (!key_positions.empty() && ctx.step_version < 1)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Serializing a {} whose GROUP BY list repeats a key requires query plan serialization version >= {}; "
-            "the receiving server is too old and would expand the wrong grouping sets",
-            "CubeStep",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS);
+            "Serializing a CubeStep whose GROUP BY list repeats a key requires Cube step serialization "
+            "version >= 1; the receiving server is too old and would expand the wrong grouping sets");
 
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    if (ctx.step_version >= 1)
     {
         writeVarUInt(key_positions.size(), ctx.out);
         for (size_t position : key_positions)
@@ -236,7 +236,7 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
     params.only_merge = false;
 
     std::vector<size_t> key_positions;
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    if (ctx.step_version >= 1)
     {
         UInt64 num_positions = 0;
         readVarUInt(num_positions, ctx.in);
@@ -285,7 +285,13 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
 void registerCubeStep(QueryPlanStepRegistry & registry);
 void registerCubeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Cube", CubeStep::deserialize);
+    /// "Cube" step serialization version 1 appends the GROUP BY positions of repeated keys. It is
+    /// written from the first global plan version that carries per-step versions; an older peer
+    /// reads version 0, only the deduplicated key list, as it did before the positions existed.
+    registry.registerStep(
+        "Cube",
+        CubeStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS}});
 }
 
 }

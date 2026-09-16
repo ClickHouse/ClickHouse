@@ -133,15 +133,13 @@ void RollupStep::serialize(Serialization & ctx) const
     /// repeated-key CUBE or ROLLUP with the grouping sets this change exists to correct. Dropping
     /// them silently is a wrong result on a mixed-version cluster, so fail instead - and only when
     /// the query actually repeats a key, which leaves every other plan shippable as before.
-    if (!key_positions.empty() && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    if (!key_positions.empty() && ctx.step_version < 1)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Serializing a {} whose GROUP BY list repeats a key requires query plan serialization version >= {}; "
-            "the receiving server is too old and would expand the wrong grouping sets",
-            "RollupStep",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS);
+            "Serializing a RollupStep whose GROUP BY list repeats a key requires Rollup step serialization "
+            "version >= 1; the receiving server is too old and would expand the wrong grouping sets");
 
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    if (ctx.step_version >= 1)
     {
         writeVarUInt(key_positions.size(), ctx.out);
         for (size_t position : key_positions)
@@ -196,7 +194,7 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
     params.only_merge = false;
 
     std::vector<size_t> key_positions;
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    if (ctx.step_version >= 1)
     {
         UInt64 num_positions = 0;
         readVarUInt(num_positions, ctx.in);
@@ -245,7 +243,13 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
 void registerRollupStep(QueryPlanStepRegistry & registry);
 void registerRollupStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Rollup", RollupStep::deserialize);
+    /// "Rollup" step serialization version 1 appends the GROUP BY positions of repeated keys. It is
+    /// written from the first global plan version that carries per-step versions; an older peer
+    /// reads version 0, only the deduplicated key list, as it did before the positions existed.
+    registry.registerStep(
+        "Rollup",
+        RollupStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS}});
 }
 
 }
