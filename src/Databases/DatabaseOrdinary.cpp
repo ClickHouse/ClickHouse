@@ -460,6 +460,11 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (query.is_time_series_table)
         return false;
 
+    /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
+    /// metadata could be read without a grant on the target. Load it eagerly, as for views.
+    if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
+        return false;
+
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
         return false;
