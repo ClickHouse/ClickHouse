@@ -105,7 +105,7 @@ REGISTER_FUNCTION(TransactionCounters)
 
 Returns the ID of a transaction.
 
-:::note
+<Note>
 This function is part of an experimental feature set.
 Enable experimental transaction support by adding this setting to your [configuration](/concepts/features/configuration/server-config/configuration-files):
 
@@ -116,7 +116,7 @@ Enable experimental transaction support by adding this setting to your [configur
 ```
 
 For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_transactionID = "transactionID()";
     FunctionDocumentation::Arguments arguments_transactionID = {};
@@ -156,7 +156,7 @@ ROLLBACK;
 
 Returns the newest snapshot (Commit Sequence Number) of a [transaction](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) that is available for reading.
 
-:::note
+<Note>
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
 ```xml
@@ -166,7 +166,7 @@ This function is part of an experimental feature set. Enable experimental transa
 ```
 
 For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_transactionLatestSnapshot = "transactionLatestSnapshot()";
     FunctionDocumentation::Arguments arguments_transactionLatestSnapshot = {};
@@ -198,7 +198,7 @@ ROLLBACK;
 
 Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 
-:::note
+<Note>
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
 ```xml
@@ -208,7 +208,7 @@ This function is part of an experimental feature set. Enable experimental transa
 ```
 
 For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_transactionOldestSnapshot = "transactionOldestSnapshot()";
     FunctionDocumentation::Arguments arguments_transactionOldestSnapshot = {};
