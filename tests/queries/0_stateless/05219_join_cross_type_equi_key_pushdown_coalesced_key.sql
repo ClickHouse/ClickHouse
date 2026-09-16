@@ -6,6 +6,7 @@
 -- Analyzer only: the substitution is keyed by the analyzer's `__tableN.k` names.
 
 SET enable_analyzer = 1;
+SET join_use_nulls = 0;
 SET query_plan_filter_push_down = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_join_swap_table = 'false';
@@ -44,6 +45,13 @@ SELECT a.k, b.k, c.k FROM a FULL JOIN b USING (k) RIGHT JOIN c USING (k) WHERE c
 
 SELECT 'FULL + RIGHT JOIN USING, cross-type keys: the push-down does not change the result';
 SELECT a.k, b.k, c.k FROM a FULL JOIN b USING (k) RIGHT JOIN c USING (k) WHERE c.k > 1 ORDER BY ALL
+SETTINGS query_plan_filter_push_down = 0;
+
+SELECT 'FULL + FULL JOIN USING, cross-type keys: result';
+SELECT a.k, b.k, c.k FROM a FULL JOIN b USING (k) FULL JOIN c USING (k) WHERE b.k > 1 AND c.k > 1 ORDER BY ALL;
+
+SELECT 'FULL + FULL JOIN USING, cross-type keys: the push-down does not change the result';
+SELECT a.k, b.k, c.k FROM a FULL JOIN b USING (k) FULL JOIN c USING (k) WHERE b.k > 1 AND c.k > 1 ORDER BY ALL
 SETTINGS query_plan_filter_push_down = 0;
 
 SELECT 'FULL + LEFT JOIN USING, Nullable cross-type keys: result';
