@@ -51,8 +51,7 @@ const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
 
 HTMLForm::HTMLForm(const Settings & settings)
-    : max_request_header_size(settings[Setting::http_max_request_header_size])
-    , encoding(ENCODING_URL)
+    : encoding(ENCODING_URL)
 {
     applyBodyLimits(settings);
 }
@@ -60,6 +59,9 @@ HTMLForm::HTMLForm(const Settings & settings)
 
 void HTMLForm::applyBodyLimits(const Settings & settings)
 {
+    /// The structural limit of the multipart parser as well: the boundary and header lines of the
+    /// body are parsed after authentication, so they are subject to the user's settings too.
+    max_request_header_size = settings[Setting::http_max_request_header_size];
     max_fields_number = settings[Setting::http_max_fields];
     max_field_name_size = settings[Setting::http_max_field_name_size];
     max_field_value_size = settings[Setting::http_max_field_value_size];
@@ -78,7 +80,7 @@ size_t HTMLForm::checkFieldLimits(const Settings & settings) const
     {
         /// The limits are checked exactly as in readQuery: a name or a value of the maximum size
         /// is accepted, while the (limit + 1)-th field is not.
-        if (max_fields && fields == max_fields)
+        if (max_fields && fields >= max_fields)
             throw Poco::Net::HTMLFormException("Too many form fields");
         if (name.size() > max_name_size)
             throw Poco::Net::HTMLFormException("Field name too long");
@@ -189,7 +191,10 @@ void HTMLForm::readQuery(ReadBuffer & in)
 
     while (true)
     {
-        if (max_fields_number > 0 && fields == max_fields_number)
+        /// The carried-over count may already exceed the limit: the query string was validated against
+        /// the session's settings, while the request may have lowered the limit since (see
+        /// carryOverFieldCount). Fail closed instead of waiting for an equality that never comes.
+        if (max_fields_number > 0 && fields >= max_fields_number)
             throw Poco::Net::HTMLFormException("Too many form fields");
 
         std::string name;
@@ -251,7 +256,8 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
     /// Read each part until next boundary (or last boundary)
     while (!in.eof())
     {
-        if (max_fields_number && fields == max_fields_number)
+        /// `>=`: the carried-over count may already exceed a limit lowered by the request, see readQuery.
+        if (max_fields_number && fields >= max_fields_number)
             throw Poco::Net::HTMLFormException("Too many form fields");
 
         Poco::Net::MessageHeader header;

@@ -83,9 +83,10 @@ public:
     void read(ReadBuffer & in);
 
     /// Set the limits used while reading the form data: the limit on the size of the content of
-    /// a multipart/form-data part (`http_max_multipart_form_data_size`) and the limits on the
+    /// a multipart/form-data part (`http_max_multipart_form_data_size`), the limits on the
     /// number of form fields and on a field name/value size (`http_max_fields`,
-    /// `http_max_field_name_size`, `http_max_field_value_size`).
+    /// `http_max_field_name_size`, `http_max_field_value_size`) and the limit on the size of a
+    /// boundary or header line of a multipart/form-data body (`http_max_request_header_size`).
     /// The multipart parser reads part content line by line to detect boundary lines, so content
     /// with no CRLF would otherwise be accumulated in memory in full, regardless of any limit
     /// imposed on the part size by the reader of the part (in particular, while such a reader
@@ -117,7 +118,9 @@ public:
     /// the body parsers continue counting from it instead of restarting from zero. `http_max_fields`
     /// bounds the number of fields of the whole request, so it must not be possible to send the limit
     /// in the query string and the limit again in the body. `load`, which reads the whole form itself,
-    /// resets it.
+    /// resets it. The count may exceed the limit that is in effect when the body is parsed (the
+    /// query string is validated against the session's settings, and the request itself may then
+    /// select a profile or a setting that lowers the limit); the body parsers then reject any field.
     void carryOverFieldCount(size_t count) { fields_carried_over = count; }
 
     static const std::string ENCODING_URL; /// "application/x-www-form-urlencoded"
@@ -140,10 +143,9 @@ private:
 
     using PartVec = std::vector<Part>;
 
-    const size_t max_request_header_size;
-
     /// See applyBodyLimits. These limits are initialized from the constructor's settings and
     /// reapplied from the authenticated user's settings before the request body is parsed.
+    size_t max_request_header_size = 0;
     size_t max_fields_number = 0;
     /// See carryOverFieldCount.
     size_t fields_carried_over = 0;
