@@ -226,7 +226,7 @@ TypeIndex baseType(TypeIndex type_idx)
     return TypeIndex::Nothing;
 }
 
-void transpose64x8(UInt64 * src_dst)
+ALWAYS_INLINE void transpose64x8(UInt64 * src_dst)
 {
     const auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
     UInt64 dst[8] = {};
