@@ -791,6 +791,8 @@ TEST(AdaptiveAggregationPipeline, StagingUsesThePublishingAllocationContext)
         ASSERT_TRUE(block.process(keyRange(0, 64)));
         ASSERT_FALSE(block.result.isTwoLevel());
         auto chunk = recordedBlock(params, 8192, own_tracker);
+        /// Keep the source recording alive so its release cannot affect staging's allocation measurement.
+        const auto recording = chunk.getChunkInfos().get<AdaptiveAggregationMissesInfo>();
         onWorker(query_tracker, [&]
         {
             /// Staging contributes to the aggregation account only when requested by the producer.
