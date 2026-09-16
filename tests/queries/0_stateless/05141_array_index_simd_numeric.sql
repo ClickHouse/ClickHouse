@@ -97,37 +97,45 @@ SELECT 'UInt64 sizes',
     has(materialize(range(64)::Array(UInt64)), toUInt64(0)),
     indexOf(materialize(range(64)::Array(UInt64)), toUInt64(0));
 
--- Exercise a match in the middle of the first 32-byte vector for each supported width.
+SELECT 'UInt8 short',
+    has(materialize(range(10)::Array(UInt8)), toUInt8(5)),
+    indexOf(materialize(range(10)::Array(UInt8)), toUInt8(5)),
+    has(materialize(range(10)::Array(UInt8)), toUInt8(9)),
+    indexOf(materialize(range(10)::Array(UInt8)), toUInt8(9)),
+    has(materialize(range(10)::Array(UInt8)), toUInt8(255)),
+    indexOf(materialize(range(10)::Array(UInt8)), toUInt8(255));
 
-SELECT 'UInt8 first vector middle',
+-- Exercise matches near the scalar-prefix/continuation threshold for each supported width.
+
+SELECT 'UInt8 threshold middle',
     has(materialize(range(64)::Array(UInt8)), toUInt8(16)),
     indexOf(materialize(range(64)::Array(UInt8)), toUInt8(16));
 
-SELECT 'UInt16 first vector middle',
+SELECT 'UInt16 threshold middle',
     has(materialize(range(32)::Array(UInt16)), toUInt16(8)),
     indexOf(materialize(range(32)::Array(UInt16)), toUInt16(8));
 
-SELECT 'UInt32 first vector middle',
+SELECT 'UInt32 threshold middle',
     has(materialize(range(16)::Array(UInt32)), toUInt32(4)),
     indexOf(materialize(range(16)::Array(UInt32)), toUInt32(4));
 
-SELECT 'UInt64 first vector middle',
+SELECT 'UInt64 threshold middle',
     has(materialize(range(32)::Array(UInt64)), toUInt64(2)),
     indexOf(materialize(range(32)::Array(UInt64)), toUInt64(2));
 
-SELECT 'UInt8 first vector early',
+SELECT 'UInt8 threshold early',
     has(materialize(range(64)::Array(UInt8)), toUInt8(1)),
     indexOf(materialize(range(64)::Array(UInt8)), toUInt8(1));
 
-SELECT 'UInt16 first vector early',
+SELECT 'UInt16 threshold early',
     has(materialize(range(32)::Array(UInt16)), toUInt16(1)),
     indexOf(materialize(range(32)::Array(UInt16)), toUInt16(1));
 
-SELECT 'UInt32 first vector early',
+SELECT 'UInt32 threshold early',
     has(materialize(range(16)::Array(UInt32)), toUInt32(1)),
     indexOf(materialize(range(16)::Array(UInt32)), toUInt32(1));
 
-SELECT 'UInt64 first vector early',
+SELECT 'UInt64 threshold early',
     has(materialize(range(32)::Array(UInt64)), toUInt64(1)),
     indexOf(materialize(range(32)::Array(UInt64)), toUInt64(1));
 
