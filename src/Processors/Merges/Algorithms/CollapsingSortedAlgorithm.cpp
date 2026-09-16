@@ -96,17 +96,14 @@ void CollapsingSortedAlgorithm::bufferInvalidSignRow(const RowRef & row, size_t 
     invalid_sign_rows.push_back({pos, row.owned_chunk->getNumRows()});
 }
 
-/// The rows of a key have to reach `merged_data` in one run to stay in read order, so this cannot
-/// hand a full block back part way through: a key that buffered a long run of invalid signs
-/// overshoots `max_block_size`, and `merge` pulls the oversized block on its next pass.
+/// A key's rows must reach `merged_data` in one run to stay in read order, so this cannot pull a
+/// block mid-key: a long run of invalid signs overshoots `max_block_size`, drained on the next pass.
 void CollapsingSortedAlgorithm::insertBufferedInvalidSignRowsBefore(size_t pos)
 {
     if (next_invalid_sign_index >= invalid_sign_rows.size()
         || invalid_sign_rows[next_invalid_sign_index].pos >= pos)
         return;
 
-    /// `MergedData::insertRow` reads the values through `ColumnRawPtrs`, so derive that view here
-    /// rather than keeping a second member the buffer above has to stay in step with.
     ColumnRawPtrs raw_columns;
     raw_columns.reserve(invalid_sign_columns.size());
     for (const auto & column : invalid_sign_columns)
@@ -131,10 +128,8 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 
     std::optional<Chunk> res;
 
-    /// Emit everything the key contributes in read order: kept invalid-sign rows interleave by row
-    /// number with the rows collapsing selects. With both selected the last positive one is
-    /// the key's last row, so it always follows the first negative one. False here means the signs
-    /// cancelled, or the key held none - the kept rows are then all it contributes.
+    /// False when the signs cancelled, or the key held none: the kept invalid-sign rows are then
+    /// all it contributes.
     const bool keeps_a_selected_row
         = (last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0);
 
@@ -221,8 +216,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// We write data for the previous primary key.
             auto res = insertRows();
 
-            /// `current_row` is read again below, by the invalid-sign branch in this same
-            /// iteration, so it has to keep its own value here - copy it, do not swap.
+            /// Copy, do not swap: the invalid-sign branch below reads `current_row` this iteration.
             last_row = current_row;
 
             count_negative = 0;
@@ -272,8 +266,10 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             {
                 ++count_invalid;
 
-                /// Nothing can be emitted ahead of a row met before the key's first selectable one.
-                if (count_positive == 0 && count_negative == 0)
+                /// Buffer only what a vertical merge could have to reorder: its gather stage pairs
+                /// the Nth unskipped row source with the Nth merged row. A horizontal merge has no
+                /// such pairing, and nothing precedes the key's first selected row.
+                if (!out_row_sources_buf || (count_positive == 0 && count_negative == 0))
                     insertRow(current_row);
                 else
                     bufferInvalidSignRow(current_row, current_pos);

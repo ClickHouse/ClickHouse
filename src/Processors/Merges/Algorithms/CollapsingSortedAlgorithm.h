@@ -65,9 +65,9 @@ private:
     size_t last_positive_pos = 0;                  /// Row number of last_positive
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
-    /// Rows of the current primary key whose sign is neither 1 nor -1, buffered so `insertRows` can
-    /// emit them in read order against the selected rows (see `insertRows` for why). Copied by value:
-    /// a `RowRef` would pin a shared chunk from a fixed pool.
+    /// Rows of the current primary key whose sign is neither 1 nor -1, held back so `insertRows`
+    /// can emit them in read order against the selected rows. Copied by value: a `RowRef` would
+    /// pin a shared chunk from a fixed pool.
     struct BufferedInvalidSignRow
     {
         size_t pos;                /// Row number within the key, to order it against the selected rows.
@@ -75,7 +75,6 @@ private:
     };
 
     MutableColumns invalid_sign_columns;
-    /// One entry per row of `invalid_sign_columns`, appended in lockstep with it.
     std::vector<BufferedInvalidSignRow> invalid_sign_rows;
     size_t next_invalid_sign_index = 0;
 
