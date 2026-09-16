@@ -891,7 +891,11 @@ public:
     /// Makes the data written by one INSERT query durable. A sink calls this once, when it
     /// finishes, passing the parts it has committed - fsyncing the whole batch at the end of the
     /// query is much cheaper than fsyncing each part as it is written (see the description of
-    /// 'fsync_after_insert_each_part'). Does nothing unless shouldFsyncPartsAfterInsert().
+    /// 'fsync_after_insert_each_part'). The sink decides once, when it is created, whether it
+    /// collects the parts (shouldFsyncPartsAfterInsert); this function syncs whatever it is given
+    /// without consulting the table settings again, so that a concurrent ALTER of
+    /// 'fsync_after_insert' or 'fsync_after_insert_each_part' cannot leave a running INSERT
+    /// with parts that were synced neither when written nor when the query finished.
     void fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.

@@ -8085,7 +8085,12 @@ bool MergeTreeData::shouldFsyncPartsAfterInsert() const
 
 void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const
 {
-    if (committed_parts.empty() || !shouldFsyncPartsAfterInsert())
+    /// Deliberately not re-checking shouldFsyncPartsAfterInsert() here: the sink took that decision
+    /// when the query started and has skipped the per-part sync of every part in `committed_parts`
+    /// because of it. If the table settings were changed while the query was running, the batched
+    /// sync is the only one those parts will ever get, so it must happen regardless of what the
+    /// settings say now.
+    if (committed_parts.empty())
         return;
 
     /// A part committed earlier by this same query may already have been merged into a wider part
