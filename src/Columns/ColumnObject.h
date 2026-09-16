@@ -141,7 +141,6 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -212,6 +211,10 @@ public:
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
+
+    /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
+    /// Used for cache-friendly iteration in hot loops (e.g., default filling).
+    const VectorWithMemoryTracking<IColumn *> & getSortedTypedPathColumns() const { return sorted_typed_path_columns; }
 
     const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
     PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
@@ -302,11 +305,13 @@ public:
 
     void validateDynamicPathsSizes() const;
 
-    /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data)
-    bool isEmptyAt(size_t n) const;
+    /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data).
+    /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present.
+    bool isEmptyAt(size_t n, bool skip_null_typed_paths = false) const;
 
     /// Returns true if the object has at least one non-empty path on at least one row.
-    bool hasNonEmptyRows() const;
+    /// When skip_null_typed_paths is true, typed paths with all NULL values are not considered present.
+    bool hasNonEmptyRows(bool skip_null_typed_paths = false) const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator
@@ -380,12 +385,19 @@ private:
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
+    /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
+    /// Must be called after any operation that can replace typed path column pointers
+    /// (e.g. forEachMutableSubcolumn).
+    void rebuildSortedTypedPathColumns();
 
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.
     PathToColumnMap typed_paths;
     /// Sorted list of typed paths. Used to avoid sorting paths every time in some methods.
     VectorWithMemoryTracking<std::string_view> sorted_typed_paths;
+    /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
+    /// Used for cache-friendly iteration in hot loops (e.g., default filling).
+    VectorWithMemoryTracking<IColumn *> sorted_typed_path_columns;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
     /// during inserts into the column.
