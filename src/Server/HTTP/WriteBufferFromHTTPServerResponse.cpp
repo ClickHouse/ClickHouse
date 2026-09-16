@@ -241,7 +241,12 @@ bool WriteBufferFromHTTPServerResponse::isFixedLength() const
     return HTTPWriteBuffer::isFixedLength();
 }
 
-bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept
+bool WriteBufferFromHTTPServerResponse::cancelWithException(
+    HTTPServerRequest & request,
+    int exception_code_,
+    const std::string & message,
+    WriteBuffer * compression_buffer,
+    bool structured_exception) noexcept
 {
     bool use_compression_buffer = compression_buffer && !compression_buffer->isCanceled() && !compression_buffer->isFinalized();
 
@@ -275,6 +280,8 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             // Set HTTP code and HTTP message. Add "X-ClickHouse-Exception-Code" header.
             // If it is not HEAD request send the message in the body.
             setExceptionCode(exception_code_);
+            if (structured_exception)
+                response.setContentType("application/json; charset=UTF-8");
 
             auto & out = use_compression_buffer ? *compression_buffer : *this;
             writeString(message, out);
@@ -291,9 +298,14 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 " Proper HTTP error code and headers have been send to the client."
                 " HTTP code: {}, message: <{}>, error code: {}, message: <{}>,"
                 " use compression: {}, data has been send through buffers: {}, compression discarded data: {}, discarded data: {}",
-            response.getStatus(), response.getReason(), exception_code_, message,
-            use_compression_buffer,
-            data_sent, compression_discarded_data, discarded_data);
+                response.getStatus(),
+                response.getReason(),
+                exception_code_,
+                structured_exception ? "JSON exception" : message,
+                use_compression_buffer,
+                data_sent,
+                compression_discarded_data,
+                discarded_data);
         }
         else
         {
@@ -359,6 +371,9 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             size_t size_message_excluded = 2 + EXCEPTION_MARKER.size() + 2 + EXCEPTION_TAG_LENGTH + 2 + 8 + 1 + EXCEPTION_TAG_LENGTH + 2 + EXCEPTION_MARKER.size() + 2;
 
             size_t max_exception_message_size = MAX_EXCEPTION_SIZE - size_message_excluded;
+            /// Truncating JSON would produce an invalid object. Abort the stream instead.
+            if (structured_exception && message.size() > max_exception_message_size)
+                throw Exception(ErrorCodes::ABORTED, "JSON exception exceeds the HTTP exception block size limit");
 
             writeCString("\r\n", out);
             writeString(EXCEPTION_MARKER, out);
@@ -391,9 +406,14 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 "Error has been sent at the end of the response. HTTP protocol has been broken by server."
                 " HTTP code: {}, message: <{}>, error code: {}, message: <{}>."
                 " use compression: {}, data has been send through buffers: {}, compression discarded data: {}, discarded data: {}",
-            response.getStatus(), response.getReason(), exception_code_, message,
-            use_compression_buffer,
-            data_sent, compression_discarded_data, discarded_data);
+                response.getStatus(),
+                response.getReason(),
+                exception_code_,
+                structured_exception ? "JSON exception" : message,
+                use_compression_buffer,
+                data_sent,
+                compression_discarded_data,
+                discarded_data);
 
             // this prevent sending final empty chunk in case of Transfer-Encoding: chunked
             // the aim is to break HTTP

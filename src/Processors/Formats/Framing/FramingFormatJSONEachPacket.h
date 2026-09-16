@@ -46,7 +46,7 @@ protected:
     void writeProgressPacket(const Progress & progress) override;
     void writeLogsPacket(const Block & block) override;
     void writeProfileEventsPacket(const Block & block) override;
-    void writeExceptionPacket(const String & message) override;
+    void writeExceptionPacket(const String & message, bool structured) override;
 
 private:
     const bool base64;

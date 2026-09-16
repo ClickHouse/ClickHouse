@@ -1255,6 +1255,37 @@ In the example below, every server response will contain two custom headers: `X-
 </clickhouse>
 ```
 
+## Structured JSON exceptions {#structured-json-exceptions}
+
+Send `X-ClickHouse-Exception-Format: JSON` to receive errors as JSON objects. Successful query results retain their requested output format. Without this header, errors retain their existing representation.
+
+```bash
+curl -sS 'http://localhost:8123/?query_id=a74d4967-7461-4012-8e68-4c93535ac1da&wait_end_of_query=1' \
+  -H 'X-ClickHouse-Exception-Format: JSON' \
+  --data-binary 'SELECT val2 FROM test_play'
+```
+
+For example, when `test_play` exists but has no `val2` column:
+
+```json
+{
+  "code": 47,
+  "name": "DB::Exception",
+  "code_name": "UNKNOWN_IDENTIFIER",
+  "query_id": "a74d4967-7461-4012-8e68-4c93535ac1da",
+  "query": "SELECT val2 FROM test_play",
+  "formatted_message": "Code: 47. DB::Exception: ... (UNKNOWN_IDENTIFIER)"
+}
+```
+
+`formatted_message` contains the complete exception text that the plain-text response would contain, without the response's trailing newline. The JSON object has exactly these six fields. It has no `has_nested` or separate `stack_trace` field. The existing `stacktrace=1` parameter includes a stack trace inside `formatted_message` when server configuration permits it.
+
+`query` preserves the submitted SQL, including whitespace and parameter placeholders, independently of query-log truncation and formatting. As in normal HTTP query processing, SQL in the URL query parameter and request body is joined by a newline. Data following a parsed `INSERT` statement is excluded. Invalid UTF-8 is replaced so the response remains valid JSON. If the request fails before SQL is read, the query is empty or contains only the available URL query; if SQL exceeds the query size limit, only the prefix read for parsing is available. Query identifiers are strings and may be supplied by the caller; otherwise ClickHouse generates a UUID. An error before query-context creation has an empty identifier.
+
+The response advertises `X-ClickHouse-Exception-Format: JSON`. A standalone error uses `Content-Type: application/json; charset=UTF-8` and the usual HTTP error status. Structured errors take precedence over `http_write_exception_in_output_format`.
+
+Once result transmission starts, HTTP status and content type cannot be changed. An unframed response uses the existing tagged exception block, with JSON as its message, and an incomplete HTTP transfer. If the complete object cannot fit in that block's 16 KiB limit, the transfer is aborted; JSON is never truncated. With `framing_output_format=JSONEachPacketString`, `JSONEachPacketBase64`, or `EventStream`, the terminal packet's `exception` value is the JSON object. Use `wait_end_of_query=1` and sufficient buffering when a standalone JSON error is required.
+
 ## Valid JSON/XML response on exception during HTTP streaming {#valid-output-on-exception-http-streaming}
 
 While query execution occurs over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text.

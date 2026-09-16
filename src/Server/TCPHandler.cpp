@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/ErrorCodes.h>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -436,6 +437,7 @@ void TCPHandler::runImpl()
             session->makeSessionContext();
 
         sendHello();
+        hello_sent = true;
 
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
@@ -1047,7 +1049,7 @@ void TCPHandler::runImpl()
             if (query_state)
                 query_state->io.onException();
             exception = std::make_unique<DB::Exception>(Exception::CreateFromSTDTag{}, e);
-            sendException(*exception, send_exception_with_stack_trace);
+            sendException(*exception, send_exception_with_stack_trace, query_state.get());
             std::abort();
         }
 #endif
@@ -1115,7 +1117,7 @@ void TCPHandler::runImpl()
                 try
                 {
                     std::lock_guard lock(*callback_mutex);
-                    sendException(*exception, send_exception_with_stack_trace);
+                    sendException(*exception, send_exception_with_stack_trace, query_state.get());
                 }
                 catch (...) // NOLINT(bugprone-empty-catch)
                 {
@@ -1171,7 +1173,7 @@ void TCPHandler::runImpl()
                     out->sync();
                 }
                 else
-                    sendException(*exception, send_exception_with_stack_trace);
+                    sendException(*exception, send_exception_with_stack_trace, query_state.get());
             }
             catch (...)
             {
@@ -3328,13 +3330,20 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
 }
 
 
-void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
+void TCPHandler::sendException(const Exception & e, bool with_stack_trace, const QueryState * state)
 {
     if (out->isCanceled())
         return;
 
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
+    if (hello_sent && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_EXCEPTION_QUERY_INFO)
+    {
+        writeStringBinary(state ? std::string_view(state->query) : std::string_view{}, *out);
+        writeStringBinary(ErrorCodes::getName(e.code()), *out);
+        writeStringBinary(
+            state && state->query_context ? state->query_context->getCurrentQueryId() : (state ? state->query_id : String{}), *out);
+    }
 
     out->finishChunk();
     out->sync();
