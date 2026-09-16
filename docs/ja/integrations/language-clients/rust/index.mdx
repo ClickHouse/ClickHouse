@@ -1,5 +1,5 @@
 ---
-sidebarTitle: '概要'
+sidebarTitle: 'Rust'
 keywords: ['clickhouse', 'rs', 'rust', 'cargo', 'crate', 'http', 'client', 'connect', 'integrate']
 slug: /integrations/rust
 description: 'ClickHouse に接続するための公式 Rust クライアント。'
@@ -189,7 +189,7 @@ insert.end().await?;
 
 * `end()` が呼び出されない場合、`INSERT` は中止されます。
 * ネットワーク負荷を分散するため、行はストリームとして順次送信されます。
-* ClickHouse がバッチをアトミックに挿入するのは、すべての行が同じパーティションに収まり、その数が [`max_insert_block_size`](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) 未満の場合に限られます。
+* ClickHouse がバッチをアトミックに挿入するのは、すべての行が同じパーティションに収まり、その数が [`max_insert_block_size`](/ja/reference/settings/session-settings#max_insert_block_size) 未満の場合に限られます。
 
 <div id="async-insert-server-side-batching">
   ### 非同期 INSERT (サーバー側バッチ処理)

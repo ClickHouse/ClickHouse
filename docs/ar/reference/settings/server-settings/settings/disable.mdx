@@ -18,7 +18,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-يعطّل استعلامات insert/alter/delete. يُفعَّل هذا الإعداد عند الحاجة إلى عُقد للقراءة فقط، لمنع تأثير عمليات الإدراج والـ mutation على أداء القراءة. ويُسمح بعمليات الإدراج إلى المحركات الخارجية (S3 وDataLake وMySQL وPostrgeSQL وKafka وغيرها) رغم هذا الإعداد.
+يعطّل استعلامات `INSERT` و`ALTER` و`DELETE` حتى لا تنشئ النسخ المتماثلة للقراءة فقط أجزاء بيانات أو عمليات mutation أو أعمال دمج تؤثر في أداء القراءة.
+
+تظل عمليات الكتابة إلى التخزين الخارجي عبر محركات مثل `S3` و`DataLake` و`MySQL` و`PostgreSQL` و`Kafka` مسموحة. يُعطَّل البث في الخلفية من جداول `Kafka` و`RabbitMQ` و`NATS` و`S3Queue` إلى العروض المادية المرفقة لأنه ينتج أجزاء `MergeTree` وأعمال دمج على هذه النسخة المتماثلة.
 
 <div id="disable_internal_dns_cache">
   ## disable_internal_dns_cache

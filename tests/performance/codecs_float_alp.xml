@@ -1,7 +1,7 @@
 <test>
     <settings>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>
-        <allow_experimental_codecs>1</allow_experimental_codecs>
+        <enable_alp_codec>1</enable_alp_codec>
     </settings>
 
     <!-- TODO: re-enable in a follow-up PR

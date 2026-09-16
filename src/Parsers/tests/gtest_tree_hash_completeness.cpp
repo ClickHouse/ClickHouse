@@ -252,7 +252,6 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
         "SHOW CREATE TABLE db.t INTO OUTFILE 'x'",
         "CHECK TABLE db.t PARTITION 1 FORMAT JSONEachRow",
         "CHECK DATABASE db FORMAT JSONEachRow",
-        "WATCH db.t LIMIT 5 FORMAT JSONEachRow",
         "OPTIMIZE TABLE db.t PARTITION 1 FINAL DEDUPLICATE BY a, b",
         "ALTER TABLE db.t ADD COLUMN x UInt64 FORMAT JSONEachRow",
         "DROP TABLE db.t",
@@ -325,24 +324,19 @@ TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
 
 TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
 {
-    /// `ASTCheckTableQuery::partition` / `part_name`, `ASTWatchQuery::limit_length` /
-    /// `is_watch_events` and `ASTOptimizeQuery::deduplicate_by_columns` are kept outside `children`,
+    /// `ASTCheckTableQuery::partition` / `part_name` and `ASTOptimizeQuery::deduplicate_by_columns`
+    /// are kept outside `children`,
     /// so `CloneHashesEqual` above would pass for them even if a clone dropped them.
     EXPECT_NE(hashOf("CHECK TABLE t"), hashOf("CHECK TABLE t PARTITION 1"));
     EXPECT_NE(hashOf("CHECK TABLE t PARTITION 1"), hashOf("CHECK TABLE t PARTITION 2"));
     EXPECT_NE(hashOf("CHECK TABLE t"), hashOf("CHECK TABLE t PART 'all_1_1_0'"));
     EXPECT_NE(hashOf("CHECK TABLE t PART 'all_1_1_0'"), hashOf("CHECK TABLE t PART 'all_2_2_0'"));
 
-    EXPECT_NE(hashOf("WATCH t"), hashOf("WATCH t LIMIT 5"));
-    EXPECT_NE(hashOf("WATCH t LIMIT 5"), hashOf("WATCH t LIMIT 6"));
-    EXPECT_NE(hashOf("WATCH t"), hashOf("WATCH t EVENTS"));
-
     EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"));
     EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY b"));
 
     for (const std::string query : {
              "CHECK TABLE t PARTITION 1",
-             "WATCH db.t EVENTS LIMIT 5 FORMAT JSONEachRow",
              "OPTIMIZE TABLE t PARTITION 1",
              "OPTIMIZE TABLE t DRY RUN PARTS 'p1'",
              "OPTIMIZE TABLE t DEDUPLICATE BY a",
@@ -353,7 +347,6 @@ TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
     for (const std::string query : {
              "CHECK TABLE t PARTITION 1",
              "CHECK TABLE t PART 'all_1_1_0'",
-             "WATCH t EVENTS LIMIT 5",
              "OPTIMIZE TABLE t DEDUPLICATE BY a, b",
          })
     {
@@ -525,6 +518,31 @@ TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)
     }
 }
 
+TEST(TreeHashCompleteness, TableFunctionsRejectAPrimaryKeyTheyCannotFormat)
+{
+    /// A table created from a table function has no storage definition of its own, so a PRIMARY KEY
+    /// in the column list used to be normalized into a synthesized storage definition that
+    /// formatting printed after the table function - a position that no longer parsed back (and
+    /// would have made the table unloadable from its metadata). Found by the AST fuzzer.
+    for (const std::string query : {
+             "CREATE TABLE t (a UInt8 PRIMARY KEY) AS numbers(5)",
+             "CREATE TABLE t (a UInt8, PRIMARY KEY a) AS numbers(5)",
+             "ATTACH TABLE t (a UInt8 PRIMARY KEY) AS numbers(5)",
+         })
+        EXPECT_THROW(parse(query), Exception) << query;
+
+    /// Without a PRIMARY KEY the table function keeps its column list; with an explicit ENGINE the
+    /// storage definition is the table's own.
+    for (const std::string query : {
+             "CREATE TABLE t (a UInt8) AS numbers(5)",
+             "CREATE TABLE t (a UInt8 PRIMARY KEY) ENGINE = MergeTree",
+         })
+    {
+        ASTPtr ast = parse(query);
+        EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+    }
+}
+
 TEST(TreeHashCompleteness, ExplicitNilUuidClausesAreRejected)
 {
     /// Both clauses used to retain presence state that formatting could not represent. Reject them
@@ -566,15 +584,14 @@ TEST(TreeHashCompleteness, CreateQueryUpdatesEveryDirectChildPointer)
     /// in `children` and then asks the node to update its member pointer; a member missing here
     /// keeps pointing at the node that was just released.
     const std::string query =
-        "CREATE WINDOW VIEW v ENGINE = Memory WATERMARK = INTERVAL 1 SECOND "
-        "ALLOWED_LATENESS = INTERVAL 2 SECOND AS SELECT count(a) FROM t "
-        "GROUP BY tumble(timestamp, INTERVAL 5 SECOND) AS wid";
+        "CREATE MATERIALIZED VIEW v ENGINE = Memory DEFINER = CURRENT_USER SQL SECURITY DEFINER "
+        "COMMENT 'c' AS SELECT count(a) FROM t";
     ASTPtr ast = parse(query);
     auto & create = ast->as<ASTCreateQuery &>();
-    ASSERT_TRUE(create.watermark_function);
-    ASSERT_TRUE(create.lateness_function);
+    ASSERT_TRUE(create.sql_security);
+    ASSERT_TRUE(create.comment);
 
-    for (IAST ** member : {&create.watermark_function, &create.lateness_function})
+    for (IAST ** member : {&create.sql_security, &create.comment})
     {
         ASTPtr replacement = (*member)->clone();
         ast->updatePointerToChild(*member, replacement);
@@ -659,6 +676,22 @@ TEST(TreeHashCompleteness, JSONRejectsColumnPrimaryKeyMultiTargetDetachAndOrphan
     EXPECT_EQ(hashOfJSONRoundTrip("DETACH TABLE t"), hashOf("DETACH TABLE t"));
     EXPECT_EQ(hashOfJSONRoundTrip("TRUNCATE TABLE t"), hashOf("TRUNCATE TABLE t"));
     EXPECT_EQ(hashOfJSONRoundTrip("DROP TABLE t1, t2"), hashOf("DROP TABLE t1, t2"));
+
+    /// A table created from a table function has no storage definition of its own, so the parser
+    /// accepts only one of the two clauses. A payload carrying both formats to a definition that
+    /// no longer parses back, which the metadata written for such a table could not be loaded from.
+    {
+        String json = serializeASTToJSON(*parse("CREATE TABLE t (a UInt8) AS numbers(5)"));
+        const String key = R"("as_table_function":)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.insert(pos, R"("storage":{"type":"Storage","engine":{"type":"Function","name":"MergeTree","no_empty_args":true,"kind":"TABLE_ENGINE"}},)");
+        expectJSONRejected(json);
+    }
+
+    /// Either clause on its own stays accepted.
+    EXPECT_EQ(hashOfJSONRoundTrip("CREATE TABLE t (a UInt8) AS numbers(5)"), hashOf("CREATE TABLE t (a UInt8) AS numbers(5)"));
+    EXPECT_EQ(hashOfJSONRoundTrip("CREATE TABLE t (a UInt8) ENGINE = MergeTree"), hashOf("CREATE TABLE t (a UInt8) ENGINE = MergeTree"));
 
     /// The parser produces the watermark fields only together with the column; orphaned fields
     /// would previously be dropped silently, hashing and executing as an unwatermarked stream.
