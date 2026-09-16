@@ -38,6 +38,12 @@ public:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
+    void createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & table_location,
+        Poco::JSON::Object::Ptr metadata_content) const override;
+
     void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
@@ -97,6 +103,8 @@ private:
         std::function<void(std::ostream &)> out_stream_callback) const;
 
     std::string getBearerToken(bool force_refresh = false) const;
+
+    void checkNamespaceExists(const std::string & schema_name) const;
 
     /// Fetches a token from the OAuth server.
     AccessToken retrieveAccessToken() const;

@@ -4,12 +4,15 @@
 
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Databases/DataLake/UnityCatalogUtils.h>
+#include <IO/HTTPCommon.h>
 #include <Common/SettingsChanges.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <IO/Operators.h>
@@ -245,11 +248,13 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::postJSONRequest(
     const std::string & route,
     std::function<void(std::ostream &)> out_stream_callback) const
 {
+    /// Some Unity servers answer HTTP 500 to a POST without an explicit `Content-Type`.
+    DB::HTTPHeaderEntries headers{{"Content-Type", "application/json"}};
     /// `out_stream_callback` is copied, not moved: the retry has to send the same body again.
     return requestWithRetry([&](bool force_refresh)
     {
         return makeHTTPRequestAndReadJSON(
-            base_url / route, getContext(), getBearerToken(force_refresh), {}, {},
+            base_url / route, getContext(), getBearerToken(force_refresh), {}, headers,
             Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
     });
 }
@@ -316,11 +321,70 @@ CatalogTables UnityV2Catalog::listTablesInNamespaceDirect(const std::string & na
 bool UnityV2Catalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
-    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    try
+    {
+        auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+        return hasValueAndItsNotNone("name", object)
+            && object->get("name").extract<String>() == table_name;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            throw;
 
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-    return hasValueAndItsNotNone("name", object)
-        && object->get("name").extract<String>() == table_name;
+        /// The OSS server also maps a missing catalog or schema to 404, so probe the schema
+        /// to keep a misconfigured namespace an error instead of an absent table.
+        checkNamespaceExists(schema_name);
+        LOG_DEBUG(log, "Unity table {} does not exist", full_table_name);
+        return false;
+    }
+}
+
+void UnityV2Catalog::checkNamespaceExists(const std::string & schema_name) const
+{
+    try
+    {
+        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, schema_name));
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "DeltaLake catalog `{}` has no schema `{}` (or the catalog itself does not exist)",
+                warehouse, schema_name);
+        throw;
+    }
+}
+
+void UnityV2Catalog::createTable(
+    const String & namespace_name,
+    const String & table_name,
+    const String & table_location,
+    Poco::JSON::Object::Ptr metadata_content) const
+{
+    auto fields = metadata_content->getArray("fields");
+    if (!fields)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema fields are missing for Unity createTable");
+
+    auto body = buildUnityCreateTableBody(
+        warehouse, namespace_name, table_name, table_location, buildUnityColumnsFromDeltaSchema(fields));
+
+    LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
+
+    try
+    {
+        auto response = postJSONRequest(TABLES_ENDPOINT, [&](std::ostream & os) { body->stringify(os); });
+        LOG_TEST(log, "Unity createTable response: {}", response.second);
+    }
+    catch (...)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Failed to create table {}.{} in Unity catalog: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
 }
 
 void UnityV2Catalog::getTableMetadata(
