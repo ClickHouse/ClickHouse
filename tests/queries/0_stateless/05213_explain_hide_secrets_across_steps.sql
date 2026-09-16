@@ -48,3 +48,17 @@ FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
 SELECT countIf(explain LIKE '%encrypt(''aes-128-ecb'', toString(number), [HIDDEN])%') AS column_argument_shown
 FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
     SELECT encrypt('aes-128-ecb', toString(number), 'SEKRIT_LITERALKEY') FROM numbers(1)));
+
+-- The exact shape from the report: the HMAC key is a decrypt() of a hex ciphertext with an IV,
+-- computed on the opposite JOIN side.
+SELECT countIf(explain LIKE '%JOIN_SIDE_SECRET_PLAINTEXT%') AS report_join_leaks, countIf(explain LIKE '%[HIDDEN]%') > 0 AS report_join_hidden
+FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
+    SELECT n.number FROM numbers(1) AS n
+    INNER JOIN (
+        SELECT decrypt('aes-128-cbc', unhex(hex(encrypt('aes-128-cbc', 'JOIN_SIDE_SECRET_PLAINTEXT', '0123456789abcdef', 'abcdef9876543210'))), '0123456789abcdef', 'abcdef9876543210') AS k
+    ) AS s ON HMAC('sha256', toString(n.number), s.k) = ''));
+
+-- The report's positive control: a key bound through a WITH alias in the same scope.
+SELECT countIf(explain LIKE '%WITH_ALIAS_SECRET%') AS with_alias_leaks, countIf(explain LIKE '%[HIDDEN]%') > 0 AS with_alias_hidden
+FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (
+    WITH 'WITH_ALIAS_SECRET' AS k SELECT number FROM numbers(1) WHERE empty(HMAC('sha256', toString(number), k))));
