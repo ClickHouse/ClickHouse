@@ -108,6 +108,8 @@ private:
     std::atomic<bool> key_set_dropped = false;
 };
 
+/// Exact set-backed runtime filter. Positive filters reject only outer `Nullable` NULL rows;
+/// NULLs nested in Tuple, Dynamic, or Variant remain hashable parts of the key.
 template <bool negate>
 class ExactSetRuntimeFilter
 {
@@ -167,7 +169,8 @@ private:
 extern template class ExactSetRuntimeFilter<false>;
 extern template class ExactSetRuntimeFilter<true>;
 
-/// Bloom-backed runtime filter for approximate set membership checks.
+/// Bloom-backed runtime filter for approximate set membership checks. It skips outer `Nullable`
+/// NULL rows while preserving nested NULLs as hashable parts of the key.
 class ApproximateSetRuntimeFilter
 {
 public:
