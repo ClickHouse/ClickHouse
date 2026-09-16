@@ -42,7 +42,6 @@
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>

@@ -36,7 +36,6 @@
 #include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
