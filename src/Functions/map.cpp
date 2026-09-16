@@ -400,11 +400,8 @@ public:
     }
 };
 
-/// mapContainsKeyValue(map, key, value) - does the map hold an entry with this key and this value?
-///
-/// Every entry is considered, unlike `map[key] = value`, which sees only the first occurrence of `key`.
-/// The two differ for a map with a repeated key: `mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2')`
-/// is 1, while `map('k', 'v1', 'k', 'v2')['k'] = 'v2'` is 0.
+/// mapContainsKeyValue(map, key, value) considers every entry, unlike `map[key] = value`, which sees
+/// only the first occurrence of `key`.
 class FunctionMapContainsKeyValue final : public IFunction
 {
 public:
@@ -425,12 +422,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// A `NULL` needle is a value to search for, not one that makes the result `NULL`: the function
-    /// returns `UInt8`, as `mapContainsKey` and `mapContainsValue` do.
+    /// A `NULL` needle is a value to search for, not one that makes the result `NULL`.
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    /// The comparisons run on the key and value columns taken out of the map, so `LowCardinality` is
-    /// unwrapped below. The generic machinery would also wrap the `UInt8` result.
+    /// Unwrapped below, on the columns taken out of the map; the generic path would also wrap the result.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -440,7 +435,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Map, got {} instead", getName(), arguments[0]->getName());
 
-        /// Reject incomparable arguments during analysis rather than at execution time.
+        /// Reject incomparable arguments during analysis, not at execution time.
         validateComparison(map_type->getKeyType(), arguments[1]);
         validateComparison(map_type->getValueType(), arguments[2]);
 
@@ -479,11 +474,30 @@ public:
     }
 
 private:
-    /// A `Nothing` column holds no values and a `Nullable(Nothing)` one holds only `NULL`s. Either way
-    /// there is nothing for `=` to compare: a `NULL` matches only another `NULL`.
+    /// `Nothing` holds no values and `Nullable(Nothing)` only `NULL`s, so there is nothing to compare.
     static bool isAlwaysNullOrEmpty(const DataTypePtr & type) { return isNothing(removeNullable(type)); }
 
-    /// `equals` decides what is comparable, so that the function accepts the arguments `map[key] = value` does.
+    struct NullCheck
+    {
+        const NullMap * nulls = nullptr;
+        bool always = false;
+
+        bool isNullAt(size_t row) const { return always || (nulls && (*nulls)[row]); }
+    };
+
+    static NullCheck makeNullCheck(const DataTypePtr & type, const IColumn & column)
+    {
+        if (isAlwaysNullOrEmpty(type))
+            return {.nulls = nullptr, .always = true};
+
+        /// A constant keeps its null bit inside the `ColumnConst`, out of reach of a null map.
+        if (isColumnConst(column))
+            return {.nulls = nullptr, .always = column.onlyNull()};
+
+        return {.nulls = getNullMap(column), .always = false};
+    }
+
+    /// `equals` decides what is comparable, so this accepts the arguments `map[key] = value` accepts.
     void validateComparison(const DataTypePtr & element_type, const DataTypePtr & needle_type) const
     {
         if (isAlwaysNullOrEmpty(element_type) || isAlwaysNullOrEmpty(needle_type))
@@ -495,7 +509,7 @@ private:
         function_equals->build(equals_arguments);
     }
 
-    /// One flag per map entry: whether the entry's key (or value) equals the needle of the row it belongs to.
+    /// One flag per entry: does its key (or value) equal the needle of the row the entry belongs to?
     PaddedPODArray<UInt8> matchEntries(
         const ColumnPtr & elements_argument,
         const DataTypePtr & element_type_argument,
@@ -510,8 +524,7 @@ private:
         auto element_type = recursiveRemoveLowCardinality(element_type_argument);
         auto needle_type = recursiveRemoveLowCardinality(needle_argument.type);
 
-        /// The needle holds one value per row while the comparison is per entry, so spread it over the
-        /// entries of its row.
+        /// One needle value per row, one comparison per entry: spread it over the entries of its row.
         ColumnPtr needle;
         if (isColumnConst(*needle_argument.column))
             needle = needle_argument.column->cloneResized(num_entries);
@@ -519,17 +532,14 @@ private:
             needle = needle_argument.column->replicate(offsets);
         needle = recursiveRemoveLowCardinality(needle);
 
-        const bool elements_are_null = isAlwaysNullOrEmpty(element_type);
-        const bool needle_is_null = isAlwaysNullOrEmpty(needle_type);
-        const NullMap * element_nulls = getNullMap(*elements);
-        const NullMap * needle_nulls = getNullMap(*needle);
+        const auto element_nulls = makeNullCheck(element_type, *elements);
+        const auto needle_nulls = makeNullCheck(needle_type, *needle);
 
         ColumnPtr equals_result;
         const PaddedPODArray<UInt8> * equals_data = nullptr;
 
-        /// `=` returns `NULL` against a `NULL` operand, so it has nothing to contribute when one side
-        /// is `NULL` everywhere.
-        if (!elements_are_null && !needle_is_null)
+        /// `=` yields `NULL` against a `NULL` operand, so it says nothing when one side is all `NULL`.
+        if (!element_nulls.always && !needle_nulls.always)
         {
             ColumnsWithTypeAndName equals_arguments{{elements, element_type, ""}, {needle, needle_type, ""}};
             auto equals = function_equals->build(equals_arguments);
@@ -545,12 +555,12 @@ private:
 
         for (size_t i = 0; i < num_entries; ++i)
         {
-            const bool element_is_null = elements_are_null || (element_nulls && (*element_nulls)[i]);
-            const bool value_is_null = needle_is_null || (needle_nulls && (*needle_nulls)[i]);
+            const bool element_is_null = element_nulls.isNullAt(i);
+            const bool needle_is_null = needle_nulls.isNullAt(i);
 
             /// A `NULL` matches only another `NULL`, as in `mapContainsKey` and `mapContainsValue`.
-            matches[i] = (element_is_null || value_is_null)
-                ? static_cast<UInt8>(element_is_null && value_is_null)
+            matches[i] = (element_is_null || needle_is_null)
+                ? static_cast<UInt8>(element_is_null && needle_is_null)
                 : (*equals_data)[i];
         }
 
@@ -628,11 +638,15 @@ For two maps, returns the first map with values updated on the values for the co
 
     /// mapContainsKeyValue function documentation
     FunctionDocumentation::Description description_mapContainsKeyValue = R"(
-Returns whether the map contains an entry with the given key and value, i.e. whether
-`arrayExists((k, v) -> k = key AND v = value, mapKeys(map), mapValues(map))` holds.
+Returns whether the map contains an entry with the given key and value.
+
+For arguments that are not `NULL` this is
+`arrayExists((k, v) -> k = key AND v = value, mapKeys(map), mapValues(map))`.
+A `NULL` matches only another `NULL`, as in `mapContainsKey` and `mapContainsValue`, rather than
+comparing as unknown the way `=` does.
 
 All entries are considered, unlike `map[key] = value`, which compares only the value of the first
-occurrence of `key`. A `NULL` matches only another `NULL`.
+occurrence of `key`.
 
 A [text index](/reference/engines/table-engines/mergetree-family/textindexes) with the `keyValuePairs`
 tokenizer answers this function from the index.

@@ -298,9 +298,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
-    /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
-    /// the matching rows, and `mapContainsKeyValue(m, 'key', 'value')` is the union of the two lists that
-    /// hold the pair as a first and as a repeated occurrence. Nothing else is supported yet.
+    /// One token per pair: `m['key'] = 'value'` is one posting list, `mapContainsKeyValue` the union of
+    /// the first-occurrence and repeated-occurrence lists. Nothing else is supported yet.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
         const bool is_exact = function_name == "equals" || function_name == "mapContainsKeyValue";
@@ -372,8 +371,8 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
         return true;
 
     const auto function_name = node.function_base->getName();
-    /// The third argument of `like` and `ilike` is an ESCAPE character, and that of
-    /// `mapContainsKeyValue` is the searched value, not a tokenizer.
+    /// The third argument is an ESCAPE character for `like`/`ilike` and the searched value for
+    /// `mapContainsKeyValue`, not a tokenizer.
     if (function_name == "like" || function_name == "ilike" || function_name == "mapContainsKeyValue")
         return true;
 
@@ -1956,9 +1955,8 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
     if (!hasIndexForColumn(function_node.getArgumentAt(0).getColumnName()))
         return false;
 
-    /// A FixedString Field carries its zero padding, which the index does not store, while the function
-    /// compares through the String supertype and ignores it: the token would never be found and exact
-    /// direct read would drop matching rows. Scan instead, as `equals` does.
+    /// FixedString excluded: its padding is compared away by the function but not stored in the token,
+    /// so exact direct read would drop matching rows. Same as traverseMapElementKeyValueNode.
     auto get_string_constant = [](const RPNBuilderTreeNode & node) -> std::optional<String>
     {
         Field field;
@@ -1976,8 +1974,8 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
     if (!value)
         return false;
 
-    /// An entry holding the pair is either the key's first occurrence in its row or a repetition, and
-    /// every entry has a token, so no needle is excluded here - not even an empty one, unlike `equals`.
+    /// The pair is either the key's first occurrence or a repetition. Every entry has a token, so even
+    /// an empty value is searchable here, unlike in `equals`.
     VectorWithMemoryTracking<String> tokens;
     tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_rest=*/ false));
     tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_rest=*/ true));

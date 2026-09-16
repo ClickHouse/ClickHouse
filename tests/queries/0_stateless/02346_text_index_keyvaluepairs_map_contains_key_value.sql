@@ -1,9 +1,8 @@
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas -- direct read is not compatible with parallel replicas
 
--- Tests `mapContainsKeyValue(m, 'key', 'value')` on a text index with the `keyValuePairs` tokenizer.
--- The predicate holds for a row that has the pair as the first occurrence of the key or as a repetition,
--- so the index searches both tokens as a single `Any` query and answers it with exact direct read.
+-- Tests `mapContainsKeyValue(m, 'key', 'value')` on a `keyValuePairs` text index: the pair may be the
+-- key's first occurrence or a repetition, so both tokens are searched as one `Any` query, exact.
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;

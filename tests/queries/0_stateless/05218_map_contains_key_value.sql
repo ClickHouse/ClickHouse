@@ -42,9 +42,17 @@ SELECT mapContainsKeyValue(CAST(map('k', NULL) AS Map(String, Nullable(String)))
 SELECT mapContainsKeyValue(CAST(map('k', 'v') AS Map(String, Nullable(String))), 'k', 'v');
 SELECT mapContainsKeyValue(CAST(map('k', 'v') AS Map(String, Nullable(String))), 'k', NULL);
 
+-- A typed `NULL` keeps its null bit inside the constant column. Read through a null map only, it looks
+-- non-null, and the comparison then runs on the type default behind it, which can equal a stored value.
+SELECT mapContainsKeyValue(map('k', ''), 'k', CAST(NULL AS Nullable(String)));
+SELECT mapContainsKeyValue(map('k', 'v'), 'k', CAST(NULL AS Nullable(String)));
+SELECT mapContainsKeyValue(CAST(map('k', NULL) AS Map(String, Nullable(String))), 'k', CAST(NULL AS Nullable(String)));
+SELECT mapContainsKeyValue(CAST(map('k', NULL) AS Map(String, Nullable(String))), 'k', materialize(CAST(NULL AS Nullable(String))));
+SELECT mapContainsKeyValue(CAST(map('k', 'v') AS Map(String, Nullable(String))), 'k', CAST('v' AS Nullable(String)));
+SELECT mapContainsKeyValue(CAST(map('k', '') AS Map(String, Nullable(String))), 'k', CAST(NULL AS Nullable(String)));
+
 SELECT 'documentation';
--- The declared argument types are rendered into links, and an unknown type name makes every read of
--- `system.functions` and `system.documentation` throw, not only a read of this function's row.
+-- Argument types are rendered into links: an unknown name makes every read of these tables throw.
 SELECT name, is_aggregate FROM system.functions WHERE name = 'mapContainsKeyValue';
 SELECT count() FROM system.documentation WHERE type = 'Function' AND name = 'mapContainsKeyValue';
 

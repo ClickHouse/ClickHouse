@@ -189,8 +189,7 @@ private:
     /// index's column.
     std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
 
-    /// Everything a `keyValuePairs` index supports for a needle in the (column, constant) shape;
-    /// currently only `m['key'] = 'value'`.
+    /// A `keyValuePairs` index in the (column, constant) shape; currently only `m['key'] = 'value'`.
     bool traverseMapElementKeyValueNode(
         const String & function_name,
         const RPNBuilderTreeNode & index_column_node,
@@ -199,8 +198,7 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
-    /// `mapContainsKeyValue(m, 'key', 'value')` on a `keyValuePairs` index: the pair token for a first
-    /// and for a repeated occurrence of the key, searched as a single `Any` query.
+    /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
     bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
