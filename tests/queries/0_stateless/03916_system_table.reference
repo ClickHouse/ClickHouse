@@ -1,0 +1,14 @@
+1
+name	String
+type	Enum8(\'once\' = 0, \'regular\' = 1, \'pauseable_once\' = 2, \'pauseable\' = 3)
+enabled	UInt8
+0
+once	1
+regular	1
+pauseable_once	1
+pauseable	1
+1
+1
+replicated_merge_tree_insert_retry_pause	0
+replicated_merge_tree_insert_retry_pause	1
+replicated_merge_tree_insert_retry_pause	0
