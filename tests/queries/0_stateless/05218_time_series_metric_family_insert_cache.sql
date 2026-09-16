@@ -15,7 +15,8 @@ SELECT count() FROM timeSeriesMetricFamilies(ts);
 INSERT INTO ts (metric_family, type, unit, help)
 VALUES ('m', 'counter', 'bytes', 'second');
 SELECT count() FROM timeSeriesMetricFamilies(ts);
-SELECT type, unit, help FROM ts FINAL WHERE metric_family = 'm';
+SELECT type, unit, help FROM timeSeriesMetricFamilies(ts) ORDER BY type
+SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE ts;
 CREATE TABLE ts ENGINE = TimeSeries
