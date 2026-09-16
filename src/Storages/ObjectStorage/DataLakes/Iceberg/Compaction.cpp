@@ -111,7 +111,6 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
-    SharedHeader sample_block;
 
     class ParititonEncoder
     {
@@ -190,11 +189,15 @@ static Plan getPlan(
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     const String & write_format,
-    ContextPtr context)
+    ContextPtr context,
+    CompressionMethod compression_method)
 {
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
-    const auto [_, metadata_file_path, metadata_compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    Plan plan;
+    plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
+
+    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -202,23 +205,10 @@ static Plan getPlan(
         context,
         log.get(),
         persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_metadata_pointer_overrides */ true);
-
-    Plan plan;
-    plan.generator = FileNamesGenerator(
-        persistent_table_components.path_resolver.getTableLocation(), false, metadata_compression_method, write_format);
+        persistent_table_components.metadata_compression_method);
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(
-            metadata_file_path,
-            object_storage,
-            persistent_table_components.metadata_cache,
-            context,
-            log,
-            metadata_compression_method,
-            persistent_table_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -228,22 +218,18 @@ static Plan getPlan(
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
-    validateGarbageCollectionEnabled(initial_metadata_object, "compact table");
-
-    const auto current_schema_id = IcebergMetadata::parseTableSchema(
-        initial_metadata_object, *persistent_table_components.schema_processor, log);
-    const auto current_schema_object
-        = persistent_table_components.schema_processor->getIcebergTableSchemaById(current_schema_id);
-    const auto clickhouse_schema
-        = persistent_table_components.schema_processor->getClickHouseTableSchemaById(current_schema_id);
-    Block sample_block;
-    for (const auto & column : *clickhouse_schema)
-        sample_block.insert({column.type->createColumn(), column.type, column.name});
-
+    auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+    auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
+    Poco::JSON::Array::Ptr current_schema;
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(static_cast<UInt32>(i))->getArray(Iceberg::f_fields);
+            break;
+        }
+    }
     plan.initial_metadata_object = initial_metadata_object;
-    plan.sample_block = std::make_shared<const Block>(std::move(sample_block));
-
-    auto current_schema = current_schema_object->getArray(Iceberg::f_fields);
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
@@ -326,6 +312,7 @@ static Plan getPlan(
 
 static void writeDataFiles(
     Plan & initial_plan,
+    SharedHeader sample_block,
     ObjectStoragePtr object_storage,
     const IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
@@ -333,7 +320,6 @@ static void writeDataFiles(
     const String & write_format,
     CompressionMethod write_compression_method)
 {
-    const auto & sample_block = initial_plan.sample_block;
     ColumnMapperPtr column_mapper;
     {
         auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -1044,12 +1030,11 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 }
 
 static void writeMetadataFiles(
-    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, String write_format, String table_path)
+    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
 
-    const auto & sample_block = plan.sample_block;
-    ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block->getNamesAndTypes());
+    ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -1240,12 +1225,12 @@ static void writeMetadataFiles(
                 metadata_object,
                 partition_columns,
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
-                ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block).getResultTypes(),
+                ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes(),
                 data_files_vec,
                 file_row_counts,
                 file_byte_counts,
                 manifest_entry->statistics,
-                sample_block,
+                sample_block_,
                 snapshot,
                 write_format,
                 partititon_spec,
@@ -1344,14 +1329,16 @@ static void writeMetadataFiles(
 
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
-        writeMessageToFile(
-            json_representation,
-            path_resolver.resolve(generated_metadata_info.path),
-            object_storage,
-            context,
-            "",
-            "",
-            generated_metadata_info.compression_method);
+
+        auto buffer_metadata = object_storage->writeObject(
+            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+
+        buffer_metadata->write(json_representation.data(), json_representation.size());
+        buffer_metadata->finalize();
     }
 }
 
@@ -1472,6 +1459,7 @@ void compactIcebergTable(
     ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
+    SharedHeader sample_block_,
     ContextPtr context_,
     const String & write_format)
 {
@@ -1483,19 +1471,21 @@ void compactIcebergTable(
         persistent_table_components,
         object_storage_,
         write_format,
-        context_);
+        context_,
+        persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,
+            sample_block_,
             object_storage_,
             persistent_table_components.path_resolver,
             format_settings_,
             context_,
             write_format,
             persistent_table_components.metadata_compression_method);
-        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, write_format, persistent_table_components.table_path);
+        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }
 }

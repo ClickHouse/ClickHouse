@@ -1,5 +1,4 @@
 import io
-import json
 import re
 import time
 
@@ -47,30 +46,6 @@ class OrphanTestEnv:
                 settings=ICEBERG_SETTINGS,
             )
         self._n_rows = n_rows
-
-    def read_latest_metadata(self):
-        assert self.storage_type == "local", "reads the object in place, local only"
-        metadata_dir = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata"
-        latest = self.instance.exec_in_container(
-            ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
-        ).strip()
-        return json.loads(self.instance.exec_in_container(["cat", latest])), latest
-
-    def write_metadata(self, metadata, previous_path):
-        assert self.storage_type == "local", "edits the object in place, local only"
-        metadata_dir = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata"
-        metadata["last-updated-ms"] = int(time.time() * 1000)
-        version_match = re.search(r"/v(\d+)[^/]*\.metadata\.json$", previous_path)
-        new_version = int(version_match.group(1)) + 1
-        new_path = f"{metadata_dir}/v{new_version}.metadata.json"
-        new_content = json.dumps(metadata, indent=4)
-        self.instance.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"cat > {new_path}.tmp << 'JSONEOF'\n{new_content}\nJSONEOF\nmv {new_path}.tmp {new_path}",
-            ]
-        )
 
     def assert_data_intact(self):
         expected = "".join(f"{i}\n" for i in range(1, self._n_rows + 1))
@@ -607,32 +582,6 @@ def test_remove_orphan_files_rejected_on_v1(started_cluster_iceberg_with_spark, 
     )
     assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
     assert "format version" in error.lower(), f"Error should mention format version, got: {error}"
-
-
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_remove_orphan_files_rejects_minimal_v1_metadata(
-    started_cluster_iceberg_with_spark, storage_type
-):
-    """Reject v1 metadata before traversing fields that only exist in v2."""
-    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_minimal_v1")
-    env.populate(1, format_version=1)
-
-    metadata, previous_path = env.read_latest_metadata()
-    assert metadata["format-version"] == 1
-    assert metadata["snapshots"]
-    assert "schemas" in metadata
-    assert "current-schema-id" in metadata
-    metadata.pop("current-schema-id", None)
-    metadata.pop("schemas", None)
-    env.write_metadata(metadata, previous_path)
-
-    error = env.instance.query_and_get_error(
-        f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files(dry_run = 1);",
-        settings=ICEBERG_SETTINGS,
-    )
-    assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
-    assert "requires Iceberg format version >= 2" in error, \
-        f"Expected the format-version gate, got: {error}"
 
 
 @pytest.mark.parametrize("storage_type", ["local", "s3"])

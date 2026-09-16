@@ -1960,8 +1960,6 @@ value: 993
 
 ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
 
-`OPTIMIZE TABLE` is refused when the Iceberg table property `gc.enabled` is `false`, because compaction removes the files replaced by the rewrite.
-
 How to use it:
 
 ```sql

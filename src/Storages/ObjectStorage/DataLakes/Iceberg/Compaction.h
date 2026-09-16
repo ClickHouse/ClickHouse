@@ -26,6 +26,7 @@ void compactIcebergTable(
     DB::ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<DB::FormatSettings> & format_settings_,
+    DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
     const String & write_format);
 
