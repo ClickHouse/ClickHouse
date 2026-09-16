@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
@@ -23,9 +22,6 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     UncompressedCache * uncompressed_cache,
     MergeTreeReaderSettings settings)
 {
-    auto context = data_part_info->getContext();
-    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-
     const auto & index_granularity_info = data_part_info->getIndexGranularityInfo();
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         data_part_info,
@@ -35,11 +31,9 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         index_granularity_info,
         settings.save_marks_in_cache,
         settings.read_settings,
-        load_marks_threadpool,
+        /*load_marks_threadpool=*/ nullptr,
         /*num_columns_in_mark=*/ 1,
         settings.use_streaming_marks_compression);
-
-    marks_loader->startAsyncLoad();
 
     /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
     /// comes from checksums, and a stream with no checksums entry is sized via the storage.
