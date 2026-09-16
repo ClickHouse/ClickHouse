@@ -24,9 +24,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryPlanProfiler.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <optional>
+
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 
 namespace ProfileEvents
 {
@@ -122,6 +127,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     Block scalar_block;
 
+    /// Identifies this subquery within the query, for `system.query_log.query_plan`. Set only on
+    /// the cache miss below, which is the branch that actually runs it; on a hit nothing executes,
+    /// so there is nothing to report and nothing to link. Declared out here because the constant
+    /// the value is folded into is built further down, outside that branch.
+    std::optional<size_t> scalar_subquery_id;
+
     auto node_without_alias = node->clone();
     node_without_alias->removeAlias();
 
@@ -152,6 +163,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     else
     {
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+
+        scalar_subquery_id = CurrentThread::isInitialized() ? CurrentThread::get().getNextSubqueryIndex() : 0;
+
         auto subquery_context = Context::createCopy(context);
 
         Settings subquery_settings = context->getSettingsCopy();
@@ -281,6 +295,15 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
             }
 
+            /// This subquery runs here, during analysis, and its result is folded into the outer
+            /// query as a literal -- the plan that is later stored keeps no trace of it at all, not
+            /// even a reference, while its rows still count towards the query. Captured so the
+            /// stored document names the tables it read. Inert when the query is not being profiled.
+            ///
+            /// Declared out here so it outlives the pipeline it describes, and left untouched on the
+            /// `skip_execution_for_exists` path: nothing ran there, so there is nothing to report.
+            SubPlanCapture sub_plan_capture;
+
             if (!skip_execution_for_exists)
             {
                 QueryPlanOptimizationSettings optimization_settings(subquery_context);
@@ -288,11 +311,22 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
                 query_plan.setConcurrencyControl(subquery_context->getSettingsRef()[Setting::use_concurrency_control]);
 
-                auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+                /// Optimized before the capture and then built without optimizing again, as the
+                /// interpreter does for the query's own plan: optimization rewrites the plan, so a
+                /// capture taken before it would describe a shape that never ran.
+                query_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+                query_plan.optimize(optimization_settings);
+
+                sub_plan_capture = QueryPlanProfiler::captureSubPlan(
+                    subquery_context, query_plan, *scalar_subquery_id, SubPlanKind::Scalar);
+
+                auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(
+                    optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
 
                 io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
                 io.pipeline.setQuota(subquery_context->getQuota());
                 io.pipeline.setNormalizedQueryHash(subquery_context->getNormalizedQueryHash());
+                sub_plan_capture.instrument(io.pipeline);
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;
@@ -310,6 +344,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
+
+                /// While the pipeline is still alive; the statistics are read from its processors.
+                /// The loop above stops at the first non-empty chunk rather than draining, so these
+                /// describe a pipeline that may have been cancelled early -- which is what ran.
+                sub_plan_capture.finish(io.pipeline);
             }
 
             if (chunk.getNumRows() == 0)
@@ -409,11 +448,19 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
+        /// The subquery is gone from here on -- only its value remains -- so the id it was captured
+        /// under travels on the constant, for the planner to hand to the step that reads it. Unset
+        /// on a cache hit, where an earlier evaluation already reported the subquery.
+        if (scalar_subquery_id)
+            constant_node->setScalarSubqueryId(*scalar_subquery_id);
 
         if (scalar_column_with_type.column->isNullAt(0))
         {
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
-            node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+            auto wrapped = std::make_shared<ConstantNode>(std::move(constant_value), node);
+            if (scalar_subquery_id)
+                wrapped->setScalarSubqueryId(*scalar_subquery_id);
+            node = std::move(wrapped);
         }
         else
             node = std::move(constant_node);

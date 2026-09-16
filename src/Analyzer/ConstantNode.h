@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Core/Field.h>
 
 #include <Core/ConstantValue.h>
@@ -88,6 +90,13 @@ public:
         return source_expression;
     }
 
+    /// When this constant is the folded result of a scalar subquery, the id that subquery was
+    /// given, so that `system.query_log.query_plan` can say which step ended up using its value.
+    /// The subquery itself is gone by planning time -- only its value is left -- so the id has to
+    /// be carried here rather than recovered later. Assigned once, where the fold happens.
+    void setScalarSubqueryId(size_t id) { scalar_subquery_id = id; }
+    std::optional<size_t> getScalarSubqueryId() const { return scalar_subquery_id; }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::CONSTANT;
@@ -153,6 +162,7 @@ private:
     QueryTreeNodePtr source_expression;
     bool is_deterministic = true;
     size_t mask_id = 0;
+    std::optional<size_t> scalar_subquery_id;
 
     static constexpr size_t children_size = 0;
 

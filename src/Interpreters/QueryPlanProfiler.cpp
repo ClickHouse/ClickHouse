@@ -14,6 +14,13 @@
 #include <Processors/QueryPlan/StepStatsStorage.h>
 #include <Processors/QueryPlan/QueryPlanToJSON.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Interpreters/PreparedSets.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -54,6 +61,93 @@ ExplainPlanOptions planExplainOptions()
     };
 }
 
+/// Records, on every step that reads a set built by a subquery, the id of that subquery.
+///
+/// This is the half of the link the document cannot work out for itself: a captured sub-plan knows
+/// which subquery it is, but only the consuming step knows that it uses the result. Both ends carry
+/// the same assigned id, so rendering is a join rather than a search through printed text.
+///
+/// Must run while the `ActionsDAG`s are still in the plan -- `buildQueryPipeline` moves them into
+/// the `ExpressionActions` -- which is the same window in which the pretty names are captured.
+void recordConsumedSubqueries(QueryPlan & plan)
+{
+    const auto collect_from_dag = [](const ActionsDAG & dag, IQueryPlanStep & step)
+    {
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+                continue;
+
+            /// A scalar subquery leaves only its value behind, so the planner wrote the id onto
+            /// the constant as it built the actions.
+            if (node.scalar_subquery_id)
+                step.addConsumedSubqueryId(*node.scalar_subquery_id);
+
+            const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            if (!column_set)
+                continue;
+
+            const auto future_set = column_set->getData();
+            if (const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+                step.addConsumedSubqueryId(from_subquery->getSubqueryId());
+        }
+    };
+
+    /// The step types that can hold an expression referencing a set. `SourceStepWithFilter` covers
+    /// the reads generically, which is where a pushed-down `PREWHERE` puts the condition.
+    const auto collect_from_step = [&](IQueryPlanStep & step)
+    {
+        if (auto * expression = typeid_cast<ExpressionStep *>(&step))
+            collect_from_dag(expression->getExpression(), step);
+        else if (auto * filter = typeid_cast<FilterStep *>(&step))
+            collect_from_dag(filter->getExpression(), step);
+
+        if (auto * source = dynamic_cast<SourceStepWithFilter *>(&step))
+        {
+            if (const auto & dag = source->getFilterActionsDAG())
+                collect_from_dag(*dag, step);
+
+            /// Where filter pushdown puts the condition, and therefore where an `IN` over an
+            /// indexed column ends up: `s_suppkey IN subquery1` is a PREWHERE by the time the plan
+            /// is optimized, not a `Filter` step of its own.
+            if (const auto & prewhere = source->getPrewhereInfo())
+                collect_from_dag(prewhere->prewhere_actions, step);
+        }
+
+        /// Set only when PREWHERE is deferred after FINAL, in which case it is the filter that
+        /// actually runs.
+        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(&step))
+        {
+            if (const auto & prewhere = read_from_merge_tree->getDeferredPrewhereInfo())
+                collect_from_dag(prewhere->prewhere_actions, step);
+            if (const auto & row_level = read_from_merge_tree->getDeferredRowLevelFilter())
+                collect_from_dag(row_level->actions, step);
+        }
+    };
+
+    std::vector<QueryPlan::Node *> stack;
+    if (plan.isInitialized())
+        stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !node->step)
+            continue;
+
+        collect_from_step(*node->step);
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        /// A child plan is its own tree but the same query, and its steps can consume the same sets.
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && child_plan->getRootNode())
+                stack.push_back(child_plan->getRootNode());
+    }
+}
+
 void maskSensitiveValues(JSONBuilder::IItem & item)
 {
     auto masker = SensitiveDataMasker::getInstance();
@@ -85,6 +179,10 @@ String toJSONString(JSONBuilder::ItemPtr item)
 QueryPlan & QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
 {
     query_plan.emplace(std::move(plan_));
+
+    /// Both of these read the ActionsDAGs, which building the pipeline moves out of the steps, so
+    /// they happen here and not at render time.
+    recordConsumedSubqueries(*query_plan);
     pretty_names.emplace(
         QueryPlanFormat::buildPrettyNamesPerPlan(*query_plan)
     );
@@ -157,16 +255,51 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
     pipeline.setStepWallClockRegistry(std::move(registry));
 }
 
-SetSubPlanCapture::SetSubPlanCapture(
-    QueryPlanProfilerPtr profiler_, const QueryPlan & plan_, PrettyNamesPerPlan pretty_names_, String set_key_)
+SubPlanCapture::SubPlanCapture(
+    QueryPlanProfilerPtr profiler_,
+    const QueryPlan & plan_,
+    PrettyNamesPerPlan pretty_names_,
+    size_t subquery_id_,
+    SubPlanKind kind_)
     : profiler(std::move(profiler_))
     , plan(&plan_)
     , pretty_names(std::move(pretty_names_))
-    , set_key(std::move(set_key_))
+    , subquery_id(subquery_id_)
+    , kind(kind_)
 {
 }
 
-SetSubPlanCapture::~SetSubPlanCapture()
+SubPlanCapture::SubPlanCapture(SubPlanCapture && other) noexcept
+    : profiler(std::move(other.profiler))
+    , plan(other.plan)
+    , pretty_names(std::move(other.pretty_names))
+    , subquery_id(other.subquery_id)
+    , kind(other.kind)
+{
+    /// Leaves `other` inert, so only one of the two ever publishes.
+    other.profiler.reset();
+}
+
+SubPlanCapture & SubPlanCapture::operator=(SubPlanCapture && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    /// Whatever this capture was holding is finished with, and publishing the structure is better
+    /// than discarding it. A no-op in the usual case, where the target is still inert.
+    publish(nullptr);
+
+    profiler = std::move(other.profiler);
+    plan = other.plan;
+    pretty_names = std::move(other.pretty_names);
+    subquery_id = other.subquery_id;
+    kind = other.kind;
+    other.profiler.reset();
+
+    return *this;
+}
+
+SubPlanCapture::~SubPlanCapture()
 {
     /// Reached when `finish` never ran -- an exception while the sub-pipeline was executing, or a
     /// caller that stopped early. The structure is still worth having: without it the stored plan
@@ -174,7 +307,7 @@ SetSubPlanCapture::~SetSubPlanCapture()
     publish(nullptr);
 }
 
-void SetSubPlanCapture::publish(const StepStatsStorage * stats) noexcept
+void SubPlanCapture::publish(const StepStatsStorage * stats) noexcept
 {
     if (!profiler)
         return;
@@ -192,15 +325,15 @@ void SetSubPlanCapture::publish(const StepStatsStorage * stats) noexcept
             *plan,
             planExplainOptions(),
             owner->max_description_length,
-            "Set subquery, built during planning",
+            subquery_id,
+            kind,
             stats,
             &pretty_names);
 
         if (serialized.nodes.empty())
             return;
 
-        serialized.set_key = set_key;
-        owner->addSetSubPlan(std::move(serialized));
+        owner->addSubPlan(std::move(serialized));
     }
     catch (...) /// Ok: the plan is a diagnostic, and this runs both from a destructor and in the
                 /// middle of planning a query that has not returned anything yet. Losing one
@@ -211,7 +344,7 @@ void SetSubPlanCapture::publish(const StepStatsStorage * stats) noexcept
     }
 }
 
-void SetSubPlanCapture::instrument(QueryPipeline & pipeline)
+void SubPlanCapture::instrument(QueryPipeline & pipeline)
 {
     if (!profiler)
         return;
@@ -230,7 +363,7 @@ void SetSubPlanCapture::instrument(QueryPipeline & pipeline)
     }
 }
 
-void SetSubPlanCapture::finish(const QueryPipeline & pipeline)
+void SubPlanCapture::finish(const QueryPipeline & pipeline)
 {
     if (!profiler)
         return;
@@ -259,7 +392,8 @@ void SetSubPlanCapture::finish(const QueryPipeline & pipeline)
     publish(stats ? &*stats : nullptr);
 }
 
-SetSubPlanCapture QueryPlanProfiler::captureSetSubPlan(const ContextPtr & context, const QueryPlan & plan, String set_key)
+SubPlanCapture QueryPlanProfiler::captureSubPlan(
+    const ContextPtr & context, const QueryPlan & plan, size_t subquery_id, SubPlanKind kind)
 {
     auto profiler = context->getPlanProfiler();
     if (!profiler)
@@ -274,8 +408,12 @@ SetSubPlanCapture QueryPlanProfiler::captureSetSubPlan(const ContextPtr & contex
     {
         /// The only thing that has to be read now rather than at the end: building the pipeline
         /// moves the ActionsDAGs these names come from out of every expression step.
-        return SetSubPlanCapture(
-            std::move(profiler), plan, QueryPlanFormat::buildPrettyNamesPerPlan(plan), std::move(set_key));
+        /// The sub-plan is a plan of its own: its steps can consume other subqueries' sets too,
+        /// which is how TPC-H Q20 nests one set subquery inside another.
+        recordConsumedSubqueries(const_cast<QueryPlan &>(plan));
+
+        return SubPlanCapture(
+            std::move(profiler), plan, QueryPlanFormat::buildPrettyNamesPerPlan(plan), subquery_id, kind);
     }
     catch (...) /// Ok: see `publish`.
     {
@@ -284,10 +422,10 @@ SetSubPlanCapture QueryPlanProfiler::captureSetSubPlan(const ContextPtr & contex
     }
 }
 
-void QueryPlanProfiler::addSetSubPlan(SerializedSubPlan sub_plan)
+void QueryPlanProfiler::addSubPlan(SerializedSubPlan sub_plan)
 {
     std::lock_guard lock(sub_plans_mutex);
-    set_sub_plans.push_back(std::move(sub_plan));
+    sub_plans.push_back(std::move(sub_plan));
 }
 
 const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
@@ -323,7 +461,7 @@ const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
             max_description_length,
             stats ? &*stats : nullptr,
             pretty_names ? &*pretty_names : nullptr,
-            &set_sub_plans));
+            &sub_plans));
     }
     catch (...)
     {

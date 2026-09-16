@@ -646,7 +646,13 @@ public:
     }
 
     const ActionsDAG::Node * addConstantIfNecessary(
-        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic, bool is_masked_secret = false)
+        const std::string & node_name,
+        ColumnConstPtr column,
+        DataTypePtr type,
+        std::string name,
+        bool is_deterministic,
+        bool is_masked_secret = false,
+        std::optional<size_t> scalar_subquery_id = {})
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -662,6 +668,13 @@ public:
         }
 
         const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret);
+
+        /// The annotation is display-only and the node was created by `actions_dag` a line above,
+        /// which is not const here; only the returned pointer is. Marking it in place avoids
+        /// threading the id through `addColumn` and every other caller of it.
+        if (scalar_subquery_id)
+            const_cast<ActionsDAG::Node *>(node)->scalar_subquery_id = scalar_subquery_id;
+
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -1014,7 +1027,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     actions_stack[0].addConstantIfNecessary(
         constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
-        /* is_masked_secret= */ constant_node.isMasked());
+        /* is_masked_secret= */ constant_node.isMasked(),
+        /* scalar_subquery_id= */ constant_node.getScalarSubqueryId());
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)

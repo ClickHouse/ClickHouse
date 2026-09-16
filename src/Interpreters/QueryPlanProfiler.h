@@ -13,15 +13,16 @@ class QueryPipeline;
 class QueryPlanProfiler;
 class StepStatsStorage;
 
-/// Records one plan that runs for a query without being part of its plan tree -- an `IN (SELECT
-/// ...)` whose set is built during planning, so that index analysis can use it. Such a subquery
+/// Records one plan that runs for a query without being part of its plan tree. Two kinds today:
+/// an `IN (SELECT ...)` whose set is built during planning so that index analysis can use it, and
+/// a scalar `(SELECT ...)` executed during analysis and folded into the query as a literal. Either
 /// runs in a pipeline of its own before the main one exists and is linked from nowhere, yet its
 /// rows count towards the query: without this the stored plan describes a query reading millions of
 /// rows and never names the table they came from.
 ///
 /// Wraps code that already exists, in this order:
 ///
-///     auto capture = QueryPlanProfiler::captureSetSubPlan(context, plan);
+///     auto capture = QueryPlanProfiler::captureSubPlan(context, plan, id, kind);
 ///     ... build the pipeline from `plan` ...
 ///     capture.instrument(pipeline);
 ///     ... run the pipeline ...
@@ -36,34 +37,31 @@ class StepStatsStorage;
 /// that actually ran only once `buildQueryPipeline` has optimized it, and the statistics are read
 /// from the pipeline's processors.
 ///
-/// Known gap, deliberately not fixed here: the query's own plan is optimized *before* its names are
-/// captured (`InterpreterSelectQueryAnalyzer` calls `QueryPlan::optimize` and then
-/// `buildQueryPipeline` with `do_optimize = false`), whereas a sub-plan is optimized inside
-/// `buildQueryPipeline`, i.e. after this capture. So a name that only exists once optimization has
-/// run is missing here, and the step renders the raw identifier instead. The one case in practice
-/// is a set referenced from a `PREWHERE`: `buildPrettyNamesForNode` reads those through
-/// `ReadFromMergeTree::getDeferredPrewhereInfo`, which filter pushdown fills in via
-/// `updatePrewhereInfo`, so before optimization there is nothing to read and the node shows
-/// `__set_<hash>` rather than `subqueryN`. Structure, statistics and `ConsumedBy` are unaffected --
-/// they are all read from the live plan after it has been optimized. Closing it means splitting
-/// `optimize` out of `buildQueryPipeline` at the call sites in `PreparedSets.cpp`, which changes
-/// the non-profiled path too, so it belongs in its own change rather than this one.
+/// The capture must also come *after* the sub-plan has been optimized, which is why the call sites
+/// optimize explicitly and then build with `do_optimize = false`, as the interpreter does for the
+/// query's own plan. Optimization rewrites the plan -- it merges and replaces steps and pushes
+/// filters into `PREWHERE` -- so a capture taken before it would describe a shape that never ran,
+/// would hold pretty names for steps that no longer exist, and would record consumed subquery ids
+/// onto steps that are then discarded.
 ///
 /// Hard to misuse rather than merely documented: every call is a no-op on a query that is not being
 /// profiled, so no caller needs a condition of its own, and skipping `instrument` or `finish` --
 /// which an exception mid-pipeline does -- costs the sub-plan its statistics and nothing more,
 /// because the destructor still serializes and publishes its structure. Nothing here throws.
-class SetSubPlanCapture
+class SubPlanCapture
 {
 public:
     /// Inert: what a query without a profiler gets, and what every method below then does nothing on.
-    SetSubPlanCapture() = default;
-    ~SetSubPlanCapture();
+    SubPlanCapture() = default;
+    ~SubPlanCapture();
 
-    /// Neither copyable nor movable: it is a scope guard over a plan and a pipeline that outlive it
-    /// and is only ever a local. Returning one by value needs no move -- the result is a prvalue.
-    SetSubPlanCapture(const SetSubPlanCapture &) = delete;
-    SetSubPlanCapture & operator=(const SetSubPlanCapture &) = delete;
+    /// Not copyable: it is a scope guard over a plan and a pipeline that outlive it. Movable so a
+    /// caller can declare it before the branch that creates it. Move-assignment publishes whatever
+    /// the target already held, so an overwritten capture is never silently dropped.
+    SubPlanCapture(const SubPlanCapture &) = delete;
+    SubPlanCapture & operator=(const SubPlanCapture &) = delete;
+    SubPlanCapture(SubPlanCapture && other) noexcept;
+    SubPlanCapture & operator=(SubPlanCapture && other) noexcept;
 
     /// Attaches a StepWallClockRegistry, without which every step of the sub-plan renders as
     /// "time 0.00 ns". Call after the pipeline is built and before it runs.
@@ -74,8 +72,12 @@ public:
 
 private:
     friend class QueryPlanProfiler;
-    SetSubPlanCapture(
-        QueryPlanProfilerPtr profiler_, const QueryPlan & plan_, PrettyNamesPerPlan pretty_names_, String set_key_);
+    SubPlanCapture(
+        QueryPlanProfilerPtr profiler_,
+        const QueryPlan & plan_,
+        PrettyNamesPerPlan pretty_names_,
+        size_t subquery_id_,
+        SubPlanKind kind_);
 
     /// Serializes the sub-plan and gives it to the profiler, once. Clears `profiler`, which both
     /// marks the capture spent and turns every later call into the no-op an inert capture performs.
@@ -88,9 +90,10 @@ private:
     /// existed. Plain name maps, so plan optimization does not invalidate them.
     PrettyNamesPerPlan pretty_names;
 
-    /// The `__set_<hash>` key of the set being built, which is how the document works out which
-    /// step of the query consumes it.
-    String set_key;
+    /// Identifies this subquery within the query. The steps that consume its result carry the same
+    /// id, which is what lets the document name them.
+    size_t subquery_id = 0;
+    SubPlanKind kind = SubPlanKind::Set;
 };
 
 class QueryPlanProfiler
@@ -148,19 +151,20 @@ public:
     void instrumentPipeline(QueryPipeline & pipeline) const;
 
     /// Starts recording a set sub-plan, if the query in `context` is being profiled at all. See
-    /// SetSubPlanCapture for what the caller then does with the result; a query without a profiler
+    /// SubPlanCapture for what the caller then does with the result; a query without a profiler
     /// gets an inert capture, so the call site needs no condition.
     ///
-    /// `set_key` is `PreparedSets::toString` of the set the sub-plan builds. It is what lets the
-    /// document say which step of the query uses the set, rather than leaving the sub-plan looking
-    /// like an unrelated plan that happened to run.
-    static SetSubPlanCapture captureSetSubPlan(const ContextPtr & context, const QueryPlan & plan, String set_key);
+    /// `subquery_id` is `FutureSetFromSubquery::getSubqueryId`. The steps that consume the set
+    /// carry the same id, which is what lets the document say who used it rather than leaving the
+    /// sub-plan looking like an unrelated plan that happened to run.
+    static SubPlanCapture captureSubPlan(
+        const ContextPtr & context, const QueryPlan & plan, size_t subquery_id, SubPlanKind kind);
 
 private:
-    friend class SetSubPlanCapture;
+    friend class SubPlanCapture;
 
     /// Takes a finished sub-plan. Safe to call from index analysis, which runs concurrently.
-    void addSetSubPlan(SerializedSubPlan sub_plan);
+    void addSubPlan(SerializedSubPlan sub_plan);
 
     /// Drops the captured plan, which render does as soon as it has serialized it. A QueryPlan owns
     /// a QueryPlanResourceHolder -- storages, table locks, contexts -- so holding one after the
@@ -178,7 +182,7 @@ private:
     const size_t max_description_length;
 
     std::mutex sub_plans_mutex;
-    std::vector<SerializedSubPlan> set_sub_plans TSA_GUARDED_BY(sub_plans_mutex);
+    std::vector<SerializedSubPlan> sub_plans TSA_GUARDED_BY(sub_plans_mutex);
     std::optional<QueryPlan> query_plan;
     std::optional<PrettyNamesPerPlan> pretty_names;
     std::optional<String> plan_json;
