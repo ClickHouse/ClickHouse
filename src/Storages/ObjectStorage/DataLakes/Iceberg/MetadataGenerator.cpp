@@ -557,7 +557,7 @@ Iceberg::SnapshotSummary MetadataGenerator::generateNextSnaphotSummary(
 {
         std::optional<Iceberg::SnapshotSummaryTotals> previous_totals;
 
-        if (parent_snapshot_id > 0)
+        if (parent_snapshot_id >= 0)
         {
             auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
             if (!parent_snapshot)
