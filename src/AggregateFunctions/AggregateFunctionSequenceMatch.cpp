@@ -412,10 +412,10 @@ protected:
         VectorWithMemoryTracking<T> current_matched_events;
         VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
 
+        /// Records the match only. Adding a backtrack point here would let this traversal skip ahead
+        /// and accept chains the pattern does not authorise, and that the verdict traversal rejects.
         const auto do_push_event = [&]
         {
-            back_stack.emplace(action_it, events_it, base_it);
-
             current_matched_events.push_back(events_it->first);
             current_matched_actions.push_back(action_it);
             if (best_matched_events->size() < current_matched_events.size())
@@ -426,7 +426,7 @@ protected:
 
         const auto do_revert_event_if_needed = [&]
         {
-            if (current_matched_actions.size() > 0 && current_matched_actions.back() >= action_it)
+            while (!current_matched_actions.empty() && current_matched_actions.back() >= action_it)
             {
                 current_matched_events.pop_back();
                 current_matched_actions.pop_back();
