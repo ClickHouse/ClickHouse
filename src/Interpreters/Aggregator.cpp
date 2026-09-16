@@ -74,10 +74,6 @@ namespace ProfileEvents
     extern const Event OverflowAny;
     extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AggregationBucketTopKConversions;
-    extern const Event AdaptiveAggregationLocalFreezes;
-    extern const Event AdaptiveAggregationGiveUps;
-    extern const Event AdaptiveAggregationPressureStandDowns;
-    extern const Event AdaptiveAggregationSpillBacklogSheds;
 }
 
 namespace CurrentMetrics
@@ -1347,14 +1343,6 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
     throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
-void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
-{
-    std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(result, *adaptive.session); });
-    adaptive.freeze();
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
-    LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result.sizeWithoutOverflowRow());
-}
-
 /// Register each key's presence, without building any aggregate state. This is the whole of the work for a
 /// set method, and it is also the fast path a map method takes when it happens to have no aggregates - there
 /// the cell's mapped value is set to a non-null dummy, so the existing "is this cell occupied" checks still
@@ -2399,7 +2387,7 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     const auto snapshot = getPostBlockSnapshot(result, use_own_tracker);
     if (!execution)
-        return runPostBlockChecks(result, no_more_keys, snapshot, nullptr);
+        return finishBaselineBlock(result, no_more_keys, snapshot, /*adaptive=*/nullptr);
 
     execution->input_rows = row_end - row_begin;
 
@@ -2430,7 +2418,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         return true;
     }
     execution->misses.reset();
-    return runPostBlockChecks(result, no_more_keys, snapshot, execution);
+    return runAdaptivePostBlockChecks(result, no_more_keys, snapshot, *execution);
 }
 
 Aggregator::PostBlockSnapshot Aggregator::getPostBlockSnapshot(
@@ -2441,95 +2429,6 @@ Aggregator::PostBlockSnapshot Aggregator::getPostBlockSnapshot(
     /// Here all the results in the sum are taken into account, from different threads.
     const Int64 aggregation_bytes = use_own_memory_tracker ? memory_tracker->get() : query_bytes - memory_usage_before_aggregation;
     return {.groups = groups, .query_bytes = query_bytes, .aggregation_bytes = aggregation_bytes};
-}
-
-bool Aggregator::runPostBlockChecks(
-    AggregatedDataVariants & result,
-    bool & no_more_keys,
-    const PostBlockSnapshot & snapshot,
-    AdaptiveAggregationExecution * execution) const
-{
-    auto * adaptive = execution ? &execution->producer : nullptr;
-    if (adaptive && !adaptive->isBaseline())
-    {
-        if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
-        {
-            /// The shared verdict returns learning and frozen producers to ordinary insertion.
-            /// Buffered and admitted records still belong to the drain after this transition.
-            if (adaptive->isFrozen())
-                LOG_TRACE(log, "Adaptive aggregation: thawed the local table at {} keys", snapshot.groups);
-            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
-        }
-        else
-        {
-            /// A frozen table stays single-level, updating existing keys and staging misses.
-            if (adaptive->isLearning())
-            {
-                /// Byte-triggered freezing uses this table's buffers and arenas, so other
-                /// producers' allocations cannot freeze it. Unlike the key-count bound,
-                /// the byte bound is checked only between blocks.
-                const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-                    && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
-                if ((snapshot.groups >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
-                    && result.isConvertibleToTwoLevel())
-                    freezeAdaptive(result, *adaptive);
-            }
-
-            if (adaptive->isFrozen())
-            {
-                /// Pressure drains staged records and can spill their states. The bounded
-                /// frozen table stays resident: spilling would convert it to two-level,
-                /// which its frozen kernel cannot use.
-                if (params.max_bytes_before_external_group_by
-                    && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by))
-                {
-                    drainStagedChunksUnderMemoryPressure(*adaptive->session);
-                }
-
-                return checkLimits(snapshot.groups, no_more_keys);
-            }
-
-            /// A stream with many rows but few groups stands down permanently. Staging its
-            /// small tail cannot pay, and large states benefit from ordinary conversion
-            /// and parallel merging.
-            auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
-            learning.rows_seen += execution->input_rows;
-            if (learning.rows_seen >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
-                && snapshot.groups < params.adaptive_aggregator_freeze_threshold)
-            {
-                const size_t rows_seen = learning.rows_seen;
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
-                LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, snapshot.groups);
-            }
-
-            /// A learning table can stand down under pressure and spill through the baseline path.
-            if (params.max_bytes_before_external_group_by
-                && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by))
-            {
-                if (adaptive->isLearning())
-                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-            }
-
-            if (!adaptive->isBaseline())
-                return checkLimits(snapshot.groups, no_more_keys);
-        }
-    }
-
-    /// Any baseline producer can shed the session's backlog under pressure, including
-    /// records staged by other producers. Drain before checking limits: a single-level
-    /// local table cannot spill yet, and spilling it would not free the staged records.
-    /// An initialized session has the shared table needed for this drain.
-    if (adaptive && params.max_bytes_before_external_group_by
-        && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && adaptive->session->initialized.load(std::memory_order_acquire))
-    {
-        if (drainStagedChunksUnderMemoryPressure(*adaptive->session))
-            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
-    }
-
-    return finishBaselineBlock(result, no_more_keys, snapshot, adaptive);
 }
 
 bool Aggregator::finishBaselineBlock(
@@ -2577,18 +2476,6 @@ bool Aggregator::finishBaselineBlock(
     }
 
     return true;
-}
-
-bool Aggregator::resumeAdaptiveBlock(
-    AdaptiveAggregationExecution & execution, AggregatedDataVariants & result, bool & no_more_keys) const
-{
-    chassert(execution.hasPendingBlock() && !execution.misses);
-    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (execution.use_own_memory_tracker)
-        memory_tracker_switcher.emplace(memory_tracker.get());
-
-    execution.pending_block = false;
-    return runPostBlockChecks(result, no_more_keys, getPostBlockSnapshot(result, execution.use_own_memory_tracker), &execution);
 }
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const

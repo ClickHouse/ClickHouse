@@ -834,10 +834,10 @@ private:
     /// Reads group count and both memory accounts before making the block's pressure decisions.
     PostBlockSnapshot getPostBlockSnapshot(const AggregatedDataVariants & result, bool use_own_memory_tracker) const;
 
-    /// Applies phase transitions, pressure drains, and ordinary limits using the block's snapshot.
-    bool runPostBlockChecks(
+    /// Applies adaptive phase transitions and pressure drains before shared limits and spilling.
+    bool runAdaptivePostBlockChecks(
         AggregatedDataVariants & result, bool & no_more_keys,
-        const PostBlockSnapshot & snapshot, AdaptiveAggregationExecution * execution) const;
+        const PostBlockSnapshot & snapshot, const AdaptiveAggregationExecution & execution) const;
 
     /// Applies ordinary two-level conversion, group limits, and spilling using the saved readings.
     bool finishBaselineBlock(
