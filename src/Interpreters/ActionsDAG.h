@@ -568,10 +568,10 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
-    /// Whether the per-row cast of a set lookup's probe column into the set's declared key type can throw.
-    /// `node` must be an `in` function node. True whenever that cannot be established, so a caller that
-    /// transfers the lookup onto rows it was never evaluated on fails closed.
-    static bool setLookupCanThrow(const Node & node);
+    /// Whether the conjunct has a value for every value of its argument types, so a caller that also
+    /// evaluates it on rows it was not evaluated on cannot make it throw. False whenever that cannot be
+    /// established.
+    static bool conjunctIsTotal(const Node & conjunct);
 
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;

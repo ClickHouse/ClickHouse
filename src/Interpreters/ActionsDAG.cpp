@@ -3295,9 +3295,8 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
-/// With a `Variant`, `Dynamic` or JSON argument the real function is built per stored alternative at
-/// execution time, so an alternative that only the opposite side holds throws there even when the
-/// function is total on every alternative this side holds.
+/// A `Variant`, `Dynamic` or JSON argument resolves the real function per stored alternative at
+/// execution time, so an alternative only the opposite side holds can throw there.
 bool typeAdaptsPerRow(const DataTypePtr & type)
 {
     bool adapts = false;
@@ -3311,68 +3310,34 @@ bool typeAdaptsPerRow(const DataTypePtr & type)
     return adapts;
 }
 
-/// Total on its argument types, i.e. it has a value for every value of them and cannot throw.
-bool functionIsTotal(const ActionsDAG::Node & node)
+/// Whether the per-row cast of a set lookup's probe column into the set's declared key type can throw.
+/// True whenever that cannot be established.
+bool setLookupCanThrow(const ActionsDAG::Node & node)
 {
-    const auto & name = node.function_base->getName();
-
-    /// Read the boolean value and the null map only; a non-boolean argument is rejected for every row
-    /// alike, at analysis time.
-    if (name == "and" || name == "or" || name == "not")
+    if (node.children.size() != 2)
         return true;
 
-    /// Return `UInt8` for every argument type: they read a discriminator, a dictionary index or a null
-    /// map, never the value.
-    if (name == "isNull" || name == "isNotNull")
+    const auto * set_node = node.children[1];
+    if (set_node->type != ActionsDAG::ActionType::COLUMN || !set_node->column)
         return true;
 
-    /// The JOIN runtime filter probes a set built from the same common type its key argument is cast to,
-    /// so its per-row set lookup neither parses nor narrows the value. It is total only while
-    /// `joinRuntimeFilter` keeps normalizing both sides to that one type.
-    if (name == "__applyFilter")
+    const auto * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
+    if (!column_set)
         return true;
 
-    /// A set lookup casts the probe column into the set's key type per row, so it is total only when
-    /// that type is already the probe column's own. An `IN` set's key types come from the user's own
-    /// expression list, and where they are not known at all that is not a permission.
-    if (name == "in")
-        return !ActionsDAG::setLookupCanThrow(node);
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return true;
 
-    const bool is_comparison = name == "equals" || name == "notEquals" || name == "less" || name == "greater"
-        || name == "lessOrEquals" || name == "greaterOrEquals";
-    /// A comparison across type domains parses one side per row and can fail there.
-    return is_comparison && node.children.size() == 2
-        && !comparisonCanThrow(node.children[0]->result_type, node.children[1]->result_type);
-}
+    /// Reading the declared key types does not build the set, so no `IN` subquery is executed here.
+    const auto set_types = future_set->getTypes();
+    if (set_types.size() != 1 || typeAdaptsPerRow(set_types[0]))
+        return true;
 
-/// A conjunct that is safe to evaluate on values its own table never held.
-bool conjunctIsTotal(const ActionsDAG::Node * conjunct)
-{
-    std::vector<const ActionsDAG::Node *> to_visit{conjunct};
-    std::unordered_set<const ActionsDAG::Node *> visited{conjunct};
-    while (!to_visit.empty())
-    {
-        const auto * node = to_visit.back();
-        to_visit.pop_back();
-
-        /// Every function's arguments are visited as its children, so one check here covers them all.
-        if (typeAdaptsPerRow(node->result_type))
-            return false;
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            if (!functionIsTotal(*node))
-                return false;
-        }
-        else if (node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::ALIAS
-                 && node->type != ActionsDAG::ActionType::COLUMN)
-            return false;
-
-        for (const auto * child : node->children)
-            if (visited.insert(child).second)
-                to_visit.push_back(child);
-    }
-    return true;
+    /// The declared types have `LowCardinality` removed recursively while the type the lookup casts into
+    /// keeps a nested one, so what is left between the two normalized this way is a `LowCardinality`
+    /// wrapper, which re-encodes a value against a dictionary without reading it.
+    return !recursiveRemoveLowCardinality(node.children[0]->result_type)->equals(*set_types[0]);
 }
 
 /// Take a node which result is a predicate.
@@ -3530,34 +3495,52 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 
 }
 
-bool ActionsDAG::setLookupCanThrow(const Node & node)
+bool ActionsDAG::conjunctIsTotal(const Node & conjunct)
 {
-    if (node.children.size() != 2)
-        return true;
+    /// `and`, `or` and `not` read a boolean value and a null map; `isNull` and `isNotNull` read a
+    /// discriminator, a dictionary index or a null map; `__applyFilter` probes a set built from the same
+    /// common type its key argument is cast to. None of them reads the value itself.
+    static const std::unordered_set<std::string_view> total_functions
+        = {"and", "or", "not", "isNull", "isNotNull", "__applyFilter"};
+    static const std::unordered_set<std::string_view> comparisons
+        = {"equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals"};
 
-    const auto * set_node = node.children[1];
-    if (set_node->type != ActionType::COLUMN || !set_node->column)
-        return true;
+    std::vector<const Node *> to_visit{&conjunct};
+    std::unordered_set<const Node *> visited{&conjunct};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
 
-    const auto * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
-    if (!column_set)
-        return true;
+        if (typeAdaptsPerRow(node->result_type))
+            return false;
 
-    auto future_set = column_set->getData();
-    if (!future_set)
-        return true;
+        if (node->type == ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (comparisons.contains(name))
+            {
+                /// A comparison across type domains parses one side per row and can fail there.
+                if (node->children.size() != 2
+                    || comparisonCanThrow(node->children[0]->result_type, node->children[1]->result_type))
+                    return false;
+            }
+            else if (name == "in")
+            {
+                if (setLookupCanThrow(*node))
+                    return false;
+            }
+            else if (!total_functions.contains(name))
+                return false;
+        }
+        else if (node->type != ActionType::INPUT && node->type != ActionType::ALIAS && node->type != ActionType::COLUMN)
+            return false;
 
-    /// Reading the declared key types does not build the set, so no `IN` subquery is executed here.
-    const auto set_types = future_set->getTypes();
-    /// A set whose header the planner has not installed reports no types at all, and a key type that is
-    /// not known cannot be read as harmless.
-    if (set_types.size() != 1 || typeAdaptsPerRow(set_types[0]))
-        return true;
-
-    /// The declared types have `LowCardinality` removed recursively, while the type the lookup casts into
-    /// keeps a nested one, so normalize the probe the same way: what is then left between them is a
-    /// `LowCardinality` wrapper, which re-encodes a value against a dictionary without reading it.
-    return !recursiveRemoveLowCardinality(node.children[0]->result_type)->equals(*set_types[0]);
+        for (const auto * child : node->children)
+            if (visited.insert(child).second)
+                to_visit.push_back(child);
+    }
+    return true;
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
@@ -3797,13 +3780,11 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
 
     /// A both-streams conjunct is copied to the opposite side with its key column substituted for the
-    /// equivalent one, so that copy runs on values the side the conjunct names never held. Only a
-    /// conjunct that is total may do that: `t2.c0 LIKE t2.c0` parses its pattern per row, and a value
-    /// held only by `t3` can be an invalid pattern.
+    /// equivalent one, so that copy runs on values the side the conjunct names never held.
     NodeRawConstPtrs both_streams_total_conjunctions;
     for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
     {
-        if (conjunctIsTotal(conjunct))
+        if (conjunctIsTotal(*conjunct))
             both_streams_total_conjunctions.push_back(conjunct);
         else
             both_streams_push_down_conjunctions.rejected.push_back(conjunct);
