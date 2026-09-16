@@ -1,0 +1,14 @@
+linestring_input
+POLYGON((0 0,0 1,1 0,0 0))
+multilinestring_geometry_input
+POLYGON((0 0,0 1,1 1,2 0,0 0))
+polygon_union_geometry_input
+2
+polygon_intersect_geometry_input
+1
+convex_hull_compression_threshold
+1
+polygon_union_reduction_threshold
+17
+polygon_intersect_reduction_threshold
+1

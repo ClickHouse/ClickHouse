@@ -1,0 +1,5 @@
+union_empty_inner_ring_direct
+intersection_empty_inner_ring_direct
+union_empty_inner_ring_in_multipolygon
+union_open_triangle_still_accepted
+0.5
