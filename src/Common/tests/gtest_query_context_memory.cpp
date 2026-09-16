@@ -25,6 +25,9 @@ namespace FailPoints
 
 TEST(QueryContextMemory, TracksConstructionTemporaryCopiesAndAttachedCopies)
 {
+#if defined(SANITIZER)
+    GTEST_SKIP() << "Requires ClickHouse allocation interceptors, which sanitizer builds replace";
+#else
     auto source = Context::createCopy(getContext().context);
     constexpr Int64 payload_size = 256 * 1024;
     source->setSetting("log_comment", String(payload_size, 'x'));
@@ -72,10 +75,14 @@ TEST(QueryContextMemory, TracksConstructionTemporaryCopiesAndAttachedCopies)
         EXPECT_EQ(attached_copy_released, attached_copy_bytes);
         EXPECT_GE(peak, temporary_peak_floor);
     }).join();
+#endif
 }
 
 TEST(QueryContextMemory, RetainedThreadMetadataDoesNotLeaveUserCharge)
 {
+#if defined(SANITIZER)
+    GTEST_SKIP() << "Requires ClickHouse allocation interceptors, which sanitizer builds replace";
+#else
     auto source = Context::createCopy(getContext().context);
     source->setCurrentQueryId(String(8192, 'i'));
     source->setSetting("max_untracked_memory", UInt64{0});
@@ -139,6 +146,7 @@ TEST(QueryContextMemory, RetainedThreadMetadataDoesNotLeaveUserCharge)
             EXPECT_EQ(user.get(), user_floor) << "iteration " << iteration;
         }
     }).join();
+#endif
 }
 
 TEST(QueryContextMemory, FailedAttachmentRestoresOuterScope)
@@ -161,8 +169,11 @@ TEST(QueryContextMemory, FailedAttachmentRestoresOuterScope)
             EXPECT_EQ(thread.memory_tracker.getParent(), tracker);
             const auto before_release = tracker->get();
             context.reset();
-            const auto released = before_release - tracker->get();
+            [[maybe_unused]] const auto released = before_release - tracker->get();
+#if !defined(SANITIZER)
+            /// Sanitizer builds replace allocation interceptors, but still exercise attachment cleanup.
             EXPECT_GT(released, 0);
+#endif
         }
         EXPECT_EQ(CurrentThread::getGroup(), nullptr);
         EXPECT_EQ(thread.memory_tracker.getParent(), &total_memory_tracker);
@@ -217,7 +228,7 @@ TEST(QueryContextMemory, WeakControlBlockReleasedOnAnotherThreadDoesNotDebitItsQ
     auto source = Context::createCopy(getContext().context);
     source->setSetting("max_untracked_memory", UInt64{0});
     ContextWeakPtr weak;
-    Int64 released_context_bytes = 0;
+    [[maybe_unused]] Int64 released_context_bytes = 0;
     std::thread([&]
     {
         ThreadStatus thread;
@@ -231,7 +242,10 @@ TEST(QueryContextMemory, WeakControlBlockReleasedOnAnotherThreadDoesNotDebitItsQ
         released_context_bytes = before_release - tracker->get();
     }).join();
     EXPECT_TRUE(weak.expired());
+#if !defined(SANITIZER)
+    /// Sanitizer builds still exercise cross-thread release and the explicit tracking calls below.
     EXPECT_GT(released_context_bytes, 0);
+#endif
 
     Int64 unrelated_query_delta = 0;
     Int64 pending_after_release = 0;

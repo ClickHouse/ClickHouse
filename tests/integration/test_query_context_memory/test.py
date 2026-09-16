@@ -16,6 +16,8 @@ PAYLOAD_SIZE = 256 * 1024
 def started_cluster():
     try:
         cluster.start()
+        if node.is_built_with_sanitizer():
+            pytest.skip("Requires ClickHouse allocation interceptors, which sanitizer builds replace")
         yield cluster
     finally:
         cluster.shutdown()
