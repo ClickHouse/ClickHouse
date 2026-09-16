@@ -9,33 +9,34 @@ namespace DB
 /// Two open orthogonal chains, both ordered from left to right. The caller validates the input
 /// ring's topology; this representation additionally certifies monotonicity and local appendability.
 /// Updating a suffix copies only the incoming chain. Materializing the closed ring is explicit.
-struct GeoMonotoneRing
+template <typename Chain>
+struct GeoMonotoneRingImpl
 {
-    CartesianRing lower;
-    CartesianRing upper;
+    Chain lower;
+    Chain upper;
 
     size_t points() const
     {
         return lower.size() + upper.size() + 1;
     }
 
-    static std::optional<GeoMonotoneRing> fromRing(const CartesianRing & ring)
+    static std::optional<GeoMonotoneRingImpl> fromRing(const CartesianRing & ring)
     {
-        if (ring.size() < 5 || ring.front().get<0>() != ring.back().get<0>() || ring.front().get<1>() != ring.back().get<1>())
+        if (ring.size() < 5 || ring.front().template get<0>() != ring.back().template get<0>() || ring.front().template get<1>() != ring.back().template get<1>())
             return std::nullopt;
 
         auto collinear = [](const CartesianPoint & a, const CartesianPoint & b, const CartesianPoint & c)
         {
-            return (a.get<0>() == b.get<0>() && b.get<0>() == c.get<0>())
-                || (a.get<1>() == b.get<1>() && b.get<1>() == c.get<1>());
+            return (a.template get<0>() == b.template get<0>() && b.template get<0>() == c.template get<0>())
+                || (a.template get<1>() == b.template get<1>() && b.template get<1>() == c.template get<1>());
         };
         CartesianRing vertices;
         for (size_t i = 0; i + 1 < ring.size(); ++i)
         {
             const auto & point = ring[i];
             const auto & next = ring[i + 1];
-            if (!std::isfinite(point.get<0>()) || !std::isfinite(point.get<1>())
-                || ((point.get<0>() == next.get<0>()) == (point.get<1>() == next.get<1>())))
+            if (!std::isfinite(point.template get<0>()) || !std::isfinite(point.template get<1>())
+                || ((point.template get<0>() == next.template get<0>()) == (point.template get<1>() == next.template get<1>())))
                 return std::nullopt;
             while (vertices.size() >= 2 && collinear(vertices[vertices.size() - 2], vertices.back(), point))
                 vertices.pop_back();
@@ -49,108 +50,137 @@ struct GeoMonotoneRing
             return std::nullopt;
 
         size_t start = 0;
-        Float64 right_x = vertices[0].get<0>();
+        Float64 right_x = vertices[0].template get<0>();
         for (size_t i = 1; i < vertices.size(); ++i)
         {
-            if (vertices[i].get<0>() < vertices[start].get<0>()
-                || (vertices[i].get<0>() == vertices[start].get<0>() && vertices[i].get<1>() < vertices[start].get<1>()))
+            if (vertices[i].template get<0>() < vertices[start].template get<0>()
+                || (vertices[i].template get<0>() == vertices[start].template get<0>() && vertices[i].template get<1>() < vertices[start].template get<1>()))
                 start = i;
-            right_x = std::max(right_x, vertices[i].get<0>());
+            right_x = std::max(right_x, vertices[i].template get<0>());
         }
-        const Float64 left_x = vertices[start].get<0>();
+        const Float64 left_x = vertices[start].template get<0>();
         if (!(left_x < right_x))
             return std::nullopt;
-        const bool forward = vertices[(start + 1) % vertices.size()].get<0>() > left_x;
+        const bool forward = vertices[(start + 1) % vertices.size()].template get<0>() > left_x;
         auto advance = [&](size_t i)
         {
             return (i + (forward ? 1 : vertices.size() - 1)) % vertices.size();
         };
 
-        GeoMonotoneRing result;
+        GeoMonotoneRingImpl result;
         size_t index = start;
         do
         {
-            if (!result.lower.empty() && vertices[index].get<0>() < result.lower.back().get<0>())
+            if (!result.lower.empty() && vertices[index].template get<0>() < result.lower.back().template get<0>())
                 return std::nullopt;
             result.lower.push_back(vertices[index]);
-            if (vertices[index].get<0>() == right_x)
+            if (vertices[index].template get<0>() == right_x)
                 break;
             index = advance(index);
         } while (index != start);
-        if (result.lower.size() < 2 || result.lower.back().get<0>() != right_x)
+        if (result.lower.size() < 2 || result.lower.back().template get<0>() != right_x)
             return std::nullopt;
 
         index = advance(index);
-        if (vertices[index].get<0>() != right_x || vertices[index].get<1>() <= result.lower.back().get<1>())
+        if (vertices[index].template get<0>() != right_x || vertices[index].template get<1>() <= result.lower.back().template get<1>())
             return std::nullopt;
         do
         {
-            if (!result.upper.empty() && vertices[index].get<0>() > result.upper.back().get<0>())
+            if (!result.upper.empty() && vertices[index].template get<0>() > result.upper.back().template get<0>())
                 return std::nullopt;
             result.upper.push_back(vertices[index]);
-            if (vertices[index].get<0>() == left_x)
+            if (vertices[index].template get<0>() == left_x)
                 break;
             index = advance(index);
         } while (index != start);
-        if (result.upper.size() < 2 || result.upper.back().get<0>() != left_x
-            || result.upper.back().get<1>() <= result.lower.front().get<1>() || advance(index) != start
+        if (result.upper.size() < 2 || result.upper.back().template get<0>() != left_x
+            || result.upper.back().template get<1>() <= result.lower.front().template get<1>() || advance(index) != start
             || result.lower.size() + result.upper.size() != vertices.size())
             return std::nullopt;
         std::reverse(result.upper.begin(), result.upper.end());
         return result;
     }
 
-    bool canAppend(const GeoMonotoneRing & other) const
+    template <typename OtherChain>
+    bool canAppend(const GeoMonotoneRingImpl<OtherChain> & other) const
     {
-        const auto left_x = other.lower.front().get<0>();
-        const auto right_x = lower.back().get<0>();
+        const auto left_x = other.lower.front().template get<0>();
+        const auto right_x = lower.back().template get<0>();
         /// The overlap is confined to the constant-width end slabs of the two valid rings.
         /// A positive vertical overlap keeps their union one simple, monotone ring.
-        return left_x < right_x && other.lower.back().get<0>() > right_x
-            && left_x >= std::max(lower[lower.size() - 2].get<0>(), upper[upper.size() - 2].get<0>())
-            && right_x <= std::min(other.lower[1].get<0>(), other.upper[1].get<0>())
-            && std::max(lower.back().get<1>(), other.lower.front().get<1>())
-                < std::min(upper.back().get<1>(), other.upper.front().get<1>());
+        return left_x < right_x && other.lower.back().template get<0>() > right_x
+            && left_x >= std::max(lower[lower.size() - 2].template get<0>(), upper[upper.size() - 2].template get<0>())
+            && right_x <= std::min(other.lower[1].template get<0>(), other.upper[1].template get<0>())
+            && std::max(lower.back().template get<1>(), other.lower.front().template get<1>())
+                < std::min(upper.back().template get<1>(), other.upper.front().template get<1>());
     }
 
-    void append(const GeoMonotoneRing & other)
+    template <typename OtherChain>
+    void append(const GeoMonotoneRingImpl<OtherChain> & other)
     {
-        auto extend = [](CartesianRing & chain, const CartesianRing & incoming, bool lower_chain)
-        {
-            auto endpoint = chain.back();
-            const auto old_y = endpoint.get<1>();
-            const auto new_y = incoming.front().get<1>();
-            chain.pop_back();
-            auto append_point = [&](const CartesianPoint & point)
-            {
-                /// When a slab ends exactly at the overlap boundary, the replaced vertical
-                /// segments may cancel. Remove only collinear or duplicate junction vertices.
-                while (chain.size() >= 2)
-                {
-                    const auto & a = chain[chain.size() - 2];
-                    const auto & b = chain.back();
-                    if (!((a.get<0>() == b.get<0>() && b.get<0>() == point.get<0>())
-                            || (a.get<1>() == b.get<1>() && b.get<1>() == point.get<1>())))
-                        break;
-                    chain.pop_back();
-                }
-                if (chain.empty() || chain.back().get<0>() != point.get<0>() || chain.back().get<1>() != point.get<1>())
-                    chain.push_back(point);
-            };
-            if (new_y != old_y)
-            {
-                if ((lower_chain && new_y < old_y) || (!lower_chain && new_y > old_y))
-                    endpoint.set<0>(incoming.front().get<0>());
-                append_point(endpoint);
-                append_point({endpoint.get<0>(), new_y});
-            }
-            for (auto it = incoming.begin() + 1; it != incoming.end(); ++it)
-                append_point(*it);
-        };
-        extend(lower, other.lower, true);
-        extend(upper, other.upper, false);
+        extend<false>(lower, other.lower, true);
+        extend<false>(upper, other.upper, false);
     }
 
+    template <typename OtherChain>
+    void prepend(const GeoMonotoneRingImpl<OtherChain> & other)
+    {
+        extend<true>(lower, other.lower, true);
+        extend<true>(upper, other.upper, false);
+    }
+
+private:
+    template <bool Prepend, typename OtherChain>
+    static void extend(Chain & chain, const OtherChain & incoming, bool lower_chain)
+    {
+        auto last = [&](size_t offset) -> const CartesianPoint &
+        {
+            return chain[Prepend ? offset : chain.size() - 1 - offset];
+        };
+        auto remove_last = [&]
+        {
+            if constexpr (Prepend)
+                chain.pop_front();
+            else
+                chain.pop_back();
+        };
+        const auto & incoming_end = Prepend ? incoming.back() : incoming.front();
+        auto endpoint = last(0);
+        const auto old_y = endpoint.template get<1>();
+        const auto new_y = incoming_end.template get<1>();
+        remove_last();
+        auto append_point = [&](const CartesianPoint & point)
+        {
+            /// Remove only duplicate or collinear vertices at the modified junction.
+            while (chain.size() >= 2)
+            {
+                const auto & a = last(1);
+                const auto & b = last(0);
+                if (!((a.template get<0>() == b.template get<0>() && b.template get<0>() == point.template get<0>())
+                        || (a.template get<1>() == b.template get<1>() && b.template get<1>() == point.template get<1>())))
+                    break;
+                remove_last();
+            }
+            if (chain.empty() || last(0).template get<0>() != point.template get<0>() || last(0).template get<1>() != point.template get<1>())
+            {
+                if constexpr (Prepend)
+                    chain.push_front(point);
+                else
+                    chain.push_back(point);
+            }
+        };
+        if (new_y != old_y)
+        {
+            if ((lower_chain && new_y < old_y) || (!lower_chain && new_y > old_y))
+                endpoint.template set<0>(incoming_end.template get<0>());
+            append_point(endpoint);
+            append_point({endpoint.template get<0>(), new_y});
+        }
+        for (size_t i = 1; i < incoming.size(); ++i)
+            append_point(incoming[Prepend ? incoming.size() - 1 - i : i]);
+    }
+
+public:
     CartesianRing materialize() const
     {
         CartesianRing result;
@@ -161,5 +191,7 @@ struct GeoMonotoneRing
         return result;
     }
 };
+
+using GeoMonotoneRing = GeoMonotoneRingImpl<CartesianRing>;
 
 }
