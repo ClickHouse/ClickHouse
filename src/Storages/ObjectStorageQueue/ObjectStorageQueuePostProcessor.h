@@ -57,7 +57,8 @@ private:
     {
         /// False when the destination is occupied by an object this queue did not put there.
         bool destination_is_ours = true;
-        SourceGeneration consumed;
+        /// Defaulted so a designated initializer may name only the fields it cares about.
+        SourceGeneration consumed = {};
         /// True when the source no longer holds the generation the rows were read from: nothing was copied.
         bool source_rewritten = false;
     };

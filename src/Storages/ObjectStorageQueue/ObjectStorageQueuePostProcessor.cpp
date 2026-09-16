@@ -506,11 +506,11 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                 auto destination_metadata
                                     = object_storage->tryGetObjectMetadata(object_to.remote_path, /*with_tags=*/false);
                                 return CopyResult{
-                                    destination_metadata
+                                    .destination_is_ours = destination_metadata
                                         && destinationIsOwnCommittedCopy(provenance, destination_metadata->attributes),
-                                    consumed};
+                                    .consumed = consumed};
                             }
-                            return CopyResult{true, consumed};
+                            return CopyResult{.destination_is_ours = true, .consumed = consumed};
                         };
                         switch (copyAndRemoveObject(source_object, copy_object))
                         {
@@ -714,9 +714,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 
                             const auto destination_info = S3::getObjectInfoIfExists(
                                 *dst_client, dst_uri.bucket, object_to.remote_path, /*version_id=*/{}, /*with_metadata=*/true);
-                            return CopyResult{destinationIsOwnCommittedCopy(provenance, destination_info.metadata), consumed};
+                            return CopyResult{
+                                .destination_is_ours
+                                = destinationIsOwnCommittedCopy(provenance, destination_info.metadata),
+                                .consumed = consumed};
                         }
-                        return CopyResult{true, consumed};
+                        return CopyResult{.destination_is_ours = true, .consumed = consumed};
                     };
                     switch (copyAndRemoveObject(object_from, copy_object))
                     {
@@ -859,15 +862,15 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             {
                                 auto destination_properties = dst_client->GetBlobClient(object_to.remote_path).GetProperties().Value;
                                 return CopyResult{
-                                    destinationIsOwnCommittedCopy(
+                                    .destination_is_ours = destinationIsOwnCommittedCopy(
                                         provenance,
                                         ObjectAttributes{
                                             destination_properties.Metadata.begin(), destination_properties.Metadata.end()}),
-                                    consumed};
+                                    .consumed = consumed};
                             }
                             throw;
                         }
-                        return CopyResult{true, consumed};
+                        return CopyResult{.destination_is_ours = true, .consumed = consumed};
                     };
                     switch (copyAndRemoveObject(object_from, copy_object))
                     {
