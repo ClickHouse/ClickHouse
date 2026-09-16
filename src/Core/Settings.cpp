@@ -4491,7 +4491,9 @@ see all rows.
 
 The pushdown applies only when the query reads the `MergeTree` table directly. It is not propagated
 through a `Merge` table (or the `merge` table function): such queries stay correct but perform full
-FINAL merges in the children without early termination.
+FINAL merges in the children without early termination. Likewise, it is not applied to a bucketed
+distributed read (`make_distributed_plan`), where each worker merges its lanes of the FINAL read in
+full: such queries stay correct but without early termination.
 
 Possible values:
 

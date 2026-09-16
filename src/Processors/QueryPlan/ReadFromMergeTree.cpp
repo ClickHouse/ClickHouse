@@ -2441,6 +2441,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     {
         /// Distributed parallel FINAL: resolve each lane's coordinator-selected marks to local parts, then build
         /// the per-lane merge pipeline (parallel across lanes, as single-node FINAL) via `buildDistributedFinalPipe`.
+        /// The worker only receives `input_order_info`, not `final_limit`, so `optimize_final_limit_pushdown`
+        /// and `optimize_final_sequential_partitions` do not apply on this path (documented in the settings):
+        /// every lane is merged in full, which is correct, just without early termination.
         std::unordered_map<String, RangesInDataPart> parts_by_name;
         for (const auto & part : parts_with_ranges)
             parts_by_name.emplace(part.data_part->info.getPartNameV1(), part);
@@ -4168,6 +4171,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal()
         && (data.merging_params.mode != MergeTreeData::MergingParams::Replacing
             || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
+        return false;
+
+    /// A bucketed distributed FINAL read (`make_distributed_plan`) rebuilds every lane on the worker as a
+    /// forward in-order read merged in the forward direction (see `buildDistributedFinalPipe`), so it
+    /// cannot honour a reverse read direction. Refuse it on the coordinator: the outer sort stays a full
+    /// sort, and `direction = -1` is never shipped for a FINAL read.
+    if (direction != 1 && query_info.isFinal() && distributed_read_bucket_count > 0)
         return false;
 
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
