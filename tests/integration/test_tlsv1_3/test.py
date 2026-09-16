@@ -13,6 +13,7 @@ from helpers.ssl_context import WrapSSLContextWithSNI
 SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
 POSTGRESQL_PORT = 5433
+SECURE_NATIVE_PORT = 9440
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 MAX_RETRY = 5
 
@@ -36,6 +37,18 @@ instance_with_suites = cluster.add_instance(
     main_configs=[
         "configs/ssl_config.xml",
         "configs/ssl_config_tls13_suites.xml",
+        "certs/server-key.pem",
+        "certs/server-cert.pem",
+        "certs/ca-cert.pem",
+        "certs/dhparam4096.pem",
+    ],
+    user_configs=["configs/users_with_ssl_auth.xml"],
+)
+instance_with_client_suites = cluster.add_instance(
+    "node_with_client_cipher_suites",
+    main_configs=[
+        "configs/ssl_config.xml",
+        "configs/ssl_config_tls13_client_suites.xml",
         "certs/server-key.pem",
         "certs/server-cert.pem",
         "certs/ca-cert.pem",
@@ -293,3 +306,32 @@ def test_tls13_cipher_suites_postgres_port():
     assert offer_single_tls13_suite_postgres(instance, EXCLUDED_TLS13_SUITE)
     assert offer_single_tls13_suite_postgres(instance_with_suites, ALLOWED_TLS13_SUITE)
     assert not offer_single_tls13_suite_postgres(instance_with_suites, EXCLUDED_TLS13_SUITE)
+
+
+def query_over_secure_native_port(node, target):
+    """Query `target` over TLS from `node`, returning the answer and the error.
+
+    `remoteSecure` connects through a `Poco::Net::SecureStreamSocket`, which takes the default
+    client context, so the suites offered are the ones `openSSL.client` configures on `node`.
+    """
+    return node.query_and_get_answer_with_error(
+        f"SELECT 1 FROM remoteSecure('{target.name}:{SECURE_NATIVE_PORT}', system.one)"
+    )
+
+
+def test_tls13_client_cipher_suites():
+    # A client that configures no suites has to reach the same target, or the refusal below
+    # would not be attributable to the client setting.
+    answer, error = query_over_secure_native_port(instance, instance_with_suites)
+    assert answer.strip() == "1", error
+
+    # The configured client still reaches a server that offers the suite it asks for.
+    answer, error = query_over_secure_native_port(instance_with_client_suites, instance)
+    assert answer.strip() == "1", error
+
+    # It offers only that suite, so a server restricted to another one is out of reach.
+    answer, error = query_over_secure_native_port(
+        instance_with_client_suites, instance_with_suites
+    )
+    assert answer.strip() != "1"
+    assert "handshake failure" in error, error
