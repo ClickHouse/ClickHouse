@@ -728,26 +728,6 @@ TEST(PartitionedHashJoin, UndersizedTableGrows)
     }
 }
 
-/// Releasing every fill lane block before the barrier, as the spill switch does, hands over every row and leaves the join holding no bytes.
-TEST(PartitionedHashJoin, FillLaneDrainLeavesNoBytes)
-{
-    constexpr size_t distinct_keys = 100000;
-    constexpr size_t duplicates = 2;
-    BuildOptions options;
-    options.kind = JoinKind::Right;
-    options.enable_row_store = true;
-    BuiltJoin built = makeJoin(options);
-    addBuildBlocks(*built.join, distinct_keys, duplicates, options);
-
-    built.join->dropFillAuxiliary();
-    size_t drained = 0;
-    for (size_t lane = 0; lane < built.join->getNumFillLanes(); ++lane)
-        for (Block block = built.join->releaseNextFillLaneBlock(lane); !block.empty(); block = built.join->releaseNextFillLaneBlock(lane))
-            drained += block.rows();
-    EXPECT_EQ(drained, distinct_keys * duplicates);
-    EXPECT_EQ(built.join->getTotalByteCount(), 0u);
-}
-
 /// The L1 descriptor cap bounds the partition count to what a quarter of L1 holds, and only while it is switched on.
 TEST(PartitionedHashJoin, DescriptorCapClampsPlan)
 {
