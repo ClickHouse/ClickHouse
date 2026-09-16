@@ -545,7 +545,19 @@ void AccessControl::addStoragesFromMainConfig(
 
 void AccessControl::reload(ReloadMode reload_mode)
 {
-    MultipleAccessStorage::reload(reload_mode);
+    try
+    {
+        MultipleAccessStorage::reload(reload_mode);
+    }
+    catch (...)
+    {
+        /// `MultipleAccessStorage::reload` reloads every storage before rethrowing the first failure, and
+        /// storages such as `DiskAccessStorage` only queue their change notifications. Publish them before
+        /// reporting the failure, otherwise the sessions and subscribers keep the stale state until an
+        /// unrelated notification flushes the queue.
+        changes_notifier->sendNotifications();
+        throw;
+    }
     changes_notifier->sendNotifications();
 }
 

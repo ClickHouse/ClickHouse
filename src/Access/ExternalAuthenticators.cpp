@@ -910,8 +910,30 @@ std::vector<LDAPSyncClient::UserEntry> ExternalAuthenticators::enumerateLDAPUser
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP sync requires 'lookup_bind_dn' on server '{}'", server);
 
     /// `user`/`password` stay empty: the client never binds as a user here.
+    const auto params_hash = computeParamsHash(*params, &role_search_params);
     LDAPSyncClient client(params.value());
-    return client.enumerate(enumeration_params, role_search_params);
+    auto entries = client.enumerate(enumeration_params, role_search_params);
+
+    {
+        /// `SYSTEM RELOAD CONFIG` can replace or remove the server definition while the enumeration is
+        /// running. Entries read from the old host or under the old lookup identity must not become
+        /// an authoritative snapshot of the new definition, so the run fails and is retried; the same
+        /// post-check protects `checkLDAPCredentials` and `findLDAPUser`.
+        std::lock_guard lock(mutex);
+
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit == ldap_client_params_blueprint.end())
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "LDAP server '{}' was removed from the configuration while it was being enumerated; refusing to apply the result",
+                server);
+
+        if (params_hash != computeParamsHash(pit->second, &role_search_params))
+            throw Exception(ErrorCodes::LDAP_ERROR,
+                "The definition of LDAP server '{}' changed while it was being enumerated; refusing to apply the result",
+                server);
+    }
+
+    return entries;
 }
 
 bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const
