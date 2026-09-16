@@ -324,6 +324,14 @@ bool SpillingHashJoin::hasPendingMemoryReservationSpill() const
     return grace_join && grace_join->hasPendingSpill();
 }
 
+bool SpillingHashJoin::forceSpill()
+{
+    if (state.load(std::memory_order_acquire) != State::GRACE_HASH_JOIN || !grace_join)
+        return false;
+    grace_join->forceSpill();
+    return true;
+}
+
 void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
 {
     chosen_join->onProbePhaseFinish(matched_right_rows);
