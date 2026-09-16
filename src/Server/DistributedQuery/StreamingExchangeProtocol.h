@@ -1,6 +1,8 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Block_fwd.h>
+#include <Processors/Chunk.h>
 
 namespace Poco::Net
 {
@@ -17,7 +19,7 @@ namespace StreamingExchangeProtocol
 {
     /// Wire-format version, exchanged in SourceHello/SinkHello and required to match
     /// exactly on both ends. Bumped on any change to packet layouts. Version 3 carries a
-    /// `jwt_token` in `SourceHelloBody` for authenticating the connecting source (empty
+    /// `auth_token` in `SourceHelloBody` for authenticating the connecting source (empty
     /// when authentication is not used).
     static constexpr UInt64 PROTOCOL_VERSION = 3;
 
@@ -62,8 +64,8 @@ namespace StreamingExchangeProtocol
         UInt64 source_version = 0;
         String query_id;
         String stream_name;
-        /// Bearer JWT for authenticating the source; empty when the source has no token.
-        String jwt_token;
+        /// Auth token for authenticating the source; empty when the source has none.
+        String auth_token;
 
         static UInt64 readVersion(ReadBuffer & in);
         void readAfterVersion(ReadBuffer & in);
@@ -80,9 +82,69 @@ namespace StreamingExchangeProtocol
         void write(WriteBuffer & out) const;
     };
 
-    /// Single receive that retries on EINTR. Returns bytes read, or 0 if the socket
-    /// would block. Throws Poco::Net::NetException on early EOF or other socket error;
-    /// `description` labels the call site in the exception message.
+    /// Appends one Data packet for `chunk` to `out`: the packet header, the flags, the row and column
+    /// counts, the aggregation chunk number when the chunk carries one, and the compressed Native block
+    /// with the columns of `header`. A chunk without rows or columns is a data packet too; only
+    /// `writeEndOfStreamPacket` ends the stream.
+    /// The body size in the packet header is known only after the block is serialized; the caller
+    /// fills it in with `finishDataPacket` once it can address the written bytes. Returns the offset
+    /// of the packet in `out`.
+    size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out);
+
+    /// Appends the end-of-stream packet to `out`: the end-of-stream flag, no rows, no columns and
+    /// nothing else. The packet is complete, its header carries the body size. Returns the offset of
+    /// the packet in `out`.
+    size_t writeEndOfStreamPacket(WriteBuffer & out);
+
+    /// Writes the body size into the header of the packet that starts at `packet` and is
+    /// `packet_bytes` long in total.
+    void finishDataPacket(char * packet, size_t packet_bytes);
+
+    /// The header of a stream of packets: one `String` column with one packet per row. The
+    /// serializer and a source that hands out packets output it; the deserializer takes it.
+    const SharedHeader & packetStreamHeader();
+
+    /// The fields of a Data packet body that come before the block, read without deserializing the
+    /// block. A source that hands packets on drops the end-of-stream marker after this read, so the
+    /// marker is checked completely here: the end-of-stream flag alone, no rows, no columns and
+    /// nothing after the fields.
+    struct DataPacketPrefix
+    {
+        bool end_of_stream = false;
+        UInt64 num_rows = 0;
+    };
+    DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const String & stream_name);
+
+    /// One parsed Data packet body. The end-of-stream packet has a chunk without rows.
+    struct DataPacket
+    {
+        Chunk chunk;
+        bool end_of_stream = false;
+    };
+    /// Parses a Data packet body written by `writeDataPacket`: the flags, the counts, the aggregation
+    /// chunk number and the compressed Native block with the columns of `header`. A final packet must
+    /// be the empty end-of-stream marker, checked as in `readDataPacketPrefix`. `stream_name` is for
+    /// messages.
+    DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name);
+
+    /// The peer address for messages; a socket whose peer is gone may not know it anymore.
+    String describePeer(const Poco::Net::StreamSocket & socket);
+
+    /// Throw for an errno from `recv` or `send`: `EXCHANGE_PEER_DISCONNECTED` when the other side of
+    /// the connection is gone, a generic network error otherwise. `what` names the operation.
+    [[noreturn]] void throwSocketError(int socket_errno, const Poco::Net::StreamSocket & socket, const String & what);
+
+    /// For a catch block around `receiveBytes` or `sendBytes`: rethrows the in-flight Poco exception,
+    /// as `EXCHANGE_PEER_DISCONNECTED` when the other side of the connection is gone.
+    [[noreturn]] void rethrowSocketException(const Poco::Net::StreamSocket & socket, const String & what);
+
+    /// Single receive that retries on EINTR. Returns the bytes read, 0 if the socket would block, or
+    /// -1 if the peer closed its side. `description` labels the call site in the exception message.
     ssize_t tryReceive(Poco::Net::StreamSocket & socket, char * buffer, size_t size, const String & description);
+
+    /// Send the whole buffer on a blocking socket, retrying on EINTR. A send that timed out stays a
+    /// timeout: Poco reports it without the errno that would tell the send deadline from the kernel's
+    /// connection timeout. `description` labels the call site in the exception message.
+    void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size, const String & description);
 }
 }

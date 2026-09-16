@@ -48,7 +48,8 @@
   * - The core transform is a swappable kernel: a portable scalar FWHT and a NEON + ILP kernel for
   *   float32 on AArch64. Both perform exactly the same butterflies in the same stage order, so
   *   they are bit-for-bit identical; the kernel can be selected for testing with the environment
-  *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" (default: neon on AArch64, scalar elsewhere).
+  *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" | "avx2" (default: neon on AArch64,
+  *   avx2 on x86 with AVX2 support, scalar elsewhere).
   * - When the length is 2^k * m with m in {12, 20} (orders with a Hadamard matrix), the transform
   *   is the exact Kronecker product H_(2^k) (x) H_m applied without padding, so the output keeps the
   *   input dimension. H_m is built once via the Paley construction. See kroneckerFactorFor / kronecker*.
@@ -88,7 +89,14 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    /// The transform of a constant vector is a constant: with all arguments constant the default
+    /// implementation runs the transform on a single row and wraps the result in a `ColumnConst`,
+    /// instead of repeating it for every row of the block. This also lets the analyzer fold the
+    /// whole call to a literal, which matters for a vector search where the query vector is a
+    /// constant rotated the same way as the stored vectors.
+    bool useDefaultImplementationForConstants() const override { return true; }
+    /// 'seed' and 'output_dims' are read as scalars, so they must stay constant even when the vector is not.
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -125,16 +133,12 @@ public:
     {
         UInt64 seed = 0;
         size_t fixed_out_dims = 0; /// 0 means "full" (= m)
+        /// 'seed' and 'output_dims' are listed in getArgumentsThatAreAlwaysConstant, so the base class
+        /// has already rejected a non-constant one by the time we get here.
         if (arguments.size() >= 2)
-        {
-            if (!isColumnConst(*arguments[1].column))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The 'seed' argument of function {} must be a constant", getName());
             seed = arguments[1].column->getUInt(0);
-        }
         if (arguments.size() >= 3)
         {
-            if (!isColumnConst(*arguments[2].column))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The 'output_dims' argument of function {} must be a constant", getName());
             /// Reject a non-positive constant up front (validated independently of the input data):
             /// a negative signed value would otherwise wrap to a huge UInt64 and only be caught per
             /// row via the `k > working_dim` check below, which is skipped for empty arrays.
@@ -178,7 +182,7 @@ private:
         auto & result_offsets = result_offsets_column->getData();
         result_offsets.resize(rows);
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__AVX2__)
         [[maybe_unused]] const FwhtKernel kernel = selectKernel();
 #endif
 
@@ -316,6 +320,17 @@ private:
                     }
                     else
                         fwhtScalar(buffer.data(), working_dim);
+#elif defined(__AVX2__)
+                    if constexpr (std::is_same_v<Compute, float>)
+                    {
+                        if (kernel == FwhtKernel::Avx2)
+                            fwhtAvx2(buffer.data(), working_dim);
+                        else
+                            fwhtScalar(buffer.data(), working_dim);
+                    }
+                    else
+                        fwhtScalar(buffer.data(), working_dim);
+
 #else
                     fwhtScalar(buffer.data(), working_dim);
 #endif
@@ -327,6 +342,7 @@ private:
 
                 written += k;
             }
+            /// An empty vector transforms to an empty vector; `output_dims` does not apply to it.
             result_offsets[row] = written;
             start = offsets[row];
         }
@@ -365,7 +381,8 @@ zero-padding to a longer power of two; it is **rejected with an exception** rath
 returning a longer vector. Use a supported length, or pass `output_dims` to compute a truncated
 projection of an arbitrary length (see below).
 
-The result has the same element type as the input; an empty input array returns an empty array.
+The result has the same element type as the input; an empty input array returns an empty array
+(`output_dims` does not apply to it).
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.

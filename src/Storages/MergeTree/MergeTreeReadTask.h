@@ -244,8 +244,11 @@ public:
         bool collect_predicate_statistics);
 
 private:
-    using DataflowCacheUpdateCallback
-        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+    using DataflowCacheUpdateCallback = std::function<void(
+        const ColumnsWithTypeAndName & columns,
+        const NameSet & partially_read_columns,
+        size_t read_bytes,
+        std::optional<bool> & should_continue_sampling)>;
 
     UInt64 estimateNumRows() const;
 

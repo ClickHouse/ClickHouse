@@ -157,7 +157,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(stack_trace, out);
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
-    writePODBinary(current_thread, out);
+    writePODBinary(current_thread.get(), out);
 #if defined(OS_LINUX)
     writeBinary(static_cast<UInt8>(terminate_current_exception_trace_size), out);
     for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
@@ -308,7 +308,8 @@ void HandledSignals::addSignalHandler(
     [[maybe_unused]] const std::vector<int> & signals,
     [[maybe_unused]] signal_function handler,
     [[maybe_unused]] bool register_signal,
-    [[maybe_unused]] const std::vector<int> & additional_masked_signals)
+    [[maybe_unused]] const std::vector<int> & additional_masked_signals,
+    [[maybe_unused]] bool use_alt_stack)
 {
 #if !defined(OS_HAS_SIGNAL_HANDLERS)
     return;
@@ -317,6 +318,9 @@ void HandledSignals::addSignalHandler(
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = handler;
     sa.sa_flags = SA_SIGINFO;
+
+    if (use_alt_stack)
+        sa.sa_flags |= SA_ONSTACK;
 
 #if defined(OS_DARWIN)
     sigemptyset(&sa.sa_mask);
@@ -371,6 +375,42 @@ void blockSignals([[maybe_unused]] const std::vector<int> & signals)
 #endif
 }
 
+const std::vector<int> & asynchronousHandledSignals()
+{
+    /// Keep in sync with the handlers installed by `BaseDaemon::initializeTerminationAndSignalProcessing`:
+    /// `SIGTSTP` from `setupCommonDeadlySignalHandlers` (it is the only asynchronous one there),
+    /// `SIGINT`/`SIGQUIT`/`SIGTERM` from `setupCommonTerminateRequestSignalHandlers`, plus `SIGHUP` and `SIGCHLD`.
+    static const std::vector<int> signals{SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP};
+    return signals;
+}
+
+BlockSignalsScope::BlockSignalsScope(const std::vector<int> & signals)
+{
+    sigset_t sig_set;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sig_set);
+    for (auto signal : signals)
+        sigaddset(&sig_set, signal);
+#else
+    if (sigemptyset(&sig_set))
+        throw Poco::Exception("Cannot block signal.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sig_set, signal))
+            throw Poco::Exception("Cannot block signal.");
+#endif
+
+    if (pthread_sigmask(SIG_BLOCK, &sig_set, &saved_mask))
+        throw Poco::Exception("Cannot block signal.");
+}
+
+BlockSignalsScope::~BlockSignalsScope()
+{
+    /// Nothing sensible can be done if restoring the mask fails, and throwing from a destructor is worse.
+    pthread_sigmask(SIG_SETMASK, &saved_mask, nullptr);
+}
+
 
 SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_)
     : daemon(daemon_), log(log_), terminate_request_callback(std::move(terminate_request_callback_))
@@ -399,9 +439,12 @@ void SignalListener::run()
 
     static_assert(PIPE_BUF >= 512);
     static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
-    char buf[signal_pipe_buf_size];
+    /// Do not read past one signal ID. In particular, `StopThread` is only a request
+    /// to stop this listener: a handled signal written after it must remain in the
+    /// pipe for a listener started later.
+    char buf[sizeof(int)];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
-    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
+    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], sizeof(buf), buf);
 
     while (!in.eof())
     {
@@ -533,6 +576,28 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
     }
 }
 
+/// Prints an instruction address in the same representation as the symbolized lines below it, so that
+/// the two are comparable and the printed value survives ASLR of a position-independent executable.
+static void writeResolvedAddress(const void * addr, WriteBuffer & out)
+{
+    const auto resolved = StackTrace::resolveAddress(addr);
+    writePointerHex(resolved.address, out);
+
+    switch (resolved.kind)
+    {
+        case StackTrace::AddressKind::OtherObject:
+            writeString(" in ", out);
+            writeString(resolved.object, out);
+            break;
+        case StackTrace::AddressKind::UnknownMapping:
+            writeString(" in <unknown>", out);
+            break;
+        case StackTrace::AddressKind::MainObject:
+        case StackTrace::AddressKind::Unsupported:
+            break;
+    }
+}
+
 void SignalListener::onFault(
     int sig,
     const siginfo_t & info,
@@ -582,7 +647,7 @@ try
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
         {
             writeChar(' ', bare_stacktrace);
-            writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            writeResolvedAddress(stack_trace.getFramePointers()[i], bare_stacktrace);
         }
 
         LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
@@ -645,7 +710,7 @@ try
                                 [&bare_stacktrace](const void * ptr)
                                 {
                                     writeChar(' ', bare_stacktrace);
-                                    writePointerHex(ptr, bare_stacktrace);
+                                    writeResolvedAddress(ptr, bare_stacktrace);
                                 }
                 );
 
@@ -704,7 +769,9 @@ try
 
     if (daemon)
          daemon->flushTextLogs();
-    Context::getGlobalContextInstance()->handleCrash();
+    /// These handlers are installed before the global context is created, so it can still be absent during startup.
+    if (auto global_context = Context::getGlobalContextInstance())
+        global_context->handleCrash();
 
     /// Send crash report to developers (if configured)
     if (daemon)
@@ -732,7 +799,7 @@ try
         ContextPtr query_context = thread_ptr->tryGetQueryContext();
         if (query_context)
         {
-            String changed_settings = query_context->getSettingsRef().toString();
+            String changed_settings = query_context->getSettingsRef().toString(/* show_secrets */ false);
 
             if (changed_settings.empty())
                 LOG_FATAL(log, "No settings were changed");
@@ -835,8 +902,17 @@ void HandledSignals::setupCommonDeadlySignalHandlers()
 #else
     const std::vector<int> unwind_recovery_signals;
 #endif
-    addSignalHandler(
-        {SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true, unwind_recovery_signals);
+    const std::vector<int> fault_signals{SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTRAP};
+    /// Each call masks the other's signals, so both keep the `sa_mask` of the single registration that
+    /// once covered all eight.
+    std::vector<int> fault_masked_signals = unwind_recovery_signals;
+    fault_masked_signals.push_back(SIGTSTP);
+    std::vector<int> tstp_masked_signals = unwind_recovery_signals;
+    tstp_masked_signals.insert(tstp_masked_signals.end(), fault_signals.begin(), fault_signals.end());
+
+    /// Not SIGTSTP: it is never raised by stack exhaustion, and its handler returns.
+    addSignalHandler(fault_signals, signalHandler, true, fault_masked_signals, /*use_alt_stack=*/true);
+    addSignalHandler({SIGTSTP}, signalHandler, true, tstp_masked_signals);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);

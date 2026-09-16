@@ -1,6 +1,7 @@
 {
   "group": "C++",
   "icon": "/images/integrations/logos/logo_cpp.svg",
-  "pages": [],
-  "root": "ru/integrations/language-clients/cpp/index"
+  "pages": [
+    "ru/integrations/language-clients/cpp/index"
+  ]
 }

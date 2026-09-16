@@ -2,7 +2,7 @@
 -- companion stream of the `Quantized` codec: loaded parts rebuild their types from `columns.txt`,
 -- without the custom serialization that adds the stream.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 drop table if exists t_quantized_shared_meta;
 drop table if exists t_quantized_reference;
