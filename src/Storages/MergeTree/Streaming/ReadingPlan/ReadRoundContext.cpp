@@ -26,9 +26,7 @@ ContextPtr makeStreamingContext(ContextPtr context_, const ProjectionDescription
     if (projection)
     {
         copy->setSetting("preferred_optimize_projection_name", projection->name);
-        copy->setSetting("force_optimize_projection", true);
-        copy->setSetting("force_optimize_projection_name", projection->name);
-        copy->setSetting("optimize_use_implicit_projections", false);
+        copy->setSetting("prefer_optimize_projection", true);
     }
 
     return copy;
