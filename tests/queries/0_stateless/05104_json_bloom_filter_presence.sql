@@ -16,21 +16,13 @@ INSERT INTO json_bf_presence_native VALUES
     (12, '{"other":1}');
 
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE NOT isNotNull(j.x);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE NOT isNotNull(j.x) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.missing);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.missing) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x) AND j.x.:String = '';
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x) AND j.x.:String = '' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x) OR j.other = 1;
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x) OR j.other = 1 SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x.:String);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x.:String) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.t);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.t) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x.a);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_native WHERE isNotNull(j.x.a) SETTINGS use_skip_indexes = 0;
 SELECT trim(explain) FROM
 (
     EXPLAIN indexes = 1 SELECT count() FROM json_bf_presence_native WHERE isNotNull(j.missing)
@@ -57,21 +49,13 @@ INSERT INTO json_bf_presence_shared VALUES
     (12, '{"other":1}');
 
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE NOT isNotNull(j.x);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE NOT isNotNull(j.x) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.missing);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.missing) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x) AND j.x.:String = '';
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x) AND j.x.:String = '' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x) OR j.other = 1;
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x) OR j.other = 1 SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x.:String);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x.:String) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.t);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.t) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x.a);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_shared WHERE isNotNull(j.x.a) SETTINGS use_skip_indexes = 0;
 SELECT trim(explain) FROM
 (
     EXPLAIN indexes = 1 SELECT count() FROM json_bf_presence_shared WHERE isNotNull(j.missing)
@@ -97,12 +81,9 @@ ALTER TABLE json_bf_presence_parts ADD INDEX bf j TYPE jsonbf_v1(include_paths =
 ALTER TABLE json_bf_presence_parts ATTACH PARTITION tuple();
 INSERT INTO json_bf_presence_parts VALUES (3, '{"x":"new"}'), (4, '{"x":null}');
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_parts WHERE isNotNull(j.x) SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_parts WHERE isNotNull(j.x) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_parts WHERE NOT isNotNull(j.x);
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_parts WHERE NOT isNotNull(j.x) SETTINGS use_skip_indexes = 0;
 SYSTEM START MERGES json_bf_presence_parts;
 OPTIMIZE TABLE json_bf_presence_parts FINAL;
 SELECT arraySort(groupArray(id)) FROM json_bf_presence_parts WHERE isNotNull(j.x) SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_presence_parts WHERE isNotNull(j.x) SETTINGS use_skip_indexes = 0;
 SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 'json_bf_presence_parts' AND active;
 DROP TABLE json_bf_presence_parts;

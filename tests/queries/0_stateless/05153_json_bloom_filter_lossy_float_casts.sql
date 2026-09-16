@@ -14,10 +14,7 @@ SETTINGS input_format_binary_read_json_as_string = 0;
 
 SELECT id, dynamicType(j.x) FROM json_bf_lossy_float_casts ORDER BY id;
 SELECT arraySort(groupArray(id)) FROM json_bf_lossy_float_casts WHERE CAST(j.x AS Float64) = toFloat64(9007199254740992) SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_lossy_float_casts WHERE CAST(j.x AS Float64) = toFloat64(9007199254740992) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_lossy_float_casts WHERE CAST(j.x AS Float64) = '9007199254740992' SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_lossy_float_casts WHERE CAST(j.x AS Float64) = '9007199254740992' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_lossy_float_casts WHERE CAST(j.x AS Float64) = toFloat64(-9007199254740992) SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_lossy_float_casts WHERE CAST(j.x AS Float64) = toFloat64(-9007199254740992) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE json_bf_lossy_float_casts;

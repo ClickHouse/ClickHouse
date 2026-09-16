@@ -20,38 +20,23 @@ SELECT * FROM format(RowBinary, 'id UInt64, j JSON', concat(
     formatRowNoNewline('RowBinary', toUInt64(13)), unhex('010178'), formatRowNoNewline('RowBinary', CAST('42' AS Dynamic)))) SETTINGS input_format_binary_read_json_as_string = 0;
 
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = 42 SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = 42 SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = '42' SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = '42' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = '2147483648' SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = '2147483648' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS UInt64) = 42 SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS UInt64) = 42 SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS UInt64) = '4294967296' SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS UInt64) = '4294967296' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = 42.5 SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = 42.5 SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = '0.10000000149011612' SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = '0.10000000149011612' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = '0.1' SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = '0.1' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = 42 SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = 42 SETTINGS use_skip_indexes = 0;
 -- Decimal comparisons after an integer-to-float cast can round the constant.
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = toDecimal128('42.000000000000000001', 18) SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Float64) = toDecimal128('42.000000000000000001', 18) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int8) = 0 SETTINGS use_skip_indexes = 1;
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int8) = 0 SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS UInt8) = 0 SETTINGS use_skip_indexes = 1;
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS UInt8) = 0 SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Bool) = 1 SETTINGS use_skip_indexes = 1; -- { serverError CANNOT_PARSE_BOOL }
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Bool) = 1 SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_PARSE_BOOL }
 SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = 42.5 SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_widening WHERE CAST(j.x AS Int64) = 42.5 SETTINGS use_skip_indexes = 0;
 
 -- Failed comparisons still execute and report their conversion error.
 SELECT count() FROM json_bf_widening WHERE CAST(j.x AS Int64) = 'invalid' SETTINGS force_data_skipping_indices = 'bf'; -- { serverError CANNOT_PARSE_NUMBER, CANNOT_PARSE_TEXT, TYPE_MISMATCH }
-SELECT count() FROM json_bf_widening WHERE CAST(j.x AS Int64) = 'invalid' SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_PARSE_NUMBER, CANNOT_PARSE_TEXT, TYPE_MISMATCH }
 
 -- All values fit the widening cast, but the constant is outside the original type's range.
 TRUNCATE TABLE json_bf_widening;

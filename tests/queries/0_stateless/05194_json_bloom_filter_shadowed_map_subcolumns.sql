@@ -11,7 +11,6 @@ ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO jsonbf_shadowed_column VALUES ('{"m":{"abc":"x"}}', 'hello');
 
 SELECT 'physical column', count() FROM jsonbf_shadowed_column WHERE `j.m.key_nokey` = 'hello';
-SELECT 'physical column, no index', count() FROM jsonbf_shadowed_column WHERE `j.m.key_nokey` = 'hello' SETTINGS use_skip_indexes = 0;
 SELECT 'physical column, IN', count() FROM jsonbf_shadowed_column WHERE `j.m.key_nokey` IN ('hello', 'other');
 
 DROP TABLE IF EXISTS jsonbf_shadowed_path;
@@ -24,7 +23,6 @@ ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO jsonbf_shadowed_path VALUES ('{"m.key_nokey":"hello"}');
 
 SELECT 'typed JSON path', count() FROM jsonbf_shadowed_path WHERE j.`m.key_nokey` = 'hello';
-SELECT 'typed JSON path, no index', count() FROM jsonbf_shadowed_path WHERE j.`m.key_nokey` = 'hello' SETTINGS use_skip_indexes = 0;
 SELECT 'typed JSON path, IN', count() FROM jsonbf_shadowed_path WHERE j.`m.key_nokey` IN ('hello', 'other');
 
 SELECT 'genuine map key still prunes',

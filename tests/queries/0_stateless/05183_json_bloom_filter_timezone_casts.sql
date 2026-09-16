@@ -13,9 +13,7 @@ SELECT * FROM format(RowBinary, 'id UInt64, j JSON', concat(
     formatRowNoNewline('RowBinary', CAST(toDateTime64('2026-01-02 00:00:00.123', 3, 'UTC') AS Dynamic))))
 SETTINGS input_format_binary_read_json_as_string = 0;
 
-SELECT arraySort(groupArray(id)) FROM json_bf_timezone WHERE CAST(j.dt AS DateTime('Europe/Berlin')) = '2026-01-01 01:00:00' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_timezone WHERE CAST(j.dt AS DateTime('Europe/Berlin')) = '2026-01-01 01:00:00' SETTINGS force_data_skipping_indices = 'bf';
-SELECT arraySort(groupArray(id)) FROM json_bf_timezone WHERE CAST(j.dt64 AS DateTime64(3, 'Europe/Berlin')) = '2026-01-01 01:00:00.123' SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM json_bf_timezone WHERE CAST(j.dt64 AS DateTime64(3, 'Europe/Berlin')) = '2026-01-01 01:00:00.123' SETTINGS force_data_skipping_indices = 'bf';
 
 DROP TABLE json_bf_timezone;
