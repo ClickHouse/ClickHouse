@@ -5,6 +5,7 @@
 -- the initiator dispatches `CREATE TABLE ... ON CLUSTER` before `getColumnsDescription` runs, so tuple-element
 -- `DEFAULT` expressions must be pulled up on the initiator - including the inner column lists of targets, e.g.
 -- `SAMPLES INNER COLUMNS (...)` of a `TimeSeries` table, which were missed initially.
+-- The declared `SAMPLES INNER COLUMNS` are not copied to the `RECENT SAMPLES` target, so it declares its own.
 -- See https://github.com/ClickHouse/ClickHouse/issues/2797.
 
 SET allow_experimental_time_series_table = 1;
@@ -17,6 +18,10 @@ SAMPLES INNER COLUMNS
 (
     timestamp DateTime64(3),
     value Float64,
+    extra Tuple(a UInt8, s String DEFAULT 'Hello')
+)
+RECENT SAMPLES INNER COLUMNS
+(
     extra Tuple(a UInt8, s String DEFAULT 'Hello')
 )
 TAGS INNER COLUMNS
