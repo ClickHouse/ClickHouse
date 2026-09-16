@@ -1,6 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -12,7 +15,7 @@ namespace DB
 class IProcessor;
 
 // MemorySpillScheduler is bound to one thread group. It's a query-scoped manager to trigger processor spill.
-class MemorySpillScheduler
+class MemorySpillScheduler : public std::enable_shared_from_this<MemorySpillScheduler>
 {
 public:
     enum class ForcedSpillOutcome : UInt8
@@ -51,6 +54,9 @@ public:
     /// Query-thread recovery work, independent of processor readiness. No scheduler or graph lock
     /// is held while a processor spills. Ordinary pipeline work is not needed to finish this pass.
     void executeForcedSpill(UInt64 epoch);
+    /// Execute the same pass on a query-attached global-pool thread and wait only until `deadline`.
+    /// This keeps a slow processor callback from extending the user-visible suction timeout.
+    void executeForcedSpillUntil(UInt64 epoch, std::chrono::steady_clock::time_point deadline);
     void finishMemoryPressure();
 
 private:
@@ -64,6 +70,12 @@ private:
         bool dedicated_spill_in_progress = false;
         bool lifetime_tracked = false;
         std::weak_ptr<IProcessor> lifetime;
+    };
+
+    struct AsyncForcedSpillState
+    {
+        bool running = false;
+        std::exception_ptr exception;
     };
 
     bool enable = true;
@@ -82,6 +94,12 @@ private:
     std::atomic<Int64> forced_spill_reclaimed_bytes = 0;
     bool forced_spill_active = false;
     size_t forced_spill_remaining = 0; /// Protected by `mutex`.
+
+    /// Finite-timeout recovery runs the potentially blocking processor callback outside the
+    /// reservation thread. The detached task owns this scheduler through shared_from_this().
+    std::mutex async_forced_spill_mutex;
+    std::condition_variable async_forced_spill_cv;
+    std::unordered_map<UInt64, AsyncForcedSpillState> async_forced_spills;
 
     // When there is no need to spill, return nullptr. otherwise return top_processor;
     IProcessor * selectSpilledProcessor(
