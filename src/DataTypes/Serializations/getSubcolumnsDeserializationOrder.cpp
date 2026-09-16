@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -19,7 +20,7 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
     const ISerialization::StreamFileNameSettings & stream_file_name_settings)
 {
     /// Create map (substream) -> (pos in serialization order).
-    std::unordered_map<std::string_view, size_t> substream_to_pos;
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> substream_to_pos;
     substream_to_pos.reserve(substreams_in_serialization_order.size());
     for (size_t i = 0; i != substreams_in_serialization_order.size(); ++i)
         substream_to_pos[substreams_in_serialization_order[i]] = i;
