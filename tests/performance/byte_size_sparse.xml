@@ -1,0 +1,42 @@
+<test>
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS byte_size_sparse_perf</create_query>
+
+    <create_query>
+        CREATE TABLE byte_size_sparse_perf
+        (
+            id UInt64,
+            value UInt64
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS
+            ratio_of_defaults_for_sparse_serialization = 0.1,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+
+    <create_query>SYSTEM STOP MERGES byte_size_sparse_perf</create_query>
+
+    <fill_query>
+        INSERT INTO byte_size_sparse_perf
+        SELECT
+            number,
+            if(number % 100 = 0, number + 1, 0)
+        FROM numbers_mt(10000000)
+    </fill_query>
+
+    <query>
+        SELECT sum(byteSize(value))
+        FROM byte_size_sparse_perf
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_move_to_prewhere = 0,
+            use_uncompressed_cache = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS byte_size_sparse_perf</drop_query>
+</test>

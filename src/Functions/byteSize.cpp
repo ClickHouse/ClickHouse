@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -66,20 +67,39 @@ public:
         if (first_dynamic_arg == num_args)
             return result_type->createColumnConst(input_rows_count, constant_size);
 
-        auto result_col = ColumnUInt64::create(input_rows_count);
+        auto result_col = ColumnUInt64::create(input_rows_count, constant_size);
         auto & vec_res = result_col->getData();
-        const IColumn * first_dynamic_column = arguments[first_dynamic_arg].column.get();
-        for (size_t row = 0; row < input_rows_count; ++row)
-            vec_res[row] = constant_size + first_dynamic_column->byteSizeAt(row);
 
-        for (size_t arg_num = first_dynamic_arg + 1; arg_num < num_args; ++arg_num)
+        auto add_column_size = [&](const IColumn * column)
+        {
+            if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column))
+            {
+                const auto & values = sparse_column->getValuesColumn();
+                const size_t default_size = values.byteSizeAt(0);
+
+                for (size_t row = 0; row < input_rows_count; ++row)
+                    vec_res[row] += default_size;
+
+                const auto & offsets = sparse_column->getOffsetsData();
+                for (size_t offset = 0; offset < offsets.size(); ++offset)
+                {
+                    const size_t row = offsets[offset];
+                    vec_res[row] -= default_size;
+                    vec_res[row] += values.byteSizeAt(offset + 1) + sizeof(UInt64);
+                }
+                return;
+            }
+
+            for (size_t row = 0; row < input_rows_count; ++row)
+                vec_res[row] += column->byteSizeAt(row);
+        };
+
+        for (size_t arg_num = first_dynamic_arg; arg_num < num_args; ++arg_num)
         {
             if (is_constant_size(arg_num))
                 continue;
 
-            const IColumn * column = arguments[arg_num].column.get();
-            for (size_t row = 0; row < input_rows_count; ++row)
-                vec_res[row] += column->byteSizeAt(row);
+            add_column_size(arguments[arg_num].column.get());
         }
 
         return result_col;
