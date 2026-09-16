@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
+#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
 #include <Common/Exception.h>
 #include <base/getPageSize.h>
 
@@ -37,6 +38,9 @@ bool allBytesAre(const char * begin, const char * end, char value)
 {
     return std::all_of(begin, end, [value](char c) { return c == value; });
 }
+
+/// The table type the `UInt64` keys use, for its geometry helpers and its degree arithmetic.
+using Key64Table = typename decltype(HashJoinTableMapsAll::key64)::element_type;
 
 }
 
@@ -80,4 +84,15 @@ TEST(RangeCommittedBuffer, CommitAccountsAndZeroes)
     EXPECT_EQ(empty.data(), nullptr);
     EXPECT_EQ(empty.size(), 0u);
     EXPECT_EQ(empty.committedBytes(), 0u);
+}
+
+/// A table past 2^32 cells is refused before anything is allocated, and a reserve above 2^31 keys is what
+/// the standard grower's rounding maps there.
+TEST(HashJoinTable, DegreeCap)
+{
+#ifndef DEBUG_OR_SANITIZER_BUILD
+    expectThrowsCode(ErrorCodes::LOGICAL_ERROR, "degree 33 must throw before allocating", [] { Key64Table table(33, 0); });
+#endif
+    const size_t reserve_for_33 = (1uz << 31) + 1;
+    EXPECT_GE(Key64Table::degreeFor(reserve_for_33), 33u);
 }
