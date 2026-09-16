@@ -134,14 +134,54 @@ void VersionMetadata::setAndStoreCreationCSN(CSN csn)
     updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
+bool VersionMetadata::isCreatedByUncommittedTransaction() const
+{
+    auto current_info = getInfo();
+
+    if (current_info.creation_csn || current_info.creation_tid.isNonTransactional())
+        return false;
+
+    /// `creation_csn` is written lazily, so a missing one does not mean the creating transaction
+    /// is still running. Ask the transaction log: it returns `Tx::UnknownCSN` only while the
+    /// transaction is in flight (a rolled back one answers `Tx::RolledBackCSN`).
+    return !TransactionLog::getCSN(current_info.creation_tid);
+}
+
+bool VersionMetadata::isCreationCommitted() const
+{
+    auto current_info = getInfo();
+
+    CSN creation_csn = current_info.creation_csn;
+    if (!creation_csn && !current_info.creation_tid.isNonTransactional())
+        creation_csn = TransactionLog::getCSN(current_info.creation_tid);
+
+    return creation_csn && creation_csn != Tx::RolledBackCSN;
+}
+
 void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 {
     LOG_TEST(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
 
-    auto update_function = [tid](VersionInfo & info)
+    /// Refuse a non-transactional removal of an object whose transactional creation has not
+    /// committed yet: `removal_csn` is set to `Tx::NonTransactionalCSN` right away, and the
+    /// resulting `creation_csn = 0` with `removal_csn = 1` shape is rejected by `validateInfo`
+    /// and cannot be repaired on restart. `SERIALIZATION_ERROR` is retryable: once the creating
+    /// transaction commits or rolls back, the same removal succeeds.
+    /// The transaction log lookup is done here rather than inside `update_function` to keep it
+    /// out of the metadata update lock.
+    const bool creation_in_flight = tid.isNonTransactional() && isCreatedByUncommittedTransaction();
+
+    auto update_function = [tid, creation_in_flight, this](VersionInfo & info)
     {
         if (info.removal_tid == tid)
             return false;
+
+        if (creation_in_flight && !info.creation_csn && !info.creation_tid.isNonTransactional())
+        {
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                getObjectName(), info.creation_tid);
+        }
 
         chassert(info.removal_tid.isEmpty() || tid == Tx::EmptyTID, fmt::format("removal_tid {}, tid {}", info.removal_tid, tid));
         info.removal_tid = tid;

@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 DROP TABLE IF EXISTS t_any;
 DROP TABLE IF EXISTS t_small;
 
