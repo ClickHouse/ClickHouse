@@ -374,6 +374,18 @@ INNER JOIN t_115999_side AS b ON r.group_id = b.group_id
 WHERE hasAnyTokens(r.tags, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY r.id;
 SELECT id FROM t_115999_local WHERE hasAnyTokens(tags, ['alpha beta']) ORDER BY id;
 
+-- Every `remote()` node builds its own `Distributed` instance, so the branches of the union agree on the
+-- table the indexes are defined on, not on the storage the branch reads.
+SELECT 'a UNION ALL of two remote() reads of one table';
+SELECT count() FROM
+(
+    SELECT tags FROM remote('127.0.0.1', currentDatabase(), t_115999_local) ORDER BY id LIMIT 10
+    UNION ALL
+    SELECT tags FROM remote('127.0.0.1', currentDatabase(), t_115999_local) ORDER BY id LIMIT 10
+)
+WHERE hasAnyTokens(tags, ['alpha beta']);
+SELECT count() FROM t_115999_local WHERE hasAnyTokens(tags, ['alpha beta']);
+
 DROP TABLE t_115999_dist;
 DROP TABLE t_115999_local;
 DROP TABLE t_115999_side;

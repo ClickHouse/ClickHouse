@@ -75,3 +75,6 @@ a Distributed haystack, predicate on the initiator
 1
 1
 1
+a UNION ALL of two remote() reads of one table
+2
+1

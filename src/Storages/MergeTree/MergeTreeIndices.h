@@ -359,8 +359,7 @@ struct IMergeTreeIndex
     const IndexDescription & index;
 };
 
-/// The columns whose names claim the `map.key_<k>` shape, so a predicate on such a name is not read as
-/// a Map key subcolumn. Pass to `tryParseMapSubcolumnName`.
+/// The columns claiming the `map.key_<k>` shape, so such a name is not read as a Map key subcolumn.
 NameSet getColumnsShadowingMapSubcolumns(const StorageInMemoryMetadata & metadata);
 
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;

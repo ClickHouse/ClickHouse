@@ -5,15 +5,12 @@
 namespace DB
 {
 
-/** Adds the explicit tokenizer argument to text-search functions that do not have one, taking it from the
-  * text index defined on the haystack expression. `hasAnyTokens(s, ['a b'])` on a table with
-  * `INDEX idx (s) TYPE text(tokenizer = array)` becomes `hasAnyTokens(s, ['a b'], 'array')`.
+/** Takes the tokenizer from the text index on the haystack and makes it explicit, so that
+  * `hasAnyTokens(s, ['a b'])` on `INDEX idx (s) TYPE text(tokenizer = array)` becomes
+  * `hasAnyTokens(s, ['a b'], 'array')`. Otherwise the function answers with its default
+  * `splitByNonAlpha` and the result depends on whether the index was read (issue #115999).
   *
-  * Without it the function tokenizes with its default `splitByNonAlpha` and answers a different question
-  * than the index does, so the result would depend on whether the index was read.
-  *
-  * This runs in the analyzer, before the query plan exists, because the plan loses what the query tree
-  * states unambiguously: which table a column comes from. See https://github.com/ClickHouse/ClickHouse/issues/115999
+  * Runs in the analyzer because only the query tree states which table a column comes from.
   */
 class TextSearchTokenizerPass final : public IQueryTreePass
 {
