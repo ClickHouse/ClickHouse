@@ -617,7 +617,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         /// - `force_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero, or
         /// - the projection's sort order matches the query's ORDER BY,
-        if (candidate.sum_marks > parent_reading_marks)
+        if (!force_optimize_projection && candidate.sum_marks > parent_reading_marks)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
