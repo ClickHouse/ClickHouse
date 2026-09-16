@@ -66,10 +66,21 @@ public:
     virtual JoinResultBlock next() = 0;
 
     /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
-    virtual size_t getMatchedRightRows() const { return 0; }
+    /// Empty when the probe never counted matches, so its zero would be structural rather than measured.
+    virtual std::optional<size_t> getMatchedRightRows() const { return 0; }
 
     static JoinResultPtr createFromBlock(Block block);
 };
+
+/// Folds one `getMatchedRightRows()` into a running total. Empty absorbs: a total counts every match
+/// only if every part of it did.
+inline void addMatchedRightRows(std::optional<size_t> & total, std::optional<size_t> part)
+{
+    if (!part)
+        total.reset();
+    else if (total)
+        *total += *part;
+}
 
 class IJoin
 {
@@ -109,12 +120,17 @@ public:
 
     /// Add block of data from right hand of JOIN.
     ///
-    /// `num_rows` is the Chunk's row count, which `Block::rows` cannot supply for a block with no
-    /// columns at all - PREWHERE consuming every column of a cross join's right side, say.
+    /// `num_rows` is the row count of the chunk the block came from. `Block::rows` returns 0 for a
+    /// block without columns, which happens when PREWHERE consumes every column of a cross join's
+    /// right side, so the count travels separately.
     ///
-    /// Callers that may run concurrently must pass distinct `worker_id`s in
-    /// `[0, getMaxBuildThreads())`: `HashJoin` keeps unsynchronized per-worker state behind it.
-    /// A single-threaded filler passes `0`; a wrapper join forwards the id it was given.
+    /// `worker_id` is the number of the thread that fills the join, for a join that keeps state per
+    /// filler thread. Concurrent fillers pass distinct ids from `[0, getMaxBuildThreads())`, a
+    /// single filler passes 0, and a wrapper join forwards the id it received. `HashJoin` keeps
+    /// unsynchronized per-worker state behind it.
+    ///
+    /// `check_limits` makes the join check `max_rows_in_join` and `max_bytes_in_join` after the
+    /// insert; a caller that checks the limits itself, such as `JoinSwitcher`, passes false.
     ///
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) = 0;
@@ -157,7 +173,8 @@ public:
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
 
-    /// Zero leaves the choice to the pipeline.
+    /// Upper bound on the number of threads that fill this join concurrently; zero leaves the
+    /// choice to the pipeline.
     virtual size_t getMaxBuildThreads() const { return 0; }
 
     /// Peek next stream of delayed joined blocks.
@@ -200,8 +217,9 @@ public:
 
     /// Called by `JoiningTransform` when every probe stream has consumed its whole left input.
     /// Not called when the probe is cut short (LIMIT, cancellation).
-    /// `matched_right_rows` is the number of right table rows matched across every probe stream.
-    virtual void onProbePhaseFinish(size_t /*matched_right_rows*/) { }
+    /// `matched_right_rows` is the number of right table rows matched across every probe stream,
+    /// empty if any of them did not count matches.
+    virtual void onProbePhaseFinish(std::optional<size_t> /*matched_right_rows*/) { }
 
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.

@@ -22,6 +22,7 @@ struct FixedHashTableCell
 
     FixedHashTableCell() {} /// NOLINT
     FixedHashTableCell(const Key &, const State &) : full(true) {}
+    FixedHashTableCell(const FixedHashTableCell & other, const State &) : full(other.full) {}
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     VoidMapped getMapped() const { return {}; }
@@ -29,6 +30,12 @@ struct FixedHashTableCell
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
     static constexpr bool need_zero_value_storage = false;
+
+    /// The position in the table is the key, and `FixedHashTable` writes it; the cell has nothing of its own to serialize.
+    void write(DB::WriteBuffer &) const { }
+    void writeText(DB::WriteBuffer &) const { }
+    void read(DB::ReadBuffer &) { full = true; }
+    void readText(DB::ReadBuffer &) { full = true; }
 
     /// This Cell is only stored inside an iterator. It's used to accommodate the fact
     ///  that the iterator based API always provide a reference to a continuous memory
@@ -401,8 +408,8 @@ public:
     /// For example, when aggregator merges single level aggregation state in parallel.
     void ALWAYS_INLINE disableMinMaxOptimization() { disable_min_max_optimization = true; }
 
-    /// Re-derives the bounds after `disableMinMaxOptimization`, so call once no writer is left. An
-    /// empty table keeps the `max < min` state that makes iteration find nothing.
+    /// Derive the bounds from the cells and enable the optimization again, once no concurrent writer
+    /// is left. An empty table keeps `max < min`, which is how iteration finds nothing.
     void restoreMinMaxOptimization()
     {
         if (!disable_min_max_optimization)

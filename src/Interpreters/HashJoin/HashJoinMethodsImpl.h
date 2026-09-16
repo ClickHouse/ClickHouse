@@ -192,7 +192,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
       *  but they will not be used at this stage of joining (and will be in `CollectorNonJoined`), and they need to be skipped.
       * For ASOF, the last column is used as the ASOF column
       */
-    AddedColumns<!join_features.is_any_join> added_columns(
+    AddedColumns added_columns(
         block,
         block_with_columns_to_add,
         join.savedBlockSample(),
@@ -213,8 +213,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
-    else
-        added_columns.reserve(join_features.need_replication);
 
     size_t processed_rows = 0;
     {
@@ -244,13 +242,18 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
     }
 
+    /// The counter only advances where the probe records row refs, so without them its zero counts
+    /// nothing and must stay distinguishable from a measured zero.
+    const std::optional<size_t> matched_right_rows
+        = added_columns.record_row_refs ? std::optional<size_t>(added_columns.lazy_output.hash_table_matches) : std::nullopt;
+
     auto join_result = std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
         std::move(added_columns.columns),
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
         std::move(added_columns.matched_rows),
-        added_columns.lazy_output.hash_table_matches,
+        matched_right_rows,
         std::move(block),
         HashJoinResult::Properties{
             *join.table_join,
@@ -596,34 +599,38 @@ void processMatch(
         if (row_ref)
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-            added_columns.appendFromBlock(row_ref->encode(), join_features.add_missing);
+            added_columns.appendFromBlock(row_ref->encode());
         }
         else
             addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
     }
     else if constexpr (join_features.is_all_join)
     {
+        /// This branch records a key's whole cell word. The emit reads such a word correctly only in
+        /// the `Lists` shape, which `emits_whole_key_per_word` selects, so it has to cover this branch.
+        static_assert(join_features.emits_whole_key_per_word);
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
         /// An ALL join emits a right row for each matching left row, so nothing is claimed here.
-        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
+        addFoundRowAll<Map>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
     }
     else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
     {
+        static_assert(join_features.emits_whole_key_per_word);
         /// Each right row is emitted for exactly one left row, so the claimed rows must be the emitted
         /// ones. With several disjuncts a right row is reachable through several keys, hence the claim
         /// is taken per row by `addFoundRowAll`, which emits only what it claims.
         if constexpr (flag_per_row)
         {
             static_assert(join_features.need_flags, "RIGHT ANY/SEMI JOIN needs flags to claim the rows it emits");
-            if (addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, &used_flags, is_last_disjunct))
+            if (addFoundRowAll<Map>(mapped, added_columns, current_offset, known_rows, &used_flags, is_last_disjunct))
                 setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         }
         /// A single disjunct reaches a right row through one key only, so claiming the key claims all of its rows.
         else if (used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result))
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
+            addFoundRowAll<Map>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
         }
     }
     else if constexpr (join_features.is_any_join && join_features.inner)
@@ -634,7 +641,7 @@ void processMatch(
         if (used_once)
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-            added_columns.appendFromBlock(firstRefWord(mapped), join_features.add_missing);
+            added_columns.appendFromBlock(firstRefWord(mapped));
         }
     }
     else if constexpr (join_features.is_any_join && join_features.full)
@@ -650,7 +657,7 @@ void processMatch(
     {
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-        added_columns.appendFromBlock(firstRefWord(mapped), join_features.add_missing);
+        added_columns.appendFromBlock(firstRefWord(mapped));
     }
 }
 
@@ -688,7 +695,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.filter = IColumn::Filter(rows, 0);
         added_columns.matched_rows.reserve(rows);
     }
-    if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
+    /// Deliberately the same condition as the `addFoundRowAll` branches of `processMatch` below.
+    if constexpr (!flag_per_row && join_features.emits_whole_key_per_word)
         added_columns.lazy_output.output_by_row_list = true;
 
     Arena pool;
@@ -750,7 +758,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         }
     }
 
-    added_columns.applyLazyDefaults();
     return 0;
 }
 
@@ -798,7 +805,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.filter = IColumn::Filter(rows, 0);
         added_columns.matched_rows.reserve(rows);
     }
-    if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
+    /// Deliberately the same condition as the `addFoundRowAll` branches of `processMatch` below.
+    if constexpr (!flag_per_row && join_features.emits_whole_key_per_word)
         added_columns.lazy_output.output_by_row_list = true;
 
     Arena pool;
@@ -871,7 +879,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             added_columns.offsets_to_replicate.push_back(current_offset);
     }
 
-    added_columns.applyLazyDefaults();
     return i;
 }
 
@@ -1023,7 +1030,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     {
     public:
         explicit PreSelectedRows(PODArray<UInt64> & container_) : container(container_) {}
-        void appendFromBlock(UInt64 ref_word, bool /* has_default */) { container.push_back(ref_word); }
+        void appendFromBlock(UInt64 ref_word) { container.push_back(ref_word); }
         static constexpr bool isLazy() { return false; }
 
         PODArray<UInt64> & container;
@@ -1084,14 +1091,13 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                 {
                     auto & mapped = find_result.getMapped();
                     find_results.push_back(find_result);
-                    /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
                     /// it's different from `joinRightColumns`.
                     PreSelectedRows selected_rows_view{selected_rows};
                     const bool is_last_disjunct = join_clause_idx + 1 == added_columns.join_on_keys.size();
                     if (flag_per_row)
-                        addFoundRowAll<Map, false, true>(mapped, selected_rows_view, current_added_rows, all_flag_known_rows, nullptr, is_last_disjunct);
+                        addFoundRowAll<Map, true>(mapped, selected_rows_view, current_added_rows, all_flag_known_rows, nullptr, is_last_disjunct);
                     else
-                        addFoundRowAll<Map, false, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr, is_last_disjunct);
+                        addFoundRowAll<Map, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr, is_last_disjunct);
                 }
 
             }
@@ -1152,7 +1158,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                                     {
                                         any_matched = true;
                                         total_added_rows += 1;
-                                        added_columns.appendFromBlock(selected_ref, join_features.add_missing);
+                                        added_columns.appendFromBlock(selected_ref);
                                     }
                                 }
                             }
@@ -1164,7 +1170,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                                 {
                                     any_matched = true;
                                     total_added_rows += 1;
-                                    added_columns.appendFromBlock(selected_ref, join_features.add_missing);
+                                    added_columns.appendFromBlock(selected_ref);
                                 }
                             }
                         }
@@ -1178,7 +1184,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         {
                             any_matched = true;
                             total_added_rows += 1;
-                            added_columns.appendFromBlock(selected_ref, join_features.add_missing);
+                            added_columns.appendFromBlock(selected_ref);
                             used_flags.template setUsed<join_features.need_flags, true>(refWordBlockNo(selected_ref), refWordRowNo(selected_ref), 0);
                         }
                     }
@@ -1199,7 +1205,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                            added_columns.appendFromBlock(*selected_right_row_it);
                             total_added_rows += 1;
                         }
                         ++selected_right_row_it;
@@ -1209,7 +1215,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         if (filter_flags[replicated_row])
                         {
                             any_matched = true;
-                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                            added_columns.appendFromBlock(*selected_right_row_it);
                             total_added_rows += 1;
                             selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
                             break;
@@ -1242,8 +1248,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
                     if (need_filter)
                         setUsed<true>(added_columns.filter, i, added_columns.matched_rows);
-                    if constexpr (join_features.add_missing)
-                        added_columns.applyLazyDefaults();
                 }
             }
             if constexpr (leftMatchedSource(KIND, STRICTNESS) == LeftMatchedSource::DefaultRowMarkers)
@@ -1275,7 +1279,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         /// which is cut to left_block_rows downstream.
         added_columns.filter.resize(left_block_rows);
     }
-    added_columns.applyLazyDefaults();
     return left_block_rows;
 }
 

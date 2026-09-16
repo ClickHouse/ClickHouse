@@ -3,10 +3,11 @@
 #include <concepts>
 #include <base/types.h>
 
-/** What the join needs of a map that partitions its keys into buckets, whatever the storage.
+/** What a caller that fills a table bucket by bucket relies on, whatever the table's storage.
   *
-  * Route through `getBucketFromHash(bucketRoutingHash(key, hash(key)))`, in that order: the hash a
-  * map places by is not necessarily the one it routes by (see `PartitionedFixedHashMap`).
+  * The bucket of a key is `getBucketFromHash(bucketRoutingHash(key, hash(key)))`, in that order:
+  * the hash a table places its cells by is not always the one it routes by (see
+  * `PartitionedFixedHashMap`), and `offsetInternal` numbers cells across all buckets.
   */
 template <typename Map>
 concept BucketPartitionedTable = requires(

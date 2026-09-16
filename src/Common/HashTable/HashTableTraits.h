@@ -38,8 +38,7 @@ struct HasConstructorOfNumberOfElements<HashSetTable<Ts...>> : std::true_type
 };
 
 template <typename Key, typename TCell, typename Hash, typename Grower, typename Allocator, Int32 bits_for_bucket>
-struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Key, TCell, Hash, Grower, Allocator, bits_for_bucket>>
-    : std::true_type
+struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Key, TCell, Hash, Grower, Allocator, bits_for_bucket>> : std::true_type
 {
 };
 
@@ -48,6 +47,9 @@ struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
 {
 };
 
+/// The specialization that used to be here could never match, because a type pack cannot bind the
+/// bucket-count parameter, so the nullable two-level aggregation variants built on a bare
+/// `TwoLevelHashTable` took no size hint. Now they take one, like every other two-level variant.
 template <
     typename Key,
     typename Cell,

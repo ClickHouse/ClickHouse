@@ -367,7 +367,7 @@ public:
         size_t num_streams) const override;
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish(size_t matched_right_rows) override
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
         probe_phase_finished = true;
@@ -666,6 +666,8 @@ public:
             }
         }
 
+        /// A map numbers its cells across buckets and needs the prefix sums of the bucket sizes for
+        /// that; a single-bucket map has nothing to sum.
         void computeBucketPrefix(Type which) const
         {
             switch (which)
@@ -1060,7 +1062,7 @@ private:
     bool probe_phase_finished = false;
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
-    size_t hash_table_matches = 0;
+    std::optional<size_t> hash_table_matches;
 
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;

@@ -150,7 +150,7 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    void onProbePhaseFinish(size_t matched_right_rows) override
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         std::shared_lock lock(switch_mutex);
         join->onProbePhaseFinish(matched_right_rows);

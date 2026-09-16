@@ -2,10 +2,12 @@
 
 #include <Common/CacheLine.h>
 #include <Common/HashTable/PartitionedFixedHashMap.h>
+#include <Common/HashTable/PartitionedFixedHashSet.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <algorithm>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -13,21 +15,19 @@
 #include <vector>
 
 
-/** The invariant under test throughout: routing changes which lock a key belongs under and nothing
-  * else. Cells, offsets, buffer size and iteration must be indistinguishable from a plain
-  * `FixedHashMap` at every bucket count.
+/** The invariant under test: partitioning a fixed-range table changes which bucket a key belongs to
+  * and nothing else. Cells, offsets, buffer size, iteration and serialization must be those of the
+  * plain `FixedHashMap` at every bucket count.
   */
 
 namespace
 {
 
-using Mapped = UInt64;
-
 template <typename Key, size_t size_bits, Int32 bits_for_bucket>
-using Partitioned = PartitionedFixedHashMap<Key, Mapped, size_bits, bits_for_bucket>;
+using Partitioned = PartitionedFixedHashMap<Key, UInt64, size_bits, bits_for_bucket>;
 
 template <typename Key, size_t size_bits>
-using Plain = FixedHashMapWithSizeBits<Key, Mapped, size_bits>;
+using Plain = FixedHashMapWithSizeBits<Key, UInt64, size_bits>;
 
 template <typename Map>
 void insertKeyValue(Map & map, typename Map::key_type key, UInt64 value)
@@ -41,14 +41,13 @@ void insertKeyValue(Map & map, typename Map::key_type key, UInt64 value)
         it->getMapped() = value;
 }
 
-/// The pair a caller must use: for a fixed-range table the cell hash cannot select a bucket.
+/// The bucket a key belongs to, computed the way an external caller would before taking the bucket's lock.
 template <typename Map>
-size_t routedBucket(const Map & map, typename Map::key_type key)
+size_t routedBucket(typename Map::key_type key)
 {
-    return map.getBucketFromHash(map.bucketRoutingHash(key, map.hash(key)));
+    return Map::getBucketFromHash(Map::bucketRoutingHash(key, Map::hash(key)));
 }
 
-/// Collected the way `NotJoinedHash::fillColumns` does, through the iterator's raw cell pointer.
 template <typename Map>
 std::vector<size_t> offsetsByIteration(Map & map)
 {
@@ -65,7 +64,7 @@ void forBucketBits(Fn && fn)
 }
 
 template <typename Map>
-std::string serializeMap(const Map & map)
+std::string serialize(const Map & map)
 {
     DB::WriteBufferFromOwnString wb;
     map.write(wb);
@@ -73,18 +72,48 @@ std::string serializeMap(const Map & map)
 }
 
 template <typename Map>
-void readMap(Map & dst, const std::string & bytes)
+void deserialize(Map & map, const std::string & bytes)
 {
     DB::ReadBufferFromString rb(bytes);
-    dst.read(rb);
-    EXPECT_TRUE(rb.eof()) << "write emitted more partitions than read consumed";
-}
+    map.read(rb);
+    EXPECT_TRUE(rb.eof()) << "write emitted more than read consumed";
 }
 
-
-TEST(PartitionedFixedHashMap, OffsetsMatchAPlainFixedHashMap)
+/// Keys are pairwise consecutive; the two must route together whenever their cells start on one cache line.
+template <typename Map>
+void assertCacheLinesNeverSpanBuckets(size_t num_keys)
 {
-    /// `HashJoin` sizes its used flags from the cell count and indexes them by `offsetInternal`.
+    constexpr size_t cell_size = sizeof(typename Map::cell_type);
+    for (size_t key = 1; key < num_keys; ++key)
+    {
+        if (((key - 1) * cell_size) / DB::CH_CACHE_LINE_SIZE != (key * cell_size) / DB::CH_CACHE_LINE_SIZE)
+            continue;
+        const auto typed_key = static_cast<typename Map::key_type>(key);
+        const auto typed_prev = static_cast<typename Map::key_type>(key - 1);
+        ASSERT_EQ(routedBucket<Map>(typed_key), routedBucket<Map>(typed_prev))
+            << "keys " << (key - 1) << " and " << key << " share a cache line but route apart";
+    }
+}
+
+/// At least `min_buckets` of the buckets receive keys and no bucket takes more than a quarter of them.
+template <typename Map>
+void assertKeysSpread(const std::vector<typename Map::key_type> & keys, size_t min_buckets)
+{
+    std::vector<size_t> per_bucket(Map::NUM_BUCKETS, 0);
+    for (const auto key : keys)
+        ++per_bucket[routedBucket<Map>(key)];
+
+    const size_t non_empty = std::count_if(per_bucket.begin(), per_bucket.end(), [](size_t count) { return count != 0; });
+    const size_t largest = *std::max_element(per_bucket.begin(), per_bucket.end());
+    ASSERT_GE(non_empty, min_buckets) << "keys reached only " << non_empty << " of " << Map::NUM_BUCKETS << " buckets";
+    ASSERT_LE(largest, keys.size() / 4) << "one bucket took " << largest << " of " << keys.size() << " keys";
+}
+
+}
+
+
+TEST(PartitionedFixedHashMap, CellsAndOffsetsMatchThePlainMap)
+{
     constexpr size_t size_bits = 16;
     constexpr UInt32 num_keys = 5000;
 
@@ -92,447 +121,349 @@ TEST(PartitionedFixedHashMap, OffsetsMatchAPlainFixedHashMap)
     for (UInt32 key = 0; key < num_keys; ++key)
         insertKeyValue(plain, key, key);
 
-    forBucketBits<0, 8>(
-        [&]<Int32 bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
+    {
+        using Map = Partitioned<UInt32, size_bits, bits>;
+        Map map;
+        for (UInt32 key = 0; key < num_keys; ++key)
+            insertKeyValue(map, key, key);
+
+        ASSERT_EQ(Map::NUM_BUCKETS, 1u << bits);
+        ASSERT_EQ(map.size(), num_keys) << "bits " << bits;
+        for (UInt32 key = 0; key < num_keys; ++key)
         {
-            Partitioned<UInt32, size_bits, bits> map;
-            for (UInt32 key = 0; key < num_keys; ++key)
-                insertKeyValue(map, key, key);
-
-            ASSERT_EQ(map.size(), num_keys) << "bits " << bits;
-            ASSERT_EQ(decltype(map)::NUM_BUCKETS, 1u << bits) << "bits " << bits;
-
-            for (UInt32 key = 0; key < num_keys; ++key)
-            {
-                const auto * partitioned_cell = map.find(key);
-                const auto * plain_cell = plain.find(key);
-                ASSERT_NE(partitioned_cell, nullptr) << "key " << key << ", bits " << bits;
-                ASSERT_NE(plain_cell, nullptr) << "key " << key;
-                ASSERT_EQ(map.offsetInternal(partitioned_cell), plain.offsetInternal(plain_cell))
-                    << "key " << key << " got a different offset at bits " << bits;
-                ASSERT_TRUE(map.has(key)) << "key " << key << ", bits " << bits;
-            }
-
-            ASSERT_EQ(map.find(num_keys + 1), nullptr) << "bits " << bits;
-        });
+            const auto * cell = map.find(key);
+            ASSERT_NE(cell, nullptr) << "key " << key << ", bits " << bits;
+            ASSERT_EQ(map.offsetInternal(cell), plain.offsetInternal(plain.find(key))) << "key " << key << ", bits " << bits;
+            ASSERT_TRUE(map.has(key)) << "key " << key << ", bits " << bits;
+        }
+        ASSERT_EQ(map.find(num_keys + 1), nullptr) << "bits " << bits;
+    });
 }
 
 
 TEST(PartitionedFixedHashMap, BufferSizeIsIndependentOfBucketCount)
 {
-    /// If this fails the used-flags array grows with the bucket count and one flat buffer buys
-    /// nothing.
     constexpr size_t size_bits = 16;
     constexpr size_t expected_cells = 1ULL << size_bits;
 
-    forBucketBits<0, 1, 4, 8>(
-        [&]<Int32 bits>()
-        {
-            Partitioned<UInt32, size_bits, bits> map;
-            ASSERT_EQ(decltype(map)::NUM_BUCKETS, 1u << bits);
-            ASSERT_EQ(map.getBufferSizeInCells(), expected_cells) << "bits " << bits;
-            ASSERT_EQ(map.getBufferSizeInBytes(), expected_cells * sizeof(typename decltype(map)::cell_type)) << "bits " << bits;
-            ASSERT_TRUE(map.empty());
-        });
+    forBucketBits<0, 1, 4, 8>([&]<Int32 bits>()
+    {
+        using Map = Partitioned<UInt32, size_bits, bits>;
+        Map map;
+        ASSERT_EQ(Map::NUM_BUCKETS, 1u << bits);
+        ASSERT_TRUE(map.empty());
+        ASSERT_EQ(map.getBufferSizeInCells(), expected_cells) << "bits " << bits;
+        ASSERT_EQ(map.getBufferSizeInBytes(), expected_cells * sizeof(typename Map::cell_type)) << "bits " << bits;
+        for (UInt32 i = 1; i < Map::NUM_BUCKETS; ++i)
+            ASSERT_EQ(map.impls[i].getBufferSizeInBytes(), map.impls[0].getBufferSizeInBytes()) << "bits " << bits;
+    });
 }
 
 
-TEST(PartitionedFixedHashMap, IterationVisitsEveryCellExactlyOnce)
+TEST(PartitionedFixedHashMap, IterationVisitsEveryCellOnce)
 {
-    /// Buckets share the cells, so a per-bucket walk would traverse the table once per bucket.
+    /// The buckets share the cells, so a walk over buckets would visit the table once per bucket.
     constexpr size_t size_bits = 16;
     constexpr UInt32 num_keys = 3000;
 
-    forBucketBits<0, 8>(
-        [&]<Int32 bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
+    {
+        Partitioned<UInt32, size_bits, bits> map;
+        for (UInt32 key = 0; key < num_keys; ++key)
+            insertKeyValue(map, key, key * 3);
+
+        const auto offsets = offsetsByIteration(map);
+        ASSERT_EQ(offsets.size(), num_keys) << "bits " << bits;
+        const std::unordered_set<size_t> unique(offsets.begin(), offsets.end());
+        ASSERT_EQ(unique.size(), num_keys) << "a cell was visited twice at bits " << bits;
+        for (UInt32 key = 0; key < num_keys; ++key)
+            ASSERT_TRUE(unique.contains(map.offsetInternal(map.find(key)))) << "key " << key << " was not visited at bits " << bits;
+
+        size_t visited = 0;
+        map.forEachMapped([&](UInt64 & mapped)
         {
-            Partitioned<UInt32, size_bits, bits> map;
-            for (UInt32 key = 0; key < num_keys; ++key)
-                insertKeyValue(map, key, key * 3);
-
-            const auto offsets = offsetsByIteration(map);
-            ASSERT_EQ(offsets.size(), num_keys) << "bits " << bits;
-
-            const std::unordered_set<size_t> unique(offsets.begin(), offsets.end());
-            ASSERT_EQ(unique.size(), num_keys) << "iteration repeated a cell at bits " << bits;
-
-            for (UInt32 key = 0; key < num_keys; ++key)
-                ASSERT_TRUE(unique.contains(map.offsetInternal(map.find(key)))) << "key " << key << " was never visited at bits " << bits;
-
-            /// `tryRerangeRightTableData` rewrites mapped values through this.
-            size_t visited = 0;
-            map.forEachMapped(
-                [&](UInt64 & mapped)
-                {
-                    ++visited;
-                    mapped += 1;
-                });
-            ASSERT_EQ(visited, num_keys) << "forEachMapped at bits " << bits;
-            for (UInt32 key = 0; key < num_keys; ++key)
-                ASSERT_EQ(map.find(key)->getMapped(), key * 3 + 1) << "key " << key;
+            ++visited;
+            mapped += 1;
         });
+        ASSERT_EQ(visited, num_keys) << "bits " << bits;
+        for (UInt32 key = 0; key < num_keys; ++key)
+            ASSERT_EQ(map.find(key)->getMapped(), key * 3 + 1) << "key " << key;
+    });
 }
 
 
-TEST(PartitionedFixedHashMap, EveryKeyRoutesToExactlyOneBucketAndRoutingIsStable)
+TEST(PartitionedFixedHashMap, RoutingIsInRangeAndStable)
 {
     constexpr size_t size_bits = 16;
     constexpr UInt32 num_keys = 4000;
 
-    forBucketBits<0, 8>(
-        [&]<Int32 bits>()
+    forBucketBits<0, 8>([&]<Int32 bits>()
+    {
+        using Map = Partitioned<UInt32, size_bits, bits>;
+        Map map;
+
+        std::vector<size_t> bucket_of_key(num_keys);
+        for (UInt32 key = 0; key < num_keys; ++key)
         {
-            Partitioned<UInt32, size_bits, bits> map;
-            const size_t num_buckets = decltype(map)::NUM_BUCKETS;
+            bucket_of_key[key] = routedBucket<Map>(key);
+            ASSERT_LT(bucket_of_key[key], Map::NUM_BUCKETS) << "key " << key;
+        }
 
-            std::vector<size_t> bucket_of_key(num_keys);
-            for (UInt32 key = 0; key < num_keys; ++key)
-            {
-                bucket_of_key[key] = routedBucket(map, key);
-                ASSERT_LT(bucket_of_key[key], num_buckets) << "key " << key;
-            }
-
-            /// If build and probe routing could drift, a row would be read under the wrong lock.
-            for (UInt32 key = 0; key < num_keys; ++key)
-            {
-                insertKeyValue(map, key, key);
-                ASSERT_EQ(routedBucket(map, key), bucket_of_key[key]) << "routing moved for key " << key;
-            }
-        });
+        /// A key read under a different lock than it was written under would be a data race.
+        for (UInt32 key = 0; key < num_keys; ++key)
+        {
+            insertKeyValue(map, key, key);
+            ASSERT_EQ(routedBucket<Map>(key), bucket_of_key[key]) << "routing moved for key " << key;
+        }
+    });
 }
 
 
 TEST(PartitionedFixedHashMap, ACacheLineNeverSpansTwoBuckets)
 {
-    /// Keys whose cells start on the same cache line must share a bucket. `sizeof(Cell)` for
-    /// `Mapped = UInt64` divides the line, so this is the aligned case.
-    constexpr size_t size_bits = 16;
-    using Map = Partitioned<UInt32, size_bits, 8>;
-    Map map;
-    constexpr size_t cell_size = sizeof(Map::cell_type);
+    /// 16-byte cells divide the line; the 12-byte cell below (a `bool` and an 8-byte, 4-aligned
+    /// payload) does not, so the line has to come from the cell's byte offset, not from a
+    /// cells-per-line count.
+    assertCacheLinesNeverSpanBuckets<Partitioned<UInt32, 16, 8>>(1u << 16);
 
-    for (UInt32 key = 1; key < (1U << size_bits); ++key)
-    {
-        if (((key - 1) * cell_size) / DB::CH_CACHE_LINE_SIZE != (key * cell_size) / DB::CH_CACHE_LINE_SIZE)
-            continue;
-        ASSERT_EQ(routedBucket(map, key), routedBucket(map, key - 1))
-            << "keys " << (key - 1) << " and " << key << " start on one cache line but route apart";
-    }
-}
-
-
-TEST(PartitionedFixedHashMap, MapsOneSizedCellsKeepAStartedCacheLineUnderOneLock)
-{
-    /// `HashJoin::MapsOne` stores `RowRef` (8 bytes, align 4) in `FixedHashMapCell`, so the cell is
-    /// 12 bytes and `64 / 12` is not a power of two. Keys 3 and 4 start at offsets 36 and 48.
-    struct alignas(4) MapsOneMapped
+    struct alignas(4) TwoWords
     {
         UInt32 a = 0;
         UInt32 b = 0;
     };
-    using Cell = FixedHashMapCell<UInt8, MapsOneMapped>;
-    static_assert(sizeof(Cell) == 12);
-    using Map = PartitionedFixedHashMap<UInt8, MapsOneMapped, 8, 8>;
-    Map map;
-
-    for (UInt16 key = 1; key < 256; ++key)
-    {
-        const size_t prev_line = ((key - 1) * sizeof(Cell)) / DB::CH_CACHE_LINE_SIZE;
-        const size_t line = (key * sizeof(Cell)) / DB::CH_CACHE_LINE_SIZE;
-        if (prev_line != line)
-            continue;
-        ASSERT_EQ(routedBucket(map, static_cast<UInt8>(key)), routedBucket(map, static_cast<UInt8>(key - 1)))
-            << "keys " << (key - 1) << " and " << key;
-    }
+    using TwelveByteCellMap = PartitionedFixedHashMap<UInt8, TwoWords, 8, 8>;
+    static_assert(sizeof(TwelveByteCellMap::cell_type) == 12);
+    assertCacheLinesNeverSpanBuckets<TwelveByteCellMap>(256);
 }
 
 
-TEST(PartitionedFixedHashMap, SpreadsDenseAtZeroKeys)
+TEST(PartitionedFixedHashMap, SpreadsKeysThatShareHighOrLowBits)
 {
-    /// Rules out high-bit routing: a 300-key range lives in a 65536-cell table, where every key
-    /// shares its high bits, so all 300 would land in bucket 0.
     constexpr size_t size_bits = 16;
-    constexpr UInt32 num_keys = 300;
     using Map = Partitioned<UInt32, size_bits, 4>;
-    Map map;
-    const size_t num_buckets = decltype(map)::NUM_BUCKETS;
-    ASSERT_EQ(num_buckets, 16u);
+    ASSERT_EQ(Map::NUM_BUCKETS, 16u);
 
-    std::vector<size_t> per_bucket(num_buckets, 0);
-    for (UInt32 key = 0; key < num_keys; ++key)
-    {
-        insertKeyValue(map, key, key);
-        ++per_bucket[routedBucket(map, key)];
-    }
+    /// 300 keys at the bottom of a 65536-cell table share their high bits; routing on those would
+    /// put all of them into one bucket.
+    std::vector<UInt32> dense_at_zero(300);
+    for (UInt32 key = 0; key < dense_at_zero.size(); ++key)
+        dense_at_zero[key] = key;
+    assertKeysSpread<Map>(dense_at_zero, 14);
 
-    size_t non_empty = 0;
-    size_t largest = 0;
-    for (const size_t count : per_bucket)
-    {
-        non_empty += count != 0;
-        largest = std::max(largest, count);
-    }
-
-    ASSERT_GE(non_empty, 14u) << "dense-at-zero keys reached only " << non_empty << " of " << num_buckets << " buckets";
-    ASSERT_LE(largest, num_keys / 4) << "one bucket took " << largest << " of " << num_keys << " keys";
-}
-
-
-TEST(PartitionedFixedHashMap, SpreadsKeysWithLowBitStructure)
-{
-    /// Rules out low-bit routing: keys that are all multiples of 256 share their low bits.
-    constexpr size_t size_bits = 16;
-    constexpr UInt32 stride = 256;
-    constexpr UInt32 num_keys = 256;
-    using Map = Partitioned<UInt32, size_bits, 4>;
-    Map map;
-    const size_t num_buckets = decltype(map)::NUM_BUCKETS;
-    ASSERT_EQ(num_buckets, 16u);
-
-    std::vector<size_t> per_bucket(num_buckets, 0);
-    for (UInt32 i = 0; i < num_keys; ++i)
-    {
-        const UInt32 key = i * stride;
-        insertKeyValue(map, key, key);
-        ++per_bucket[routedBucket(map, key)];
-    }
-
-    size_t non_empty = 0;
-    size_t largest = 0;
-    for (const size_t count : per_bucket)
-    {
-        non_empty += count != 0;
-        largest = std::max(largest, count);
-    }
-
-    ASSERT_GE(non_empty, 14u) << "aligned keys reached only " << non_empty << " of " << num_buckets << " buckets";
-    ASSERT_LE(largest, num_keys / 4) << "one bucket took " << largest << " of " << num_keys << " keys";
+    /// Multiples of 256 share their low bits.
+    std::vector<UInt32> strided(256);
+    for (UInt32 i = 0; i < strided.size(); ++i)
+        strided[i] = i * 256;
+    assertKeysSpread<Map>(strided, 14);
 }
 
 
 TEST(PartitionedFixedHashMap, SmallKeyTypeIsFullyAddressable)
 {
-    /// `key8` covers its whole key space, including at more buckets than there are cache lines.
-    constexpr size_t size_bits = 8;
+    /// Every key of `UInt8` must be reachable, also with more buckets than the table has cache lines.
+    forBucketBits<0, 8>([&]<Int32 bits>()
+    {
+        Partitioned<UInt8, 8, bits> map;
+        for (size_t key = 0; key < 256; ++key)
+            insertKeyValue(map, static_cast<UInt8>(key), key);
 
-    forBucketBits<0, 8>(
-        [&]<Int32 bits>()
+        ASSERT_EQ(map.size(), 256u) << "bits " << bits;
+        ASSERT_EQ(map.getBufferSizeInCells(), 256u) << "bits " << bits;
+        for (size_t key = 0; key < 256; ++key)
         {
-            Partitioned<UInt8, size_bits, bits> map;
-            for (size_t key = 0; key < 256; ++key)
-                insertKeyValue(map, static_cast<UInt8>(key), key);
-
-            ASSERT_EQ(map.size(), 256u) << "bits " << bits;
-            ASSERT_EQ(map.getBufferSizeInCells(), 256u) << "bits " << bits;
-
-            for (size_t key = 0; key < 256; ++key)
-            {
-                const auto * cell = map.find(static_cast<UInt8>(key));
-                ASSERT_NE(cell, nullptr) << "key " << key << ", bits " << bits;
-                ASSERT_EQ(cell->getMapped(), key);
-                ASSERT_EQ(map.offsetInternal(cell), key + 1) << "key " << key;
-                ASSERT_TRUE(map.has(static_cast<UInt8>(key)));
-            }
-
-            ASSERT_EQ(offsetsByIteration(map).size(), 256u) << "bits " << bits;
-        });
+            const auto * cell = map.find(static_cast<UInt8>(key));
+            ASSERT_NE(cell, nullptr) << "key " << key << ", bits " << bits;
+            ASSERT_EQ(cell->getMapped(), key);
+            ASSERT_EQ(map.offsetInternal(cell), key + 1) << "key " << key;
+        }
+        ASSERT_EQ(offsetsByIteration(map).size(), 256u) << "bits " << bits;
+    });
 }
 
 
-TEST(PartitionedFixedHashMap, SerialLayoutKeepsMinMaxOptimization)
+TEST(PartitionedFixedHashMap, MinMaxOptimizationIsOffOnlyWhileBucketsAreFilled)
 {
-    using Map = Partitioned<UInt16, 16, 0>;
-    Map map;
-    insertKeyValue(map, 10, 1);
-    insertKeyValue(map, 20, 2);
-    insertKeyValue(map, 40, 3);
+    /// One bucket has one writer, so the bounds stay live. Several buckets have several writers, who
+    /// would race on the bounds; they are off until the caller restores them after the build.
+    Partitioned<UInt16, 16, 0> serial;
+    Partitioned<UInt16, 16, 8> parallel;
+    for (const UInt16 key : std::initializer_list<UInt16>{10, 20, 40})
+    {
+        insertKeyValue(serial, key, key);
+        insertKeyValue(parallel, key, key);
+    }
 
-    ASSERT_EQ(decltype(map)::NUM_BUCKETS, 1u);
-    ASSERT_TRUE(map.canUseMinMaxOptimization());
-    ASSERT_EQ(offsetsByIteration(map).size(), 3u);
+    ASSERT_TRUE(serial.canUseMinMaxOptimization());
+    ASSERT_EQ(offsetsByIteration(serial).size(), 3u);
+
+    ASSERT_FALSE(parallel.canUseMinMaxOptimization());
+    ASSERT_EQ(offsetsByIteration(parallel).size(), 3u);
+    parallel.restoreMinMaxOptimization();
+    ASSERT_TRUE(parallel.canUseMinMaxOptimization());
+    ASSERT_EQ(offsetsByIteration(parallel).size(), 3u);
 }
 
 
-TEST(PartitionedFixedHashMap, ParallelLayoutRestoresMinMaxAfterBuild)
+TEST(PartitionedFixedHashMap, SerializesTheFlatTableOnce)
 {
-    using Map = Partitioned<UInt16, 16, 8>;
-    Map map;
-    insertKeyValue(map, 10, 1);
-    insertKeyValue(map, 20, 2);
-    insertKeyValue(map, 40, 3);
-
-    ASSERT_EQ(decltype(map)::NUM_BUCKETS, 256u);
-    ASSERT_FALSE(map.canUseMinMaxOptimization());
-    ASSERT_EQ(offsetsByIteration(map).size(), 3u);
-
-    map.restoreMinMaxOptimization();
-    ASSERT_TRUE(map.canUseMinMaxOptimization());
-    ASSERT_EQ(offsetsByIteration(map).size(), 3u);
-}
-
-
-TEST(PartitionedFixedHashMap, WriteReadsTheFlatTableOnce)
-{
-    /// `FixedRangeStorage` must serialize the one buffer, not once per routing bucket.
     using Serial = Partitioned<UInt16, 16, 0>;
     using Parallel = Partitioned<UInt16, 16, 8>;
     ASSERT_EQ(Serial::serializedPartitionCount(), 1u);
     ASSERT_EQ(Parallel::serializedPartitionCount(), 1u);
 
+    const std::vector<UInt16> keys = {0, 10, 20, 40, 65535};
     Serial serial;
     Parallel parallel;
-    const std::vector<UInt16> keys = {0, 10, 20, 40, 65535};
-    for (auto key : keys)
+    for (const auto key : keys)
     {
         insertKeyValue(serial, key, key * 3);
         insertKeyValue(parallel, key, key * 3);
     }
 
-    const auto serial_bytes = serializeMap(serial);
-    const auto parallel_bytes = serializeMap(parallel);
-    ASSERT_EQ(serial_bytes, parallel_bytes);
+    /// The bucket count is a property of the build, not of the data, so the bytes are the same.
+    const auto bytes = serialize(serial);
+    ASSERT_EQ(serialize(parallel), bytes);
 
-    auto check_copy = [&](auto & src, auto & copy)
+    const auto check_copy = [&](const auto & source, auto & copy)
     {
-        ASSERT_EQ(copy.size(), src.size());
-        ASSERT_EQ(offsetsByIteration(copy), offsetsByIteration(src));
-        for (auto key : keys)
+        deserialize(copy, bytes);
+        ASSERT_EQ(copy.size(), source.size());
+        ASSERT_EQ(offsetsByIteration(copy), offsetsByIteration(const_cast<std::decay_t<decltype(source)> &>(source)));
+        for (const auto key : keys)
         {
-            const auto * from = src.find(key);
             const auto * to = copy.find(key);
-            ASSERT_NE(from, nullptr) << "key " << key;
             ASSERT_NE(to, nullptr) << "key " << key;
-            ASSERT_EQ(to->getMapped(), from->getMapped()) << "key " << key;
-            ASSERT_EQ(copy.offsetInternal(to), src.offsetInternal(from)) << "key " << key;
+            ASSERT_EQ(to->getMapped(), source.find(key)->getMapped()) << "key " << key;
         }
     };
 
     Serial serial_copy;
     Parallel parallel_copy;
-    readMap(serial_copy, serial_bytes);
-    readMap(parallel_copy, parallel_bytes);
     check_copy(serial, serial_copy);
     check_copy(parallel, parallel_copy);
 }
 
 
-TEST(PartitionedFixedHashMap, ConcurrentBuildWithExternalBucketLocks)
+TEST(PartitionedFixedHashMap, ConcurrentInsertsUnderOneLockPerBucket)
 {
-    /// Distinct keys are distinct cells, so routed disjointness is real disjointness. Nothing
-    /// synchronizes internally.
-    constexpr size_t size_bits = 18;
     constexpr size_t num_threads = 16;
     constexpr UInt32 keys_per_thread = 10000;
-    using Map = Partitioned<UInt32, size_bits, 6>;
-    Map map;
-    const size_t num_buckets = decltype(map)::NUM_BUCKETS;
-    ASSERT_EQ(num_buckets, 64u);
-    std::vector<std::mutex> bucket_mutexes(num_buckets);
+    using Map = Partitioned<UInt32, 18, 6>;
+    ASSERT_EQ(Map::NUM_BUCKETS, 64u);
 
-    std::vector<std::thread> threads;
-    threads.reserve(num_threads);
-    for (size_t t = 0; t < num_threads; ++t)
+    /// Distinct keys are distinct cells, so keys under different locks never touch the same cell,
+    /// while the same keys collide inside their bucket. Both must end in the same state.
+    for (const bool same_keys_in_every_thread : {false, true})
     {
-        threads.emplace_back([&map, &bucket_mutexes, t]
+        Map map;
+        std::vector<std::mutex> bucket_mutexes(Map::NUM_BUCKETS);
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        for (size_t t = 0; t < num_threads; ++t)
         {
-            const UInt32 begin = static_cast<UInt32>(t) * keys_per_thread;
-            for (UInt32 key = begin; key < begin + keys_per_thread; ++key)
+            const UInt32 first_key = same_keys_in_every_thread ? 0 : static_cast<UInt32>(t) * keys_per_thread;
+            threads.emplace_back([&map, &bucket_mutexes, first_key]
             {
-                std::lock_guard lock(bucket_mutexes[routedBucket(map, key)]);
-                insertKeyValue(map, key, key * 5);
-            }
-        });
-    }
-    for (auto & thread : threads)
-        thread.join();
+                for (UInt32 key = first_key; key < first_key + keys_per_thread; ++key)
+                {
+                    std::lock_guard lock(bucket_mutexes[routedBucket<Map>(key)]);
+                    insertKeyValue(map, key, key * 5);
+                }
+            });
+        }
+        for (auto & thread : threads)
+            thread.join();
 
-    constexpr UInt32 total_keys = num_threads * keys_per_thread;
-    ASSERT_EQ(map.size(), total_keys);
-    for (UInt32 key = 0; key < total_keys; ++key)
-    {
-        const auto * cell = map.find(key);
-        ASSERT_NE(cell, nullptr) << "key " << key << " lost by the concurrent build";
-        ASSERT_EQ(cell->getMapped(), key * 5) << "mapped value of key " << key << " was corrupted";
-        ASSERT_EQ(map.offsetInternal(cell), key + 1) << "key " << key;
-    }
-
-    ASSERT_EQ(offsetsByIteration(map).size(), total_keys);
-}
-
-
-TEST(PartitionedFixedHashMap, ConcurrentBuildWithContendedKeys)
-{
-    /// Same, but every thread inserts the same keys, so they collide inside a bucket too.
-    constexpr size_t size_bits = 16;
-    constexpr size_t num_threads = 16;
-    constexpr UInt32 num_keys = 4000;
-    using Map = Partitioned<UInt32, size_bits, 5>;
-    Map map;
-    const size_t num_buckets = decltype(map)::NUM_BUCKETS;
-    ASSERT_EQ(num_buckets, 32u);
-    std::vector<std::mutex> bucket_mutexes(num_buckets);
-
-    std::vector<std::thread> threads;
-    threads.reserve(num_threads);
-    for (size_t t = 0; t < num_threads; ++t)
-    {
-        threads.emplace_back([&map, &bucket_mutexes]
+        const UInt32 total_keys = same_keys_in_every_thread ? keys_per_thread : num_threads * keys_per_thread;
+        ASSERT_EQ(map.size(), total_keys);
+        for (UInt32 key = 0; key < total_keys; ++key)
         {
-            for (UInt32 key = 0; key < num_keys; ++key)
-            {
-                std::lock_guard lock(bucket_mutexes[routedBucket(map, key)]);
-                insertKeyValue(map, key, key * 11);
-            }
-        });
-    }
-    for (auto & thread : threads)
-        thread.join();
-
-    ASSERT_EQ(map.size(), num_keys);
-    for (UInt32 key = 0; key < num_keys; ++key)
-    {
-        const auto * cell = map.find(key);
-        ASSERT_NE(cell, nullptr) << "key " << key;
-        ASSERT_EQ(cell->getMapped(), key * 11) << "key " << key;
+            const auto * cell = map.find(key);
+            ASSERT_NE(cell, nullptr) << "key " << key << " was lost";
+            ASSERT_EQ(cell->getMapped(), key * 5) << "key " << key;
+            ASSERT_EQ(map.offsetInternal(cell), key + 1) << "key " << key;
+        }
+        ASSERT_EQ(offsetsByIteration(map).size(), total_keys);
     }
 }
 
 
-TEST(PartitionedFixedHashMap, IteratorRoutedBucketSplitsAScanAcrossStreams)
+TEST(PartitionedFixedHashMap, IteratorReportsTheRoutedBucket)
 {
-    /// Flat storage: `getBucket()` is 0. Stream split must use `getRoutedBucket()`
-    /// or streams 1..N skip straight to `end()`.
+    /// The storage is flat, so `getBucket` is 0 for every cell; a scan split by bucket uses `getRoutedBucket`.
     using Map = Partitioned<UInt16, 16, 8>;
     Map map;
     constexpr UInt16 num_keys = 4000;
     for (UInt16 key = 0; key < num_keys; ++key)
         insertKeyValue(map, key, key);
 
+    constexpr size_t num_streams = 4;
+    std::vector<size_t> per_stream(num_streams, 0);
+    std::vector<char> seen(num_keys, 0);
     for (auto it = map.begin(); it != map.end(); ++it)
     {
         ASSERT_EQ(it.getBucket(), 0u);
         const auto key = static_cast<UInt16>(it.getHash());
-        ASSERT_EQ(it.getRoutedBucket(), routedBucket(map, key)) << "key " << key;
+        ASSERT_LT(key, num_keys);
+        ASSERT_EQ(it.getRoutedBucket(), routedBucket<Map>(key)) << "key " << key;
+        ASSERT_FALSE(seen[key]) << "key " << key << " visited twice";
+        seen[key] = 1;
+        ++per_stream[it.getRoutedBucket() % num_streams];
     }
+    ASSERT_TRUE(std::all_of(seen.begin(), seen.end(), [](char c) { return c == 1; }));
+    for (size_t stream = 0; stream < num_streams; ++stream)
+        ASSERT_GT(per_stream[stream], 0u) << "stream " << stream << " would get no cells";
+}
 
-    constexpr size_t num_streams = 4;
-    std::vector<size_t> counts(num_streams);
-    std::vector<char> seen(num_keys);
-    for (size_t stream = 0; stream < num_streams; ++stream)
+
+TEST(PartitionedFixedHashSet, RecordsPresenceAndRoutesByCacheLine)
+{
+    /// A set cell is one byte, so a cache line holds many keys, and all of them route to one bucket.
+    /// Keys one line apart are what spread over the buckets.
+    constexpr size_t keys_per_line = DB::CH_CACHE_LINE_SIZE / sizeof(FixedHashTableCell<UInt16>);
+    constexpr UInt32 num_lines = 1000;
+
+    forBucketBits<0, 8>([&]<Int32 bits>()
     {
-        for (auto it = map.begin(); it != map.end(); ++it)
+        using Set = PartitionedFixedHashSet<UInt16, 16, bits>;
+        Set set;
+        ASSERT_EQ(Set::NUM_BUCKETS, 1u << bits);
+        ASSERT_EQ(set.getBufferSizeInCells(), 1u << 16) << "bits " << bits;
+
+        std::unordered_set<size_t> buckets;
+        for (UInt32 line = 0; line < num_lines; ++line)
         {
-            if ((it.getRoutedBucket() % num_streams) != stream)
-                continue;
-            const auto key = static_cast<UInt16>(it.getHash());
-            ASSERT_LT(key, num_keys);
-            ASSERT_FALSE(seen[key]) << "key " << key << " on two streams";
-            seen[key] = 1;
-            ++counts[stream];
+            const auto key = static_cast<UInt16>(line * keys_per_line);
+            typename Set::LookupResult it = nullptr;
+            bool inserted = false;
+            set.emplace(key, it, inserted);
+            ASSERT_TRUE(inserted) << "key " << key;
+            buckets.insert(routedBucket<Set>(key));
         }
-    }
-    for (UInt16 key = 0; key < num_keys; ++key)
-        ASSERT_TRUE(seen[key]) << "key " << key << " missed";
-    for (size_t stream = 0; stream < num_streams; ++stream)
-        ASSERT_GT(counts[stream], 0u) << "stream " << stream << " got no keys";
+        ASSERT_EQ(set.size(), num_lines) << "bits " << bits;
+        if (bits == 0)
+            ASSERT_EQ(buckets.size(), 1u);
+        else
+            ASSERT_GT(buckets.size(), 200u) << "keys on distinct cache lines reached only " << buckets.size() << " buckets";
+
+        for (UInt16 key = 0; key < keys_per_line; ++key)
+            ASSERT_EQ(routedBucket<Set>(key), routedBucket<Set>(0)) << "key " << key << " shares a cache line with key 0 but routes apart";
+
+        for (UInt32 line = 0; line < num_lines; ++line)
+            ASSERT_TRUE(set.has(static_cast<UInt16>(line * keys_per_line))) << "line " << line;
+        ASSERT_FALSE(set.has(static_cast<UInt16>(1)));
+
+        size_t iterated = 0;
+        for (auto it = set.begin(); it != set.end(); ++it)
+            ++iterated;
+        ASSERT_EQ(iterated, num_lines) << "bits " << bits;
+
+        /// Presence is all a set cell carries, so the bytes are the table's populated positions.
+        Set copy;
+        deserialize(copy, serialize(set));
+        ASSERT_EQ(copy.size(), num_lines) << "bits " << bits;
+        for (UInt32 line = 0; line < num_lines; ++line)
+            ASSERT_TRUE(copy.has(static_cast<UInt16>(line * keys_per_line))) << "line " << line;
+    });
 }

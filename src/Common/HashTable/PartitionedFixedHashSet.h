@@ -10,8 +10,8 @@ struct IsFixedRangeTable<FixedHashSet<Key, Allocator, size_bits>> : std::true_ty
 {
 };
 
-/// Set counterpart of `PartitionedFixedHashMap`, for a join that only has to answer whether a key
-/// is present. The cell holds the key alone, so it routes on the cache line of a narrower cell.
+/// Set counterpart of `PartitionedFixedHashMap`, for a caller that only records which keys exist.
+/// The cell holds nothing but the presence flag, so routing uses the cache line of that narrower cell.
 template <typename Key, size_t size_bits = sizeof(Key) * 8, Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
 using PartitionedFixedHashSet = TwoLevelHashTable<
     Key,

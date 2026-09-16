@@ -350,7 +350,7 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /* num_rows */, size_t worker_id, bool /*check_limits*/)
+bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /*num_rows*/, size_t worker_id, bool /*check_limits*/)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");

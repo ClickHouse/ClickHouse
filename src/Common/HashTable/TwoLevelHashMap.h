@@ -14,7 +14,8 @@ template
     template <typename ...> typename ImplTable = HashMapTable,
     Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET
 >
-class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, bits_for_bucket>
+class TwoLevelHashMapTable
+    : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, bits_for_bucket>
 {
 public:
     using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;

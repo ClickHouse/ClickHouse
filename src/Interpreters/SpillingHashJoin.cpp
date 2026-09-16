@@ -210,7 +210,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         in_memory_hash_join->dropRightBlocksKeptForAnotherAlgorithm();
 }
 
-void SpillingHashJoin::onProbePhaseFinish(size_t matched_right_rows)
+void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
 {
     chosen_join->onProbePhaseFinish(matched_right_rows);
 }
