@@ -1,16 +1,11 @@
--- The squashing step after a join exists for `parallel_hash`, whose output splits each probe block into one
--- piece per hash table. `partitioned_hash` joins each probe block whole and caps its output at
--- `max_joined_block_size_rows`, so its blocks pass through the squashing unchanged, as `hash`'s do. Inside
--- `SpillingHashJoin` the decision is made at run time: while the join stays in memory the blocks pass
--- through; after a switch to `GraceHashJoin`, which emits one bucket's part of each probe block, they are
--- squashed again.
+-- The squashing step after a join exists for the parallel `hash` layout, whose output splits each probe
+-- block into one piece per hash table. `partitioned_hash` joins each probe block whole and caps its output
+-- at `max_joined_block_size_rows`, so its blocks are not squashed, as the serial `hash` layout's are not.
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
-SET grace_hash_join_initial_buckets = 1;
-SET grace_hash_join_max_buckets = 1024;
 SET max_threads = 4;
 -- Every build here is tiny; the parallel build (and with it the squashing) needs the threshold off.
 SET parallel_hash_join_threshold = 0;
@@ -36,25 +31,6 @@ SELECT max(bs) <= 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS
 SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 0;
 SELECT max(bs) <= 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS l FULL JOIN t_sq_right AS r ON l.a = r.a)
 SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 0;
-
-SELECT '-- partitioned_hash inside the spilling wrapper, build kept in memory: still pass through';
-SELECT max(bs) <= 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a)
-SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000000;
-SELECT max(bs) <= 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS l FULL JOIN t_sq_right AS r ON l.a = r.a)
-SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000000;
-
-SELECT '-- switched to grace during the build: the bucket output is squashed again (one stream, so one block)';
-SELECT max(bs) > 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a)
-SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1, max_threads = 1, log_comment = '05143 grace';
-
-SELECT '-- the squashing stays in the pipeline for the run-time decision';
-SELECT countIf(explain LIKE '%SimpleSquashingTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 0);
-
-SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0
-FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05143 grace'
-ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_sq_left;
 DROP TABLE t_sq_right;
