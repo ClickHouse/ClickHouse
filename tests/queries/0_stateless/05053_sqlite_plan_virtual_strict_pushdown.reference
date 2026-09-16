@@ -1,0 +1,10 @@
+Query: SELECT `i` FROM `t` WHERE `i` = 1
+Query: SELECT `i` FROM `t`
+Table-backed strict mode rejects _table with the analyzer:
+1
+Table-backed strict mode rejects _database with the old analyzer:
+1
+Query-backed strict mode rejects _table with the analyzer:
+1
+Query-backed strict mode rejects _database with the old analyzer:
+1

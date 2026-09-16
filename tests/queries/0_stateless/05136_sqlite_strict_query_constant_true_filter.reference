@@ -1,0 +1,10 @@
+enable_analyzer = 1
+literal one	2
+constant equality	2
+constant conjunction	2
+filter on a source column is still rejected: 1
+enable_analyzer = 0
+literal one	2
+constant equality	2
+constant conjunction	2
+filter on a source column is still rejected: 1

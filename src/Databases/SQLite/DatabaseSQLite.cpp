@@ -14,9 +14,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Processors/Formats/Impl/SQLiteCommon.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
-#include <Common/quoteString.h>
 
 
 namespace DB
@@ -45,14 +45,38 @@ DatabaseSQLite::DatabaseSQLite(
     , database_path(database_path_)
     , log(getLogger("DatabaseSQLite"))
 {
-    sqlite_db = openSQLiteDB(database_path_, context_, !is_attach_);
+    /// Only a genuine `CREATE DATABASE ... ENGINE = SQLite(...)` may create a missing database file. On
+    /// `ATTACH` (including replaying the stored definition on server startup) a missing file must stay
+    /// missing, so that table lookups surface `Cannot access sqlite database` instead of silently operating
+    /// on a fabricated empty database. The connection opened here is not kept: see `openConnection`.
+    openSQLiteDB(database_path_, context_, /* throw_on_error */ !is_attach_, /* allow_create */ !is_attach_);
+}
+
+
+DatabaseSQLite::SQLitePtr DatabaseSQLite::openConnection() const
+{
+    /// Table discovery, existence checks and schema fetches must describe the database file that is at the
+    /// path now, not the one that was there when the database was created or attached. A long-lived
+    /// connection would keep the file it was opened on: after the file has been replaced at the same path
+    /// (`mv new.sqlite data.sqlite`), it still sees the old, unlinked file, so `SHOW TABLES` would keep
+    /// listing the old tables, a table of the replacement would be reported as missing, and a table would be
+    /// read with the old schema. `StorageSQLite` opens its scans and writes afresh for the same reason.
+    ///
+    /// The connection never creates the file: a missing file surfaces an error here instead of reading a
+    /// fabricated empty database, both when the file was unavailable on `ATTACH` and when it went missing
+    /// later.
+    return openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 }
 
 
 bool DatabaseSQLite::empty() const
 {
+    /// Refuse when the database file is unavailable: an unreadable file must not be reported as an
+    /// empty database. This does not make a database attached over a missing file impossible to remove,
+    /// because `shouldBeEmptyOnDetach` is `false` for this engine (like for the other external database
+    /// engines), so `DROP DATABASE` and `DETACH DATABASE` never probe emptiness here.
     std::lock_guard lock(mutex);
-    return fetchTablesList().empty();
+    return fetchTablesList(openConnection().get()).empty();
 }
 
 
@@ -61,94 +85,113 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
     std::lock_guard lock(mutex);
 
     Tables tables;
-    auto table_names = fetchTablesList();
-    for (const auto & table_name : table_names)
-        tables[table_name] = fetchTable(table_name, local_context, true);
+
+    /// Do not allow to throw here, because this might be, for example, a query to system.tables:
+    /// enumeration of one broken SQLite database (e.g. its file is missing after a fail-closed
+    /// `ATTACH`) must not fail queries that enumerate tables of all databases. Direct table access
+    /// (`fetchTable`, `checkSQLiteTable`) still fails closed. The same is done for other external
+    /// database engines, see `DatabasePostgreSQL::getTablesIterator`.
+    try
+    {
+        auto sqlite_db = openConnection();
+        auto table_names = fetchTablesList(sqlite_db.get());
+        for (const auto & table_name : table_names)
+            tables[table_name] = fetchTable(sqlite_db, table_name, local_context, true);
+    }
+    catch (...)
+    {
+        /// Log below the `warning` level: with `send_logs_level = 'warning'` (set e.g. by the test
+        /// harness for every query) an `error`-level record would be forwarded to every client whose
+        /// unrelated query enumerates tables, and the error is reported properly on direct access anyway.
+        tryLogCurrentException(log, "", LogsLevel::information);
+    }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
 
-NameSet DatabaseSQLite::fetchTablesList() const
+NameSet DatabaseSQLite::fetchTablesList(sqlite3 * sqlite_db)
 {
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
-
     std::unordered_set<String> tables;
-    std::string query = "SELECT name FROM sqlite_master "
-                        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'";
+    /// Escape the `_` in the `sqlite_` prefix so that `LIKE` treats it as a literal underscore
+    /// rather than a single-character wildcard. Otherwise a genuine user table such as `sqliteX`
+    /// would be excluded together with the internal `sqlite_*` tables and stay hidden from
+    /// `SHOW TABLES`, `DatabaseSQLite::empty` and table discovery.
+    static const String query = "SELECT name FROM sqlite_master "
+                                "WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'";
 
-    auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** /* col_names */) -> int
-    {
-        for (int i = 0; i < col_num; ++i)
-            static_cast<std::unordered_set<std::string> *>(res)->insert(data_by_col[i]);
-        return 0;
-    };
+    /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
+    /// concurrent writer holds an exclusive lock, like the scan paths do.
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db, query);
 
-    char * err_message = nullptr;
-    int status = sqlite3_exec(sqlite_db.get(), query.c_str(), callback_get_data, &tables, &err_message);
-    if (status != SQLITE_OK)
+    while (true)
     {
-        String err_msg(err_message);
-        sqlite3_free(err_message);
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot fetch sqlite database tables. Error status: {}. Message: {}",
-                        status, err_msg);
+        int status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(statement.get());
+        if (status == SQLITE_DONE)
+            break;
+
+        if (status != SQLITE_ROW)
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Cannot fetch sqlite database tables. Error status: {}. Message: {}",
+                            status, sqlite3_errmsg(sqlite_db));
+
+        const auto * name_data = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 0));
+        int name_size = sqlite3_column_bytes(statement.get(), 0);
+        tables.insert(String(name_data ? name_data : "", static_cast<size_t>(name_size)));
     }
 
     return tables;
 }
 
 
-bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
+bool DatabaseSQLite::checkSQLiteTable(sqlite3 * sqlite_db, const String & table_name)
 {
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+    /// The table name is passed as a bound parameter instead of being re-serialized into the SQL text:
+    /// SQLite string literals have no escape sequences (only an embedded quote is doubled), so any
+    /// backslash-style textual escaping would make the existence check miss a valid table whose name
+    /// contains e.g. a newline or a tab.
+    static const String query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?";
 
-    const String query = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = " + quoteStringSQLite(table_name) + ";";
+    /// Preparing and stepping need a shared lock on the database; retry instead of failing while a
+    /// concurrent writer holds an exclusive lock, like the scan paths do.
+    auto statement = SQLiteFormatImpl::prepareSQLiteStatementRetryOnBusy(sqlite_db, query);
+    sqlite3_stmt * compiled_stmt = statement.get();
 
-    auto callback_get_data = [](void * res, int, char **, char **) -> int
-    {
-        *(static_cast<int *>(res)) += 1;
-        return 0;
-    };
-
-    int count = 0;
-    char * err_message = nullptr;
-    int status = sqlite3_exec(sqlite_db.get(), query.c_str(), callback_get_data, &count, &err_message);
+    int status = sqlite3_bind_text64(compiled_stmt, 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
     if (status != SQLITE_OK)
-    {
-        String err_msg(err_message);
-        sqlite3_free(err_message);
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Cannot check sqlite table. Error status: {}. Message: {}",
-                        status, err_msg);
-    }
+                        status, sqlite3_errmsg(sqlite_db));
 
-    return (count != 0);
+    status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(compiled_stmt);
+    if (status == SQLITE_ROW)
+        return true;
+    if (status == SQLITE_DONE)
+        return false;
+
+    throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                    "Cannot check sqlite table. Error status: {}. Message: {}",
+                    status, sqlite3_errmsg(sqlite_db));
 }
 
 
 bool DatabaseSQLite::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
-    return checkSQLiteTable(table_name);
+    return checkSQLiteTable(openConnection().get(), table_name);
 }
 
 
 StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
     std::lock_guard lock(mutex);
-    return fetchTable(table_name, local_context, false);
+    return fetchTable(openConnection(), table_name, local_context, false);
 }
 
 
-StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr local_context, bool table_checked) const
+StoragePtr DatabaseSQLite::fetchTable(const SQLitePtr & sqlite_db, const String & table_name, ContextPtr local_context, bool table_checked) const
 {
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
-
-    if (!table_checked && !checkSQLiteTable(table_name))
+    if (!table_checked && !checkSQLiteTable(sqlite_db.get(), table_name))
         return StoragePtr{};
 
     auto columns = fetchSQLiteTableStructure(sqlite_db.get(), table_name);
@@ -161,10 +204,11 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         sqlite_db,
         database_path,
         TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
-        ColumnsDescription{*columns},
+        std::move(*columns),
         ConstraintsDescription{},
         /* comment = */ "",
-        local_context);
+        local_context,
+        /* generated_columns_reclassification_pending_ = */ false);
 
     return storage;
 }
@@ -187,7 +231,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     StoragePtr storage;
     {
         std::lock_guard lock(mutex);
-        storage = fetchTable(table_name, local_context, false);
+        storage = fetchTable(openConnection(), table_name, local_context, false);
     }
     if (!storage)
     {
@@ -259,13 +303,11 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 The table below shows the default type mapping when ClickHouse automatically infers schema from SQLite:
 
-|  SQLite   | ClickHouse                                              |
-|---------------|---------------------------------------------------------|
-| INTEGER       | [Int32](/reference/data-types/int-uint)     |
-| REAL          | [Float32](/reference/data-types/float)      |
-| TEXT          | [String](/reference/data-types/string)      |
-| TEXT          | [UUID](/reference/data-types/uuid)          |
-| BLOB          | [String](/reference/data-types/string)      |
+| SQLite declared type | ClickHouse |
+|----------------------|------------|
+| Type name contains `INT` | [`Int64`](/reference/data-types/int-uint) |
+| `REAL`, `FLOAT`, `DOUBLE` | [`Float64`](/reference/data-types/float) |
+| Other types, including `TEXT` and `BLOB` | [`String`](/reference/data-types/string) |
 
 When you explicitly define a table with specific ClickHouse types using the [SQLite table engine](/reference/engines/table-engines/integrations/sqlite), the following ClickHouse types can be parsed from SQLite TEXT columns:
 
@@ -275,7 +317,7 @@ When you explicitly define a table with specific ClickHouse types using the [SQL
 - [Enum8, Enum16](/reference/data-types/enum)
 - [Decimal32, Decimal64, Decimal128, Decimal256](/reference/data-types/decimal)
 - [FixedString](/reference/data-types/fixedstring)
-- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/reference/data-types/int-uint))
+- All integer types ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/reference/data-types/int-uint))
 - [Float32, Float64](/reference/data-types/float)
 
 SQLite has dynamic typing, and its type access functions perform automatic type coercion. For example, reading a TEXT column as an integer will return 0 if the text cannot be parsed as a number. This means that if a ClickHouse table is defined with a different type than the underlying SQLite column, values may be silently coerced rather than causing an error.

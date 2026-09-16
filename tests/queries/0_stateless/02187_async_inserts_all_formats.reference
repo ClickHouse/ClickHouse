@@ -37,6 +37,7 @@ RawWithNamesAndTypes
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+SQLite
 TSKV
 TSV
 TSVRaw

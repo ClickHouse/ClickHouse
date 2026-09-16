@@ -1,0 +1,30 @@
+-- declared columns keep their declared types, expressions are typed from the first row
+id	Nullable(Int64)					
+x	Nullable(Int64)					
+f	Nullable(Float64)					
+s	Nullable(String)					
+one	Nullable(Int64)					
+half	Nullable(Float64)					
+b	Nullable(String)					
+n	Nullable(String)					
+-- aggregates
+c	Nullable(Int64)					
+s	Nullable(Float64)					
+m	Nullable(String)					
+-- an empty result has no row to type an expression from
+id	Nullable(Int64)					
+x	Nullable(String)					
+-- the values are read with the inferred types
+2	1	a!	1	0.5	Nullable(Int64)	Nullable(Float64)
+3	2	b!	1	0.5	Nullable(Int64)	Nullable(Float64)
+4	3	c!	1	0.5	Nullable(Int64)	Nullable(Float64)
+3	7.5	c	Nullable(Int64)	Nullable(Float64)
+12
+-- the subquery form and the table engine infer the same way
+x	Nullable(Int64)					
+c	Nullable(Int64)					
+x	Nullable(Int64)					
+h	Nullable(Float64)					
+10	0.75
+20	1.25
+30	1.75

@@ -22,13 +22,12 @@ namespace DB
 /// so an embedded `'` still terminates the literal.
 [[nodiscard]] String quoteStringPostgreSQL(std::string_view x);
 
-[[nodiscard]] inline String quoteStringSQLite(std::string_view x)
-{
-    return quoteStringSingleQuoteWithSingleQuote(x);
-}
-
 /// Double quote the string.
 String doubleQuoteString(std::string_view x);
+
+/// Double quote the string with standard SQL identifier escaping: an embedded double quote is doubled,
+/// a backslash stays literal (the rules of SQLite and PostgreSQL).
+String doubleQuoteStringStandard(std::string_view x);
 
 /// Quote the identifier with backquotes.
 String backQuote(std::string_view x);
@@ -39,4 +38,6 @@ String backQuoteIfNeed(std::string_view x);
 /// Quote the identifier with backquotes, for use in MySQL queries.
 String backQuoteMySQL(std::string_view x);
 
+/// Quote the identifier with backquotes, for use in SQLite queries.
+String backQuoteSQLite(std::string_view x);
 }

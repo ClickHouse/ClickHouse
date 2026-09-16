@@ -1,0 +1,7 @@
+An explicitly inserted generated column is rejected by SQLite:
+cannot INSERT into generated column "b"
+The rejected insert wrote nothing:
+0
+An insert naming only base columns still succeeds:
+a	b
+2	3
