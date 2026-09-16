@@ -81,7 +81,7 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     /// the cursor; plan-time part selection is skipped for it. A projection describes the whole
     /// table, so an answer derived from one ignores those bounds.
     if (reading->getQueryInfo().isStream())
-        return false;
+        return std::unexpected("the query uses STREAM");
 
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
