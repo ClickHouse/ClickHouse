@@ -31,6 +31,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -80,7 +81,7 @@ namespace
     /// The RecentSamples target is optional: it's enabled by the `recent_samples_ttl_seconds` setting.
     constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
     }
 
     /// Whether the create query defines inner columns for the specified target.
@@ -698,7 +699,7 @@ namespace
                 return false;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 if (has_default || codec)
                     return false;
@@ -868,7 +869,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 if (engine_name != "ReplacingMergeTree")
                     return;
@@ -1013,7 +1014,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 add_column_if_missing(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
                 add_column_if_missing(TimeSeriesColumnNames::Type, makeASTDataType("LowCardinality", makeASTDataType("String")));
@@ -1231,7 +1232,7 @@ namespace
                     break;
                 }
 
-                case ViewTarget::Metrics:
+                case ViewTarget::MetricFamilies:
                 {
                     add_column(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
                     add_column(TimeSeriesColumnNames::Type, makeASTDataType("String"));
@@ -1513,7 +1514,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 if (!inner_engine.engine)
                     set_engine("ReplacingMergeTree");
@@ -1662,7 +1663,7 @@ namespace
                 break;
             }
 
-            case ViewTarget::Metrics:
+            case ViewTarget::MetricFamilies:
             {
                 check_column_is_string(TimeSeriesColumnNames::MetricFamilyName);
                 check_column_is_string(TimeSeriesColumnNames::Type);
