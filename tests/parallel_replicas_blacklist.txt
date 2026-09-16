@@ -40,6 +40,7 @@
 01174_select_insert_isolation
 
     https://github.com/ClickHouse/clickhouse-private/issues/13900
+03075_shared_merge_tree_recursive_cte_smoke_test
 03034_recursive_cte_tree_merge_tree
 03154_recursive_cte_distributed
 
@@ -96,6 +97,7 @@
 03279_join_choose_build_table_auto_statistics
 03275_subcolumns_in_primary_key.gen
 03277_json_subcolumns_in_primary_key.gen
+02944_variant_as_common_type
 01283_max_threads_simple_query_optimization
 
     # NOT BUGS
@@ -124,6 +126,8 @@
 01585_use_index_for_global_in
     max rows: 2.00, current rows: 11.00
 01585_use_index_for_global_in_with_null
+
+01624_soft_constraints
 
     Failpoint
 02910_prefetch_unexpceted_exception
