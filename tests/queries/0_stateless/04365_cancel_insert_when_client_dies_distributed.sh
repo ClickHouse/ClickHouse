@@ -57,8 +57,8 @@ function insert_data
         local ATTEMPT=0
         while [ $ATTEMPT -lt 40 ]
         do
-            if [ "$($CLICKHOUSE_CLIENT -q "select count() > 0 from system.processes where initial_query_id = '$ID' and ProfileEvents['DuplicatedInsertedBlocks'] > 0")" = "1" ]; then
-                kill -s "$SIGNAL" "$CLIENT_PID"
+            if [ "$($CLICKHOUSE_CLIENT -q "select count() > 0 from system.processes where initial_query_id = '$ID' and ProfileEvents['DuplicatedInsertedBlocks'] > 0" 2>/dev/null)" = "1" ]; then
+                kill -s "$SIGNAL" "$CLIENT_PID" 2>/dev/null
                 break
             fi
             ATTEMPT=$((ATTEMPT + 1))
@@ -116,6 +116,7 @@ wait
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 $CLICKHOUSE_CLIENT -q 'system flush logs text_log'
+$CLICKHOUSE_CLIENT -q 'system flush logs query_log'
 
 # Ensure that the cancellations in insert_data actually did something. Native-protocol SIGINT sends a graceful
 # 'Cancel' packet (connection preserved) rather than dropping the socket, so match the
@@ -129,6 +130,14 @@ CANCELLED=$($CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where
 echo "$CANCELLED"
 if [ "$CANCELLED" != "1" ]; then
     # Distinguish "no insert was cancelled" from "one was and text_log did not keep the message".
-    $CLICKHOUSE_CLIENT -q "system flush logs query_log"
     $CLICKHOUSE_CLIENT -q "select type, count() from system.query_log where event_date >= yesterday() and current_database = currentDatabase() and query_id like '$TEST_MARK%' group by type order by type format TSV" >&2
 fi
+
+# A cancellation that never reached the deduplicating stage does not exercise this test, so require at
+# least one that did. The event is on the shard-level insert, so this must group the whole query chain.
+$CLICKHOUSE_CLIENT -q "select throwIf(count() = 0, 'No cancelled insert had reached the deduplicating stage') from (
+  select initial_query_id from system.query_log where event_date >= yesterday() and initial_query_id like '$TEST_MARK%'
+  group by initial_query_id
+  having countIf(is_initial_query and current_database = currentDatabase() and type = 'ExceptionWhileProcessing') > 0
+     and sum(ProfileEvents['DuplicatedInsertedBlocks']) > 0
+) SETTINGS max_rows_to_read = 0 format Null"
