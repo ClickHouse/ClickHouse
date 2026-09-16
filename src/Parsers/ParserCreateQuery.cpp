@@ -3780,6 +3780,7 @@ If the table was detached permanently, it won't be reattached at the server star
 ### With Specified Path to Table Data {#with-specified-path-to-table-data}
 
 The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
+The user needs the `READ ON FILE` privilege for this query, the same privilege that the `file` table function needs.
 
 **Syntax**
 

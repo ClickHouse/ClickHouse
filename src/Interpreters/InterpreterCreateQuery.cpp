@@ -3796,6 +3796,12 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
+    /// `ATTACH TABLE ... FROM '<path>'` adopts a directory in `user_files` as the table data and makes its rows
+    /// readable, so it needs the same grant as the `file` function and the `File` engine. Without it, `CREATE TABLE`
+    /// on a table of their own would let a user read any data staged in `user_files`.
+    if (create.has_attach_from_path)
+        required_access.emplace_back(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
     return required_access;
 }
 
