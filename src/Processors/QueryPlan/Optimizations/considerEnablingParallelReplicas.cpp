@@ -567,20 +567,24 @@ void considerEnablingParallelReplicas(
                 /// keep its own analysis instead of overwriting it: it is the same parallelized table
                 /// (findReadingStep runs the same descent on the hash-matched JOIN node in both plans, and the
                 /// swap_streams case is already diverted to the throw above), so the existing result is
-                /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
-                /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
-                /// apply a mismatched analysis.
-                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
-                {
-                    local_replica_plan_reading_step->setAnalyzedResult(analysis);
-                }
-                else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
+                /// equivalent.
+                ///
+                /// The table check guards the assignment, so it comes first. Handing a read the ranges
+                /// selected for another table's predicates would execute and return wrong rows, and the read
+                /// with no analysis yet is precisely the one about to be given `analysis`. A different table
+                /// means the two plans diverged at the matched node - which the rebuild above can do, since
+                /// it replaces the replicas plan - so fail loudly rather than read the wrong ranges.
+                if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
+                        "Parallel replicas branch read is for table {} but the single-node plan reads {}",
                         local_replica_plan_reading_step->getStorageID().getNameForLogs(),
                         source_reading_step->getStorageID().getNameForLogs());
+                }
+                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
+                {
+                    local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
