@@ -4,7 +4,14 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
+#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+
+namespace ProfileEvents
+{
+    extern const Event ColumnsCacheEvictedBytes;
+    extern const Event ColumnsCacheEvictedEntries;
+}
 
 namespace DB
 {

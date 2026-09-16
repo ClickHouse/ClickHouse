@@ -6,18 +6,9 @@
 
 #include <Common/CacheBase.h>
 #include <Common/IMemoryReleasableCache.h>
-#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Columns/IColumn.h>
 #include <Core/UUID.h>
-
-namespace ProfileEvents
-{
-    extern const Event ColumnsCacheHits;
-    extern const Event ColumnsCacheMisses;
-    extern const Event ColumnsCacheEvictedBytes;
-    extern const Event ColumnsCacheEvictedEntries;
-}
 
 namespace DB
 {
