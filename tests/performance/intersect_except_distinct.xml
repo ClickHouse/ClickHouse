@@ -1,0 +1,25 @@
+<test>
+    <!-- INTERSECT DISTINCT / EXCEPT DISTINCT are executed as a semi or anti join on all columns
+         followed by DISTINCT (optimize_rewrite_intersect_except_to_join), compared with the
+         set-operation step. -->
+
+    <substitutions>
+        <substitution>
+            <name>rewrite</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Single UInt64 key. -->
+    <query>SELECT count() FROM (SELECT number % 1000000 AS n FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(2000000)) SETTINGS optimize_rewrite_intersect_except_to_join = {rewrite}</query>
+    <query>SELECT count() FROM (SELECT number % 1000000 AS n FROM numbers_mt(3000000) EXCEPT DISTINCT SELECT number FROM numbers_mt(2000000)) SETTINGS optimize_rewrite_intersect_except_to_join = {rewrite}</query>
+
+    <!-- Two columns. -->
+    <query>SELECT count() FROM (SELECT number % 1000000 AS a, number % 7 AS b FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number AS a, number % 5 AS b FROM numbers_mt(2000000)) SETTINGS optimize_rewrite_intersect_except_to_join = {rewrite}</query>
+
+    <!-- Nullable key: NULL matches NULL in both executions. -->
+    <query>SELECT count() FROM (SELECT nullIf(number % 1000000, 0) AS n FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT nullIf(number, 0) FROM numbers_mt(2000000)) SETTINGS optimize_rewrite_intersect_except_to_join = {rewrite}</query>
+</test>

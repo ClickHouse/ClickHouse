@@ -11,8 +11,4 @@
 
     <!-- String key (key_string). -->
     <query>SELECT count() FROM (SELECT toString(number) AS s FROM numbers(2000000) EXCEPT ALL SELECT toString(number) AS s FROM numbers(1000000))</query>
-
-    <!-- DISTINCT: executed as a semi join followed by DISTINCT, against the set-operation step. -->
-    <query>SELECT count() FROM (SELECT number % 1000000 AS n FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(2000000))</query>
-    <query>SELECT count() FROM (SELECT number % 1000000 AS n FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(2000000)) SETTINGS optimize_rewrite_intersect_except_to_join = 0</query>
 </test>
