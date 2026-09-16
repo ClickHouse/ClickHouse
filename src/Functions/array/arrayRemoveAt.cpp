@@ -1,9 +1,11 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
+#include <limits>
 #include <optional>
 
 namespace DB
@@ -89,7 +91,14 @@ public:
         const DataTypePtr & /*result_type*/,
         size_t input_rows_count) const override
     {
-        const auto array_column = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr array_column = arguments[0].column;
+        bool array_is_const = false;
+        if (const auto * const_array = checkAndGetColumnConst<ColumnArray>(array_column.get()))
+        {
+            array_is_const = true;
+            array_column = const_array->getDataColumnPtr();
+        }
+
         const auto * array = checkAndGetColumn<ColumnArray>(array_column.get());
         if (!array)
             throw Exception(
@@ -102,29 +111,75 @@ public:
         const auto & source_offsets = array->getOffsets();
         const auto & index_column = *arguments[1].column;
         const bool index_is_unsigned = isUInt(arguments[1].type);
+        const bool index_is_const = isColumnConst(index_column);
+
+        UInt64 constant_unsigned_index = 0;
+        Int64 constant_signed_index = 0;
+        if (index_is_const)
+        {
+            UInt64 required_array_size;
+            if (index_is_unsigned)
+            {
+                constant_unsigned_index = index_column.getUInt(0);
+                if (constant_unsigned_index == 0)
+                    throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
+                required_array_size = constant_unsigned_index;
+            }
+            else
+            {
+                constant_signed_index = index_column.getInt(0);
+                if (constant_signed_index == 0)
+                    throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
+
+                required_array_size = constant_signed_index > 0
+                    ? static_cast<UInt64>(constant_signed_index)
+                    : UInt64(0) - static_cast<UInt64>(constant_signed_index);
+            }
+
+            /// No individual array can be longer than the whole nested column.
+            /// If even that is shorter than the requested position, every row is unchanged.
+            if (required_array_size > static_cast<UInt64>(source_data.size()))
+                return arguments[0].column;
+        }
 
         auto result_data = source_data.cloneEmpty();
-        result_data->reserve(source_data.size());
+        size_t reserve_size = source_data.size();
+        if (array_is_const && input_rows_count != 0
+            && source_data.size() <= std::numeric_limits<size_t>::max() / input_rows_count)
+            reserve_size *= input_rows_count;
+        result_data->reserve(reserve_size);
 
         auto result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & result_offsets = result_offsets_column->getData();
 
         size_t source_begin = 0;
+        const size_t constant_array_size = array_is_const ? source_offsets[0] : 0;
         size_t result_size = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const size_t source_end = source_offsets[row];
-            const size_t array_size = source_end - source_begin;
+            const size_t row_source_begin = array_is_const ? 0 : source_begin;
+            const size_t source_end = array_is_const ? constant_array_size : source_offsets[row];
+            const size_t array_size = source_end - row_source_begin;
 
-            const std::optional<size_t> remove_position = index_is_unsigned
-                ? getRemovePosition(index_column.getUInt(row), array_size)
-                : getRemovePosition(index_column.getInt(row), array_size);
+            std::optional<size_t> remove_position;
+            if (index_is_const)
+            {
+                remove_position = index_is_unsigned
+                    ? getRemovePosition(constant_unsigned_index, array_size)
+                    : getRemovePosition(constant_signed_index, array_size);
+            }
+            else
+            {
+                remove_position = index_is_unsigned
+                    ? getRemovePosition(index_column.getUInt(row), array_size)
+                    : getRemovePosition(index_column.getInt(row), array_size);
+            }
 
             if (!remove_position)
             {
                 if (array_size != 0)
-                    result_data->insertRangeFrom(source_data, source_begin, array_size);
+                    result_data->insertRangeFrom(source_data, row_source_begin, array_size);
                 result_size += array_size;
             }
             else
@@ -133,15 +188,16 @@ public:
                 const size_t suffix_size = array_size - prefix_size - 1;
 
                 if (prefix_size != 0)
-                    result_data->insertRangeFrom(source_data, source_begin, prefix_size);
+                    result_data->insertRangeFrom(source_data, row_source_begin, prefix_size);
                 if (suffix_size != 0)
-                    result_data->insertRangeFrom(source_data, source_begin + prefix_size + 1, suffix_size);
+                    result_data->insertRangeFrom(source_data, row_source_begin + prefix_size + 1, suffix_size);
 
                 result_size += array_size - 1;
             }
 
             result_offsets[row] = result_size;
-            source_begin = source_end;
+            if (!array_is_const)
+                source_begin = source_end;
         }
 
         return ColumnArray::create(std::move(result_data), std::move(result_offsets_column));
