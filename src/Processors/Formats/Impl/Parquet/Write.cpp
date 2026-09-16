@@ -1380,8 +1380,17 @@ void writeColumnImpl(
                         def_count = def_count_kept;
                         data_count = values_in(def_count_kept);
 
-                        converter.setByteBudget(0);
+                        /// Not without a budget: a record can be larger than a page, and one that is
+                        /// gets split below anyway, at the cost of the index. Stopping there bounds
+                        /// this to what a page can hold rather than to the whole record.
+                        converter.setByteBudget(max_record_bytes);
                         converted = converter.getBatch(next_data_offset, data_count);
+
+                        if (const size_t retry_produced = converter.producedBatchSize(); retry_produced < data_count)
+                        {
+                            def_count = levels_holding(retry_produced);
+                            data_count = retry_produced;
+                        }
                     }
                     else
                     {
