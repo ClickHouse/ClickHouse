@@ -126,6 +126,11 @@ Consequently the invariant does not hold if the *top-level runner* is SIGKILL'd
 (the surviving workers would then hold the pipe themselves); that is a separate
 concern about worker lifetime.
 
+**Regression coverage.**
+`tests/queries/0_stateless/05218_clickhouse_test_wrapper_stdio_contract.sh` loads
+`clickhouse-test` as a module and drives `run_single_test` with the `Popen` seam replaced, so it
+checks all three properties above without needing a server and without timing dependence.
+
 ---
 
 ## Solution: PGID tracking via per-worker group pid files
