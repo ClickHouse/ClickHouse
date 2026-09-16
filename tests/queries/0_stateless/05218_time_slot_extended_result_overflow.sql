@@ -1,4 +1,4 @@
--- `timeSlot` on a DateTime64 near the Int64 minimum used to overflow and wrap around to a positive value.
+-- `timeSlot` used to overflow near the Int64 minimum and wrap around to a positive value.
 SET enable_extended_results_for_datetime_functions = 1;
 
 SELECT v, toInt64(timeSlot(reinterpret(v, 'DateTime64(0)')))

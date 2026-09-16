@@ -1821,13 +1821,11 @@ struct TimeSlotImpl
 
     static DecimalUtils::DecimalComponents<DateTime64>  executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
-        /// Round towards negative infinity, saturating instead of overflowing near the Int64 minimum.
         return {DateLUTImpl::roundDownToMultiple(t.whole, 1800), 0};
     }
 
     static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
     {
-        /// Round towards negative infinity, saturating instead of overflowing near the Int64 minimum.
         return {DateLUTImpl::roundDownToMultiple(t.whole, 1800), 0};
     }
 
