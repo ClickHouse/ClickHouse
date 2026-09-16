@@ -1,17 +1,16 @@
-#include <cstring>
-
 #include <array>
-#include <Common/TargetSpecific.h>
-#include <Common/SipHash.h>
-#include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
-#include <DataTypes/IDataType.h>
-#include <base/unaligned.h>
-#include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
-#include <Core/Types.h>
 #include <bit>
+#include <cstring>
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
+#include <Compression/registerCompressionCodecs.h>
+#include <Core/Types.h>
+#include <DataTypes/IDataType.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST.h>
+#include <base/unaligned.h>
+#include <Common/SipHash.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
