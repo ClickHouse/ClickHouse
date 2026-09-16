@@ -307,7 +307,7 @@ Usage of non-deterministic functions is disallowed.
 
 Preprocessor and postprocessor expressions are authorized against the user who submits the `CREATE TABLE` or `ALTER TABLE` statement, exactly as if that user had called the functions directly.
 A function that requires a grant, such as `demangle` or `addressToLine`, therefore requires that grant (and, for introspection functions, `allow_introspection_functions = 1`) at the time the index is defined.
-Reading a text index re-checks the same grants whenever the expression has to be evaluated over column data, so revoking a grant also stops queries that would otherwise evaluate the expression on behalf of the reader.
+As with `DEFAULT` and `MATERIALIZED` column expressions, the grants are not re-checked when the index is used, so an index that already exists stays usable by anyone who can read the table.
 
 <Note>
 Preprocessors are in principle equivalent to wrapping the index column or expression by the preprocessor expression.

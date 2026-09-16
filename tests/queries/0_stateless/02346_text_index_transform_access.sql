@@ -84,10 +84,10 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab VALUES (1, 'hello world');
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
-SELECT '8. Losing the privilege also stops reads that re-resolve the expression over column data.';
+SELECT '8. An existing index stays readable without the privilege: it is authorized when defined, not per reader.';
 
 SET allow_introspection_functions = 0;
 
-SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']); -- { serverError FUNCTION_NOT_ALLOWED }
+SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
 DROP TABLE tab;

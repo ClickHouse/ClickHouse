@@ -7,4 +7,5 @@
 1
 7. With the privilege the same expression is accepted: this is authorization, not a blocklist.
 1
-8. Losing the privilege also stops reads that re-resolve the expression over column data.
+8. An existing index stays readable without the privilege: it is authorized when defined, not per reader.
+1

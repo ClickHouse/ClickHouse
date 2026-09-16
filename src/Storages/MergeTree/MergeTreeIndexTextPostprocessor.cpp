@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Parsers/ASTFunction.h>
@@ -227,11 +228,7 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
 }
 
 ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
-    const String & col_name,
-    const DataTypePtr & col_type,
-    const String & tokenizer_description,
-    ContextPtr context,
-    const ASTPtr & source_ast) const
+    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast) const
 {
     chassert(actions);
 
@@ -269,6 +266,7 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
         std::move(tokens_ast));
 
     NamesAndTypesList source_columns{{col_name, col_type}};
-    return buildActionsDAGFromAST(std::move(expr), source_columns, context);
+    /// Global context: an index that exists was authorised when it was defined, not per reader.
+    return buildActionsDAGFromAST(std::move(expr), source_columns, Context::getGlobalContextInstance());
 }
 }
