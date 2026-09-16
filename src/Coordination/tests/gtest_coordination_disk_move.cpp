@@ -52,9 +52,9 @@ namespace
 
 constexpr size_t always_fail = std::numeric_limits<size_t>::max();
 
-/// A local disk whose two failure-prone sub-operations of `moveFileBetweenDisks` can be made to
-/// fail a chosen number of times. `moveFileBetweenDisks` catches everything, so a plain
-/// `std::runtime_error` is enough to exercise the retry loop without pulling in error codes.
+/// A local disk whose two failure-prone sub-operations of `moveFileBetweenDisks`
+/// can be made to fail a chosen number of times. `moveFileBetweenDisks` catches
+/// everything, so a plain `std::runtime_error` is enough to drive the retry loop.
 class FlakyDiskLocal : public DB::DiskLocal
 {
 public:
@@ -63,8 +63,8 @@ public:
     {
     }
 
-    /// Only the `tmp_` marker is failed here, not the copy target: `IDisk::copyFile` also writes
-    /// through `to_disk.writeFile`, and the two sub-operations must be injectable independently.
+    /// Only the `tmp_` marker is failed here, not the copy target: `IDisk::copyFile`
+    /// also writes through `to_disk.writeFile`, and the two must be injectable apart.
     std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
         const std::string & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
     {
@@ -116,8 +116,8 @@ struct DiskMoveEvents
     UInt64 abandoned = 0;
 };
 
-/// Thread counters have `global_counters` as their parent, so an increment reaches it whether or
-/// not the moving thread has a `ThreadStatus`.
+/// Thread counters have `global_counters` as their parent, so an increment reaches
+/// it whether or not the moving thread has a `ThreadStatus`.
 DiskMoveEvents readDiskMoveEvents()
 {
     return DiskMoveEvents{
@@ -156,7 +156,7 @@ struct DiskMoveFixture
         buf->finalize();
 
         settings = std::make_shared<DB::CoordinationSettings>();
-        /// Nothing in these tests waits for the sleep between retries, it only slows them down.
+        /// Nothing here waits for the sleep between retries, it only slows tests down.
         (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 1;
     }
 
@@ -197,8 +197,8 @@ TEST(KeeperDiskMove, MoveIsNotRefusedByTheMemoryTracker)
     SCOPE_EXIT_SAFE(fs::remove_all(test_dir));
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
-    /// Give up after the first failure so that a refused move fails this test quickly instead of
-    /// burning through the whole retry budget.
+    /// Give up after the first failure so that a refused move fails this test quickly
+    /// instead of burning through the whole retry budget.
     (*settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
     (*settings)[DB::CoordinationSetting::disk_move_retries_after_init] = 1;
     (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 1;
@@ -236,11 +236,8 @@ TEST(KeeperDiskMove, MoveIsNotRefusedByTheMemoryTracker)
     EXPECT_FALSE(disk_from->existsFile("changelog.bin"));
 }
 
-/// A running server used to retry a failed sub-operation until shutdown. That pins the caller
-/// instead of failing it: the snapshot thread never returns, so NuRaft's `when_done` never fires,
-/// `snapshot_in_progress` stays set and Raft log compaction stops; the background changelog
-/// operations thread never marks its operation done, so `waitAllAsyncOperations` blocks `writeAt`.
-/// `disk_move_retries_after_init` must bound it.
+/// A running server used to retry a failed sub-operation until shutdown, pinning the
+/// caller instead of failing it. `disk_move_retries_after_init` must bound it.
 TEST(KeeperDiskMove, RuntimeRetriesAreBounded)
 {
     DiskMoveFixture fixture("./keeper_disk_move_runtime_bound_test");
@@ -262,7 +259,7 @@ TEST(KeeperDiskMove, RuntimeRetriesAreBounded)
         keeper_context);
     const auto delta = readDiskMoveEvents() - before;
 
-    /// Bounded by the running-server limit, not by the much larger initialization one.
+    /// Bounded by the runtime limit, not by the much larger initialization one.
     EXPECT_EQ(fixture.disk_to->tmp_write_calls.load(), 3u);
     EXPECT_EQ(fixture.disk_from->copy_calls.load(), 0u);
 
@@ -270,16 +267,16 @@ TEST(KeeperDiskMove, RuntimeRetriesAreBounded)
     EXPECT_EQ(delta.retries, 3u);
     EXPECT_EQ(delta.abandoned, 1u);
 
-    /// The source file is untouched and the caller's metadata was never repointed at the target,
-    /// so the abandoned file is still tracked on the disk it is actually on.
+    /// The source file is untouched and the caller's metadata was never repointed at
+    /// the target, so the abandoned file is still tracked on the disk it is on.
     EXPECT_FALSE(before_file_remove_op_called);
     EXPECT_TRUE(fixture.disk_from->existsFile("changelog.bin"));
     EXPECT_FALSE(fixture.disk_to->existsFile("changelog.bin"));
     EXPECT_FALSE(fixture.disk_to->existsFile("tmp_changelog.bin"));
 }
 
-/// `disk_move_retries_during_init` keeps its old meaning and is what bounds a move while the
-/// server is still initializing, even when the running-server limit is much larger.
+/// `disk_move_retries_during_init` keeps its old meaning and is what bounds a move
+/// while the server is still initializing, even when the runtime limit is larger.
 TEST(KeeperDiskMove, InitRetriesAreStillBounded)
 {
     DiskMoveFixture fixture("./keeper_disk_move_init_bound_test");
@@ -311,8 +308,8 @@ TEST(KeeperDiskMove, InitRetriesAreStillBounded)
     EXPECT_FALSE(before_file_remove_op_called);
     EXPECT_TRUE(fixture.disk_from->existsFile("changelog.bin"));
     EXPECT_FALSE(fixture.disk_to->existsFile("changelog.bin"));
-    /// The marker is deliberately left behind: it is what makes the incomplete copy detectable by
-    /// the startup scan, which removes both it and its partner file.
+    /// The marker is deliberately left behind: it is what makes the incomplete copy
+    /// detectable by the startup scan, which removes both it and its partner file.
     EXPECT_TRUE(fixture.disk_to->existsFile("tmp_changelog.bin"));
 }
 
