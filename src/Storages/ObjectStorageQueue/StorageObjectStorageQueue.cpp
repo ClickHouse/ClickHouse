@@ -2211,15 +2211,32 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// the metadata object and plain members of this storage.
     auto settings = getSettings().enumerateSettings();
 
+    /// The fields `getSettings` reads from the table metadata serialized to Keeper, and serialization - not
+    /// the `isStoredInKeeper` name list - decides what that metadata holds. So not `keeper_path`, which the
+    /// storage keeps itself, and not `parallel_inserts`, which the table metadata declares but never writes
+    /// or reads: https://github.com/ClickHouse/ClickHouse/issues/119018.
+    static const NameSet held_in_shared_metadata{
+        "mode", "after_processing", "loading_retries", "processing_threads_num",
+        "last_processed_path", "bucketing_mode", "partitioning_mode",
+        "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
+        "buckets"};
+
     /// The rebuild assigns the settings this engine keeps somewhere - in Keeper, in the metadata handle
     /// or in a member of this storage - and nothing else. The rest, which is most of this struct because it
     /// carries the shared format settings, is left at a compiled-in default even when the table's own
     /// definition states it: `registerQueueStorage` turns those into the table's `FormatSettings`, which the
     /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
     /// that distinction is visible, before the loop below overwrites it.
+    ///
+    /// The shared-metadata settings are excluded rather than merely expected to be absent. `getSettings`
+    /// returns an untouched object when this table has not finished `startup()` - databases load
+    /// asynchronously, and a table whose startup threw stays queryable - or after `shutdown()` dropped the
+    /// metadata handle. Everything then looks unassigned, and without this the values below would be taken
+    /// from the `CREATE` query and still stamped `SharedMetadata`, naming Keeper as the source of a value
+    /// Keeper was never asked for.
     NameSet not_assigned_by_rebuild;
     for (const auto & setting : settings)
-        if (setting.origin == SettingOrigin::Default)
+        if (setting.origin == SettingOrigin::Default && !held_in_shared_metadata.contains(setting.name))
             not_assigned_by_rebuild.insert(setting.name);
 
     /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
@@ -2246,16 +2263,6 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this
     /// replica's `CREATE` query still states whatever it was created with.
-    /// These are the fields `getSettings` reads from the table metadata serialized to Keeper, and
-    /// serialization - not the `isStoredInKeeper` name list - decides what that metadata holds. So
-    /// not `keeper_path`, which the storage keeps itself, and not `parallel_inserts`, which the table
-    /// metadata declares but never writes or reads: https://github.com/ClickHouse/ClickHouse/issues/119018.
-    static const NameSet held_in_shared_metadata{
-        "mode", "after_processing", "loading_retries", "processing_threads_num",
-        "last_processed_path", "bucketing_mode", "partitioning_mode",
-        "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
-        "buckets"};
-
     for (auto & setting : settings)
         if (held_in_shared_metadata.contains(setting.name))
             setting.origin = SettingOrigin::SharedMetadata;

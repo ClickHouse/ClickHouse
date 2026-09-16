@@ -286,6 +286,12 @@ public:
     /// names with the value the clause states. For an engine that keeps no settings object and rebuilds one
     /// from its own state: what the rebuild does not assign carries a compiled-in default, while the table
     /// works with what its definition said - see `StorageObjectStorageQueue`.
+    ///
+    /// `only_these` must hold settings whose value the engine derives from nothing but the definition. This
+    /// sets the value and leaves `origin` alone, so a setting the engine does derive - from replicated
+    /// metadata, a config section, a named collection - would keep a source naming where the value did not
+    /// come from. An engine that reconstructs its settings must also account for the states in which the
+    /// reconstruction does not run, where every setting looks unassigned.
     SettingDescriptions reportValuesStatedInDefinition(
         SettingDescriptions settings, ContextPtr context, const NameSet & only_these,
         const SettingNameNormalizer & normalize = {}) const;
