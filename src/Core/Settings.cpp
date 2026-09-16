@@ -6336,6 +6336,26 @@ Rewrite sumIf() and sum(if()) function countIf() function when logically equival
 Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
 only when col is of String or FixedString type.
 )", 0) \
+    DECLARE(Bool, optimize_fuse_sibling_aggregate_subqueries, true, R"(
+Answer sibling single-row aggregate subqueries that read the same tables with a single pass.
+
+A cross/comma join of derived tables that each aggregate the same `FROM` and differ only in their own
+`WHERE` conjuncts reads those tables once per branch. When enabled, the conjuncts shared by every
+branch become the fused filter and each branch's own residual conjuncts become the condition of an
+`-If` combinator on that branch's aggregates, so the tables are read once. For example,
+`SELECT * FROM (SELECT count() AS a FROM t WHERE c AND x) AS s1, (SELECT count() AS b FROM t WHERE c AND y) AS s2`
+is answered as
+`SELECT * FROM (SELECT countIf(x) AS a, countIf(y) AS b FROM t WHERE c AND (x OR y)) AS s1`.
+
+The rewrite is deliberately restricted to the cases where it is provably answer-preserving: aggregates
+that take no arguments (such as `count()`), MergeTree sources that read stored values with no
+expression evaluated on the way out, and branch filters built from comparisons and logical
+connectives over a single one of those tables.
+
+:::note
+Supported only with the analyzer (`enable_analyzer = 1`).
+:::
+)", 0) \
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.

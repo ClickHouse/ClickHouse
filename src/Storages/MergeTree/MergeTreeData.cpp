@@ -13502,6 +13502,24 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
     return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasLightweightDeletedMask();
 }
 
+bool MergeTreeData::readsColumnsWithoutTransformations(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// A snapshot that does not carry the mutations it will be read with cannot answer this: the
+    /// static overload below reads a missing snapshot as "nothing pending", which is the unsafe
+    /// answer here.
+    const auto * snapshot_data = storage_snapshot ? dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()) : nullptr;
+    if (!snapshot_data || !snapshot_data->mutations_snapshot)
+        return false;
+
+    /// Both overloads: the snapshot one answers what this read will apply, the live one answers what
+    /// is pending at all, which the snapshot omits when the on-the-fly settings are off while the
+    /// reader still converts.
+    return getColumnDefaultnessStatsUnavailableReason(query_context, snapshot_data->mutations_snapshot)
+            == ColumnDefaultnessStatsUnavailableReason::None
+        && getColumnDefaultnessStatsUnavailableReason(query_context) == ColumnDefaultnessStatsUnavailableReason::None
+        && !hasEnabledMaskingPolicies(query_context);
+}
+
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)
 {
     PartsSnapshotInfo info;

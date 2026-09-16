@@ -320,6 +320,15 @@ public:
         return false;
     }
 
+    /// Return true if reading a row of this storage yields the stored values, with no expression
+    /// evaluated on the way out. A rewrite that widens the set of rows a column is read for is only
+    /// sound on such a storage. The default is false: a storage that has not proven this is assumed
+    /// to transform what it reads.
+    virtual bool readsColumnsWithoutTransformations(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
+    {
+        return false;
+    }
+
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return SerializationInfoByName{{}}; }
 
