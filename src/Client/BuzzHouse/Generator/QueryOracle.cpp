@@ -7,7 +7,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BUZZHOUSE;
+extern const int BUZZHOUSE_ORACLE;
 }
 }
 
@@ -2048,7 +2048,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE,
+                DB::ErrorCodes::BUZZHOUSE_ORACLE,
                 "{}: failed with different success results: {} vs {}",
                 oracle_name,
                 DB::ErrorCodes::getName(first_errcode),
@@ -2068,7 +2068,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                 md5_hash2.hashFile((peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qcfile).generic_string(), second_digest);
                 if (first_digest != second_digest)
                 {
-                    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different result sets", oracle_name);
+                    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE_ORACLE, "{}: failed with different result sets", oracle_name);
                 }
             }
         }

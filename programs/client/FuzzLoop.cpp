@@ -58,6 +58,7 @@ extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
 extern const int AST_FUZZER_ORACLE_MISMATCH;
 extern const int BUZZHOUSE;
+extern const int BUZZHOUSE_ORACLE;
 using ErrorCode = int;
 extern std::string_view getName(ErrorCode error_code);
 }
@@ -459,7 +460,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         }
         if (can_compare && fuzz_config->compare_success_results && peer_success != !have_error)
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "AST Fuzzer: The peer server got a different success result");
+            throw DB::Exception(DB::ErrorCodes::AST_FUZZER_ORACLE_MISMATCH, "AST Fuzzer: The peer server got a different success result");
         }
         if (measure_performance)
         {
@@ -580,7 +581,7 @@ bool Client::processBuzzHouseQuery(const String & full_query)
     {
         if (fuzz_config->disallowed_error_codes.contains(error_code))
         {
-            throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
+            throw Exception(ErrorCodes::BUZZHOUSE_ORACLE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
         server_up &= tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
     }

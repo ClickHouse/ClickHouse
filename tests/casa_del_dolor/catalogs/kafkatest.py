@@ -3,7 +3,7 @@ import random
 import traceback
 
 from kafka import KafkaAdminClient
-import integration.helpers.kafka.common as k
+import tests.integration.helpers.kafka.common as k
 
 
 class KafkaTable:
