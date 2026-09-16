@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <unistd.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
@@ -109,6 +110,8 @@ FormatSettings getFormatSettings(const ContextPtr & context)
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
 {
     FormatSettings format_settings;
+
+    format_settings.session_time_zone = &DateLUT::instance();
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
