@@ -2275,6 +2275,32 @@ static BlockIO executeQueryImpl(
     chassert(internal || CurrentThread::get().tryGetQueryContext());
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
+    /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9: the
+    /// analyzer is mandatory and the old query analysis is no longer supported. A change that would
+    /// disable it is refused where the settings constraints are consulted, but a settings profile from
+    /// the server configuration is applied without them, and so is a setting given to
+    /// `clickhouse-local` on the command line, so a value from before the deprecation can still reach
+    /// a query. Ignore it here, the way the value of an obsolete setting is ignored, rather than
+    /// quietly analyzing the query the retired way; `system.warnings` reports the changed obsolete
+    /// setting, pointing at the configuration that still carries it.
+    ///
+    /// A query that another server sent to this one keeps the value it was sent with: a few internal
+    /// code paths still turn the analyzer off for a whole query on the initiator (`EXPLAIN AST`, a
+    /// view read by the old interpreter, a materialized view over a `Distributed` table), and the
+    /// servers of a cluster have to agree on how one query is analyzed.
+    ///
+    /// Such a query is identified by the query kind, which the initiator sends, so a client that
+    /// declares its own query to be a secondary one (`clickhouse-client --query_kind secondary_query`)
+    /// keeps the value as well. There is nothing more trustworthy to key this on - a secondary query
+    /// is exactly a query another server says it is sending - and forcing the analyzer on instead
+    /// would make an initiator that turned it off disagree with its own replicas about the result.
+    /// `clickhouse-local` is not a server another one can send a query to, so the declaration carries
+    /// no meaning there and does not keep the old query analysis alive.
+    const bool sent_by_another_server = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && client_info.interface != ClientInfo::Interface::LOCAL;
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer] && !sent_by_another_server)
+        context->setSetting("allow_experimental_analyzer", true);
+
     const Settings & settings = context->getSettingsRef();
 
     /// Remember the query id in the session history exposed through `system.session_query_ids`.
