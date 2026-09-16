@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ErrorCodes
@@ -226,6 +227,32 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
     visitor.visit(query);
 
     return query->cloneAndReplace(visitor.replacement_map);
+}
+
+bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_node, const ContextPtr & context)
+{
+    /// The plan-based implementation decides where to read with replicas by analyzing the query plan
+    /// rather than the query tree, so the walk below does not describe what it will do. Report every
+    /// query as possibly eligible there instead of risking a rejection of one it could parallelize.
+    if (context->getSettingsRef()[Setting::parallel_replicas_plan_based])
+        return true;
+
+    if (!context->canUseParallelReplicasOnInitiator())
+        return false;
+
+    /// The walk returns an empty stack when nothing in the join tree can be read with replicas: a
+    /// non-MergeTree storage, a table function, a `FINAL` modifier, a view that does not resolve to a
+    /// MergeTree table, a refreshable materialized view, a non-replicated MergeTree without
+    /// `parallel_replicas_for_non_replicated_merge_tree`, or a join kind that cannot be evaluated by
+    /// parallelizing a single side (`CROSS`, `FULL`, `ANY RIGHT`, a non-leftmost `RIGHT`).
+    ///
+    /// It is deliberately only the query-tree half of the eligibility rules. The planner disables
+    /// parallel replicas for a few more reasons that are not visible here - a correlated subquery
+    /// (`DisableParallelReplicasPass`), `IN` with a subquery under
+    /// `parallel_replicas_allow_in_with_subquery = 0`, `additional_table_filters` without
+    /// `serialize_query_plan`, a `STREAM` modifier - and each of those only costs a missed skip, never a
+    /// wrong one.
+    return !getSupportingParallelReplicasQueries(query_tree_node.get(), context).empty();
 }
 
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
