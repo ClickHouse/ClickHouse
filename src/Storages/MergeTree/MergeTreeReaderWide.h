@@ -125,13 +125,13 @@ private:
 
     /// Read up to `max_rows_to_read` rows of the selected columns from the part, appending them to
     /// `res_columns`, and return how many rows were read (zero if no selected column is in the part).
-    /// The rows of the regular columns are copied into the accumulator of the granule being
-    /// written to the columns cache, if there is one.
+    /// `sizes_before_reading`, if given, receives the number of rows every column held before.
     size_t readSegmentFromDisk(
         size_t from_mark,
         size_t max_rows_to_read,
         MutableColumns & res_columns,
-        const ColumnReadSelector & selector);
+        const ColumnReadSelector & selector,
+        std::vector<size_t> * sizes_before_reading = nullptr);
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
@@ -154,6 +154,18 @@ private:
     /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
     /// Filled by `addStreams`.
     NameSet columns_absent_from_part;
+
+    /// Columns whose rows are not a function of the row range they are read for, so an entry
+    /// written by one read would be wrong for another: the distinct-paths subcolumn of a `JSON`
+    /// column (`ObjectDistinctPaths`) emits the path names of the part once per reader and the
+    /// shared data paths per call, rather than a value per row. Such a column is read from the
+    /// part by every read, like a partially read column. Filled by `addStreams`.
+    NameSet columns_not_cacheable;
+
+    /// Whether the column at `pos` is read from the part even when the rest of the granule is
+    /// served from the cache: a partially read column or a column that is not cacheable.
+    bool isColumnReadOnlyFromPart(size_t pos) const;
+    bool hasColumnsReadOnlyFromPart() const;
 
     /// Whether the column at `pos` is not produced by reading the part but synthesized by
     /// `fillMissingColumns` afterwards: it is absent from the part altogether (added by an
@@ -227,10 +239,11 @@ private:
 
     bool isGranuleColumnCached(size_t pos, size_t granule_index) const;
 
-    /// The granule being copied for a deferred write, if any, and its rows read so far.
+    /// The granule the previous block ended in, if it is to be cached: its rows read so far, per
+    /// result column (nullptr for the columns that are not read from the part).
     bool accumulating = false;
     size_t accumulated_mark = 0;
-    size_t accumulated_granule_rows = 0;
+    size_t accumulated_rows = 0;
     MutableColumns accumulated_columns;
 
     /// Entries of the granules read to their end, written together at the end of the call.
@@ -261,15 +274,24 @@ private:
     /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
     bool canWriteToColumnsCache() const;
 
-    void startAccumulatingGranule(size_t mark, size_t granule_rows, size_t num_columns);
     void resetAccumulatedGranule();
 
-    /// Copy `rows` rows read from the part, starting at `offset` of `column`, into the accumulator
-    /// of the result column at `pos`.
-    void accumulateRowsForColumnsCache(size_t pos, const IColumn & column, size_t offset, size_t rows);
+    /// Make the rows of granule `mark` just read from the part into cache entries: the rows
+    /// [offset, offset + rows) of the granule are at `sizes_before_reading[pos] + row_in_run` of
+    /// every result column read from the part (`from_disk`). A granule read in full becomes
+    /// entries at once; a granule the block ends in is kept until the next block completes it.
+    void cacheGranuleRowsFromResult(
+        size_t mark,
+        size_t offset,
+        size_t rows,
+        size_t granule_rows,
+        size_t row_in_run,
+        const std::vector<bool> & from_disk,
+        const std::vector<size_t> & sizes_before_reading,
+        const MutableColumns & res_columns);
 
-    /// The accumulated granule has been read to its end: turn its columns into entries.
-    void finishAccumulatedGranule();
+    /// Queue an entry for granule `mark` of the result column at `pos`.
+    void addPendingColumnsCacheEntry(size_t pos, size_t mark, MutableColumnPtr column);
 
     /// Write the pending entries to the cache.
     void flushPendingColumnsCacheWrites();

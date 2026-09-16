@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -279,9 +280,12 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
     size_t from_mark,
     size_t max_rows_to_read,
     MutableColumns & res_columns,
-    const ColumnReadSelector & selector)
+    const ColumnReadSelector & selector,
+    std::vector<size_t> * sizes_before_reading)
 {
     const size_t num_columns = res_columns.size();
+    if (sizes_before_reading)
+        sizes_before_reading->assign(num_columns, 0);
 
     /// The streams prefetched by `prefetchBeginOfRange` stand at the first mark of the first
     /// range. A read that starts elsewhere - the granules before it were served from the cache -
@@ -319,6 +323,8 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
             column = column_to_read.type->createColumn(*serializations[pos]);
 
         size_t column_size_before_reading = column->size();
+        if (sizes_before_reading)
+            (*sizes_before_reading)[pos] = column_size_before_reading;
 
         try
         {
@@ -347,9 +353,6 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
             throw;
         }
 
-        if (accumulating && !isColumnFilledAfterReading(pos) && column->size() > column_size_before_reading)
-            accumulateRowsForColumnsCache(pos, *column, column_size_before_reading, column->size() - column_size_before_reading);
-
         if (column->empty() && max_rows_to_read > 0)
             res_columns[pos] = nullptr;
     }
@@ -362,7 +365,17 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
 
 bool MergeTreeReaderWide::isColumnFilledAfterReading(size_t pos) const
 {
-    return isColumnAbsentFromPart(pos) || isColumnPartiallyRead(pos);
+    return isColumnAbsentFromPart(pos) || isColumnReadOnlyFromPart(pos);
+}
+
+bool MergeTreeReaderWide::isColumnReadOnlyFromPart(size_t pos) const
+{
+    return isColumnPartiallyRead(pos) || columns_not_cacheable.contains(columns_to_read[pos].name);
+}
+
+bool MergeTreeReaderWide::hasColumnsReadOnlyFromPart() const
+{
+    return !partially_read_columns.empty() || !columns_not_cacheable.empty();
 }
 
 bool MergeTreeReaderWide::isColumnAbsentFromPart(size_t pos) const
@@ -455,13 +468,13 @@ bool MergeTreeReaderWide::canServeFirstRangeFromCache()
     if (!columns_cache_reads_possible || all_mark_ranges.getNumberOfMarks() == 0)
         return false;
 
-    /// A hit is not the same as a read without IO. The lookup ignores the partially read columns,
-    /// because the write path can never produce an entry for one, so a range whose serve path
-    /// still reads those columns from the part - and deserializes the prefix of every column on
-    /// the way - would be left exactly as the repeated read that still goes to object storage
-    /// without read-ahead. So the prefetch is skipped only when no stream of the range will be
-    /// touched at all.
-    if (!partially_read_columns.empty())
+    /// A hit is not the same as a read without IO. The lookup ignores the columns that are read
+    /// only from the part, because the write path never produces an entry for one, so a range
+    /// whose serve path still reads those columns from the part - and deserializes the prefix of
+    /// every column on the way - would be left exactly as the repeated read that still goes to
+    /// object storage without read-ahead. So the prefetch is skipped only when no stream of the
+    /// range will be touched at all.
+    if (hasColumnsReadOnlyFromPart())
         return false;
 
     /// Only the first mark range matters: that is the only one this prefetch covers. Entries
@@ -482,12 +495,173 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
 {
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
     const size_t num_columns = res_columns.size();
-    const bool has_partial_columns = !partially_read_columns.empty();
 
+    /// The block: the pieces of the granules that hold the next `max_rows_to_read` rows of the range.
+    struct Segment
+    {
+        size_t mark;
+        size_t offset;
+        size_t rows;
+        size_t granule_rows;
+    };
+    std::vector<Segment> segments;
+    {
+        size_t mark = cursor_mark;
+        size_t offset = cursor_offset;
+        size_t left = max_rows_to_read;
+        while (left > 0 && mark < range_end_mark)
+        {
+            const size_t granule_rows = index_granularity.getMarkRows(mark);
+            if (offset >= granule_rows)
+            {
+                ++mark;
+                offset = 0;
+                continue;
+            }
+            const size_t rows = std::min(left, granule_rows - offset);
+            segments.push_back({mark, offset, rows, granule_rows});
+            left -= rows;
+            offset += rows;
+        }
+    }
+
+    if (segments.empty())
+    {
+        flushPendingColumnsCacheWrites();
+        return 0;
+    }
+
+    size_t block_rows = 0;
+    for (const auto & segment : segments)
+        block_rows += segment.rows;
+
+    /// The regular columns, granule by granule: a column whose entry for the granule is in the
+    /// cache is served from it, the others are read from the part. Consecutive granules that read
+    /// the same columns from the part are read in one call, so a range that is not cached at all
+    /// is read exactly as it is without the cache.
+    ///
+    /// The columns that are read only from the part are read in the same calls, so that a
+    /// partially read `Nested` member shares the call - and the offsets stream, read once per call
+    /// for the group - with the members of its group that are read from the part; it has no entry
+    /// but is not a no-op to read, because `fillMissingColumns` sizes every re-added member of the
+    /// group from its offsets. A column that is not cacheable is read the same way: in one call
+    /// per block unless the block mixes served and read granules.
+    const bool has_columns_read_only_from_part = hasColumnsReadOnlyFromPart();
+    auto columns_from_disk = [&](size_t mark)
+    {
+        std::vector<bool> from_disk(num_columns, false);
+        const size_t granule_index = mark - range_first_mark;
+        for (size_t pos = 0; pos < num_columns; ++pos)
+            if (!isColumnSkipped(pos) && !isColumnFilledAfterReading(pos) && !isGranuleColumnCached(pos, granule_index))
+                from_disk[pos] = true;
+        return from_disk;
+    };
+
+    std::vector<size_t> sizes_before_reading;
     size_t read_rows = 0;
-    size_t rows_left = max_rows_to_read;
+    size_t run_begin = 0;
+    while (run_begin < segments.size())
+    {
+        const auto from_disk = columns_from_disk(segments[run_begin].mark);
+        size_t run_end = run_begin + 1;
+        while (run_end < segments.size() && columns_from_disk(segments[run_end].mark) == from_disk)
+            ++run_end;
 
-    while (rows_left > 0 && cursor_mark < range_end_mark)
+        size_t run_rows = 0;
+        for (size_t i = run_begin; i < run_end; ++i)
+            run_rows += segments[i].rows;
+
+        size_t disk_columns = 0;
+        size_t served_columns = 0;
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+                continue;
+            if (from_disk[pos])
+                ++disk_columns;
+            else
+                ++served_columns;
+        }
+
+        if (served_columns)
+        {
+            for (size_t i = run_begin; i < run_end; ++i)
+                serveRowsFromColumnsCache(segments[i].mark - range_first_mark, segments[i].offset, segments[i].rows, res_columns);
+        }
+
+        size_t rows = run_rows;
+        if (disk_columns || has_columns_read_only_from_part)
+        {
+            const bool continue_reading_from_part_only = partial_columns_started;
+            const size_t rows_from_disk = readSegmentFromDisk(segments[run_begin].mark, run_rows, res_columns,
+                [&](size_t pos) -> std::optional<bool>
+                {
+                    if (isColumnAbsentFromPart(pos))
+                        return std::nullopt;
+                    if (isColumnReadOnlyFromPart(pos))
+                        return continue_reading_from_part_only;
+                    if (!from_disk[pos])
+                        return std::nullopt;
+                    return static_cast<bool>(disk_positioned[pos]);
+                },
+                &sizes_before_reading);
+            partial_columns_started = true;
+
+            if (disk_columns + served_columns == 0)
+            {
+                /// Nothing but columns read only from the part: they measure the read.
+                rows = rows_from_disk;
+            }
+            else if (disk_columns && rows_from_disk < run_rows)
+            {
+                /// The part ended before the marks say it does. Nothing can have been served for
+                /// rows that do not exist.
+                if (served_columns)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Read {} rows of {} from part {} starting at mark {}, but {} columns of these rows were served from the columns cache",
+                        rows_from_disk, run_rows, data_part_info_for_read->getPartName(), segments[run_begin].mark, served_columns);
+                rows = rows_from_disk;
+            }
+
+            /// The granules of the run that were read to their end are written to the cache.
+            size_t row_in_run = 0;
+            for (size_t i = run_begin; disk_columns && i < run_end && row_in_run + segments[i].rows <= rows; ++i)
+            {
+                const auto & segment = segments[i];
+                if (columns_cache_writes_possible)
+                    cacheGranuleRowsFromResult(segment.mark, segment.offset, segment.rows, segment.granule_rows, row_in_run, from_disk, sizes_before_reading, res_columns);
+                if (columns_cache_reads_possible && segment.offset + segment.rows == segment.granule_rows)
+                    ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, disk_columns);
+                row_in_run += segment.rows;
+            }
+        }
+
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+                continue;
+            /// The streams of a served column stay where they were; the others are at the cursor.
+            disk_positioned[pos] = from_disk[pos];
+        }
+
+        if (served_columns)
+        {
+            for (size_t i = run_begin; i < run_end; ++i)
+                if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
+                    ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
+        }
+
+        read_rows += rows;
+
+        /// Fewer rows than asked for: the data of the part ended.
+        if (rows < run_rows)
+            break;
+
+        run_begin = run_end;
+    }
+
+    /// Move the cursor over the rows that were produced.
+    for (size_t left = std::min(read_rows, block_rows); left > 0;)
     {
         const size_t granule_rows = index_granularity.getMarkRows(cursor_mark);
         if (cursor_offset >= granule_rows)
@@ -496,103 +670,14 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
             cursor_offset = 0;
             continue;
         }
-
-        const size_t rows_to_read = std::min(rows_left, granule_rows - cursor_offset);
-        const size_t granule_index = cursor_mark - range_first_mark;
-        const bool reaches_granule_end = cursor_offset + rows_to_read == granule_rows;
-
-        /// Every regular column whose entry for this granule is in the cache is served from it,
-        /// the others are read from the part - together with the partially read columns, which
-        /// have no entries but are not a no-op to read: their offsets are in the part, and
-        /// `fillMissingColumns` sizes every re-added member of their `Nested` group from them.
-        size_t served_columns = 0;
-        size_t disk_columns = 0;
-        for (size_t pos = 0; pos < num_columns; ++pos)
-        {
-            if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
-                continue;
-            if (isGranuleColumnCached(pos, granule_index))
-                ++served_columns;
-            else
-                ++disk_columns;
-        }
-
-        if (served_columns)
-            serveRowsFromColumnsCache(granule_index, cursor_offset, rows_to_read, res_columns);
-
-        size_t rows = rows_to_read;
-        if (disk_columns || has_partial_columns)
-        {
-            /// A granule is copied for the cache only when its read starts at its first row, and
-            /// only the columns that are read from the part are copied: the others are there already.
-            if (accumulating && accumulated_mark != cursor_mark)
-                resetAccumulatedGranule();
-            if (disk_columns && !accumulating && cursor_offset == 0 && columns_cache_writes_possible
-                && canWriteToColumnsCache() && columns_cache->shouldAdmit())
-                startAccumulatingGranule(cursor_mark, granule_rows, num_columns);
-
-            const bool continue_partial = partial_columns_started;
-            const size_t rows_from_disk = readSegmentFromDisk(cursor_mark, rows_to_read, res_columns,
-                [&](size_t pos) -> std::optional<bool>
-                {
-                    if (isColumnAbsentFromPart(pos))
-                        return std::nullopt;
-                    if (isColumnPartiallyRead(pos))
-                        return continue_partial;
-                    if (isGranuleColumnCached(pos, granule_index))
-                        return std::nullopt;
-                    return static_cast<bool>(disk_positioned[pos]);
-                });
-
-            for (size_t pos = 0; pos < num_columns; ++pos)
-            {
-                if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
-                    continue;
-                /// The streams of a served column stay where they were; the others are at the cursor.
-                disk_positioned[pos] = !isGranuleColumnCached(pos, granule_index);
-            }
-            partial_columns_started = true;
-
-            if (disk_columns)
-            {
-                /// Zero rows from the part when a regular column was to be read means that
-                /// nothing is left; the caller finishes the range by its own count of rows.
-                if (rows_from_disk == 0 && served_columns == 0)
-                    break;
-                rows = std::min(rows, std::max(rows_from_disk, served_columns ? rows_to_read : 0));
-            }
-
-            if (reaches_granule_end && rows == rows_to_read)
-            {
-                if (columns_cache_reads_possible)
-                    ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, disk_columns);
-                if (accumulating)
-                    finishAccumulatedGranule();
-            }
-        }
-        else
-        {
-            for (size_t pos = 0; pos < num_columns; ++pos)
-                if (!isColumnSkipped(pos) && !isColumnFilledAfterReading(pos))
-                    disk_positioned[pos] = false;
-        }
-
-        if (reaches_granule_end && rows == rows_to_read)
-            ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
-
+        const size_t rows = std::min(left, granule_rows - cursor_offset);
         cursor_offset += rows;
-        if (cursor_offset >= granule_rows)
-        {
-            ++cursor_mark;
-            cursor_offset = 0;
-        }
-
-        rows_left -= rows;
-        read_rows += rows;
-
-        /// Fewer rows than asked for: the data of the part ended.
-        if (rows < rows_to_read)
-            break;
+        left -= rows;
+    }
+    if (cursor_mark < range_end_mark && cursor_offset >= index_granularity.getMarkRows(cursor_mark))
+    {
+        ++cursor_mark;
+        cursor_offset = 0;
     }
 
     flushPendingColumnsCacheWrites();
@@ -621,7 +706,7 @@ void MergeTreeReaderWide::serveRowsFromColumnsCache(size_t granule_index, size_t
         }
 
         /// Read from the part by the caller, see `readRowsWithColumnsCache`.
-        if (isColumnPartiallyRead(pos) || !isGranuleColumnCached(pos, granule_index))
+        if (isColumnReadOnlyFromPart(pos) || !isGranuleColumnCached(pos, granule_index))
             continue;
 
         const auto & entry = cached_entries[pos][granule_index];
@@ -634,16 +719,25 @@ void MergeTreeReaderWide::serveRowsFromColumnsCache(size_t granule_index, size_t
 
         auto & column = res_columns[pos];
         if (!column)
-            column = columns_to_read[pos].type->createColumn(*serializations[pos]);
+        {
+            /// The first rows of the result column are a copy of the cached rows, so that the
+            /// column keeps the structure the part gives it and a freshly created column would
+            /// not have: the dynamic paths of a `JSON` column and the variants of a `Dynamic`
+            /// column come from the prefix of the part, the value of a column stored as a single
+            /// value per part is in the data, and a part with sparse serialization produces a
+            /// `ColumnSparse`. Downstream behavior depends on all of these: some aggregate
+            /// functions (for example `groupConcat`) have a sparse fast path that processes
+            /// non-defaults first and all defaults at the end, while the full path preserves the
+            /// natural row order. `cut` creates a fresh copy, so mutating it cannot touch the
+            /// column stored in the cache.
+            column = IColumn::mutate(cached_column.cut(offset, rows));
+            continue;
+        }
 
-        /// The result column has the concrete type the current serialization produces. If the
-        /// entry was written under different settings and holds a `ColumnSparse` while the result
-        /// is a full column, insert from a full copy of the range so that `insertRangeFrom` is
-        /// type-compatible. The disk-read path returns a `ColumnSparse` for parts with sparse
-        /// serialization, and the cache-hit path must do the same to keep downstream behavior
-        /// consistent: some aggregate functions (for example `groupConcat`) have a sparse fast
-        /// path that processes non-defaults first and all defaults at the end, while the full
-        /// path preserves the natural row order.
+        /// The result column already has its structure, from the granules before this one - read
+        /// from the part or served from the cache, both of the same part. If the entry was written
+        /// under different settings and holds a `ColumnSparse` while the result is a full column,
+        /// insert from a full copy of the range so that `insertRangeFrom` is type-compatible.
         const bool cached_is_sparse = typeid_cast<const ColumnSparse *>(&cached_column) != nullptr;
         const bool dst_is_sparse = typeid_cast<const ColumnSparse *>(column.get()) != nullptr;
         if (cached_is_sparse && !dst_is_sparse)
@@ -681,69 +775,116 @@ bool MergeTreeReaderWide::canWriteToColumnsCache() const
     return true;
 }
 
-void MergeTreeReaderWide::startAccumulatingGranule(size_t mark, size_t granule_rows, size_t num_columns)
-{
-    accumulating = true;
-    accumulated_mark = mark;
-    accumulated_granule_rows = granule_rows;
-    accumulated_columns.clear();
-    accumulated_columns.resize(num_columns);
-}
-
 void MergeTreeReaderWide::resetAccumulatedGranule()
 {
     accumulating = false;
     accumulated_columns.clear();
 }
 
-void MergeTreeReaderWide::accumulateRowsForColumnsCache(size_t pos, const IColumn & column, size_t offset, size_t rows)
+void MergeTreeReaderWide::addPendingColumnsCacheEntry(size_t pos, size_t mark, MutableColumnPtr column)
 {
-    auto & accumulated = accumulated_columns[pos];
-    if (!accumulated)
-    {
-        accumulated = column.cloneEmpty();
-        accumulated->reserve(accumulated_granule_rows);
-    }
+    /// Give back the capacity the column holds beyond its rows. `PODArray` rounds an allocation
+    /// up to a power of two elements, and the accumulated copy of a granule grew as its rows came,
+    /// so without this an entry would occupy - and, since the cache is bounded by the memory an
+    /// entry retains, be charged for - up to twice the memory of its rows for the whole time it
+    /// stays cached.
+    column->shrinkToFit();
 
-    /// This copy is the one the cache entry is made of: the accumulated column is moved into
-    /// the entry when the granule is complete, and the result column stays uniquely owned by the
-    /// read in progress.
-    accumulated->insertRangeFrom(column, offset, rows);
+    auto entry = std::make_shared<ColumnsCacheEntry>();
+    entry->key = ColumnsCacheKey{
+        data_part_info_for_read->getTableUUID(),
+        data_part_info_for_read->getPartName(),
+        requested_column_names[pos],
+        mark,
+        settings.columns_cache_schema_identity};
+    entry->row_begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
+    entry->rows = column->size();
+    entry->column = std::move(column);
+
+    pending_entries.push_back(std::move(entry));
 }
 
-void MergeTreeReaderWide::finishAccumulatedGranule()
+void MergeTreeReaderWide::cacheGranuleRowsFromResult(
+    size_t mark,
+    size_t offset,
+    size_t rows,
+    size_t granule_rows,
+    size_t row_in_run,
+    const std::vector<bool> & from_disk,
+    const std::vector<size_t> & sizes_before_reading,
+    const MutableColumns & res_columns)
 {
-    const size_t row_begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(accumulated_mark);
-
-    for (size_t pos = 0; pos < accumulated_columns.size(); ++pos)
+    /// The rows of the granule that column `pos` holds after the read, or nullptr.
+    auto rows_of = [&](size_t pos) -> const IColumn *
     {
-        auto & column = accumulated_columns[pos];
-        if (!column || column->empty())
-            continue;
+        if (!from_disk[pos] || !res_columns[pos])
+            return nullptr;
+        const auto & column = *res_columns[pos];
+        if (column.size() < sizes_before_reading[pos] + row_in_run + rows)
+            return nullptr;
+        return &column;
+    };
 
-        /// Give back the capacity the accumulation reserved beyond the rows it ended up holding.
-        /// `PODArray` rounds a reservation up to a power of two elements, and doubles the element
-        /// storage of `String` and `Array` columns on growth, so without this an entry would
-        /// occupy - and, since the cache is bounded by the memory an entry retains, be charged
-        /// for - up to twice the memory of its rows for the whole time it stays cached.
-        column->shrinkToFit();
+    if (offset == 0)
+    {
+        /// The granule the previous block ended in was not continued: it is not cached.
+        if (accumulating)
+            resetAccumulatedGranule();
 
-        const size_t rows = column->size();
-        auto entry = std::make_shared<ColumnsCacheEntry>();
-        entry->key = ColumnsCacheKey{
-            data_part_info_for_read->getTableUUID(),
-            data_part_info_for_read->getPartName(),
-            requested_column_names[pos],
-            accumulated_mark,
-            settings.columns_cache_schema_identity};
-        entry->row_begin = row_begin;
-        entry->rows = rows;
-        entry->column = std::move(column);
+        if (!canWriteToColumnsCache() || !columns_cache->shouldAdmit())
+            return;
 
-        pending_entries.push_back(std::move(entry));
+        if (rows == granule_rows)
+        {
+            /// The whole granule was read in this block: its entries come straight from the result.
+            for (size_t pos = 0; pos < res_columns.size(); ++pos)
+                if (const auto * column = rows_of(pos))
+                    addPendingColumnsCacheEntry(pos, mark, IColumn::mutate(column->cut(sizes_before_reading[pos] + row_in_run, rows)));
+            return;
+        }
+
+        /// The block ended inside the granule: keep its rows until the next block brings the rest.
+        /// The entries are written only once the granule has been read to its end, so the cache
+        /// never holds a granule in part - and never shares column data with a read in progress.
+        accumulating = true;
+        accumulated_mark = mark;
+        accumulated_rows = rows;
+        accumulated_columns.clear();
+        accumulated_columns.resize(res_columns.size());
+        for (size_t pos = 0; pos < res_columns.size(); ++pos)
+            if (const auto * column = rows_of(pos))
+                accumulated_columns[pos] = IColumn::mutate(column->cut(sizes_before_reading[pos] + row_in_run, rows));
+        return;
     }
 
-    resetAccumulatedGranule();
+    /// The continuation of the granule the previous block ended in.
+    if (!accumulating || accumulated_mark != mark || accumulated_rows != offset)
+    {
+        resetAccumulatedGranule();
+        return;
+    }
+
+    for (size_t pos = 0; pos < res_columns.size(); ++pos)
+    {
+        if (!from_disk[pos])
+            continue;
+        const auto * column = rows_of(pos);
+        if (!column || !accumulated_columns[pos])
+        {
+            resetAccumulatedGranule();
+            return;
+        }
+        accumulated_columns[pos]->insertRangeFrom(*column, sizes_before_reading[pos] + row_in_run, rows);
+    }
+    accumulated_rows += rows;
+
+    if (accumulated_rows == granule_rows)
+    {
+        for (size_t pos = 0; pos < accumulated_columns.size(); ++pos)
+            if (accumulated_columns[pos])
+                addPendingColumnsCacheEntry(pos, mark, std::move(accumulated_columns[pos]));
+        resetAccumulatedGranule();
+    }
 }
 
 void MergeTreeReaderWide::flushPendingColumnsCacheWrites()
@@ -777,6 +918,17 @@ void MergeTreeReaderWide::addStreams(
 {
     bool has_any_stream = false;
     bool has_all_streams = true;
+
+    /// See `columns_not_cacheable`. The streams of the distinct-paths subcolumn are the structure
+    /// and shared data streams of the `JSON` column, so it is recognized by its name: a typed path
+    /// spelled the same way is a regular column, and not caching it costs nothing but the caching.
+    if (name_and_type.isSubcolumn())
+    {
+        const auto & subcolumn_name = name_and_type.getSubcolumnName();
+        const std::string_view special_name = DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION;
+        if (subcolumn_name == special_name || subcolumn_name.ends_with(fmt::format(".{}", special_name)))
+            columns_not_cacheable.insert(name_and_type.name);
+    }
 
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
