@@ -71,6 +71,9 @@ namespace
         if (!lambda_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got: {}", function->formatForErrorMessage());
 
+        if (lambda_function->name != "lambda")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected lambda expression, got: {}", function->formatForErrorMessage());
+
         if (!lambda_function->arguments || lambda_function->arguments->children.size() != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have arguments and body");
 

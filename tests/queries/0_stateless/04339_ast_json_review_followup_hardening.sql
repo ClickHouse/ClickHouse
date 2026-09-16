@@ -96,8 +96,9 @@ SELECT formatQueryFromJSON('{"type":"Function","name":"f","kind":"LAMBDA_FUNCTIO
 -- ahead of the `isASTLambdaFunction` predicate; reject the flag on any other shape. One row per
 -- shape: no `arguments` (under a name that is not `lambda`, then under `lambda`), one argument, a
 -- first argument that is not a tuple, an argument tuple without its own argument list, an otherwise
--- well-formed lambda whose name is not `lambda`, three arguments, and the `APPLY` transformer child
--- (whose own boundary check accepts a two-child lambda whose first argument is not a tuple).
+-- well-formed lambda whose name is not `lambda`, three arguments, the `APPLY` transformer child
+-- (whose own boundary check accepts a two-child lambda whose first argument is not a tuple), and a
+-- parametric lambda, whose parameters query analysis would silently drop.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Function","name":"f","is_lambda_function":true}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true}'); -- { serverError BAD_ARGUMENTS }
@@ -107,3 +108,4 @@ SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_functi
 SELECT formatQueryFromJSON('{"type":"Function","name":"f","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * APPLY(x -> (x + 1))'), '"name":"tuple"', '"name":"nottuple"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"parameters":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":7}}]},"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }

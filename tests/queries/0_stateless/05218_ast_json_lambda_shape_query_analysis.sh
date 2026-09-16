@@ -46,3 +46,7 @@ run_json TYPE_MISMATCH "$INDEX_JSON_TUPLE"
 #    registration performs on it tests nothing about the node beyond `as<ASTFunction>()`, so neither
 #    the `is_lambda_function` boundary check nor a name test guards the argument list it then reads.
 run_json BAD_ARGUMENTS '{"type":"CreateSQLFunctionQuery","function_name":{"type":"Identifier","name":"udf_shape"},"function_core":{"type":"Function","name":"lambda"}}'
+
+# 6. A core that is well formed in every respect the validator checks except its own name. Registration
+#    is where it has to be rejected: the consequence lands later, as a `LOGICAL_ERROR` at first use.
+run_json BAD_ARGUMENTS '{"type":"CreateSQLFunctionQuery","function_name":{"type":"Identifier","name":"udf_name"},"function_core":{"type":"Function","name":"f","arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}}'
