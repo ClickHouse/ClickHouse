@@ -36,7 +36,7 @@ ${CLICKHOUSE_CLIENT} \
     -q "INSERT INTO t_sz3_cancel_src SELECT arrayMap(i -> randCanonical(i + number * 64)::Float32 * 1e6, range(64)) FROM numbers($ROWS)"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_sz3_cancel"
-${CLICKHOUSE_CLIENT} --allow_experimental_codecs 1 -q "
+${CLICKHOUSE_CLIENT} --enable_sz3_codec 1 -q "
 CREATE TABLE t_sz3_cancel (a Array(Float32) CODEC(SZ3))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
