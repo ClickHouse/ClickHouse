@@ -34,7 +34,7 @@ select minMap(val) from values ('val Map(UInt128, UInt128)',  (map(1, 1)), (map(
 select minMap(val) from values ('val Map(UInt256, UInt256)',  (map(1, 1)), (map(1, 2)));
 
 select sumMap(map(1,2), 1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select sumMap(map(1,2), map(1,3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select sumMap(map(1,2), map(1,3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- array and tuple arguments
 select avgMap([1,1,1], [2,2,2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
