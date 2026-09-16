@@ -19,11 +19,15 @@
 # neither the drain nor the query ever completes; with it, `cancel` observes a `finish` in progress
 # and returns.
 #
-# `LIMIT 1` closes the initiator's output ports while both shards are still streaming, so `finish`
-# runs with a real drain left to do. `distributed_push_down_limit=0` is what makes that a certainty
-# rather than a race: with the default the shards apply the `LIMIT` themselves and send `EndOfStream`
-# after a single granule, and a `finish` that already observed `finished` returns before reaching the
-# drain (measured on this fixture: 16384 rows read with the push-down, 200000 without).
+# `LIMIT 1` closes the initiator's output ports while both shards are still streaming, so `finish` runs
+# with a real drain left to do, and `distributed_push_down_limit=0` keeps the shards from applying the
+# `LIMIT` themselves and finishing after one granule. What decides whether the drain is still outstanding
+# is how many packets that port close leaves behind, and blocks arrive granule-aligned here
+# (`max_block_size` clamps up to a granule, it does not split one). The runner randomizes
+# `index_granularity` over [1, 65536], so unpinned the fixture leaves anywhere from 100000 packets per
+# shard down to two, and the two it drew for the run that failed (43695) let `read()` reach `EndOfStream`
+# first. `index_granularity = 256` leaves ~390 per shard on every run. Measured on a two-core-confined
+# server: 8 runs in 150 where neither shard reached its drain unpinned, 0 in 150 pinned.
 # `enable_parallel_replicas=0` keeps `drain_was_skipped` false, which is what leads into the drain;
 # `async_socket_for_remote=0` keeps the fixture on the synchronous read path, as 04512 does.
 
@@ -43,7 +47,8 @@ trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.src;
-    CREATE TABLE ${CLICKHOUSE_DATABASE}.src (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.src (x UInt64) ENGINE = MergeTree ORDER BY x
+        SETTINGS index_granularity = 256;
     INSERT INTO ${CLICKHOUSE_DATABASE}.src SELECT number FROM numbers(100000);
     DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dist;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.dist AS ${CLICKHOUSE_DATABASE}.src
@@ -78,13 +83,33 @@ else
     # Bounded, because the unfixed failure mode is a deadlock rather than an error, and bounded well
     # inside Fast test's 60 s per-test allowance so that on a regression the diagnosis below is what
     # surfaces, not the runner's bare timeout. The query itself returns in under a second here.
-    if ! timeout 30 $CLICKHOUSE_CLIENT \
-        --enable_parallel_replicas=0 --async_socket_for_remote=0 --distributed_push_down_limit=0 \
-        --max_block_size=1 --prefer_localhost_replica=0 \
-        --query "SELECT count() FROM (SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1)" 2>"$err"
-    then
-        echo "the query did not complete with cancel injected into finish's drain:"
-        cat "$err"
+    #
+    # Retried while the failpoint is still armed: a query whose `finish` calls all returned before the
+    # drain has exercised nothing, so passing on it would be vacuous. The granularity pin makes one
+    # attempt enough in practice; this keeps a residual miss from reddening the check. It cannot hide a
+    # regression, which shows up on the first attempt that does fire.
+    attempts=0
+    while [ "$attempts" -lt 10 ]; do
+        attempts=$((attempts + 1))
+
+        if ! rows=$(timeout 30 $CLICKHOUSE_CLIENT \
+            --enable_parallel_replicas=0 --async_socket_for_remote=0 --distributed_push_down_limit=0 \
+            --max_block_size=1 --prefer_localhost_replica=0 \
+            --query "SELECT count() FROM (SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1)" 2>"$err"); then
+            echo "the query did not complete with cancel injected into finish's drain:"
+            cat "$err"
+            failed=1
+            break
+        fi
+
+        if [ "$(enabled)" = "0" ]; then
+            echo "$rows"
+            break
+        fi
+    done
+
+    if [ "$(enabled)" = "1" ]; then
+        echo "no finish reached its drain in $attempts attempts, so cancel was never injected"
         failed=1
     fi
 
