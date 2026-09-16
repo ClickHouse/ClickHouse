@@ -1141,6 +1141,15 @@ Block StorageJoin::getBlockByKeys(const std::vector<std::vector<Field>> & keys, 
         if (!cur_sample_block.has(name))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table {}", name, getStorageID().getNameForLogs());
 
+        /// `joinGet` only serves the non-key columns (`HashJoin` strips the key columns from the columns
+        /// to add), so a key column would fail below with a misleading "doesn't contain column" error.
+        /// The client knows the key it looks up anyway, so refuse it explicitly.
+        if (std::find(key_names.begin(), key_names.end(), name) != key_names.end())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column {} is a key column of table {} and cannot be read by get requests: only non-key columns can be read",
+                name, getStorageID().getNameForLogs());
+
         /// Request a Nullable result (as `joinGetOrNull` does), so that a missing key is
         /// distinguishable from a key present with a default value.
         /// `LowCardinality(T)` cannot be wrapped into `Nullable`, it has to become

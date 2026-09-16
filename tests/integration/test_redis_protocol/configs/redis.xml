@@ -50,6 +50,13 @@
                 <key_column>name</key_column>
                 <value_column>surname</value_column>
             </_6>
+            <_7>
+                <db_type>string</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>name_surname_map</clickhouse_table>
+                <key_column>name</key_column>
+                <value_column>name</value_column>
+            </_7>
         </db>
     </redis>
 </clickhouse>

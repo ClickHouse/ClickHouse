@@ -15,7 +15,7 @@ Each Redis database number is mapped in the server configuration to an existing 
 Supported commands:
 
 - `GET`, `MGET` — for databases of type `string`.
-- `HGET`, `HMGET` — for databases of type `hash` (the field names are ClickHouse column names).
+- `HGET`, `HMGET` — for databases of type `hash` (the field names are ClickHouse column names; only non-key columns can be requested, the key column itself is not readable as a field).
 - `SELECT` — switch to another configured database number.
 - `PING`, `ECHO`, `QUIT`, `COMMAND`, `CLIENT`.
 - `AUTH` — authenticate as a ClickHouse user: `AUTH password` authenticates the `default` user, `AUTH username password` authenticates the given user.
@@ -63,7 +63,7 @@ The element name inside `db` sets the Redis database number: `<_0>` is database 
 | `clickhouse_db`    | ClickHouse database of the mapped table.                                                 |
 | `clickhouse_table` | Mapped table. Must use the `Join` table engine with `ANY LEFT` join (`Join(ANY, LEFT, key)`). |
 | `key_column`       | Column looked up by the Redis key. Must be the key column of the `Join` table.           |
-| `value_column`     | Column returned for `GET`/`MGET`. Required for `string` databases, unused for `hash`.    |
+| `value_column`     | Column returned for `GET`/`MGET`. Required for `string` databases, unused for `hash`. Must not be the key column. |
 
 Upon startup, a log message confirms the interface is active:
 

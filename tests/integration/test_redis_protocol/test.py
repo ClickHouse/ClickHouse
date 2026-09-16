@@ -228,6 +228,32 @@ def test_unrepresentable_value_column(redis_client):
     assert "cannot be used for get requests" in str(resp_err.value)
 
 
+def test_key_column_is_not_readable(redis_client):
+    # `joinGet` only serves the non-key columns of a `Join` table, so the key column
+    # cannot be looked up. It is refused with an explicit error instead of the misleading
+    # `StorageJoin doesn't contain column` one.
+
+    # A string database whose value_column is the key column is rejected by `SELECT`,
+    # not by the first `GET`.
+    with pytest.raises(exceptions.ResponseError) as resp_err:
+        redis_client.select(7)
+    assert "key column" in str(resp_err.value)
+    assert "cannot be read by get requests" in str(resp_err.value)
+
+    # A hash field naming the key column is rejected, and the other fields of the same
+    # request are not answered partially.
+    assert redis_client.select(0)
+    with pytest.raises(exceptions.ResponseError) as resp_err:
+        redis_client.hget("Alice", "name")
+    assert "cannot be read by get requests" in str(resp_err.value)
+    with pytest.raises(exceptions.ResponseError) as resp_err:
+        redis_client.hmget("Alice", "surname", "name")
+    assert "cannot be read by get requests" in str(resp_err.value)
+
+    # The connection is still usable afterwards.
+    assert redis_client.hget("Alice", "surname") == b"Smith"
+
+
 def test_table_is_resolved_for_every_request(started_cluster, redis_client):
     node.query(
         """
