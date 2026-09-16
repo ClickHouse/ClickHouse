@@ -6,6 +6,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
+#include <Disks/IVolume.h>
 
 
 namespace Poco { class Logger; }
@@ -54,8 +55,7 @@ private:
     ASTPtr query_ptr;
     LoggerPtr log = nullptr;
     StorageID table_id = StorageID::createEmpty();      /// Will be set up if query contains table name
-    StoragePolicyPtr volume_policy;
-    String volume_name;
+    VolumePtr volume_ptr;
 
     /// Tries to get a replicated table and restart it
     /// Returns pointer to a newly created table if the restart was successful

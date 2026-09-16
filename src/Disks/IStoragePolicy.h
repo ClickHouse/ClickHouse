@@ -85,7 +85,6 @@ public:
     VolumePtr getVolumeByDiskName(const String & disk_name) const;
     /// Check if we have any volume with stopped merges
     virtual bool hasAnyVolumeWithDisabledMerges() const = 0;
-    virtual void setAvoidMergesUserOverride(const String & volume_name, bool avoid) const = 0;
     virtual bool containsVolume(const String & volume_name) const = 0;
     /// Returns disks by type ordered by volumes priority
 };

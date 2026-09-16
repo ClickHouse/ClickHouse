@@ -118,7 +118,6 @@ StoragePolicy::StoragePolicy(
                         move_factor, backQuote(name));
 
     buildVolumeIndices();
-    updateHasVolumeWithDisabledMerges();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
@@ -138,7 +137,6 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
                         move_factor, backQuote(name));
 
     buildVolumeIndices();
-    updateHasVolumeWithDisabledMerges();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
@@ -172,8 +170,6 @@ StoragePolicy::StoragePolicy(StoragePolicyPtr storage_policy,
             }
         }
     }
-
-    updateHasVolumeWithDisabledMerges();
 }
 
 
@@ -476,21 +472,10 @@ void StoragePolicy::buildVolumeIndices()
 
 bool StoragePolicy::hasAnyVolumeWithDisabledMerges() const
 {
-    return has_volume_with_disabled_merges.load(std::memory_order_acquire);
-}
-
-void StoragePolicy::setAvoidMergesUserOverride(const String & volume_name, bool avoid) const
-{
-    std::lock_guard lock(volume_merge_overrides_mutex);
-    getVolumeByName(volume_name)->setAvoidMergesUserOverride(avoid);
-    updateHasVolumeWithDisabledMerges();
-}
-
-void StoragePolicy::updateHasVolumeWithDisabledMerges() const
-{
-    has_volume_with_disabled_merges.store(
-        std::ranges::any_of(volumes, [](const auto & volume) { return volume->areMergesAvoided(); }),
-        std::memory_order_release);
+    for (const auto & volume : volumes)
+        if (volume->areMergesAvoided())
+            return true;
+    return false;
 }
 
 bool StoragePolicy::containsVolume(const String & volume_name) const
