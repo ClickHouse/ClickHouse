@@ -126,14 +126,6 @@ std::optional<int> sumTypeOf(const IDataType & type)
     }
 }
 
-std::unique_lock<std::mutex> lockDevice()
-{
-    /// One mutex in the process, function-local so that nothing can end up with a second copy of
-    /// it - the same reason `setUpDeviceMemoryResourceOnce` keeps its flag in one place.
-    static std::mutex device_mutex;
-    return std::unique_lock{device_mutex};
-}
-
 const String & deviceProbeError()
 {
     static const String error = []
@@ -153,9 +145,6 @@ bool canSumOnDevice(const IDataType & argument_type, const IDataType & result_ty
     if (!element_type)
         return false;
 
-    /// The result type has to be the one this argument's sum is asked for on the device. It is
-    /// checked rather than assumed so that a change to what `sum` returns cannot quietly turn into
-    /// a wrong answer here: the aggregation is then simply no longer eligible.
     const auto result_sum_type = sumTypeOf(result_type);
     return result_sum_type && result_sum_type == sumTypeFor(*element_type);
 }
@@ -163,8 +152,6 @@ bool canSumOnDevice(const IDataType & argument_type, const IDataType & result_ty
 namespace
 {
 
-/// The types are `canSumOnDevice`'s to accept, and it is asked before an accumulator is built -
-/// so reaching either of these is a mistake in the caller rather than an unsupported query.
 int elementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type)
 {
     if (const auto element_type = elementTypeOf(argument_type); element_type && canSumOnDevice(argument_type, result_type))
@@ -223,18 +210,11 @@ void SumAccumulator::sumBatchOnDevice()
 
     const size_t num_rows = staged.size() / element_size;
 
-    /// Eight bytes for the device's answer, read back as whatever `sum_type` says below.
     UInt64 batch_sum = 0;
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
-    /// One device call at a time - see `lockDevice`. Released before anything else happens, so
-    /// that the staging of the next batch, which needs no device, does not wait for it.
-    const int status = [&]
-    {
-        auto lock = lockDevice();
-        return clickhouseGPUSum(element_type, sum_type, staged.data(), num_rows, &batch_sum, error, sizeof(error));
-    }();
+    const int status = clickhouseGPUSum(element_type, sum_type, staged.data(), num_rows, &batch_sum, error, sizeof(error));
     const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
 
     if (status != 0)
@@ -272,11 +252,7 @@ DeviceBuffer::DeviceBuffer(size_t bytes_)
 {
     char error[error_buffer_size] = {};
 
-    const int status = [&]
-    {
-        auto lock = lockDevice();
-        return clickhouseGPUDeviceBufferAllocate(bytes, &handle, error, sizeof(error));
-    }();
+    const int status = clickhouseGPUDeviceBufferAllocate(bytes, &handle, error, sizeof(error));
 
     if (status != 0)
         throw Exception(ErrorCodes::GPU_ERROR, "Cannot hold {} bytes of a column in device memory: {}", bytes, error);
@@ -284,7 +260,6 @@ DeviceBuffer::DeviceBuffer(size_t bytes_)
 
 DeviceBuffer::~DeviceBuffer()
 {
-    auto lock = lockDevice();
     clickhouseGPUDeviceBufferFree(handle);
 }
 
@@ -293,11 +268,7 @@ void DeviceBuffer::copyIn(size_t offset, const char * host_data, size_t bytes_to
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
-    const int status = [&]
-    {
-        auto lock = lockDevice();
-        return clickhouseGPUDeviceBufferCopyIn(handle, offset, host_data, bytes_to_copy, error, sizeof(error));
-    }();
+    const int status = clickhouseGPUDeviceBufferCopyIn(handle, offset, host_data, bytes_to_copy, error, sizeof(error));
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
     if (status != 0)
@@ -309,32 +280,21 @@ void DeviceBuffer::copyIn(size_t offset, const char * host_data, size_t bytes_to
             bytes,
             error);
 
-    /// Counted here rather than where the blocks are read, because this is the call the bytes
-    /// actually cross the link in - and every byte this feature puts on the device crosses it here.
     ProfileEvents::increment(ProfileEvents::GPUColumnCacheUploadedBytes, bytes_to_copy);
 }
 
 Field DeviceBuffer::sum(int element_type, int sum_type, size_t num_rows) const
 {
-    /// Eight bytes for the device's answer, read back as whatever `sum_type` says below - the same
-    /// convention `SumAccumulator` reads a batch's sum with.
     UInt64 raw_sum = 0;
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
-    const int status = [&]
-    {
-        auto lock = lockDevice();
-        return clickhouseGPUDeviceBufferSum(handle, element_type, sum_type, num_rows, &raw_sum, error, sizeof(error));
-    }();
+    const int status = clickhouseGPUDeviceBufferSum(handle, element_type, sum_type, num_rows, &raw_sum, error, sizeof(error));
     const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
 
     if (status != 0)
         throw Exception(ErrorCodes::GPU_ERROR, "Cannot sum {} values held on the device: {}", num_rows, error);
 
-    /// The same events the uploading path increments: from `system.events` a reduction is a
-    /// reduction, and what says that this one read no host memory is that the bytes it summed are
-    /// not in `GPUColumnCacheUploadedBytes` for this query.
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, elapsed_microseconds);
@@ -354,22 +314,9 @@ Field DeviceBuffer::sum(int element_type, int sum_type, size_t num_rows) const
 
 bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types)
 {
-    /// A keyed aggregation with no keys is the keyless one, which `canSumOnDevice` and
-    /// `SumAccumulator` are for.
     if (key_types.empty() || argument_types.empty() || argument_types.size() != result_types.size())
         return false;
 
-    /// `elementTypeOf` switches on the outermost type, so `Nullable(UInt64)`,
-    /// `LowCardinality(UInt64)` and every `Decimal` are turned away by it rather than by a check of
-    /// their own - and so is anything else that is not one of the ten fixed-width numeric types.
-    ///
-    /// Floats are then turned away on top of that, for a reason that has nothing to do with what
-    /// the device can compute and everything to do with what a group is. ClickHouse groups a
-    /// `Float64` key by its eight bytes, so `0.0` and `-0.0` are two groups. cuDF's hash groupby
-    /// compares float keys with `nan_equal_physical_equality_comparator`, which is IEEE equality
-    /// with `NaN` equal to itself, so `0.0` and `-0.0` are one group - and two `NaN`s with
-    /// different payloads are one group where ClickHouse makes two. Either difference turns into a
-    /// different number of output rows, which is a wrong answer rather than a slower one.
     for (const auto & key_type : key_types)
     {
         const auto key_element_type = elementTypeOf(*key_type);
@@ -389,38 +336,9 @@ bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argume
     return true;
 }
 
-std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size)
-{
-    if (column.size() != num_rows)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Column {} of a row set of {} rows has {} of its own",
-            column.getName(),
-            num_rows,
-            column.size());
-
-    const std::string_view raw = column.getRawData();
-    if (raw.size() != num_rows * element_size)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Column {} of {} rows holds {} bytes of values, expected {}",
-            column.getName(),
-            num_rows,
-            raw.size(),
-            num_rows * element_size);
-
-    return raw;
-}
-
 namespace
 {
 
-/// Resizes `column` to `num_rows` and hands back the bytes its values occupy, so that the device
-/// copies the groups straight into the column the query returns instead of into a staging buffer
-/// that would then be copied again.
-///
-/// The type is checked rather than assumed: the caller supplies the columns, and one of a different
-/// width would be filled with a shifted, meaningless run of bytes instead of failing.
 template <typename T>
 void * resizeAndGetValueBytes(IColumn & column, size_t num_rows)
 {
@@ -437,8 +355,6 @@ void * resizeAndGetValueBytes(IColumn & column, size_t num_rows)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Cannot copy groups into a column of {} that already holds {} rows", column.getName(), data.size());
 
-    /// Leaves the values uninitialized, and every one of them is about to be overwritten by the
-    /// copy from the device.
     data.resize(num_rows);
     return data.data();
 }
@@ -534,7 +450,6 @@ std::vector<size_t> elementSizesOf(const std::vector<int> & element_types)
     return sizes;
 }
 
-/// How many bytes one row of the batch takes in host memory: every key and every value of it.
 size_t rowBytesOf(const std::vector<size_t> & key_element_sizes, const std::vector<size_t> & value_element_sizes)
 {
     return std::accumulate(key_element_sizes.begin(), key_element_sizes.end(), size_t{0})
@@ -550,9 +465,6 @@ GroupBySumAccumulator::GroupBySumAccumulator(
     , value_sum_types(sumTypesOrThrow(result_types))
     , key_element_sizes(elementSizesOf(key_element_types))
     , value_element_sizes(elementSizesOf(value_element_types))
-    /// The setting is in bytes and the cap is in rows, so the two meet here. Dividing rather than
-    /// multiplying the cap keeps this from overflowing on a wide row set, and a batch is at least
-    /// one row so that a tiny setting still makes progress.
     , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_sizes, value_element_sizes), size_t{1}, max_batch_rows))
     , staged_keys(key_element_types.size())
     , staged_values(value_element_types.size())
@@ -595,14 +507,6 @@ void GroupBySumAccumulator::add(const Columns & key_columns, const Columns & val
     if (num_rows == 0)
         return;
 
-    /// Checked before anything is staged, so that a mismatched row set leaves the batch as it was
-    /// rather than half-appended.
-    for (size_t i = 0; i < key_columns.size(); ++i)
-        rawValuesOf(*key_columns[i], num_rows, key_element_sizes[i]);
-    for (size_t i = 0; i < value_columns.size(); ++i)
-        rawValuesOf(*value_columns[i], num_rows, value_element_sizes[i]);
-
-    /// Sends what is staged before this row set would take the batch past what cuDF can count.
     if (staged_rows + num_rows > max_batch_rows)
         sendBatchToDevice();
 
@@ -651,9 +555,6 @@ void GroupBySumAccumulator::sendBatchToDevice()
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, elapsed_microseconds);
 
-    /// The batch is on the device and merged into the partial result there, so the host buffers are
-    /// free for the next one. `clear` keeps their capacity, which is the point of staging at all:
-    /// every batch after the first reuses the same host memory.
     for (auto & staged : staged_keys)
         staged.clear();
     for (auto & staged : staged_values)
@@ -705,8 +606,6 @@ void GroupBySumAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
     for (size_t i = 0; i < value_columns.size(); ++i)
         value_data[i] = resizeForSumType(*value_columns[i], *num_groups, value_sum_types[i]);
 
-    /// Nothing was ever added, so there is nothing on the device to copy - and the pointers above
-    /// point at columns of no rows, which is not something to hand over the boundary.
     if (*num_groups == 0)
         return;
 
