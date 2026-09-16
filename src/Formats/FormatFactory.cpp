@@ -971,6 +971,11 @@ void FormatFactory::registerFileExtension(const String & extension, const String
     file_extension_formats[boost::to_lower_copy(extension)] = format_name;
 }
 
+void FormatFactory::registerAdditionalFileExtension(const String & extension, const String & format_name)
+{
+    additional_file_extensions.emplace_back(boost::to_lower_copy(extension), format_name);
+}
+
 std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & format_name) const
 {
     std::vector<String> format_names = {boost::to_lower_copy(format_name)};
@@ -989,11 +994,16 @@ std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & for
     /// The format name itself is registered as a file extension for every input and output
     /// format, so the lowercased format name always ends up in the result.
     std::set<String> extensions{format_names.front()};
-    for (const auto & [extension, extension_format] : file_extension_formats)
+    const auto collect = [&](const String & extension, const String & extension_format)
     {
         if (std::find(format_names.begin(), format_names.end(), boost::to_lower_copy(extension_format)) != format_names.end())
             extensions.insert(extension);
-    }
+    };
+
+    for (const auto & [extension, extension_format] : file_extension_formats)
+        collect(extension, extension_format);
+    for (const auto & [extension, extension_format] : additional_file_extensions)
+        collect(extension, extension_format);
 
     return {extensions.begin(), extensions.end()};
 }

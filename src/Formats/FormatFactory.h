@@ -340,6 +340,12 @@ public:
 
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);
+    /// Register an extension that also carries data readable as the format, but is mapped to a
+    /// different format by `registerFileExtension` (an extension can infer only one format):
+    /// e.g. NDJSON lakes commonly name their files `.json`, which infers as `JSON`. Such
+    /// extensions do not participate in format-from-file-name inference, only in
+    /// `getFileExtensionsForFormat`.
+    void registerAdditionalFileExtension(const String & extension, const String & format_name);
     /// All file extensions registered for the format or for its `WithNames`/`WithNamesAndTypes`
     /// base format, in a deterministic order. The lowercased format name is always a part of
     /// the result, because format names are registered as extensions of the format itself.
@@ -403,6 +409,7 @@ public:
 private:
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;
+    std::vector<std::pair<String, String>> additional_file_extensions;
 
     const Creators & getCreators(const String & name) const;
     Creators & getOrCreateCreators(const String & name);
