@@ -41,6 +41,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.10",
+        {
+            {"use_columns_cache", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."},
+            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
+            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
+            {"columns_cache_max_estimated_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated uncompressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
+            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to one cache entry (0 = half of columns_cache_size)."},
+        });
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
@@ -49,11 +57,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
-            {"use_columns_cache", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."},
-            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
-            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
-            {"columns_cache_max_estimated_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated uncompressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
-            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to one cache entry (0 = half of columns_cache_size)."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
