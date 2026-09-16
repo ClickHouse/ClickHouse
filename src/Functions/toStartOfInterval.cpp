@@ -307,8 +307,7 @@ private:
             {
                 const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
-                /// (e.g. `Asia/Kolkata` is +5:21:10 before 1906), so the rounding is not modular there, nor
-                /// before the epoch unless `valid_before_epoch`.
+                /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
                 if (unlikely(!DateLUTImpl::isTimeInLUTRange(t) || (t < 0 && !valid_before_epoch)))
                 {
                     result_data[i] = saturatingResultCast<saturate, ResultFieldType>(

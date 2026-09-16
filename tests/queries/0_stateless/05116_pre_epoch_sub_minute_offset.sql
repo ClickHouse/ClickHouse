@@ -3,8 +3,6 @@
 -- zone whose historical offset has a sub-minute component - `Europe/Amsterdam` was +00:19:32 until 1937,
 -- `Asia/Kolkata` +05:21:10 until 1906 - the answer was the second of the UTC minute, and the rounding
 -- landed on a UTC-aligned boundary, disagreeing with `toString` of the very same value.
--- The `INTERVAL 30 SECOND` column below is the deliberate exception: a second interval is measured from the
--- epoch, so a UTC-aligned boundary is the right answer there, and still a local second boundary.
 
 SET enable_extended_results_for_datetime_functions = 1;
 

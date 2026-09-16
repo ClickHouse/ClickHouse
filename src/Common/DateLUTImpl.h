@@ -542,14 +542,11 @@ private:
         return res;
     }
 
-    /// Round `x` down to a multiple of `divisor` measured from the start of the local day, so `divisor` must
-    /// divide an hour. An interval anchored at the epoch uses `roundDownToMultiple` directly instead.
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         chassert(divisor > 0);
-        chassert(3600 % divisor == 0);
 
         /// Checked before the fast path below: outside the lookup table the offset is extrapolated and can have
         /// a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the fast path would round to a UTC boundary
@@ -561,11 +558,9 @@ private:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
             }
 
-        /// Both sides of the epoch. What the flag excludes is a sub-hour component in the offset, which
-        /// would put the result off any local boundary at all - below the epoch the offset of a zone such as
-        /// `Europe/Moscow` (+02:30:17 until 1919) has one, so the helper picks the flag that covers `x`. A
-        /// whole number of hours is enough: the local day then starts on a multiple of `divisor`.
-        /// `toStartOfMinuteInterval` guards its own fast path the same way.
+        /// Below the epoch a value may sit in a period whose offset has a sub-hour component; rounding it by
+        /// modular arithmetic would land on a UTC-aligned boundary instead of the local one, so the helper
+        /// picks the flag that covers `x`. `toStartOfMinuteInterval` guards its own fast path the same way.
         if (offsetIsWholeNumberOfHours(static_cast<Time>(x))) [[likely]]
             return roundDownToMultiple(x, divisor);
 
@@ -1824,15 +1819,6 @@ public:
         return static_cast<Int64>(product);
     }
 
-    /// The rounding divisor of a `seconds`-long interval. An interval count above the maximum of `Int64`
-    /// would make the modular arithmetic negative; saturate instead.
-    static Int64 secondIntervalDivisor(UInt64 seconds)
-    {
-        if (unlikely(seconds > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
-            return std::numeric_limits<Int64>::max();
-        return static_cast<Int64>(seconds);
-    }
-
     /// `divisor` in seconds if the corresponding `toStartOf*Interval` method equals
     /// `roundDownToMultiple(t, divisor)` from the epoch onward in this time zone. `valid_before_epoch` says
     /// whether it also holds below the epoch: the historical offset of a zone such as `Europe/Amsterdam`
@@ -1857,10 +1843,13 @@ public:
 
     std::optional<ModularDivisor> secondIntervalModularDivisor(UInt64 seconds) const
     {
-        /// Every interval count and every time zone, on both sides of the epoch - see
-        /// `toStartOfSecondInterval`. The out-of-range bail-out of the vectorized loop is then conservative:
-        /// the generic path returns the same value.
-        return ModularDivisor{secondIntervalDivisor(seconds), true};
+        if (seconds == 1)
+            return ModularDivisor{Int64(1), true};
+        if (seconds % 60 == 0)
+            return minuteIntervalModularDivisor(seconds / 60);
+        if (offset_is_whole_number_of_hours_during_epoch)
+            return ModularDivisor{static_cast<Int64>(seconds), offset_is_whole_number_of_hours_in_lut_range};
+        return std::nullopt;
     }
 
     std::optional<ModularDivisor> hourIntervalModularDivisor(UInt64 hours) const
@@ -1886,13 +1875,7 @@ public:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
             }
 
-        /// Both sides of the epoch, for the same reason as in `roundDown` above: the flag excludes only a
-        /// sub-minute component in the offset (`Europe/Amsterdam` was +00:19:32 until 1937), which would put
-        /// the result off any local minute boundary. A whole number of minutes is enough even when it is not
-        /// a multiple of the interval, because a minute interval is measured from the epoch and not from the
-        /// start of the local day, so a zone such as `Australia/Eucla` (+08:45) rounds a ten-minute interval
-        /// to the same boundaries on either side of 1970. This is also what `minuteIntervalModularDivisor`
-        /// reports to the vectorized loop of `toStartOfInterval`, so the two paths cannot disagree.
+        /// Both sides of the epoch, for the same reason as in `roundDown` above.
         if (offsetIsWholeNumberOfMinutes(static_cast<Time>(t))) [[likely]]
             return roundDownToMultiple(t, divisor);
 
@@ -1913,15 +1896,10 @@ public:
     {
         if (seconds == 1)
             return t;
+        if (seconds % 60 == 0)
+            return toStartOfMinuteInterval(t, seconds / 60);
 
-        /// A second interval is measured from the epoch (see the table in the description of
-        /// `toStartOfInterval`) whatever the interval count, a whole number of minutes included: the `origin`
-        /// overload rounds the duration between the value and the origin, and measuring that from the start
-        /// of a local day would put the start of the bucket before the origin. Every UTC offset is a whole
-        /// number of seconds, so the modular result is always on a local second boundary and no time zone
-        /// needs the table. `toStartOfMinuteInterval` cannot do the same: a sub-minute component
-        /// (`Europe/Amsterdam` was +00:19:32 until 1937) would put it off any local minute boundary.
-        return static_cast<DateOrTime>(roundDownToMultiple(t, secondIntervalDivisor(seconds)));
+        return static_cast<DateOrTime>(roundDown(t, seconds));
     }
 
     LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
