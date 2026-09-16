@@ -211,7 +211,9 @@ def main():
     sys.stdout.write(answer)
 
     # A standards-compliant server may answer with `308 Permanent Redirect` instead of `302`.
-    create_dictionary("dict_04498_permanent_redirect", 5, endpoint="/redirect_permanent")
+    create_dictionary(
+        "dict_04498_permanent_redirect", 5, endpoint="/redirect_permanent"
+    )
     answer = get_ch_answer("SELECT * FROM dict_04498_permanent_redirect ORDER BY id")
     print("with 308 Permanent Redirect:")
     sys.stdout.write(answer)
