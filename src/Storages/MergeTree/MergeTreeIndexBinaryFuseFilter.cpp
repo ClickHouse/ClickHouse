@@ -186,9 +186,10 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
 /// against the binary fuse filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
-std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, const Block & header)
+std::optional<MapIndexInfo> tryParseMapSubcolumn(
+    const String & column_name, const Block & header, const NameSet & shadowing_columns)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name);
+    auto parsed = tryParseMapSubcolumnName(column_name, shadowing_columns);
     if (!parsed)
         return std::nullopt;
 
@@ -216,7 +217,8 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
-std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode & key_node, const Block & header)
+std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
+    const RPNBuilderTreeNode & key_node, const Block & header, const NameSet & shadowing_columns)
 {
     if (key_node.isFunction())
     {
@@ -235,14 +237,14 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, shadowing_columns);
 }
 
 }
 
 MergeTreeIndexConditionBinaryFuseFilter::MergeTreeIndexConditionBinaryFuseFilter(
-    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_)
-    : WithContext(context_), header(header_)
+    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, NameSet columns_shadowing_map_subcolumns_)
+    : WithContext(context_), header(header_), columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
     if (!predicate)
     {
@@ -592,7 +594,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -839,7 +841,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
-        if (!isJSONPathFilterSafe(key_type, value_field))
+        if (!isJSONPathFilterSafe(key_type, value_field, value_type))
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -904,7 +906,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals" || function_name == "notEquals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1014,7 +1016,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBinaryFuseFilter::createIndexAggregato
 
 MergeTreeIndexConditionPtr MergeTreeIndexBinaryFuseFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBinaryFuseFilter>(predicate, context, index.sample_block);
+    return std::make_shared<MergeTreeIndexConditionBinaryFuseFilter>(predicate, context, index.sample_block, getColumnsShadowingMapSubcolumns());
 }
 
 static void assertIndexColumnsType(const Block & header)

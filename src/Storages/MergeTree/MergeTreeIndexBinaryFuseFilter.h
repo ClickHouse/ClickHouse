@@ -68,7 +68,8 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBinaryFuseFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_);
+    MergeTreeIndexConditionBinaryFuseFilter(
+        const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, NameSet columns_shadowing_map_subcolumns_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -84,6 +85,7 @@ public:
 
 private:
     const Block & header;
+    const NameSet columns_shadowing_map_subcolumns;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBinaryFuseFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const;
