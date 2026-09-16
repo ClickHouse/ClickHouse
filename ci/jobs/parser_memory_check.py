@@ -710,6 +710,8 @@ def generate_html_report(
     report_title="Parser AST Memory Check Report",
     report_subtitle="Measuring AST allocated memory during SQL parsing (not query execution).",
     item_label="Query",
+    change_threshold_bytes=CHANGE_THRESHOLD_BYTES,
+    change_threshold_pct=CHANGE_THRESHOLD_PCT,
 ):
     """Generate a standalone HTML report viewable in browser.
     Detail panels live OUTSIDE the table to avoid table-layout issues with SVG/nested tables."""
@@ -728,7 +730,9 @@ def generate_html_report(
         abs_ch = abs(change)
         base_b = abs(master_b)
         pct_ch = (abs_ch / base_b * 100) if base_b > 0 else (100.0 if abs_ch > 0 else 0)
-        sig = abs_ch > CHANGE_THRESHOLD_BYTES and pct_ch > CHANGE_THRESHOLD_PCT
+        sig = (
+            abs_ch > change_threshold_bytes and pct_ch > change_threshold_pct
+        )
 
         if status == Result.Status.FAIL:
             row_class = "regression"
@@ -917,7 +921,7 @@ def generate_html_report(
   </div>
   <div class="summary-item">
     <span class="summary-label">Threshold</span>
-    <span class="summary-value">&gt;{CHANGE_THRESHOLD_BYTES} B and &gt;{CHANGE_THRESHOLD_PCT}%</span>
+    <span class="summary-value">&gt;{change_threshold_bytes} B and &gt;{change_threshold_pct}%</span>
   </div>
 </div>
 
@@ -1050,7 +1054,11 @@ def run_profiler_collect_heap(
     }
 
 
-def batch_symbolize(binary_path: str, heap_files: list) -> bool:
+def batch_symbolize(
+    binary_path: str,
+    heap_files: list,
+    timeout: int = 600,
+) -> bool:
     """
     Run batch symbolization: invokes --symbolize-batch on all heap files.
     The tool's global LRU cache deduplicates addresses across files.
@@ -1067,7 +1075,7 @@ def batch_symbolize(binary_path: str, heap_files: list) -> bool:
             args,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         print("ERROR: batch symbolization timed out")
