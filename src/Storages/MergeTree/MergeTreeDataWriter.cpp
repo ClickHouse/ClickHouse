@@ -1107,7 +1107,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         /*try_adaptive_codec=*/ false,
-        context);
+        /// An inserted part resolves its writer settings (compression block sizes, serialization
+        /// versions) from the table's live context, never from the INSERT query context: the query
+        /// settings of one session must not change the on-disk layout of the parts it writes, and the
+        /// parts a mutation later rewrites are compared checksum for checksum against them.
+        /*writer_context=*/ nullptr);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1340,7 +1344,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         try_adaptive_codec,
-        context);
+        /// Only a merge (the caller that froze base_data_settings) passes its own context on: its memory
+        /// reservation was priced against that context's settings, so the rebuilt projection's writer
+        /// must resolve the same ones. An inserted or materialized projection part keeps the table's
+        /// live context, exactly like the parent part (see writeTempPartImpl).
+        base_data_settings ? context : nullptr);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
