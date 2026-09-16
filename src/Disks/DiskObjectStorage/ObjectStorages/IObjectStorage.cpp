@@ -1,4 +1,5 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IOSchedulingSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -80,7 +81,10 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
+    {
         copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+        return;
+    }
 
     auto in = readObject(object_from, read_settings);
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
@@ -93,14 +97,29 @@ const std::string & IObjectStorage::getCacheName() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName is not implemented for object storage");
 }
 
+void IObjectStorage::setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_)
+{
+    std::lock_guard lock(io_scheduling_mutex);
+    read_resource_name = read_resource_name_;
+    write_resource_name = write_resource_name_;
+}
+
+std::pair<String, String> IObjectStorage::getIOSchedulingResourceNames() const
+{
+    std::lock_guard guard(io_scheduling_mutex);
+    return {read_resource_name, write_resource_name};
+}
+
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    return read_settings;
+    const auto [read_resource, write_resource] = getIOSchedulingResourceNames();
+    return updateIOSchedulingSettings(read_settings, read_resource, write_resource);
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    return write_settings;
+    const auto [read_resource, write_resource] = getIOSchedulingResourceNames();
+    return updateIOSchedulingSettings(write_settings, read_resource, write_resource);
 }
 
 void IObjectStorage::prepareRead(
@@ -110,7 +129,7 @@ void IObjectStorage::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    pipeline.setSource(std::move(storage), objects, read_settings, read_hint);
+    pipeline.setSource(std::move(storage), objects, patchSettings(read_settings), read_hint);
 }
 
 }

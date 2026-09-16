@@ -86,7 +86,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -99,7 +101,7 @@ public:
     /// `static`) so this contract can be unit-tested without a live NameNode.
     static ObjectMetadata makeObjectMetadata(Int64 last_modified, Int64 size);
 
-    void copyObject( /// NOLINT
+    String copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,

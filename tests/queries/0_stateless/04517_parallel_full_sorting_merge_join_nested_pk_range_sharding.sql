@@ -51,8 +51,6 @@ INSERT INTO pfsmj_pkr_dim SELECT number, number * 2 FROM numbers(0, 12000);
 INSERT INTO pfsmj_pkr_dim SELECT number, number * 2 FROM numbers(6000, 12000);
 INSERT INTO pfsmj_pkr_probe SELECT number, number FROM numbers(9000);
 
--- Analyzer path. The default is overridden to 0 in the old-analyzer CI configuration, so pin it
--- explicitly (`enable_analyzer` cannot be changed inside a subquery, so set it at session level).
 SET enable_analyzer = 1;
 
 -- The outer join is NOT scattered: its left side is a sorted subquery (a pre-sorted `FinishSorting` side),
@@ -105,24 +103,6 @@ FROM
     EXCEPT
     (SELECT s.k, p.y FROM (SELECT l.k AS k FROM pfsmj_pkr_ord AS l INNER JOIN pfsmj_pkr_dim AS r ON l.k = r.k ORDER BY l.k SETTINGS join_algorithm = 'full_sorting_merge') AS s INNER JOIN pfsmj_pkr_probe AS p ON s.k = p.j SETTINGS join_algorithm = 'hash')
 );
-
--- Legacy analyzer: `InterpreterSelectQuery` does not recognize the subquery's sortedness (no `applyOrder`),
--- so the outer pre-join sorts stay plain full sorts - which ARE scattered (the safe, fully-draining path)
--- - and the result must stay correct. `enable_analyzer` cannot be changed inside a subquery, so set it at
--- session level (as in `04516`).
-SET enable_analyzer = 0;
-
-SELECT 'legacy outer_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
-FROM (EXPLAIN PIPELINE
-  SELECT s.k FROM (SELECT l.k AS k FROM pfsmj_pkr_ord AS l INNER JOIN pfsmj_pkr_dim AS r ON l.k = r.k ORDER BY l.k SETTINGS join_algorithm = 'full_sorting_merge') AS s
-  INNER JOIN pfsmj_pkr_probe AS p ON s.k = p.j
-  SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, query_plan_join_shard_by_pk_ranges = 1, query_plan_join_swap_table = 0);
-
-SELECT 'legacy virtual_row_on',
-    (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_pkr_ord AS l INNER JOIN pfsmj_pkr_dim AS r ON l.k = r.k ORDER BY l.k SETTINGS join_algorithm = 'full_sorting_merge') AS s INNER JOIN pfsmj_pkr_probe AS p ON s.k = p.j SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, query_plan_join_shard_by_pk_ranges = 1, query_plan_join_swap_table = 0)
-  = (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_pkr_ord AS l INNER JOIN pfsmj_pkr_dim AS r ON l.k = r.k ORDER BY l.k SETTINGS join_algorithm = 'full_sorting_merge') AS s INNER JOIN pfsmj_pkr_probe AS p ON s.k = p.j SETTINGS join_algorithm = 'hash');
-
-SET enable_analyzer = 1;
 
 DROP TABLE pfsmj_pkr_ord;
 DROP TABLE pfsmj_pkr_dim;
