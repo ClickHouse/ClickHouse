@@ -289,10 +289,10 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     auto access = getContext()->getAccess();
     auto required_access_type = getRequiredAccessType(action_type);
 
-    if (volume_ptr && action_type == ActionLocks::PartsMerge)
+    if (volume_policy && action_type == ActionLocks::PartsMerge)
     {
         access->checkAccess(required_access_type);
-        volume_ptr->setAvoidMergesUserOverride(!start);
+        volume_policy->setAvoidMergesUserOverride(volume_name, !start);
     }
     else if (table_id)
     {
@@ -416,9 +416,14 @@ BlockIO InterpreterSystemQuery::execute()
 
     BlockIO result;
 
-    volume_ptr = {};
+    volume_policy = {};
+    volume_name.clear();
     if (!query.storage_policy.empty() && !query.volume.empty())
-        volume_ptr = getContext()->getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
+    {
+        volume_policy = getContext()->getStoragePolicy(query.storage_policy);
+        volume_name = query.volume;
+        volume_policy->getVolumeByName(volume_name);
+    }
 
     switch (query.type)
     {

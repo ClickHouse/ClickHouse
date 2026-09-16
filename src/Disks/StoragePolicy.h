@@ -3,7 +3,9 @@
 #include <Disks/IStoragePolicy.h>
 #include <Disks/IDisk.h>
 
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 namespace Poco::Util
@@ -87,6 +89,7 @@ public:
 
     /// Check if we have any volume with stopped merges
     bool hasAnyVolumeWithDisabledMerges() const override;
+    void setAvoidMergesUserOverride(const String & volume_name, bool avoid) const override;
 
     bool containsVolume(const String & volume_name) const override;
 
@@ -95,6 +98,8 @@ private:
     const String name;
     std::unordered_map<String, size_t> volume_index_by_volume_name;
     std::unordered_map<String, size_t> volume_index_by_disk_name;
+    mutable std::mutex volume_merge_overrides_mutex;
+    mutable std::atomic_bool has_volume_with_disabled_merges = false;
 
     /// move_factor from interval [0., 1.]
     /// We move something if disk from this policy
@@ -102,6 +107,7 @@ private:
     double move_factor = 0.1; /// by default move factor is 10%
 
     void buildVolumeIndices();
+    void updateHasVolumeWithDisabledMerges() const;
 
     LoggerPtr log;
 };
