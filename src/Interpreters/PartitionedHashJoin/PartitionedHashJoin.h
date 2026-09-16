@@ -457,10 +457,10 @@ private:
     /// its partitioned counterpart, holding identical cells.
     JoinResultPtr probeDispatch(Block block, size_t lane);
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape> // NOLINT(readability-identifier-naming)
     JoinResultPtr probeImpl(Block block, size_t lane);
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
     void joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
     /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.

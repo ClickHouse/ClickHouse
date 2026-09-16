@@ -252,7 +252,7 @@ struct SharedAmacFindPolicy
   * `MapsShape` is the standard maps type driving `JoinFeatures` and `processMatch`; `Map` is the shared
   * table (or the fixed map) holding identical cells.
   */
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType>
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
 void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;

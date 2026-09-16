@@ -16,6 +16,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <base/unaligned.h>
 
 #include <algorithm>
 #include <array>
@@ -96,9 +97,7 @@ struct OverflowBuffer
     template <typename Key>
     Key keyAt(size_t i) const
     {
-        Key key;
-        memcpy(&key, keys.data() + i * sizeof(Key), sizeof(Key));
-        return key;
+        return unalignedLoad<Key>(keys.data() + i * sizeof(Key));
     }
 
     void clear()
@@ -156,9 +155,9 @@ struct InsertTarget
     OverflowBuffer & overflow;
     /// Where this pass stops writing, and whether the walk wraps at the buffer end (single partition,
     /// one writer) or hands rows at `range_end` to the overflow (parallel owners).
-    size_t range_end;
-    bool wrap;
-    bool any_take_last_row;
+    size_t range_end = 0;
+    bool wrap = false;
+    bool any_take_last_row = false;
     /// ASOF: the inequality column of the stored block being inserted, and its number.
     const IColumn * asof_column = nullptr;
     UInt32 asof_block_no = 0;
@@ -383,7 +382,7 @@ struct OwnerAmacInsertPolicy
             target.appendLater(cell->getMapped(), refWordAt(row), row, static_cast<UInt32>(pos));
             return AmacStepResult::Done;
         }
-        size_t next_pos;
+        size_t next_pos = 0;
         if (target.wrap)
             next_pos = target.table.next(pos);
         else
@@ -1048,7 +1047,7 @@ namespace
 template <typename Mapped>
 void placeMapped(Mapped & dest, Mapped && src)
 {
-    new (&dest) Mapped(std::move(src));
+    new (&dest) Mapped(std::forward<Mapped>(src));
 }
 
 }
@@ -1109,7 +1108,7 @@ void PartitionedHashJoin::growHashJoinTable(Table & table, UInt64 occupied, UInt
 
     table.beginRehash(new_degree);
 
-    auto rehashPartition = [&](size_t p, std::vector<RehashEntry> & list)
+    auto rehash_partition = [&](size_t p, std::vector<RehashEntry> & list)
     {
         table.commitNewRange(p);
         const size_t begin = table.rangeBegin(p);
@@ -1129,26 +1128,21 @@ void PartitionedHashJoin::growHashJoinTable(Table & table, UInt64 occupied, UInt
                 continue;
             }
             size_t np = table.newPlace(hash);
-            bool placed = false;
-            while (np < new_end)
-            {
-                Cell * nc = table.newCellAt(np);
-                if (table.isEmptyCell(nc))
-                {
-                    table.claimPersisted(nc, key, hash);
-                    placeMapped(nc->getMapped(), std::move(mapped));
-                    placed = true;
-                    break;
-                }
+            while (np < new_end && !table.isEmptyCell(table.newCellAt(np)))
                 ++np;
-            }
-            if (!placed)
+            if (np == new_end)
+            {
                 list.push_back(RehashEntry{key, hash, std::move(mapped)});
+                continue;
+            }
+            Cell * nc = table.newCellAt(np);
+            table.claimPersisted(nc, key, hash);
+            placeMapped(nc->getMapped(), std::move(mapped));
         }
     };
 
     if (partitions == 1)
-        rehashPartition(0, lists[0]);
+        rehash_partition(0, lists[0]);
     else
     {
         std::atomic<UInt32> claim{0};
@@ -1164,7 +1158,7 @@ void PartitionedHashJoin::growHashJoinTable(Table & table, UInt64 occupied, UInt
                     if (i >= partitions)
                         break;
                     const size_t p = ctx.partition_order[i];
-                    rehashPartition(p, lists[w]);
+                    rehash_partition(p, lists[w]);
                 }
             },
             unused_us);
