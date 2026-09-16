@@ -2867,21 +2867,16 @@ void TCPHandler::processObsoleteIgnoredPartUUIDs()
 
 bool TCPHandler::receiveQueryPlan(QueryState & state)
 {
-    /// Rejected even while draining a failed query: the drain consumes what that query's input still
-    /// owes, and an out-of-place plan is not part of it.
-    if (state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data)
+    /// Rejected while draining a failed query too: consuming it would only buy the reuse of a
+    /// connection whose query is already lost, at the price of running the plan deserializer on a
+    /// peer's bytes - which is what `process_query_plan_packet` exists to prevent, and a query
+    /// rejected for having it off fails late enough that the drain runs.
+    if (state.skipping_data || state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets
+        || !state.query_context || state.read_all_data)
         throwUnexpectedPacket(Protocol::Client::QueryPlan);
 
     const auto & context = state.query_context;
     state.packet_body_partially_read = true;
-
-    /// While draining, only consume the bytes off the buffer, without building a runnable plan.
-    if (state.skipping_data)
-    {
-        QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context), /*skip_data=*/true);
-        state.packet_body_partially_read = false;
-        return true;
-    }
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
