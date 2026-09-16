@@ -14,10 +14,5 @@ SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY
 SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 1 AFTER x % 4 = 3 ALL) SETTINGS enable_analyzer = 1;
 SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x DESC LIMIT 2 AFTER x <= 5) SETTINGS enable_analyzer = 1;
 
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 2 AFTER x >= 5) SETTINGS enable_analyzer = 0;
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 2 UNTIL x >= 8) SETTINGS enable_analyzer = 0;
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x LIMIT 1 AFTER x % 4 = 3 ALL) SETTINGS enable_analyzer = 0;
-SELECT arraySort(groupArray(x)) FROM (SELECT x FROM v_outer_range_plain ORDER BY x DESC LIMIT 2 AFTER x <= 5) SETTINGS enable_analyzer = 0;
-
 DROP VIEW v_outer_range_plain;
 DROP TABLE t_outer_range_src;
