@@ -1418,6 +1418,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 
 Here is a list of functions supporting a `TimeSeries` table as an argument:
 - [timeSeriesSamples](/reference/functions/table-functions/timeSeriesSamples)
+- [timeSeriesRecentSamples](/reference/functions/table-functions/timeSeriesRecentSamples)
 - [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags)
 - [timeSeriesTimeRanges](/reference/functions/table-functions/timeSeriesTimeRanges)
 - [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies)

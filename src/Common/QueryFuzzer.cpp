@@ -3294,7 +3294,7 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
         /// TimeSeries table functions (db, table → time-series views)
-        {"timeSeriesMetricFamilies", "timeSeriesSamples", "timeSeriesTags", "timeSeriesTimeRanges"},
+        {"timeSeriesMetricFamilies", "timeSeriesRecentSamples", "timeSeriesSamples", "timeSeriesTags", "timeSeriesTimeRanges"},
         /// View variants
         {"view", "viewIfPermitted"},
     };

@@ -28,6 +28,11 @@ SELECT
     (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%') AS samples_rows,
     (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%') AS recent_rows;
 
+SELECT '-- the table function timeSeriesRecentSamples returns the recent samples table';
+-- The database is passed explicitly, otherwise the query fails with parallel replicas: the function reads
+-- the inner MergeTree table directly, so the query can be sent to another replica where the current database is different.
+SELECT value FROM timeSeriesRecentSamples({CLICKHOUSE_DATABASE:String}, 'ts_recent') ORDER BY value;
+
 SELECT '-- a query fitting in the TTL window reads from the recent samples table and returns the same data';
 
 SELECT plan LIKE '%.inner_id.recentsamples.%' AS reads_recent, plan LIKE '%.inner_id.samples.%' AS reads_main
@@ -111,6 +116,12 @@ SELECT value FROM prometheusQuery(ts_recent_ext, 'ext_metric', now());
 
 DROP TABLE ts_recent_ext;
 DROP TABLE recent_ext;
+
+SELECT '-- timeSeriesRecentSamples throws if the table has no recent samples table';
+DROP TABLE IF EXISTS ts_no_recent;
+CREATE TABLE ts_no_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
+SELECT * FROM timeSeriesRecentSamples({CLICKHOUSE_DATABASE:String}, 'ts_no_recent'); -- { serverError UNKNOWN_TABLE }
+DROP TABLE ts_no_recent;
 
 SELECT '-- settings of the recent samples table require a non-zero recent_samples_ttl_seconds';
 
