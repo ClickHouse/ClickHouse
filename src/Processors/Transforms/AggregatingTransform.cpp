@@ -1344,6 +1344,8 @@ void AggregatingTransform::initGenerate()
     finishLocalAggregation();
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
+        /// Reset our reference to the aggregation state here to release memory earlier.
+        /// Keeping it until this transform is destroyed can cause extra memory usage for complex queries.
         many_data.reset();
         return;
     }

@@ -74,7 +74,10 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
-    /// Sets the merge transform's input count before final assembly can append the shared drain table.
+    /// The number of producers that have to reach the finish barrier in
+    /// `AggregatingTransform::initGenerate`, fixed at construction time.
+    /// It also sets the adaptive merge transform's input count. The size of `variants` cannot be used
+    /// instead: the merge can append the adaptive aggregation's early-drain routing table to it.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
@@ -111,7 +114,11 @@ protected:
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
 
-    /// Stops inserting new keys when the group limit is reached with overflow mode `ANY`.
+    /** Used if there is a limit on the maximum number of rows in the aggregation,
+      * and if `group_by_overflow_mode = 'any'`.
+      * In this case, new keys are not added to the set, but aggregation is performed only for
+      * keys that have already managed to get into the set.
+      */
     bool no_more_keys = false;
     bool is_consume_finished = false;
     Chunk current_chunk;
@@ -121,6 +128,7 @@ private:
     LoggerPtr log = getLogger("AggregatingTransformBase");
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
+    /// TODO: Calculate time only for aggregation.
     Stopwatch watch;
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
@@ -128,15 +136,30 @@ private:
     RowsBeforeStepCounterPtr rows_before_aggregation;
 };
 
-/// Aggregates one input stream into its own variant in `ManyAggregatedData`. The last producer
-/// assembles the merge pipeline and forwards its results through a second input. With `final = false`,
-/// result columns hold aggregate states for subsequent merging.
+/** Aggregates the stream of blocks using the specified key columns and aggregate functions.
+  * Columns with aggregate functions are added to the end of the block.
+  * If `final = false`, the aggregate functions are not finalized: they are not replaced by their
+  * values, but contain intermediate calculation states. This is necessary so that aggregation can
+  * continue (for example, by combining streams of partially aggregated data).
+  *
+  * For every separate stream of data, a separate `AggregatingTransform` is created.
+  * Every `AggregatingTransform` reads data from the first port until it runs out, or until
+  * `max_rows_to_group_by` is exceeded with `group_by_overflow_mode = 'break'`.
+  * When the last `AggregatingTransform` finishes reading, the aggregation results must be merged.
+  * For in-memory aggregation, this task is performed by `ConvertingAggregatedToChunksTransform`.
+  * The last `AggregatingTransform` expands the pipeline and adds a second input port, which reads
+  * from the merge pipeline.
+  *
+  * Aggregation data is passed through `ManyAggregatedData`, shared between all aggregating transforms.
+  * During aggregation, every transform uses its own `AggregatedDataVariants` structure.
+  * During in-memory merging, all structures are passed to `ConvertingAggregatedToChunksTransform`.
+  */
 class AggregatingTransform final : public AggregatingTransformBase
 {
 public:
     AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
-    /// Aggregates one producer's input and participates in the shared final merge.
+    /// For parallel aggregation.
     AggregatingTransform(
         SharedHeader header,
         AggregatingTransformParamsPtr params_,
@@ -157,12 +180,13 @@ private:
     size_t getGeneratingStepGroup() const;
     void initGenerate();
 
-    /// Holds the merge processors before they are added to the pipeline.
+    /// Holds the merge processors, including readers for data flushed into temporary files,
+    /// before they are added to the pipeline.
     Processors processors;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
-    /// Partitioned aggregation can produce its results without merging producer tables.
+    /// If we aggregate partitioned data, merging is not needed.
     bool skip_merging = false;
     std::atomic_flag is_generate_initialized;
     bool is_pipeline_created = false;

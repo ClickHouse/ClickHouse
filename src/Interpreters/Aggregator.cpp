@@ -2438,6 +2438,7 @@ Aggregator::PostBlockSnapshot Aggregator::getPostBlockSnapshot(
 {
     const size_t groups = result.sizeWithoutOverflowRow();
     const Int64 query_bytes = getCurrentQueryMemoryUsage();
+    /// Here all the results in the sum are taken into account, from different threads.
     const Int64 aggregation_bytes = use_own_memory_tracker ? memory_tracker->get() : query_bytes - memory_usage_before_aggregation;
     return {.groups = groups, .query_bytes = query_bytes, .aggregation_bytes = aggregation_bytes};
 }

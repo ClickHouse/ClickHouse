@@ -274,7 +274,8 @@ public:
 
     const Params & getParams() const { return params; }
 
-    /// Processes one block and returns false when `group_by_overflow_mode = 'break'` stops consumption.
+    /// Process one block. Return false if processing should be aborted
+    /// (with `group_by_overflow_mode = 'break'`).
     /// `execution` is null for ordinary aggregation. Adaptive execution records misses and suspends
     /// its post-block checks. The caller forwards the block's aggregate arguments, then calls
     /// `resumeAdaptiveBlock` once acknowledgement arrives, before consuming another block or finishing.
