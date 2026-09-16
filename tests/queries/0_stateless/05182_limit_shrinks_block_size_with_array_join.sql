@@ -19,7 +19,8 @@ DROP TABLE IF EXISTS t_aj_sparse;
 CREATE TABLE t_aj_sparse (k UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
 INSERT INTO t_aj_sparse SELECT number, if(number < 9000, [], [number]) FROM numbers(10000);
 
-SELECT arrayJoin(a) FROM t_aj_sparse LIMIT 3 SETTINGS max_threads = 1, log_comment = '05182_sparse';
+-- one local stream reads in key order; with parallel replicas the order and the initiator's read_rows are not deterministic
+SELECT arrayJoin(a) FROM t_aj_sparse LIMIT 3 SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05182_sparse';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT argMax(read_rows, event_time_microseconds) >= 9000 FROM system.query_log
