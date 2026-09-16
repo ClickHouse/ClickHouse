@@ -706,12 +706,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"vertical_merge_optimize_lightweight_delete", trueOrFalseSetting},
     {"vertical_merge_optimize_ttl_delete", trueOrFalseSetting},
     {"vertical_merge_remote_filesystem_prefetch", trueOrFalseSetting},
-    {"vertical_merge_tuple_subcolumns_fat_threshold_bytes", bytesRangeSetting},
-    {"vertical_merge_tuple_subcolumns_prefetch_units",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 16)); },
-         {"0", "1"},
-         false)},
     {"wait_for_unique_parts_send_before_shutdown_ms", highRangeSetting},
     {"write_marks_for_substreams_in_compact_parts", trueOrFalseSetting},
     {"zero_copy_concurrent_part_removal_max_postpone_ratio", probRangeSetting},

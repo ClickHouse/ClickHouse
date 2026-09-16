@@ -54,7 +54,7 @@ inner_exact False
 merge_algorithm
 Vertical
 
-=== Fat+Tiny mix (String + UInt8) ===
+=== String + UInt8 flatten ===
 mix_rows
 40	380	1000
 mix_check
@@ -66,11 +66,6 @@ t%2Es.bin
 t%2Es.cmrk2
 t%2Es.size.bin
 t%2Es.size.cmrk2
-
-=== fat_threshold=0 does not flatten ===
-1	('a','b')
-2	('c','d')
-1
 
 === JSON leaf does not flatten ===
 1	a	1

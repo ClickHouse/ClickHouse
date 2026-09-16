@@ -36,7 +36,7 @@ ${CLICKHOUSE_CLIENT} -q "
         vertical_merge_algorithm_min_rows_to_activate = 1,
         vertical_merge_algorithm_min_columns_to_activate = 1,
         allow_experimental_vertical_merge_tuple_subcolumns = 1,
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+        auto_statistics_types = '';
 
     INSERT INTO t_ren_pend VALUES (1, ('a', 1));
     INSERT INTO t_ren_pend VALUES (2, ('b', 2));

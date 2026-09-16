@@ -23,12 +23,8 @@
 1
 1
 
-=== Tuple(UInt8 x 20) is not flattened ===
+=== Tuple(UInt8 x 20) merge stays correct ===
 32	240	848
-1
-
-=== near-Fat tinies whose granule sum >= Fat threshold ===
-2000	200000	0	38000
 1
 
 === merge_max_block_size_bytes=0 does not refuse or force flatten ===

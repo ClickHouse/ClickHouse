@@ -5,8 +5,6 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
 
-#include <vector>
-
 namespace Poco { class Logger; }
 
 
@@ -51,10 +49,9 @@ struct RowSourcePart
 using MergedRowSources = PODArray<RowSourcePart>;
 
 
-/** Gather a single stream from multiple streams according to a streams mask.
+/** Gather single stream from multiple streams according to streams mask.
   * Stream mask maps row number to index of source stream.
-  * Every input stream must contain the same columns (one or more).
-  * Multiple columns are gathered in one walk of `rows_sources`.
+  * Streams should contain exactly one column.
   */
 class ColumnGathererStream final : public IMergingAlgorithm
 {
@@ -65,7 +62,7 @@ public:
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
-        std::vector<UInt8> is_result_sparse_);
+        bool is_result_sparse_);
 
     const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
@@ -79,28 +76,19 @@ public:
     MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
 
 private:
-    void updateStats(size_t rows, size_t bytes);
-    void applySparsePolicy(Columns & columns) const;
-    void gatherAllColumns();
-    Chunk emitFullyCopiedSource();
-    Chunk emitAndResetResultColumns();
-    size_t resultRows() const;
-    size_t resultBytes() const;
-    bool resultIsEmpty() const;
+    void updateStats(const IColumn & column);
 
     /// Cache required fields
     struct Source
     {
-        Columns columns;
-        /// Alias of `columns.front()` for the single-column `IColumn::gather` path.
         ColumnPtr column;
         size_t pos = 0;
         size_t size = 0;
 
-        void update(Columns columns_);
+        void update(ColumnPtr column_);
     };
 
-    MutableColumns result_columns;
+    MutableColumnPtr result_column;
 
     std::vector<Source> sources;
     ReadBuffer & row_sources_buf;
@@ -108,7 +96,7 @@ private:
     const size_t block_preferred_size_rows;
     const size_t block_preferred_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
-    const std::vector<UInt8> is_result_sparse;
+    const bool is_result_sparse;
 
     Source * source_to_fully_copy = nullptr;
 
@@ -128,7 +116,7 @@ public:
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
-        std::vector<UInt8> is_result_sparse_);
+        bool is_result_sparse_);
 
     String getName() const override { return "ColumnGathererTransform"; }
 

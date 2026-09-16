@@ -4,9 +4,8 @@
 # no-random-merge-tree-settings: pins flatten settings and Vertical activation.
 # no-object-storage / no-shared-merge-tree: reads part files from a local directory.
 #
-# Refuse-to-flatten gates for vertical Tuple-subcolumn merge. Cases that would
-# flatten (low Fat threshold or a fat `String`) stay one `StorageColumn` when a
-# gate fires. Merge, `CHECK`, and reads must still succeed.
+# Refuse-to-flatten gates for vertical Tuple-subcolumn merge. Merge, `CHECK`,
+# and reads must still succeed when a parent stays one `StorageColumn`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +23,8 @@ COMMON_SETTINGS="
     ratio_of_defaults_for_sparse_serialization = 0.9,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
-    allow_experimental_vertical_merge_tuple_subcolumns = 1
+    allow_experimental_vertical_merge_tuple_subcolumns = 1,
+    auto_statistics_types = ''
 "
 
 print_merge_algorithm()
@@ -52,8 +52,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Nullable(Tuple(x String, y String))
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_nullable VALUES (1, ('a', 'b')), (2, NULL);
     INSERT INTO t_nullable VALUES (3, ('c', 'd')), (4, NULL);
@@ -71,8 +70,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Point
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_point VALUES (1, (1.5, 2.5));
     INSERT INTO t_point VALUES (2, (3.5, 4.5));
@@ -90,8 +88,7 @@ ${CLICKHOUSE_CLIENT} -q "
         t Tuple()
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+    SETTINGS ${COMMON_SETTINGS};
 
     INSERT INTO t_empty VALUES (1, ()), (2, ());
     INSERT INTO t_empty VALUES (3, ());
@@ -116,8 +113,7 @@ coll_err=$(${CLICKHOUSE_CLIENT} --query "
         \`t.x\` String
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1
+    SETTINGS ${COMMON_SETTINGS}
 " 2>&1)
 set -e
 if echo "$coll_err" | grep -q 'collision in file name'; then echo 1; else echo 0; fi
@@ -135,7 +131,6 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1,
         index_granularity = 1;
 
     INSERT INTO t_idx_parent VALUES (1, ('a', 'b')), (2, ('c', 'd'));
@@ -148,7 +143,7 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 echo
-echo '=== Tuple(UInt8 x 20) is not flattened ==='
+echo '=== Tuple(UInt8 x 20) merge stays correct ==='
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_u8;
@@ -182,42 +177,6 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT count(), sum(t.c0), sum(t.c19) FROM t_u8;
     CHECK TABLE t_u8 SETTINGS check_query_single_value_result = 1;
     DROP TABLE t_u8;
-"
-
-echo
-echo '=== near-Fat tinies whose granule sum >= Fat threshold ==='
-
-${CLICKHOUSE_CLIENT} -q "
-    DROP TABLE IF EXISTS t_near;
-    CREATE TABLE t_near
-    (
-        k UInt64,
-        t Tuple(
-            s String,
-            c0 UInt8, c1 UInt8, c2 UInt8, c3 UInt8, c4 UInt8,
-            c5 UInt8, c6 UInt8, c7 UInt8, c8 UInt8, c9 UInt8,
-            c10 UInt8, c11 UInt8, c12 UInt8, c13 UInt8, c14 UInt8,
-            c15 UInt8, c16 UInt8, c17 UInt8, c18 UInt8, c19 UInt8)
-    )
-    ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 5000,
-        index_granularity = 8192;
-
-    INSERT INTO t_near SELECT
-        number,
-        (repeat('x', 100),
-         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)
-    FROM numbers(1000);
-    INSERT INTO t_near SELECT
-        number + 1000,
-        (repeat('y', 100),
-         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)
-    FROM numbers(1000);
-    OPTIMIZE TABLE t_near FINAL;
-    SELECT count(), sum(length(t.s)), sum(t.c0), sum(t.c19) FROM t_near;
-    CHECK TABLE t_near SETTINGS check_query_single_value_result = 1;
-    DROP TABLE t_near;
 "
 
 echo
@@ -303,7 +262,7 @@ ${CLICKHOUSE_CLIENT} -q "
         enable_block_offset_column = 0,
         vertical_merge_algorithm_min_rows_to_activate = 1,
         allow_experimental_vertical_merge_tuple_subcolumns = 1,
-        vertical_merge_tuple_subcolumns_fat_threshold_bytes = 1;
+        auto_statistics_types = '';
 
     INSERT INTO t_novert VALUES (1, ('a', 1));
     INSERT INTO t_novert VALUES (2, ('b', 2));
