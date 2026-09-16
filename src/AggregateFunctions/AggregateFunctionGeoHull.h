@@ -120,8 +120,8 @@ public:
 /// Graham-Andrew scan with the same clockwise closed-ring convention as `Boost.Geometry`.
 /// Partition buffers use the input's allocator and are compacted in place, so the hull's
 /// workspace follows the throwing memory tracker instead of Boost's default-allocated vectors.
-template <typename MultiPoint, typename Ring>
-void computeGeoConvexHull(const MultiPoint & points, Ring & result)
+template <bool HasAdditional, typename MultiPoint, typename Ring>
+void computeGeoConvexHullImpl(const MultiPoint & points, const MultiPoint * additional, Ring & result)
 {
     result.clear();
     if (points.empty())
@@ -134,21 +134,35 @@ void computeGeoConvexHull(const MultiPoint & points, Ring & result)
         return ax < bx || (ax == bx && boost::geometry::get<1>(first) < boost::geometry::get<1>(second));
     };
     const auto [left_it, right_it] = std::minmax_element(points.begin(), points.end(), less);
-    const auto left = *left_it;
-    const auto right = *right_it;
+    auto left = *left_it;
+    auto right = *right_it;
+    if constexpr (HasAdditional)
+    {
+        const auto [additional_left, additional_right] = std::minmax_element(additional->begin(), additional->end(), less);
+        if (less(*additional_left, left))
+            left = *additional_left;
+        if (!less(*additional_right, right))
+            right = *additional_right;
+    }
 
     MultiPoint lower;
     MultiPoint upper;
     lower.push_back(left);
     upper.push_back(left);
-    for (const auto & point : points)
+    auto partition_points = [&](const MultiPoint & input)
     {
-        const int side = GeoHullSide::apply(left, right, point);
-        if (side < 0)
-            lower.push_back(point);
-        else if (side > 0)
-            upper.push_back(point);
-    }
+        for (const auto & point : input)
+        {
+            const int side = GeoHullSide::apply(left, right, point);
+            if (side < 0)
+                lower.push_back(point);
+            else if (side > 0)
+                upper.push_back(point);
+        }
+    };
+    partition_points(points);
+    if constexpr (HasAdditional)
+        partition_points(*additional);
     lower.push_back(right);
     upper.push_back(right);
 
@@ -174,6 +188,25 @@ void computeGeoConvexHull(const MultiPoint & points, Ring & result)
     result.insert(result.end(), std::next(lower.rbegin()), lower.rend());
     while (result.size() < 4)
         result.push_back(left);
+}
+
+template <typename MultiPoint, typename Ring>
+void computeGeoConvexHull(const MultiPoint & points, Ring & result)
+{
+    computeGeoConvexHullImpl<false>(points, static_cast<const MultiPoint *>(nullptr), result);
+}
+
+/// Read both inputs without allocating a concatenated accumulator. The partition buffers
+/// still use the tracked allocator of `MultiPoint`.
+template <typename MultiPoint, typename Ring>
+void computeGeoConvexHull(const MultiPoint & first, const MultiPoint & second, Ring & result)
+{
+    if (first.empty())
+        computeGeoConvexHull(second, result);
+    else if (second.empty())
+        computeGeoConvexHull(first, result);
+    else
+        computeGeoConvexHullImpl<true>(first, &second, result);
 }
 
 }

@@ -97,6 +97,14 @@ struct GroupConvexHullData
             return;
         }
 
+        /// Compute the complete merged hull without first copying RHS into the accumulator.
+        /// A prefix can exceed the cap even when later points make the final hull small.
+        if (other.points.size() > MAX_POINTS_IN_CONVEX_HULL_STATE - points.size())
+        {
+            mergeOverLimit(other, function_name);
+            return;
+        }
+
         /// Bound transient ingestion just as for a large input row. Do not append an entire
         /// maximum-sized RHS before compression has a chance to remove interior points.
         for (size_t offset = 0; offset < other.points.size();)
@@ -146,6 +154,28 @@ struct GroupConvexHullData
 
         points.swap(compressed_points);
 
+        size_after_compression = points.size();
+        is_compressed = true;
+    }
+
+    /// Keep the exceptional large-state path out of ordinary ingestion and compression.
+    [[gnu::noinline]] void mergeOverLimit(const GroupConvexHullData & other, const char * function_name)
+    {
+        CartesianMultiPoint merged_points;
+        computeGeoConvexHull(points, other.points, merged_points);
+        while (merged_points.size() >= 2 && merged_points.front().get<0>() == merged_points.back().get<0>()
+            && merged_points.front().get<1>() == merged_points.back().get<1>())
+            merged_points.pop_back();
+
+        if (merged_points.size() > MAX_POINTS_IN_CONVEX_HULL_STATE)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} state has too many points after compression: {} (limit {})",
+                function_name,
+                merged_points.size(),
+                MAX_POINTS_IN_CONVEX_HULL_STATE);
+
+        points.swap(merged_points);
         size_after_compression = points.size();
         is_compressed = true;
     }
