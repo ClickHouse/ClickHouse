@@ -70,10 +70,17 @@ std::map<std::string, uint64_t> readAllMetricsFromStatFile(ReadBufferFromFile & 
 
 using Metrics = std::map<std::string_view, uint64_t>;
 
-uint64_t getMetric(const Metrics & metrics, std::string_view key)
+std::optional<uint64_t> findMetric(const Metrics & metrics, std::string_view key)
 {
     auto it = metrics.find(key);
-    return it != metrics.end() ? it->second : 0;
+    if (it == metrics.end())
+        return std::nullopt;
+    return it->second;
+}
+
+uint64_t getMetric(const Metrics & metrics, std::string_view key)
+{
+    return findMetric(metrics, key).value_or(0);
 }
 
 void readMetricsFromStatFile(
@@ -124,16 +131,21 @@ void readMetricsFromStatFile(
         metrics[*it] = value;
     }
 
-    if (print_warnings)
+    for (const auto * it = keys.begin(); it != keys.end(); ++it)
     {
-        for (const auto * it = keys.begin(); it != keys.end(); ++it)
+        uint64_t key_bit = 1ull << (it - keys.begin());
+        if (seen_mask & key_bit)
+            continue;
+
+        /// A requested key that is absent from the file must not be reported as a zero value:
+        /// callers distinguish "the kernel does not expose this statistic" from a real zero
+        /// (e.g. `CGroupMemoryInactiveFile` is omitted rather than published as 0).
+        metrics.erase(*it);
+
+        if (print_warnings)
         {
-            uint64_t key_bit = 1ull << (it - keys.begin());
-            if (!(seen_mask & key_bit))
-            {
-                *warnings_printed = true;
-                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
-            }
+            *warnings_printed = true;
+            LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
         }
     }
 }
@@ -162,7 +174,8 @@ struct CgroupsV1Reader : ICgroupsReader
 
         CgroupsMemoryUsageAndInactive result;
         result.usage = calculateUsage(metrics);
-        result.inactive_file = getMetric(metrics, "total_inactive_file");
+        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
+        result.inactive_file = findMetric(metrics, "total_inactive_file");
         return result;
     }
 
@@ -209,7 +222,8 @@ struct CgroupsV2Reader : ICgroupsReader
 
         CgroupsMemoryUsageAndInactive result;
         result.usage = calculateUsage(metrics);
-        result.inactive_file = getMetric(metrics, "inactive_file");
+        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
+        result.inactive_file = findMetric(metrics, "inactive_file");
         return result;
     }
 

@@ -15,14 +15,19 @@
 namespace DB
 {
 
+/// Result of the combined read of the usage value and the inactive-file statistic.
+/// `inactive_file` is empty when the kernel does not expose the corresponding key
+/// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1) in `memory.stat`:
+/// an absent statistic must not be reported as a real zero.
 struct CgroupsMemoryUsageAndInactive
 {
     uint64_t usage = 0;
-    uint64_t inactive_file = 0;
+    std::optional<uint64_t> inactive_file;
 };
 
 /// Result of the best-effort combined read used by the asynchronous metrics: the usage value is
-/// always present, while `inactive_file` is empty if the inactive-file fields could not be parsed.
+/// always present, while `inactive_file` is empty if the inactive-file fields could not be parsed
+/// or are not present in `memory.stat` at all.
 struct CgroupsMemoryUsageAndOptionalInactive
 {
     uint64_t usage = 0;

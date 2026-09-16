@@ -181,20 +181,21 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
     /// returns exactly the strict result, with `inactive_file` present.
     auto optional_result = reader->readMemoryUsageAndOptionalInactiveFile();
     ASSERT_EQ(optional_result.usage, result.usage);
+    ASSERT_TRUE(result.inactive_file.has_value());
     ASSERT_TRUE(optional_result.inactive_file.has_value());
-    ASSERT_EQ(*optional_result.inactive_file, result.inactive_file);
+    ASSERT_EQ(*optional_result.inactive_file, *result.inactive_file);
 
     if (version == ICgroupsReader::CgroupsVersion::V1)
     {
         ASSERT_EQ(result.usage, 2232029184); /* rss */
         /// The fixture deliberately has `inactive_file` (1841305088) != `total_inactive_file` (2841305088),
         /// so this assertion proves the reader returns the hierarchical `total_*` value (matching cAdvisor).
-        ASSERT_EQ(result.inactive_file, 2841305088); /* total_inactive_file */
+        ASSERT_EQ(*result.inactive_file, 2841305088); /* total_inactive_file */
     }
     else
     {
         ASSERT_EQ(result.usage, 10506210680); /* anon + sock + kernel - slab_reclaimable */
-        ASSERT_EQ(result.inactive_file, 8693084160); /* inactive_file */
+        ASSERT_EQ(*result.inactive_file, 8693084160); /* inactive_file */
     }
 }
 
@@ -235,6 +236,59 @@ active_anon 5000000000
     ASSERT_EQ(reader->readMemoryUsage(), /* anon + sock */ 5000001000);
 
     fs::remove_all(tmp_dir);
+}
+
+/// When `memory.stat` does not contain the inactive-file key at all (`inactive_file` on v2,
+/// `total_inactive_file` on v1), the statistic is unavailable, not zero: both the strict and the
+/// best-effort combined read must return an empty `inactive_file`, so that `AsynchronousMetrics`
+/// omits `CGroupMemoryInactiveFile` instead of publishing a bogus `0`. The usage is unaffected.
+TEST(CgroupsMissingInactiveFile, MetricIsAbsentNotZero)
+{
+    struct Case
+    {
+        ICgroupsReader::CgroupsVersion version;
+        std::string dir;
+        std::string content;
+        uint64_t expected_usage;
+    };
+
+    const std::vector<Case> cases = {
+        /// `inactive_file` is present but the hierarchical `total_inactive_file` (the one the v1 reader uses) is not.
+        {ICgroupsReader::CgroupsVersion::V1,
+         "./test_cgroups_v1_missing_inactive_file",
+         "cache 4673703936\nrss 2232029184\ninactive_file 1841305088\ntotal_rss 2232029184\n",
+         2232029184},
+        /// A minimal v2 trace of an older kernel, as in `CgroupsV2NoKernel`.
+        {ICgroupsReader::CgroupsVersion::V2,
+         "./test_cgroups_v2_missing_inactive_file",
+         "anon 5000000000\nfile 1000000000\nsock 1000\ninactive_anon 0\nactive_anon 5000000000\n",
+         5000001000},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        fs::create_directories(test_case.dir);
+        auto stat_file = WriteBufferFromFile(test_case.dir + "/memory.stat");
+        stat_file.write(test_case.content.data(), test_case.content.size());
+        stat_file.finalize();
+        stat_file.sync();
+
+        auto reader = ICgroupsReader::createCgroupsReader(test_case.version, test_case.dir);
+
+        auto result = reader->readMemoryUsageAndInactiveFile();
+        ASSERT_EQ(result.usage, test_case.expected_usage);
+        ASSERT_FALSE(result.inactive_file.has_value());
+
+        auto optional_result = reader->readMemoryUsageAndOptionalInactiveFile();
+        ASSERT_EQ(optional_result.usage, test_case.expected_usage);
+        ASSERT_FALSE(optional_result.inactive_file.has_value());
+
+        /// Repeated reads on the same reader must not resurrect the key from a previous pass.
+        ASSERT_EQ(reader->readMemoryUsage(), test_case.expected_usage);
+        ASSERT_FALSE(reader->readMemoryUsageAndInactiveFile().inactive_file.has_value());
+
+        fs::remove_all(test_case.dir);
+    }
 }
 
 /// A broken `inactive_file` / `total_inactive_file` line must not affect `readMemoryUsage`:
