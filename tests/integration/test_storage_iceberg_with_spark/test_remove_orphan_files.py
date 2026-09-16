@@ -620,7 +620,7 @@ def test_remove_orphan_files_rejects_minimal_v1_metadata(
     metadata, previous_path = env.read_latest_metadata()
     assert metadata["format-version"] == 1
     assert metadata["snapshots"]
-    assert "schema" in metadata
+    assert "schemas" in metadata
     assert "current-schema-id" in metadata
     metadata.pop("current-schema-id", None)
     metadata.pop("schemas", None)
