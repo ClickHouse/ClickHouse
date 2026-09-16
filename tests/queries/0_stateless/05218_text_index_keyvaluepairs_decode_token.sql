@@ -58,7 +58,7 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO tab_bytes SELECT 1, map(repeat('a', 63), 'v63', repeat('b', 64), 'v64', repeat('c', 65), 'v65');
-INSERT INTO tab_bytes VALUES (2, map('ab', 'c')), (3, map('a', 'bc')), (4, map('a\0b', 'x\0y')), (5, map('', '')), (6, map('k', '')), (7, map('\xFF', '\xFF')), (8, map('', 'ek'));
+INSERT INTO tab_bytes VALUES (2, map('ab', 'c')), (3, map('a', 'bc')), (4, map('a\0b', 'x\0y')), (5, map('', '')), (6, map('k', '')), (7, map('\xFF', '\xFF')), (8, map('', 'ek')), (9, map('a"b', 'c\\d'));
 
 SELECT length(token_key), hex(token_key), hex(token_value), length(token) FROM mergeTreeTextIndex(currentDatabase(), tab_bytes, idx) ORDER BY token;
 
@@ -70,7 +70,7 @@ SELECT '-- filtering on the decoded parts';
 SELECT length(token_key), token_value FROM mergeTreeTextIndex(currentDatabase(), tab_bytes, idx) WHERE token_key = repeat('b', 64);
 SELECT hex(token_key) FROM mergeTreeTextIndex(currentDatabase(), tab_bytes, idx) WHERE token_value = '' ORDER BY token;
 
-SELECT '-- quotes, backslashes and control bytes in a pair are escaped in the condition';
+SELECT '-- quotes, backslashes and control bytes in a pair are escaped in the descriptions';
 SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_bytes WHERE m['a"b'] = 'c\\d') WHERE explain LIKE '%Condition%' AND explain NOT LIKE '%Condition: true%';
 SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_bytes WHERE m['tab\tkey'] = 'new\nline') WHERE explain LIKE '%Condition%' AND explain NOT LIKE '%Condition: true%';
 SELECT trim(explain) FROM (EXPLAIN SELECT count() FROM tab_bytes WHERE m['a"b'] = 'c\\d') WHERE explain LIKE '%Trivial count from text index%';
