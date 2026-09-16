@@ -452,14 +452,14 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         /// under travels on the constant, for the planner to hand to the step that reads it. Unset
         /// on a cache hit, where an earlier evaluation already reported the subquery.
         if (scalar_subquery_id)
-            constant_node->setScalarSubqueryId(*scalar_subquery_id);
+            constant_node->addScalarSubqueryId(*scalar_subquery_id);
 
         if (scalar_column_with_type.column->isNullAt(0))
         {
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
             auto wrapped = std::make_shared<ConstantNode>(std::move(constant_value), node);
             if (scalar_subquery_id)
-                wrapped->setScalarSubqueryId(*scalar_subquery_id);
+                wrapped->addScalarSubqueryId(*scalar_subquery_id);
             node = std::move(wrapped);
         }
         else

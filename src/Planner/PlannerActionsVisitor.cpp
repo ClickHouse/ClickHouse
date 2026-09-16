@@ -652,12 +652,12 @@ public:
         std::string name,
         bool is_deterministic,
         bool is_masked_secret = false,
-        std::optional<size_t> scalar_subquery_id = {})
+        const std::vector<size_t> & scalar_subquery_ids = {})
     {
         /// On the DAG as well as on the node: a constant projected under an alias is rebuilt as a
         /// fresh column and the marked node goes away with the old one, but the actions survive.
-        if (scalar_subquery_id)
-            actions_dag.addScalarSubqueryId(*scalar_subquery_id);
+        for (size_t id : scalar_subquery_ids)
+            actions_dag.addScalarSubqueryId(id);
 
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -676,9 +676,9 @@ public:
 
         /// The annotation is display-only and the node was created by `actions_dag` a line above,
         /// which is not const here; only the returned pointer is. Marking it in place avoids
-        /// threading the id through `addColumn` and every other caller of it.
-        if (scalar_subquery_id)
-            const_cast<ActionsDAG::Node *>(node)->scalar_subquery_id = scalar_subquery_id;
+        /// threading the ids through `addColumn` and every other caller of it.
+        if (!scalar_subquery_ids.empty())
+            const_cast<ActionsDAG::Node *>(node)->scalar_subquery_ids = scalar_subquery_ids;
 
         node_name_to_node[node->result_name] = node;
 
@@ -1033,7 +1033,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     actions_stack[0].addConstantIfNecessary(
         constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
         /* is_masked_secret= */ constant_node.isMasked(),
-        /* scalar_subquery_id= */ constant_node.getScalarSubqueryId());
+        /* scalar_subquery_ids= */ constant_node.getScalarSubqueryIds());
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)

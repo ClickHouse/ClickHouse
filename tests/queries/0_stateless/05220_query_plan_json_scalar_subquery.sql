@@ -38,6 +38,12 @@ SELECT count() FROM t_scalar_05220 AS o
 WHERE v = (SELECT max(v) FROM t_scalar_05220 AS i WHERE i.k = o.k)
     SETTINGS log_comment = '05220_correlated' FORMAT Null;
 
+-- Two subqueries folded into one constant. Constant folding collapses the whole expression, so
+-- the ids have to travel onto the constant it produces -- and there are two of them, which is why
+-- a constant carries a list rather than one id.
+SELECT (SELECT sum(v) FROM t_scalar_05220) + (SELECT count() FROM t_scalar_05220) AS s
+    SETTINGS log_comment = '05220_folded' FORMAT Null;
+
 SET log_query_plans = 0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -59,10 +65,12 @@ SELECT
     -- The step that reads the folded value is named, and it belongs to the query's own plan.
     arrayExists(
         c -> arrayExists(n -> (JSONExtractString(n, 'Node Id') = JSONExtractString(c)) AND NOT JSONHas(n, 'SubPlanId'), nodes),
-        JSONExtractArrayRaw(subqueries[1], 'ConsumedBy')) AS consumer_in_main_plan
+        JSONExtractArrayRaw(subqueries[1], 'ConsumedBy')) AS consumer_in_main_plan,
+    -- Every captured subquery names a consumer, the folded pair included.
+    arrayAll(q -> length(JSONExtractArrayRaw(q, 'ConsumedBy')) > 0, subqueries) AS all_linked
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05220_scalar', '05220_correlated', '05220_projected')
+    AND log_comment IN ('05220_scalar', '05220_correlated', '05220_projected', '05220_folded')
 ORDER BY shape;
 
 DROP TABLE t_scalar_05220;

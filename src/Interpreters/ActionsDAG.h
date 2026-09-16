@@ -115,13 +115,14 @@ public:
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
         bool is_masked_secret = false;
-        /// Set when this constant is the folded result of a scalar subquery: the id that subquery
-        /// was captured under. The subquery is executed during analysis and replaced by a literal
-        /// named after its own value, so by planning time nothing else distinguishes it from any
-        /// other constant, and `system.query_log.query_plan` could not otherwise say which step
-        /// used its result. Living on the node means clone, split and merge carry it for free.
+        /// Ids of the scalar subqueries this constant is made of. They are executed during
+        /// analysis and replaced by a literal named after its own value, so by planning time
+        /// nothing else distinguishes it from any other constant, and
+        /// `system.query_log.query_plan` could not otherwise say which step used the result. A
+        /// list because folding collapses expressions: `(SELECT a) + (SELECT b)` is one constant
+        /// from two subqueries. Living on the node means clone, split and merge carry it for free.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
-        std::optional<size_t> scalar_subquery_id;
+        std::vector<size_t> scalar_subquery_ids;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 

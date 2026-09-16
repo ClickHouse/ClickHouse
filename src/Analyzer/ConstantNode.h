@@ -90,12 +90,19 @@ public:
         return source_expression;
     }
 
-    /// When this constant is the folded result of a scalar subquery, the id that subquery was
-    /// given, so that `system.query_log.query_plan` can say which step ended up using its value.
-    /// The subquery itself is gone by planning time -- only its value is left -- so the id has to
-    /// be carried here rather than recovered later. Assigned once, where the fold happens.
-    void setScalarSubqueryId(size_t id) { scalar_subquery_id = id; }
-    std::optional<size_t> getScalarSubqueryId() const { return scalar_subquery_id; }
+    /// Ids of the scalar subqueries whose values this constant is made of, so that
+    /// `system.query_log.query_plan` can say which step ended up using them. The subqueries are
+    /// gone by planning time -- only their values are left -- so the ids have to be carried here
+    /// rather than recovered later.
+    ///
+    /// A list rather than one id because constant folding collapses whole expressions:
+    /// `(SELECT a) + (SELECT b)` becomes a single constant made from two subqueries.
+    void addScalarSubqueryId(size_t id) { scalar_subquery_ids.push_back(id); }
+    void addScalarSubqueryIds(const std::vector<size_t> & ids)
+    {
+        scalar_subquery_ids.insert(scalar_subquery_ids.end(), ids.begin(), ids.end());
+    }
+    const std::vector<size_t> & getScalarSubqueryIds() const { return scalar_subquery_ids; }
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -162,7 +169,7 @@ private:
     QueryTreeNodePtr source_expression;
     bool is_deterministic = true;
     size_t mask_id = 0;
-    std::optional<size_t> scalar_subquery_id;
+    std::vector<size_t> scalar_subquery_ids;
 
     static constexpr size_t children_size = 0;
 

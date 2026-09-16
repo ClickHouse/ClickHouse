@@ -82,10 +82,10 @@ void recordConsumedSubqueries(QueryPlan & plan)
             if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
                 continue;
 
-            /// A scalar subquery leaves only its value behind, so the planner wrote the id onto
+            /// A scalar subquery leaves only its value behind, so the planner wrote the ids onto
             /// the constant as it built the actions.
-            if (node.scalar_subquery_id)
-                step.addConsumedSubqueryId(*node.scalar_subquery_id);
+            for (size_t id : node.scalar_subquery_ids)
+                step.addConsumedSubqueryId(id);
 
             const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
             if (!column_set)
