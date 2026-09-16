@@ -20,6 +20,7 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
     if (force_spill)
     {
         bool should_spill = false;
+        bool should_run_dedicated_spill = false;
         {
             std::lock_guard lock(mutex);
             if (!forced_spill_active
@@ -35,16 +36,39 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
                 return;
 
             state.claimed_forced_epoch = forced_epoch;
-            state.dedicated_spill_in_progress = false;
             state.memory_before_spill = getCurrentQueryMemoryUsage();
             state.spill_requested = false;
             should_spill = stats.spillable_memory_bytes > 0;
-            if (!should_spill)
-                completeForcedSpillProcessor(forced_epoch, state);
+            should_run_dedicated_spill = !should_spill;
+            state.dedicated_spill_in_progress = should_run_dedicated_spill;
         }
 
-        if (!should_spill)
+        if (should_run_dedicated_spill)
+        {
+            const bool spilled = processor->spillForMemoryReservation();
+            const Int64 memory_after = getCurrentQueryMemoryUsage();
+
+            std::lock_guard lock(mutex);
+            if (!forced_spill_active
+                || forced_spill_request_epoch.load(std::memory_order_acquire) != forced_epoch)
+                return;
+
+            auto state = processor_states.find(processor);
+            if (state == processor_states.end()
+                || state->second.claimed_forced_epoch != forced_epoch
+                || state->second.completed_forced_epoch >= forced_epoch)
+                return;
+
+            state->second.dedicated_spill_in_progress = false;
+            const Int64 reclaimed_bytes = std::max<Int64>(state->second.memory_before_spill - memory_after, 0);
+            if (spilled || reclaimed_bytes > 0)
+            {
+                forced_spill_outcome.store(ForcedSpillOutcome::Progress, std::memory_order_relaxed);
+                forced_spill_reclaimed_bytes.fetch_add(reclaimed_bytes, std::memory_order_relaxed);
+            }
+            completeForcedSpillProcessor(forced_epoch, state->second);
             return;
+        }
 
         const bool spill_succeeded = processor->spillOnSize(stats.spillable_memory_bytes);
 
@@ -171,7 +195,7 @@ void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
 
             for (auto & [candidate, state] : processor_states)
             {
-                if (state.completed_forced_epoch >= epoch)
+                if (state.completed_forced_epoch >= epoch || state.claimed_forced_epoch >= epoch)
                     continue;
                 if (state.lifetime_tracked)
                 {
