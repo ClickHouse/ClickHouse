@@ -1247,6 +1247,14 @@ Allows or restricts using [Variant](/reference/data-types/variant) and [Dynamic]
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](/reference/data-types/variant) and [Dynamic](/reference/data-types/dynamic) types in ORDER BY keys.
 )", 0) \
+    DECLARE(Bool, validate_group_by_all_key_types, true, R"(
+Controls whether the grouping keys that `GROUP BY ALL` expands the `SELECT` expressions into are checked against [allow_suspicious_types_in_group_by](#allow_suspicious_types_in_group_by). Disable it to restore the behavior of versions before 26.7, which accepted a [Variant](/reference/data-types/variant) or [Dynamic](/reference/data-types/dynamic) key written as `GROUP BY ALL`, for example a grouping key that is an untyped JSON subpath. Takes effect only when the analyzer is enabled (`enable_analyzer = 1`, the default); with the old analyzer such a key was rejected before 26.7 as well, so there is nothing to restore there. An explicit `GROUP BY` is unaffected and keeps rejecting such a key either way, so this is narrower than setting `allow_suspicious_types_in_group_by`, which also permits them in an explicit `GROUP BY`.
+
+Possible values:
+
+- 0 - The key types `GROUP BY ALL` expands into are not validated.
+- 1 - They are validated, as an explicit `GROUP BY` validates its own keys.
+)", 0) \
     DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
 Enables or disables default implementation for Variant type in comparison functions.
 )", 0) \
@@ -5282,6 +5290,7 @@ These functions can be transformed:
 - [count](/reference/functions/aggregate-functions/count) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
 - [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [has](/reference/functions/regular-functions/array-functions#has) and [notHas](/reference/functions/regular-functions/array-functions#notHas) for `Map` to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -7728,7 +7737,7 @@ Only has an effect in ClickHouse Cloud. A period of credentials refresh.
 Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
 )", 0) \
     DECLARE(UInt64, write_through_distributed_cache_buffer_size, 0, R"(
-Only has an effect in ClickHouse Cloud. Set buffer size for write-through distributed cache. If 0, will use buffer size which would have been used if there was not distributed cache.
+Only has an effect in ClickHouse Cloud. The maximum size of the buffer which is written to distributed cache servers, per write buffer. It is independent of the buffer which is written to the object storage: that one keeps growing towards the upload part size. If 0, `DBMS_DEFAULT_BUFFER_SIZE` (1 MiB) is used. The buffer starts at `adaptive_write_buffer_initial_size` and grows up to this size only as the stream is written, so that a part does not allocate it for every stream it writes.
 )", 0) \
     DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
 Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
