@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <fmt/format.h>
-
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -11,14 +9,11 @@
 #include <vector>
 
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
 #include <Interpreters/TableJoin.h>
