@@ -316,3 +316,80 @@ def test_optimize_ignores_pinned_metadata_when_gc_disabled(started_cluster_icebe
         started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
     )) == files_before
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_uses_current_schema_with_pinned_metadata(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_pinned_schema_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(0, 100)")
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    default_upload_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    old_metadata_file = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+    ).strip()
+    old_metadata_path = "metadata/" + old_metadata_file.rsplit("/", 1)[-1]
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark,
+        spark,
+        storage_type,
+        TABLE_NAME,
+        "ADD COLUMN newer_col string",
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (100, 'new-data', 'important')")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        explicit_metadata_path=old_metadata_path,
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )
+    latest_metadata_file = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+    ).strip()
+    with open(latest_metadata_file) as metadata_handle:
+        latest_metadata = json.load(metadata_handle)
+    current_schema_id = latest_metadata["current-schema-id"]
+    current_schema = next(
+        schema for schema in latest_metadata["schemas"] if schema["schema-id"] == current_schema_id
+    )
+    assert any(field["name"] == "newer_col" for field in current_schema["fields"])
+
+    current_table = spark.read.format("iceberg").load(table_dir)
+    assert current_table.count() == 81
+    assert current_table.where("id = 100").select("newer_col").collect()[0][0] == "important"

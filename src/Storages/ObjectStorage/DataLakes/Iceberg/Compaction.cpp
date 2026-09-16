@@ -111,6 +111,7 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
+    SharedHeader sample_block;
 
     class ParititonEncoder
     {
@@ -222,18 +223,20 @@ static Plan getPlan(
 
     validateGarbageCollectionEnabled(initial_metadata_object, "compact table");
 
-    auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
-    auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
-    Poco::JSON::Array::Ptr current_schema;
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-        {
-            current_schema = schemas->getObject(static_cast<UInt32>(i))->getArray(Iceberg::f_fields);
-            break;
-        }
-    }
+    const auto current_schema_id = IcebergMetadata::parseTableSchema(
+        initial_metadata_object, *persistent_table_components.schema_processor, log);
+    const auto current_schema_object
+        = persistent_table_components.schema_processor->getIcebergTableSchemaById(current_schema_id);
+    const auto clickhouse_schema
+        = persistent_table_components.schema_processor->getClickHouseTableSchemaById(current_schema_id);
+    Block sample_block;
+    for (const auto & column : *clickhouse_schema)
+        sample_block.insert({column.type->createColumn(), column.type, column.name});
+
     plan.initial_metadata_object = initial_metadata_object;
+    plan.sample_block = std::make_shared<const Block>(std::move(sample_block));
+
+    auto current_schema = current_schema_object->getArray(Iceberg::f_fields);
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
@@ -316,7 +319,6 @@ static Plan getPlan(
 
 static void writeDataFiles(
     Plan & initial_plan,
-    SharedHeader sample_block,
     ObjectStoragePtr object_storage,
     const IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
@@ -324,6 +326,7 @@ static void writeDataFiles(
     const String & write_format,
     CompressionMethod write_compression_method)
 {
+    const auto & sample_block = initial_plan.sample_block;
     ColumnMapperPtr column_mapper;
     {
         auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -1034,11 +1037,12 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 }
 
 static void writeMetadataFiles(
-    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
+    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
 
-    ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
+    const auto & sample_block = plan.sample_block;
+    ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -1229,12 +1233,12 @@ static void writeMetadataFiles(
                 metadata_object,
                 partition_columns,
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
-                ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes(),
+                ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block).getResultTypes(),
                 data_files_vec,
                 file_row_counts,
                 file_byte_counts,
                 manifest_entry->statistics,
-                sample_block_,
+                sample_block,
                 snapshot,
                 write_format,
                 partititon_spec,
@@ -1463,7 +1467,6 @@ void compactIcebergTable(
     ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
-    SharedHeader sample_block_,
     ContextPtr context_,
     const String & write_format)
 {
@@ -1482,14 +1485,13 @@ void compactIcebergTable(
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,
-            sample_block_,
             object_storage_,
             persistent_table_components.path_resolver,
             format_settings_,
             context_,
             write_format,
             persistent_table_components.metadata_compression_method);
-        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
+        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }
 }
