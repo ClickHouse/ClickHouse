@@ -1900,8 +1900,16 @@
     "source": "/cloud/managed-postgres/branching"
   },
   {
-    "destination": "/products/managed-postgres/clickhouse-integration",
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
     "source": "/cloud/managed-postgres/clickhouse-integration"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/cloud/managed-postgres/walshadow"
   },
   {
     "destination": "/products/managed-postgres/connection",
@@ -1942,6 +1950,18 @@
   {
     "destination": "/products/managed-postgres/migrations/clickpipes",
     "source": "/cloud/managed-postgres/migrations/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/products/managed-postgres/clickhouse-integration"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/products/managed-postgres/walshadow"
   },
   {
     "destination": "/products/managed-postgres/migrations/data-validation",
