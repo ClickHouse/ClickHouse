@@ -1,5 +1,4 @@
 -- Interval constants are accepted as RANGE window frame offsets and are applied in their own unit.
--- The analyzers differ only in how they record the interval kind in the frame; the old analyzer section repeats the blocks that cover that path and window identity.
 
 DROP TABLE IF EXISTS test_window_interval_offset;
 CREATE TABLE test_window_interval_offset (dt Date, ts DateTime('UTC'), val UInt32) ENGINE = MergeTree ORDER BY dt;
@@ -11,8 +10,6 @@ INSERT INTO test_window_interval_offset VALUES
     ('2024-03-01', '2024-03-01 00:00:00', 5),
     ('2024-03-31', '2024-03-31 00:00:00', 6),
     ('2025-01-31', '2025-01-31 00:00:00', 7);
-
-SET enable_analyzer = 1;
 
 SELECT 'Date key, INTERVAL DAY, begin offset';
 SELECT dt, val, sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS rolling
@@ -110,26 +107,5 @@ SELECT 'Rejected: negative interval';
 SELECT sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL -1 DAY PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError BAD_ARGUMENTS }
 SELECT 'Rejected: non-constant offset';
 SELECT sum(val) OVER (ORDER BY val ROWS BETWEEN val PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError BAD_ARGUMENTS }
-
-SET enable_analyzer = 0;
-
-SELECT 'Old analyzer: Date key, INTERVAL MONTH';
-SELECT dt, val, sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS rolling
-FROM test_window_interval_offset;
-
-SELECT 'Old analyzer: DateTime key, INTERVAL HOUR';
-SELECT ts, val, sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND CURRENT ROW) AS rolling
-FROM test_window_interval_offset;
-
-SELECT 'Old analyzer: windows differing only by unit are not merged';
-SELECT dt, val,
-    sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS by_day,
-    sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS by_month
-FROM test_window_interval_offset;
-
-SELECT 'Old analyzer, rejected: ROWS frame with interval';
-SELECT sum(val) OVER (ORDER BY dt ROWS BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError BAD_ARGUMENTS }
-SELECT 'Old analyzer, rejected: numeric key with interval';
-SELECT sum(val) OVER (ORDER BY val RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE test_window_interval_offset;
