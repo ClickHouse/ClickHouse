@@ -60,3 +60,24 @@ SELECT count() FROM t_has_dynamic_same_type
 WHERE NOT has([CAST((1, toUInt16(1)), 'Tuple(UInt8, Dynamic)')], x) SETTINGS use_primary_key = 0;
 
 DROP TABLE t_has_dynamic_same_type;
+
+-- A `Variant` key side, both sides declared alike and compared at the top level, where the comparison is
+-- accurate: `Date '1970-01-02'` is day 1, equal to `UInt8` 1, while the two cast to '1970-01-02' and '1'.
+-- The set must occupy both alternatives, or its element narrows to one and is no longer the key's type.
+
+DROP TABLE IF EXISTS t_has_variant_same_type;
+
+CREATE TABLE t_has_variant_same_type (v Variant(UInt8, Date)) ENGINE = MergeTree ORDER BY toString(v)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO t_has_variant_same_type VALUES (toDate('1970-01-02')), (toDate('1971-01-01')), (7);
+
+SELECT sum(has([CAST(1, 'Variant(UInt8, Date)'), CAST(toDate('1999-12-31'), 'Variant(UInt8, Date)')], v))
+FROM t_has_variant_same_type;
+SELECT count() FROM t_has_variant_same_type
+WHERE has([CAST(1, 'Variant(UInt8, Date)'), CAST(toDate('1999-12-31'), 'Variant(UInt8, Date)')], v);
+SELECT count() FROM t_has_variant_same_type
+WHERE has([CAST(1, 'Variant(UInt8, Date)'), CAST(toDate('1999-12-31'), 'Variant(UInt8, Date)')], v)
+SETTINGS use_primary_key = 0;
+
+DROP TABLE t_has_variant_same_type;

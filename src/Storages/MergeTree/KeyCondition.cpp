@@ -3257,8 +3257,11 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     if (element_type_is_from_column && contains_float(checked_element_type))
         return false;
 
-    /// A relaxed atom is checked too: relaxing only permits false positives in `can_be_false`, while
-    /// the positive direction still trusts `can_be_true`, which needs the set to over-approximate `has`.
+    /// A relaxed atom is checked by the same rule. Relaxing permits false positives in `can_be_true`, so
+    /// an over-approximating set is sound and an under-approximating one is not; it does not permit
+    /// turning a comparison that raises at runtime (`has([toIPv4('1.2.3.4')], x)` over a `UInt32` key
+    /// reports `Cannot compare DB::IPv4 with unsigned long` once a granule reaches the filter) into an
+    /// empty result.
     if (!areSetAndKeyTypesCompatibleForHas(
             {checked_element_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
         return false;
