@@ -505,7 +505,9 @@ def test_remove_orphan_files_gate_setting(started_cluster_iceberg_with_spark, st
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_remove_orphan_files_rejected_when_gc_disabled(started_cluster_iceberg_with_spark, storage_type):
+def test_remove_orphan_files_rejected_when_gc_disabled(
+    started_cluster_iceberg_with_spark, storage_type
+):
     """remove_orphan_files must not delete files when gc.enabled is false."""
     env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_gc_disabled")
     env.populate(1)
@@ -521,13 +523,14 @@ def test_remove_orphan_files_rejected_when_gc_disabled(started_cluster_iceberg_w
     time.sleep(2)
     files_before = env.list_files()
 
-    error = env.instance.query_and_get_error(
-        f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files(older_than = '{env.now_ts()}');",
-        settings=ICEBERG_SETTINGS,
-    )
+    for dry_run in [0, 1]:
+        error = env.instance.query_and_get_error(
+            f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files(older_than = '{env.now_ts()}', dry_run = {dry_run});",
+            settings=ICEBERG_SETTINGS,
+        )
+        assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
+        assert "GC is disabled" in error, f"Expected GC-disabled error, got: {error}"
 
-    assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
-    assert "GC is disabled" in error, f"Expected GC-disabled error, got: {error}"
     assert env.list_files() == files_before
     assert env.exists("data", "orphan-gc-disabled.parquet")
     env.assert_data_intact()

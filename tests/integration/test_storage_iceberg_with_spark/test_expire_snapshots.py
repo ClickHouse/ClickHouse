@@ -228,13 +228,13 @@ def test_expire_snapshots_rejected_when_gc_is_not_true(
     files_before = set(default_download_directory(
         started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
     ))
-    error = instance.query_and_get_error(
-        f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots();",
-        settings=ICEBERG_SETTINGS,
-    )
-
-    assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
-    assert "GC is disabled" in error, f"Expected GC-disabled error, got: {error}"
+    for dry_run in [0, 1]:
+        error = instance.query_and_get_error(
+            f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots(dry_run = {dry_run});",
+            settings=ICEBERG_SETTINGS,
+        )
+        assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
+        assert "GC is disabled" in error, f"Expected GC-disabled error, got: {error}"
 
     metadata_after, metadata_path_after = _read_iceberg_metadata(instance, TABLE_NAME)
     files_after = set(default_download_directory(

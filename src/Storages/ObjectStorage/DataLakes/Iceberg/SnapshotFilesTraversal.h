@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
 
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -45,6 +46,7 @@ struct ReachableFilesResult
     /// Resolved storage path of the metadata file the traversal was rooted at. Two distinct
     /// files can share a version number, so identity of the root is this path, not the number.
     String metadata_path;
+    Poco::JSON::Object::Ptr metadata;
 };
 
 /// Collect all files reachable through the metadata graph.
