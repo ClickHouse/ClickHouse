@@ -2155,7 +2155,8 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
     }
 }
 
-void ServerSettings::mirrorCommandLineToConfigPaths(const std::vector<std::string> & argv, Poco::Util::LayeredConfiguration & config)
+void ServerSettings::mirrorCommandLineToConfigPaths(
+    const std::vector<std::string> & argv, const Poco::Util::OptionSet & builtin_options, Poco::Util::LayeredConfiguration & config)
 {
     /// A setting backed by a nested config key can be given on the command line under two spellings: the
     /// flat setting name (`openssl_server_required_tls_v1_2`, as a direct option or after the `--`
@@ -2186,8 +2187,16 @@ void ServerSettings::mirrorCommandLineToConfigPaths(const std::vector<std::strin
     /// spelling (`-- --config_file ...`) actually select the configuration file instead of only being
     /// reported by `system.server_settings` (and consumed by e.g. the relative `hdfs_libhdfs3_conf`
     /// resolution) while the server runs on a different config.
+    ///
+    /// A built-in option of the application that binds the config key of such a setting is a third spelling
+    /// of it: `--log-file` (`-L`) binds `logger.log`, the key of `logger_log`, and `--errorlog-file` (`-E`)
+    /// binds `logger.errorlog`, the key of `logger_errorlog`. Poco stores the value of a direct option in
+    /// the application layer, where the later of `--logger_log a --log-file b` wins, but the mirrored layer
+    /// below has a higher priority - so if the built-in spellings were not recognized here, the value of
+    /// `--logger_log` would be published over the later `--log-file` and the earlier occurrence would win.
     const auto & accessor = ServerSettingsTraits::Accessor::instance();
     std::unordered_map<std::string_view, size_t> spellings;
+    std::unordered_map<std::string_view, size_t> settings_by_key;
     for (size_t i = 0; i < accessor.size(); ++i)
     {
         std::string_view path = accessor.getPath(i);
@@ -2195,6 +2204,20 @@ void ServerSettings::mirrorCommandLineToConfigPaths(const std::vector<std::strin
             continue;
         spellings[accessor.getName(i)] = i;
         spellings[path] = i;
+        settings_by_key[path] = i;
+    }
+
+    /// The short name of a built-in option (`-L b`) reaches `argsToConfig` as the key `L`, the full name
+    /// (`--log-file b`, or `--log-file=b`) as `log-file`; an abbreviation of the full name has already been
+    /// expanded by the time this function runs (see `expandBuiltinOptionAbbreviations` in the server).
+    for (const auto & option : builtin_options)
+    {
+        auto it = settings_by_key.find(option.binding());
+        if (it == settings_by_key.end())
+            continue;
+        spellings[option.fullName()] = it->second;
+        if (!option.shortName().empty())
+            spellings[option.shortName()] = it->second;
     }
 
     /// The last occurrence on the command line wins, whichever spelling it uses.

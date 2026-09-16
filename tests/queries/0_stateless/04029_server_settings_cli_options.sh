@@ -405,3 +405,43 @@ $CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name 
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
+
+# Test 16: A built-in option that binds the config key of a path-backed setting is another spelling of
+# that setting: `--log-file` (`-L`) binds `logger.log`, the key of `logger_log`, and `--errorlog-file`
+# (`-E`) binds `logger.errorlog`, the key of `logger_errorlog`. The "last occurrence wins" contract must
+# hold when the new flat spelling is mixed with the built-in one, in both orders: here the built-in
+# `--log-file` comes after `--logger_log` and must win, and the flat `--logger_errorlog` comes after the
+# short built-in `-E` and must win. Both `system.server_settings` and the files the server really writes
+# must reflect the winners.
+srv_dir16="${CLICKHOUSE_TMP}/srv16"
+mkdir -p "$srv_dir16"
+$CLICKHOUSE_BINARY server \
+    --logger_log "$srv_dir16/loser.log" --log-file "$srv_dir16/winner.log" \
+    -E "$srv_dir16/loser.err" --logger_errorlog "$srv_dir16/winner.err" \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir16/" > "${CLICKHOUSE_TMP}/server16.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server16.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "SELECT name, splitByChar('/', value)[-1] FROM system.server_settings WHERE name IN ('logger.log', 'logger.errorlog') ORDER BY name"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT
+
+for f in winner.log winner.err loser.log loser.err; do
+    if [[ -e "$srv_dir16/$f" ]]; then
+        echo "$f exists"
+    else
+        echo "$f does not exist"
+    fi
+done

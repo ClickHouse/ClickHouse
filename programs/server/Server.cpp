@@ -901,8 +901,12 @@ void Server::initialize(Poco::Util::Application & self)
 
     /// The command-line values of the settings backed by a nested config key have to be mirrored into that key
     /// before the configuration file is loaded and before the loggers are built, because the components reading
-    /// the raw configuration do not go through `ServerSettings`.
-    ServerSettings::mirrorCommandLineToConfigPaths(argv(), config());
+    /// the raw configuration do not go through `ServerSettings`. The built-in options are passed so that
+    /// `--log-file` counts as another spelling of `logger_log` (both bind `logger.log`), and likewise for
+    /// `--errorlog-file` and `logger_errorlog`.
+    Poco::Util::OptionSet builtin_options;
+    defineBuiltinOptions(builtin_options);
+    ServerSettings::mirrorCommandLineToConfigPaths(argv(), builtin_options, config());
 
     BaseDaemon::initialize(self);
     logger().information("starting up");

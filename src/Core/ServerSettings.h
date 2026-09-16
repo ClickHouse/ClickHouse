@@ -76,9 +76,12 @@ struct ServerSettings
     /// Mirror the command-line values of the settings backed by a config key different from the setting
     /// name (e.g. `openssl_server_required_tls_v1_2` -> `openSSL.server.requireTLSv1_2`, or `config_file`
     /// -> `config-file`) into that key, so that the components reading the raw configuration and
-    /// `system.server_settings` always agree.
+    /// `system.server_settings` always agree. A built-in option of the application (`builtin_options`)
+    /// that binds the same key (e.g. `--log-file` -> `logger.log`, the key of `logger_log`) counts as
+    /// another spelling of the setting.
     /// Must be called before the configuration file is loaded - see the implementation for the details.
-    static void mirrorCommandLineToConfigPaths(const std::vector<std::string> & argv, Poco::Util::LayeredConfiguration & config);
+    static void mirrorCommandLineToConfigPaths(
+        const std::vector<std::string> & argv, const Poco::Util::OptionSet & builtin_options, Poco::Util::LayeredConfiguration & config);
 
     /// Check that all top-level keys in the config are known server settings or known config sections.
     /// Throws an exception if an unknown key is found (unless skip_check_for_incorrect_settings is set,
