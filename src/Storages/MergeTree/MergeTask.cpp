@@ -1061,12 +1061,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     tryFlattenGatheringColumns(
         *global_ctx->data_settings,
         global_ctx->gathering_columns,
-        global_ctx->merging_columns,
         global_ctx->storage_columns,
         global_ctx->metadata_snapshot,
         global_ctx->future_part->parts,
         patch_parts,
-        global_ctx->new_data_part->expired_columns,
         columns_with_statistics_to_rebuild,
         global_ctx->skip_indexes_by_column,
         ctx->log);

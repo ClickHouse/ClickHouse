@@ -22,12 +22,10 @@ struct MergeTreeSettings;
 void tryFlattenGatheringColumns(
     const MergeTreeSettings & settings,
     NamesAndTypesList & gathering_columns,
-    const NamesAndTypesList & merging_columns,
     const NamesAndTypesList & storage_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartsVector & parts,
     const MergeTreeDataPartsVector & patch_parts,
-    const NameSet & expired_columns,
     const NameSet & columns_with_statistics_to_rebuild,
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log);
