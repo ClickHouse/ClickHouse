@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A PARTITION BY window under make_distributed_plan=1 is parallelized: the "any" scatter feeding the
 -- window's sort is retargeted to hash by the partition columns and the window runs per bucket below a
 -- sorted gather (`tryPushWindowBelowSortedGather`). The reference pins the full distributed EXPLAIN,
