@@ -58,6 +58,8 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    /// Push a predicate over non-key columns below an `ANY INNER JOIN`, to the side that owns the columns.
+    bool filter_push_down_over_any_inner_join;
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;

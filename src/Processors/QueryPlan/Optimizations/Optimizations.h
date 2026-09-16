@@ -95,6 +95,8 @@ struct Optimization
         bool short_circuit_function_evaluation_disabled = false;
         bool lower_array_join_function = false;
         bool enable_lazy_columns_replication = false;
+        /// Mirrors `QueryPlanOptimizationSettings::filter_push_down_over_any_inner_join`.
+        bool filter_push_down_over_any_inner_join = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

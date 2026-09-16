@@ -28,3 +28,17 @@
             Prewhere filter column: equals(__table1.k, 1_UInt8) (removed)
           ReadType: Default
             Prewhere filter column: equals(__table2.k, 1_UInt8) (removed)
+-- push-down allowed: non-key filter on the right column prunes the right side
+              Condition: true
+              Granules: 3/3
+              Condition: (v in [10, 10])
+              Granules: 1/3
+-- push-down allowed: non-key filter on the left column prunes the left side
+              Condition: (a in [100, 100])
+              Granules: 1/3
+              Condition: true
+              Granules: 3/3
+-- push-down allowed: a key keeps a match whenever any of its right rows qualifies
+2
+-- push-down allowed: a key keeps a match whenever any of its left rows qualifies
+2

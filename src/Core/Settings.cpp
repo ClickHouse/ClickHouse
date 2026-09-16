@@ -6835,6 +6835,20 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_filter_push_down_over_any_inner_join, true, R"(
+Allows the filter push-down optimization to move a `WHERE` predicate over non-key columns below an `ANY INNER JOIN`, to the side of the join that owns the columns.
+
+`ANY INNER JOIN` returns one row per key from both sides, and which row is taken for a key is not specified. Filtering a side before the join lets the join choose among the rows that already satisfy the predicate, so a key keeps a match whenever any of its rows qualifies. Filtering after the join tests the predicate on whichever row the join happened to take, so a key may be dropped although another of its rows would have qualified. Both outcomes are permitted; the second one is the same as evaluating the join first and then the `WHERE`. The push-down reads only the matching part of the table and is enabled by default. Set it to 0 to keep the predicate above the join.
+
+Predicates over the equi-join keys are pushed down regardless of this setting: such a predicate removes whole key groups and cannot change the row taken for the groups that remain.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) and [query_plan_filter_push_down](#query_plan_filter_push_down) are 1.
+
+Possible values:
+
+- 0 - Keep a predicate over non-key columns above an `ANY INNER JOIN`
+- 1 - Push it down to the side that owns the columns
+)", 0) \
     DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
 Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning

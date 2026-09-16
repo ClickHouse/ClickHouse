@@ -466,7 +466,10 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
 
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 
-static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
+static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node,
+    QueryPlan::Nodes & nodes,
+    QueryPlan::Node * child_node,
+    const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
     QueryPlanStepPtr & child = child_node->step;
@@ -621,7 +624,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         left_stream_filter_push_down_input_columns_available = false;
 
     /** `ANY INNER` join emits at most one row per key, deduplicating both sides.
-      * Both sides are blocked: filtering the right stream can change which match is taken for the left row.
+      * When `query_plan_filter_push_down_over_any_inner_join` is off both sides are blocked:
+      * filtering the right stream can change which match is taken for the left row.
       * If the left side has multiple rows with the same value, only one survives
       * and pushing the filter down to the left may affect which one survives.
       * Also the optimizer is allowed to swap the sides of the join after that pass,
@@ -631,7 +635,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     const bool is_any_inner_join = (table_join_ptr && isAnyInnerJoin(table_join_ptr->kind(), table_join_ptr->strictness()))
         || (logical_join && isAnyInnerJoin(logical_join->getJoinOperator().kind, logical_join->getJoinOperator().strictness));
 
-    if (is_any_inner_join)
+    if (!settings.filter_push_down_over_any_inner_join && is_any_inner_join)
     {
         right_stream_filter_push_down_input_columns_available = false;
         left_stream_filter_push_down_input_columns_available = false;
@@ -1366,7 +1370,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<BuildRuntimeFilterStep>(parent_node, true, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node))
+    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node, settings))
         return updated_steps;
 
     /// TODO.
