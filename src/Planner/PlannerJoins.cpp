@@ -1232,16 +1232,15 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        /// Covers the single-level hash-join shapes. The rest falls back to `parallel_hash`, if it
-        /// is enabled, or `hash` below - at plan time, never at execution time.
+        /// Covers the single-level hash-join shapes; the rest falls back to `hash` below, at plan time.
         algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
         const bool spill_to_disk = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk()
             && GraceHashJoin::isSupported(table_join);
 
-        /// The partitioned join has no spilling mode yet, so an external-join limit sends the join to
-        /// `hash` below - at plan time, like the shapes `isSupported` declines.
+        /// The partitioned join has no spilling mode yet, so an external-join limit is one more shape
+        /// that `hash` takes.
         if (algorithm == JoinAlgorithm::PARTITIONED_HASH && !spill_to_disk && PartitionedHashJoin::isSupported(*table_join))
             return std::make_shared<PartitionedHashJoin>(
                 table_join,

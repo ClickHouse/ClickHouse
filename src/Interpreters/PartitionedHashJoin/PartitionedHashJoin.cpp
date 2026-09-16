@@ -151,8 +151,8 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
     /// Everything the single-level `HashJoin` machinery serves: INNER/LEFT/RIGHT/FULL crossed with
     /// ALL/ANY/RightAny/SEMI/ANTI, plus ASOF, null maps, per-clause ON filters, USING, and any number
     /// of disjuncts. Out: special storages, and the Cross/Comma/Paste and ON-constant joins, which are
-    /// routed before the algorithm loop. Also out: mixed non-equi ON conditions, which `parallel_hash`
-    /// serves better than a delegated single-threaded build would.
+    /// routed before the algorithm loop. Also out: mixed non-equi ON conditions, which the parallel
+    /// `hash` layout serves better than a delegated single-threaded build would.
     const JoinKind kind = table_join.kind();
     const JoinStrictness strictness = table_join.strictness();
 
