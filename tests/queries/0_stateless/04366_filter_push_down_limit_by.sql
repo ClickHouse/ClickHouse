@@ -143,6 +143,49 @@ SELECT count(), sum(val) FROM (
     SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
 ) WHERE key IN (SELECT k FROM t_04366_keys WHERE k = '5');
 
+-- The bound is a row count, not a subquery test: a built literal set larger than it is held back
+-- too. Four elements against a bound of three.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '7', '11', '13')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 3
+);
+
+-- The same list at a bound equal to its size is pushed: the comparison is strictly greater-than.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '7', '11', '13')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4
+);
+
+-- `getTotalRowCount` deduplicates, while the sorted materialization filters the original list, so
+-- the pre-deduplication length is bounded as well. Three distinct values in a six-entry list
+-- against a bound of four: the deduplicated size fits and the list length does not.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '5', '7', '7', '11', '11')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4
+);
+
+-- The same list at a bound that covers its length passes both checks and is pushed.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '5', '7', '7', '11', '11')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 6
+);
+
 DROP TABLE t_04366_keys;
 
 DROP TABLE t_04366;

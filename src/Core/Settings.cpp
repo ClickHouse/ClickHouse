@@ -7030,7 +7030,7 @@ Used by the aggregate projection matcher (and any future projection matcher that
     DECLARE(UInt64, query_plan_max_set_size_for_filter_push_down_below_limit_by, 10000, R"(
 Maximum number of rows in an `IN`-clause set for which a conjunct probing that set may be pushed below a `LIMIT BY` on the set's column. A larger set, a literal list with more entries than this before deduplication, or a set a subquery has not produced yet, keeps the conjunct above the `LIMIT BY`.
 
-Below the step the conjunct reaches index analysis, which materializes the whole set in sorted order to prune with, and it is also merged into the source filter, where `in` is not evaluated lazily and so runs on every source row. Both costs grow with the set, while `LIMIT BY` only trims each group, so a large set is paid for with no matching saving. `0` means no limit, which restores the behaviour of 26.7 and 26.8.
+Below the step the conjunct reaches index analysis, which materializes the whole set in sorted order to prune with, and it is also merged into the source filter, where `in` is not evaluated lazily and so runs on every source row. The materialization grows with the set, while `LIMIT BY` only trims each group, so a large set is paid for with no matching saving. `0` means no limit, which restores the behaviour of 26.7 and 26.8.
 )", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
