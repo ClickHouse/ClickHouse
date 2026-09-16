@@ -23,7 +23,6 @@ std::optional<int> sumTypeOf(const IDataType & type);
 
 size_t elementSizeOf(int element_type);
 
-std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size);
 
 void * resizeForElementType(IColumn & column, size_t num_rows, int element_type);
 
@@ -55,34 +54,6 @@ private:
 };
 
 
-class DeviceBuffer
-{
-public:
-    explicit DeviceBuffer(size_t bytes_);
-
-    ~DeviceBuffer();
-
-    /// Holds a device resource, and there is no use for a second name for one.
-    DeviceBuffer(const DeviceBuffer &) = delete;
-    DeviceBuffer & operator=(const DeviceBuffer &) = delete;
-
-    /// Copies the `bytes` at `host_data` into the buffer at `offset`. Returns once the copy has
-    /// run, so the block the bytes came from may be released as soon as this does.
-    void copyIn(size_t offset, const char * host_data, size_t bytes);
-
-    /// Sums the first `num_rows` values, which have to be of `element_type`, and returns the sum as
-    /// a `Field` of the type `sum_type` names. Nothing crosses the link but those eight bytes.
-    Field sum(int element_type, int sum_type, size_t num_rows) const;
-
-    /// What the cache weighs this at - device bytes, the thing `gpu_column_cache_size` limits.
-    size_t size() const { return bytes; }
-
-private:
-    const size_t bytes;
-
-    /// The device memory, behind the boundary. Owned - see the destructor.
-    void * handle = nullptr;
-};
 
 bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types);
 

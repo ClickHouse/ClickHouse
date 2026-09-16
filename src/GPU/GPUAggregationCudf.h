@@ -67,26 +67,4 @@ int clickhouseGPUGroupBySumCopyOut(
 
 void clickhouseGPUGroupBySumDestroy(void * handle);
 
-
-int clickhouseGPUDeviceBufferAllocate(size_t bytes, void ** handle, char * error, size_t error_size);
-
-int clickhouseGPUDeviceBufferCopyIn(
-    void * handle,
-    size_t offset,
-    const void * host_data,
-    size_t bytes,
-    char * error,
-    size_t error_size);
-
-int clickhouseGPUDeviceBufferSum(
-    void * handle,
-    int element_type,
-    int sum_type,
-    size_t num_rows,
-    void * result,
-    char * error,
-    size_t error_size);
-
-    void clickhouseGPUDeviceBufferFree(void * handle);
-
 }

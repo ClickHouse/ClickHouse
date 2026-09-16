@@ -9376,17 +9376,14 @@ Every value has to cross the PCIe link to reach the device, and that link is nar
 CPU's own path to memory - so a sum whose column has to be sent over is normally **slower** than
 the same sum on the CPU, and slower still than the CPU using several threads.
 
-Where the speed comes from is not sending it: with the server setting `gpu_column_cache_size` set,
-a keyless `sum` over plain `UInt64`, `Int64` or `Float64` columns of a `MergeTree` table keeps
-those columns in device memory, and every query after the first reads no disk, decompresses
-nothing and sends nothing - it reduces what is already there. On a Tesla T4 over 1.49 GiB of
-`UInt64`, that reduction is 6 ms where sending the same values takes 334 ms and the whole query on
-sixteen cores takes 430 ms. `EXPLAIN` names the source step `ReadFromGPUResidentColumns` when a
-query is answered that way.
+Measured on a Tesla T4 over 1.49 GiB of `UInt64`: the reduction itself takes 8 ms, sending the
+values to the device takes 353 ms, and the whole query is 0.77 s against 0.35 s for the same query
+on sixteen cores. So a `sum` whose column has to be sent is currently about twice as slow as the
+CPU's, and the device pays for itself only once the data reaches it by some cheaper route than one
+uncompressed copy per query.
 
 `GPUAggregationRows`, `GPUAggregationBatches` and `GPUAggregationMicroseconds` in `system.events`
-say how much was summed and how long it took, and `GPUColumnCacheHits`, `GPUColumnCacheMisses`,
-`GPUColumnCacheUploadedBytes` and `GPUColumnCacheEvictions` say how much of it had to be sent over.
+say how much was summed and how long the device calls took.
 :::
 
 :::note

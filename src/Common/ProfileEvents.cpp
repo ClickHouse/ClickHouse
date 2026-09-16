@@ -441,11 +441,6 @@
     M(GPUAggregationRows, "Number of rows summed on a GPU by the experimental GPU aggregation.", ValueType::Number) \
     M(GPUAggregationBatches, "Number of batches of values sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction.", ValueType::Number) \
     M(GPUAggregationMicroseconds, "Total time spent transferring batches of values to a GPU and reducing them there.", ValueType::Microseconds) \
-    M(GPUColumnCacheHits, "Number of columns of a MergeTree part that a GPU aggregation found in device memory and summed without reading anything on the host.", ValueType::Number) \
-    M(GPUColumnCacheMisses, "Number of columns of a MergeTree part that a GPU aggregation had to read and upload because they were not in device memory.", ValueType::Number) \
-    M(GPUColumnCacheUploadedBytes, "Number of bytes of column data copied from host memory into device memory by the GPU column cache.", ValueType::Bytes) \
-    M(GPUColumnCacheEvictedBytes, "Number of bytes of column data released from device memory by the GPU column cache to stay within gpu_column_cache_size.", ValueType::Bytes) \
-    M(GPUColumnCacheEvictions, "Number of columns released from device memory by the GPU column cache to stay within gpu_column_cache_size.", ValueType::Number) \
     M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \

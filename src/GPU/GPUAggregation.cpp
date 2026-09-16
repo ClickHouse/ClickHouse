@@ -21,7 +21,6 @@ namespace ProfileEvents
     extern const Event GPUAggregationRows;
     extern const Event GPUAggregationBatches;
     extern const Event GPUAggregationMicroseconds;
-    extern const Event GPUColumnCacheUploadedBytes;
 }
 
 namespace DB
@@ -247,70 +246,9 @@ Field SumAccumulator::finalize()
     }
 }
 
-DeviceBuffer::DeviceBuffer(size_t bytes_)
-    : bytes(bytes_)
-{
-    char error[error_buffer_size] = {};
 
-    const int status = clickhouseGPUDeviceBufferAllocate(bytes, &handle, error, sizeof(error));
 
-    if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot hold {} bytes of a column in device memory: {}", bytes, error);
-}
 
-DeviceBuffer::~DeviceBuffer()
-{
-    clickhouseGPUDeviceBufferFree(handle);
-}
-
-void DeviceBuffer::copyIn(size_t offset, const char * host_data, size_t bytes_to_copy)
-{
-    char error[error_buffer_size] = {};
-
-    Stopwatch watch;
-    const int status = clickhouseGPUDeviceBufferCopyIn(handle, offset, host_data, bytes_to_copy, error, sizeof(error));
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-
-    if (status != 0)
-        throw Exception(
-            ErrorCodes::GPU_ERROR,
-            "Cannot copy {} bytes of a column to the device at offset {} of {}: {}",
-            bytes_to_copy,
-            offset,
-            bytes,
-            error);
-
-    ProfileEvents::increment(ProfileEvents::GPUColumnCacheUploadedBytes, bytes_to_copy);
-}
-
-Field DeviceBuffer::sum(int element_type, int sum_type, size_t num_rows) const
-{
-    UInt64 raw_sum = 0;
-    char error[error_buffer_size] = {};
-
-    Stopwatch watch;
-    const int status = clickhouseGPUDeviceBufferSum(handle, element_type, sum_type, num_rows, &raw_sum, error, sizeof(error));
-    const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
-
-    if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot sum {} values held on the device: {}", num_rows, error);
-
-    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, elapsed_microseconds);
-
-    switch (sum_type)
-    {
-        case CLICKHOUSE_GPU_SUM_UINT64:
-            return Field(raw_sum);
-        case CLICKHOUSE_GPU_SUM_INT64:
-            return Field(static_cast<Int64>(raw_sum));
-        case CLICKHOUSE_GPU_SUM_FLOAT64:
-            return Field(std::bit_cast<Float64>(raw_sum));
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU sum type {}", sum_type);
-    }
-}
 
 bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types)
 {
