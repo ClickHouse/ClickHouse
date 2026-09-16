@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/Port.h>
+#include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <functional>
+#include <set>
 #include <utility>
 
 using namespace DB;
@@ -381,6 +384,15 @@ private:
     std::vector<std::weak_ptr<IProcessor>> batch_history;
 };
 
+Chunk makeSingleValueChunk(UInt8 value)
+{
+    auto column = ColumnUInt8::create();
+    column->insertValue(value);
+    Columns columns;
+    columns.emplace_back(std::move(column));
+    return Chunk(std::move(columns), 1);
+}
+
 }
 
 TEST(Processors, PortDisconnect)
@@ -603,4 +615,70 @@ TEST(Processors, UpdatePipelineRemovalIsNotStrandedByCancellation)
     /// A source scheduled for removal must leave the pipeline even when the query is cancelled in
     /// the middle of the update, otherwise it stays around until the whole pipeline is destroyed.
     EXPECT_TRUE(coordinator->getSourceWeak(0).expired());
+}
+
+/// Reclaiming a retired processor sweeps `post_updated_output_ports` of *every* node under the graph
+/// write lock, so a processor that touches its ports outside `prepare` writes to that vector with no
+/// lock held. Scatter next to removal churn, on many threads, is that collision.
+TEST(Processors, UpdatePipelineRemovalWithConcurrentScatter)
+{
+    constexpr size_t total_batches = 400;
+    constexpr size_t scatter_outputs = 8;
+    constexpr size_t scattered_chunks = 4000;
+    constexpr size_t num_threads = 16;
+
+    auto header = makeHeader();
+
+    auto coordinator = std::make_shared<BatchCyclingCoordinator>(header, total_batches);
+
+    Chunks chunks;
+    chunks.reserve(scattered_chunks);
+    for (size_t i = 0; i < scattered_chunks; ++i)
+        chunks.push_back(makeSingleValueChunk(static_cast<UInt8>(i % 256)));
+
+    Pipe scatter_pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks)));
+    scatter_pipe.transform([&](const OutputPortRawPtrs & ports) -> Processors
+    {
+        auto scatter = ScatterByPartitionTransform::createRoundRobin(header, scatter_outputs, /*start_bucket=*/0);
+        connect(*ports.front(), scatter->getInputs().front());
+        return Processors{std::move(scatter)};
+    });
+
+    Pipes pipes;
+    pipes.emplace_back(coordinator);
+    pipes.emplace_back(std::move(scatter_pipe));
+
+    auto united = Pipe::unitePipes(std::move(pipes));
+    united.resize(1, /*strict=*/false, /*min_outstreams_per_resize_after_split=*/0);
+
+    QueryPipeline pipeline(std::move(united));
+    pipeline.setNumThreads(num_threads);
+
+    std::multiset<UInt8> pulled;
+    {
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            if (!chunk)
+                continue;
+            const auto & col = assert_cast<const ColumnUInt8 &>(*chunk.getColumns().front());
+            for (size_t i = 0; i < chunk.getNumRows(); ++i)
+                pulled.insert(col.getElement(i));
+        }
+
+        /// Removal still runs to completion alongside the scatter.
+        for (const auto & weak : coordinator->batchHistory())
+            EXPECT_TRUE(weak.expired());
+    }
+
+    std::multiset<UInt8> expected;
+    /// The coordinator's first batch is swallowed by its EarlyClosingTransform.
+    for (size_t i = 1; i < total_batches; ++i)
+        expected.insert(static_cast<UInt8>(i));
+    for (size_t i = 0; i < scattered_chunks; ++i)
+        expected.insert(static_cast<UInt8>(i % 256));
+
+    EXPECT_EQ(pulled, expected);
 }
