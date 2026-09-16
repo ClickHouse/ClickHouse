@@ -318,7 +318,7 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
     if (hasAnyNonFinishedTTLInMap(group_by_ttl))
         return true;
 
-    if (has_non_finished_ttl(index_clear_ttl))
+    if (hasAnyNonFinishedTTLInMap(index_clear_ttl))
         return true;
 
     return false;
