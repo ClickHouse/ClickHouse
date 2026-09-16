@@ -16,7 +16,7 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserDropTypeQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
-#include <Parsers/ParserHypotheticalIndexQuery.h>
+#include <Parsers/ParserHypotheticalObjectQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -126,7 +126,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropHandlerQuery drop_handler_p;
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
-    ParserHypotheticalIndexQuery hypothetical_index_p;
+    ParserHypotheticalObjectQuery hypothetical_object_p;
     ParserDropTypeQuery drop_type_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
@@ -154,7 +154,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_handler_p.parse(pos, node, expected)
         || create_index_p.parse(pos, node, expected)
         || drop_index_p.parse(pos, node, expected)
-        || hypothetical_index_p.parse(pos, node, expected)
+        || hypothetical_object_p.parse(pos, node, expected)
         || parseGrantOrDropAccessEntityQuery(pos, node, expected)
         || drop_type_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
