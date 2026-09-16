@@ -28,10 +28,6 @@ struct IsStorageTouched
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
-/// Returns whether the analyzer should be used for mutations.
-/// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
-bool shouldUseAnalyzerForMutations(const ContextPtr & context);
-
 /// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
@@ -238,7 +234,6 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
-    bool use_analyzer = false;
 
     LoggerPtr logger;
 
@@ -254,7 +249,7 @@ private:
     /// Each stage has output_columns that contain columns that are changed at the end of that stage
     /// plus columns needed for the next mutations.
     ///
-    /// First stage is special: it can contain only filters and is executed using InterpreterSelectQuery
+    /// First stage is special: it can contain only filters and is executed as a plain read
     /// to take advantage of table indexes (if there are any). It's necessary because all mutations have
     /// `WHERE clause` part.
 

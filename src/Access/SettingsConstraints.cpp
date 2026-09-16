@@ -64,10 +64,11 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
 }
 
 /// The analyzer became mandatory in v26.9: `enable_analyzer` (canonically
-/// `allow_experimental_analyzer`) is an obsolete setting frozen at its default value, and the old
-/// query analysis is not supported anymore. Unlike the other obsolete settings, a change of this one
-/// is refused rather than ignored: the value decides how a query is analyzed, so accepting it and
-/// running the query the other way would silently return a different result.
+/// `allow_experimental_analyzer`) is an obsolete setting frozen at its default value, and the query
+/// analysis it used to switch to has been removed. Unlike the other obsolete settings, a change of
+/// this one is refused rather than ignored: it used to decide how a query is analyzed, so accepting
+/// it silently would leave a configuration in place that asks for a result this server cannot
+/// produce.
 bool isChangeDisablingTheAnalyzer(std::string_view resolved_name, const Field & new_value)
 {
     return resolved_name == "allow_experimental_analyzer" && !SettingFieldBool{new_value}.value;

@@ -249,7 +249,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
@@ -9935,8 +9934,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// same context the commands will be interpreted in. An ALTER mutation does not run with the
     /// submitting session's context: the background worker builds a fresh context from the
     /// background context (`MutatePlainMergeTreeTask::createTaskContext`,
-    /// `MutateFromLogEntryTask::prepare`), so session-only settings - most importantly the
-    /// analyzer selection consulted by `shouldUseAnalyzerForMutations` - do not propagate to the
+    /// `MutateFromLogEntryTask::prepare`), so session-only settings do not propagate to the
     /// execution. Derive the analysis context the same way, so that the pruning analysis and the
     /// asynchronous execution cannot diverge. A lightweight update, on the contrary, interprets
     /// its commands in the foreground with the submitting context
@@ -9967,7 +9965,6 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     std::optional<ActionsDAG> actions_dag;
     const ActionsDAG::Node * predicate_node = nullptr;
 
-    if (shouldUseAnalyzerForMutations(execution_context))
     {
         auto expression = buildQueryTree(predicate_clone, execution_context);
 
@@ -10019,35 +10016,6 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (actions_dag->getOutputs().size() != 1)
             return std::nullopt;
         predicate_node = actions_dag->getOutputs().front();
-    }
-    else
-    {
-        /// Every column the mutation predicate may legally reference must be known here, otherwise
-        /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
-        /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
-        /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
-        /// A column that is not part of the partition key simply makes the expression opaque to
-        /// `PartitionPruner`, which then keeps the partition - it does not have to be readable here.
-        auto columns = metadata_snapshot->getColumns().getAll();
-
-        NameSet column_names;
-        for (const auto & column : columns)
-            column_names.insert(column.name);
-        for (const auto & column : metadata_snapshot->virtuals)
-        {
-            if (!column_names.contains(column.name))
-                columns.emplace_back(column.name, column.type);
-        }
-
-        TreeRewriter tree_rewriter(execution_context);
-        auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
-        actions_dag.emplace(ExpressionAnalyzer(predicate_clone, syntax_result, execution_context).getActionsDAG(false));
-
-        /// The predicate output is the node matching the predicate expression name.
-        /// `getActionsDAG` may include input columns in the outputs list, so we need
-        /// to find the correct node by name.
-        String predicate_column_name = predicate_clone->getColumnName();
-        predicate_node = actions_dag->tryFindInOutputs(predicate_column_name);
     }
 
     if (!predicate_node)
@@ -11717,47 +11685,12 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
 }
 
 QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
-    ContextPtr query_context,
-    QueryProcessingStage::Enum to_stage,
+    ContextPtr,
+    QueryProcessingStage::Enum,
     const StorageSnapshotPtr &,
     SelectQueryInfo &) const
 {
-    /// with the analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
-    if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        const auto & settings = query_context->getSettingsRef();
-        if (query_context->canUseParallelReplicasCustomKey())
-        {
-            if (query_context->getClientInfo().distributed_depth > 0)
-                return QueryProcessingStage::FetchColumns;
-
-            if (!supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
-                return QueryProcessingStage::Enum::FetchColumns;
-
-            if (to_stage >= QueryProcessingStage::WithMergeableState
-                && query_context->canUseParallelReplicasCustomKeyForCluster(*query_context->getClusterForParallelReplicas()))
-                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-        }
-
-        if (query_context->getClientInfo().collaborate_with_initiator)
-            return QueryProcessingStage::Enum::FetchColumns;
-
-        /// Parallel replicas
-        /// This branch is reached only with the analyzer disabled, and `parallel_replicas_plan_based`
-        /// requires the analyzer, so such a query reads locally: keep the stage local as well.
-        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState
-            && !settings[Setting::parallel_replicas_plan_based])
-        {
-            /// ReplicatedMergeTree
-            if (supportsReplication())
-                return QueryProcessingStage::Enum::WithMergeableState;
-
-            /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-            if (settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
-                return QueryProcessingStage::Enum::WithMergeableState;
-        }
-    }
-
+    /// The Planner decides whether parallel replicas are used, and with that the processing stage on reading.
     return QueryProcessingStage::Enum::FetchColumns;
 }
 

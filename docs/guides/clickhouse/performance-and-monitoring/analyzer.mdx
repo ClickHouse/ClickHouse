@@ -187,13 +187,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 ### Heterogeneous clusters {#heterogeneous-clusters}
 
-The analyzer significantly changes the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers that do not agree on whether the analyzer is used - which, for a cluster of servers older than `26.9`, means servers with different `enable_analyzer` setting values.
-
-### Mutations are interpreted by previous analyzer {#mutations-are-interpreted-by-previous-analyzer}
-
-Mutations are still using the old analyzer.
-This means some new ClickHouse SQL features can't be used in mutations. For example, the `QUALIFY` clause.
-The status can be checked [here](https://github.com/ClickHouse/ClickHouse/issues/61563).
+The analyzer significantly changes the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers that do not agree on whether the analyzer is used - which, for a cluster of servers older than `26.9`, means servers with different `enable_analyzer` setting values. A server of version `26.9` or newer has no other query analysis left, so it ignores the value an older initiator sends and analyzes the query with the analyzer regardless.
 
 ### Unsupported features {#unsupported-features}
 
