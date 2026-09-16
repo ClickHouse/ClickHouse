@@ -199,6 +199,17 @@ struct SetMethodHashed
     using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, SetMethodMapped<Data>, set_method_use_cache<Data, true>>;
 };
 
+/// For other cases. 128 bit hash from the key.
+template <typename TData>
+struct SetMethodHashedTwoLevel
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+
+    Data data;
+
+    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, void>;
+};
 
 /** Different implementations of the set.
   */
@@ -232,6 +243,8 @@ struct NonClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+
+    std::unique_ptr<SetMethodHashedTwoLevel<TwoLevelHashSet<UInt128, UInt128TrivialHash>>>   hashed_two_level;
 };
 
 struct ClearableSet
@@ -256,6 +269,8 @@ struct ClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+
+    std::unique_ptr<SetMethodHashed<ClearableHashSet<UInt128, UInt128TrivialHash>>>                  hashed_two_level;
 };
 
 /// Like NonClearableSet, but each distinct key carries a UInt64 occurrence count (a multiset),
@@ -279,6 +294,11 @@ struct CountingSet
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>>>                   keys256;
     std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>>>                    hashed;
 
+    /// Present only to satisfy APPLY_FOR_SET_VARIANTS (the pre-DISTINCT bloom-filter feature added
+    /// `hashed_two_level` to every set variant). INTERSECT ALL / EXCEPT ALL never selects it because
+    /// `SetVariants::chooseMethod` does not return `hashed_two_level`; it mirrors `hashed`.
+    std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>>>                    hashed_two_level;
+
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, true>>             nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, true>>             nullable_keys256;
 };
@@ -301,7 +321,8 @@ struct SetVariantsTemplate: public Variant
         M(keys256)              \
         M(nullable_keys128)     \
         M(nullable_keys256)     \
-        M(hashed)
+        M(hashed)               \
+        M(hashed_two_level)
 
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)

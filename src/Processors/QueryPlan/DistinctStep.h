@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -24,7 +25,11 @@ public:
         /// per-stream deduplication is best-effort: duplicates from different streams pass through it
         /// in any case, so a deduplicating consumer must follow, and on mostly-unique input the
         /// transform may abandon deduplication entirely (see `allow_preliminary_distinct_abandoning`).
-        bool pre_distinct_);
+        bool pre_distinct_,
+        UInt64 set_limit_for_enabling_bloom_filter_ = 0,
+        UInt64 bloom_filter_bytes_ = 0,
+        Float64 pass_ratio_threshold_for_disabling_bloom_filter_ = 0,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_ = 0);
 
     String getName() const override { return "Distinct"; }
     const Names & getColumnNames() const { return columns; }
@@ -37,6 +42,11 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     bool isPreliminary() const { return pre_distinct; }
+
+    UInt64 getSetLimitForEnablingBloomFilter() const { return set_limit_for_enabling_bloom_filter; }
+    UInt64 getBloomFilterBytes() const { return bloom_filter_bytes; }
+    Float64 getBloomFilterPassRatioThreshold() const { return pass_ratio_threshold_for_disabling_bloom_filter; }
+    Float64 getBloomFilterMaxRatioSetBits() const { return max_ratio_of_set_bits_in_bloom_filter; }
 
     UInt64 getLimitHint() const { return limit_hint; }
     void updateLimitHint(UInt64 hint);
@@ -71,6 +81,11 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+
+    UInt64 set_limit_for_enabling_bloom_filter;
+    UInt64 bloom_filter_bytes;
+    Float64 pass_ratio_threshold_for_disabling_bloom_filter;
+    Float64 max_ratio_of_set_bits_in_bloom_filter;
 };
 
 }

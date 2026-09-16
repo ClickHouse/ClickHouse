@@ -3,9 +3,13 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/SetVariants.h>
+#include <Interpreters/BloomFilter.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ColumnsHashing.h>
+#include <base/types.h>
 
 #include <optional>
 #include <unordered_map>
@@ -99,13 +103,23 @@ public:
     /// `skip_null_keys_` drops rows with a NULL in any key column instead of emitting them, mirroring a
     /// set fill with `transform_null_in = 0`, which skips such rows; it must only be enabled when the
     /// consumer drops them anyway.
+    /// `is_pre_distinct_` selects the preliminary (per-stream) mode: there the transform may absorb
+    /// new keys into a bloom filter instead of the hash set once the set has grown past
+    /// `set_limit_for_enabling_bloom_filter_` (0 disables it). In the final mode the transform may
+    /// instead switch to a two-level hash set probed in parallel on `max_threads_` threads.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
         bool allow_abandoning_ = false,
-        bool skip_null_keys_ = false);
+        bool skip_null_keys_ = false,
+        bool is_pre_distinct_ = false,
+        UInt64 set_limit_for_enabling_bloom_filter_ = 0,
+        UInt64 bloom_filter_bytes_ = 0,
+        Float64 pass_ratio_threshold_for_disabling_bloom_filter_ = 0,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_ = 0,
+        size_t max_threads_ = 1);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -116,8 +130,29 @@ private:
     ColumnNumbers key_columns_pos;
     /// Reset after the controller abandons deduplication, freeing the accumulated set.
     std::optional<SetVariants> data{std::in_place};
+    std::unique_ptr<BloomFilter> bloom_filter;
+    std::unique_ptr<ThreadPool> pool;
+
     Sizes key_sizes;
     const UInt64 limit_hint;
+
+    const bool is_pre_distinct;
+
+    /// BloomFilter Pre DISTINCT optimization
+    size_t total_passed_bf = 0;
+    /// Rows forwarded by the `check_only` mode. Such rows are not recorded anywhere (neither in the
+    /// hash set nor in the bloom filter), so the same key is forwarded on every occurrence and this
+    /// counter is not a count of distinct keys - it must not be compared against `limit_hint`.
+    size_t total_passed_check_only = 0;
+    bool use_bf = false;
+    bool try_init_bf;
+    UInt64 set_limit_for_enabling_bloom_filter = 1000000;
+    UInt64 bloom_filter_bytes = 0;
+    Float64 pass_ratio_threshold_for_disabling_bloom_filter = 0.7;
+    Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
+    UInt64 bf_worthless_last_set_bits = 0;
+    UInt64 bf_worthless_total_set_bits = 0;
+    UInt64 bf_worthless_last_bf_pass = 0;
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
@@ -152,13 +187,43 @@ private:
 
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>
-    void buildFilter(
+    void buildSetFilter(
         Method & method,
         const ColumnRawPtrs & key_columns,
         IColumn::Filter & filter,
         size_t rows,
         SetVariants & variants,
         const IColumn::Filter * mask) const;
+
+    template <typename Method>
+    void buildCombinedFilter(
+        Method & method,
+        const ColumnRawPtrs & columns,
+        IColumnFilter & filter,
+        size_t rows,
+        SetVariants & variants,
+        size_t & passed_bf) const;
+
+    template <typename Method>
+    void checkSetFilter(
+        Method & method,
+        const ColumnRawPtrs & columns,
+        IColumnFilter & filter,
+        size_t rows,
+        SetVariants & variants,
+        size_t & passed_bf) const;
+
+    template <typename Method>
+    void buildSetParallelFilter(
+        Method & method,
+        const ColumnRawPtrs & columns,
+        IColumnFilter & filter,
+        size_t rows,
+        SetVariants & variants,
+        ThreadPool & thread_pool) const;
+
+    /// Disables bloom filter if it is likely to have bad selectivity
+    void checkBloomFilterWorthiness();
 
     /// For a single LowCardinality key column, build a mask of rows that are
     /// the first occurrence of their LC dictionary index for this dictionary identity. Then, only those
