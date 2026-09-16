@@ -471,6 +471,10 @@ struct HashMethodKeysFixed
 
     PaddedPODArray<Key> prepared_keys;
 
+    /// Set when this state covers only a sub-range of the block: `prepared_keys` stays empty and keys
+    /// are packed one row at a time instead.
+    bool pack_keys_per_row = false;
+
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
         if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
@@ -506,13 +510,14 @@ struct HashMethodKeysFixed
 
         if (usePreparedKeys(key_sizes))
         {
-            /// The state must cover exactly the rows it will be asked about. Only `end` is clamped:
-            /// it defaults to "the whole block", while `begin` is always a row of the block.
-            chassert(!key_columns.empty());
-            const size_t block_rows = key_columns[0]->size();
-            chassert(rows.begin <= block_rows);
-            packFixedBatch(
-                keys_size, Base::getActualColumns(), key_sizes, prepared_keys, rows.begin, std::min(rows.end, block_rows));
+            /// Batch-packing costs one pass over the whole column, so a state that will be asked about
+            /// only a sub-range does not batch at all: one state per run of a sorted prefix would
+            /// otherwise pay for the whole block each time. Same trade as `Params::aggregation_in_order`.
+            const size_t block_rows = key_columns.empty() ? 0 : key_columns[0]->size();
+            if (rows.begin == 0 && rows.end >= block_rows)
+                packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            else
+                pack_keys_per_row = true;
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -583,6 +588,9 @@ struct HashMethodKeysFixed
 
             if (!prepared_keys.empty())
                 return prepared_keys[row];
+
+            if (pack_keys_per_row)
+                return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
             if constexpr (sizeof(Key) <= 16)

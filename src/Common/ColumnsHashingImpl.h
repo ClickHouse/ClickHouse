@@ -59,9 +59,9 @@ struct LastElementCacheStats
     }
 };
 
-/// The rows of the block a hashing state will be asked about. A state whose constructor precomputes
-/// per-row key data must cover exactly this range: a caller that builds one state per sub-range of a
-/// block would otherwise pay whole-block work per sub-range. `end` is clamped to the block size.
+/// The rows of the block a hashing state will be asked about. A state that is not asked about the whole
+/// column skips whole-column precomputation in its constructor, so a caller building one state per
+/// sub-range of a block does not pay whole-block work per sub-range. `end` defaults to the whole block.
 struct RowRange
 {
     size_t begin = 0;
