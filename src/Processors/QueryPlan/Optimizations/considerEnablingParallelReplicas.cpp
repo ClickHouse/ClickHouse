@@ -268,9 +268,13 @@ struct ReadIdentity
 /// An analysis carries the mark ranges selected for one read's predicates, so a pairing that lines the
 /// two plans up wrongly does not merely misestimate - it reads the wrong rows. The reads are therefore
 /// paired by the name the analyzer gave the table expression each one reads, which is stable across the
-/// two plans and distinguishes two reads of one table; anything that cannot be paired that way leaves
-/// the transplant undone rather than guessed.
-void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
+/// two plans and distinguishes two reads of one table.
+///
+/// Returns whether every read was paired. A read left unpaired keeps no analysis of its own either - the
+/// replicas plan is built with `query_plan_optimize_primary_key` off - so it would read every mark, which
+/// is the state this exists to avoid and which measured worse than not using replicas at all (TPC-H q22
+/// at sf=100 was +96% against a single node). The caller declines the candidate instead.
+bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
 {
     auto single_node_reads = collectReadingSteps(single_node_root);
     auto replicas_reads = collectReadingSteps(replicas_root);
@@ -282,7 +286,7 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
             "Single-node plan has {} reads and the replicas plan {}; not transplanting index analysis",
             single_node_reads.size(),
             replicas_reads.size());
-        return;
+        return false;
     }
 
     /// Identify a read by the table expression it reads rather than by where it sits in the plan. The
@@ -309,7 +313,7 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
                 "Read of {} in the single-node plan has no name to pair it by, or shares one with another read; "
                 "not transplanting index analysis",
                 read->getStorageID().getNameForLogs());
-            return;
+            return false;
         }
     }
 
@@ -325,7 +329,7 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
                 "Read of {} in the replicas plan has no counterpart of the same name in the single-node plan; "
                 "not transplanting index analysis",
                 replicas_reads[i]->getStorageID().getNameForLogs());
-            return;
+            return false;
         }
         paired_single_node_reads[i] = it->second;
     }
@@ -350,6 +354,8 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
                 replicas_reads[i]->setIndexes(paired_single_node_reads[i]->getIndexes());
         }
     }
+
+    return true;
 }
 
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
@@ -647,7 +653,10 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
-                transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode());
+                /// Every read of the candidate has to be given its analysis. One that is not would read
+                /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
+                if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
+                    return;
 
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
