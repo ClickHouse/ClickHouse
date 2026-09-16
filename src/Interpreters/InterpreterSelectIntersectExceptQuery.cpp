@@ -31,6 +31,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool exact_rows_before_limit;
 }
 
 namespace ErrorCodes
