@@ -367,40 +367,10 @@ inline const char * find_first_symbols_avx2_blocks_64(const char * pos)
 template <bool positive, char... symbols>
 inline const char * find_first_symbols_avx2_blocks_128(const char * pos)
 {
-    __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
-    __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32));
-    __m256i bytes2 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 64));
-    __m256i bytes3 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 96));
+    if (const char * found = find_first_symbols_avx2_blocks_64<positive, symbols...>(pos))
+        return found;
 
-    __m256i eq0 = mm256_is_in<symbols...>(bytes0);
-    __m256i eq1 = mm256_is_in<symbols...>(bytes1);
-    __m256i eq2 = mm256_is_in<symbols...>(bytes2);
-    __m256i eq3 = mm256_is_in<symbols...>(bytes3);
-
-    __m256i combined;
-    if constexpr (positive)
-        combined = _mm256_or_si256(_mm256_or_si256(eq0, eq1), _mm256_or_si256(eq2, eq3));
-    else
-        combined = _mm256_and_si256(_mm256_and_si256(eq0, eq1), _mm256_and_si256(eq2, eq3));
-
-    const uint32_t combined_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined)));
-    if (!combined_mask)
-        return nullptr;
-
-    const uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
-    if (mask0)
-        return pos + __builtin_ctz(mask0);
-
-    const uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
-    if (mask1)
-        return pos + 32 + __builtin_ctz(mask1);
-
-    const uint32_t mask2 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq2)));
-    if (mask2)
-        return pos + 64 + __builtin_ctz(mask2);
-
-    const uint32_t mask3 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq3)));
-    return pos + 96 + __builtin_ctz(mask3);
+    return find_first_symbols_avx2_blocks_64<positive, symbols...>(pos + 64);
 }
 
 template <bool positive, ReturnMode return_mode, char... symbols>
