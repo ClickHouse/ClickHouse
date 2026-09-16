@@ -843,12 +843,6 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
         /*is_join_get=*/false,
         /*record_refs_for_stats=*/false);
 
-    /// Fixed-width right columns are gathered directly by type instead of through the generic
-    /// (block, row) pair expansion; see `LazyOutput::buildOutputFromBlocks`. Only the lazy outputs that
-    /// build from ref words support it; ASOF's `AddedColumns` does not.
-    if constexpr (!join_features.is_any_join && !join_features.is_asof_join)
-        added_columns.lazy_output.use_direct_typed_gather = true;
-
     const bool has_required_right_keys = join.required_right_keys.columns() != 0;
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
