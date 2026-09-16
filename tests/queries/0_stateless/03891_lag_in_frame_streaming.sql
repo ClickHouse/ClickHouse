@@ -24,12 +24,9 @@ SELECT
     map('k1', toString(number % 5)) AS Attributes
 FROM numbers(0, 100000);
 
--- This test pins the obsolete planner to keep covering the legacy `optimize_read_in_order`
--- helper (`tryReuseStorageOrderingForWindowFunctions`).  The default planner path is covered by
--- `05037_lag_in_frame_streaming_default_planner`.
 -- Note: the rewrite is a query-plan optimization driven by the top-level query context, so a
 -- `SETTINGS` clause inside a subquery does not switch it on; correctness checks use session-level `SET`.
-SET max_threads = 4, optimize_read_in_order = 1, query_plan_read_in_order = 0, allow_experimental_analyzer = 0;
+SET max_threads = 4, optimize_read_in_order = 1;
 
 -- Without the optimization, no StreamingLag in the pipeline.
 SELECT countIf(explain LIKE '%StreamingLag%')

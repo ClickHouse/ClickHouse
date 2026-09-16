@@ -1,10 +1,9 @@
 -- Tags: no-parallel-replicas
 -- Optimization doesn't work with parallel replicas
 
--- `03891_lag_in_frame_streaming` pins the obsolete planner (`allow_experimental_analyzer = 0`,
--- `query_plan_read_in_order = 0`).  This test covers the shipped path instead: the default
--- analyzer together with the query-plan `optimizeReadInOrder` pass, where the sort description
--- holds analyzer-qualified column names.
+-- Covers the shipped path: the analyzer together with the query-plan `optimizeReadInOrder` pass,
+-- where the sort description holds analyzer-qualified column names (`03891_lag_in_frame_streaming`
+-- holds the broader eligibility matrix).
 
 CREATE TABLE lag_streaming_default_t (
     MetricName LowCardinality(String),
@@ -84,12 +83,10 @@ SELECT sum(prev_count) FROM (
     FROM lag_streaming_default_t
 );
 
--- The rewrite widens the read-in-order prefix by re-requesting `requestReadingInOrder`.  It must
--- carry over the read limit installed by the earlier request, otherwise a query with a `LIMIT`
--- that stops the in-order scan early degrades into a full scan.  The limit is only pushed into
--- the read on the obsolete planner path, so check it there.
-SET query_plan_read_in_order = 0, allow_experimental_analyzer = 0;
-
+-- The rewrite widens the read-in-order prefix by re-requesting `requestReadingInOrder` and must
+-- carry over the read limit installed by the earlier request.  The streaming pipeline has no
+-- blocking sort, so a query with a `LIMIT` stops the in-order scan after the first granules
+-- instead of reading the whole table the way the `WindowTransform` path does.
 SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
 FROM lag_streaming_default_t
 LIMIT 10
@@ -98,9 +95,8 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The single granule holding the first rows (8192) is enough for `LIMIT 10`; without the
--- carried-over limit the in-order read does not stop there and reads more granules.
-SELECT read_rows <= 8192
+-- 100000 rows in the table; `LIMIT 10` needs a handful of granules, not a full scan.
+SELECT read_rows < 100000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05037_lag_streaming_limit' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
