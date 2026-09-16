@@ -997,21 +997,25 @@ static std::pair<size_t, size_t> countAndCapReplicas(
 
 size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
 {
-    /// Remote replicas must use the exact count selected by the initiator. In particular, the non-local-plan
-    /// path lets any remote replica send the first announcement, so independently reading `system.clusters`
-    /// here could make that announcement disagree with the coordinator's snapshot.
-    ///
-    /// Trust the `ClientInfo` carrier only on follower (secondary) queries: that struct is deserialized from
-    /// the client's `Query` packet (`ClientInfo::read`) and copied verbatim into the query context, so on an
-    /// initial query a custom client could otherwise inject an arbitrary count here and desynchronize this
-    /// heuristic from the coordinator, which is always sized from live pools. The initiator's own plan takes
-    /// the count out-of-band, from the context, where no client can reach it.
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        if (const auto coordinator_replicas_count = context->getClientInfo().obsolete_count_participating_replicas)
-            return coordinator_replicas_count;
-
+    /// A coordinator sized on this server is authoritative. Every dispatch that builds a coordinator
+    /// (`executeQueryWithParallelReplicas`, `createParallelReplicasPlan`, `executeInsertSelectWithParallelReplicas`)
+    /// writes the count it was sized with into this server-owned context carrier before any reading step of
+    /// the query is built, so a coordinated read on this server can never observe a different count than its
+    /// coordinator. No client can write this carrier: it is not part of `ClientInfo` and is never deserialized.
     if (const auto coordinator_replicas_count = context->getParallelReplicasCoordinatorCount())
         return *coordinator_replicas_count;
+
+    /// Without a coordinator on this server the read is a follower read: the coordinator lives on the
+    /// initiator, and its count reaches this replica in `ClientInfo`. It is consulted only for a follower
+    /// read (`collaborate_with_initiator`, the same bit that puts `ReadFromMergeTree` into follower mode),
+    /// and it must be used as is: with the non-local-plan path any replica may send the first announcement,
+    /// so independently reading `system.clusters` here could make that announcement disagree with the
+    /// coordinator's snapshot. Whoever sends this field is, by construction, the coordinator of this read
+    /// and owns the count; a client that sets the follower bits on a query of its own is that read's
+    /// coordinator, and there is no locally sized coordinator on this server for the value to diverge from.
+    if (context->getClientInfo().collaborate_with_initiator)
+        if (const auto coordinator_replicas_count = context->getClientInfo().obsolete_count_participating_replicas)
+            return coordinator_replicas_count;
 
     /// Narrow the cluster to the shard the coordinator is scoped to, exactly like
     /// `prepareClusterForParallelReplicas` does: with a multi-shard cluster, shard 0 is not necessarily the
@@ -1195,7 +1199,7 @@ void executeQueryWithParallelReplicas(
     /// Send the initiator-owned coordinator count to every replica. This occupies a long-standing compatible
     /// `ClientInfo` field, so older servers continue to deserialize it safely (while ignoring the value).
     /// The context carrier next to it is the one the initiator's own plan reads: the `ClientInfo` field is
-    /// client-writable, so it is not trusted on an initial query (see `getActiveReplicasCountForParallelReplicas`).
+    /// client-writable, so it is consulted only by follower reads (see `getActiveReplicasCountForParallelReplicas`).
     new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
     new_context->setParallelReplicasCoordinatorCount(max_replicas_to_use);
 

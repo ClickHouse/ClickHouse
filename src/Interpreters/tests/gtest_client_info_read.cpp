@@ -109,7 +109,9 @@ TEST(ClientInfoRead, UsesInitiatorCoordinatorReplicasCountForRemoteReplica)
 {
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
+    /// A follower read: the coordinator lives on the initiator, which sent both follower bits.
     context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    context->getClientInfo().collaborate_with_initiator = true;
     context->getClientInfo().obsolete_count_participating_replicas = 2;
 
     /// A remote replica must use the initiator's snapshot before consulting its own cluster liveness.
@@ -124,8 +126,23 @@ TEST(ClientInfoRead, InitialQueryCannotOverrideCoordinatorReplicasCount)
     /// `ClientInfo` is deserialized from the client's `Query` packet and copied verbatim into the query
     /// context, so a custom client can put any value in this field on an *initial* query. It must not be
     /// able to resize the mark-segment-size heuristic away from the count the coordinator was sized with:
-    /// on an initial query only the out-of-band context carrier, written by the dispatch itself, counts.
+    /// only the out-of-band context carrier, written by the dispatch itself, counts.
     context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    context->getClientInfo().obsolete_count_participating_replicas = 5;
+    context->setParallelReplicasCoordinatorCount(2);
+
+    EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
+}
+
+TEST(ClientInfoRead, SpoofedFollowerBitsCannotOverrideLocalCoordinatorReplicasCount)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    /// `query_kind` and `collaborate_with_initiator` are client-supplied too, so a custom client can dress
+    /// its own query up as a follower query and still ship an arbitrary count. Whenever a coordinator was
+    /// sized on this server, its server-owned carrier wins regardless of what `ClientInfo` claims.
+    context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    context->getClientInfo().collaborate_with_initiator = true;
     context->getClientInfo().obsolete_count_participating_replicas = 5;
     context->setParallelReplicasCoordinatorCount(2);
 
