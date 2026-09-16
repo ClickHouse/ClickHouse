@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionGeoUtils.h>
+#include <AggregateFunctions/AggregateFunctionGeoMonotoneRing.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -116,6 +117,94 @@ struct GroupPolygonIntersectData
     size_t total_points = 0;
     std::unique_ptr<HoleIndex> hole_index;
 
+    struct MonotoneHoleState
+    {
+        CartesianRing exterior;
+        GeoRectangle bounds;
+        GeoMonotoneRing hole;
+    };
+    std::unique_ptr<MonotoneHoleState> monotone_hole;
+
+    CartesianMultiPolygon monotoneGeometry() const
+    {
+        CartesianMultiPolygon result;
+        result.emplace_back();
+        result[0].outer() = monotone_hole->exterior;
+        result[0].inners().push_back(monotone_hole->hole.materialize());
+        return result;
+    }
+
+    void materializeMonotoneHole()
+    {
+        if (!monotone_hole)
+            return;
+        if (chunks.empty())
+            chunks.push_back(monotoneGeometry());
+        monotone_hole.reset();
+    }
+
+    bool appendMonotoneHole(const CartesianMultiPolygon & incoming, const char * function_name)
+    {
+        if (incoming.size() != 1 || incoming[0].inners().size() != 1)
+            return false;
+        if (!monotone_hole && (chunks.size() != 1 || chunks[0].size() != 1 || chunks[0][0].inners().size() != 1))
+            return false;
+        const auto & exterior = monotone_hole ? monotone_hole->exterior : chunks[0][0].outer();
+        if (!equalExteriorCycles(exterior, incoming[0].outer()))
+            return false;
+        const auto bounds = monotone_hole ? std::optional{monotone_hole->bounds} : tryGetGeoRectangle(exterior);
+        if (!bounds)
+            return false;
+        auto next = GeoMonotoneRing::fromRing(incoming[0].inners()[0]);
+        if (!next)
+            return false;
+        /// The disjoint-hole check has already indexed a materialized state. Reject an
+        /// incoming hole that cannot extend its right boundary before copying the old ring.
+        if (!monotone_hole && hole_index && hole_index->size() == 1
+            && next->lower.back().get<0>() <= boost::geometry::get<boost::geometry::max_corner, 0>(hole_index->bounds()))
+            return false;
+        auto strictly_inside = [&](const GeoMonotoneRing & hole)
+        {
+            auto inside = [&](const CartesianPoint & point)
+            {
+                return bounds->min_x < point.get<0>() && point.get<0>() < bounds->max_x
+                    && bounds->min_y < point.get<1>() && point.get<1>() < bounds->max_y;
+            };
+            return std::all_of(hole.lower.begin(), hole.lower.end(), inside)
+                && std::all_of(hole.upper.begin(), hole.upper.end(), inside);
+        };
+        if (!strictly_inside(*next))
+            return false;
+
+        std::unique_ptr<MonotoneHoleState> initial;
+        if (!monotone_hole)
+        {
+            auto current = GeoMonotoneRing::fromRing(chunks[0][0].inners()[0]);
+            if (!current || !strictly_inside(*current) || !current->canAppend(*next))
+                return false;
+            initial = std::make_unique<MonotoneHoleState>(MonotoneHoleState{exterior, *bounds, std::move(*current)});
+        }
+        auto & state = monotone_hole ? *monotone_hole : *initial;
+        if (!state.hole.canAppend(*next))
+            return false;
+        /// Both holes are already valid. Only their end slabs overlap, so the union changes a
+        /// constant-size suffix plus the incoming boundary. Strict containment leaves a nonempty
+        /// strip inside the rectangular exterior after every update; no logical reduction is deferred.
+        state.hole.append(*next);
+        const size_t points = state.exterior.size() + state.hole.points();
+        if (points > MAX_POINTS_IN_POLYGONAL_STATE)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} state has too many points after reduction: {} (limit {})",
+                function_name, points, MAX_POINTS_IN_POLYGONAL_STATE);
+        if (initial)
+            monotone_hole = std::move(initial);
+        total_points = points;
+        chunks.clear();
+        hole_index.reset();
+        return true;
+    }
+
     /// For a common exterior, intersection adds the incoming holes to the existing holes.
     /// Strictly disjoint bounding boxes prove that no old/new hole boundaries interact.
     /// Each operand has already passed full validation, so this preserves topology and a
@@ -174,6 +263,20 @@ struct GroupPolygonIntersectData
         return true;
     }
 
+    bool appendOptimizedHoles(const CartesianMultiPolygon & incoming, const char * function_name)
+    {
+        if (monotone_hole)
+        {
+            if (appendMonotoneHole(incoming, function_name))
+                return true;
+            materializeMonotoneHole();
+            return appendDisjointHoles(incoming, function_name);
+        }
+        /// Build or reuse the existing hole index before considering a local boundary update.
+        /// This also avoids inspecting a growing ring when a disjoint append already succeeds.
+        return appendDisjointHoles(incoming, function_name) || appendMonotoneHole(incoming, function_name);
+    }
+
     void add(CartesianMultiPolygon && mp, const char * function_name)
     {
         if (mode == IntersectMode::Empty)
@@ -184,11 +287,12 @@ struct GroupPolygonIntersectData
             mode = IntersectMode::Empty;
             chunks.clear();
             hole_index.reset();
+            monotone_hole.reset();
             total_points = 0;
             return;
         }
 
-        if (mode == IntersectMode::NonEmpty && appendDisjointHoles(mp, function_name))
+        if (mode == IntersectMode::NonEmpty && appendOptimizedHoles(mp, function_name))
             return;
 
         total_points += countMultiPolygonPoints(mp);
@@ -206,7 +310,7 @@ struct GroupPolygonIntersectData
 
     void merge(const GroupPolygonIntersectData & other, const char * function_name)
     {
-        if (mode == IntersectMode::Empty)
+        if (this == &other || mode == IntersectMode::Empty)
             return;
 
         if (other.mode == IntersectMode::Empty)
@@ -214,6 +318,7 @@ struct GroupPolygonIntersectData
             mode = IntersectMode::Empty;
             chunks.clear();
             hole_index.reset();
+            monotone_hole.reset();
             total_points = 0;
             return;
         }
@@ -226,16 +331,31 @@ struct GroupPolygonIntersectData
             mode = other.mode;
             chunks = other.chunks;
             total_points = other.total_points;
-            if (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+            if (other.monotone_hole)
+                monotone_hole = std::make_unique<MonotoneHoleState>(*other.monotone_hole);
+            if (!monotone_hole && (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE))
                 reduce(function_name);
             return;
         }
 
-        if (other.chunks.size() == 1 && appendDisjointHoles(other.chunks[0], function_name))
+        CartesianMultiPolygon other_geometry;
+        const CartesianMultiPolygon * incoming = nullptr;
+        if (other.monotone_hole)
+        {
+            other_geometry = other.monotoneGeometry();
+            incoming = &other_geometry;
+        }
+        else if (other.chunks.size() == 1)
+            incoming = other.chunks.data();
+        if (incoming && appendOptimizedHoles(*incoming, function_name))
             return;
+        materializeMonotoneHole();
 
         total_points += other.total_points;
-        chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
+        if (incoming)
+            chunks.push_back(*incoming);
+        else
+            chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
 
         /// A merged state must preserve the same eager running-intersection invariant as `add`.
         reduce(function_name);
@@ -244,6 +364,7 @@ struct GroupPolygonIntersectData
     /// Balanced pairwise reduction with early-empty short-circuit.
     void reduce(const char * function_name)
     {
+        materializeMonotoneHole();
         if (chunks.size() <= 1)
         {
             recountPoints(function_name);
@@ -311,6 +432,12 @@ struct GroupPolygonIntersectData
         if (mode == IntersectMode::Uninitialized || mode == IntersectMode::Empty)
             return empty_result;
 
+        if (monotone_hole)
+        {
+            if (chunks.empty())
+                chunks.push_back(monotoneGeometry());
+            return chunks[0];
+        }
         reduce(function_name);
         if (mode == IntersectMode::Empty || chunks.empty())
             return empty_result;
@@ -377,6 +504,12 @@ public:
 
         if (data.mode == IntersectMode::NonEmpty)
         {
+            if (data.monotone_hole)
+            {
+                writeVarUInt(1, buf);
+                serializeGeoMultiPolygon(data.monotoneGeometry(), buf);
+                return;
+            }
             chassert(data.chunks.size() == 1);
             writeVarUInt(data.chunks.size(), buf);
             for (const auto & chunk : data.chunks)
@@ -397,6 +530,7 @@ public:
                 static_cast<int>(GEO_SERDE_VERSION));
 
         auto & data = AggregateFunctionGroupPolygonIntersect::data(place);
+        data.monotone_hole.reset();
         UInt8 mode_val = 0;
         readBinaryLittleEndian(mode_val, buf);
         if (mode_val > static_cast<UInt8>(IntersectMode::Empty))

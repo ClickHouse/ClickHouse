@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionGeoUtils.h>
 #include <AggregateFunctions/AggregateFunctionGeoValidity.h>
+#include <AggregateFunctions/AggregateFunctionGeoRectangle.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -156,6 +157,43 @@ void checkPolygonalPointBudget(const Geometry & geometry, std::optional<size_t> 
             *max_result_points);
 }
 
+bool areValidSeparatedRectangles(const CartesianMultiPolygon & geometry)
+{
+    if (geometry.size() < 2)
+        return false;
+
+    std::optional<GeoRectangle> previous;
+    for (const auto & polygon : geometry)
+    {
+        if (!polygon.inners().empty())
+            return false;
+        const auto rectangle = tryGetGeoRectangle(polygon.outer());
+        if (!rectangle)
+            return false;
+
+        if (previous)
+        {
+            if (previous->max_x > rectangle->min_x)
+                return false;
+            if (previous->max_x == rectangle->min_x)
+            {
+                /// Shared vertical edges are invalid in a multi-polygon; point contacts are allowed.
+                if (std::max(previous->min_y, rectangle->min_y) < std::min(previous->max_y, rectangle->max_y))
+                    return false;
+            }
+            else if (boost::geometry::math::equals(previous->max_x, rectangle->min_x))
+                return false;
+        }
+
+        /// Preserve the ordinary numeric validity rules for each ring. The rectangle and interval
+        /// certificates replace only the cross-component topology work, not individual validation.
+        if (!boost::geometry::is_valid(polygon))
+            return false;
+        previous = rectangle;
+    }
+    return true;
+}
+
 bool correctAndValidatePolygonalGeometry(
     CartesianMultiPolygon & geometry, String & reason, std::optional<size_t> max_result_points = {}, const char * function_name = nullptr)
 {
@@ -173,6 +211,8 @@ bool correctAndValidatePolygonalGeometry(
 
     boost::geometry::correct(geometry);
     checkPolygonalPointBudget(geometry, max_result_points, function_name);
+    if (areValidSeparatedRectangles(geometry))
+        return true;
     return isValidGeoMultiPolygon<AllocatorWithMemoryTracking>(geometry, reason);
 }
 
@@ -534,6 +574,29 @@ void normalizeAndValidatePolygonalResult(
 
 void unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
 {
+    if (left.size() == 1 && right.size() == 1 && left[0].inners().empty() && right[0].inners().empty())
+    {
+        const auto first = tryGetGeoRectangle(left[0].outer());
+        const auto second = tryGetGeoRectangle(right[0].outer());
+        if (first && second)
+        {
+            const bool same_height = first->min_y == second->min_y && first->max_y == second->max_y
+                && std::max(first->min_x, second->min_x) <= std::min(first->max_x, second->max_x);
+            const bool same_width = first->min_x == second->min_x && first->max_x == second->max_x
+                && std::max(first->min_y, second->min_y) <= std::min(first->max_y, second->max_y);
+            if (same_height || same_width || first->contains(*second) || second->contains(*first))
+            {
+                /// These sufficient conditions make the union exactly its envelope. In particular,
+                /// a diagonal overlap alone is not sufficient. The caller retains result validation.
+                const GeoRectangle united{
+                    std::min(first->min_x, second->min_x), std::min(first->min_y, second->min_y),
+                    std::max(first->max_x, second->max_x), std::max(first->max_y, second->max_y)};
+                result.push_back(united.polygon());
+                return;
+            }
+        }
+    }
+
     evaluatePolygonalOverlay(left, right, result, [](const auto & first, const auto & second, auto & output)
     {
         if constexpr (std::is_same_v<std::decay_t<decltype(first)>, CartesianMultiPolygon>)
@@ -600,6 +663,83 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
 
 void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
 {
+    if (!left.empty() && !right.empty() && (left.size() > 1 || right.size() > 1))
+    {
+        auto get_rectangles = [](const CartesianMultiPolygon & geometry)
+            -> std::optional<std::vector<GeoRectangle, AllocatorWithMemoryTracking<GeoRectangle>>> // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        {
+            std::vector<GeoRectangle, AllocatorWithMemoryTracking<GeoRectangle>> rectangles; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            rectangles.reserve(geometry.size());
+            for (const auto & polygon : geometry)
+            {
+                if (!polygon.inners().empty())
+                    return std::nullopt;
+                const auto rectangle = tryGetGeoRectangle(polygon.outer());
+                if (!rectangle || std::abs(rectangle->min_x) > MAX_ORDINARY_POLYGONAL_COORDINATE
+                    || std::abs(rectangle->min_y) > MAX_ORDINARY_POLYGONAL_COORDINATE
+                    || std::abs(rectangle->max_x) > MAX_ORDINARY_POLYGONAL_COORDINATE
+                    || std::abs(rectangle->max_y) > MAX_ORDINARY_POLYGONAL_COORDINATE)
+                    return std::nullopt;
+                rectangles.push_back(*rectangle);
+            }
+            return rectangles;
+        };
+        const auto first = get_rectangles(left);
+        const auto second = first ? get_rectangles(right) : std::nullopt;
+        if (first && second)
+        {
+            using Box = boost::geometry::model::box<CartesianPoint>;
+            using Entry = std::pair<Box, size_t>;
+            using Index = boost::geometry::index::rtree<
+                Entry, boost::geometry::index::quadratic<16>, boost::geometry::index::indexable<Entry>,
+                boost::geometry::index::equal_to<Entry>, AllocatorWithMemoryTracking<Entry>>;
+            const auto & smaller = first->size() <= second->size() ? *first : *second;
+            const auto & larger = first->size() <= second->size() ? *second : *first;
+            auto box = [](const GeoRectangle & rectangle)
+            {
+                return Box{{rectangle.min_x, rectangle.min_y}, {rectangle.max_x, rectangle.max_y}};
+            };
+            Index index;
+            for (size_t i = 0; i < smaller.size(); ++i)
+                index.insert({box(smaller[i]), i});
+            CartesianMultiPolygon rectangles;
+            bool representable = true;
+            for (const auto & rectangle : larger)
+            {
+                for (auto it = index.qbegin(boost::geometry::index::intersects(box(rectangle))); it != index.qend(); ++it)
+                {
+                    const auto & other = smaller[it->second];
+                    const GeoRectangle intersection{
+                        std::max(rectangle.min_x, other.min_x), std::max(rectangle.min_y, other.min_y),
+                        std::min(rectangle.max_x, other.max_x), std::min(rectangle.max_y, other.max_y)};
+                    /// A line or point has no polygonal area. Distinct output interiors cannot
+                    /// overlap because both input multi-polygons were validated. Keep the caller's
+                    /// full result validation, including boundary contacts and the point budget.
+                    if (intersection.min_x < intersection.max_x && intersection.min_y < intersection.max_y)
+                    {
+                        auto polygon = intersection.polygon();
+                        /// The ordinary numeric predicates can collapse a very narrow rectangle.
+                        /// Require a representable ring before selecting this kernel; the general
+                        /// overlay retains its existing treatment of such near-degenerate intersections.
+                        if (!boost::geometry::is_valid(polygon))
+                        {
+                            representable = false;
+                            break;
+                        }
+                        rectangles.push_back(std::move(polygon));
+                    }
+                }
+                if (!representable)
+                    break;
+            }
+            if (representable)
+            {
+                result = std::move(rectangles);
+                return;
+            }
+        }
+    }
+
     evaluatePolygonalOverlay(left, right, result, [](const auto & first, const auto & second, auto & output)
     {
         boost::geometry::intersection(first, second, output);
