@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 #include <Core/Joins.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Transforms/JoiningTransform.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <atomic>
@@ -345,44 +343,6 @@ private:
     /// The block handed out last, kept because one block is walked over several tiles.
     BuildBlockPtr current;
     size_t current_index = 0;
-};
-
-/// Fills `BlockNestedLoopJoinData` with the build side. Carries no data downstream: its output port
-/// has an empty header and is finished once the whole build side is stored, which is how the probe
-/// side learns that it may start.
-class BlockNestedLoopBuildTransform final : public IProcessor
-{
-public:
-    BlockNestedLoopBuildTransform(
-        SharedHeader input_header, BlockNestedLoopJoinDataPtr data_, FinishCounterPtr finish_counter_, size_t stream_index_);
-
-    String getName() const override { return "BlockNestedLoopBuild"; }
-
-    /// Routes the build side's `WITH TOTALS` row into the store. Only one build stream may carry
-    /// it, so a pipeline with build-side totals uses a single build stream.
-    InputPort * addTotalsPort();
-
-    Status prepare() override;
-    void work() override;
-
-    ProcessorMemoryStats getMemoryStats() override;
-    bool spillOnSize(size_t bytes) override;
-
-private:
-    /// Counts this stream out of the build phase, closing the store when it is the last one.
-    void finishBuild();
-
-    BlockNestedLoopJoinDataPtr data;
-    FinishCounterPtr finish_counter;
-    /// This stream's place among the build streams, and so the temporary file it spills to.
-    const size_t stream_index;
-    Chunk chunk;
-    bool stop_reading = false;
-    bool for_totals = false;
-    /// Closing the store is asked for by `prepare` and done by `work`, which is where the work of
-    /// this stream belongs; `build_finished` is what makes `prepare` ask for it exactly once.
-    bool finish_build_requested = false;
-    bool build_finished = false;
 };
 
 }
