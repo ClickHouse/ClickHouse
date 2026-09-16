@@ -483,8 +483,74 @@ def test_refresh_uses_memory_reservation_resource():
     )
     node.query("SYSTEM REFRESH VIEW mv")
     error = node.query_and_get_error("SYSTEM WAIT VIEW mv", timeout=30)
-    assert "memory reservation" in error.lower()
+    assert "RESOURCE_LIMIT_EXCEEDED" in error
+    assert "Workload 'all' allocation" in error
     assert node.query("SELECT count() FROM mv") == "0\n"
+
+
+@contextmanager
+def occupied_memory_reservation(instance, workload="all"):
+    query_id = f"rmv-memory-blocker-{uuid.uuid4()}"
+    errors = []
+
+    def run():
+        try:
+            instance.query(
+                "SELECT sum(number) FROM numbers(1000000000000) "
+                f"SETTINGS workload='{workload}', reserve_memory='32M', max_threads=1",
+                query_id=query_id,
+            )
+        except Exception as error:
+            errors.append(str(error))
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    try:
+        wait_query(
+            instance,
+            "SELECT value >= 33554432 FROM system.metrics WHERE metric='MemoryReservationApproved'",
+            1,
+        )
+        assert thread.is_alive(), errors
+        yield
+    finally:
+        instance.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
+        thread.join(timeout=30)
+        assert not thread.is_alive()
+
+
+@pytest.mark.parametrize("action", ["STOP", "PAUSE", "DROP"])
+def test_pending_memory_reservation_can_be_cancelled(action):
+    node.query(
+        "CREATE RESOURCE memory (MEMORY RESERVATION);"
+        "CREATE WORKLOAD all SETTINGS max_memory='64M'"
+    )
+    node.query(
+        "CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 YEAR "
+        "SETTINGS refresh_retries=0 APPEND (x UInt64) ENGINE Memory EMPTY "
+        "AS SELECT toUInt64(1) AS x "
+        "SETTINGS refresh_workload='all', reserve_memory='64M', workload_admission_timeout_ms=0"
+    )
+
+    with occupied_memory_reservation(node):
+        node.query("SYSTEM REFRESH VIEW mv")
+        wait_query(
+            node,
+            "SELECT value > 0 FROM system.metrics WHERE metric='MemoryReservationDemand'",
+            1,
+        )
+
+        if action == "DROP":
+            node.query("DROP TABLE mv SYNC", timeout=10)
+            assert node.query("EXISTS TABLE mv") == "0\n"
+        else:
+            node.query(f"SYSTEM {action} VIEW mv", timeout=10)
+            wait_status(node, "Disabled")
+            assert node.query("SELECT count() FROM mv") == "0\n"
+
+        # The blocker still owns its reservation, but the cancelled RMV demand must be gone.
+        wait_metric(node, "MemoryReservationDemand", 0)
+        assert int(metric(node, "MemoryReservationApproved")) >= 33554432
 
 
 def test_stop_replicated_cancels_queued_admission():

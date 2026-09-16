@@ -491,7 +491,8 @@ public:
       */
     /// A supplied query slot must already be granted; its lifetime is transferred to QueryStatus.
     EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal, QuerySlotPtr query_slot = {}, bool use_workload_resources = false,
-        std::chrono::steady_clock::time_point workload_admission_deadline = std::chrono::steady_clock::time_point::max());
+        std::chrono::steady_clock::time_point workload_admission_deadline = std::chrono::steady_clock::time_point::max(),
+        const std::atomic_bool * workload_admission_cancelled = nullptr);
 
     /// Number of currently executing queries.
     /// WARNING: includes internal queries (e.g. those executed by dictionaries, RMVs, async inserts).

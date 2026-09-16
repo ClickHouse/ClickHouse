@@ -120,7 +120,8 @@ ProcessList::EntryPtr ProcessList::insert(
     bool is_internal,
     QuerySlotPtr query_slot,
     bool use_workload_resources,
-    std::chrono::steady_clock::time_point workload_admission_deadline)
+    std::chrono::steady_clock::time_point workload_admission_deadline,
+    const std::atomic_bool * workload_admission_cancelled)
 {
     EntryPtr res;
 
@@ -174,7 +175,8 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
+                memory_reservation = std::make_unique<MemoryReservation>(
+                    link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline, workload_admission_cancelled);
             }
         }
     }

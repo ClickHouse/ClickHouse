@@ -725,9 +725,10 @@ void RefreshTask::pause()
         return;
     /// A query slot can be granted before the execution task starts. Cancel both queued
     /// admission and that dispatch window; neither has started refreshing the target yet.
-    if (execution.query_slot
-        && (execution.state == ExecutionState::State::WaitingForResource
-            || execution.state == ExecutionState::State::Requested))
+    if ((execution.query_slot
+            && (execution.state == ExecutionState::State::WaitingForResource
+                || execution.state == ExecutionState::State::Requested))
+        || execution.waiting_for_workload_admission.load(std::memory_order_relaxed))
         interruptExecution();
     scheduleRefresh(guard);
 }
@@ -1658,9 +1659,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
-            process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal,
-                std::move(query_slot), use_workload_resources, admission_deadline);
+            {
+                execution.waiting_for_workload_admission.store(true, std::memory_order_relaxed);
+                SCOPE_EXIT({ execution.waiting_for_workload_admission.store(false, std::memory_order_relaxed); });
+                process_list_entry = refresh_context->getProcessList().insert(
+                    query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal,
+                    std::move(query_slot), use_workload_resources, admission_deadline, &execution.interrupt_execution);
+            }
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
 
