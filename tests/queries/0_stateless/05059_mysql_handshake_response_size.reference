@@ -1,0 +1,4 @@
+declared payload too large: rejected
+user name without a terminator: rejected
+truncated packet with a complete prefix: rejected
+well-formed handshake: authenticated
