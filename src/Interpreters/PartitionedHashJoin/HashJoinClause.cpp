@@ -1710,6 +1710,14 @@ void HashJoinClause::insertJoinTableBlock(FillBlock & fill)
     fill.releaseInputs();
 }
 
+void HashJoinClause::shareTable(const HashJoinClause & source)
+{
+    table_maps = source.table_maps;
+    join_table_arena = source.join_table_arena;
+    size_degree = source.size_degree;
+    ht_total_bytes = source.ht_total_bytes;
+}
+
 void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
 {
     auto & ctx = *post_build_ctx;

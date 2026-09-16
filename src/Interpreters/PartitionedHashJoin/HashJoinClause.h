@@ -186,6 +186,9 @@ public:
     /// `join_table_arena`, shared by pointer with the per-query instances like the table itself.
     void createJoinTable();
     void insertJoinTableBlock(FillBlock & fill);
+    /// Makes this clause a query's view of a Join table's: the table, its arena and its geometry are
+    /// shared by pointer with `source`, the storage's clause.
+    void shareTable(const HashJoinClause & source);
     /// Frees the post-build context and pool once the build is published.
     void releaseBuildScratch();
     /// Frees the table and arenas. The table goes first: cells point into the arenas and the row store.
@@ -205,6 +208,8 @@ public:
     static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     bool hasTable() const { return table_maps != nullptr; }
+    /// Which `HashJoin::MapsVariant` alternative the table mirrors.
+    size_t mapsVariantIndex() const { return maps_variant_index; }
     const HashJoinTableMaps & tableMaps() const { return *table_maps; }
     /// The table's buffer bytes (drives the prefetch heuristics).
     size_t tableBytes() const { return ht_total_bytes; }

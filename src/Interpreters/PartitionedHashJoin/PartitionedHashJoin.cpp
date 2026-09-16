@@ -40,6 +40,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int SET_SIZE_LIMIT_EXCEEDED;
@@ -249,6 +250,68 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
 const TableJoin & PartitionedHashJoin::getTableJoin() const
 {
     return *table_join;
+}
+
+void PartitionedHashJoin::shareJoinTable(const PartitionedHashJoin & source)
+{
+    if (!join_table_mode || !source.join_table_mode)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: only the instances of a Join table share its table");
+    /// `StorageJoin` checked the kind and strictness; the map type follows from the key columns, which
+    /// are the storage's. Both have to agree, or the probe would read the cells through the wrong layout.
+    if (clause.mapsVariantIndex() != source.clause.mapsVariantIndex() || hash_join->data->type != source.hash_join->data->type)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PartitionedHashJoin: the query's join shape (maps {}, type {}) does not match the Join table's (maps {}, type {})",
+            clause.mapsVariantIndex(),
+            hash_join->data->type,
+            source.clause.mapsVariantIndex(),
+            source.hash_join->data->type);
+
+    hash_join->reuseJoinedData(*source.hash_join);
+    clause.shareTable(source.clause);
+    shared_from_join_table = true;
+    /// `reuseJoinedData` sized the flags to the inner join's own, empty map.
+    reinitUsedFlags();
+}
+
+DataTypePtr PartitionedHashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
+{
+    return hash_join->joinGetCheckAndGetReturnType(data_types, column_name, or_null);
+}
+
+ColumnWithTypeAndName PartitionedHashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add)
+{
+    const JoinStrictness strictness = hash_join->getStrictness();
+    const bool is_valid = (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny) && hash_join->getKind() == JoinKind::Left;
+    if (!is_valid)
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "joinGet only supports StorageJoin of type Left Any");
+
+    /// The keys under the storage's names, which is how the probe reads a right-side key.
+    const auto & key_names_right = table_join->getOnlyClause().key_names_right;
+    Block keys;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto key = block.getByPosition(i);
+        key.name = key_names_right[i];
+        keys.insert(std::move(key));
+    }
+
+    /// Concurrent `joinGet` calls probe the storage's instance under its read lock; a flagged shape
+    /// would write the shared used flags.
+    static_assert(
+        !MapGetter<JoinKind::Left, JoinStrictness::Any, JoinMapsKind::Default>::flagged,
+        "joinGet is not protected from hash table changes between block processing");
+
+    auto result = probeImpl<JoinKind::Left, JoinStrictness::Any, HashJoin::MapsOne>(std::move(keys), invalid_lane, &block_with_columns_to_add);
+    auto res = result->next();
+    chassert(res.is_last);
+    return res.block.getByPosition(res.block.columns() - 1);
+}
+
+void PartitionedHashJoin::shrinkStoredBlocksToFit()
+{
+    size_t total_bytes = getTotalByteCount();
+    hash_join->shrinkStoredBlocksToFit(total_bytes, /*worker_id=*/0, /*force_optimize=*/true);
 }
 
 PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane()

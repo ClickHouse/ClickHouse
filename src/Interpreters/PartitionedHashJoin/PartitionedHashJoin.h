@@ -11,6 +11,7 @@
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
 #include <Common/SharedMutex.h>
+#include <Storages/TableLockHolder.h>
 
 #include <atomic>
 #include <deque>
@@ -95,6 +96,36 @@ public:
     PartitionedHashJoin(JoinTableTag, std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_);
 
     ~PartitionedHashJoin() override;
+
+    /// Makes this Join table instance a query's view of `source`, the storage's. `hash_join` reuses the
+    /// storage's stored blocks (the saved sample, the row store and the null maps come with them); the
+    /// table and its arena are shared by pointer; the used flags of this instance are sized to the
+    /// table. The caller holds the storage's read lock and hands it to `setLock`, so the table cannot
+    /// change while this instance reads it.
+    void shareJoinTable(const PartitionedHashJoin & source);
+
+    /// Keeps the storage's read lock for this instance's lifetime, as `HashJoin::setLock` does.
+    void setLock(TableLockHolder holder) { storage_join_lock = std::move(holder); }
+
+    /// A query's instance of a Join table is probed through `FilledJoinStep`: there is no right stream
+    /// to fill and no `NonJoinedBlocksTransform` to run the parallel non-joined regime in.
+    JoinPipelineType pipelineType() const override
+    {
+        return shared_from_join_table ? JoinPipelineType::FilledRight : JoinPipelineType::FillRightFirst;
+    }
+    bool isParallelNonJoinedProcessingEnabled() const override
+    {
+        return !shared_from_join_table && supportParallelNonJoinedBlocksProcessing();
+    }
+
+    /// `joinGet` over the storage's instance, with the contract of `HashJoin::joinGet`. The key types
+    /// and the result type are checked first. Then the keys are probed as one block with `LEFT ANY`
+    /// semantics, and the requested column comes back with a default for every key not found.
+    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add);
+
+    /// `OPTIMIZE TABLE` on a Join table: compacts the columns of the stored blocks.
+    void shrinkStoredBlocksToFit();
 
     /// Shapes outside this predicate must be planned onto another enabled algorithm rather than
     /// failing at execution time; see `tryCreateJoin` in `Planner/PlannerJoins.cpp`.
@@ -271,11 +302,12 @@ private:
     void reinitUsedFlags();
 
     /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the shared table is
-    /// its partitioned counterpart, holding identical cells.
+    /// its partitioned counterpart, holding identical cells. With `join_get_columns` the block carries
+    /// the keys under the right-side names and the result is the `joinGet` output of those columns.
     JoinResultPtr probeDispatch(Block block, size_t lane);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape> // NOLINT(readability-identifier-naming)
-    JoinResultPtr probeImpl(Block block, size_t lane);
+    JoinResultPtr probeImpl(Block block, size_t lane, const Block * join_get_columns = nullptr);
 
     /// Returns the number of probe rows processed: all of them, unless a mixed ON condition stops the
     /// block at `max_joined_block_rows`, as the standard join does.
@@ -314,6 +346,10 @@ private:
     const bool delegate_mode;
     /// The Join table engine's mode; see the class comment.
     const bool join_table_mode;
+    /// A query's instance after `shareJoinTable`.
+    bool shared_from_join_table = false;
+    /// The storage's read lock, see `setLock`.
+    TableLockHolder storage_join_lock;
 
     /// `IJoin::totals` is private, so the guarded overrides keep their own copy.
     std::mutex totals_mutex;

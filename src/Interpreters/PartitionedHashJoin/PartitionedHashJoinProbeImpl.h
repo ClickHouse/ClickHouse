@@ -824,18 +824,22 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
-JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
+JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Block * join_get_columns)
 {
     HashJoin & join = *hash_join;
+    const bool is_join_get = join_get_columns != nullptr;
 
-    for (const auto & onexpr : table_join->getClauses())
+    /// `joinGet` hands over the keys under the right-side names, checked by `joinGetCheckAndGetReturnType`.
+    if (!is_join_get)
     {
-        auto cond_column_name = onexpr.condColumnNames();
-        JoinCommon::checkTypesOfKeys(
-            block, onexpr.key_names_left, cond_column_name.first, join.right_sample_block, onexpr.key_names_right, cond_column_name.second);
+        for (const auto & onexpr : table_join->getClauses())
+        {
+            auto cond_column_name = onexpr.condColumnNames();
+            JoinCommon::checkTypesOfKeys(
+                block, onexpr.key_names_left, cond_column_name.first, join.right_sample_block, onexpr.key_names_right, cond_column_name.second);
+        }
+        join.materializeColumnsFromLeftBlock(block);
     }
-
-    join.materializeColumnsFromLeftBlock(block);
     ScatteredBlock scattered_block{std::move(block)};
 
     if (!clause.hasTable() && scattered_block.rows() > 0)
@@ -847,21 +851,21 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     std::vector<JoinOnKeyColumns> join_on_keys;
     join_on_keys.emplace_back(
         scattered_block,
-        on_clause.key_names_left,
+        is_join_get ? on_clause.key_names_right : on_clause.key_names_left,
         on_clause.condColumnNames().first,
         join.key_sizes[0],
         HashJoin::isLowCardinalityType(join.data->type));
 
     AddedColumns added_columns(
         scattered_block,
-        join.sample_block_with_columns_to_add,
+        is_join_get ? *join_get_columns : join.sample_block_with_columns_to_add,
         join.savedBlockSample(),
         join,
         std::move(join_on_keys),
         table_join->getMixedJoinExpression(),
         join.additional_filter_required_rhs_pos,
         join_features.is_asof_join,
-        /*is_join_get=*/false,
+        is_join_get,
         /*record_refs_for_stats=*/false);
 
     const bool has_required_right_keys = join.required_right_keys.columns() != 0;
@@ -936,7 +940,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
             join.max_joined_block_bytes,
             join.data->allocated_size / std::max<size_t>(1, join.data->rows_to_join),
             join_features.need_filter,
-            /*is_join_get=*/false,
+            is_join_get,
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
             join.enable_lazy_columns_indexing});
