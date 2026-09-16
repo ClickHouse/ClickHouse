@@ -61,9 +61,4 @@ std::unique_ptr<SeekableReadBuffer> BackupEntryFromAppendOnlyFile::getReadBuffer
     return std::make_unique<LimitSeekableReadBuffer>(std::move(buf), 0, size);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupEntryFromAppendOnlyFile::getReadBufferForEncryptionHeader(const ReadSettings & read_settings) const
-{
-    return disk->readEncryptedFile(file_path, read_settings);
-}
-
 }

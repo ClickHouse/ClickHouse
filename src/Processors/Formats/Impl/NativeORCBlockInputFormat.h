@@ -131,15 +131,9 @@ public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
-    std::optional<size_t> readNumberOrRows() override;
 
 private:
-    void initializeIfNeeded();
-
     const FormatSettings format_settings;
-    std::unique_ptr<orc::Reader> file_reader;
-    std::atomic<int> is_stopped{0};
-    bool initialized = false;
 };
 
 class ORCColumnToCHColumn
@@ -155,8 +149,7 @@ public:
         bool allow_missing_columns_,
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
-        bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
+        bool dictionary_as_low_cardinality_ = false);
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -166,11 +159,7 @@ public:
         BlockMissingValues * block_missing_values = nullptr);
 
     void orcColumnsToCHChunk(
-        Chunk & res,
-        NameToColumnPtr & name_to_column_ptr,
-        const Names & orc_field_names,
-        size_t num_rows,
-        BlockMissingValues * block_missing_values = nullptr);
+        Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
 private:
     ColumnWithTypeAndName readColumnFromORCColumn(
@@ -186,7 +175,6 @@ private:
     bool null_as_default;
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
 };
 }
 #endif
