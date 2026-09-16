@@ -245,13 +245,10 @@ private:
     Time offset_at_start_of_epoch;
     /// UTC offset at the beginning of the first supported year.
     Time offset_at_start_of_lut;
-    /// Whether the local day always starts at a whole number of hours / minutes past the UTC hour. The
-    /// `_during_epoch` flags are sampled only from the local days that can contain a non-negative time point;
-    /// the `_in_lut_range` ones hold over the whole table, which a fast path serving a pre-epoch time point
-    /// needs (`Europe/Moscow` was +2:30:17 until 1919, `Europe/Amsterdam` +0:19:32 until 1937). Each
-    /// `_in_lut_range` flag implies its `_during_epoch` counterpart.
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
+    /// The same over the whole LUT range rather than the epoch onward, for the callers that answer a
+    /// question about every value the LUT serves - a pre-1970 `DateTime64` included.
     bool offset_is_whole_number_of_hours_in_lut_range;
     bool offset_is_whole_number_of_minutes_in_lut_range;
     bool offset_is_fixed;
@@ -335,12 +332,6 @@ private:
     /// The Values of the day an out-of-range value belongs to.
     Values outOfRangeValues(Time t) const { return valuesForOutOfRangeDayIndex(findDayIndexOutOfRange(t)); }
     Values outOfRangeValues(ExtendedDayNum d) const { return valuesForOutOfRangeDayIndex(outOfRangeDayIndex(d)); }
-
-    /// Pick the flag that covers `t`, for the fast paths that are reached on both sides of the epoch.
-    bool offsetIsWholeNumberOfHours(Time t) const
-    {
-        return t >= 0 ? offset_is_whole_number_of_hours_during_epoch : offset_is_whole_number_of_hours_in_lut_range;
-    }
 
     /// Splitting a time of day into hours, minutes and seconds without three divisions in sequence.
     /// See https://www.benjoffe.com/fast-time-of-day
@@ -550,9 +541,9 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         chassert(divisor > 0);
 
-        /// Checked before the fast path below: outside the lookup table the offset is extrapolated and can have
-        /// a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the fast path would round to a UTC boundary
-        /// instead of the local one there.
+        /// Checked before the fast path below: the "whole number of hours" property holds during the epoch,
+        /// but historical (pre-1900) offsets can have a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the
+        /// fast path would round to a UTC boundary instead of the local one for out-of-range values.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(x)))
             {
@@ -560,10 +551,10 @@ private:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
             }
 
-        /// Below the epoch the offset can have a sub-hour component, so use the flag that covers `x`; it is the
-        /// one `secondIntervalModularDivisor` hands out as `valid_before_epoch`, so the fast path agrees with
-        /// the interval function. The origin overload passes a non-negative difference, so `x >= 0` there.
-        if (offsetIsWholeNumberOfHours(static_cast<Time>(x))) [[likely]]
+        /// The property is computed over the epoch onward, so a value before it may sit in a period whose
+        /// offset has a sub-hour component; rounding it by modular arithmetic would land on a UTC-aligned
+        /// boundary instead of the local one. `toMinute` guards its own fast path the same way.
+        if (static_cast<Time>(x) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
             return roundDownToMultiple(x, divisor);
 
         const Time date = find(x).date;
@@ -1015,8 +1006,8 @@ public:
 
     unsigned toSecond(Time t) const
     {
-        /// Checked before the fast path: outside the lookup table the offset is extrapolated and can have a
-        /// sub-minute component (e.g. Moscow's +2:30:17 LMT).
+        /// Checked before the fast path: the "whole number of minutes" property holds during the epoch,
+        /// but historical (pre-1900) offsets can have a sub-minute component (e.g. Moscow's +2:30:17 LMT).
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.second);
 
@@ -1868,8 +1859,8 @@ public:
     {
         Int64 divisor = minuteIntervalDivisor(minutes);
 
-        /// Checked before the fast path below: outside the lookup table the offset is extrapolated and can have
-        /// a sub-minute component, so the fast path would round to a UTC boundary instead of the local one.
+        /// Checked before the fast path below: historical (pre-1900) offsets can have a sub-minute component,
+        /// so for out-of-range values the fast path would round to a UTC boundary instead of the local one.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(t)))
             {
@@ -1877,9 +1868,7 @@ public:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
             }
 
-        /// From the epoch onward only: a whole number of minutes (`date % 60 == 0`) does not align the start
-        /// of the local day to ten or fifteen minutes, so before the epoch a value has to stay on the
-        /// local-day path below.
+        /// From the epoch onward only, for the same reason as in `roundDown` above.
         if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_minutes_during_epoch) [[likely]]
             return roundDownToMultiple(t, divisor);
 
@@ -2025,7 +2014,7 @@ public:
         {
             if (unlikely(isOutOfLUTRange(v)))
                 return outOfRangeValues(v);
-            /// Already gated: skip the redundant bound clamp that `findIndex` would repeat.
+            /// Already gated: skip the redundant bound clamp that findIndex would repeat.
             if constexpr (std::is_same_v<DateOrTime, Time>)
                 return lut[findIndexInRange(v)];
         }
