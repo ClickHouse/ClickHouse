@@ -1,4 +1,4 @@
--- Exercise the exact-type numeric-array search path around its vector threshold.
+-- Exercise the exact-type numeric-array search path across inline-prefix, block, and tail boundaries.
 -- The same answers must hold for the first, last, and missing values across all supported widths.
 
 SELECT 'UInt8',
@@ -57,7 +57,7 @@ SELECT 'UInt64 tail',
     has(materialize(range(65)::Array(UInt64)), toUInt64(65)),
     indexOf(materialize(range(65)::Array(UInt64)), toUInt64(65));
 
-SELECT 'UInt8 threshold',
+SELECT 'UInt8 sizes',
     has(materialize(range(63)::Array(UInt8)), toUInt8(0)),
     indexOf(materialize(range(63)::Array(UInt8)), toUInt8(62)),
     has(materialize(range(64)::Array(UInt8)), toUInt8(63)),
@@ -67,7 +67,7 @@ SELECT 'UInt8 threshold',
     has(materialize(range(128)::Array(UInt8)), toUInt8(0)),
     indexOf(materialize(range(128)::Array(UInt8)), toUInt8(0));
 
-SELECT 'UInt16 threshold',
+SELECT 'UInt16 sizes',
     has(materialize(range(31)::Array(UInt16)), toUInt16(0)),
     indexOf(materialize(range(31)::Array(UInt16)), toUInt16(30)),
     has(materialize(range(32)::Array(UInt16)), toUInt16(31)),
@@ -77,7 +77,7 @@ SELECT 'UInt16 threshold',
     has(materialize(range(64)::Array(UInt16)), toUInt16(0)),
     indexOf(materialize(range(64)::Array(UInt16)), toUInt16(0));
 
-SELECT 'UInt32 threshold',
+SELECT 'UInt32 sizes',
     has(materialize(range(15)::Array(UInt32)), toUInt32(0)),
     indexOf(materialize(range(15)::Array(UInt32)), toUInt32(14)),
     has(materialize(range(16)::Array(UInt32)), toUInt32(15)),
@@ -87,7 +87,7 @@ SELECT 'UInt32 threshold',
     has(materialize(range(32)::Array(UInt32)), toUInt32(0)),
     indexOf(materialize(range(32)::Array(UInt32)), toUInt32(0));
 
-SELECT 'UInt64 threshold',
+SELECT 'UInt64 sizes',
     has(materialize(range(31)::Array(UInt64)), toUInt64(0)),
     indexOf(materialize(range(31)::Array(UInt64)), toUInt64(30)),
     has(materialize(range(32)::Array(UInt64)), toUInt64(31)),
@@ -196,11 +196,31 @@ SELECT 'Unsigned max SIMD',
 
 SELECT 'UInt32 duplicate SIMD',
     indexOf(
-        materialize(arrayMap(x -> if(x = 16 OR x = 20, toUInt32(777), toUInt32(x)), range(64))),
+        materialize(arrayMap(x -> if(x = 64 OR x = 68, toUInt32(777), toUInt32(x)), range(96))),
         toUInt32(777)),
     indexOf(
-        materialize(arrayMap(x -> if(x = 16 OR x = 24, toUInt32(888), toUInt32(x)), range(64))),
+        materialize(arrayMap(x -> if(x = 64 OR x = 72, toUInt32(888), toUInt32(x)), range(96))),
         toUInt32(888));
+
+-- Exercise indexOf's positive 16-value block rescan and the scalar tail after that block.
+
+SELECT 'UInt16 continuation block',
+    has(materialize(arrayMap(x -> if(x = 64 OR x = 68, toUInt16(777), toUInt16(x)), range(96))), toUInt16(777)),
+    indexOf(materialize(arrayMap(x -> if(x = 64 OR x = 68, toUInt16(777), toUInt16(x)), range(96))), toUInt16(777)),
+    has(materialize(range(81)::Array(UInt16)), toUInt16(80)),
+    indexOf(materialize(range(81)::Array(UInt16)), toUInt16(80));
+
+SELECT 'UInt32 continuation block',
+    has(materialize(arrayMap(x -> if(x = 64 OR x = 68, toUInt32(777), toUInt32(x)), range(96))), toUInt32(777)),
+    indexOf(materialize(arrayMap(x -> if(x = 64 OR x = 68, toUInt32(777), toUInt32(x)), range(96))), toUInt32(777)),
+    has(materialize(range(81)::Array(UInt32)), toUInt32(80)),
+    indexOf(materialize(range(81)::Array(UInt32)), toUInt32(80));
+
+SELECT 'UInt64 continuation block',
+    has(materialize(arrayMap(x -> if(x = 128 OR x = 132, toUInt64(777), toUInt64(x)), range(160))), toUInt64(777)),
+    indexOf(materialize(arrayMap(x -> if(x = 128 OR x = 132, toUInt64(777), toUInt64(x)), range(160))), toUInt64(777)),
+    has(materialize(range(145)::Array(UInt64)), toUInt64(144)),
+    indexOf(materialize(range(145)::Array(UInt64)), toUInt64(144));
 
 SELECT 'UInt8 long missing',
     has(materialize(arrayMap(x -> toUInt8(x % 255), range(4096))), toUInt8(255)),

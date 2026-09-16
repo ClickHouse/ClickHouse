@@ -1,133 +1,184 @@
 #include <Functions/array/arrayIndex.h>
 
-#if USE_MULTITARGET_CODE
-#include <immintrin.h>
-#endif
+#include <cstring>
 
 namespace DB
 {
 
-#if USE_MULTITARGET_CODE
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+namespace ArrayIndexImpl
+{
+namespace
+{
+template <typename T, size_t N>
+ALWAYS_INLINE bool hasInBlock(const T * data, T value)
+{
+    unsigned found = 0;
+
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#endif
+    for (size_t j = 0; j < N; ++j)
+        found |= static_cast<unsigned>(data[j] == value);
+
+    return found != 0;
+}
 
 template <typename T>
-size_t findUIntSIMD(const T * data, size_t size, T value)
+ALWAYS_INLINE bool findUIntHasInternal(const T * data, size_t size, T value)
 {
     static_assert(
         std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16> || std::is_same_v<T, UInt32>
         || std::is_same_v<T, UInt64>);
 
-    constexpr size_t lanes = sizeof(__m256i) / sizeof(T);
-
-    /// Keep a cheap early-hit prefix without scanning a whole vector scalarly.
-    if (size && data[0] == value)
-        return 0;
-    if (size > 1 && data[1] == value)
-        return 1;
-
-    __m256i needle;
     if constexpr (std::is_same_v<T, UInt8>)
-        needle = _mm256_set1_epi8(static_cast<char>(value));
-    else if constexpr (std::is_same_v<T, UInt16>)
-        needle = _mm256_set1_epi16(static_cast<short>(value));
-    else if constexpr (std::is_same_v<T, UInt32>)
-        needle = _mm256_set1_epi32(static_cast<int>(value));
+    {
+        return std::memchr(data, static_cast<int>(value), size) != nullptr;
+    }
     else
-        needle = _mm256_set1_epi64x(static_cast<long long>(value));
-
-    const auto findInVector = [&](size_t offset)
     {
-        const auto values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + offset));
-        __m256i equal;
-        if constexpr (std::is_same_v<T, UInt8>)
-            equal = _mm256_cmpeq_epi8(values, needle);
-        else if constexpr (std::is_same_v<T, UInt16>)
-            equal = _mm256_cmpeq_epi16(values, needle);
-        else if constexpr (std::is_same_v<T, UInt32>)
-            equal = _mm256_cmpeq_epi32(values, needle);
-        else
-            equal = _mm256_cmpeq_epi64(values, needle);
+        size_t i = 0;
 
-        unsigned mask;
-        if constexpr (std::is_same_v<T, UInt8>)
+        if (size >= 8)
         {
-            mask = static_cast<unsigned>(_mm256_movemask_epi8(equal));
-        }
-        else if constexpr (std::is_same_v<T, UInt16>)
-        {
-            /// Matching 16-bit lanes produce two adjacent set bits, so ctz(mask) >> 1 is the lane.
-            mask = static_cast<unsigned>(_mm256_movemask_epi8(equal));
-        }
-        else if constexpr (std::is_same_v<T, UInt32>)
-        {
-            mask = static_cast<unsigned>(_mm256_movemask_ps(_mm256_castsi256_ps(equal)));
-        }
-        else
-        {
-            mask = static_cast<unsigned>(_mm256_movemask_pd(_mm256_castsi256_pd(equal)));
+            if (hasInBlock<T, 8>(data, value))
+                return true;
+            i = 8;
         }
 
-        if (!mask)
-            return static_cast<size_t>(-1);
+        for (; size - i >= 16; i += 16)
+        {
+            if (hasInBlock<T, 16>(data + i, value))
+                return true;
+        }
 
-        unsigned lane = static_cast<unsigned>(__builtin_ctz(mask));
-        if constexpr (std::is_same_v<T, UInt16>)
-            lane >>= 1;
-        return static_cast<size_t>(lane);
-    };
+        if (size - i >= 8)
+        {
+            if (hasInBlock<T, 8>(data + i, value))
+                return true;
+            i += 8;
+        }
 
+        for (; i < size; ++i)
+        {
+            if (data[i] == value)
+                return true;
+        }
+
+        return false;
+    }
+}
+
+template <typename T>
+ALWAYS_INLINE size_t findScalarPrefix(const T * data, size_t size, T value)
+{
     size_t i = 0;
-    for (; i + 2 * lanes <= size; i += 2 * lanes)
-    {
-        const auto first = findInVector(i);
-        if (first != static_cast<size_t>(-1))
-            return i + first;
 
-        const auto second = findInVector(i + lanes);
-        if (second != static_cast<size_t>(-1))
-            return i + lanes + second;
+    for (; size - i >= 8; i += 8)
+    {
+#if defined(__clang__)
+#pragma unroll
+#endif
+        for (size_t j = 0; j < 8; ++j)
+        {
+            if (data[i + j] == value)
+                return i + j;
+        }
     }
 
-    for (; i + lanes <= size; i += lanes)
+    if (size - i >= 4)
     {
-        const auto found = findInVector(i);
-        if (found != static_cast<size_t>(-1))
-            return i + found;
+#if defined(__clang__)
+#pragma unroll
+#endif
+        for (size_t j = 0; j < 4; ++j)
+        {
+            if (data[i + j] == value)
+                return i + j;
+        }
+        i += 4;
     }
 
     for (; i < size; ++i)
+    {
         if (data[i] == value)
             return i;
+    }
 
     return static_cast<size_t>(-1);
 }
 
-) // DECLARE_X86_64_V3_SPECIFIC_CODE
-
-namespace ArrayIndexImpl
+template <typename T>
+ALWAYS_INLINE size_t findUIntIndexOfInternal(const T * data, size_t size, T value)
 {
+    static_assert(
+        std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16> || std::is_same_v<T, UInt32>
+        || std::is_same_v<T, UInt64>);
 
-size_t findUInt(const UInt8 * data, size_t size, UInt8 value)
-{
-    return TargetSpecific::x86_64_v3::findUIntSIMD(data, size, value);
-}
+    if constexpr (std::is_same_v<T, UInt8>)
+    {
+        const auto * found = static_cast<const UInt8 *>(std::memchr(data, static_cast<int>(value), size));
+        return found ? static_cast<size_t>(found - data) : static_cast<size_t>(-1);
+    }
+    else
+    {
+        /// The caller already checked the first eight values inline.
+        constexpr size_t scalar_prefix = std::is_same_v<T, UInt64> ? 128 : 64;
+        constexpr size_t scalar_continuation = scalar_prefix - 8;
+        const size_t scalar_size = size < scalar_continuation ? size : scalar_continuation;
+        size_t i = findScalarPrefix(data, scalar_size, value);
 
-size_t findUInt(const UInt16 * data, size_t size, UInt16 value)
-{
-    return TargetSpecific::x86_64_v3::findUIntSIMD(data, size, value);
-}
+        if (i != static_cast<size_t>(-1))
+            return i;
 
-size_t findUInt(const UInt32 * data, size_t size, UInt32 value)
-{
-    return TargetSpecific::x86_64_v3::findUIntSIMD(data, size, value);
-}
+        i = scalar_size;
+        for (; size - i >= 16; i += 16)
+        {
+            if (!hasInBlock<T, 16>(data + i, value))
+                continue;
 
-size_t findUInt(const UInt64 * data, size_t size, UInt64 value)
-{
-    return TargetSpecific::x86_64_v3::findUIntSIMD(data, size, value);
-}
-
-}
+#if defined(__clang__)
+#pragma unroll
 #endif
+            for (size_t j = 0; j < 16; ++j)
+            {
+                if (data[i + j] == value)
+                    return i + j;
+            }
+        }
+
+        for (; i < size; ++i)
+        {
+            if (data[i] == value)
+                return i;
+        }
+
+        return static_cast<size_t>(-1);
+    }
+}
+}
+
+template <typename T>
+NO_INLINE bool findUIntHas(const T * data, size_t size, T value)
+{
+    return findUIntHasInternal(data, size, value);
+}
+
+template <typename T>
+NO_INLINE size_t findUIntIndexOf(const T * data, size_t size, T value)
+{
+    return findUIntIndexOfInternal(data, size, value);
+}
+
+#define INSTANTIATE(T) \
+    template bool findUIntHas<T>(const T * data, size_t size, T value); \
+    template size_t findUIntIndexOf<T>(const T * data, size_t size, T value);
+
+INSTANTIATE(UInt8)
+INSTANTIATE(UInt16)
+INSTANTIATE(UInt32)
+INSTANTIATE(UInt64)
+
+#undef INSTANTIATE
+}
 
 }

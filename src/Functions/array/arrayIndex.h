@@ -31,7 +31,6 @@
 #include <DataTypes/DataTypeObject.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -50,15 +49,25 @@ namespace ErrorCodes
 
 using NullMap = PaddedPODArray<UInt8>;
 
-#if USE_MULTITARGET_CODE
 namespace ArrayIndexImpl
 {
-size_t findUInt(const UInt8 * data, size_t size, UInt8 value);
-size_t findUInt(const UInt16 * data, size_t size, UInt16 value);
-size_t findUInt(const UInt32 * data, size_t size, UInt32 value);
-size_t findUInt(const UInt64 * data, size_t size, UInt64 value);
+template <typename T>
+bool findUIntHas(const T * data, size_t size, T value);
+
+template <typename T>
+size_t findUIntIndexOf(const T * data, size_t size, T value);
+
+#define ARRAY_INDEX_INSTANTIATION(T) \
+    extern template bool findUIntHas<T>(const T * data, size_t size, T value); \
+    extern template size_t findUIntIndexOf<T>(const T * data, size_t size, T value);
+
+ARRAY_INDEX_INSTANTIATION(UInt8)
+ARRAY_INDEX_INSTANTIATION(UInt16)
+ARRAY_INDEX_INSTANTIATION(UInt32)
+ARRAY_INDEX_INSTANTIATION(UInt64)
+
+#undef ARRAY_INDEX_INSTANTIATION
 }
-#endif
 
 /// ConcreteActions -- what to do when the index was found.
 
@@ -188,26 +197,49 @@ public:
     {
         ResultType current = 0;
 
-#if USE_MULTITARGET_CODE
         if constexpr (
             Case == 1 && RightArgIsConstant && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
             && std::is_same_v<Data, PaddedPODArray<Initial>> && std::is_same_v<Target, Result> && std::is_same_v<Initial, Result>
             && (std::is_same_v<Initial, UInt8> || std::is_same_v<Initial, UInt16> || std::is_same_v<Initial, UInt32>
                 || std::is_same_v<Initial, UInt64>))
         {
-            /// Keep short-array regressions on the scalar path. UInt64 needs a larger minimum because one
-            /// AVX2 vector contains only four values and the SIMD helper is out of line.
-            constexpr size_t simd_min_bytes = std::is_same_v<Initial, UInt64> ? 256 : 64;
-            constexpr size_t simd_min_size = simd_min_bytes / sizeof(Initial);
-            if (array_size >= simd_min_size) [[unlikely]]
+            /// Keep the first few values on the tiny inline path. The continuation is deliberately out of line so
+            /// its vectorized loop does not change the code layout of this hot prefix.
+            if (array_size >= 8)
             {
-                const auto found = ArrayIndexImpl::findUInt(data.data() + current_offset, array_size, target);
-                if (found != static_cast<size_t>(-1))
-                    ConcreteAction::apply(current, found);
+#if defined(__clang__)
+#pragma unroll
+#endif
+                for (size_t j = 0; j < 8; ++j)
+                {
+                    if (data[current_offset + j] == target)
+                    {
+                        ConcreteAction::apply(current, j);
+                        return current;
+                    }
+                }
+
+                if (array_size > 8)
+                {
+                    const auto * continuation = data.data() + current_offset + 8;
+                    const size_t continuation_size = array_size - 8;
+
+                    if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+                    {
+                        if (ArrayIndexImpl::findUIntHas(continuation, continuation_size, target))
+                            ConcreteAction::apply(current, 0);
+                    }
+                    else
+                    {
+                        const auto found = ArrayIndexImpl::findUIntIndexOf(continuation, continuation_size, target);
+                        if (found != static_cast<size_t>(-1))
+                            ConcreteAction::apply(current, found + 8);
+                    }
+                }
+
                 return current;
             }
         }
-#endif
 
         for (size_t j = 0; j < array_size; ++j)
         {

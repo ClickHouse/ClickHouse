@@ -6,10 +6,10 @@ UInt8 tail	1	65	0	0
 UInt16 tail	1	65	0	0
 UInt32 tail	1	65	0	0
 UInt64 tail	1	65	0	0
-UInt8 threshold	1	63	1	64	0	0	1	1
-UInt16 threshold	1	31	1	32	0	0	1	1
-UInt32 threshold	1	15	1	16	0	0	1	1
-UInt64 threshold	1	31	1	32	0	0	1	1
+UInt8 sizes	1	63	1	64	0	0	1	1
+UInt16 sizes	1	31	1	32	0	0	1	1
+UInt32 sizes	1	15	1	16	0	0	1	1
+UInt64 sizes	1	31	1	32	0	0	1	1
 UInt8 first vector middle	1	17
 UInt16 first vector middle	1	9
 UInt32 first vector middle	1	5
@@ -31,5 +31,8 @@ UInt16 lane equality	0	0	1	1
 UInt32 lane equality	0	0	1	1
 UInt64 lane equality	0	0	1	1
 Unsigned max SIMD	1	41	1	21	1	13	1	9
-UInt32 duplicate SIMD	17	17
+UInt32 duplicate SIMD	65	65
+UInt16 continuation block	1	65	1	81
+UInt32 continuation block	1	65	1	81
+UInt64 continuation block	1	129	1	145
 UInt8 long missing	0	0
