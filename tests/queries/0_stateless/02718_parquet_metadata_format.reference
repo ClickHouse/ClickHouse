@@ -81,6 +81,7 @@
                         "max": "999"
                     },
                     "bloom_filter_bytes": 0,
+                    "have_size_statistics": false,
                     "size_statistics": {
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
@@ -101,6 +102,7 @@
                         "max": "Hello999"
                     },
                     "bloom_filter_bytes": 0,
+                    "have_size_statistics": false,
                     "size_statistics": {
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
@@ -121,6 +123,7 @@
                         "max": "8"
                     },
                     "bloom_filter_bytes": 0,
+                    "have_size_statistics": false,
                     "size_statistics": {
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
@@ -150,6 +153,7 @@
                         "max": "999"
                     },
                     "bloom_filter_bytes": 0,
+                    "have_size_statistics": false,
                     "size_statistics": {
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
@@ -170,6 +174,7 @@
                         "max": "Hello999"
                     },
                     "bloom_filter_bytes": 0,
+                    "have_size_statistics": false,
                     "size_statistics": {
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
@@ -190,6 +195,7 @@
                         "max": "8"
                     },
                     "bloom_filter_bytes": 0,
+                    "have_size_statistics": false,
                     "size_statistics": {
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
@@ -309,6 +315,7 @@
                         "max": "154 31 90 141 15 7 68 47 190 29 121 145 188 162 234 154 "
                     },
                     "bloom_filter_bytes": 1048594,
+                    "have_size_statistics": true,
                     "size_statistics": {
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [

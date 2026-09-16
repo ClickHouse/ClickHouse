@@ -51,6 +51,7 @@ namespace DB
  *             distinct_count - the number pf distinct values in the column chunk
  *             min - the minimum value of the column chunk
  *             max - the maximum column of the column chunk
+ *         have_size_statistics - bool flag that indicates if column chunk metadata contains size statistics
  *         size_statistics - column chunk size statistics with the next structure:
  *             unencoded_byte_array_data_bytes - the total size of the unencoded byte array values, NULL for other physical types
  *             repetition_level_histogram - the number of values at each repetition level

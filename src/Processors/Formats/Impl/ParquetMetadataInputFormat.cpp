@@ -95,6 +95,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
                                  Names{"num_values", "null_count", "distinct_count", "min", "max"}),
                              std::make_shared<DataTypeInt64>(),
+                             DataTypeFactory::instance().get("Bool"),
                              std::make_shared<DataTypeTuple>(
                                  DataTypes{
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
@@ -102,7 +103,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
                                  Names{"unencoded_byte_array_data_bytes", "repetition_level_histogram", "definition_level_histogram"}),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes", "size_statistics"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes", "have_size_statistics", "size_statistics"}))},
              Names{"file_offset", "num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
@@ -363,7 +364,12 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
         else
             tuple_column.getColumn(5).insertDefault();
         assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(column_chunk_metadata->bloom_filter_length().value_or(0));
-        fillColumnSizeStatistics(column_chunk_metadata->size_statistics(), tuple_column.getColumn(7));
+        /// A file written before SizeStatistics existed, or by a writer that omits it, has no size
+        /// statistics at all; that is not the same as a column whose histograms are legitimately
+        /// empty, so the presence is reported separately.
+        auto size_statistics = column_chunk_metadata->size_statistics();
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(7)).insertValue(size_statistics != nullptr);
+        fillColumnSizeStatistics(size_statistics, tuple_column.getColumn(8));
     }
     array_column.getOffsets().push_back(tuple_column.size());
 }
@@ -593,7 +599,8 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
       - `distinct_count` - the number of distinct values in the column chunk
       - `min` - the minimum value of the column chunk
       - `max` - the maximum column of the column chunk
-    - `size_statistics` - column chunk size statistics with the next structure:
+    - `have_size_statistics` - boolean flag that indicates if column chunk metadata contains size statistics
+    - `size_statistics` - column chunk size statistics (all fields are NULL or empty if have_size_statistics = false) with the next structure:
       - `unencoded_byte_array_data_bytes` - the total size of the unencoded byte array values, NULL for other physical types
       - `repetition_level_histogram` - the number of values at each repetition level, empty when the column has no repetition levels
       - `definition_level_histogram` - the number of values at each definition level, empty when the column has no definition levels

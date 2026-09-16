@@ -19,6 +19,7 @@ $CLICKHOUSE_LOCAL --query "
 
 $CLICKHOUSE_LOCAL --query "
     SELECT
+        columns.have_size_statistics AS present,
         columns.size_statistics.unencoded_byte_array_data_bytes AS reported,
         reported = (SELECT sum(length(toString(number))) FROM numbers(1000)) AS matches_values
     FROM file('$FILE', ParquetMetadata)
