@@ -50,6 +50,7 @@ namespace ProfileEvents
 {
     extern const Event QueryAnalysisMicroseconds;
     extern const Event QueryPipelineBuildMicroseconds;
+    extern const Event AutomaticParallelReplicasProbePlansBuilt;
 }
 
 namespace DB
@@ -259,6 +260,9 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
         std::string_view{"force_primary_key"},
     };
     removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
+    /// Counted here rather than on return: everything below is the cost the eligibility check above
+    /// exists to avoid, and the plan is built whether or not it ends up being used.
+    ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasProbePlansBuilt);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
