@@ -107,11 +107,6 @@ void moveFileBetweenDisks(
     auto max_retries_after_init = coordination_settings[CoordinationSetting::disk_move_retries_after_init].value;
     auto retries_sleep = std::chrono::milliseconds(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
 
-    /// Every sub-operation is bounded, in both phases. An unbounded retry never
-    /// throws and never returns, so it pins its caller rather than failing it:
-    /// the snapshot thread, which then never reports the snapshot as done and
-    /// stops Raft log compaction for good, or `backgroundChangelogOperationsThread`,
-    /// which then blocks `writeAt` with no timeout.
     auto run_with_retries = [&](const auto & op, std::string_view operation_description)
     {
         size_t retry_num = 0;
@@ -140,7 +135,7 @@ void moveFileBetweenDisks(
             const bool during_init = keeper_context->getServerState() == KeeperContext::Phase::INIT;
             const auto max_retries = during_init ? max_retries_during_init : max_retries_after_init;
 
-            /// 0 keeps retrying until shutdown, which a running server used to do always.
+            /// 0 means no limit.
             if (max_retries != 0 && retry_num >= max_retries)
             {
                 if (during_init)
@@ -153,12 +148,6 @@ void moveFileBetweenDisks(
 
         ProfileEvents::increment(ProfileEvents::KeeperDiskMovesAbandoned);
 
-        /// Abandoning is safe: `before_file_remove_op` repoints the caller's metadata
-        /// at `disk_to` only after the copy completed, so the metadata always names the
-        /// disk the file is really on, and a leftover temporary marker makes an
-        /// incomplete copy detectable for the next startup scan. A snapshot move is
-        /// re-attempted by `KeeperSnapshotManager::selectSnapshotsToMove` on the next
-        /// maintenance pass, a changelog move only at the next restart.
         LOG_ERROR(
             logger,
             "Abandoning the move of file {} to disk {}: '{}' failed {} times and {}",
