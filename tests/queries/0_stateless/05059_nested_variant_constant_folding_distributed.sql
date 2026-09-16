@@ -56,7 +56,7 @@ FROM (SELECT v FROM remote('127.0.0.{1,2}', currentDatabase(), t_variant_const_p
 WHERE v = 42::UInt64::Variant(UInt64)
 SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 1, prefer_localhost_replica = 0, serialize_query_plan = 0;
 
--- `count()` stays 2 even if the predicate never reaches the remote query, so assert the pushed filter is in
+-- `count` stays 2 even if the predicate never reaches the remote query, so assert the pushed filter is in
 -- the remote-side plan: one `Filter` above the outer read plus one inside each of the two shards' plans.
 SELECT countIf(explain ILIKE '%Filter column: equals(__table1.v, _CAST(%')
 FROM
@@ -85,7 +85,7 @@ WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64))
    OR x = (toDateTime(1100000000, 'Europe/Berlin'), 2::UInt64::Variant(UInt64))
 SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3;
 
--- `count()` stays 1 if the rewrite declines and each equality keeps its own cast, so assert the rewritten
+-- `count` stays 1 if the rewrite declines and each equality keeps its own cast, so assert the rewritten
 -- predicate too: the `IN`, the named member and the `DateTime` sibling's raw timestamp together.
 SELECT countIf(explain ILIKE '%in(__table1.x, tuple(tuple(1698541800, _CAST(_CAST(42, ''UInt64''), ''Variant(UInt64)''%')
 FROM
