@@ -218,7 +218,7 @@ def test_transient_error_after_sent_file_keeps_only_unsent_files(started_cluster
     assert int(node1.query("select sum(uniq_values) from dist_data")) == 3
 
 
-def test_recovery_skips_sent_prefix_before_broken_file(started_cluster):
+def test_recovery_resends_existing_file_before_broken_file(started_cluster):
     create_tables(
         background_insert_batch=1, background_insert_split_batch_on_failure=1
     )
@@ -237,12 +237,9 @@ def test_recovery_skips_sent_prefix_before_broken_file(started_cluster):
     assert len(files) == 3
     file_indices = [file.rsplit("/", 1)[-1][:-4] for file in files]
 
-    # Simulate an acknowledged first file followed by a quarantined second file,
-    # with the stale batch metadata left by an abnormal shutdown.
-    node1.query(
-        "insert into dist values (1, 1)",
-        settings={"distributed_foreground_insert": 1},
-    )
+    # A server without ordered split retries skipped `A` after a transient error, went
+    # on to quarantine `B`, and died before rewriting the batch metadata. `A` was never
+    # acknowledged by the remote shard, so recovery must resend it rather than delete it.
     node1.exec_in_container(["mv", files[1], f"{queue_path}/broken/"])
     node1.exec_in_container(
         [
@@ -253,15 +250,13 @@ def test_recovery_skips_sent_prefix_before_broken_file(started_cluster):
     )
 
     node1.query("system flush distributed dist")
-    # Only the direct insert and `C` may reach the sink. Every insert block produces
-    # its own row in `data`, so a resent `A` would add a third row (or, if it was
-    # squashed together with `C`, raise `uniq_values` of that row to 2).
-    sink_state = node1.query("select count(), sum(uniq_values) from dist_data")
-    assert sink_state.split() == ["2", "2"]
-    # `A` must be finalized locally rather than retried, and the queue directory must
-    # drain. (`system.distribution_queue` is not consulted here: `B` was quarantined
-    # by this test with an out-of-band `mv`, so the in-memory file counter still
-    # accounts for it.)
+    # Every insert block produces its own row in `data` with the number of distinct
+    # values it carried, so the sum counts delivered files whether or not `A` and `C`
+    # were squashed into one block. Both must arrive; only quarantined `B` is lost.
+    assert int(node1.query("select sum(uniq_values) from dist_data")) == 2
+    # The queue directory must drain. (`system.distribution_queue` is not consulted
+    # here: `B` was quarantined by this test with an out-of-band `mv`, so the in-memory
+    # file counter still accounts for it.)
     remaining_files = node1.exec_in_container(
         ["bash", "-c", f"ls -1 {queue_path}/*.bin 2>/dev/null || true"]
     ).strip()
