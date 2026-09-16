@@ -309,7 +309,7 @@ ArrowType parseType(const flatbuf::Field & field)
         /// View-list and run-end-encoded types the reader cannot decode, but whose physical buffer layout
         /// is known. Keep them as `Unsupported` placeholders (so schema inference can drop them and a
         /// `SELECT` of such a column errors clearly), but parse their children and record the layout so
-        /// `skipField` can advance the node/buffer cursors past an *unrequested* column of this type and
+        /// `advanceField` can advance the node/buffer cursors past an *unrequested* column of this type and
         /// keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
             type.kind = TypeKind::Unsupported;
@@ -1161,7 +1161,7 @@ DataTypePtr fieldToCHType(
 
     if (make_nullable && result->canBeInsideNullable())
     {
-        /// A Tuple (from an Arrow Struct) is wrapped in Nullable only when `allow_experimental_nullable_tuple_type`
+        /// A Tuple (from an Arrow Struct) is wrapped in Nullable only when `enable_nullable_tuple_type`
         /// is enabled; otherwise schema inference would return a `Nullable(Tuple)` that `CREATE TABLE` rejects.
         /// Without it the struct is read as a plain Tuple (its null map is dropped), as before `Nullable(Tuple)`
         /// was supported. The decode path applies the same gate.
