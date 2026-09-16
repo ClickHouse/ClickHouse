@@ -39,7 +39,7 @@ expect "Syntax error: failed at position 93 (UInt64):*"
 # (an unclosed opening parenthesis, by contrast, would trigger continuation).
 send -- "select 1)\r"
 expect "Syntax error: failed at position 9 ()):"
-expect "Unmatched parentheses: )"
+expect "Unmatched parentheses: ')' at position 9 has no matching opening bracket."
 expect ":) "
 
 send -- "\4"

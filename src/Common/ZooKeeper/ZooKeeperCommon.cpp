@@ -1364,21 +1364,17 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             response = std::make_shared<ZooKeeperErrorResponse>();
 
         if (op_error != Error::ZOK)
-        {
             response->error = op_error;
-
-            /// Set error for whole transaction.
-            /// If some operations fail, ZK send global error as zero and then send details about each operation.
-            /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
-            if (error == Error::ZOK && op_error != Error::ZRUNTIMEINCONSISTENCY)
-                error = op_error;
-        }
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
 
         response->zxid = zxid;
     }
+
+    /// The failed-multi aggregate error is not sent on the wire; derive it from the
+    /// per-operation errors just read.
+    promoteMultiResponseError(*this);
 
     /// Footer.
     {
@@ -1396,6 +1392,23 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
         if (error_read != -1)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
+    }
+}
+
+void promoteMultiResponseError(MultiResponse & response)
+{
+    if (response.error != Error::ZOK)
+        return;
+
+    /// A failed multi leaves the aggregate ZOK, with the real error on the failing operation
+    /// and ZRUNTIMEINCONSISTENCY on the operations after it; promote the first real error.
+    for (const auto & sub : response.responses)
+    {
+        if (sub->error != Error::ZOK && sub->error != Error::ZRUNTIMEINCONSISTENCY)
+        {
+            response.error = sub->error;
+            break;
+        }
     }
 }
 
