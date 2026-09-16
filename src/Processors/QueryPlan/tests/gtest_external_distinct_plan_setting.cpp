@@ -9,12 +9,15 @@
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 
 namespace DB
 {
+void registerDistinctStep(QueryPlanStepRegistry & registry);
+
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
@@ -30,8 +33,9 @@ using namespace DB;
 /// `QueryPlanSerializationSettings::readBinary` rejects unknown setting names, so older peers receive
 /// neither threshold and use in-memory execution with its memory requirements.
 ///
-/// The input-order flag is gated by the same version. Older peers preserve input order through their
-/// in-memory execution; newer peers receive the requirement for order restoration after spilling.
+/// Step version 1 carries the input-order flag and is introduced at the same global version. Older
+/// peers preserve input order through their in-memory execution; newer peers receive the requirement
+/// for order restoration after spilling.
 namespace
 {
 
@@ -54,19 +58,19 @@ QueryPlanSerializationSettings serializeDistinctStep(const DistinctStep::Setting
 }
 
 /// Serializes the step without its settings at the given version.
-String serializeStep(const DistinctStep & step, UInt64 version, bool for_cache_key)
+String serializeStep(const DistinctStep & step, UInt64 version, UInt64 step_version, bool for_cache_key)
 {
     WriteBufferFromOwnString out;
     SerializedSetsRegistry serialized_sets;
     serialized_sets.for_cache_key = for_cache_key;
-    IQueryPlanStep::Serialization serialization{out, serialized_sets, for_cache_key, version};
+    IQueryPlanStep::Serialization serialization{out, serialized_sets, for_cache_key, version, step_version};
     step.serialize(serialization);
     return out.str();
 }
 
-DistinctStep makeStep(const SharedHeader & header, bool preserve_input_order)
+DistinctStep makeStep(const SharedHeader & header, bool preserve_input_order, bool pre_distinct = false)
 {
-    DistinctStep step(header, DistinctStep::Settings{}, /*limit_hint_=*/0, Names{"k"}, /*pre_distinct_=*/false);
+    DistinctStep step(header, DistinctStep::Settings{}, /*limit_hint_=*/0, Names{"k"}, pre_distinct);
     if (preserve_input_order)
         step.preserveInputOrder();
     return step;
@@ -74,16 +78,21 @@ DistinctStep makeStep(const SharedHeader & header, bool preserve_input_order)
 
 /// Round-trips a step through its own `serialize` and `deserialize` at the given version, the way a peer
 /// at that version reads it.
-bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader & header, UInt64 version)
+bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader & header, UInt64 version, UInt64 step_version)
 {
-    const String bytes = serializeStep(step, version, /*for_cache_key=*/ false);
+    const String bytes = serializeStep(step, version, step_version, /*for_cache_key=*/ false);
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry deserialized_sets;
     const SharedHeaders input_headers{header};
     const QueryPlanSerializationSettings settings;
     IQueryPlanStep::Deserialization deserialization{
-        in, deserialized_sets, {}, getContext().context, input_headers, header, settings, /*max_type_complexity=*/ 0, version, /*skipping=*/ false};
-    const auto restored = DistinctStep::deserializeNormal(deserialization);
+        in, deserialized_sets, {}, getContext().context, input_headers, header, settings,
+        /*max_type_complexity=*/ 0, version, step_version, /*skipping=*/ false};
+    QueryPlanStepRegistry registry;
+    registerDistinctStep(registry);
+    registry.checkVersionReadable(step.getSerializationName(), step_version);
+    const auto restored = registry.createStep(step.getSerializationName(), deserialization);
+    EXPECT_TRUE(in.eof());
     return dynamic_cast<const DistinctStep &>(*restored).preservesInputOrder();
 }
 
@@ -177,7 +186,15 @@ TEST(ExternalDistinctPlanSetting, MaxBlockSizeIsValidatedOnDeserialization)
 TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)
 {
     const auto header = makeHeader();
-    EXPECT_TRUE(inputOrderFlagAfterRoundTrip(makeStep(header, /*preserve_input_order=*/ true), header, current_version));
+    QueryPlanStepRegistry registry;
+    registerDistinctStep(registry);
+    for (const bool preliminary : {false, true})
+    {
+        const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
+        const auto step_version = registry.versionToWrite(step.getSerializationName(), current_version);
+        EXPECT_EQ(step_version, 1);
+        EXPECT_TRUE(inputOrderFlagAfterRoundTrip(step, header, current_version, step_version));
+    }
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotCarriedTowardsAnOlderPeer)
@@ -185,7 +202,33 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotCarriedTowardsAnOlderPeer)
     /// The older peer reads the step in its own format, without the flag; it runs the in-memory `DISTINCT`,
     /// which keeps the input order by construction.
     const auto header = makeHeader();
-    EXPECT_FALSE(inputOrderFlagAfterRoundTrip(makeStep(header, /*preserve_input_order=*/ true), header, pre_setting_version));
+    QueryPlanStepRegistry registry;
+    registerDistinctStep(registry);
+    for (const bool preliminary : {false, true})
+    {
+        const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
+        const auto step_version = registry.versionToWrite(step.getSerializationName(), pre_setting_version);
+        EXPECT_EQ(step_version, 0);
+        EXPECT_FALSE(inputOrderFlagAfterRoundTrip(step, header, pre_setting_version, step_version));
+    }
+}
+
+TEST(ExternalDistinctPlanSetting, VersionZeroIsReadableAtTheCurrentPlanVersion)
+{
+    /// Peers can share a global plan version while supporting different step versions. Version 0
+    /// carries no input-order flag, even when the global version supports external `DISTINCT`.
+    const auto header = makeHeader();
+    for (const bool preliminary : {false, true})
+        EXPECT_FALSE(inputOrderFlagAfterRoundTrip(
+            makeStep(header, /*preserve_input_order=*/ true, preliminary), header, current_version, /*step_version=*/ 0));
+}
+
+TEST(ExternalDistinctPlanSetting, UnknownStepVersionIsRejected)
+{
+    QueryPlanStepRegistry registry;
+    registerDistinctStep(registry);
+    for (const String name : {"Distinct", "PreDistinct"})
+        EXPECT_THROW(registry.checkVersionReadable(name, 2), Exception);
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)
@@ -198,9 +241,9 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)
     const auto without_flag = makeStep(header, /*preserve_input_order=*/ false);
 
     EXPECT_EQ(
-        serializeStep(with_flag, current_version, /*for_cache_key=*/ true),
-        serializeStep(without_flag, current_version, /*for_cache_key=*/ true));
+        serializeStep(with_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ true),
+        serializeStep(without_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ true));
     EXPECT_NE(
-        serializeStep(with_flag, current_version, /*for_cache_key=*/ false),
-        serializeStep(without_flag, current_version, /*for_cache_key=*/ false));
+        serializeStep(with_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ false),
+        serializeStep(without_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ false));
 }

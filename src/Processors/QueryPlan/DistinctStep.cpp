@@ -350,7 +350,7 @@ void DistinctStep::serialize(Serialization & ctx) const
     for (const auto & column : columns)
         writeStringBinary(column, ctx.out);
 
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT && !ctx.for_cache_key)
+    if (ctx.step_version >= 1 && !ctx.for_cache_key)
         writeBinary(preserve_input_order, ctx.out);
 }
 
@@ -366,7 +366,7 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
         readStringBinary(column_names[i], ctx.in);
 
     bool preserve_input_order = false;
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT)
+    if (ctx.step_version >= 1)
         readBinary(preserve_input_order, ctx.in);
 
     auto step = std::make_unique<DistinctStep>(
@@ -395,8 +395,9 @@ void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.
     /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
-    registry.registerStep("Distinct", DistinctStep::deserializeNormal);
-    registry.registerStep("PreDistinct", DistinctStep::deserializePre);
+    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT}};
+    registry.registerStep("Distinct", DistinctStep::deserializeNormal, versions);
+    registry.registerStep("PreDistinct", DistinctStep::deserializePre, versions);
 }
 
 }
