@@ -529,6 +529,51 @@ def test_static_token_expiry(started_cluster):
     assert_seeded_rows(node, db_name, DELTA_TABLE)
 
 
+def test_iceberg_rest_denied_keeps_database_usable(started_cluster):
+    """No Iceberg REST access: the table is unreadable, the database still works."""
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("v2_iceberg_rest_denied")
+    create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
+
+    def column_tables():
+        return set(
+            node.query(
+                f"SELECT DISTINCT table FROM system.columns WHERE database = '{db_name}'",
+                settings={"show_data_lake_catalogs_in_system_tables": "1"},
+            )
+            .strip()
+            .split("\n")
+        )
+
+    try:
+        proxy_control(node, "deny_iceberg_rest")
+
+        # Listing does not touch the REST endpoint, so the table is still shown.
+        assert UNIFORM_TABLE in show_tables(node, db_name, "default%")
+
+        # Goes through getTablesIterator.
+        tables = column_tables()
+        assert DELTA_TABLE in tables
+        assert UNIFORM_TABLE not in tables
+
+        error = node.query_and_get_error(f"SELECT * FROM {db_name}.`{UNIFORM_TABLE}`")
+        assert "EXTERNAL USE SCHEMA" in error
+        assert "External data access is not enabled" in error
+        assert "LOGICAL_ERROR" not in error
+
+        assert_seeded_rows(node, db_name, DELTA_TABLE)
+
+        # Not sticky.
+        proxy_control(node, "allow_iceberg_rest")
+        assert_seeded_rows(node, db_name, UNIFORM_TABLE)
+        assert UNIFORM_TABLE in column_tables()
+
+        proxy_control(node, "deny_iceberg_rest")
+        node.query(f"DROP DATABASE {db_name}")
+    finally:
+        proxy_control(node, "allow_iceberg_rest")
+
+
 def test_no_secrets_leaked(started_cluster):
     """`catalog_credential` must not appear in `SHOW CREATE`, `system.databases`, errors, or logs."""
     node = started_cluster.instances["node1"]

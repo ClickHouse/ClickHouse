@@ -1070,7 +1070,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded,
+    bool /*skip_not_loaded*/,
     const TablesFilter & tables_filter,
     bool keep_unresolved_tables) const
 {
@@ -1119,13 +1119,15 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
             futures.emplace_back(promises.back()->get_future());
 
             pool.scheduleOrThrow(
-                [this, table_name, skip_not_loaded, context_, keep_unresolved_tables, promise=promises.back()]() mutable
+                [this, table_name, context_, keep_unresolved_tables, promise=promises.back()]() mutable
                 {
                     StoragePtr storage = nullptr;
                     try
                     {
                         LOG_INFO(log, "Get table information for table {}", table_name);
-                        storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
+                        /// Tables marked unreadable at metadata time are skipped, not an error;
+                        /// direct access still reports the reason.
+                        storage = tryGetTableImpl(table_name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ true);
                     }
                     catch (...)
                     {

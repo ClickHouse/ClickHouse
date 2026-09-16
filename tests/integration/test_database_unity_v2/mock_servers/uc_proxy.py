@@ -41,6 +41,12 @@ PAT_TOKEN = "dapi-test-pat"
 # Mutated from handler threads; `set` operations are atomic under the GIL.
 VALID_TOKENS = set()
 PAT_VALID = True
+# Principal can use the Unity tables API but not the Iceberg REST catalog.
+ICEBERG_REST_DENIED = False
+ICEBERG_REST_DENIED_BODY = (
+    b'{"error_code": "PERMISSION_DENIED", '
+    b'"message": "External data access is not enabled on the metastore"}'
+)
 
 
 def is_authorized(header):
@@ -87,6 +93,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self._check_auth():
             return
 
+        if ICEBERG_REST_DENIED and "/iceberg-rest/" in self.path:
+            self._reply(403, ICEBERG_REST_DENIED_BODY)
+            return
+
         path = self.path.replace("/iceberg-rest/", "/iceberg/")
         try:
             response = urllib.request.urlopen(UPSTREAM + path)
@@ -110,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(404, b'{"error": "unsupported POST route"}')
 
     def _handle_control(self):
-        global PAT_VALID
+        global PAT_VALID, ICEBERG_REST_DENIED
         if self.path == "/control/expire":
             VALID_TOKENS.clear()
             self._reply(200, b"OK")
@@ -119,6 +129,12 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(200, b"OK")
         elif self.path == "/control/restore_pat":
             PAT_VALID = True
+            self._reply(200, b"OK")
+        elif self.path == "/control/deny_iceberg_rest":
+            ICEBERG_REST_DENIED = True
+            self._reply(200, b"OK")
+        elif self.path == "/control/allow_iceberg_rest":
+            ICEBERG_REST_DENIED = False
             self._reply(200, b"OK")
         else:
             self._reply(404, b'{"error": "unknown control route"}')

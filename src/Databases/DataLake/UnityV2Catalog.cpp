@@ -363,10 +363,28 @@ bool UnityV2Catalog::tryGetTableMetadata(
         /// The Unity tables API describes the table but does not serve its Iceberg metadata;
         /// Databricks exposes that only through the Iceberg REST catalog endpoint.
         /// See https://docs.databricks.com/aws/en/external-access/iceberg
-        return requestWithRetry([&](bool force_refresh)
+        try
         {
-            return getIcebergRestCatalog(force_refresh)->tryGetTableMetadata(schema_name, table_name, result);
-        });
+            /// Covers `getIcebergRestCatalog`: the `RestCatalog` constructor fetches `/v1/config`.
+            return requestWithRetry([&](bool force_refresh)
+            {
+                return getIcebergRestCatalog(force_refresh)->tryGetTableMetadata(schema_name, table_name, result);
+            });
+        }
+        catch (...)
+        {
+            /// Status codes for a refused request are undocumented, so any failure marks the table unreadable.
+            std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
+            auto reason = fmt::format(
+                "Cannot read Iceberg table `{}`: the Unity Iceberg REST endpoint `{}` returned an error: {}. "
+                "Reading managed Iceberg tables from Unity requires 'External data access' to be enabled on the metastore "
+                "and the `EXTERNAL USE SCHEMA` privilege for the principal; "
+                "check these if the error above indicates a permission problem.",
+                full_table_name, iceberg_rest_url, DB::getCurrentExceptionMessage(false));
+            LOG_DEBUG(log, "{}", reason);
+            result.setTableIsNotReadable(reason);
+            return true;
+        }
     }
 
     return tryGetDeltaTableMetadata(full_table_name, object, result);
