@@ -32,15 +32,22 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log, query_log"
 
 # The flush runs as a query of its own, and the event belongs to that query, next to the
 # rest of the flush accounting. Its own 'current_database' is a default value, so the row
-# is found through the flush query id that the asynchronous insert log records.
+# is found through the flush query id that the asynchronous insert log records. The log is
+# ordered by 'database, table, event_date, event_time', so the subquery names the database
+# and the table to read only this test's part of it, and both lookups are bounded in time
+# to the current run.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT sum(ProfileEvents['AsyncInsertFlush'])
     FROM system.query_log
-    WHERE type = 'QueryFinish'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND type = 'QueryFinish'
       AND query_kind = 'AsyncInsertFlush'
       AND initial_query_id = (
           SELECT flush_query_id FROM system.asynchronous_insert_log
-          WHERE query_id = '${insert_query_id}_1')"
+          WHERE database = currentDatabase()
+            AND table = 'async_insert_flush_event'
+            AND event_date >= yesterday()
+            AND query_id = '${insert_query_id}_1')"
 
 # A flush started by SYSTEM FLUSH ASYNC INSERT QUEUE runs in a thread group whose parent is
 # that query, so the event reaches it as well. Reading it per query id keeps tests running
@@ -48,7 +55,8 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "
     SELECT sum(ProfileEvents['AsyncInsertFlush'])
     FROM system.query_log
-    WHERE current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND current_database = currentDatabase()
       AND query_id = '${flush_query_id}'
       AND type = 'QueryFinish'"
 
