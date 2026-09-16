@@ -1167,10 +1167,9 @@ void MergeTreeData::checkProperties(
     }
 
     std::unordered_set<String> columns_with_text_indexes;
+    std::unordered_set<String> indices_names;
     if (!new_metadata.secondary_indices.empty())
     {
-        std::unordered_set<String> indices_names;
-
         for (const auto & index : new_metadata.secondary_indices)
         {
             try
@@ -1279,6 +1278,16 @@ void MergeTreeData::checkProperties(
                 const auto * index_desc = projection.index->getIndexDescription();
                 if (!index_desc)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection index '{}' has no index description", projection.name);
+
+                /// A projection text index is analyzed and read as a text index named after the projection, and the
+                /// query planner keys text indexes by that name. A secondary index with the same name would be
+                /// indistinguishable from it there, so the two namespaces must not overlap for text indexes.
+                if (indices_names.contains(projection.name))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Projection text index {} has the same name as a secondary index; the names must differ",
+                        backQuote(projection.name));
+
                 const auto & column = index_desc->column_names[0];
 
                 if (columns_with_text_indexes.contains(column))
