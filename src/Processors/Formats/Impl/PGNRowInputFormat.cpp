@@ -366,6 +366,10 @@ private:
 
         skipWhitespaceAndComments(in);
 
+        /// The game termination marker ends the movetext: once it has been read, only comments,
+        /// variations and escape lines may follow before the next game.
+        bool terminated = false;
+
         /// Read move text until end of game (next [ or EOF or blank line followed by [)
         while (!in.eof() && *in.position() != '[')
         {
@@ -397,8 +401,16 @@ private:
                     ignoreOne(in);
                 }
 
+                if (terminated)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Invalid PGN: unexpected token '{}' after the game termination marker '{}'",
+                        token,
+                        game.result);
+
                 if (isResultToken(token))
                 {
+                    terminated = true;
                     if (game.result.empty())
                     {
                         game.result = token;
@@ -626,6 +638,8 @@ When the `Result` tag is missing, the result is taken from the game termination 
 A `Result` tag whose value is not one of `1-0`, `0-1`, `1/2-1/2` or `*` is an error, and so is a game
 termination marker that contradicts the game result. A game that has neither a `Result` tag nor a game
 termination marker is an error as well, because the `result` column is always one of the four values above.
+The game termination marker ends the move text: a move or any other token that follows it (comments,
+variations and escape lines aside) is an error.
 
 ## Example usage {#example-usage}
 

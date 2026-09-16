@@ -1,0 +1,7 @@
+Test 1: Moves after the game termination marker are an error
+Invalid PGN: unexpected token '2.Nf3' after the game termination marker '1-0'
+Test 2: A repeated marker is an error as well, even when it agrees with the result
+Invalid PGN: unexpected token '0-1' after the game termination marker '0-1'
+Test 3: Comments, a variation and an escape line after the marker are fine, and the next game is read
+Trailing Comments	1/2-1/2	e4 e5
+Second Game	*	d4 d5
