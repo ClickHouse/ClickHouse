@@ -18,13 +18,20 @@
                  about 11x better than they are on a real cluster. Pin a realistic replica count. -->
             <max_parallel_replicas>3</max_parallel_replicas>
             <!-- The cost model divides the read by `min(max_threads [* replicas], input_bytes /
-                 merge_tree_min_bytes_per_task_for_remote_reading + 1)`. At the 2 MiB default that second
-                 term clamps BOTH sides to the same value for any read below a few MiB, the comparison
-                 collapses to `0 > output_bytes / replicas`, and the answer is "no" before the cost model
-                 looks at anything. In the first run of these jobs that was 7280 of 7366 evaluations -
-                 98.8% decided in advance, 0 of them switching, while the 86 that escaped the clamp
-                 switched 88% of the time. Lower it so the cost model, not the clamp, makes the decision
-                 on the table sizes stateless tests actually use. -->
+                 merge_tree_min_bytes_per_task_for_remote_reading + 1)`. When that second term is the
+                 smaller one it clamps BOTH sides to the same value, the comparison collapses to
+                 `0 > output_bytes / replicas`, and the answer is "no" before the cost model looks at
+                 anything. At the 2 MiB default only 183 of the 7366 evaluations in the first run of
+                 these jobs escaped the clamp; those switched 88% of the time, the rest could not switch
+                 at all.
+
+                 16 KiB is chosen off the measured read sizes of that run, not to disable the clamp.
+                 Most reads here are far too small to parallelize - the median is 201 bytes and p75 is
+                 2.4 KiB - so the clamp still (correctly) decides ~85% of evaluations, and no threshold
+                 changes that. What this buys is the band above it: genuinely-decided evaluations go
+                 183 -> 1087, about 6x. The curve is flat here - 64 KiB gives 885 and 4 KiB gives 1351 -
+                 so this trades a little reach for a task size that stays plausible for the tests that
+                 read from object storage. -->
             <merge_tree_min_bytes_per_task_for_remote_reading>16384</merge_tree_min_bytes_per_task_for_remote_reading>
             <parallel_replicas_local_plan>1</parallel_replicas_local_plan>
             <parallel_replicas_for_non_replicated_merge_tree>1</parallel_replicas_for_non_replicated_merge_tree>
