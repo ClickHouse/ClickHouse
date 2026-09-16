@@ -1,5 +1,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
@@ -57,7 +58,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 {
     marks_file = getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
-            4096,
+            MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE,
             settings_.query_write_settings);
 
     marks_file_hashing = std::make_unique<HashingWriteBuffer>(*marks_file);
