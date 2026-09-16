@@ -546,7 +546,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
       * now and stays in `columns_filled_by_defaults`; `applyPatchesAfterReader` applies the patch at the
       * step boundary and evaluates the dependents again from the patched value.
       */
-    if (!positions_filled_by_defaults.empty())
+    if (!positions_filled_by_defaults.empty() && !patch_readers.empty())
     {
         bool has_columns_to_reevaluate = false;
         for (size_t pos : positions_filled_by_defaults)
