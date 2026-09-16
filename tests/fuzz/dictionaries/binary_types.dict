@@ -55,6 +55,7 @@
 "\x32"  # Time
 "\x34"  # Time64(P)
 "\x36"  # QBit(T, N)
+"\x37"  # QBit(T, N, stride)
 
 # VarUInt encodings for small counts (1-byte encoding for values 0-127)
 "\x00"  # count = 0

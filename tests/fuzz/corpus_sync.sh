@@ -212,7 +212,7 @@ echo ""
 #    one-element chain rather than copied verbatim.
 #
 #    Arguments: <src_fuzzer> <CompressionMethodByte> <header size> <offset of
-#    decompressed_size within the header>.  gorilla/t64 use
+#    decompressed_size within the header>.  gorilla/t64/fpc use
 #    `struct { size_t decompressed_size; }` (8 bytes); delta uses
 #    `struct { UInt8 delta_size_bytes; size_t decompressed_size; }`, which is
 #    16 bytes with the size at offset 8 after padding.
@@ -226,6 +226,7 @@ echo ""
 echo "=== Compression codec fuzzers → multiple_decompress_fuzzer ==="
 wrap_codec_corpus "gorilla_decompress_fuzzer" 95 8  0 "multiple_decompress_fuzzer"
 wrap_codec_corpus "t64_decompress_fuzzer"     93 8  0 "multiple_decompress_fuzzer"
+wrap_codec_corpus "fpc_decompress_fuzzer"     98 8  0 "multiple_decompress_fuzzer"
 wrap_codec_corpus "delta_decompress_fuzzer"   92 16 8 "multiple_decompress_fuzzer"
 echo ""
 
