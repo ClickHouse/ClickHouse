@@ -8632,7 +8632,7 @@ void StorageReplicatedMergeTree::fetchPartition(
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No active replicas for shard {}", from_);
 
         /// The replicas that the best one is chosen among. Normally all active replicas, but with geo replication
-        /// control it is narrowed down to the replicas of the same region that have the requested partition, if there are any.
+        /// control it is narrowed down to the replicas of the same region that can serve the whole partition, if there are any.
         zkutil::Strings same_region_replicas;
         std::span<const String> candidate_replicas{active_replicas};
 
@@ -8641,6 +8641,36 @@ void StorageReplicatedMergeTree::fetchPartition(
             /// We're attaching from the same ZooKeeper as the current table, so we can leverage the region information to reduce
             /// fetching cost if possible by favoring replicas in the same region.
             /// This logic belongs to a user query, so we can only do the best effort, we cannot force fetching from the leader.
+
+            /// The parts of the requested partition that every active replica has committed, and the union of them:
+            /// the current state of the partition across the shard. A replica of the same region is a candidate only when
+            /// its own parts cover this whole state. Otherwise a lagging replica of the region (having a stale subset of the
+            /// partition, or nothing at all) would be chosen just because it is close, and the query would fetch an
+            /// incomplete partition or be rejected with `PARTITION_DOESNT_EXIST` below, while an active replica outside
+            /// of the region already has the data.
+            std::unordered_map<String, Strings> partition_parts_by_replica;
+            Strings all_partition_parts;
+            for (const String & replica : active_replicas)
+            {
+                Strings replica_parts;
+                if (zookeeper->tryGetChildren(fs::path(from) / "replicas" / replica / "parts", replica_parts) != Coordination::Error::ZOK)
+                    continue;
+
+                Strings & partition_parts = partition_parts_by_replica[replica];
+                for (const String & part : replica_parts)
+                {
+                    auto part_info = MergeTreePartInfo::tryParsePartName(part, format_version);
+                    if (part_info && part_info->getPartitionId() == partition_id)
+                    {
+                        partition_parts.push_back(part);
+                        all_partition_parts.push_back(part);
+                    }
+                }
+            }
+
+            const ActiveDataPartSet current_partition_state(format_version, all_partition_parts);
+            const Strings current_partition_parts = current_partition_state.getParts();
+
             for (const String & replica : active_replicas)
             {
                 String region;
@@ -8649,24 +8679,24 @@ void StorageReplicatedMergeTree::fetchPartition(
                 if (region != geo_replication_controller.getRegion())
                     continue;
 
-                /// A replica of the same region is a candidate only when it really has something to fetch from the
-                /// requested partition. Otherwise the query would be rejected with `PARTITION_DOESNT_EXIST` below,
-                /// while an active replica outside of the region already has the data.
-                Strings replica_parts;
-                if (zookeeper->tryGetChildren(fs::path(from) / "replicas" / replica / "parts", replica_parts) != Coordination::Error::ZOK)
+                auto it = partition_parts_by_replica.find(replica);
+                if (it == partition_parts_by_replica.end() || it->second.empty())
                     continue;
 
-                const bool has_partition = std::any_of(replica_parts.begin(), replica_parts.end(), [&](const String & part)
-                {
-                    auto part_info = MergeTreePartInfo::tryParsePartName(part, format_version);
-                    return part_info && part_info->getPartitionId() == partition_id;
-                });
+                const ActiveDataPartSet replica_partition_state(format_version, it->second);
+                const bool covers_whole_partition = std::all_of(
+                    current_partition_parts.begin(), current_partition_parts.end(), [&](const String & part)
+                    {
+                        return !replica_partition_state.getContainingPart(part).empty();
+                    });
 
-                if (has_partition)
+                if (covers_whole_partition)
                     same_region_replicas.push_back(replica);
+                else
+                    LOG_DEBUG(log, "Replica {} of the same region has only a part of partition {}, it is not preferred as the fetch source", replica, partition_id);
             }
 
-            /// Only consider the out-of-region replicas when there is nothing to fetch from within the region:
+            /// Only consider the out-of-region replicas when no replica of the region can serve the whole partition:
             /// otherwise the best replica could be chosen across the ocean just because it is slightly more up to date.
             if (!same_region_replicas.empty())
                 candidate_replicas = std::span<const String>{same_region_replicas};
