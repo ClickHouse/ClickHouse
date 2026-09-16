@@ -23,7 +23,7 @@ function create_part()
         INSERT INTO t SELECT ('{\"p' || toString(number % 8) || '\":\"' || repeat('Q', 40) || '\"}')::JSON(max_dynamic_paths=0) FROM numbers(200);
         INSERT INTO t SELECT ('{\"z' || toString(number % 8) || '\":\"' || repeat('W', 40) || '\"}')::JSON(max_dynamic_paths=0) FROM numbers(200);
         OPTIMIZE TABLE t FINAL;
-        SELECT trim(TRAILING '/' FROM path) FROM system.parts WHERE table = 't' AND active
+        SELECT trim(TRAILING '/' FROM path) FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active
     ")
 
     if [ -z "$PART" ]

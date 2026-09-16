@@ -19,7 +19,7 @@ node2 = cluster.add_instance(
     stay_alive=True,
     with_installed_binary=True,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False, use_old_analyzer=True)
+node3 = cluster.add_instance("node3", with_zookeeper=False)
 
 
 @pytest.fixture(scope="module")
