@@ -733,6 +733,19 @@ queries run with `use_columns_cache` enabled.
 A value of `0` disables the cache unless `columns_cache_size` is set explicitly.
 )", 0) \
     DECLARE(Double, columns_cache_size_ratio, DEFAULT_COLUMNS_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the columns cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, columns_cache_free_memory_ratio, 0.15, R"(
+Fraction of the server memory limit (`max_server_memory_usage`) that the columns cache keeps free for the queries.
+
+The memory of the cache counts against the same limit as the queries do, so the size of the cache in effect is lowered
+while the rest of the server uses more than `max_server_memory_usage * (1 - columns_cache_free_memory_ratio) - columns_cache_size`,
+and raised back towards `columns_cache_size` once that usage subsides. An allocation that would exceed the limit also evicts
+from the cache before a query is stopped for it. Analogous to `page_cache_free_memory_ratio`.
+)", 0) \
+    DECLARE(UInt64, columns_cache_history_window_ms, 1000, R"(
+The columns cache takes the peak memory usage of the rest of the server over this many milliseconds (and the same window
+before it) when it decides how much memory it may use, so that a brief dip of the usage does not let the cache grow
+only to be evicted again a moment later. Analogous to `page_cache_history_window_ms`.
+)", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
 Maximum size of cache for uncompressed blocks of `MergeTree` indices.

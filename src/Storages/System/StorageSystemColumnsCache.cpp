@@ -151,8 +151,8 @@ protected:
             col_table_uuid->insert(meta.key.table_uuid);
             col_part->insert(meta.key.part_name);
             col_column->insert(meta.key.column_name);
-            col_row_begin->insert(meta.key.row_begin);
-            col_row_end->insert(meta.key.row_end);
+            col_row_begin->insert(meta.row_begin);
+            col_row_end->insert(meta.row_begin + meta.rows);
             col_rows->insert(meta.rows);
             col_bytes->insert(meta.bytes);
 

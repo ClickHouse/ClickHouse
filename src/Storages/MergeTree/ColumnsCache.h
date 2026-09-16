@@ -1,13 +1,15 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
+#include <vector>
 
 #include <Common/CacheBase.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Columns/IColumn.h>
 #include <Core/UUID.h>
-#include <Storages/MergeTree/MarkRange.h>
 
 namespace ProfileEvents
 {
@@ -20,17 +22,24 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Key for looking up cached deserialized columns.
-/// Identifies a specific column in a specific row range of a specific data part.
-/// Uses Table UUID so that RENAME TABLE properly invalidates the cache.
-/// Row ranges (not mark ranges) allow for flexible block sizes and intersection queries.
+/// Key of a cached deserialized column: the rows of one granule of one column of one data part.
+///
+/// An entry covers exactly one granule (the rows between two adjacent marks), so the entries
+/// of a part never overlap, and every read of the part finds the same entries no matter how
+/// it cuts the part into ranges: the ranges of a read task depend on the number of threads,
+/// on the primary key analysis, on the query condition cache and on `PREWHERE` skipping rows,
+/// and they differ between queries and even between two runs of the same query. Entries
+/// bound to those ranges would only ever be found again by a read with the very same ranges,
+/// while the entries of the other reads of the same data would displace them.
+///
+/// Uses the table UUID so that `RENAME TABLE` keeps the entries and does not mix tables.
 struct ColumnsCacheKey
 {
     UUID table_uuid;
     String part_name;
     String column_name;
-    size_t row_begin = 0;
-    size_t row_end = 0;
+    /// The granule: the index of the mark the rows of the entry start at.
+    size_t mark = 0;
     /// Identity of the schema the column was read with: a hash of the table's column list
     /// (names, types, defaults) taken from the very metadata snapshot the reader uses, see
     /// `getColumnsCacheSchemaIdentity`. Cache data of an earlier schema must not be served
@@ -44,15 +53,6 @@ struct ColumnsCacheKey
     UInt64 schema_identity = 0;
 
     bool operator==(const ColumnsCacheKey & other) const = default;
-
-    bool intersects(const ColumnsCacheKey & other) const
-    {
-        return table_uuid == other.table_uuid
-            && part_name == other.part_name
-            && column_name == other.column_name
-            && row_begin < other.row_end
-            && row_end > other.row_begin;
-    }
 };
 
 struct ColumnsCacheKeyHash
@@ -63,42 +63,48 @@ struct ColumnsCacheKeyHash
         hash.update(key.table_uuid);
         hash.update(key.part_name);
         hash.update(key.column_name);
-        hash.update(key.row_begin);
-        hash.update(key.row_end);
+        hash.update(key.mark);
         hash.update(key.schema_identity);
         return hash.get64();
     }
 };
 
-/// Cached deserialized column data.
+/// Cached deserialized column data of one granule.
 struct ColumnsCacheEntry
 {
     ColumnPtr column;
-    size_t rows;
+    /// The first row of the granule in the part, and the number of rows in it.
+    size_t row_begin = 0;
+    size_t rows = 0;
+    /// The key the entry is stored under. The eviction callback of the cache does not receive
+    /// the key, and the cache has to know which granules of a part it holds, see `removePart`.
+    ColumnsCacheKey key;
+    /// Whether a read has found the entry since it was written, see `ColumnsCache::shouldAdmit`.
+    mutable std::atomic<bool> used{false};
 };
 
 struct ColumnsCacheWeightFunction
 {
-    /// Overhead for key storage, hash map entry, shared pointers, etc.
-    static constexpr size_t COLUMNS_CACHE_OVERHEAD = 256;
+    /// Overhead for key storage, hash map entry, shared pointers, the column object, etc.
+    static constexpr size_t COLUMNS_CACHE_OVERHEAD = 512;
 
     size_t operator()(const ColumnsCacheEntry & entry) const
     {
-        /// The memory the entry retains, not the logical size of the rows in it. A cached column
-        /// is built by reserving and appending, and `PODArray` rounds a reservation up to a power
-        /// of two elements and doubles on growth, so the capacity it holds can exceed `byteSize`
-        /// by a large factor - for `String`, `Array` and `Map` columns, whose element storage
-        /// grows by doubling, up to twice. `columns_cache_size` is documented as a bound on the
-        /// memory the cache keeps, so the bound has to be enforced - and reported by
-        /// `system.columns_cache`, `CurrentMetrics::ColumnsCacheBytes` and
-        /// `ProfileEvents::ColumnsCacheEvictedBytes` - on the memory that is actually held.
-        /// `allocatedBytes` descends into the nested columns of `Array`, `Tuple`, `Nullable` and
-        /// `Map`, so composite shapes are covered too, and unlike `byteSize` it also counts the
-        /// dictionary of a `LowCardinality` column when that dictionary is shared. The entry
-        /// keeps the dictionary alive - once the part is gone the cache can be its only holder -
-        /// so it has to be charged; several entries of the same column do share one dictionary
-        /// object, and each of them is charged for it, which makes the accounting conservative
-        /// (the cache holds less than its limit) rather than unbounded.
+        /// The memory the entry retains, not the logical size of the rows in it. `PODArray`
+        /// rounds an allocation up to a power of two elements, so the capacity a column holds
+        /// can exceed `byteSize` by up to two times; the accumulated copy is shrunk to its rows
+        /// before it is admitted, but the allocator still rounds to its size classes.
+        /// `columns_cache_size` is documented as a bound on the memory the cache keeps, so the
+        /// bound has to be enforced - and reported by `system.columns_cache`,
+        /// `CurrentMetrics::ColumnsCacheBytes` and `ProfileEvents::ColumnsCacheEvictedBytes` -
+        /// on the memory that is actually held. `allocatedBytes` descends into the nested
+        /// columns of `Array`, `Tuple`, `Nullable` and `Map`, so composite shapes are covered
+        /// too, and unlike `byteSize` it also counts the dictionary of a `LowCardinality`
+        /// column when that dictionary is shared. The entry keeps the dictionary alive - once
+        /// the part is gone the cache can be its only holder - so it has to be charged; several
+        /// entries of the same column do share one dictionary object, and each of them is
+        /// charged for it, which makes the accounting conservative (the cache holds less than
+        /// its limit) rather than unbounded.
         return entry.column->allocatedBytes() + COLUMNS_CACHE_OVERHEAD;
     }
 };
@@ -108,14 +114,16 @@ extern template class CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCache
 /// Cache of deserialized columns for MergeTree tables.
 /// Eliminates the need to read compressed data, decompress, and deserialize
 /// for frequently accessed data parts and columns.
-/// Supports intersection queries to find cached blocks overlapping with requested row ranges.
-class ColumnsCache : public CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>
+///
+/// The entries are looked up by exact key, one per granule (see `ColumnsCacheKey`), and the
+/// reader asks for all the granules of a column of a range at once, so a range that is only
+/// partly cached is served from the cache for the granules that are there and read from disk
+/// for the others.
+class ColumnsCache : public CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>, public IMemoryReleasableCache
 {
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
 
-    /// Interval index organized by part, then column, then row ranges
-    /// This structure makes cleanup efficient when parts are removed
     struct PartIdentifier
     {
         UUID table_uuid;
@@ -135,25 +143,52 @@ private:
         }
     };
 
-    using IntervalMap = std::map<std::pair<size_t, size_t>, ColumnsCacheKey>;
-    using ColumnIntervalsMap = std::unordered_map<String, IntervalMap>;
-    using PartIndexMap = std::unordered_map<PartIdentifier, ColumnIntervalsMap, PartIdentifierHash>;
+    struct ColumnIdentifier
+    {
+        String column_name;
+        UInt64 schema_identity = 0;
 
-    PartIndexMap interval_index;
-    mutable std::mutex interval_index_mutex;
+        bool operator==(const ColumnIdentifier & other) const = default;
+    };
+
+    struct ColumnIdentifierHash
+    {
+        size_t operator()(const ColumnIdentifier & id) const
+        {
+            SipHash hash;
+            hash.update(id.column_name);
+            hash.update(id.schema_identity);
+            return hash.get64();
+        }
+    };
+
+    /// The granules of a column of a part that are in the cache: a bit per mark.
+    using CachedMarks = std::vector<bool>;
+    using PartIndex = std::unordered_map<ColumnIdentifier, CachedMarks, ColumnIdentifierHash>;
+
+    /// Which entries the cache holds, by part: what `removePart` and `removeTable` have to
+    /// find quickly, and what the base cache cannot answer without a scan of all its entries.
+    /// A bit is set by `set` before the entry is inserted into the base cache and reset by
+    /// `onEntryRemoval` when the entry is evicted. Guarded by `index_mutex`.
+    ///
+    /// Lock order: the base cache's mutex is taken first and `index_mutex` second, because the
+    /// eviction callback runs under the former and takes the latter. So nothing here ever
+    /// calls into the base cache while holding `index_mutex`.
+    std::unordered_map<PartIdentifier, PartIndex, PartIdentifierHash> part_index;
+    mutable std::mutex index_mutex;
 
     /// Per-table invalidation stamp, advanced by removeTable. See
-    /// getInvalidationGeneration. Guarded by interval_index_mutex.
+    /// getInvalidationGeneration. Guarded by index_mutex.
     std::unordered_map<UUID, UInt64> table_generations;
 
     /// Cache-wide invalidation stamp, advanced by clearAll (`SYSTEM DROP COLUMNS
     /// CACHE`). It participates in the token returned by
     /// getInvalidationGeneration, so a drop also rejects deferred writes from
-    /// readers that started before it. Guarded by interval_index_mutex.
+    /// readers that started before it. Guarded by index_mutex.
     UInt64 global_generation = 0;
 
     /// Source of invalidation stamps: every invalidation event takes the next value, so two
-    /// different events never produce the same stamp. Guarded by interval_index_mutex.
+    /// different events never produce the same stamp. Guarded by index_mutex.
     UInt64 last_generation = 0;
 
     UInt64 nextGeneration() { return ++last_generation; }
@@ -164,28 +199,46 @@ private:
     /// captured before an invalidation can never compare equal to the current one. This also
     /// lets clearAll forget the per-table stamps: the new cache-wide stamp is greater than
     /// every stamp handed out before it.
-    /// Must be called with interval_index_mutex held.
+    /// Must be called with index_mutex held.
     UInt64 currentGeneration(const UUID & table_uuid) const
     {
         auto it = table_generations.find(table_uuid);
         return std::max(global_generation, it == table_generations.end() ? UInt64(0) : it->second);
     }
 
-    /// Counts set() calls since the last compaction. Used to amortize the cost of
-    /// compactIntervalIndex() across many inserts.
-    size_t sets_since_compaction = 0;
+    /// The size of the cache as configured, and the size in effect (also `Base::maxSizeInBytes`,
+    /// mirrored here to be read without the lock), which `autoResize` lowers while the server is
+    /// short of memory.
+    std::atomic<size_t> configured_max_size_in_bytes;
+    std::atomic<size_t> effective_max_size_in_bytes;
 
-    /// Lower bound on the number of set() calls between two compaction sweeps.
-    static constexpr size_t MIN_SETS_BETWEEN_COMPACTIONS = 1024;
+    /// The fraction of the server memory limit to keep free of the cache, see `autoResize`.
+    std::atomic<double> free_memory_ratio{0.0};
 
-    /// Run the next compaction sweep after this many set() calls. Recomputed by
-    /// compactIntervalIndex as max(MIN_SETS_BETWEEN_COMPACTIONS, number of
-    /// surviving indexed ranges), so the sweep interval scales with the index
-    /// size: a sweep costs O(entries), the index grows by at most one entry per
-    /// set(), so at the next sweep the index holds at most 2 * threshold entries
-    /// and the amortized cost per set() stays O(1) no matter how many ranges the
-    /// cache holds. Guarded by interval_index_mutex.
-    size_t compaction_threshold = MIN_SETS_BETWEEN_COMPACTIONS;
+    /// The peak of the memory used by everything but the cache over the last two history
+    /// windows, so that `autoResize` does not grow the cache back at a brief dip of the
+    /// memory usage only to evict it again a moment later. Guarded by `resize_mutex`, which
+    /// also serializes the resizes themselves.
+    std::mutex resize_mutex;
+    Int64 history_window_ms = 0;
+    Int64 current_history_bucket = 0;
+    size_t peak_memory_buckets[2] = {0, 0};
+
+    /// Remove the given entries from the base cache. Must be called without `index_mutex`.
+    void removeFromBase(const PartIdentifier & part_id, const PartIndex & index);
+
+    /// Admission control, see `shouldAdmit`: the entries admitted and the entries evicted before
+    /// any read found them, since the last adjustment, and the current admission probability as
+    /// 2^-admission_log2.
+    static constexpr size_t ADMISSION_WINDOW = 4096;
+    static constexpr UInt64 MAX_ADMISSION_LOG2 = 6;
+    std::atomic<size_t> recent_admitted{0};
+    std::atomic<size_t> recent_evicted_unused{0};
+    std::atomic<UInt64> admission_log2{0};
+
+    void accountAdmitted(size_t admitted);
+
+    void onEntryRemoval(size_t weight_loss, const MappedPtr & mapped) override;
 
 public:
     ColumnsCache(
@@ -196,43 +249,48 @@ public:
         size_t max_count,
         double size_ratio);
 
-    /// Look up a cached column. Returns nullptr on miss.
-    MappedPtr get(const Key & key)
-    {
-        auto result = Base::get(key);
-        if (result)
-            ProfileEvents::increment(ProfileEvents::ColumnsCacheHits);
-        else
-            ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
-        return result;
-    }
-
-    /// Find all cached entries that intersect with the given row range for a column.
-    /// Returns a vector of (cache_key, cached_entry) pairs, sorted by row_begin.
-    /// Does NOT update hit/miss profile events; the caller should count at request level.
-    std::vector<std::pair<Key, MappedPtr>> getIntersecting(
+    /// The entries of the granules [first_mark, end_mark) of a column: the entry of every
+    /// granule that is in the cache at its position, nullptr for the others. One lookup under
+    /// the lock for the whole range, so that a read of many granules does not contend on the
+    /// cache for each of them.
+    /// Does not update hit/miss profile events; the reader counts them per granule it reads.
+    std::vector<MappedPtr> getMany(
         const UUID & table_uuid,
         const String & part_name,
         const String & column_name,
-        size_t row_begin,
-        size_t row_end,
-        UInt64 schema_identity = 0);
+        UInt64 schema_identity,
+        size_t first_mark,
+        size_t end_mark);
 
-    /// Insert a column into the cache.
-    /// Maintains a non-overlapping invariant on the per-column interval map so
-    /// that `getIntersecting` runs in O(log N) instead of scanning every entry
-    /// before `lower_bound`. See implementation for details.
-    /// Returns true if an entry was actually inserted, false if the call was a
-    /// no-op (an existing wider interval already covers this range, so nothing
-    /// was written; the write was rejected as stale - see below; or the entry
-    /// could not stay resident in the cache, e.g. its weight exceeds the cache
-    /// size limit). Callers use the return value to avoid charging the per-query
-    /// write budget for writes that never landed in the cache.
+    /// Insert the column of one granule into the cache. The key is `mapped->key`.
+    /// Returns true if the entry is in the cache afterwards, false if the write was dropped:
+    /// it was rejected as stale (see below) or the entry could not stay resident, e.g. its
+    /// weight exceeds the size limit. Callers use the return value to avoid charging the
+    /// per-query write budget for writes that never landed in the cache.
     ///
     /// The expected generation is captured through getInvalidationGeneration
     /// when the reader starts. A mismatch means the table or the whole cache
     /// was invalidated after the read began, so the deferred write is dropped.
-    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation);
+    bool set(const MappedPtr & mapped, UInt64 expected_table_generation);
+
+    /// Insert the entries of several granules at once - one pass under the locks for all of them,
+    /// so that a read of many small granules does not contend on the cache for each of them.
+    /// Returns the total weight of the entries that are in the cache afterwards, for the per-query
+    /// write budget. The generation check is the same as in `set`, for all entries together.
+    size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation);
+
+    /// Whether a granule that is not in the cache should be written to it. Nothing is written
+    /// while the cache is shrunk to nothing by `autoResize`: the copy would be rejected anyway.
+    ///
+    /// A cache smaller than the working set of the queries is worse than no cache: with the
+    /// entries of one pass evicted before the next pass reaches them, every read pays for
+    /// copying its rows into the cache and none is served from it. The protected segment of
+    /// the SLRU policy keeps what was found at least once, but the probationary segment churns.
+    /// So the entries evicted before any read found them are counted against the entries
+    /// admitted: while most of the admitted entries go unused, the admission probability is
+    /// halved (down to 1/64), and while most of them are used, or nothing is evicted, it is
+    /// doubled back. A cache that holds its working set is not affected: nothing is evicted.
+    bool shouldAdmit();
 
     /// Current invalidation token for a table. Advances each time removeTable is
     /// called (a metadata change that can remap column names) and each time
@@ -259,53 +317,44 @@ public:
     /// serve stale data for the freshly added `a`.
     void removeTable(const UUID & table_uuid);
 
-    /// Clear both the base cache and the interval index.
+    /// Clear both the base cache and the part index.
     /// Used by SYSTEM DROP COLUMNS CACHE.
     /// Advances the cache-wide invalidation generation first, so the drop is
     /// sticky: a reader that started before it cannot write its deferred entries
     /// back into the cache afterwards.
-    /// Holds interval_index_mutex across both operations so that a concurrent
-    /// set() cannot insert into interval_index between the two clears.
-    /// This is deadlock-safe because both paths use the same lock order:
-    /// interval_index_mutex first, then briefly the CacheBase internal mutex
-    /// (taken inside Base::set / Base::clear). There is no lock-order cycle.
-    void clearAll()
-    {
-        std::lock_guard lock(interval_index_mutex);
-        global_generation = nextGeneration();
-        /// The new cache-wide stamp already invalidates every token captured so far, so the
-        /// per-table stamps can be reclaimed instead of being kept forever.
-        table_generations.clear();
-        Base::clear();
-        interval_index.clear();
-        sets_since_compaction = 0;
-        compaction_threshold = MIN_SETS_BETWEEN_COMPACTIONS;
-    }
+    void clearAll();
 
-    /// Lower the maximum size in bytes and immediately compact the interval index
-    /// so that entries evicted by the resulting eviction sweep do not leave stale
-    /// keys behind. `CacheBase::onEntryRemoval` does not receive the key, so
-    /// without an explicit compaction here a runtime config reload that shrinks
-    /// the cache would leak metadata indefinitely if no further `set` calls
-    /// trigger periodic compaction.
-    /// Takes interval_index_mutex first, then the CacheBase internal mutex (inside
-    /// Base::setMaxSizeInBytes), matching the lock order of clearAll / set /
-    /// removePart so there is no lock-order cycle. Holding interval_index_mutex
-    /// across the eviction also makes the eviction and the following compaction
-    /// atomic with respect to a concurrent clearAll / set.
-    void setMaxSizeInBytesAndCompact(size_t max_size_in_bytes)
-    {
-        std::lock_guard lock(interval_index_mutex);
-        Base::setMaxSizeInBytes(max_size_in_bytes);
-        compactIntervalIndex();
-        sets_since_compaction = 0;
-    }
+    /// Set the size of the cache from the configuration. Takes effect at once: the entries
+    /// beyond the new size are evicted.
+    void setConfiguredMaxSizeInBytes(size_t max_size_in_bytes);
+
+    /// How `autoResize` behaves: the fraction of the memory limit that is kept free of the
+    /// cache, and the length of the window the memory usage of the rest of the server is
+    /// averaged (as a peak) over.
+    void setAutoResizeSettings(double free_memory_ratio_, Int64 history_window_ms_);
+
+    /// Give memory back to the queries when the server is short of it.
+    ///
+    /// The cache is bounded by `columns_cache_size`, but the bound counts against the same
+    /// `max_server_memory_usage` as the queries do: on a server whose queries use most of its
+    /// memory, a cache of a tenth of it pushes them over the limit, and they fail where they
+    /// succeeded with the cache off. So the size in effect is lowered to what fits next to the
+    /// peak memory usage of everything else - like the userspace page cache does - and raised
+    /// again towards the configured size once that usage subsides:
+    ///
+    ///     target = min(configured size, memory_limit * (1 - free_memory_ratio) - peak usage excluding the cache)
+    ///
+    /// Called periodically by `MemoryWorker`, and by `MemoryTracker` when an allocation is about
+    /// to exceed the limit, before it resorts to stopping a query. Returns true if the memory
+    /// usage fits the limit after the resize.
+    bool autoResize(Int64 memory_usage, size_t memory_limit) override;
 
     /// Metadata for a cache entry, used by system.columns_cache.
     /// Does not hold a shared_ptr to column data, so it does not pin cached columns in memory.
     struct EntryMetadata
     {
         Key key;
+        size_t row_begin = 0;
         size_t rows = 0;
         size_t bytes = 0;
     };
@@ -313,29 +362,6 @@ public:
     /// Get metadata for all cache entries for introspection (system.columns_cache table).
     /// Returns lightweight metadata without holding shared_ptrs to column data.
     std::vector<EntryMetadata> getAllEntriesMetadata();
-
-private:
-    /// Remove stale entries from interval_index.
-    /// Must be called without holding the CacheBase lock to avoid deadlock.
-    void removeStaleKeys(const std::vector<Key> & stale_keys);
-
-    /// Walk the entire interval_index and erase any key that is no longer in Base
-    /// (i.e., evicted by LRU). Must be called with interval_index_mutex held.
-    /// Cost is O(interval_index entries). Also recomputes compaction_threshold
-    /// from the number of surviving entries, which keeps the periodic sweeps in
-    /// set() amortized O(1) per call (see compaction_threshold).
-    void compactIntervalIndex();
-
-    void onEntryRemoval(size_t weight_loss, const MappedPtr &) override
-    {
-        ProfileEvents::increment(ProfileEvents::ColumnsCacheEvictedEntries);
-        ProfileEvents::increment(ProfileEvents::ColumnsCacheEvictedBytes, weight_loss);
-
-        /// We can't remove from interval_index here because the eviction callback
-        /// doesn't provide the key. Stale entries are cleaned up lazily in
-        /// getIntersecting, eagerly in set/removePart, and via periodic compaction
-        /// driven by sets_since_compaction in set() (see compactIntervalIndex).
-    }
 };
 
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;

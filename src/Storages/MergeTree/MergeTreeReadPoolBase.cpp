@@ -43,7 +43,7 @@ namespace ErrorCodes
 /// Return the columns cache for a pool, or nullptr when it should not be used.
 /// A zero-sized cache (`columns_cache_size = 0`) accepts no entries, so treat it
 /// as absent: this turns off not only the writes but also the read-side probes
-/// (`getIntersecting` lookups counted as misses) and the prefetch-skipping walk
+/// (lookups counted as misses) and the prefetch-skipping walk
 /// when the columns cache is fully disabled, making size 0 mean "fully disabled".
 static ColumnsCachePtr getColumnsCacheIfEnabled(const ContextPtr & context, bool use_columns_cache)
 {

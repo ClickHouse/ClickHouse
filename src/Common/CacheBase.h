@@ -137,6 +137,25 @@ public:
         return values;
     }
 
+    /// Insert several entries under one lock.
+    void setMany(const std::vector<Key> & keys, const std::vector<MappedPtr> & mapped)
+    {
+        chassert(keys.size() == mapped.size());
+        std::lock_guard lock(mutex);
+        for (size_t i = 0; i < keys.size(); ++i)
+            cache_policy->set(keys[i], mapped[i]);
+    }
+
+    /// Which of the keys are in the cache, under one lock. Does not touch the priorities.
+    std::vector<bool> containsMany(const std::vector<Key> & keys) const
+    {
+        std::vector<bool> result(keys.size());
+        std::lock_guard lock(mutex);
+        for (size_t i = 0; i < keys.size(); ++i)
+            result[i] = cache_policy->contains(keys[i]);
+        return result;
+    }
+
     bool contains(const Key & key) const
     {
         std::lock_guard lock(mutex);

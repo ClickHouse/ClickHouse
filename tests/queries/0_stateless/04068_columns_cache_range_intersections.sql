@@ -7,8 +7,8 @@ SET enable_writes_to_columns_cache = 1;
 
 -- The reads below are tagged with `log_comment` and their `ColumnsCacheHits` /
 -- `ColumnsCacheMisses` counters are checked at the end of the test, so that a
--- `ColumnsCache::getIntersecting` that always missed would be caught instead of
--- silently falling back to reading from disk with the same query result.
+-- cache lookup that always missed would be caught instead of silently falling
+-- back to reading from disk with the same query result.
 -- Pin `max_threads` so that the read is split into the same tasks - and therefore
 -- produces the same number of cache lookups - regardless of the machine.
 SET max_threads = 1;
@@ -95,8 +95,8 @@ SETTINGS log_comment = '04068_probe_left_overlap_warm';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 1000 AND id < 5000
 SETTINGS log_comment = '04068_probe_left_overlap_read';
 
--- The range of the second read is cached, and it replaced the overlapping range of
--- the first one, which therefore has to be read from disk again.
+-- The entries are per granule, so both ranges are cached now and neither of the
+-- reads displaced the entries of the other: both are served from the cache.
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 1000 AND id < 5000
 SETTINGS log_comment = '04068_probe_left_overlap_read_again';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 3000 AND id < 7000
@@ -120,9 +120,8 @@ SETTINGS log_comment = '04068_probe_right_overlap_warm';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 4000 AND id < 8000
 SETTINGS log_comment = '04068_probe_right_overlap_read';
 
--- Neither range is cached at this point: the per-column interval map holds no
--- overlapping entries, so each of these two reads replaces the entry of the other
--- and both of them miss. Only the range of the last read stays in the cache.
+-- Both ranges are cached at this point, granule by granule, and both of these
+-- reads are served from the cache.
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 2000 AND id < 5000
 SETTINGS log_comment = '04068_probe_right_overlap_warm_again';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 4000 AND id < 8000
@@ -271,9 +270,8 @@ SETTINGS log_comment = '04068_probe_adjacent_left';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 5000 AND id < 7000
 SETTINGS log_comment = '04068_probe_adjacent_right';
 
--- Third read: spans both cached ranges. A single lookup is served only when one
--- entry covers the whole requested range, so two adjacent entries are not stitched
--- together and this read still goes to disk - and caches the union.
+-- Third read: spans both cached ranges. The entries are per granule, so the read is
+-- served from the entries of both of the previous reads.
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 3000 AND id < 7000
 SETTINGS log_comment = '04068_probe_adjacent_spanning';
 
@@ -285,15 +283,15 @@ DROP TABLE t_cache_ranges;
 
 -- =============================================================================
 -- The cache path of every case above, as observed through the per-query profile
--- events: `has_hits` tells that `ColumnsCache::getIntersecting` returned a usable
--- entry, `has_misses` that at least one lookup had to read from disk.
+-- events: `has_hits` tells that at least one granule of a column was served from the
+-- cache, `has_misses` that at least one had to be read from disk.
 --
--- Two properties of the cache shape the expected values. A lookup is a hit only when
--- a single cached entry covers the whole requested range, so a partially overlapping
--- or a spanning read misses even though part of its data is cached. And the per-column
--- interval map never holds two overlapping entries, so caching the range of such a read
--- replaces the entry it overlapped - which is why re-reading the older range misses
--- again in the left-overlap and right-overlap cases.
+-- The entries are per granule of a column, so a read is served from the cache for the
+-- granules that are there and reads the others from disk: a partially overlapping or a
+-- spanning read both hits and misses, and no read ever displaces the entries of another
+-- one - which is why re-reading the older range hits in the left-overlap and
+-- right-overlap cases, and only a read of granules nobody read before misses without
+-- a hit.
 -- =============================================================================
 
 SYSTEM FLUSH LOGS query_log;

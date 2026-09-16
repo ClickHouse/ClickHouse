@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 
 
@@ -54,12 +56,23 @@ public:
 private:
     FileStreams streams;
 
+    /// Which columns a read of the part touches, and whether their streams continue from where the
+    /// previous read left them or seek to the mark. Returns nothing for a column that is not read.
+    using ColumnReadSelector = std::function<std::optional<bool>(size_t pos)>;
+
     void prefetchForAllColumns(
         Priority priority,
         size_t num_columns,
         size_t from_mark,
         bool continue_reading,
         bool deserialize_prefixes);
+
+    void prefetchForColumns(
+        Priority priority,
+        size_t num_columns,
+        size_t from_mark,
+        bool deserialize_prefixes,
+        const ColumnReadSelector & selector);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
@@ -110,6 +123,16 @@ private:
     using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
     void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
 
+    /// Read up to `max_rows_to_read` rows of the selected columns from the part, appending them to
+    /// `res_columns`, and return how many rows were read (zero if no selected column is in the part).
+    /// The rows of the regular columns are copied into the accumulator of the granule being
+    /// written to the columns cache, if there is one.
+    size_t readSegmentFromDisk(
+        size_t from_mark,
+        size_t max_rows_to_read,
+        MutableColumns & res_columns,
+        const ColumnReadSelector & selector);
+
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     DeserializationPrefixesCache * deserialization_prefixes_cache;
@@ -128,70 +151,9 @@ private:
     /// name never refers to two columns within one schema identity.
     Names requested_column_names;
 
-    /// State of the deferred columns cache write for the contiguous mark range being read.
-    ///
-    /// The range reader hands out the rows of one range over several `readRows` calls - one per
-    /// output block, plus the calls that skip rows within the range - each into result columns of
-    /// its own, while the cache stores one entry per column for the whole range. The rows read
-    /// from disk are therefore copied into `cache_accumulated_columns`, in order, across the calls
-    /// of the range, and the entries are written once the accumulated rows reach the end of the
-    /// range. Deferring the write until then also keeps the cache from ever sharing column data
-    /// with a read still in progress. A range that is not read to its end (the query was
-    /// cancelled, or stopped early by `LIMIT`) is not cached.
-    bool cache_write_pending = false;
-    size_t cache_row_begin = 0;
-    size_t cache_row_end_max = 0;
-    /// One column per result column: the rows read so far; nullptr for columns that are not read.
-    MutableColumns cache_accumulated_columns;
-    /// The size the accumulated columns of the range are expected to reach, estimated from the
-    /// size of a row of every column as it is first copied. A range that cannot stay resident in
-    /// the cache is dropped as soon as this estimate says so, before its rows are copied and
-    /// before memory is reserved for them.
-    size_t cache_estimated_range_bytes = 0;
-    /// Invalidation generation captured when the read of the range started.
-    /// Passed to ColumnsCache::set so a deferred write is dropped if the table was
-    /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
-    /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
-    UInt64 cache_table_generation = 0;
-
-    /// State of a contiguous mark range that is served from the columns cache.
-    ///
-    /// A range is either served from the cache as a whole or read from disk as a whole:
-    /// serving from the cache does not move the file streams, so a range that began from the
-    /// cache could not be continued from disk. The decision is made by the first call of the
-    /// range, which requires cached entries covering the whole range for every column; the
-    /// following calls of the range are served from the columns held here, so the range stays
-    /// consistent even if the entries are evicted from the cache meanwhile.
-    bool cache_serving = false;
-    /// The row the cached entries start at (the same for all columns).
-    size_t cache_serving_cached_row_begin = 0;
-    /// The next row to serve and the end of the range being served.
-    size_t cache_serving_row = 0;
-    size_t cache_serving_row_end = 0;
-    /// One column per result column; nullptr for columns that are not read.
-    Columns cache_serving_columns;
-
-    /// Forget the state of the range being read: called when a new range begins.
-    void resetColumnsCacheState();
-
-    /// The cached columns of a range that can be served from the cache as a whole, and the row
-    /// the entries they came from start at.
-    struct ColumnsCacheRangeHit
-    {
-        Columns columns;
-        size_t cached_row_begin = 0;
-    };
-
-    /// Look the whole range [row_begin, row_end) up in the cache for every column that is read.
-    /// Returns the cached columns when every one of them is covered by a single entry containing
-    /// the range, nothing otherwise. Changes no state, so it can be asked before the task is
-    /// handed to a reading thread; `lookupColumnsCache` and `canServeFirstRangeFromCache` are the
-    /// two callers, which is what keeps the read decision and the prefetch decision identical.
-    std::optional<ColumnsCacheRangeHit> findColumnsCacheEntriesForRange(size_t row_begin, size_t row_end, size_t num_columns);
-
-    /// Look the whole range [row_begin, row_end) up in the cache for every column. On success,
-    /// arms `cache_serving` for the range and returns true.
-    bool lookupColumnsCache(size_t row_begin, size_t row_end, size_t num_columns);
+    /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
+    /// Filled by `addStreams`.
+    NameSet columns_absent_from_part;
 
     /// Whether the column at `pos` is not produced by reading the part but synthesized by
     /// `fillMissingColumns` afterwards: it is absent from the part altogether (added by an
@@ -209,43 +171,108 @@ private:
     /// member added by an `ALTER`, whose offsets are read from the shared stream of its group
     /// while its elements stay empty. Reading it does produce data: `fillMissingColumns`
     /// discards its values but takes those offsets to size every re-added member of the group,
-    /// so it has to be read from the part even when the rest of the range is served from cache.
+    /// so it has to be read from the part even when the rest of the granule is served from cache.
     bool isColumnPartiallyRead(size_t pos) const;
 
-    /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
-    /// Filled by `addStreams`.
-    NameSet columns_absent_from_part;
+    /// The column at `pos` is not read at all: dropped by a pending mutation, or an invalidated
+    /// system column. Both paths leave it null.
+    bool isColumnSkipped(size_t pos) const;
 
-    /// Whether a range served from the cache still reads streams of the part.
-    /// `readPartiallyReadColumnsWhileServing` is what does it, and once one partially read column
-    /// is in the read it touches that column's data streams and the prefix of every column, so
-    /// the whole serve path is free of IO exactly when no column of the read is partially read.
-    bool servingRangeStillReadsFromPart() const;
+    /// The columns cache.
+    ///
+    /// The cache holds one entry per granule of a column of a part (see `ColumnsCacheKey`), and a
+    /// read goes granule by granule and column by column: a column whose entry for the granule is
+    /// in the cache is served from it, the others are read from the part, whatever the ranges of
+    /// the read task are. The
+    /// rows read from the part are copied, granule by granule, into an entry of their own, which
+    /// is written once the granule has been read to its end - so the cache never shares column
+    /// data with a read still in progress, and a granule that is not read in full (skipped by
+    /// `PREWHERE`, or cut short by `LIMIT` or a cancelled query) is not cached.
+    ///
+    /// Serving a granule from the cache does not move the file streams, so before the next
+    /// granule is read from the part its streams are positioned at that granule again. Streams
+    /// can only be positioned at marks, which is why the unit is a granule.
+
+    /// Whether this reader can use the cache at all: the cache is on, and the part is a wide part
+    /// of a table with a UUID (the key of the cache) and not a projection part - projection parts
+    /// share the projection name as their part name, which is not unique across parent parts.
+    bool columns_cache_reads_possible = false;
+    bool columns_cache_writes_possible = false;
+
+    /// Invalidation generation captured when the read of the range started.
+    /// Passed to ColumnsCache::set so a deferred write is dropped if the table was
+    /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
+    /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
+    UInt64 cache_table_generation = 0;
+
+    /// The contiguous mark range being read, [range_first_mark, range_end_mark), and the position
+    /// of the next row to produce in it: the granule and the offset within the granule.
+    size_t range_first_mark = 0;
+    size_t range_end_mark = 0;
+    size_t cursor_mark = 0;
+    size_t cursor_offset = 0;
+
+    /// Per result column, whether its streams are positioned at the cursor: true right after a
+    /// segment of it was read from the part, false after one was served from the cache. A column
+    /// is served or read granule by granule independently of the other columns.
+    std::vector<bool> disk_positioned;
+    /// Whether the partially read columns have been read in this range yet. They are read from the
+    /// part for every segment, served or not, so their streams always continue.
+    bool partial_columns_started = false;
+
+    /// The entries of the range, per result column, per granule of the range (nullptr when the
+    /// granule is not cached), and per granule whether every regular column of it is cached.
+    std::vector<std::vector<ColumnsCache::MappedPtr>> cached_entries;
+    std::vector<bool> granule_served_from_cache;
+
+    bool isGranuleColumnCached(size_t pos, size_t granule_index) const;
+
+    /// The granule being copied for a deferred write, if any, and its rows read so far.
+    bool accumulating = false;
+    size_t accumulated_mark = 0;
+    size_t accumulated_granule_rows = 0;
+    MutableColumns accumulated_columns;
+
+    /// Entries of the granules read to their end, written together at the end of the call.
+    std::vector<ColumnsCache::MappedPtr> pending_entries;
+
+    /// Begin a new contiguous mark range at `from_mark`: look its granules up in the cache and reset
+    /// the state of the previous range.
+    void startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns);
+
+    /// Look the granules [first_mark, end_mark) up in the cache for every regular column. Returns
+    /// the entries per column, and per granule whether it can be served as a whole.
+    void lookupColumnsCache(
+        size_t first_mark, size_t end_mark, size_t num_columns,
+        std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<bool> & servable);
 
     /// Whether the first mark range of this reader can be served from the cache as a whole
     /// *without touching a single stream of it*, and so need not be prefetched.
     /// See `prefetchBeginOfRange`.
     bool canServeFirstRangeFromCache();
 
-    /// Serve the next rows of the range from the columns held by `lookupColumnsCache`.
-    size_t serveRowsFromColumnsCache(MutableColumns & res_columns, size_t max_rows_to_read);
+    /// Read up to `max_rows_to_read` rows granule by granule, from the cache or from the part.
+    size_t readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns);
 
-    /// Read the columns the cache cannot hold - the partially read ones - from the part, while
-    /// the rest of the block is served from the cache. See `isColumnPartiallyRead`.
-    void readPartiallyReadColumnsWhileServing(
-        MutableColumns & res_columns, size_t from_mark, bool continue_reading, size_t max_rows_to_read);
+    /// Append `rows` rows starting at `offset` of the cached granule at `granule_index` to the
+    /// regular result columns whose entry for the granule is in the cache.
+    void serveRowsFromColumnsCache(size_t granule_index, size_t offset, size_t rows, MutableColumns & res_columns);
 
-    /// Whether the deferred write of the current range may go on: the query-wide budgets may
-    /// have run out while the range was being read, and a range larger than the whole cache
-    /// could never stay resident.
-    bool canContinueColumnsCacheWrite() const;
+    /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
+    bool canWriteToColumnsCache() const;
 
-    /// Copy `rows` rows read from disk, starting at `offset` of `column`, into the accumulator of
-    /// the result column at `pos`.
+    void startAccumulatingGranule(size_t mark, size_t granule_rows, size_t num_columns);
+    void resetAccumulatedGranule();
+
+    /// Copy `rows` rows read from the part, starting at `offset` of `column`, into the accumulator
+    /// of the result column at `pos`.
     void accumulateRowsForColumnsCache(size_t pos, const IColumn & column, size_t offset, size_t rows);
 
-    /// Write the accumulated columns to the cache if the range has been read to its end.
-    void writeToColumnsCacheIfRangeComplete();
+    /// The accumulated granule has been read to its end: turn its columns into entries.
+    void finishAccumulatedGranule();
+
+    /// Write the pending entries to the cache.
+    void flushPendingColumnsCacheWrites();
 };
 
 }

@@ -100,6 +100,7 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
@@ -237,6 +238,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 columns_cache_size;
     extern const ServerSettingsDouble columns_cache_size_ratio;
     extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
+    extern const ServerSettingsDouble columns_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 columns_cache_history_window_ms;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
     extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
@@ -1569,6 +1572,10 @@ try
           */
         LOG_INFO(log, "Shutting down storages.");
 
+        /// The columns cache goes away with the context; stop resizing it.
+        setMemoryReleasableCache(nullptr);
+        memory_worker.setReleasableCache(nullptr);
+
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
@@ -2239,6 +2246,17 @@ try
         LOG_INFO(log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(columns_cache_size));
     }
     global_context->setColumnsCache(columns_cache_policy, columns_cache_size, columns_cache_size_ratio);
+    /// The columns cache gives its memory back to the queries when the server is short of it, see
+    /// `ColumnsCache::autoResize`: on every tick of the memory worker, and when an allocation is
+    /// about to exceed the memory limit.
+    if (auto columns_cache = global_context->getColumnsCache())
+    {
+        columns_cache->setAutoResizeSettings(
+            server_settings[ServerSetting::columns_cache_free_memory_ratio],
+            server_settings[ServerSetting::columns_cache_history_window_ms]);
+        setMemoryReleasableCache(columns_cache.get());
+        memory_worker.setReleasableCache(columns_cache);
+    }
 
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
@@ -2873,6 +2891,10 @@ try
                     config(),
                     getDefaultColumnsCacheSize(current_physical_server_memory, new_server_settings[ServerSetting::columns_cache_size_to_ram_ratio]),
                     max_cache_size_in_bytes);
+                if (auto columns_cache = global_context->getColumnsCache())
+                    columns_cache->setAutoResizeSettings(
+                        new_server_settings[ServerSetting::columns_cache_free_memory_ratio],
+                        new_server_settings[ServerSetting::columns_cache_history_window_ms]);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);

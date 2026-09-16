@@ -23,11 +23,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # that neither of them can silently compare the cache-disabled path against itself.
 #
 # Part 1 raises the block limits so that the whole read task is one block. The cache stores
-# one entry per mark range of a task, so a cache-populating query holds a copy of the rows
-# of a range until the range has been read to its end, however small its blocks are; with
-# the default block limits the baseline query would hold one block of the range at a time
-# instead, and the comparison would measure the block limits rather than the cache. With the
-# limits raised, both queries hold one range at a time.
+# one entry per granule of a column, and a cache-populating query holds a copy of the rows of
+# the granule it is reading until the granule has been read to its end; with the default
+# block limits the baseline query would hold one block of the range at a time instead, and
+# the comparison would measure the block limits rather than the cache. With the limits
+# raised, both queries hold one range at a time.
 
 # Settings that let a whole read task be read in one block.
 BLOCK_SETTINGS="max_threads = 1, max_block_size = 200000, preferred_block_size_bytes = 0"

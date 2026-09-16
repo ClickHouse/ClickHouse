@@ -489,6 +489,18 @@ MemoryWorker::MemoryWorker(
 #endif
 }
 
+void MemoryWorker::setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache)
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    releasable_cache = std::move(cache);
+}
+
+std::shared_ptr<IMemoryReleasableCache> MemoryWorker::getReleasableCache()
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    return releasable_cache;
+}
+
 MemoryWorker::MemoryUsageSource MemoryWorker::getSource()
 {
     return source;
@@ -915,6 +927,9 @@ void MemoryWorker::updateResidentMemoryThread()
 
             if (page_cache)
                 page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
+
+            if (auto cache = getReleasableCache())
+                cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
             const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
