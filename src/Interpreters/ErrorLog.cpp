@@ -1,3 +1,8 @@
+#include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/ErrorCodes.h>
+#include <Common/StackTrace.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -8,9 +13,6 @@
 #include <Interpreters/ErrorLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/ErrorCodes.h>
 
 #include <vector>
 
@@ -20,53 +22,89 @@ namespace DB
 ColumnsDescription ErrorLogElement::getColumnsDescription()
 {
     ParserCodec codec_parser;
-    DataTypePtr symbolized_type
-        = std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-    return ColumnsDescription{
-        {"hostname",
-         std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Hostname of the server executing the query."},
-        {"event_date",
-         std::make_shared<DataTypeDate>(),
-         parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Event date."},
-        {"event_time",
-         std::make_shared<DataTypeDateTime>(),
-         parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Event time."},
-        {"code",
-         std::make_shared<DataTypeInt32>(),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Error code."},
-        {"error",
-         std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Error name."},
-        {"value",
-         std::make_shared<DataTypeUInt64>(),
-         parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Number of errors happened in time interval."},
-        {"remote",
-         std::make_shared<DataTypeUInt8>(),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Remote exception (i.e. received during one of the distributed queries)."},
-        {"last_error_time",
-         std::make_shared<DataTypeDateTime>(),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "The time when the last error happened."},
-        {"last_error_message",
-         std::make_shared<DataTypeString>(),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Message for the last error."},
-        {"last_error_query_id",
-         std::make_shared<DataTypeString>(),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "Id of a query that caused the last error (if available)."},
-        {"last_error_trace",
-         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
-         parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-         "A stack trace that represents a list of physical addresses where the called methods are stored."}};
+    DataTypePtr symbolized_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    return ColumnsDescription {
+        {
+                "hostname",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Hostname of the server executing the query."
+            },
+        {
+                "clickhouse_version",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Version of the ClickHouse server that produced the row."
+            },
+        {
+                "system_processor",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "CPU architecture of the ClickHouse server that produced the row."
+            },
+        {
+                "event_date",
+                std::make_shared<DataTypeDate>(),
+                parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event date."
+            },
+        {
+                "event_time",
+                std::make_shared<DataTypeDateTime>(),
+                parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event time."
+            },
+        {
+                "code",
+                std::make_shared<DataTypeInt32>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Error code."
+            },
+        {
+                "error",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Error name."
+            },
+        {
+                "value",
+                std::make_shared<DataTypeUInt64>(),
+                parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Number of errors happened in time interval."
+            },
+        {
+                "remote",
+                std::make_shared<DataTypeUInt8>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Remote exception (i.e. received during one of the distributed queries)."
+            },
+        {
+                "last_error_time",
+                std::make_shared<DataTypeDateTime>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "The time when the last error happened."
+            },
+        {
+                "last_error_message",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Message for the last error."
+            },
+            {
+                "last_error_query_id",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Id of a query that caused the last error (if available)."
+            },
+        {
+                "last_error_trace",
+                std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
+                "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse "
+                "server process."
+            }
+    };
 }
 
 void ErrorLogElement::appendToBlock(MutableColumns & columns) const
@@ -74,6 +112,8 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(code);
@@ -104,7 +144,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
         std::vector<UInt64> addrs;
         addrs.reserve(trace.size());
         for (auto * ptr : trace)
-            addrs.push_back(reinterpret_cast<uintptr_t>(ptr));
+            addrs.push_back(StackTrace::resolveAddressForStorage(ptr));
         return addrs;
     };
 
