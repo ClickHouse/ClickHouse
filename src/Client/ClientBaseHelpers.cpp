@@ -33,6 +33,55 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
 }
 
+Settings networkCompressionSettings(const Settings & settings)
+{
+    static constexpr std::string_view compression_setting_names[]
+        = {"network_compression_method", "network_zstd_compression_level", "allow_suspicious_codecs", "allow_experimental_codecs"};
+
+    /// The server re-derives the settings that `compatibility` changed, and a profile may pin them as
+    /// read-only, so an explicitly serialized compatibility-derived value would make the helper query fail
+    /// where an ordinary query succeeds. Drop them first, exactly as ordinary queries do, to tell an
+    /// explicit override apart from a derived value.
+    const Settings * source = &settings;
+    Settings settings_without_compat;
+    if (settings.hasSettingsChangedByCompatibility())
+    {
+        settings_without_compat = settings;
+        settings_without_compat.resetSettingsChangedByCompatibility();
+        source = &settings_without_compat;
+    }
+
+    Settings result;
+
+    /// `compatibility` itself is an explicit user setting; forward it so the server applies it to the
+    /// helper query the same way it does to an ordinary query of this session. Setting it re-derives its
+    /// effects inside `result`, so the network settings it changed get their derived values back.
+    if (source->isChanged("compatibility"))
+        result.set("compatibility", source->get("compatibility"));
+
+    /// An explicit override wins over a derived value; `set` also stops tracking the setting as
+    /// compatibility-derived, so it survives the demotion below and is serialized to the server
+    /// (the server cannot re-derive an explicit override).
+    for (std::string_view name : compression_setting_names)
+        if (source->isChanged(name))
+            result.set(name, source->get(name));
+
+    /// The derived values must select the client-side network codec in `Connection::sendQuery`, but they
+    /// must not be serialized as explicit changes. Keep the values, clear the `changed` flags.
+    result.markSettingsChangedByCompatibilityAsUnchanged();
+
+    /// Force ClickHouse SQL unconditionally, and after the demotion above so that the override stays
+    /// `changed` and is therefore serialized: dropping the session `dialect` is not enough, because the
+    /// server takes the parser from the effective `dialect` of the authenticated user, which a profile
+    /// may itself default to Kusto or PRQL. The same override, for the same reason, is applied to
+    /// secondary queries by the interserver senders (`MultiplexedConnections`, `HedgedConnections`,
+    /// `RemoteInserter`). Sending the value a user already has is a no-op for setting constraints, so
+    /// this does not trip a profile that pins `dialect` as read-only to `clickhouse`.
+    result.set("dialect", String("clickhouse"));
+
+    return result;
+}
+
 /// Should we celebrate a bit?
 bool isNewYearMode()
 {
