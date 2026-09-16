@@ -8,12 +8,10 @@ INSERT INTO t_cnf_nan VALUES (nan, 1), (1, 2), (100, 3);
 SELECT 'not less';
 SELECT count() FROM t_cnf_nan WHERE NOT (x < 65.5) SETTINGS convert_query_to_cnf = 0;
 SELECT count() FROM t_cnf_nan WHERE NOT (x < 65.5) SETTINGS convert_query_to_cnf = 1;
-SELECT count() FROM t_cnf_nan WHERE NOT (x < 65.5) SETTINGS convert_query_to_cnf = 1, enable_analyzer = 0;
 
 SELECT 'not greater';
 SELECT count() FROM t_cnf_nan WHERE NOT (x > 65.5) SETTINGS convert_query_to_cnf = 0;
 SELECT count() FROM t_cnf_nan WHERE NOT (x > 65.5) SETTINGS convert_query_to_cnf = 1;
-SELECT count() FROM t_cnf_nan WHERE NOT (x > 65.5) SETTINGS convert_query_to_cnf = 1, enable_analyzer = 0;
 
 SELECT 'not less or equals';
 SELECT count() FROM t_cnf_nan WHERE NOT (x <= 65.5) SETTINGS convert_query_to_cnf = 0;
@@ -33,14 +31,37 @@ SELECT count() FROM t_cnf_nan WHERE NOT (x IN (1, 100)) SETTINGS convert_query_t
 
 -- An integer column cannot hold a `NaN`, so its comparison is still inverted into the CNF form.
 SELECT 'the integer comparison is still inverted';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_cnf_nan WHERE NOT (i < 2) SETTINGS convert_query_to_cnf = 1)
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_cnf_nan WHERE NOT (i < 2) SETTINGS convert_query_to_cnf = 1, enable_analyzer = 1)
 WHERE explain LIKE '%function_name: greaterOrEquals%';
 SELECT count() FROM t_cnf_nan WHERE NOT (i < 2) SETTINGS convert_query_to_cnf = 1;
 SELECT count() FROM t_cnf_nan WHERE NOT (i < 2) SETTINGS convert_query_to_cnf = 0;
 
 -- A float comparison is not, even though the constant itself is not a `NaN`.
 SELECT 'the float comparison is not';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_cnf_nan WHERE NOT (x < 65.5) SETTINGS convert_query_to_cnf = 1)
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_cnf_nan WHERE NOT (x < 65.5) SETTINGS convert_query_to_cnf = 1, enable_analyzer = 1)
 WHERE explain LIKE '%function_name: greaterOrEquals%';
 
 DROP TABLE t_cnf_nan;
+
+-- A `Dynamic` value can be a floating point `NaN` as well, and a comparison over it is executed per inner
+-- type, so it fails for a `NaN` like a plain `Float64` comparison does. The type does not enumerate the
+-- floating point type among its children, so it is judged by the type itself.
+SELECT 'dynamic';
+DROP TABLE IF EXISTS t_cnf_nan_dynamic;
+CREATE TABLE t_cnf_nan_dynamic (d Dynamic, a Array(Dynamic)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_cnf_nan_dynamic VALUES (nan::Float64, [nan::Float64]), (1::Float64, [1::Float64]), (100::Float64, [100::Float64]);
+
+SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (d < 65.5) SETTINGS convert_query_to_cnf = 0;
+SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (d < 65.5) SETTINGS convert_query_to_cnf = 1;
+SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (d > 65.5) SETTINGS convert_query_to_cnf = 0;
+SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (d > 65.5) SETTINGS convert_query_to_cnf = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (d < 65.5) SETTINGS convert_query_to_cnf = 1, enable_analyzer = 1)
+WHERE explain LIKE '%function_name: greaterOrEquals%';
+
+SELECT 'array of dynamic';
+SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (a[1] < 65.5) SETTINGS convert_query_to_cnf = 0;
+SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (a[1] < 65.5) SETTINGS convert_query_to_cnf = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_cnf_nan_dynamic WHERE NOT (a < [65.5]) SETTINGS convert_query_to_cnf = 1, enable_analyzer = 1)
+WHERE explain LIKE '%function_name: greaterOrEquals%';
+
+DROP TABLE t_cnf_nan_dynamic;

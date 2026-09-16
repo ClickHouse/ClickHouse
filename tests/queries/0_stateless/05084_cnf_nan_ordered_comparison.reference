@@ -1,9 +1,7 @@
 not less
 2
 2
-2
 not greater
-2
 2
 2
 not less or equals
@@ -23,4 +21,14 @@ the integer comparison is still inverted
 2
 2
 the float comparison is not
+0
+dynamic
+2
+2
+2
+2
+0
+array of dynamic
+2
+2
 0

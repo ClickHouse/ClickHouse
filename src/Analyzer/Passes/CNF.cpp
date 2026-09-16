@@ -288,14 +288,24 @@ private:
     }
 };
 
+/// Whether a type can hold a `NaN` by itself, not looking at the nested types. `Dynamic` and `JSON`
+/// can carry a value of any type, including a floating point one, and `DataTypeDynamic::forEachChild`
+/// has nothing to enumerate (`DataTypeObject::forEachChild` enumerates only the typed paths), so both
+/// have to be judged by the type itself.
+bool typeCanHoldNaNItself(const IDataType & type)
+{
+    WhichDataType which(type);
+    return which.isFloat() || which.isDynamic() || which.isObject();
+}
+
 /// Whether the type, or a type nested in it, can hold a `NaN`.
 bool typeCanHoldNaN(const IDataType & type)
 {
-    if (WhichDataType(type).isFloat())
+    if (typeCanHoldNaNItself(type))
         return true;
 
     bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || WhichDataType(child).isFloat(); });
+    type.forEachChild([&](const IDataType & child) { result = result || typeCanHoldNaNItself(child); });
     return result;
 }
 
