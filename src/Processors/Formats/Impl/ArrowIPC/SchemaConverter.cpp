@@ -749,7 +749,7 @@ buildField(
             default:
                 /// A type with no first-class Arrow mapping, handled per `output_format_arrow_unsupported_types`:
                 /// rejected, or written as an opaque variable-width column holding one serialized value per row,
-                /// typed by `arrowOpaqueTypeIsUtf8` and filled by `RecordBatchEncoder::encodeAsOpaque`.
+                /// typed by `arrowOpaqueValueIsText` and filled by `RecordBatchEncoder::encodeAsOpaque`.
                 /// The decision is made here, before the schema message is written, so a rejected type cannot
                 /// abort a stream whose schema the reader has already accepted.
                 switch (settings.arrow.output_unsupported_types)
@@ -763,8 +763,7 @@ buildField(
                     case FormatSettings::ArrowUnsupportedTypes::TEXT:
                     case FormatSettings::ArrowUnsupportedTypes::BINARY:
                     {
-                        if (arrowOpaqueTypeIsUtf8(
-                                settings.arrow.output_unsupported_types, t, settings.arrow.output_string_as_string))
+                        if (arrowOpaqueValueIsText(settings.arrow.output_unsupported_types, t))
                         {
                             type_type = flatbuf::Type_Utf8;
                             type_offset = flatbuf::CreateUtf8(b).Union();

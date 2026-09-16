@@ -20,30 +20,28 @@ namespace DB
 /// those decisions live here to keep them in step: a column typed `utf8` must be filled with text, and a
 /// column typed `binary` must not be silently filled with something else.
 
-/// Whether an opaque column carries the value's text form. `text` mode asks for it, except for an aggregate
-/// state: `SerializationAggregateFunction::serializeText` writes the raw state bytes, which are not text, so
-/// it is serialized as binary in either mode.
+/// Whether an opaque column carries the value's text form, which also makes it `utf8` rather than `binary`:
+/// the Arrow type states which of the two encodings the payload is, so a reader can tell them apart.
+///
+/// `text` mode asks for the text form, except for an aggregate state:
+/// `SerializationAggregateFunction::serializeText` writes the raw state bytes, which are not text, so it is
+/// serialized as binary in either mode.
+///
+/// `output_format_arrow_string_as_string` deliberately does not enter into it. It says how a `String` column
+/// is typed, and letting it also move an opaque column would put a text payload into a `binary` column,
+/// leaving a reader unable to tell which encoding it holds.
 inline bool arrowOpaqueValueIsText(FormatSettings::ArrowUnsupportedTypes mode, const DataTypePtr & type)
 {
     return mode == FormatSettings::ArrowUnsupportedTypes::TEXT && !WhichDataType(type).isAggregateFunction();
-}
-
-/// Whether an opaque column is typed `utf8` rather than `binary`. A text payload uses the Arrow type a
-/// `String` column uses and follows the same setting, so that `output_format_arrow_string_as_string = 0`
-/// keeps every column of this output free of unvalidated UTF-8 rather than only the real `String` ones.
-inline bool
-arrowOpaqueTypeIsUtf8(FormatSettings::ArrowUnsupportedTypes mode, const DataTypePtr & type, bool output_string_as_string)
-{
-    return arrowOpaqueValueIsText(mode, type) && output_string_as_string;
 }
 
 /// Replaces each invalid UTF-8 sequence in `value` with U+FFFD. The result aliases `value` itself when it
 /// needs no change and `scratch` otherwise, so both have to outlive it.
 ///
 /// An Arrow `utf8` column is required by the format to hold valid UTF-8, and a text payload can break that:
-/// a `Dynamic` holding a `String` serializes those bytes verbatim, and they can be arbitrary. Declaring
-/// `binary` instead is what `output_format_arrow_string_as_string = 0` selects, and that stays byte-exact;
-/// here the column has been declared as text, so the bytes are made to match the declaration.
+/// a `Dynamic` holding a `String` serializes those bytes verbatim, and they can be arbitrary. `binary` mode
+/// is the byte-exact one; here the column has been declared as text, so the bytes are made to match the
+/// declaration.
 inline std::string_view makeValidUTF8View(std::string_view value, String & scratch)
 {
     if (UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))

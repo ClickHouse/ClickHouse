@@ -204,8 +204,8 @@ namespace DB
         size_t end)
     {
         /// The builder `getArrowType` picked is what says whether this column was declared as text and so
-        /// has to hold valid UTF-8; a `utf8` builder implies `as_text`, both deriving from
-        /// `arrowOpaqueTypeIsUtf8`.
+        /// has to hold valid UTF-8. It agrees with `as_text` by construction, both deriving from
+        /// `arrowOpaqueValueIsText`.
         static constexpr bool target_is_utf8 = std::is_same_v<Builder, arrow::StringBuilder>;
 
         const auto serialization = column_type->getDefaultSerialization();
@@ -246,8 +246,6 @@ namespace DB
         size_t start,
         size_t end)
     {
-        /// A text payload lands in a `utf8` column only when a `String` column would too (see
-        /// `getArrowType`), so it can reach either builder and the two questions are asked separately.
         /// Cast to the builder that was actually created: `arrow::StringBuilder` does derive from
         /// `arrow::BinaryBuilder`, but `assert_cast` compares typeid exactly, so casting one to the other
         /// aborts in a debug or sanitizer build.
@@ -1885,7 +1883,7 @@ namespace DB
         /// One serialized value per row, as `utf8` or `binary`; see `fillArrowArrayWithOpaqueColumnData`.
         if (out_opaque_type_name)
             *out_opaque_type_name = column_type->getName();
-        if (arrowOpaqueTypeIsUtf8(settings.output_unsupported_types, column_type, settings.output_string_as_string))
+        if (arrowOpaqueValueIsText(settings.output_unsupported_types, column_type))
             return arrow::utf8();
         return arrow::binary();
     }

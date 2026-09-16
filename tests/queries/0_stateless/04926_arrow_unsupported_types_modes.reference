@@ -9,6 +9,7 @@ aggregate:            8000000000000000
 qbit:                 5B312C322C335D
 invalid_utf8:         EFBFBD
 aggregate_in_dynamic: EFBFBD00000000000000
+plain_string:         plain
 state:                128
 Row 1:
 ──────
@@ -20,6 +21,7 @@ aggregate:            8000000000000000
 qbit:                 03803F00404040
 invalid_utf8:         1501FF
 aggregate_in_dynamic: 25000373756D0001048000000000000000
+plain_string:         plain
 state:                128
 Row 1:
 ──────
@@ -29,8 +31,9 @@ dynamic:              3432
 array_dynamic:        ['31','32']
 aggregate:            8000000000000000
 qbit:                 5B312C322C335D
-invalid_utf8:         FF
-aggregate_in_dynamic: 8000000000000000
+invalid_utf8:         EFBFBD
+aggregate_in_dynamic: EFBFBD00000000000000
+plain_string:         plain
 state:                128
 === throw ===
 NOT_IMPLEMENTED
@@ -49,6 +52,7 @@ text	s	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
 text	q	string	clickhouse.opaque	QBit(BFloat16, 3)
 text	b	string	clickhouse.opaque	Dynamic
 text	n	string	clickhouse.opaque	Dynamic
+text	p	string	None	None
 binary	j	binary	clickhouse.opaque	JSON
 binary	d	binary	clickhouse.opaque	Dynamic
 binary	a	list<item: binary not null>	None	None
@@ -57,6 +61,7 @@ binary	s	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
 binary	q	binary	clickhouse.opaque	QBit(BFloat16, 3)
 binary	b	binary	clickhouse.opaque	Dynamic
 binary	n	binary	clickhouse.opaque	Dynamic
+binary	p	string	None	None
 map/text	m	map<string, uint8>	None	None
 map/text	m.entries	struct<key: string not null, value: uint8 not null>	None	None
 map/text	m.entries.key	string	clickhouse.opaque	JSON
@@ -65,11 +70,12 @@ map/binary	m	map<binary, uint8>	None	None
 map/binary	m.entries	struct<key: binary not null, value: uint8 not null>	None	None
 map/binary	m.entries.key	binary	clickhouse.opaque	JSON
 map/binary	m.entries.value	uint8	None	None
-text,string_as_string=0	j	binary	clickhouse.opaque	JSON
-text,string_as_string=0	d	binary	clickhouse.opaque	Dynamic
-text,string_as_string=0	a	list<item: binary not null>	None	None
-text,string_as_string=0	a.item	binary	clickhouse.opaque	Dynamic
+text,string_as_string=0	j	string	clickhouse.opaque	JSON
+text,string_as_string=0	d	string	clickhouse.opaque	Dynamic
+text,string_as_string=0	a	list<item: string not null>	None	None
+text,string_as_string=0	a.item	string	clickhouse.opaque	Dynamic
 text,string_as_string=0	s	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
-text,string_as_string=0	q	binary	clickhouse.opaque	QBit(BFloat16, 3)
-text,string_as_string=0	b	binary	clickhouse.opaque	Dynamic
-text,string_as_string=0	n	binary	clickhouse.opaque	Dynamic
+text,string_as_string=0	q	string	clickhouse.opaque	QBit(BFloat16, 3)
+text,string_as_string=0	b	string	clickhouse.opaque	Dynamic
+text,string_as_string=0	n	string	clickhouse.opaque	Dynamic
+text,string_as_string=0	p	binary	None	None

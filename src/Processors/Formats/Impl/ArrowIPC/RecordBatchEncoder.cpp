@@ -526,11 +526,9 @@ void RecordBatchEncoder::encodeAsOpaque(
     /// `ISerialization`, so every type has a real per-value representation here.
     const NullMap * null_map
         = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
-    /// `SchemaConverter::buildField` types this column from the same two predicates, so what is written
-    /// here cannot disagree with what the reader has been told the column holds.
+    /// `SchemaConverter::buildField` types this column from the same predicate, so what is written here
+    /// cannot disagree with what the reader has been told the column holds.
     const bool as_text = arrowOpaqueValueIsText(settings.arrow.output_unsupported_types, type);
-    const bool as_utf8
-        = arrowOpaqueTypeIsUtf8(settings.arrow.output_unsupported_types, type, settings.arrow.output_string_as_string);
     const auto serialization = type->getDefaultSerialization();
 
     PODArray<Int32> arrow_offsets(num_rows + 1);
@@ -546,15 +544,13 @@ void RecordBatchEncoder::encodeAsOpaque(
             /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
             if (!(null_map && (*null_map)[i]))
             {
-                if (as_utf8)
+                if (as_text)
                 {
                     value.restart();
                     serialization->serializeText(column, i, value, settings);
                     const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
                     buffer.write(valid.data(), valid.size());
                 }
-                else if (as_text)
-                    serialization->serializeText(column, i, buffer, settings);
                 else
                     serialization->serializeBinary(column, i, buffer, settings);
             }

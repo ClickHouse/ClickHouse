@@ -1511,12 +1511,14 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
 What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
 
 - `throw` — reject the query;
-- `text` — one text-form value per row (what `CAST(col AS String)` would produce), in whichever Arrow type a `String` column would use: `Utf8`, or `Binary` when `output_format_arrow_string_as_string = 0`;
+- `text` — one text-form value per row (what `CAST(col AS String)` would produce), as an Arrow `Utf8` column;
 - `binary` — the binary representation of each value, as an Arrow `Binary` column (the same per-value encoding as `RowBinary`).
 
 An `AggregateFunction` column is `Binary` in `text` mode as well, because its text form is the raw aggregate state rather than text, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` to get a readable value.
 
-A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - a `Dynamic` holding a `String` of arbitrary bytes, for example. Set `output_format_arrow_string_as_string = 0` for a byte-exact text form in a `Binary` column, or use `binary` mode.
+A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - a `Dynamic` holding a `String` of arbitrary bytes, for example. Use `binary` mode when the bytes have to be preserved exactly.
+
+`output_format_arrow_string_as_string` does not apply to these columns, only to real `String` and `FixedString` ones. That keeps the Arrow type of an opaque column a statement about which encoding it holds: `Utf8` is the text form and `Binary` is the binary one, whatever that setting says.
 
 The same applies to an aggregate state held in a `Dynamic`: the column is typed from `Dynamic`, which says nothing about what its rows hold, and the Arrow schema is fixed before any value is seen, so the state cannot be given a `Binary` column of its own the way an `AggregateFunction` column is. In `text` mode it is therefore lossy. `binary` mode keeps it. A `Variant` is not affected - it lists its alternatives, so an `AggregateFunction` among them gets its own `Binary` child.
 
