@@ -312,7 +312,8 @@ private:
     /// `finish` reaches its drain only after `tryCancel` sent the Cancel packet, and on every earlier
     /// return `cancelUnlocked` would find `finished`, `hasThrownException` or `was_cancelled` already
     /// set. A counter because `work` and `onUpdatePorts` can enter `finish` on different threads.
-    /// Lock order is always this mutex before `was_cancelled_mutex`, never the reverse.
+    /// Lock order is this mutex before `was_cancelled_mutex`; only the `cancel_in_finish_drain`
+    /// failpoint reverses it, and there the counter is non-zero so `cancel` returns without locking.
     mutable std::mutex finish_gate_mutex;
     size_t finish_in_progress TSA_GUARDED_BY(finish_gate_mutex) = 0;
 

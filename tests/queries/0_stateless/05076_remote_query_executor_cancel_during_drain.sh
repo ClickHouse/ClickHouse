@@ -75,9 +75,10 @@ else
     echo "armed $(enabled)"
 
     # The count is asserted, not discarded: the suppressed `cancel` must not cost the query its row.
-    # Bounded, because the unfixed failure mode is a deadlock rather than an error - a diagnosis here
-    # is worth more than the runner's own timeout.
-    if ! timeout 60 $CLICKHOUSE_CLIENT \
+    # Bounded, because the unfixed failure mode is a deadlock rather than an error, and bounded well
+    # inside Fast test's 60 s per-test allowance so that on a regression the diagnosis below is what
+    # surfaces, not the runner's bare timeout. The query itself returns in under a second here.
+    if ! timeout 30 $CLICKHOUSE_CLIENT \
         --enable_parallel_replicas=0 --async_socket_for_remote=0 --distributed_push_down_limit=0 \
         --max_block_size=1 --prefer_localhost_replica=0 \
         --query "SELECT count() FROM (SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1)" 2>"$err"
