@@ -9228,6 +9228,8 @@ function closeDatabases() {
 
 function toggleDatabases() {
     if (!databases_toggle.dataset['opened']) {
+        /// The databases list is a request with the live credentials (see `dropAutofilledStalePassword`).
+        dropAutofilledStalePassword();
         loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(ok => {
             if (ok !== false) {
                 databases_toggle.dataset['opened'] = 1;
@@ -9440,12 +9442,18 @@ function passwordlessLoginKey(server_address, user) {
 
 function loadPasswordlessLogins() {
     let parsed = null;
-    try { parsed = JSON.parse(window.localStorage.getItem(PASSWORDLESS_LOGINS_KEY) ?? '[]'); } catch (e) { /* malformed: start over */ }
+    /// Storage access can throw too (a storage policy denying it), not only the parse of a malformed value.
+    try { parsed = JSON.parse(window.localStorage.getItem(PASSWORDLESS_LOGINS_KEY) ?? '[]'); } catch (e) { /* malformed or inaccessible: start over */ }
     return new Set(Array.isArray(parsed) ? parsed.filter(k => typeof k === 'string') : []);
 }
 
 /// Record a successful authentication as `server_address`/`user` with `password`: an empty password
 /// remembers the login as passwordless, a non-empty one forgets it.
+///
+/// Best-effort: it runs on the success path of an authentication check and of a query, and a storage
+/// failure (`QuotaExceededError`, a storage policy exception) must not turn that success into a
+/// client-side error or lose the green indication. Without the entry the page merely does not drop a
+/// stale autofilled password next time, which is the pre-existing behaviour.
 function rememberLoginPassword(server_address, user, password) {
     const key = passwordlessLoginKey(server_address, user);
     const logins = loadPasswordlessLogins();
@@ -9457,7 +9465,7 @@ function rememberLoginPassword(server_address, user, password) {
         /// A `Set` iterates in insertion order, so the oldest entries go first.
         while (logins.size > MAX_PASSWORDLESS_LOGINS) logins.delete(logins.values().next().value);
     }
-    window.localStorage.setItem(PASSWORDLESS_LOGINS_KEY, JSON.stringify([...logins]));
+    try { window.localStorage.setItem(PASSWORDLESS_LOGINS_KEY, JSON.stringify([...logins])); } catch (e) { /* best-effort, see above */ }
 }
 
 /// Whether the browser filled the field itself (its password manager), as opposed to the user typing
@@ -15131,6 +15139,8 @@ async function cancel()
 }
 
 function storeCredentials() {
+    /// A stale autofilled password must not be re-offered to the browser's store either.
+    dropAutofilledStalePassword();
     if (password_elem.value) {
         const cred = new PasswordCredential({
             id: user_elem.value,
@@ -19281,6 +19291,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     // connection then surfaces as a visible authentication error rather than silently exporting
     // data from the wrong server.
     const user = last_user_for_download;
+    dropAutofilledStalePassword();
     const password = password_elem.value;
     const server_address = last_url_for_download || url_elem.value;
     const query = last_query_for_download;
@@ -19427,6 +19438,8 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     function sendCredentialsToTerminal() {
         if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
+            /// The terminal authenticates with these credentials (see `dropAutofilledStalePassword`).
+            dropAutofilledStalePassword();
             terminalIframe.contentWindow.postMessage({
                 type: 'webterminal-credentials',
                 user: user_elem.value,
