@@ -522,7 +522,6 @@ class RunTest:
     def uses_vector_index(self):
         return self._search_method == SEARCH_METHOD_INDEX
 
-    # The column a search actually reads: the QBit companion, else the vector column itself
     def search_column(self):
         if self._search_method == SEARCH_METHOD_QBIT:
             return self._dataset[QBIT_COLUMN]
@@ -530,7 +529,6 @@ class RunTest:
 
     def capture_column_size(self):
         column = self.search_column()
-        # `count()` distinguishes "no rows matched" from a genuine zero: `sum` over an empty set returns 0
         result = self._chclient.query(
             f"SELECT count(), sum(column_bytes_on_disk), formatReadableSize(sum(column_bytes_on_disk)) "
             f"FROM system.parts_columns WHERE database = currentDatabase() "
