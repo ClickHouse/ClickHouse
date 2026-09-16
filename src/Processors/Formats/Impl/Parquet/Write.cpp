@@ -1275,6 +1275,18 @@ void writeColumnImpl(
                 }
             }
 
+            /// A converter materializes the whole batch before it can be measured, and ConverterJSON
+            /// serializes each value into storage of its own, so a batch of wide values has to be cut
+            /// from the source column's sizes before that happens. Those sizes only approximate the
+            /// encoded ones - serializing a value can grow it - so the batch is measured again below,
+            /// once the values exist.
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count,
+                    [&](size_t i) { return s.primitive_column->byteSizeAt(next_data_offset + i); });
+            }
+
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
 

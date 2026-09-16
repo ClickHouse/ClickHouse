@@ -49,3 +49,17 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT length(a), arraySum(x -> length(x), a) FROM file('$FILE', Parquet)
 "
+
+# A converter materializes the whole batch before it can be measured, and the one for `JSON`
+# serializes each value into storage of its own, so the batch is cut from the source column's sizes
+# first. 1024 values of 100 KB cross that cut; the point here is that splitting the batch that early
+# still round-trips.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT map('k', concat(toString(number), repeat('j', 100000)))::JSON AS o
+    FROM numbers(1024)
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(toString(o))), uniqExact(cityHash64(toString(o))) FROM file('$FILE', Parquet)
+"
