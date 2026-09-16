@@ -135,6 +135,43 @@ def test_redirect_is_cached_after_access_denied(cluster):
         node.query(f"DROP TABLE {table}")
 
 
+def test_cached_redirect_is_revalidated_after_config_reload(cluster):
+    node = cluster.instances["node"]
+    table = "s3_redirect_cache_reload"
+    node.query(f"DROP TABLE IF EXISTS {table}")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        "ENGINE = S3('http://resolver:8080/reload-cache/key.csv', NOSIGN, 'CSV')"
+    )
+    try:
+        error = node.query_and_get_error(
+            f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1, s3_max_redirects=5"
+        )
+        assert "AccessDenied" in error
+        assert _initial_requests(cluster, "reload-cache") == "1"
+
+        restricted_config = """
+<clickhouse>
+    <remote_url_allow_hosts>
+        <host>resolver:8080</host>
+    </remote_url_allow_hosts>
+</clickhouse>
+"""
+        with node.with_replace_config(
+            "/etc/clickhouse-server/config.d/config.xml",
+            restricted_config,
+            reload_before=True,
+            reload_after=True,
+        ):
+            error = node.query_and_get_error(
+                f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1, s3_max_redirects=0"
+            )
+            assert "not allowed in configuration file" in error
+            assert _initial_requests(cluster, "reload-cache") == "1"
+    finally:
+        node.query(f"DROP TABLE {table}")
+
+
 def test_head_redirect_is_cached_after_list_access_denied(cluster):
     node = cluster.instances["node"]
     table = "s3_head_redirect_cache"

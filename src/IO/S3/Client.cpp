@@ -765,14 +765,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (Poco::URI(initial_endpoint).getHost() == "s3.amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
-        Poco::URI retry_uri = new_uri->uri;
-        if (new_uri->is_virtual_hosted_style)
-        {
-            Poco::URI endpoint_uri(new_uri->endpoint);
-            endpoint_uri.setHost(std::string(bucket.c_str(), bucket.size()) + "." + endpoint_uri.getHost());
-            retry_uri.setAuthority(endpoint_uri.getAuthority());
-        }
-        client_configuration.remote_host_filter.checkURL(retry_uri);
+        checkURIForBucket(bucket, *new_uri);
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI
@@ -1102,11 +1095,30 @@ std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::str
 
 std::optional<S3::URI> Client::getURIForBucket(const std::string & bucket) const
 {
-    std::lock_guard lock(cache->uri_cache_mutex);
-    if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
-        return it->second;
+    std::optional<S3::URI> result;
+    {
+        std::lock_guard lock(cache->uri_cache_mutex);
+        if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
+            result = it->second;
+    }
 
-    return std::nullopt;
+    if (result)
+        checkURIForBucket(bucket, *result);
+
+    return result;
+}
+
+void Client::checkURIForBucket(const std::string & bucket, const S3::URI & uri) const
+{
+    Poco::URI request_uri = uri.uri;
+    if (uri.is_virtual_hosted_style)
+    {
+        Poco::URI endpoint_uri(uri.endpoint);
+        endpoint_uri.setHost(bucket + "." + endpoint_uri.getHost());
+        request_uri.setAuthority(endpoint_uri.getAuthority());
+    }
+
+    client_configuration.remote_host_filter.checkURL(request_uri);
 }
 
 void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const

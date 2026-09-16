@@ -304,6 +304,7 @@ private:
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
+    void checkURIForBucket(const std::string & bucket, const S3::URI & uri) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;

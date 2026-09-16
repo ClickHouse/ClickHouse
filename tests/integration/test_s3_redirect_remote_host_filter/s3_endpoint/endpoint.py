@@ -26,7 +26,7 @@ VIRTUAL_HOSTED_REDIRECT_TARGET = "bucket.s3.resolver:8080"
 VIRTUAL_HOSTED_RETRY_TARGET = "virtual.s3.resolver:8080"
 
 followed_redirect = {"hit": False}
-initial_requests = {"cache": 0, "network": 0}
+initial_requests = {"cache": 0, "network": 0, "reload-cache": 0}
 region_requests = {"region-error": [], "region-head": []}
 
 
@@ -91,7 +91,7 @@ def server(_bucket, _path=""):
         initial_requests[_bucket] += 1
 
     suffix = _bucket if not _path else _bucket + "/" + _path
-    if _bucket in ("cache", "head", "network"):
+    if _bucket in ("cache", "head", "network", "reload-cache"):
         target = UNREACHABLE_REDIRECT_TARGET if _bucket == "network" else ALLOWED_REDIRECT_TARGET
         target_path = suffix
     elif _bucket == "virtual":
