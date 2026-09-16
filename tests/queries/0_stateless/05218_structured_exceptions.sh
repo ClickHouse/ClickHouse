@@ -19,8 +19,20 @@ import subprocess
 import urllib.parse
 import uuid
 
+def without_options(args, names):
+    result = []
+    args = iter(args)
+    for arg in args:
+        if arg.split('=', 1)[0] in names:
+            if '=' not in arg:
+                next(args)
+        else:
+            result.append(arg)
+    return result
+
+
 curl = shlex.split(os.environ['CLICKHOUSE_CURL'])
-client = shlex.split(os.environ['CLICKHOUSE_CLIENT'])
+client = without_options(shlex.split(os.environ['CLICKHOUSE_CLIENT']), {'--send_logs_level'})
 url = os.environ['CLICKHOUSE_URL']
 query_id = str(uuid.uuid4())
 fields = {'code', 'name', 'code_name', 'query_id', 'query', 'formatted_message'}
@@ -223,13 +235,7 @@ def capture(listener):
                 destination.sendall(data)
 
 
-proxy_client = []
-args = iter(client)
-for arg in args:
-    if arg in ('--host', '--port'):
-        next(args)
-    elif not arg.startswith(('--host=', '--port=')):
-        proxy_client.append(arg)
+proxy_client = without_options(client, {'--host', '--port'})
 
 with socket.socket() as listener, concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
     listener.bind(('127.0.0.1', 0))
