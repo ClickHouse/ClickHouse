@@ -2541,6 +2541,9 @@ try
             validatePrometheusConstantLabels(
                 *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
 
+            /// Keep the file layer being replaced: the merged-view check below runs after the
+            /// replacement and needs to undo it on rejection.
+            Poco::Util::LayeredConfiguration::ConfigPtr previous_config = config().find("default");
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
@@ -2548,11 +2551,23 @@ try
 
             /// The check above sees the incoming file alone. A triple split across the file and the
             /// command-line layer can have each source valid and the merge out of order, so check the
-            /// merged view too - here, before the first live setting below is touched.
-            validateMemoryPressureThresholds(
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
+            /// merged view too - here, before the first live setting below is touched. The merged view
+            /// only exists once the layer is replaced, so a rejection here restores the previous file
+            /// layer: otherwise the failed reload would keep publishing the rejected values through
+            /// `config()` and `system.server_settings` while every live consumer keeps the old ones.
+            try
+            {
+                validateMemoryPressureThresholds(
+                    new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                    new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                    new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
+            }
+            catch (...)
+            {
+                if (previous_config)
+                    config().replace("default", previous_config, PRIO_DEFAULT, true);
+                throw;
+            }
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 

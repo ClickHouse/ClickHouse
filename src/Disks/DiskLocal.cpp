@@ -437,12 +437,17 @@ void DiskLocal::prepareRead(
         read_hint);
 
     /// Mirror the remote path (`DiskObjectStorage::prepareRead`): attach the prefetch pool
-    /// only when the local read method is the asynchronous one AND prefetch is requested, so
+    /// only when the local read method is a prefetch-capable one AND prefetch is requested, so
     /// `local_filesystem_read_prefetch = 1` keeps driving read-ahead on the executor path
     /// instead of silently becoming a no-op (`PipelineReadBuffer::prefetch` reaches
     /// `ReaderExecutor::prefetch`, which needs a pool to schedule on), while a synchronous
-    /// method still reads synchronously.
-    if (settings.local_fs_settings.method == LocalFSReadMethod::pread_threadpool
+    /// method still reads synchronously. The prefetch-capable set is the one
+    /// `MergeTreePrefetchedReadPool::checkReadMethodAllowed` accepts: `pread_threadpool` and
+    /// `pread_fake_async`. The legacy `pread_fake_async` buffer honours `prefetch` by reading
+    /// synchronously at prefetch time; the executor has no synchronous read-ahead buffer, so on
+    /// this path its read-ahead is served by the prefetch pool too.
+    if ((settings.local_fs_settings.method == LocalFSReadMethod::pread_threadpool
+            || settings.local_fs_settings.method == LocalFSReadMethod::pread_fake_async)
         && settings.local_fs_settings.prefetch)
     {
         if (auto global_context = Context::getGlobalContextInstance())

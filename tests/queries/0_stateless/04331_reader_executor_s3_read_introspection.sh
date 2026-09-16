@@ -65,15 +65,16 @@ $CLICKHOUSE_CLIENT --query "
     WHERE query_id = '$COLD_ID'
 "
 
-# Warm: re-read served predominantly from the filesystem cache. The settling
-# scan absorbed the boundary tails, so this scan opens no source connection and
-# pays no gap-bridging or drain bytes.
-#   expected: 1  1  1
+# Warm: re-read served entirely from the filesystem cache. The settling scan
+# absorbed the boundary tails, so this scan opens no source connection and pays
+# no gap-bridging or drain bytes: zero source bytes, zero source requests.
+#   expected: 1  1  1  1
 $CLICKHOUSE_CLIENT --query "
     SELECT
         count() > 0,
         sum(bytes_from_filesystem_cache) > 0,
-        sum(bytes_from_filesystem_cache) > sum(bytes_from_source)
+        sum(bytes_from_source) = 0,
+        sum(source_requests) = 0
     FROM system.reader_executor_log
     WHERE query_id = '$WARM_ID'
 "

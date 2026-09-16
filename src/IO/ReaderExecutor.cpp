@@ -3032,8 +3032,14 @@ void ReaderExecutor::cancelMachine(bool cancelled)
         /// shared_ptr, a detached owner would leak `DiskConnectionsReset` off-query). Never
         /// drain - this is reachable from the noexcept destructor. No longer LENT: the lane
         /// may open a fresh one.
+        /// Wasted = issued minus what the worker already committed into cache writers
+        /// (`pushChainToWriters` per tile, counted in the machine's `BytesPushedToCacheSync`):
+        /// those tiles persist for later reads, so only the uncommitted residue is real wasted
+        /// bandwidth - as `ReaderExecutorPrefetchWastedSourceBytes` documents.
         stats += m->stats;
-        stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
+        const size_t issued = m->stats.get(Stats::PrefetchIssuedSourceBytes);
+        const size_t persisted = m->stats.get(Stats::BytesPushedToCacheSync);
+        stats.add(Stats::PrefetchWastedSourceBytes, issued - std::min(issued, persisted));
         accountLongConnectionDrop(m->long_conn, /*at_eof=*/m->reached_eof, stats);
         m->long_conn.reset();
         fill_lane.conn_lent = false;

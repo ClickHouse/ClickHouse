@@ -40,6 +40,7 @@ METRIC_EVENTS = {
     "S": "ReaderExecutorBytesFromSource",
     "Wc": "ReaderExecutorCachePopulateRequests",
     "Rc": "ReaderExecutorCacheGetRequests",
+    "Pc": "ReaderExecutorBytesFromPageCache",
 }
 
 # The actual S3-disk connection pool counters (the "reset connections" seen on the
@@ -166,8 +167,8 @@ def _formula_cost_ms(m):
 
 
 def _cost_per_mib(m):
-    """Load-independent KPI: modeled ms of cost per MiB of requested (useful) bytes."""
-    req_mib = m["Requested"] / (1024.0 * 1024.0)
+    """Load-independent KPI: modeled ms of cost per MiB of delivered (useful) bytes."""
+    req_mib = m["Delivered"] / (1024.0 * 1024.0)
     return _cost_ms(m) / req_mib if req_mib else 0.0
 
 
@@ -192,7 +193,7 @@ def _measure(query, use_long_conn, pc=False, extra=None):
     qid = str(uuid.uuid4())
     node.query(query, query_id=qid, settings=_pc_settings(use_long_conn, extra) if pc else _settings(use_long_conn, extra))
     node.query("SYSTEM FLUSH LOGS")
-    extra = ["ReaderExecutorModeledCostMicroseconds", "ReaderExecutorRequestedBytes"]
+    extra = ["ReaderExecutorModeledCostMicroseconds", "ReaderExecutorDeliveredBytes"]
     cols = ", ".join(f"ProfileEvents['{e}']" for e in list(ALL_EVENTS.values()) + extra)
     row = node.query(
         f"SELECT {cols} FROM system.query_log "
@@ -202,7 +203,7 @@ def _measure(query, use_long_conn, pc=False, extra=None):
     assert row, f"no QueryFinish row in query_log for {qid}"
     vals = list(map(int, row.split("\t")))
     m = dict(zip(ALL_EVENTS.keys(), vals))
-    m["Cost"], m["Requested"] = vals[-2], vals[-1]
+    m["Cost"], m["Delivered"] = vals[-2], vals[-1]
     return m
 
 
@@ -409,6 +410,12 @@ def test_page_cache_path(started_cluster):
     # Warm reads are served from the page cache, not S3 (far fewer source requests).
     assert results[("warm", "live")]["R"][0] * 10 < results[("cold", "live")]["R"][0], (
         "warm page-cache scan should issue far fewer source requests than cold")
+    # ... and they really come from the page-cache tier: every warm sample, in every mode,
+    # issued bytes from `PageCacheProvider` (a fewer-source-requests drop alone could also be
+    # explained by another layer serving the data).
+    for mode, _ in MODES:
+        assert results[("warm", mode)]["Pc"][3] > 0, (
+            f"warm page-cache scan ({mode}) issued no bytes from the page-cache tier")
 
     banner = "\n=== ReaderExecutor page-cache path (state x mode) ===\n" + "\n".join(report) + "\n"
     logging.info(banner)
