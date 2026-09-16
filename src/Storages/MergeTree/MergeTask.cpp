@@ -930,7 +930,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             global_ctx->new_data_part->name);
         ctx->need_clear_expired_indexes = false;
     }
-    global_ctx->clear_expired_indexes = ctx->need_clear_expired_indexes;
+    global_ctx->clear_expired_indexes = ctx->need_clear_expired_indexes
+        || (ctx->force_ttl && ctx->need_remove_expired_values);
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
