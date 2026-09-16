@@ -96,21 +96,4 @@ endif()
 
 set (CMAKE_CXX_COMPILER_LAUNCHER ${LAUNCHER} ${CMAKE_CXX_COMPILER_LAUNCHER})
 set (CMAKE_C_COMPILER_LAUNCHER ${LAUNCHER} ${CMAKE_C_COMPILER_LAUNCHER})
-
-# And CUDA, where it matters more than anywhere else in the tree. The GPU island is nvcc
-# compiling cuDF: 413 translation units and about 11 CPU-hours in a Release build, of which
-# `groupby/hash/compute_shared_memory_aggs.cu` alone is 47 minutes. Without this, every fresh
-# build directory pays all of it again - measured on one of those units, 129 s cold against
-# 0.08 s on a hit.
-#
-# Set unconditionally rather than under ENABLE_GPU: this file runs long before cmake/cuda.cmake
-# declares that option, and CMake ignores the variable when the CUDA language is not enabled.
-#
-# Without depend mode, unlike C and C++ above. That mode reads the compiler's dependency file
-# instead of parsing includes, and CMake drives nvcc with no dependency flags at all - it scans
-# CUDA dependencies separately - so there is no such file to read. It is also unneeded here:
-# depend mode is there to track `#embed`, which is C23 and appears in nothing nvcc compiles,
-# while ccache's own parser handles the ordinary includes cuDF has, generated headers included.
-# Measured, depend mode does not merely lose its edge here, it stops caching: on the same unit it
-# reports an error and no hit, and the second compilation costs the full 132 s.
 set (CMAKE_CUDA_COMPILER_LAUNCHER ${CCACHE_EXECUTABLE} ${CMAKE_CUDA_COMPILER_LAUNCHER})

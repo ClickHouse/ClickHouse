@@ -35,15 +35,6 @@ if (ENABLE_GPU)
     endif ()
 
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-        # `-real`, so that nvcc emits the cubin for sm_75 and not also the PTX for
-        # compute_75. PTX is what the driver JITs when it meets a card newer than anything
-        # the binary was built for, so it buys forward compatibility - which a build pinned
-        # to one architecture of an experimental engine is not asking for. Plain "75" makes
-        # CMake pass `code=[compute_75,sm_75]` and nvcc compile the whole translation unit
-        # twice over.
-        #
-        # Name the architectures explicitly (`-real` on each) to keep the PTX out when
-        # building for a card of your own.
         set (CMAKE_CUDA_ARCHITECTURES "75-real" CACHE STRING "CUDA architectures to generate code for")
     endif ()
 
@@ -135,13 +126,6 @@ if (ENABLE_GPU)
     # no-op here - CMake emits -std=c++20 for nvcc either way.
     string (APPEND CMAKE_CUDA_FLAGS " --expt-relaxed-constexpr -Xcompiler -fPIC -Xcompiler -std=gnu++20")
 
-    # `-lineinfo` maps device instructions back to source lines, which Nsight Compute needs
-    # to attribute a kernel's time and nothing else here does - it says nothing about the
-    # host code a debugger walks, which gets its `-g` from ClickHouse's own flags. It is not
-    # free: on cuDF it is the whole difference between a RelWithDebInfo island and a Release
-    # one, 39658 CPU-seconds against 60393, so a build that is not going to be opened in a
-    # profiler pays half again for nothing. Off by default, and RelWithDebInfo is the only
-    # configuration it would have applied to anyway.
     option (ENABLE_GPU_KERNEL_LINEINFO "Emit CUDA line info, for profiling kernels in Nsight Compute" OFF)
 
     if (ENABLE_GPU_KERNEL_LINEINFO)
