@@ -306,10 +306,6 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
             "TwoStageAggregationTransformation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    /// Phase 1: partial aggregation - takes raw rows, outputs intermediate aggregate states.
-    auto partial_step_ptr = cloneStepAs(*agg_step);
-    auto * partial_step = partial_step_ptr.get();
-    partial_step->setFinal(false);
     /// The memory-efficient merge below expects every input to deliver two-level buckets in
     /// ascending order. Force the partial step to emit them that way; otherwise a parallel
     /// flush unites several bucket sequences into one exchange stream out of order and the
@@ -317,6 +313,18 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     /// states of grouping sets, so for them it stays off, the same as in the rule-based planner.
     const bool memory_efficient_merge
         = memo.getContext().distributed_aggregation_memory_efficient && !agg_step->isGroupingSets();
+
+    /// The per-block streaming flush of `group_by_each_block_no_merge` cannot produce a bucket-ordered
+    /// first stage (see `AggregatingStep::transformPipeline`), so the two-stage shape is not applicable
+    /// for it; the pre-optimization check in `makeDistributed` normally rejects the plan before this rule
+    /// runs, this keeps the rule itself sound.
+    if (memory_efficient_merge && agg_step->getParams().group_by_each_block_no_merge)
+        return {};
+
+    /// Phase 1: partial aggregation - takes raw rows, outputs intermediate aggregate states.
+    auto partial_step_ptr = cloneStepAs(*agg_step);
+    auto * partial_step = partial_step_ptr.get();
+    partial_step->setFinal(false);
     if (memory_efficient_merge)
         partial_step->setShouldProduceResultsInBucketOrder(true);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);

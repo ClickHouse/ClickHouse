@@ -120,7 +120,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `ORDER BY ... WITH FILL` can be shipped in full.
 /// Version 19 writes a per-step serialization version next to every step, so a step can change its
 /// own bytes without moving this global version (see the constant below).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
+/// Version 20 knows the `group_by_each_block_no_merge` plan setting name on `AggregatingStep`.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -163,6 +164,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STE
 /// the wire so a reader refuses a step version it does not know rather than misparsing it. The global
 /// version then only needs to move once per release, not on every step change.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS = 19;
+/// First query-plan serialization version that knows the `group_by_each_block_no_merge` plan setting
+/// name. `AggregatingStep::serializeSettings` writes the name only towards a peer at this version or
+/// later, and refuses to ship an enabled step towards an older peer (see the comment there).
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
