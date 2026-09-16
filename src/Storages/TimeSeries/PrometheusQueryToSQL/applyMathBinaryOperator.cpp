@@ -90,6 +90,27 @@ bool isMathBinaryOperator(std::string_view operator_name)
 }
 
 
+ASTPtr applyMathBinaryOperatorToAST(std::string_view operator_name, ASTPtr x, ASTPtr y)
+{
+    const auto * impl_info = getImplInfo(operator_name);
+    chassert(impl_info);
+
+    if (operator_name != "%")
+        return makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y));
+
+    ASTPtr result = makeASTFunction(impl_info->ch_function_name, x->clone(), y->clone());
+
+    return makeASTFunction(
+        "if",
+        makeASTFunction(
+            "and",
+            makeASTFunction("isInfinite", y->clone()),
+            makeASTFunction("isFinite", x->clone())),
+        std::move(x),
+        std::move(result));
+}
+
+
 SQLQueryPiece applyMathBinaryOperator(
     const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
@@ -99,24 +120,10 @@ SQLQueryPiece applyMathBinaryOperator(
     checkArgumentTypes(operator_node, left_argument, right_argument, context);
 
     const auto & operator_name = operator_node->operator_name;
-    const auto * impl_info = getImplInfo(operator_name);
-    chassert(impl_info);
 
     auto apply_function_to_ast = [&](ASTPtr x, ASTPtr y) -> ASTPtr
     {
-        if (operator_name != "%")
-            return makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y));
-
-        ASTPtr result = makeASTFunction(impl_info->ch_function_name, x->clone(), y->clone());
-
-        return makeASTFunction(
-            "if",
-            makeASTFunction(
-                "and",
-                makeASTFunction("isInfinite", y->clone()),
-                makeASTFunction("isFinite", x->clone())),
-            std::move(x),
-            std::move(result));
+        return applyMathBinaryOperatorToAST(operator_name, std::move(x), std::move(y));
     };
 
     return applySimpleBinaryOperator(
