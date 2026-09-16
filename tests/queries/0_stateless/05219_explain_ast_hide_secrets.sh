@@ -41,6 +41,10 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST optimize = 1, graph = 1
 echo "-- a secret typed into the explained query itself is hidden as well"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT encrypt('aes-128-ecb', 'plain', '$key', leftPad('iv', 16, '*'))"
 
+echo "-- a positional secret written as a comparison is hidden whole; a named argument keeps its key"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT encrypt('aes-128-ecb', 'plain', 'k1' = 'k2')" | grep -F 'Literal'
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT * FROM url('http://x/f', headers('Authorization' = 'Bearer abc'))" | grep -F 'Literal'
+
 echo "-- the view itself stays usable for the restricted user"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.encrypted_view"
 

@@ -394,8 +394,14 @@ namespace
                 }
 
                 const bool in_span = secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count;
-                if (in_span || secret_arguments.masked_arguments.contains(i) || secret_arguments.replaced_arguments.contains(i))
-                    hideLiteralsInSubtree(secretValueSlot(arguments[i]));
+                const auto masked = secret_arguments.masked_arguments.find(i);
+                if (!in_span && masked == secret_arguments.masked_arguments.end() && !secret_arguments.replaced_arguments.contains(i))
+                    continue;
+
+                /// Only a named argument keeps its key; a positional one is hidden whole, as the formatter does.
+                const bool is_named = (in_span && secret_arguments.are_named)
+                    || (masked != secret_arguments.masked_arguments.end() && masked->second);
+                hideLiteralsInSubtree(is_named ? secretValueSlot(arguments[i]) : arguments[i]);
             }
         }
     };
