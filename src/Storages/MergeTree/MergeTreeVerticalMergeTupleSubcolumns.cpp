@@ -88,7 +88,9 @@ bool skipOrTextOrStatsPinsParent(
         /// parent when building them requires the parent column in the gather pipeline:
         /// Vertical flatten only produces leaf names (`t.a`), so `addBuildStatisticsStep` would
         /// never see `t`. Implicit `basic` on a flattenable `Tuple` does not store min/max or
-        /// string length (only a type-default count), so it does not need the parent values.
+        /// string length, so it does not pin here: ordinary merges still fold existing part
+        /// stats by parent name without reading the column. Merges that must rebuild parent
+        /// stats from the gather pipeline pin separately via `columns_with_statistics_to_rebuild`.
         for (const auto & [type, desc] : column->statistics.types_to_desc)
         {
             if (type != StatisticsType::Basic || !desc.is_implicit)
@@ -204,7 +206,8 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartsVector & parts,
     const MergeTreeDataPartsVector & patch_parts,
-    const NameSet & expired_columns)
+    const NameSet & expired_columns,
+    const NameSet & columns_with_statistics_to_rebuild)
 {
     TupleSubcolumnsClassifyResult result;
 
@@ -255,6 +258,12 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     if (skipOrTextOrStatsPinsParent(metadata_snapshot, column.name, leaf_name_set, storage_names))
     {
         result.reason = "index_or_stats_pins_parent";
+        return result;
+    }
+
+    if (columns_with_statistics_to_rebuild.contains(column.name))
+    {
+        result.reason = "stats_rebuild_pins_parent";
         return result;
     }
 
@@ -338,6 +347,7 @@ void tryFlattenGatheringColumns(
     const MergeTreeDataPartsVector & parts,
     const MergeTreeDataPartsVector & patch_parts,
     const NameSet & expired_columns,
+    const NameSet & columns_with_statistics_to_rebuild,
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log)
 {
@@ -357,7 +367,8 @@ void tryFlattenGatheringColumns(
             metadata_snapshot,
             parts,
             patch_parts,
-            expired_columns);
+            expired_columns,
+            columns_with_statistics_to_rebuild);
         logClassifyResult(log, column, result);
 
         if (!result.flatten)

@@ -1057,6 +1057,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end());
         MergeTreeDataPartsVector classify_patch_parts(
             global_ctx->future_part->patch_parts.begin(), global_ctx->future_part->patch_parts.end());
+        NameSet columns_with_statistics_to_rebuild;
+        for (const auto & part_stats : global_ctx->statistics_to_build_by_part)
+        {
+            for (const auto & stats_entry : part_stats.second)
+                columns_with_statistics_to_rebuild.insert(stats_entry.first);
+        }
         tryFlattenGatheringColumns(
             *global_ctx->data_settings,
             global_ctx->gathering_columns,
@@ -1066,6 +1072,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             classify_parts,
             classify_patch_parts,
             global_ctx->new_data_part->expired_columns,
+            columns_with_statistics_to_rebuild,
             global_ctx->skip_indexes_by_column,
             ctx->log);
     }
