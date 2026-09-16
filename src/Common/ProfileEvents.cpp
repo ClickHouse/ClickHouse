@@ -1267,7 +1267,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheObjectStorageWriteMicroseconds, "Distributed Cache write buffer event. Time spent writing to object storage", ValueType::Microseconds) \
     M(DistrCacheObjectStorageWriteBytes, "Distributed Cache write buffer event. Number of bytes written to object storage", ValueType::Bytes) \
     M(DistrCacheBackgroundWrites, "Distributed Cache write buffer event. Number of cache writes that ran on a background thread (a background write slot was acquired)", ValueType::Number) \
-    M(DistrCacheInlineWrites, "Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (no background write slot was free, or the write was for temporary data)", ValueType::Number) \
+    M(DistrCacheInlineWrites, "Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (writes of temporary data, which has no object storage write to overlap with)", ValueType::Number) \
+    M(DistrCacheSkippedWrites, "Distributed Cache write buffer event. Number of write buffers that skipped the write-through cache write because no background write slot was free (the limit set by the `distributed_cache_write_pool_size` server setting was reached) or a background write could not be started. The data is still written to object storage", ValueType::Number) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
     M(DistrCacheConnectErrors, "Distributed Cache client event. Number of failures to connect to a distributed cache server before making a request (counted once per request, after all connect attempts are exhausted, unlike per-attempt DistrCacheUnsuccessfulConnectAttempts). A timeout while waiting for a free pooled connection is counted here as well. Failures to reconnect during request creation are counted in DistrCacheMakeRequestErrors instead", ValueType::Number) \
@@ -1442,7 +1443,7 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds, "Time of tryUpdateDiskMetadataCacheForPart in scheduleDataProcessingJob", ValueType::Number) \
     M(SharedMergeTreeLoadChecksumAndIndexesMicroseconds, "Time of loadColumnsChecksumsIndexes only for SharedMergeTree", ValueType::Number)                                                                                                                                                                                                             \
     \
-    M(SharedMergeTreeBlobRefCounterSharedBlobs, "How many data blobs were path-shared between SharedMergeTree blob-list parts (reference-count increments appended to commit multis)", ValueType::Number) \
+    M(SharedMergeTreeBlobRefCounterSharedBlobs, "How many data blobs were path-shared between SharedMergeTree blob-list parts (reference-count increments staged in commit transactions, before accumulation into one update per counter node)", ValueType::Number) \
     M(SharedMergeTreeSnapshotPartsCleanRequest, "How many times SnapshotCleanerThread decides to clean a part", ValueType::Number) \
     M(SharedMergeTreeSnapshotPartsCleanerParts, "How long time SnapshotCleanerThread tries to clean a part", ValueType::Number) \
     M(SharedMergeTreeSnapshotPartsRemoved, "How many times SnapshotCleanerThread successfully clean a part", ValueType::Number) \
