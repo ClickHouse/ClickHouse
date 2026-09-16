@@ -1,0 +1,39 @@
+<test>
+    <!-- Keep array construction out of the timed queries. The dynamic cases use both signed and unsigned positions. -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE array_insert_perf
+        (
+            a Array(UInt64),
+            pos_signed Int64,
+            pos_unsigned UInt64,
+            value UInt64
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO array_insert_perf
+        SELECT
+            arrayMap(i -&gt; number + i, range(32)),
+            toInt64(number % 33 + 1),
+            number % 33 + 1,
+            number
+        FROM numbers(1000000)
+    </fill_query>
+
+    <!-- Constant middle position. -->
+    <query>SELECT arrayInsert(a, 17, value) FROM array_insert_perf FORMAT Null</query>
+    <query>SELECT arrayConcat(arraySlice(a, 1, 16), [value], arraySlice(a, 17)) FROM array_insert_perf FORMAT Null</query>
+
+    <!-- Dynamic middle positions, compared with the equivalent arraySlice/arrayConcat expression. -->
+    <query>SELECT arrayInsert(a, pos_signed, value) FROM array_insert_perf FORMAT Null</query>
+    <query>SELECT arrayConcat(arraySlice(a, 1, pos_signed - 1), [value], arraySlice(a, pos_signed)) FROM array_insert_perf FORMAT Null</query>
+    <query>SELECT arrayInsert(a, pos_unsigned, value) FROM array_insert_perf FORMAT Null</query>
+    <query>SELECT arrayConcat(arraySlice(a, 1, pos_unsigned - 1), [value], arraySlice(a, pos_unsigned)) FROM array_insert_perf FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_insert_perf</drop_query>
+</test>
