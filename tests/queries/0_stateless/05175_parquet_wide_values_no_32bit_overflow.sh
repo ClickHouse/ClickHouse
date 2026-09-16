@@ -22,7 +22,7 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 " > "$FILE"
 
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
-    SELECT count(), sum(n), sum(length(s)), uniqExact(s) FROM file('$FILE', Parquet)
+    SELECT count(), sum(n), sum(length(s)), uniqExact(cityHash64(s)) FROM file('$FILE', Parquet)
 "
 
 # `FIXED_LEN_BYTE_ARRAY` shares that builder, so a wide `FixedString` has to be split the same way.
@@ -34,18 +34,18 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 -
 " > "$FILE"
 
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
-    SELECT count(), sum(length(s)), uniqExact(s) FROM file('$FILE', Parquet)
+    SELECT count(), sum(length(s)), uniqExact(cityHash64(s)) FROM file('$FILE', Parquet)
 "
 
-# A record is kept whole, so a single `Array(String)` row holding more than 2 GiB has to be split
-# across pages anyway. Page indexes are on by default, which is what makes the writer prefer record
-# boundaries in the first place.
+# A record is kept whole so that pages start where the page index says they do, and page indexes are
+# on by default. One `Array(String)` row larger than a page has to be split regardless, which is the
+# only case that gives up the index. The values need not be distinct here: the split counts the
+# bytes the record occupies, whether or not the dictionary would fold them together.
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
-    SELECT arrayMap(i -> concat(toString(i), repeat('x', 1000000)), range(2200)) AS a
-    FROM numbers(1)
+    SELECT groupArray(s) AS a FROM (SELECT repeat('y', 1000) AS s FROM numbers(2200000))
     FORMAT Parquet
 " > "$FILE"
 
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
-    SELECT count(), length(a), arraySum(x -> length(x), a), uniqExact(a) FROM file('$FILE', Parquet) GROUP BY a
+    SELECT length(a), arraySum(x -> length(x), a) FROM file('$FILE', Parquet)
 "
