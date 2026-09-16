@@ -9,7 +9,6 @@
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -183,7 +182,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     }
     auto schema = std::move(schema_result).ValueOrDie();
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", getFormatSettings(context_));
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
     return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
@@ -343,7 +342,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
                 config.dataset_name,
                 args.columns,
                 args.constraints,
-                args.getLocalContext());
+                args.getContext());
         },
         {
             .supports_schema_inference = true,

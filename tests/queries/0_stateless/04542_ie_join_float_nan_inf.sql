@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Float keys with NaN, infinities and negative zero, verified against the cross-join oracle
 -- (comma join with the conditions in WHERE; `cross_to_inner_join_rewrite = 0` keeps it out of
 -- IEJoin). The join predicates follow IEEE semantics: every comparison involving NaN is false,

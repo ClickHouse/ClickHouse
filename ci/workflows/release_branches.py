@@ -27,7 +27,6 @@ workflow = Workflow.Config(
     name="ReleaseBranchCI",
     event=Workflow.Event.PUSH,
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *builds_for_release_branch,
         *[
@@ -41,6 +40,11 @@ workflow = Workflow.Config(
         *JobConfigs.install_check_master_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
         *[job for job in JobConfigs.unittest_jobs if "fuzzer" not in job.name],
+        *[
+            job
+            for job in JobConfigs.integration_test_asan_master_jobs
+            if "asan" in job.name
+        ],
         *[
             job
             for job in JobConfigs.integration_test_jobs_required
