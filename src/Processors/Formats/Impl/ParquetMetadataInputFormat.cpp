@@ -601,9 +601,9 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
       - `max` - the maximum column of the column chunk
     - `have_size_statistics` - boolean flag that indicates if column chunk metadata contains size statistics
     - `size_statistics` - column chunk size statistics (all fields are NULL or empty if have_size_statistics = false) with the next structure:
-      - `unencoded_byte_array_data_bytes` - the total size of the unencoded byte array values, NULL for other physical types
-      - `repetition_level_histogram` - the number of values at each repetition level, empty when the column has no repetition levels
-      - `definition_level_histogram` - the number of values at each definition level, empty when the column has no definition levels
+      - `unencoded_byte_array_data_bytes` - the total size of the unencoded byte array values as recorded in the footer, NULL when the writer did not record it
+      - `repetition_level_histogram` - the number of values at each repetition level as recorded in the footer, empty when the writer did not record it
+      - `definition_level_histogram` - the number of values at each definition level as recorded in the footer, empty when the writer did not record it
 
 ## Example usage {#example-usage}
 

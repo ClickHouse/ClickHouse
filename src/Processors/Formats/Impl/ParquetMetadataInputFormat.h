@@ -53,9 +53,9 @@ namespace DB
  *             max - the maximum column of the column chunk
  *         have_size_statistics - bool flag that indicates if column chunk metadata contains size statistics
  *         size_statistics - column chunk size statistics with the next structure:
- *             unencoded_byte_array_data_bytes - the total size of the unencoded byte array values, NULL for other physical types
- *             repetition_level_histogram - the number of values at each repetition level
- *             definition_level_histogram - the number of values at each definition level
+ *             unencoded_byte_array_data_bytes - the total size of the unencoded byte array values as recorded in the footer, NULL when absent
+ *             repetition_level_histogram - the number of values at each repetition level as recorded in the footer, empty when absent
+ *             definition_level_histogram - the number of values at each definition level as recorded in the footer, empty when absent
  * */
 
 class ParquetMetadataInputFormat final : public IInputFormat
