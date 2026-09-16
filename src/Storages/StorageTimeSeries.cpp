@@ -22,6 +22,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/TimeSeries/TimeSeriesInsertCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
@@ -219,9 +220,17 @@ StorageTimeSeries::StorageTimeSeries(
     }
 
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
-    if ((*settings)[TimeSeriesSetting::insert_cache_max_size_bytes] && isInnerTable(ViewTarget::MetricFamilies))
-        insert_cache = std::make_unique<TimeSeriesInsertCache>((*settings)[TimeSeriesSetting::insert_cache_max_size_bytes]);
+    const auto insert_cache_max_size_bytes = (*settings)[TimeSeriesSetting::insert_cache_max_size_bytes];
     storage_settings.set(std::move(settings));
+    const auto metric_families_table = getTargetTable(ViewTarget::MetricFamilies, local_context);
+    const auto * metric_families_merge_tree = dynamic_cast<const MergeTreeData *>(metric_families_table.get());
+    if (insert_cache_max_size_bytes
+        && metric_families_merge_tree
+        && metric_families_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Mode::Replacing)
+    {
+        insert_cache = std::make_unique<TimeSeriesInsertCache>(insert_cache_max_size_bytes);
+        DatabaseCatalog::instance().addDependencies(table_id, {metric_families_table->getStorageID()}, {}, {});
+    }
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -797,6 +806,18 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
         ErrorCodes::UNEXPECTED_TABLE_ENGINE,
         "This operation can be executed on a TimeSeries table only, the engine of table {} is not TimeSeries",
         storage->getStorageID().getNameForLogs());
+}
+
+void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table, const ContextPtr & context)
+{
+    for (const auto & dependent_id : DatabaseCatalog::instance().getReferentialDependents(target_table->getStorageID()))
+    {
+        auto dependent = DatabaseCatalog::instance().tryGetTable(dependent_id, context);
+        auto time_series = std::dynamic_pointer_cast<StorageTimeSeries>(dependent);
+        if (time_series && time_series->tryGetTargetTable(ViewTarget::MetricFamilies, context) == target_table)
+            if (auto * cache = time_series->getInsertCache())
+                cache->clear();
+    }
 }
 
 

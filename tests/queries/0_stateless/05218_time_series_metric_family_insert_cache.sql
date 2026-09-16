@@ -46,6 +46,17 @@ VALUES ('m', 'gauge', 'seconds', 'first');
 SELECT count() FROM timeSeriesMetricFamilies(ts);
 
 DROP TABLE ts;
+CREATE TABLE ts ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 0, insert_cache_max_size_bytes = 150
+METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family_name;
+
+INSERT INTO ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+INSERT INTO ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies(ts);
+
+DROP TABLE ts;
 CREATE TABLE ext_metric_families
 (
     metric_family_name String,
@@ -68,3 +79,32 @@ SELECT count() FROM ext_metric_families;
 
 DROP TABLE ts;
 DROP TABLE ext_metric_families;
+
+DROP DATABASE IF EXISTS test_05218;
+CREATE DATABASE test_05218 ENGINE = Memory;
+CREATE TABLE test_05218.ts ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 0, insert_cache_max_size_bytes = 1048576;
+SYSTEM STOP MERGES test_05218.`.inner.metricfamilies.ts`;
+
+INSERT INTO test_05218.ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+INSERT INTO FUNCTION timeSeriesMetricFamilies(test_05218.ts)
+VALUES ('m', 'counter', 'bytes', 'function');
+INSERT INTO test_05218.ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies(test_05218.ts) WHERE metric_family_name = 'm';
+
+INSERT INTO test_05218.`.inner.metricfamilies.ts`
+VALUES ('m', 'counter', 'bytes', 'inner');
+INSERT INTO test_05218.ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies(test_05218.ts) WHERE metric_family_name = 'm';
+
+SYSTEM START MERGES test_05218.`.inner.metricfamilies.ts`;
+ALTER TABLE test_05218.`.inner.metricfamilies.ts` DELETE WHERE metric_family_name = 'm' SETTINGS mutations_sync = 2;
+SYSTEM STOP MERGES test_05218.`.inner.metricfamilies.ts`;
+INSERT INTO test_05218.ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies(test_05218.ts) WHERE metric_family_name = 'm';
+
+DROP DATABASE test_05218;

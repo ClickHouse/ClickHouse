@@ -153,5 +153,6 @@ private:
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
+void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table, const ContextPtr & context);
 
 }

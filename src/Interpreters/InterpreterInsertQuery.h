@@ -28,7 +28,8 @@ public:
         bool allow_materialized_,
         bool no_squash_,
         bool no_destination,
-        bool async_insert_);
+        bool async_insert_,
+        bool invalidate_time_series_cache_ = true);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -80,6 +81,7 @@ private:
     bool no_squash = false;
     bool no_destination = false;
     const bool async_insert;
+    const bool invalidate_time_series_cache;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
 

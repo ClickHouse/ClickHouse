@@ -430,7 +430,8 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
         /* allow_materialized= */ true,
         /* no_squash= */ false,
         /* no_destination= */ false,
-        async_insert);
+        async_insert,
+        /* invalidate_time_series_cache= */ false);
 
     pipeline->io = interpreter.execute();
     pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);
