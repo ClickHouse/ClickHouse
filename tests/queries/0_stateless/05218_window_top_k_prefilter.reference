@@ -205,6 +205,10 @@ nan	nan	2
 --     `canThrow` of its own, so the property falls back to the short-circuit answer, which is
 --     `false` for it. Only an allowlist keeps the exception below alive.
 33 a cheap throwing conjunct beside the bound	0
+-- 34 a comparison of two values of the same type is direct only if that type stores every row the
+--     same way: inside a `Tuple(Variant)` it is resolved per row and can find no common type, so a
+--     composite type holding one has to be refused as well.
+34 a composite comparison resolved per row	0
 -- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the
 --    prefilter is admitted and the expanded rows must be unchanged
 1	1	1

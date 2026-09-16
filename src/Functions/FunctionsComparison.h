@@ -801,6 +801,26 @@ template <> struct CompileOp<GreaterOrEqualsOp>
 
 #endif
 
+/// Whether comparing two values of this type dispatches on the type of the individual row, which can fail
+/// on a value (`NO_COMMON_TYPE`, see `FunctionDynamicAdaptor`). A composite type is compared by comparing
+/// its elements, so one such type nested anywhere inside is enough.
+inline bool comparisonDispatchesPerRow(const DataTypePtr & type)
+{
+    auto dispatches = [](const IDataType & data_type)
+    {
+        const WhichDataType which(data_type);
+        return which.isVariant() || which.isDynamic() || which.isObject();
+    };
+
+    if (dispatches(*type))
+        return true;
+
+    bool found = false;
+    /// `forEachChild` visits nested types recursively, so one call reaches every level.
+    type->forEachChild([&](const IDataType & child) { found = found || dispatches(child); });
+    return found;
+}
+
 /** Whether a comparison of two values of these types can throw an exception, see `IFunction::canThrow`.
   *
   * A comparison does not throw as long as both sides are compared the way they are stored, or the
@@ -873,9 +893,8 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
         return false;
 
     /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
-    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
-    /// dispatches on the type of every individual row.
-    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+    /// as they are stored, unless the comparison dispatches per row on one of the sides.
+    if (left->equals(*right) && !comparisonDispatchesPerRow(left))
         return false;
 
     return true;

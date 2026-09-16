@@ -134,6 +134,21 @@ SELECT '33 a cheap throwing conjunct beside the bound', count() FROM (EXPLAIN ac
 SELECT count() FROM (SELECT p, s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ip) WHERE IPv4StringToNum(s) > 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, cast_ipv4_ipv6_default_on_conversion_error = 0; -- { serverError CANNOT_PARSE_IPV4 }
 SELECT count() FROM (SELECT p, s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ip) WHERE IPv4StringToNum(s) > 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, cast_ipv4_ipv6_default_on_conversion_error = 0; -- { serverError CANNOT_PARSE_IPV4 }
 
+SELECT '-- 34 a comparison of two values of the same type is direct only if that type stores every row the';
+SELECT '--     same way: inside a `Tuple(Variant)` it is resolved per row and can find no common type, so a';
+SELECT '--     composite type holding one has to be refused as well.';
+DROP TABLE IF EXISTS t_wtkp_var;
+CREATE TABLE t_wtkp_var (p UInt8, o UInt8, v Tuple(Variant(String, UInt8))) ENGINE = Memory;
+-- The middle row is the one the prefilter would remove at `rk <= 1`, and it holds the only variant with no
+-- common type with the constant's, so the exception exists only while removed rows are still compared. The
+-- throwing conjunct comes FIRST, for the same reason as in 33.
+INSERT INTO t_wtkp_var VALUES (1,10,tuple(1::Variant(String, UInt8))),(1,9,tuple('a'::Variant(String, UInt8))),(1,8,tuple(2::Variant(String, UInt8)));
+-- `variant_throw_on_type_mismatch = 0` returns NULL instead of throwing, which would make all three
+-- statements vacuous. It already defaults to 1 and the runner does not randomize it.
+SELECT '34 a composite comparison resolved per row', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_var) WHERE v = tuple(1::Variant(String, UInt8)) AND rk <= 1) WHERE explain ILIKE '%Window top-K prefilter%' SETTINGS variant_throw_on_type_mismatch = 1;
+SELECT count() FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_var) WHERE v = tuple(1::Variant(String, UInt8)) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, variant_throw_on_type_mismatch = 1; -- { serverError NO_COMMON_TYPE }
+SELECT count() FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_var) WHERE v = tuple(1::Variant(String, UInt8)) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, variant_throw_on_type_mismatch = 1; -- { serverError NO_COMMON_TYPE }
+
 SELECT '-- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the';
 SELECT '--    prefilter is admitted and the expanded rows must be unchanged';
 SELECT p, rk, a FROM (SELECT p, rk, a FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, [1, 2] AS arr FROM t_wtkp) ARRAY JOIN arr AS a) WHERE rk <= 3 ORDER BY p, rk, a;
@@ -164,6 +179,7 @@ WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND qu
         AND log_comment = '05218_window_top_k_prefilter_pruning' AND type = 'QueryFinish'
 );
 
+DROP TABLE t_wtkp_var;
 DROP TABLE t_wtkp_ip;
 DROP TABLE t_wtkp_merge;
 DROP TABLE t_wtkp_mt;

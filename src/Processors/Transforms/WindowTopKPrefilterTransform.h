@@ -16,8 +16,10 @@ namespace DB
   * final rank is therefore at least `top_k + 1`, whatever the rest of the input looks like. A row tying
   * with the heap's worst entry is always forwarded, which is what makes this correct for `rank()` (all
   * rows of a tie block share one rank) rather than for a plain row count. `row_number() >= rank()`, so a
-  * `row_number()` bound is covered by the same argument. Every row of a partition ranked ahead of a
-  * forwarded row is itself forwarded, so the ranks the window computes for the surviving rows are exact.
+  * `row_number()` bound is covered by the same argument. Every row within the bound has every row of its
+  * partition ranked ahead of it forwarded too, so the ranks the window computes for the rows the filter
+  * keeps are exact. A row forwarded with a rank already past the bound may be ranked lower than it would
+  * have been, which is what the filter above discards.
   *
   * The argument only ever uses "rows of this partition that this instance has already seen", and a chunk
   * is such a subset just as much as a whole stream is - so no state has to survive `transform`, and the
