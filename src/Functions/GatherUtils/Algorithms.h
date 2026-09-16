@@ -266,7 +266,7 @@ void insertDynamicPositionImpl(Source && array_source, ValueSource && value_sour
     {
         const auto row_num = array_source.rowNum();
         const auto array_size = array_source.getElementSize();
-        size_t insert_position;
+        size_t insert_position = 0;
         if constexpr (position_is_unsigned)
             insert_position = normalizeInsertPosition(position_column.getUInt(row_num), array_size);
         else
