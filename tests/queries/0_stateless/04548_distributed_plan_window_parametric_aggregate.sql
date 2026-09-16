@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A parametric window aggregate must keep its parameters after WindowStep serialization. Regression
 -- test for a bug where deserializeWindowFunctions rebuilt the aggregate from
 -- aggregate_function->getParameters() instead of the parameters the planner preserved; parametric
