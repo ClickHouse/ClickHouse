@@ -5,6 +5,7 @@
 #include <Processors/IProcessor.h>
 
 #include <deque>
+#include <optional>
 
 namespace DB
 {
@@ -14,6 +15,8 @@ namespace DB
 ///
 /// Starts on demand, then reads ahead when a portion produces too few surviving rows.
 /// Active lanes buffer independently of speculation; consecutive announcements coalesce.
+/// With a `LIMIT`, speculation widens one lane at a time as sparse results come back and
+/// stops past the key where the rows already held satisfy the limit.
 /// The merge still owns ordering and decides when to stop for `LIMIT`.
 class VirtualRowReadAheadTransform final : public IProcessor
 {
@@ -45,23 +48,30 @@ private:
         size_t rows_since_boundary = 0;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
-        size_t pushed_rows = 0;
+        size_t port_rows = 0;
+        Columns port_keys;
+        bool port_filled = false;
+        size_t taken_rows = 0;
+        Columns taken_keys;
         UInt64 rows_read = 0;
         bool output_started = false;
         bool demanded = false;
         bool read_requested = false;
+        bool speculated = false;
         bool limit_reached = false;
         bool input_finished = false;
         bool finished = false;
     };
 
     void finishLane(Lane & lane);
+    Columns getBoundary(const Columns & key_columns, size_t row) const;
     Columns getBoundary(const Chunk & chunk, size_t row) const;
+    Columns heldRowKey(const Lane & lane, size_t row) const;
     int compareBoundaries(const Columns & lhs, const Columns & rhs) const;
     bool earlier(size_t lhs, size_t rhs) const;
     bool needsMoreSources(size_t lane_num, const Chunk & chunk) const;
     bool canBuffer(const Lane & lane) const;
-    const Columns * coverageBoundary();
+    std::optional<Columns> coverageBoundary();
 
     const SharedHeader header;
     const SortDescription description;
@@ -79,6 +89,7 @@ private:
     std::vector<size_t> ready_lanes;
     size_t finished_lanes = 0;
     bool read_ahead_started = false;
+    size_t speculation_allowance = 0;
 };
 
 }
