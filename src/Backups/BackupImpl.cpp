@@ -148,6 +148,17 @@ namespace
                 backup_name_for_logging,
                 field_name,
                 quoteString(file_name));
+
+        /// The name is kept verbatim, and `listFiles` cuts a directory prefix off it by byte offset, so a
+        /// name that is not already normalized yields a remainder that is rooted or escapes its directory.
+        /// Compare the strings: two `fs::path` objects compare element-wise, so "a//b" equals "a/b".
+        if (normalized.string() != file_name)
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} is not a normalized path, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
     }
 }
 
@@ -320,7 +331,20 @@ void BackupImpl::openArchive()
         if (!reader->fileExists(archive_name))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         size_t archive_size = reader->getFileSize(archive_name);
-        archive_reader = createArchiveReader(archive_name, [my_reader = reader, archive_name]{ return my_reader->readFile(archive_name); }, archive_size);
+        /// The archive is reopened through this factory as many times as it is read - the `tar` and
+        /// `7z` readers reopen it for every `fileExists` and every `readFile`, and the `zip` reader
+        /// whenever it needs another handle - so the size alone does not keep the session on one
+        /// archive: a blob replaced in place by another archive of the same size would be read as
+        /// the first archive for one file and as the second for the next. The generation of the
+        /// archive is therefore named once here, and every reopen is pinned to it: an archive
+        /// replaced under the open backup is refused (`FILE_CHANGED_DURING_READ` on Azure,
+        /// `S3_OBJECT_CHANGED_DURING_READ` on S3) instead of being read as two archives.
+        String archive_generation = reader->getFileGeneration(archive_name);
+        archive_reader = createArchiveReader(
+            archive_name,
+            [my_reader = reader, archive_name, archive_size, archive_generation]
+            { return my_reader->readFilePinnedToGeneration(archive_name, archive_size, archive_generation); },
+            archive_size);
         archive_reader->setPassword(archive_params.password);
     }
     else
@@ -362,12 +386,12 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         BackupInfo effective_base_backup_info = *base_backup_info;
         if (params.use_same_s3_credentials_for_base_backup)
         {
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+            backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
         }
-        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
+        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info, params.context))
         {
             /// Metadata marker asks to copy credentials from this backup locator at restore time.
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+            backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
@@ -517,16 +541,16 @@ void BackupImpl::writeBackupMetadata()
             /// Persist base backup locators without inline `S3` credentials.
             BackupInfo effective_base_backup_info = *base_backup_info;
             if (params.use_same_s3_credentials_for_base_backup)
-                backup_info.copyS3CredentialsTo(effective_base_backup_info);
+                backup_info.copyS3CredentialsTo(effective_base_backup_info, params.context);
 
             const BackupInfo base_backup_info_for_metadata = effective_base_backup_info.withoutS3Credentials(params.context);
             const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != effective_base_backup_info.toString();
             bool base_backup_can_use_this_backup_credentials = false;
 
-            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
+            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata, params.context))
             {
                 BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
-                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
+                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials, params.context);
                 base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
             }
 
@@ -658,7 +682,7 @@ void BackupImpl::readBackupMetadata()
     {
         if (!reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
-        in = reader->readFile(".backup");
+        in = reader->readFile(".backup", /*expected_file_size=*/ std::nullopt);
     }
 
     String str;
@@ -1198,7 +1222,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const Ba
     if (info.object_key.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Object key of {} is empty string", info.data_file_name);
 
-    return lightweight_snapshot_reader->readFile(info.object_key);
+    return lightweight_snapshot_reader->readFile(info.object_key, /*expected_file_size=*/ std::nullopt);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1251,7 +1275,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
         if (use_archive)
             read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
         else
-            read_buffer = reader->readFile(info.data_file_name);
+            read_buffer = reader->readFile(info.data_file_name, /*expected_file_size=*/ info.size - info.base_size);
     }
 
     if (info.base_size)
@@ -1388,7 +1412,11 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
-        if (write_mode == WriteMode::Rewrite)
+        /// The destination must exist afterwards either way: the non-empty path below writes through
+        /// writeFile(), which creates a missing file, while createFile() throws on an existing one.
+        const bool create_destination
+            = (write_mode == WriteMode::Rewrite) || !destination_disk->existsFile(destination_path);
+        if (create_destination)
         {
             if (sync)
             {
