@@ -137,19 +137,27 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
     if (partition_key.data_types.size() != partition_summaries.size())
         return false;
 
-    std::vector<FieldRef> left_keys(partition_summaries.size());
-    std::vector<FieldRef> right_keys(partition_summaries.size());
+    std::vector<int> key_column_to_sparse_position(partition_summaries.size(), -1);
+    DB::Hyperrectangle sparse_hyperrectangle;
+    DB::DataTypes sparse_data_types;
     for (size_t i = 0; i < partition_summaries.size(); ++i)
     {
-        auto bounds
-            = boundsOfPartitionFieldSummary(partition_summaries[i], partition_key.data_types.at(i), partition_spec_id, i);
+        const auto & type = partition_key.data_types[i];
+        auto bounds = boundsOfPartitionFieldSummary(partition_summaries[i], type, partition_spec_id, i);
+        if (!bounds.has_value())
+            continue;
 
-        left_keys[i] = bounds.has_value() ? FieldRef(bounds->first) : FieldRef(NEGATIVE_INFINITY);
-        right_keys[i] = bounds.has_value() ? FieldRef(bounds->second) : FieldRef(POSITIVE_INFINITY);
+        key_column_to_sparse_position[i] = static_cast<int>(sparse_hyperrectangle.size());
+        sparse_hyperrectangle.emplace_back(bounds->first, true, bounds->second, true);
+        sparse_data_types.push_back(type);
     }
 
-    return !condition_it->second.condition.mayBeTrueInRange(
-        partition_summaries.size(), left_keys.data(), right_keys.data(), partition_key.data_types);
+    if (sparse_hyperrectangle.empty())
+        return false;
+
+    return !condition_it->second.condition
+                .checkInHyperrectangle(key_column_to_sparse_position, sparse_hyperrectangle, sparse_data_types)
+                .can_be_true;
 }
 
 }
