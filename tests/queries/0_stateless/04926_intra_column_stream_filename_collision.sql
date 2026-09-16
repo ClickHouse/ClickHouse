@@ -33,9 +33,11 @@ SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero
 CREATE TABLE t_collision (c Tuple(`a.keys` Array(String), `a` Map(String, UInt64))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'basic'; -- { serverError BAD_ARGUMENTS }
 
--- ... while a configuration that never writes the colliding layout must stay allowed.
+-- ... while a configuration that never writes the colliding layout must stay allowed. The bucketed
+-- layout also needs `with_types`, as a per-type version that cannot be persisted falls back to `basic`.
 CREATE TABLE t_collision (c Tuple(`a.keys` Array(String), `a` Map(String, UInt64))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+         serialization_info_version = 'with_types';
 DROP TABLE t_collision;
 
 -- ALTER must not be able to turn a healthy column into a colliding one.

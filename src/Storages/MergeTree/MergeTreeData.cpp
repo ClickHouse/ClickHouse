@@ -10777,9 +10777,7 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
     enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
-    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown
-    /// here. No detection is lost: a user-supplied name escapes its dots to `%2E` while automatic
-    /// components are separated by a literal dot, so it can only collide at its own nesting level.
+    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
     enumerate_settings.enumerate_dynamic_streams = false;
 
     std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
