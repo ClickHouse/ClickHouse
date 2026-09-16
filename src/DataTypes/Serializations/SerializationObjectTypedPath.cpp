@@ -39,8 +39,6 @@ SerializationPtr sparsePathSerialization(const SerializationPtr & nested)
     /// must reconstruct ones for missing rows from the same SparseOffsets stream.
     if (const auto * named = typeid_cast<const SerializationNamed *>(nested.get()); named && named->getElementName() == "null")
         return SerializationSparseNullMap::create();
-    if (typeid_cast<const SerializationSparse *>(nested.get()) || typeid_cast<const SerializationSparseNullMap *>(nested.get()))
-        return nested;
     return SerializationSparse::create(nested);
 }
 }
