@@ -5,6 +5,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
+#include <algorithm>
 #include <limits>
 #include <optional>
 
@@ -141,9 +142,6 @@ public:
                 return arguments[0].column;
         }
 
-        auto result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & result_offsets = result_offsets_column->getData();
-
         size_t result_size = 0;
 
         auto get_remove_position_for_row = [&](size_t row, size_t array_size) -> std::optional<size_t>
@@ -167,13 +165,39 @@ public:
 
         if (array_is_const)
         {
+            const size_t constant_array_size = source_offsets.empty() ? 0 : source_offsets[0];
+
+            size_t removal_count = 0;
+            if (index_is_const)
+            {
+                removal_count = input_rows_count;
+            }
+            else
+            {
+                /// Do not materialize a constant array when every dynamic index is out of bounds.
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    if (get_remove_position_for_row(row, constant_array_size))
+                        ++removal_count;
+                }
+
+                if (removal_count == 0)
+                    return arguments[0].column;
+            }
+
             auto result_data = source_data.cloneEmpty();
-            size_t reserve_size = source_data.size();
-            if (input_rows_count != 0 && source_data.size() <= std::numeric_limits<size_t>::max() / input_rows_count)
-                reserve_size *= input_rows_count;
+            size_t reserve_size = 0;
+            if (constant_array_size != 0 && input_rows_count != 0)
+            {
+                if (constant_array_size <= std::numeric_limits<size_t>::max() / input_rows_count)
+                    reserve_size = constant_array_size * input_rows_count - removal_count;
+                else if (constant_array_size - 1 <= std::numeric_limits<size_t>::max() / input_rows_count)
+                    reserve_size = (constant_array_size - 1) * input_rows_count;
+            }
             result_data->reserve(reserve_size);
 
-            const size_t constant_array_size = source_offsets.empty() ? 0 : source_offsets[0];
+            auto result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+            auto & result_offsets = result_offsets_column->getData();
             for (size_t row = 0; row < input_rows_count; ++row)
             {
                 const auto remove_position = get_remove_position_for_row(row, constant_array_size);
@@ -203,6 +227,7 @@ public:
         }
 
         MutableColumnPtr result_data;
+        ColumnArray::ColumnOffsets::MutablePtr result_offsets_column;
         size_t source_begin = 0;
         size_t copy_begin = 0;
 
@@ -221,7 +246,16 @@ public:
                 if (!result_data)
                 {
                     result_data = source_data.cloneEmpty();
-                    result_data->reserve(source_data.size());
+                    /// At most one element is removed per row, so this is a safe lower bound for the result.
+                    const size_t reserve_size = source_data.size() > input_rows_count
+                        ? source_data.size() - input_rows_count
+                        : 0;
+                    result_data->reserve(reserve_size);
+
+                    result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+                    auto & result_offsets = result_offsets_column->getData();
+                    /// Before the first removal, all preceding rows are unchanged.
+                    std::copy(source_offsets.begin(), source_offsets.begin() + row, result_offsets.begin());
                 }
 
                 const size_t absolute_remove_position = source_begin + *remove_position;
@@ -237,7 +271,8 @@ public:
                 result_size += array_size - 1;
             }
 
-            result_offsets[row] = result_size;
+            if (result_offsets_column)
+                result_offsets_column->getData()[row] = result_size;
             source_begin = source_end;
         }
 
