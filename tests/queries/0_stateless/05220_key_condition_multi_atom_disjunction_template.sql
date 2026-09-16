@@ -24,7 +24,9 @@ CREATE TABLE test_multi_atom_disjunction_template
     INDEX ib (intDiv(b, 8), b) TYPE minmax GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_multi_atom_disjunction_template SELECT number, number, number FROM numbers(128);
 
 SELECT '16 leaves, disjunction pruning=0';

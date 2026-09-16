@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS test_multi_atom_sampling_asc;
 CREATE TABLE test_multi_atom_sampling_asc (x UInt8) ENGINE = MergeTree
 ORDER BY (intDiv(x, 16), x) SAMPLE BY x
 SETTINGS index_granularity = 8, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
     add_minmax_index_for_numeric_columns = 0, allow_experimental_reverse_key = 1;
 INSERT INTO test_multi_atom_sampling_asc SELECT number FROM numbers(256);
 
@@ -96,6 +97,7 @@ DROP TABLE IF EXISTS test_multi_atom_sampling_desc;
 CREATE TABLE test_multi_atom_sampling_desc (x UInt8) ENGINE = MergeTree
 ORDER BY (intDiv(x, 16) DESC, x DESC) SAMPLE BY x
 SETTINGS index_granularity = 8, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
     add_minmax_index_for_numeric_columns = 0, allow_experimental_reverse_key = 1;
 INSERT INTO test_multi_atom_sampling_desc SELECT number FROM numbers(256);
 

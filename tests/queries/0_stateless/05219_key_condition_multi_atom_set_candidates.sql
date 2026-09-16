@@ -17,7 +17,9 @@ SET optimize_rewrite_has_to_in = 0;
 DROP TABLE IF EXISTS test_set_candidates_components;
 CREATE TABLE test_set_candidates_components (s String, x UInt8, id UInt32) ENGINE = MergeTree
 ORDER BY (s, x)
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_set_candidates_components
 SELECT char(97 + intDiv(number, 64)), toUInt8(intDiv(number % 64, 8)), number FROM numbers(256);
 
@@ -56,7 +58,9 @@ DROP TABLE test_set_candidates_components;
 DROP TABLE IF EXISTS test_set_candidates_packed;
 CREATE TABLE test_set_candidates_packed (s String, x UInt8, id UInt32) ENGINE = MergeTree
 ORDER BY (tuple(s, x), id)
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_set_candidates_packed
 SELECT char(97 + intDiv(number, 64)), toUInt8(intDiv(number % 64, 8)), number FROM numbers(256);
 
@@ -95,7 +99,9 @@ DROP TABLE test_set_candidates_packed;
 DROP TABLE IF EXISTS test_set_candidates_combined;
 CREATE TABLE test_set_candidates_combined (s String, x UInt8, id UInt32) ENGINE = MergeTree
 ORDER BY (tuple(s, x), s, x, cityHash64(s), x + 1)
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_set_candidates_combined
 SELECT char(97 + intDiv(number, 64)), toUInt8(intDiv(number % 64, 8)), number FROM numbers(256);
 
@@ -162,7 +168,9 @@ DROP TABLE test_set_candidates_combined;
 DROP TABLE IF EXISTS test_set_candidates_derived;
 CREATE TABLE test_set_candidates_derived (s String, x UInt8, id UInt32) ENGINE = MergeTree
 ORDER BY (cityHash64(s), x + 1, s, x)
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_set_candidates_derived
 SELECT char(97 + intDiv(number, 64)), toUInt8(intDiv(number % 64, 8)), number FROM numbers(256);
 

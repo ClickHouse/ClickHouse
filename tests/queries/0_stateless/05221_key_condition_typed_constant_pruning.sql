@@ -16,7 +16,9 @@ SET max_threads = 1;
 
 DROP TABLE IF EXISTS test_typed_constant_direct;
 CREATE TABLE test_typed_constant_direct (v String) ENGINE = MergeTree ORDER BY v
-SETTINGS index_granularity = 1, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 1, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_typed_constant_direct SELECT toString(number) FROM numbers(100);
 
 SET analyze_index_with_multiple_key_columns_per_condition = 0;
@@ -111,7 +113,9 @@ DROP TABLE test_typed_constant_direct;
 
 DROP TABLE IF EXISTS test_typed_constant_derived;
 CREATE TABLE test_typed_constant_derived (v String) ENGINE = MergeTree ORDER BY (reverse(v), v)
-SETTINGS index_granularity = 1, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 1, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_typed_constant_derived SELECT toString(number) FROM numbers(100);
 
 -- Derived-key cases put the constant on the left to exercise comparison normalization.
@@ -209,7 +213,9 @@ DROP TABLE test_typed_constant_derived;
 -- The relaxed bound includes '37', so pruning reads 32 one-row granules and filtering returns 31 rows.
 DROP TABLE IF EXISTS test_typed_constant_monotonic;
 CREATE TABLE test_typed_constant_monotonic (v String) ENGINE = MergeTree ORDER BY (toString(v), v)
-SETTINGS index_granularity = 1, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 1, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_typed_constant_monotonic SELECT toString(number) FROM numbers(100);
 
 SELECT 'monotonic, Enum8, Dynamic';
