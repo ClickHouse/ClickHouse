@@ -340,11 +340,13 @@ bool UnityCatalog::tryGetTableMetadata(
     }
 }
 
-void UnityCatalog::createTable(
+bool UnityCatalog::createTable(
     const String & namespace_name,
     const String & table_name,
     const String & table_location,
-    Poco::JSON::Object::Ptr metadata_content) const
+    Poco::JSON::Object::Ptr metadata_content,
+    DB::CompressionMethod /*metadata_compression_method*/,
+    bool /*if_not_exists*/) const
 {
     /// Build the Unity `ColumnInfo` array from the Delta schema fields, with `type_json` matching what the read path (`tryGetTableMetadata`) parses back.
     auto fields = metadata_content->getArray("fields");
@@ -436,6 +438,8 @@ void UnityCatalog::createTable(
             "Failed to create table {}.{} in Unity catalog: {}",
             namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
+
+    return true;
 }
 
 bool UnityCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const

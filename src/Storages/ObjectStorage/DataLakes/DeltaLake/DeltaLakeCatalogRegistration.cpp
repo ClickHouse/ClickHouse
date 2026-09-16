@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Databases/DataLake/Common.h>
+#include <IO/CompressionMethod.h>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -55,7 +56,11 @@ void registerDeltaTableInCatalog(
     /// Do not roll back commit 0 on failure: a generic catalog error is ambiguous (a racing server may have already registered our `_delta_log`), so we keep the log and surface the error rather than risk corrupting that entry.
     try
     {
-        catalog->createTable(namespace_name, table_name, location, metadata_content);
+        /// Unity registers an existing location rather than writing metadata, so the compression method does not
+        /// apply; `IF NOT EXISTS` is reconciled below against the location of the entry that is already there.
+        catalog->createTable(
+            namespace_name, table_name, location, metadata_content,
+            CompressionMethod::None, /*if_not_exists=*/false);
     }
     catch (...)
     {

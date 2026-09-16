@@ -53,11 +53,15 @@ public:
 
     /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
     /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
-    void createTable(
+    /// Unity writes no metadata file of its own, so the compression method does not apply, and `IF NOT EXISTS` is
+    /// reconciled by the caller (`registerDeltaTableInCatalog`) against the location of the existing entry.
+    bool createTable(
         const String & namespace_name,
         const String & table_name,
         const String & table_location,
-        Poco::JSON::Object::Ptr metadata_content) const override;
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
 private:
     const std::filesystem::path base_url;
