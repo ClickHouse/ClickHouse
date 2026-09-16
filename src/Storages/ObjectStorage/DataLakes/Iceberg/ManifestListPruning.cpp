@@ -8,9 +8,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 
+#include <base/unaligned.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/convertFieldToType.h>
 
 using namespace DB;
 
@@ -22,27 +24,32 @@ namespace
 
 std::optional<Int64> decodeSignedInteger(const String & bytes)
 {
-    if (bytes.empty() || bytes.size() > sizeof(Int64))
-        return {};
-
-    UInt64 value = (bytes.back() & 0x80) ? ~UInt64(0) : UInt64(0);
-    for (size_t i = bytes.size(); i > 0; --i)
-        value = (value << 8) | static_cast<UInt8>(bytes[i - 1]);
-
-    return static_cast<Int64>(value);
+    switch (bytes.size())
+    {
+        case 1:
+            return unalignedLoad<Int8>(bytes.data());
+        case 2:
+            return unalignedLoadLittleEndian<Int16>(bytes.data());
+        case 4:
+            return unalignedLoadLittleEndian<Int32>(bytes.data());
+        case 8:
+            return unalignedLoadLittleEndian<Int64>(bytes.data());
+        default:
+            return {};
+    }
 }
 
-std::optional<Field> deserializeUnsignedBound(const String & bytes, const IDataType & type)
+std::optional<Field> deserializeIntegerBound(const String & bytes, const IDataType & type)
 {
     const auto value = decodeSignedInteger(bytes);
-    if (!value.has_value() || *value < 0)
+    if (!value.has_value())
         return {};
 
-    const size_t type_bits = 8 * type.getSizeOfValueInMemory();
-    if (type_bits < 8 * sizeof(UInt64) && (static_cast<UInt64>(*value) >> type_bits) != 0)
+    auto converted = convertFieldToType(Field(*value), type, nullptr, {}, /* strict */ true);
+    if (converted.isNull())
         return {};
 
-    return Field(static_cast<UInt64>(*value));
+    return converted;
 }
 
 std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
@@ -53,13 +60,14 @@ std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
         return {};
 
     const auto non_nullable_type = removeNullable(type);
+    const WhichDataType which(non_nullable_type);
 
     std::optional<Field> lower;
     std::optional<Field> upper;
-    if (WhichDataType(non_nullable_type).isUInt())
+    if (which.isInt() || which.isUInt())
     {
-        lower = deserializeUnsignedBound(*summary.lower_bound, *non_nullable_type);
-        upper = deserializeUnsignedBound(*summary.upper_bound, *non_nullable_type);
+        lower = deserializeIntegerBound(*summary.lower_bound, *non_nullable_type);
+        upper = deserializeIntegerBound(*summary.upper_bound, *non_nullable_type);
     }
     else
     {
