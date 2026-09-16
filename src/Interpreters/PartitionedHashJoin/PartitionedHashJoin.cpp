@@ -207,7 +207,7 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
 {
     /// Everything the single-level `HashJoin` machinery serves. Kinds: INNER, LEFT, RIGHT, FULL.
     /// Strictness: ALL, ANY, RightAny, SEMI, ANTI, plus ASOF. Also null maps, per-clause ON filters,
-    /// mixed non-equi ON conditions, USING, and any number of disjuncts. Out: special storages, and
+    /// mixed non-equi ON conditions, USING, and any number of disjuncts. Out: key-value storages, and
     /// the Cross/Comma/Paste and ON-constant joins. Those are routed before the algorithm loop.
     /// A memory limit is no reason to decline: the planner wraps this join in `SpillingHashJoin` instead.
     const JoinKind kind = table_join.kind();
@@ -227,7 +227,11 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
         default: return false;
     }
 
-    if (table_join.isSpecialStorage())
+    /// A `Join` table is probed through the instance `StorageJoin::getJoinLocked` builds, which the
+    /// planner reaches before the algorithm loop, so it is not a shape to decline here. A key-value
+    /// storage (a dictionary) on the right side is: it stays on `HashJoin`, this join has not been run
+    /// against one.
+    if (table_join.isSpecialStorage() && !table_join.getStorageJoin())
         return false;
 
     if (strictness == JoinStrictness::Asof)
