@@ -48,10 +48,10 @@ void CalculateWatermarksTransform::consume(Chunk chunk)
     }
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    Field max_value = calculateWatermark(watermark_expression, std::move(block));
+    Field watermark = calculateWatermark(watermark_expression, std::move(block));
 
     pending_chunks.push(std::move(chunk));
-    pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(max_value)));
+    pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(watermark)));
 }
 
 bool CalculateWatermarksTransform::canGenerate()
