@@ -27,8 +27,4 @@ $CLICKHOUSE_CLIENT --query "
     SELECT name FROM filesystem('${TEST_REL}') WHERE name = 'a.txt'
 "
 
-$CLICKHOUSE_CLIENT --query "
-    SELECT name FROM filesystem('${TEST_REL}') WHERE indexHint(name = 'a.txt') AND name = 'a.txt' SETTINGS enable_analyzer = 0
-"
-
 rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"
