@@ -435,6 +435,10 @@ void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Uti
     auto new_storage = std::make_shared<LDAPAccessStorage>(storage_name_, *this, config_, prefix_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', LDAP server name: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getLDAPServerName());
+
+    /// Refuse a second `ldap` storage next to a synchronised one as soon as it is added, so that a caller other than
+    /// `addStoragesFromMainConfig` cannot leave the layout unchecked.
+    checkLDAPStoragesLayout();
 }
 
 
@@ -557,8 +561,8 @@ void AccessControl::checkLDAPStoragesLayout() const
     /// its own schedule, so a user who starts matching both is materialised by one of them and taken over by the
     /// other at its next run or at the next login, and the identity and the roles of the login follow the timing of
     /// the runs. No run-time check makes that sound (whether two search filters can select the same user cannot be
-    /// told in general), so the layout is refused here, once every storage of the configuration is known, and the
-    /// server does not start.
+    /// told in general), so the layout is refused here, as soon as a second `ldap` storage is added and again once
+    /// every storage of the configuration is known, and the server does not start.
     std::vector<const LDAPAccessStorage *> ldap_storages;
     for (const auto & storage : getStorages())
     {
@@ -580,7 +584,8 @@ void AccessControl::checkLDAPStoragesLayout() const
         "a synchronised 'ldap' user directory must be the only 'ldap' user directory in 'user_directories'. "
         "Its synchronisation cannot tell from a snapshot whether another 'ldap' directory will serve a login, so a user "
         "matching both would change directory, and roles, with the timing of the runs. Remove one of the two directories "
-        "or the 'sync' section; to synchronise the users of both, widen the 'search_filter' of the synchronised one",
+        "or the 'sync' section; if both use the same server, widen the 'search_filter' of the synchronised one instead "
+        "(the users of a second LDAP server cannot be synchronised on the same node)",
         backQuote(synced->getStorageName()), backQuote(other->getStorageName()));
 }
 

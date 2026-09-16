@@ -296,7 +296,8 @@ private:
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
     /// Throws `BAD_ARGUMENTS` when an `ldap` storage with a `<sync>` section is not the only `ldap` storage.
-    /// Called once every storage of the main configuration has been added.
+    /// Called by `addLDAPStorage` after every `ldap` storage and once every storage of the main configuration
+    /// has been added.
     void checkLDAPStoragesLayout() const;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
