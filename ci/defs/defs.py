@@ -558,34 +558,32 @@ class ArtifactNames:
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 8
-# Batch count of the two ASan integration-test flavors, which run the whole integration suite
+# Batch count of the ASan integration-test flavor, which runs the whole integration suite
 # on `AMD_MEDIUM` with three xdist workers against a two-hour pytest `--session-timeout`.
 #
 # Eight, not six: the suite measures about 112000 test-seconds, so six batches put the heaviest
 # shard at 119.7 of the 120 available minutes - no margin at all, however well they are
-# balanced - and `amd_asan_ubsan, db disk, old analyzer` timed out 133 times in the three weeks
-# after it went to six. Eight brings the heaviest shard to 82 minutes, 68% of the budget.
+# balanced - and this flavor, when it still carried the old-analyzer flag, timed out 133 times
+# in the three weeks after it went to six. Eight brings the heaviest shard to 82 minutes, 68%
+# of the budget.
 #
 # Batches are the right lever rather than a longer timeout: the aggregate compute is unchanged,
 # since the work is the same and only the parallelism differs, so the only cost is one more
 # per-batch setup - and the job gets its answer 25% sooner.
-#
-# Both flavors must keep the same count: they run the same suite with the same worker count
-# against the same budget, so a count that does not fit one does not fit the other.
 #
 # To re-measure, score the packing of `get_optimal_test_batch` against per-module
 # `sum(test_duration_ms)` from CIDB rather than against its own `TEST_DURATIONS` table - that
 # table currently sums to 97000 test-seconds against a measured 112000, so it reports every
 # shard as evenly packed while the measured spread across six is 1.24.
 ASAN_IT_NUM_BATCHES = 8
-# The old-analyzer + s3 + DBReplicated parallel variant runs the whole stateless
-# suite un-batched and is the slowest job in CI (main run alone ~1h40m-2h10m
-# under coverage instrumentation). It is split into batches so each shard
-# finishes well inside the runner lease and is not torn down mid-job.
-LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES = 3
+# The s3 + DBReplicated parallel variant runs the whole stateless suite un-batched
+# and is the slowest job in CI (main run alone ~1h40m-2h10m under coverage
+# instrumentation). It is split into batches so each shard finishes well inside
+# the runner lease and is not torn down mid-job.
+LLVM_FT_S3_DB_REPL_NUM_BATCHES = 3
 # The sequential counterpart is lighter than the parallel variant but still slow
 # enough to benefit from being split, so it gets its own (smaller) batch count.
-LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES = 2
+LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES = 2
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -594,21 +592,21 @@ LLVM_FT_ARTIFACTS_LIST = [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated, parallel execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_parallel_{batch}"
-    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
+    # default.profdata files for batches from Functional tests with S3 + DBReplicated, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_db_repl_parallel_{batch}"
+    for total_batches in (LLVM_FT_S3_DB_REPL_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated, sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_sequential_{batch}"
-    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
+    # default.profdata files for batches from Functional tests with S3 + DBReplicated, sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_db_repl_sequential_{batch}"
+    for total_batches in (LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
+    # default.profdata files for jobs from Functional tests with S3 + AsyncInsert + parallel/sequential execution
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",

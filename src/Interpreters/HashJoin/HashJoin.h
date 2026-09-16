@@ -464,6 +464,24 @@ public:
             #undef M
             }
         }
+
+        /// A two-level map numbers its cells across buckets and needs the prefix sums of the bucket
+        /// sizes for that; nothing to do for the single-level maps.
+        void computeBucketPrefix(Type which) const
+        {
+            switch (which)
+            {
+            #define M(NAME) \
+                case Type::NAME: \
+                    if (NAME) \
+                        NAME->computeBucketPrefix(); \
+                    break;
+                APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
+            #undef M
+                default:
+                    break;
+            }
+        }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
 
