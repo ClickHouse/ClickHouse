@@ -2344,6 +2344,65 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
         node.query("DROP TABLE prometheus_f32 SYNC")
 
 
+# Regression test: the prediction offset of `predict_linear` may be a scalar expression which depends on the
+# evaluation time, e.g. `predict_linear(m[90s], time() - 1770582580)`. Scalar expressions are normally evaluated
+# in the scalar (value) data type of the TimeSeries table, and Float32 only has ~128 seconds of precision at today's
+# epoch magnitude, so on a table with Float32 values the evaluation timestamps used to be rounded to that
+# granularity before the offsets were computed: the three steps of the range query below all collapsed to the same
+# two Float32 buckets (offsets 76, 76 and 204 seconds instead of 60, 120 and 180), and the predictions were wrong.
+# The prediction offset must be computed in Float64 regardless of the scalar type of the table. The series is
+# exactly linear (one unit per 30 seconds), so the prediction at evaluation time `T` for offset `T - t0` is exactly
+# `2 * (T - t0) / 30`.
+def test_predict_linear_time_dependent_offset_with_float32_scalar():
+    node.query(
+        "CREATE TABLE prometheus_f32 (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO prometheus_f32 (metric_name, tags, samples) VALUES"
+            " ('lin', {'job': 'test'}, arrayMap(k -> (toDateTime64(1770582580 + 30 * k, 3), k), range(7)))"
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'predict_linear(lin[90s], time() - 1770582580)', 1770582640, 1770582760, 60)"
+            ),
+            [
+                [
+                    "[('job','test')]",
+                    "[('2026-02-08 20:30:40.000',4),('2026-02-08 20:31:40.000',8),('2026-02-08 20:32:40.000',12)]",
+                ]
+            ],
+            eps=1e-9,
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'predict_linear(lin[90s], time() - 1770582580)', 1770582760)"
+            ),
+            [["[('job','test')]", "2026-02-08 20:32:40.000", 12]],
+            eps=1e-9,
+        )
+
+        # The same query wrapped in a subquery, which is another way to get a scalar grid of prediction offsets.
+        # The subquery steps are aligned to multiples of 60 seconds: 1770582660 and 1770582720, with offsets 80 and 140.
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'predict_linear(lin[90s], time() - 1770582580)[120s:60s]', 1770582760)"
+            ),
+            [
+                [
+                    "[('job','test')]",
+                    "[('2026-02-08 20:31:00.000',5.333333333333333),('2026-02-08 20:32:00.000',9.333333333333334)]",
+                ]
+            ],
+            eps=1e-6,
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32 SYNC")
+
+
 def test_math_functions():
     do_query_test(
         "abs(vector(-3))",

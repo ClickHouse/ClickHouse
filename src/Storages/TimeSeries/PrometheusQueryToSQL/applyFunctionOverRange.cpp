@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -104,7 +105,9 @@ namespace
         {
             case StoreMethod::CONST_SCALAR:
             {
-                return timeSeriesScalarToAST(scalar_arg.scalar_value, context.scalar_data_type);
+                /// The prediction offset is kept in `Float64` regardless of the scalar data type of the table,
+                /// see isFunctionOverRangeFloat64ScalarArgument().
+                return timeSeriesScalarToAST(scalar_arg.scalar_value, std::make_shared<DataTypeFloat64>());
             }
             case StoreMethod::SINGLE_SCALAR:
             {
@@ -382,6 +385,12 @@ namespace
 bool isFunctionOverRange(std::string_view function_name)
 {
     return (function_name == "predict_linear") || (getImplInfo(function_name) != nullptr);
+}
+
+
+bool isFunctionOverRangeFloat64ScalarArgument(std::string_view function_name, size_t argument_index)
+{
+    return (function_name == "predict_linear") && (argument_index == 1);
 }
 
 

@@ -1,10 +1,12 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFusedAggregationBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
@@ -14,6 +16,9 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
+#include <base/scope_guard.h>
+
+#include <utility>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -21,6 +26,17 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    SQLQueryPiece visitNode(const Node * node, ConverterContext & context);
+
+    /// Converts a subtree keeping its scalar values in `Float64` instead of `context.scalar_data_type`,
+    /// see isFunctionOverRangeFloat64ScalarArgument().
+    SQLQueryPiece visitNodeWithFloat64Scalars(const Node * node, ConverterContext & context)
+    {
+        auto saved_scalar_data_type = std::exchange(context.scalar_data_type, std::make_shared<DataTypeFloat64>());
+        SCOPE_EXIT({ context.scalar_data_type = std::move(saved_scalar_data_type); });
+        return visitNode(node, context);
+    }
+
     SQLQueryPiece visitNode(const Node * node, ConverterContext & context)
     {
         switch (node->node_type)
@@ -66,10 +82,16 @@ namespace
             case NodeType::Function:
             {
                 const auto * function = static_cast<const PrometheusQueryTree::Function *>(node);
+                const auto & argument_nodes = function->getArguments();
+                const bool is_function_over_range = isFunctionOverRange(function->function_name);
                 std::vector<SQLQueryPiece> arguments;
-                for (const auto * arg_node : function->getArguments())
+                arguments.reserve(argument_nodes.size());
+                for (size_t i = 0; i != argument_nodes.size(); ++i)
                 {
-                    arguments.push_back(visitNode(arg_node, context));
+                    if (is_function_over_range && isFunctionOverRangeFloat64ScalarArgument(function->function_name, i))
+                        arguments.push_back(visitNodeWithFloat64Scalars(argument_nodes[i], context));
+                    else
+                        arguments.push_back(visitNode(argument_nodes[i], context));
                 }
                 return applyFunction(function, std::move(arguments), context);
             }
