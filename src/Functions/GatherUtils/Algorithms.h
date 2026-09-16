@@ -202,7 +202,7 @@ void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 }
 
 template <typename Position>
-[[noreturn]] void throwInsertPositionOutOfBounds(Position position, size_t array_size)
+[[noreturn]] [[gnu::cold]] NO_INLINE void throwInsertPositionOutOfBounds(Position position, size_t array_size)
 {
     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "Array insertion position {} is out of bounds for an array of size {}", position, array_size);
@@ -220,12 +220,12 @@ inline size_t normalizeInsertPosition(Int64 position, size_t array_size)
     if (position < 0)
     {
         const UInt64 from_end = static_cast<UInt64>(-(position + 1));
-        if (from_end > array_size)
+        if (unlikely(from_end > array_size))
             throwInsertPositionOutOfBounds(position, array_size);
         return array_size - static_cast<size_t>(from_end);
     }
 
-    if (position == 0 || static_cast<UInt64>(position) > getMaxInsertPosition(array_size))
+    if (unlikely(position == 0 || static_cast<UInt64>(position) > getMaxInsertPosition(array_size)))
         throwInsertPositionOutOfBounds(position, array_size);
 
     return static_cast<size_t>(position - 1);
@@ -233,7 +233,7 @@ inline size_t normalizeInsertPosition(Int64 position, size_t array_size)
 
 inline size_t normalizeInsertPosition(UInt64 position, size_t array_size)
 {
-    if (position == 0 || position > getMaxInsertPosition(array_size))
+    if (unlikely(position == 0 || position > getMaxInsertPosition(array_size)))
         throwInsertPositionOutOfBounds(position, array_size);
 
     return static_cast<size_t>(position - 1);
