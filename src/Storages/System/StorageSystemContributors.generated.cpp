@@ -358,6 +358,7 @@ const char * auto_contributors[] {
     "Chuan-Zheng Lee",
     "Chun-Sheng, Li",
     "Ciprian Hacman",
+    "Claude",
     "Clayton McClure",
     "Clement Rodriguez",
     "ClickGap AI Bot",
