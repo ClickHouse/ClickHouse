@@ -15,7 +15,7 @@ import SystemTableCloud from '/snippets/pt-BR/_system_table_cloud.mdx';
   ## Descrição
 </div>
 
-Contém estatísticas amostrais de seletividade coletadas durante a leitura de tabelas `MergeTree`. A tabela é preenchida somente quando [`predicate_statistics_sample_rate`](/pt-BR/reference/settings/session-settings/other#predicate_statistics_sample_rate) é maior que `0`.
+Contém estatísticas amostrais de seletividade coletadas durante a leitura de tabelas `MergeTree`. A tabela é preenchida somente quando [`predicate_statistics_sample_rate`](/pt-BR/reference/settings/session-settings#predicate_statistics_sample_rate) é maior que `0`.
 
 Use esta tabela para inspecionar quão seletivos são os predicados definidos pelo usuário em cargas de trabalho reais e quantos grânulos permanecem após a filtragem por chave primária ou índice de salto. Esses dados servem como entrada para recomendações de índices e projeções orientadas pela carga de trabalho.
 
@@ -34,7 +34,7 @@ As linhas de filtro e as linhas de índice da mesma consulta compartilham o mesm
   ## Amostragem e sobrecarga
 </div>
 
-A amostragem é controlada por [`predicate_statistics_sample_rate`](/pt-BR/reference/settings/session-settings/other#predicate_statistics_sample_rate):
+A amostragem é controlada por [`predicate_statistics_sample_rate`](/pt-BR/reference/settings/session-settings#predicate_statistics_sample_rate):
 
 * `0` desativa a coleta.
 * `1` amostra todas as consultas.
@@ -100,5 +100,5 @@ LIMIT 10;
   ## Veja também
 </div>
 
-* [`predicate_statistics_sample_rate`](/pt-BR/reference/settings/session-settings/other#predicate_statistics_sample_rate)
+* [`predicate_statistics_sample_rate`](/pt-BR/reference/settings/session-settings#predicate_statistics_sample_rate)
 * [system.query&#95;log](/pt-BR/reference/system-tables/query_log)

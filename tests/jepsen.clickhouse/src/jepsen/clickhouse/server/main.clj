@@ -15,7 +15,7 @@
              [set :as set]]
             [jepsen.clickhouse.utils :as chu]
             [jepsen.control.util :as cu]
-            [jepsen.clickhouse.os :as chos]
+            [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
             [clojure.java.io :as io])
   (:import (ch.qos.logback.classic Level)
@@ -56,7 +56,7 @@
     (merge tests/noop-test
            opts
            {:name (str "clickhouse-server-"  (name (:workload opts)) "-" (name (:nemesis opts)))
-            :os chos/os
+            :os ubuntu/os
             :db (get-db opts)
             :pure-generators true
             :nemesis (:nemesis current-nemesis)

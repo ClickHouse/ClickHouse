@@ -999,7 +999,7 @@ Além disso, ao usar offsets, o ClickHouse garante que essas subcolunas permane�
 
 No entanto, em cenários com estruturas JSON de alta cardinalidade ou muito variáveis, como pipelines de telemetria, logs ou feature stores de machine learning, esse comportamento pode levar a uma explosão no número de arquivos de coluna. Cada novo caminho JSON único resulta em um novo arquivo de coluna, e cada variante de tipo nesse caminho resulta em um arquivo de coluna adicional. Embora isso seja ideal para o desempenho de leitura, também introduz desafios operacionais: esgotamento de descritores de arquivo, aumento do uso de memória e merges mais lentos devido ao grande número de arquivos pequenos.
 
-Para mitigar isso, o ClickHouse introduz o conceito de subcoluna de overflow: quando o número de caminhos JSON distintos ultrapassa um limite, os caminhos adicionais são armazenados em um único arquivo compartilhado usando um formato codificado compacto. Esse arquivo ainda pode ser consultado, mas não se beneficia das mesmas características de desempenho das subcolunas dedicadas.
+Para mitigar isso, o ClickHouse introduz o conceito de subcoluna de overflow: quando o número de caminhos JSON distintos ultrapassa um limite, os caminhos adicionais são armazenados em um único arquivo compartilhado usando um formato compacto codificado. Esse arquivo ainda pode ser consultado, mas não se beneficia das mesmas características de desempenho das subcolunas dedicadas.
 
 <Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Coluna JSON compartilhada" />
 
