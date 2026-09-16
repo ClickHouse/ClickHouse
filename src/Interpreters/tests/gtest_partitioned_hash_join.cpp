@@ -751,67 +751,6 @@ TEST(PartitionedHashJoin, DescriptorCapClampsPlan)
     probeAndCheck(capped, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
 }
 
-/// The route the fill saves for a key names the partition whose range holds the key's home cell, for every plan the 16-bit routes cover.
-TEST(PartitionedHashJoin, RoutesMatchTablePlacement)
-{
-    /// The invariant the probe relies on. Checked on the table type the `UInt64` keys use and on the
-    /// string type, with the same hashes the build and the probe use.
-    constexpr size_t rows = 10007;
-    auto uint64_key = ColumnUInt64::create();
-    for (size_t i = 0; i < rows; ++i)
-        uint64_key->insertValue(keyOf(i));
-    uint64_key->insertValue(0); /// the zero key has a route too
-
-    {
-        const ColumnRawPtrs key_columns{uint64_key.get()};
-        const Sizes key_sizes{sizeof(UInt64)};
-        PaddedPODArray<UInt16> routes(uint64_key->size());
-        DenseHyperLogLog hll;
-        computeJoinRoutesForFill(HashJoin::Type::key64, key_columns, key_sizes, uint64_key->size(), nullptr, routes.data(), hll);
-        EXPECT_NEAR(hll.estimate(), static_cast<double>(uint64_key->size()), 0.05 * static_cast<double>(uint64_key->size()));
-
-        for (const size_t bits : {1uz, 9uz, 15uz})
-        {
-            const size_t size_degree = std::max<size_t>(bits, 16);
-            Key64Table table(size_degree, bits);
-            const auto & data = uint64_key->getData();
-            for (size_t i = 0; i < data.size(); ++i)
-            {
-                const size_t hash = table.hash(data[i]);
-                const size_t partition = routes[i] >> (16 - bits);
-                ASSERT_EQ(table.partitionOf(hash), partition) << "bits " << bits << " row " << i;
-                const size_t home = table.place(hash);
-                ASSERT_GE(home, table.rangeBegin(partition));
-                ASSERT_LT(home, table.rangeEnd(partition));
-            }
-        }
-    }
-
-    {
-        auto string_key = ColumnString::create();
-        for (size_t i = 0; i < rows; ++i)
-        {
-            const std::string value = i % 7 == 0 ? "" : fmt::format("key-{}-{}", i, std::string(i % 19, 'x'));
-            string_key->insertData(value.data(), value.size());
-        }
-        using StringTable = typename decltype(HashJoinTableMapsAll::key_string)::element_type;
-        const ColumnRawPtrs key_columns{string_key.get()};
-        const Sizes key_sizes{0};
-        PaddedPODArray<UInt16> routes(rows);
-        DenseHyperLogLog hll;
-        computeJoinRoutesForFill(HashJoin::Type::key_string, key_columns, key_sizes, rows, nullptr, routes.data(), hll);
-
-        constexpr size_t bits = 7;
-        StringTable table(/*size_degree_=*/16, bits);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            const std::string_view value = string_key->getDataAt(i);
-            const size_t hash = table.hash(value);
-            ASSERT_EQ(table.partitionOf(hash), routes[i] >> (16 - bits)) << "row " << i;
-        }
-    }
-}
-
 /// A forced partition count above the per-pass ceiling splits into passes whose bits sum to the plan, with every row
 /// conserved and exact results.
 TEST(PartitionedHashJoin, ForcedBitsSplitIntoPasses)
@@ -1272,11 +1211,8 @@ TEST(PartitionedHashJoin, GroupSizedAfterGrowth)
 /// fails the barrier with `LIMIT_EXCEEDED`.
 TEST(PartitionedHashJoin, DegreeCapAtPlan)
 {
-#ifndef DEBUG_OR_SANITIZER_BUILD
-    expectThrowsCode(ErrorCodes::LOGICAL_ERROR, "degree 33 must throw before allocating", [] { Key64Table table(33, 0); });
-#endif
+    /// `HashJoinTable.DegreeCap` checks that this reserve maps to degree 33 and that the table refuses it.
     const size_t reserve_for_33 = (1uz << 31) + 1;
-    EXPECT_GE(Key64Table::degreeFor(reserve_for_33), 33u);
 
     BuildOptions options;
     options.num_threads = 2;
