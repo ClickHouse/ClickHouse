@@ -1531,6 +1531,24 @@ Output types having no conversion as raw binary data. If false - such types woul
 
 Superseded by `output_format_arrow_unsupported_types`: `0` means `throw` and `1` means `binary`. Only consulted when `output_format_arrow_unsupported_types` is not set explicitly.
 )", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size, 0, R"(
+Target number of rows per record batch for the `Arrow` and `ArrowStream` output formats. Combining small blocks reduces metadata and buffer-padding overhead, particularly for queries with selective filters.
+
+Blocks accumulate until this target or [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes) is reached. A block that already meets the row or byte target is written separately, without splitting. If you set a row target, combined batches contain fewer than twice that many rows, but a single input block can be larger.
+
+Buffering blocks can increase memory use and delay output. If the result never reaches either target, `ArrowStream` writes the first record batch only when the query finishes, though it can write the schema earlier. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the row target. Try `65409` as a starting value.
+)", 0) \
+    DECLARE(UInt64, output_format_arrow_record_batch_size_bytes, 0, R"(
+Target record batch size for the `Arrow` and `ArrowStream` output formats, measured in bytes of accumulated block data. This uses the same measure as [min_insert_block_size_bytes](/reference/settings/settings#min_insert_block_size_bytes). A batch is written when either this target or [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) is reached.
+
+Note that `LowCardinality` columns can produce Arrow batches much larger or smaller than this byte target. Repeated values expand in the output unless [output_format_arrow_low_cardinality_as_dictionary](#output_format_arrow_low_cardinality_as_dictionary) is enabled. Filtered blocks can also retain large dictionaries, so even a block with very few rows can reach the target and be written separately. For these columns, use [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) to control the row count and set the byte target to `0`.
+
+Buffering blocks can increase memory use and delay the first record batch until the query finishes. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns

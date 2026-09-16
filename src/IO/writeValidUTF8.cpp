@@ -1,7 +1,13 @@
 #include <IO/writeValidUTF8.h>
 
+#include "config.h"
+
 #include <IO/WriteBuffer.h>
 #include <Poco/UTF8Encoding.h>
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#endif
 
 #include <string_view>
 
@@ -24,6 +30,25 @@ extern const UInt8 length_of_utf8_sequence[256];
 
 void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
 {
+#if USE_SIMDUTF
+    /// Avoid runtime dispatch overhead on short strings.
+    static constexpr size_t SIMDUTF_MIN_SIZE = 128;
+    const size_t size = static_cast<size_t>(end - begin);
+    if (size >= SIMDUTF_MIN_SIZE)
+    {
+        const auto validation = simdutf::validate_utf8_with_errors(begin, size);
+        if (validation.error == simdutf::SUCCESS)
+        {
+            out.write(begin, size);
+            return;
+        }
+
+        if (validation.count != 0)
+            out.write(begin, validation.count);
+        begin += validation.count;
+    }
+#endif
+
     static constexpr std::string_view replacement = "\xEF\xBF\xBD";
 
     const char * p = begin;
