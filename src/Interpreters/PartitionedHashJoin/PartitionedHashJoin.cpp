@@ -122,6 +122,15 @@ PartitionedHashJoin::PartitionedHashJoin(
             "PartitionedHashJoin was created for an unsupported map type {}; the plan-time gate must reject this shape",
             hash_join->data->type);
 
+    /// `HashJoin`'s constructor derived the row store layout as `hash` builds it, so it gave way to the
+    /// rerange optimization. This join never reranges its rows: derive the layout without that rule.
+    if (hash_join->data->row_store_state == HashJoin::RowStoreState::Disabled && table_join->isRowStoreEnabled()
+        && hash_join->isRowStoreSupported() && hash_join->isRightTableRerangeEnabled())
+    {
+        hash_join->data->row_store_state = HashJoin::RowStoreState::Enabled;
+        hash_join->initRowStore(hash_join->data->sample_block, /*may_rerange=*/false);
+    }
+
     /// A ceiling above 2^15 would let a 16-bit plan wrap the drop bucket onto partition 0 and insert
     /// the skipped rows there; see `max_plan_bits`.
     if (max_fanout_per_pass < 2 || max_fanout_per_pass > 32768)
@@ -270,13 +279,11 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
             fill.skip_bytes[i] = ((nulls && (*nulls)[i]) || fill.join_mask.isRowFiltered(i)) ? 1 : 0;
     }
 
-    /// The payload in stored form. The row store layout is decided once, on the first block, and the
-    /// columns it admits are packed row-wise right here, so the probe reads one row pointer per output
-    /// row instead of one random column read per output column. The remaining columns stay columnar.
-    /// The inner `HashJoin` never reranges its rows, so `initRowStore` is told not to reserve for that.
+    /// The payload in stored form. The row store layout was decided in the constructor, and the columns
+    /// it admits are packed row-wise right here, so the probe reads one row pointer per output row
+    /// instead of one random column read per output column. The remaining columns stay columnar.
     Block prepared = HashJoin::prepareRightBlock(materialized, hash_join->savedBlockSample());
     assertBlocksHaveEqualStructureAllowReplicated(hash_join->data->sample_block, prepared, "joined block");
-    std::call_once(row_store_init_flag, [&] { hash_join->initRowStore(prepared, /*may_rerange=*/false); });
     fill.stored = hash_join->createStoredBlock(prepared, ScatteredBlock::Selector(rows));
 
     if (single_fill_thread)

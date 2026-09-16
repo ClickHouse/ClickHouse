@@ -516,8 +516,6 @@ private:
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
-    /// The row store layout is derived from the first block, as `HashJoin` does.
-    std::once_flag row_store_init_flag;
 
     size_t bits = 0;
     size_t partitions = 1;

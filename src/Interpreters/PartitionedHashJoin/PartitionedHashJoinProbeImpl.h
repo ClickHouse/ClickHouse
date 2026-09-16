@@ -290,7 +290,8 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     /// No null map and no ON mask: the loops run the instantiation without the per-row skip check.
     const bool fast_path = !join_keys.null_map && join_keys.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue;
 
-    if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
+    /// Deliberately the same condition as the `addFoundRowAll` branches of `processMatch`.
+    if constexpr (!flag_per_row && join_features.emits_whole_key_per_word)
         added_columns.lazy_output.output_by_row_list = true;
 
     if constexpr (join_features.need_replication)
