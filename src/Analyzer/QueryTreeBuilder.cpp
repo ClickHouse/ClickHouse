@@ -4,6 +4,7 @@
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/SettingSource.h>
 #include <Common/quoteString.h>
 
 #include <DataTypes/FieldToDataType.h>
@@ -300,9 +301,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
+        /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
+        /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
+        /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
+        /// Clamp it instead of throwing, as done for other settings crossing execution contexts
+        /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
+        /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
+        /// reader's constraints keeps working. A top-level clause still throws
+        /// (`applySettingsFromQuery`). Clamp a copy: the `QueryNode` keeps the clause as written, so
+        /// the tree's AST and hash are unchanged, and every node executing the subquery clamps it
+        /// against its own constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
         if (!set_query.changes.empty())
         {
-            updated_context->applySettingsChanges(set_query.changes);
+            auto checked_changes = set_query.changes;
+            updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
+            updated_context->applySettingsChanges(checked_changes);
             settings_changes = set_query.changes;
         }
     }
@@ -324,6 +337,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
+    current_query_tree->setIsLimitAfterAll(select_query_typed.limit_after_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
     bool order_by_all_enabled = select_query_typed.order_by_all && enable_order_by_all;
@@ -479,6 +493,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto select_limit_by = select_query_typed.limitBy();
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
+
+    auto select_limit_after = select_query_typed.limitAfter();
+    if (select_limit_after)
+        current_query_tree->getLimitAfter() = buildExpression(select_limit_after, current_context);
+
+    auto select_limit_until = select_query_typed.limitUntil();
+    if (select_limit_until)
+        current_query_tree->getLimitUntil() = buildExpression(select_limit_until, current_context);
 
     /// Combine limit expression with limit and offset settings into final limit expression
     /// `LIMIT` / `OFFSET` come straight from the SQL clauses. The `limit` / `offset` settings are no

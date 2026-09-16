@@ -1,0 +1,20 @@
+-- bin rounds an integer down, not toward zero --
+-5
+0
+-15
+-9223372036854775807
+0
+-- bin_at inherits the floor through its delegate --
+-5
+-2
+4.5
+-- a timespan column is an interval, not a bare number --
+1.00:00:00
+00:30:00
+2017-01-02 00:00:00.000000000
+true
+-- a parameter default must be a literal --
+-2
+true
+-- a parameterless tabular function may be rebound without parentheses --
+3
