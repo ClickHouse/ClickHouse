@@ -117,6 +117,32 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
+    static constexpr size_t getOptimizedSearchMinSize()
+    {
+        if constexpr (std::is_same_v<Initial, UInt8>)
+        {
+            /// `memchr` is kept out of line, so the short-row overhead needs a larger row to pay off.
+            return 64;
+        }
+        else if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+        {
+            if constexpr (std::is_same_v<Initial, UInt16>)
+                return 32;
+            else if constexpr (std::is_same_v<Initial, UInt32>)
+                return 16;
+            else
+                return 32;
+        }
+        else
+        {
+            /// `indexOf` scans a scalar prefix in the continuation before probing a vector block.
+            if constexpr (std::is_same_v<Initial, UInt16> || std::is_same_v<Initial, UInt32>)
+                return 80;
+            else
+                return 160;
+        }
+    }
+
     static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
         return accurate::equalsOp(left, right[i]);
@@ -203,9 +229,9 @@ public:
             && (std::is_same_v<Initial, UInt8> || std::is_same_v<Initial, UInt16> || std::is_same_v<Initial, UInt32>
                 || std::is_same_v<Initial, UInt64>))
         {
-            /// Keep the first few values on the tiny inline path. The continuation is deliberately out of line so
-            /// its vectorized loop does not change the code layout of this hot prefix.
-            if (array_size >= 8)
+            /// Keep short rows on the scalar path. The continuation is deliberately out of line so its vectorized
+            /// loop does not change the code layout of this hot prefix.
+            if (array_size >= getOptimizedSearchMinSize()) [[unlikely]]
             {
 #if defined(__clang__)
 #pragma unroll
