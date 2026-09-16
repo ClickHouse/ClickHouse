@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -11,7 +12,9 @@
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <fmt/format.h>
 
+#include <cstdint>
 #include <filesystem>
 
 namespace DB
