@@ -1263,6 +1263,13 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    /// The post-processing runs before the Keeper requests are sent on purpose: an object found to
+    /// be no longer the generation that was ingested (`FILE_CHANGED_DURING_READ`, see
+    /// `ObjectStorageQueuePostProcessor::process`) throws out of here, so that the batch is not
+    /// committed as processed. The files then go back to unprocessed (their `Processing` nodes are
+    /// released when the sources are destroyed) and the newer generation is ingested on a later pass,
+    /// instead of staying in the bucket untracked for good. The objects of the batch that were moved
+    /// or deleted are gone from the bucket, so that pass does not ingest them again.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty()
@@ -1659,7 +1666,8 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 void StorageObjectStorageQueue::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    AlterLockHolder &)
+    AlterLockHolder &,
+    DDLGuardPtr &)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alter");
     if (commands.isSettingsAlter())
@@ -1798,7 +1806,7 @@ void StorageObjectStorageQueue::alter(
         });
 
         LOG_TRACE(
-            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}): {})",
             new_metadata.settings_changes->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
@@ -2003,8 +2011,8 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     if (move_between_databases && !can_be_moved_between_databases)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot move Storage{}Queue table between databases because the `keeper_path` setting is not explicitly set."
-            "By default, the `keeper_path` includes the UUID of the database where the table was created, making it non-portable."
+            "Cannot move Storage{}Queue table between databases because the `keeper_path` setting is not explicitly set. "
+            "By default, the `keeper_path` includes the UUID of the database where the table was created, making it non-portable. "
             "Please set an explicit `keeper_path` to allow moving the table", configuration->getEngineName());
     }
 }

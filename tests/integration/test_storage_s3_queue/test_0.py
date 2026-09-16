@@ -985,8 +985,9 @@ def test_move_fresh_attempt_recognizes_committed_copy(started_cluster, engine_na
 def test_move_fails_closed_when_source_rewritten_before_post_processing(
     started_cluster, versioned
 ):
-    """A source rewritten after its rows were read, before the move inspects it, must be left
-    alone: neither copied nor deleted, and not hidden behind a delete marker."""
+    """A source rewritten after its rows were read, before the move inspects it, must not be moved
+    as if the newer generation had been ingested. The batch is refused, so the file is read again
+    and the newer generation is ingested too, rather than being moved away unread."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     table_name = f"move_rewritten_before_{token}"
@@ -1028,13 +1029,24 @@ def test_move_fails_closed_when_source_rewritten_before_post_processing(
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
 
+    # The move is refused while the source is not the generation that was ingested.
     wait_until(lambda: move_source_rewrites(node) > rewrites_before)
     assert move_collisions(node) == collisions_before
-    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 0
     assert read_s3_object(started_cluster, bucket, source_key) == rewritten
     if versioned:
         assert client.stat_object(bucket, source_key).version_id == rewritten_version
-    assert node.query(f"SELECT * FROM {table_name}_dst") == "1\t2\t3\n"
+
+    # The refusal did not commit the file, so the newer generation is read on a later attempt and
+    # the object is then moved as itself. Nothing is moved away unread, and nothing is lost.
+    wait_until(
+        lambda: node.query(f"SELECT * FROM {table_name}_dst ORDER BY ALL")
+        == "1\t2\t3\n7\t8\t9\n",
+        timeout=90,
+    )
+    wait_until(
+        lambda: count_minio_objects(started_cluster, bucket, processed_prefix) == 1,
+        timeout=90,
+    )
 
 
 @pytest.mark.parametrize(
@@ -1103,7 +1115,8 @@ def test_move_forged_destination_provenance(started_cluster, destination_token):
 
 
 def test_move_does_not_remove_rewritten_source(started_cluster):
-    """The delete that ends a move must not remove a generation the copy never consumed."""
+    """The delete that ends a move must not remove a generation the copy never consumed: it is
+    pinned to the generation that was copied, so a source replaced in between is left in place."""
     node = started_cluster.instances["instance"]
     token = generate_random_string()
     table_name = f"move_rewritten_{token}"

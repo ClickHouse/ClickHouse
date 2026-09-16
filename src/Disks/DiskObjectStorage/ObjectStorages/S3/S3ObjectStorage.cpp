@@ -37,6 +37,8 @@
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 
+#include <ranges>
+
 #include <aws/s3/model/Tag.h>
 #include <aws/s3/model/Tagging.h>
 
@@ -147,6 +149,7 @@ public:
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
         , start_after_set(start_after_.has_value() && !start_after_->empty())
+        , description(fmt::format("Bucket: {}, Prefix: {}", bucket_, path_prefix))
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
@@ -164,6 +167,9 @@ public:
     }
 
 private:
+    /// Not read off `request`: the listing worker mutates and sometimes replaces it while this runs.
+    std::string describeListing() const override { return description; }
+
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
@@ -222,6 +228,7 @@ private:
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
     bool start_after_set;
+    const std::string description;
 };
 
 }
@@ -419,6 +426,12 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                         .attributes = {},
                     }));
 
+        if (objects.empty() && outcome.GetResult().GetIsTruncated())
+            LOG_INFO(
+                LogFrequencyLimiter(log, 30),
+                "Listing returned an empty page while reporting more to come. Bucket: {}, Prefix: {}, Disk: {}",
+                uri.bucket, path, disk_name);
+
         if (max_keys)
         {
             ssize_t keys_left = static_cast<ssize_t>(max_keys) - children.size();
@@ -436,9 +449,14 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     const auto [bucket, key] = splitBucketAndKey(object.remote_path);
 
+    /// A `StoredObject` that carries an `ETag` names one generation of the object, not just a key:
+    /// the delete is then pinned to that generation with `If-Match`, so an object that was written
+    /// over after the caller looked at it (a move copies the generation it selected, then deletes)
+    /// is left in place, with `FILE_CHANGED_DURING_READ`, instead of being deleted without the newer
+    /// generation having been seen.
     deleteFileFromS3(client.get(), bucket, key, if_exists,
                       blob_storage_log, object.local_path, object.bytes_size,
-                      ProfileEvents::DiskS3DeleteObjects);
+                      ProfileEvents::DiskS3DeleteObjects, object.etag);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects)
@@ -467,6 +485,15 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
     {
         Strings keys = collectRemotePaths(objects_in_bucket);
 
+        /// The objects that name a generation are deleted pinned to it, see `removeObjectImpl`.
+        Strings etags_to_match;
+        if (std::ranges::any_of(objects_in_bucket, [](const StoredObject & object) { return !object.etag.empty(); }))
+        {
+            etags_to_match.reserve(objects_in_bucket.size());
+            for (const auto & object : objects_in_bucket)
+                etags_to_match.push_back(object.etag);
+        }
+
         auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
         Strings local_paths_for_blob_storage_log;
         VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
@@ -485,7 +512,8 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                           s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                           blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
                           ProfileEvents::DiskS3DeleteObjects,
-                          &successful_keys);
+                          &successful_keys,
+                          etags_to_match);
     }
 }
 
@@ -499,9 +527,10 @@ void S3ObjectStorage::removeObjectVersionIfExists(const StoredObject & object, c
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     const auto [bucket, key] = splitBucketAndKey(object.remote_path);
 
+    /// The version names one generation by itself, so the delete carries no `If-Match` of its own.
     deleteFileFromS3(client.get(), bucket, key, /*if_exists=*/true,
                      blob_storage_log, object.local_path, object.bytes_size,
-                     ProfileEvents::DiskS3DeleteObjects, version_id);
+                     ProfileEvents::DiskS3DeleteObjects, /*etag_to_match=*/{}, version_id);
 }
 
 void S3ObjectStorage::removeObjectsIfExist( /// NOLINT
@@ -683,6 +712,8 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*src_bucket=*/src_bucket,
                 /*src_key=*/src_key,
                 /*src_size=*/size,
+                /*src_etag=*/object_from.etag,
+                /*src_version_id=*/"",
                 /*dest_s3_client=*/current_client,
                 /*dest_bucket=*/dest_bucket,
                 /*dest_key=*/dest_key,
@@ -723,7 +754,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
-void S3ObjectStorage::copyObject( // NOLINT
+String S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -741,8 +772,12 @@ void S3ObjectStorage::copyObject( // NOLINT
     /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
     const String source_version_id = guarded_copy ? source_info.version_id : String{};
     /// A caller that already built provenance from an earlier lookup pins that generation here, so the
-    /// copy fails rather than stamping it onto bytes from a newer one.
-    const String & source_if_match = write_settings.object_storage_copy_source_if_match;
+    /// copy fails rather than stamping it onto bytes from a newer one; otherwise the source object's
+    /// own `ETag` names the generation the caller listed. One value, so the native copy and the
+    /// read-and-write fallback are pinned to the same generation.
+    const String source_if_match = write_settings.object_storage_copy_source_if_match.empty()
+        ? object_from.etag
+        : write_settings.object_storage_copy_source_if_match;
     /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
     /// `HeadObject` tag count, which restricted credentials do not get to see.
     std::optional<ObjectAttributes> source_tags;
@@ -751,11 +786,18 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
-    copyS3File(
+    /// A source that carries an `ETag` names the generation the caller has seen (a queue copies the
+    /// generation it ingested); the copy is pinned to it and transfers that generation or fails with
+    /// `S3_OBJECT_CHANGED_DURING_READ`. The read-and-write fallback reads the source through
+    /// `readObject`, which pins its `GET`s to the same `ETag`. The generation the copy created is
+    /// the one the response to the write names; see `copyObject`.
+    return copyS3File(
         /*src_s3_client=*/current_client,
         /*src_bucket=*/src_bucket,
         /*src_key=*/src_key,
         /*src_size=*/source_info.size,
+        /*src_etag=*/source_if_match,
+        /*src_version_id=*/source_version_id,
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/dest_bucket,
         /*dest_key=*/dest_key,
@@ -779,8 +821,6 @@ void S3ObjectStorage::copyObject( // NOLINT
         object_to_attributes,
         S3CopyFileSettings{
             .if_none_match = write_settings.object_storage_write_if_none_match,
-            .source_version_id = source_version_id,
-            .source_if_match = source_if_match,
             .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
                                            : std::optional<S3::ObjectHeaders>{},
             .source_tags = std::move(source_tags)});
