@@ -1,9 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BASE_SHA=25a638e44500860043a7d8be3f77bee63b4a3399
+BRANCH=agent/refreshable-mv-workload
+ORIGINAL_HEAD=$(git rev-parse HEAD)
+
+git config user.name clickhouse-gh
+git config user.email clickhouse-gh@users.noreply.github.com
 git remote add upstream https://github.com/ClickHouse/ClickHouse.git
-git fetch --no-tags --depth=700 upstream master
-git merge --no-commit --no-ff -X theirs upstream/master
+git config remote.upstream.promisor true
+git config remote.upstream.partialclonefilter blob:none
+git fetch --no-tags --filter=blob:none --depth=1 upstream "$BASE_SHA:refs/remotes/upstream/pr-base"
+git fetch --no-tags --filter=blob:none --depth=1 upstream "master:refs/remotes/upstream/current-master"
+MASTER_SHA=$(git rev-parse refs/remotes/upstream/current-master)
+
+# Recreate the exact three-way merge from the known PR merge base without downloading
+# the hundreds of intervening commits. The synthetic commits differ only by tree; the
+# final commit uses the real branch head and real master tip as its two parents.
+OURS_TREE=$(git rev-parse "$ORIGINAL_HEAD^{tree}")
+MASTER_TREE=$(git rev-parse "$MASTER_SHA^{tree}")
+SYNTHETIC_OURS=$(printf 'synthetic PR side\n' | git commit-tree "$OURS_TREE" -p "$BASE_SHA")
+SYNTHETIC_MASTER=$(printf 'synthetic master side\n' | git commit-tree "$MASTER_TREE" -p "$BASE_SHA")
+
+git checkout --detach "$SYNTHETIC_OURS"
+git merge --no-commit --no-ff -X theirs "$SYNTHETIC_MASTER"
 
 python3 - <<'PY'
 from pathlib import Path
@@ -83,8 +103,9 @@ The server setting is disabled by default to preserve existing scheduling behavi
 PY
 
 git diff --check
-git config user.name clickhouse-gh
-git config user.email clickhouse-gh@users.noreply.github.com
 git add -A
-git commit -m "Merge current master into RMV workload PR"
-git push origin HEAD:agent/refreshable-mv-workload
+MERGED_TREE=$(git write-tree)
+MERGE_COMMIT=$(printf 'Merge current master into RMV workload PR\n' | git commit-tree "$MERGED_TREE" -p "$ORIGINAL_HEAD" -p "$MASTER_SHA")
+git push origin "$MERGE_COMMIT:refs/heads/$BRANCH"
+echo "MERGE_COMMIT=$MERGE_COMMIT"
+echo "MASTER_SHA=$MASTER_SHA"
