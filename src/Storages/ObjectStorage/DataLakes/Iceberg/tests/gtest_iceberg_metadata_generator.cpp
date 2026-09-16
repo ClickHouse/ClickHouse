@@ -61,12 +61,10 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
         });
 }
 
-/// Generate one snapshot with explicit delete-file / operation parameters and return its `operation` summary field.
+/// Generate one snapshot with a typed summary update and return its `operation` summary field.
 String snapshotOperation(
     Poco::JSON::Object::Ptr metadata,
-    Int64 added_delete_files,
-    Int64 num_deleted_rows,
-    MetadataGenerator::SnapshotOperation operation = MetadataGenerator::SnapshotOperation::Append)
+    Iceberg::SnapshotSummaryUpdate update)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
@@ -75,15 +73,7 @@ String snapshotOperation(
         generator,
         metadata_info.path,
         /*parent_snapshot_id=*/ -1,
-        /*added_files=*/ 1,
-        /*added_records=*/ 1,
-        /*added_files_size=*/ 100,
-        /*num_partitions=*/ 1,
-        added_delete_files,
-        num_deleted_rows,
-        /*user_defined_snapshot_id=*/ std::nullopt,
-        /*user_defined_timestamp=*/ std::nullopt,
-        operation);
+        std::move(update));
     return result.snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_operation);
 }
 
@@ -101,7 +91,7 @@ void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_sna
 TEST(IcebergMetadataGenerator, AppendOperationForInsert)
 {
     auto metadata = makeMinimalV2Metadata();
-    EXPECT_EQ(snapshotOperation(metadata, /*added_delete_files=*/ 0, /*num_deleted_rows=*/ 0), Iceberg::f_append);
+    EXPECT_EQ(snapshotOperation(metadata, Iceberg::SnapshotSummaryUpdateAppend{.added_files = 1, .added_records = 1}), Iceberg::f_append);
 }
 
 /// A merge-on-read DELETE writes position-delete files, so its snapshot must be labelled `overwrite`
@@ -109,7 +99,7 @@ TEST(IcebergMetadataGenerator, AppendOperationForInsert)
 TEST(IcebergMetadataGenerator, OverwriteOperationForDelete)
 {
     auto metadata = makeMinimalV2Metadata();
-    EXPECT_EQ(snapshotOperation(metadata, /*added_delete_files=*/ 1, /*num_deleted_rows=*/ 5), Iceberg::f_overwrite);
+    EXPECT_EQ(snapshotOperation(metadata, Iceberg::SnapshotSummaryUpdateOverwrite{.added_delete_files = 1, .added_position_deletes = 5}), Iceberg::f_overwrite);
 }
 
 /// An explicit `Replace` (manifest rewrite / compaction) stays `replace` regardless of delete counters.
@@ -118,7 +108,7 @@ TEST(IcebergMetadataGenerator, ReplaceOperationIsPreserved)
     auto metadata = makeMinimalV2Metadata();
     EXPECT_EQ(
         snapshotOperation(
-            metadata, /*added_delete_files=*/ 1, /*num_deleted_rows=*/ 5, MetadataGenerator::SnapshotOperation::Replace),
+            metadata, Iceberg::SnapshotSummaryUpdateReplace{.added_delete_files = 1, .added_position_deletes = 5}),
         Iceberg::f_replace);
 }
 

@@ -142,7 +142,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Iceberg::SnapshotSummaryUpdate snapshot_summary_update,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp,
-    SnapshotOperation operation,
     const std::optional<String> & refresh_cursor)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);

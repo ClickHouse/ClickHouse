@@ -1304,7 +1304,6 @@ bool IcebergStorageSink::initializeMetadata()
         },
         /* user_defined_snapshot_id */ std::nullopt,
         /* user_defined_timestamp */ std::nullopt,
-        MetadataGenerator::SnapshotOperation::Append,
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
