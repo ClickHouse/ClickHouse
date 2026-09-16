@@ -10,10 +10,12 @@ FILE="$CLICKHOUSE_TMP/${CLICKHOUSE_DATABASE}_large_record_batch.arrows"
 trap 'rm -f "$FILE"' EXIT
 
 # Arrow IPC addresses the Utf8/Binary buffers with 32-bit offsets, so 21475 * 100000 bytes of String data
-# do not fit into a single record batch and have to be split across several of them.
+# do not fit into a single record batch and have to be split across several of them. `max_block_size` is
+# pinned because the harness randomizes it, and a smaller block would pass here without ever splitting.
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT number AS n, repeat('x', 100000) AS s
     FROM numbers(21475)
+    SETTINGS max_block_size = 21475
     FORMAT ArrowStream
 " > "$FILE"
 
@@ -27,7 +29,7 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 --query "
     SELECT toFixedString(toString(number % 3), 100000)::LowCardinality(FixedString(100000)) AS lc
     FROM numbers(21475)
-    SETTINGS output_format_arrow_fixed_string_as_fixed_byte_array = 0
+    SETTINGS output_format_arrow_fixed_string_as_fixed_byte_array = 0, max_block_size = 21475
     FORMAT ArrowStream
 " > "$FILE"
 

@@ -1013,6 +1013,18 @@ namespace DB
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array {} with {} data", value_type->name(), column_type->getName());
     }
 
+    /// Arrow's `Utf8`/`Binary` builders take an int32 length and their `Append` skips the copy when it is
+    /// negative, so a narrowed size would store an empty value instead of failing.
+    static void checkStringSizeFitsArrowOffsets(size_t size, const String & column_name, const String & format_name)
+    {
+        if (size > MAX_ARROW_BUFFER_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cannot write a value of {} bytes of column {} to {}: `Utf8`/`Binary` offsets are 32-bit, so a single "
+                "value cannot be larger than {} bytes",
+                size, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
+    }
+
     template <typename ColumnType, typename ArrowBuilder>
     static void fillArrowArrayWithStringColumnData(
         ColumnPtr write_column,
@@ -1037,6 +1049,7 @@ namespace DB
                 else
                 {
                     std::string_view string_ref = internal_column.getDataAt(string_i);
+                    checkStringSizeFitsArrowOffsets(string_ref.size(), write_column->getName(), format_name);
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -1047,6 +1060,7 @@ namespace DB
             for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i);
+                checkStringSizeFitsArrowOffsets(string_ref.size(), write_column->getName(), format_name);
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1915,7 +1929,7 @@ namespace DB
                             offset + rows,
                             settings.output_fixed_string_as_fixed_byte_array));
                 }
-                /// A row that does not fit on its own cannot be represented at all; let Arrow reject it.
+                /// A row that does not fit on its own cannot be represented at all; the leaf encoders reject it.
                 rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
 
                 /// For arrow::Table creation
