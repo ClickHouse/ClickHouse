@@ -898,8 +898,7 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
         /// Read statistics if any.
         ColumnMap::StatisticsPtr statistics;
         bool have_statistics = false;
-        if (settings.read_statistics)
-            readBinary(have_statistics, *stream);
+        readBinary(have_statistics, *stream);
         if (have_statistics)
         {
             auto mutable_statistics = std::make_shared<ColumnMap::Statistics>();
