@@ -181,6 +181,11 @@ public:
     void beginSinglePartitionInsert(size_t reserve, size_t rows, bool grow_at_max_fill_);
     void insertSingleLaneBlock(FillBlock & fill);
     bool finishSinglePartitionInsert();
+    /// The Join table engine's table: single-partition, small, grown by `emplace`; and its per-block
+    /// insert, which leaves the table probe-ready. Its keys and `RowRefList` chains live in
+    /// `join_table_arena`, shared by pointer with the per-query instances like the table itself.
+    void createJoinTable();
+    void insertJoinTableBlock(FillBlock & fill);
     /// Frees the post-build context and pool once the build is published.
     void releaseBuildScratch();
     /// Frees the table and arenas. The table goes first: cells point into the arenas and the row store.
@@ -399,9 +404,12 @@ private:
     bool narrow_locators = false;
 
     /// The one table. `build_arenas` hold the string keys and the duplicate spans the cells point at,
-    /// so they must outlive it: one arena per build worker plus one for the drain.
-    std::unique_ptr<HashJoinTableMaps> table_maps;
+    /// so they must outlive it: one arena per build worker plus one for the drain. A Join table's
+    /// instance keeps its keys and `Batch` chains in `join_table_arena` instead; both are shared by
+    /// pointer with the per-query instances.
+    std::shared_ptr<HashJoinTableMaps> table_maps;
     std::deque<Arena> build_arenas;
+    std::shared_ptr<Arena> join_table_arena;
     size_t ht_total_bytes = 0; /// the table's buffer bytes (drives the prefetch heuristics)
 
     std::unique_ptr<ThreadPool> post_build_pool;

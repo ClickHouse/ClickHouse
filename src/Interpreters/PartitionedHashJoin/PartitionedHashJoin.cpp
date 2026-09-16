@@ -84,6 +84,41 @@ PartitionedHashJoin::PartitionedHashJoin(
     const HashJoinStatsCollectingParams & stats_collecting_params_,
     size_t max_bytes_before_external_join_,
     std::optional<size_t> build_rows_hint_)
+    : PartitionedHashJoin(
+          std::move(table_join_),
+          std::move(right_sample_block_),
+          num_threads_,
+          any_take_last_row_,
+          stats_collecting_params_,
+          max_bytes_before_external_join_,
+          build_rows_hint_,
+          /*join_table_mode_=*/false)
+{
+}
+
+PartitionedHashJoin::PartitionedHashJoin(
+    JoinTableTag, std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_)
+    : PartitionedHashJoin(
+          std::move(table_join_),
+          std::move(right_sample_block_),
+          /*num_threads_=*/1,
+          any_take_last_row_,
+          HashJoinStatsCollectingParams{},
+          /*max_bytes_before_external_join_=*/0,
+          /*build_rows_hint_=*/std::nullopt,
+          /*join_table_mode_=*/true)
+{
+}
+
+PartitionedHashJoin::PartitionedHashJoin(
+    std::shared_ptr<TableJoin> table_join_,
+    SharedHeader right_sample_block_,
+    size_t num_threads_,
+    bool any_take_last_row_,
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    size_t max_bytes_before_external_join_,
+    std::optional<size_t> build_rows_hint_,
+    bool join_table_mode_)
     : table_join(std::move(table_join_))
     , right_sample_block(std::move(right_sample_block_))
     , any_take_last_row(any_take_last_row_)
@@ -101,6 +136,7 @@ PartitionedHashJoin::PartitionedHashJoin(
               /*use_parallel_layout_=*/false,
               /*allow_set_maps_=*/false))
     , delegate_mode(hash_join->needUsedFlagsForPerRightTableRow(table_join))
+    , join_table_mode(join_table_mode_)
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(!delegate_mode && build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())
     , stats_collecting_params(stats_collecting_params_.build)
@@ -128,6 +164,16 @@ PartitionedHashJoin::PartitionedHashJoin(
     /// threads; a lane index past the table takes the mutexed fallback.
     fill_lane_slots = std::vector<std::atomic<FillLane *>>(2 * num_threads);
     probe_scratch_slots = std::vector<std::atomic<ProbeScratch *>>(2 * num_threads);
+
+    if (join_table_mode)
+    {
+        /// `StorageJoin` accepts one key clause and no ASOF at `CREATE`, so these are not user errors.
+        if (delegate_mode)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table has exactly one key clause");
+        if (hash_join->getStrictness() == JoinStrictness::Asof)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
+        clause.createJoinTable();
+    }
 }
 
 PartitionedHashJoin::~PartitionedHashJoin()
@@ -294,6 +340,19 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     assertBlocksHaveEqualStructureAllowReplicated(hash_join->data->sample_block, prepared, "joined block");
     fill.stored = hash_join->createStoredBlock(prepared, ScatteredBlock::Selector(rows));
 
+    if (join_table_mode)
+    {
+        /// One block at a time under the storage's write lock: stored, then inserted straight into the
+        /// table, which is probe-ready again when this returns. No routes, no sketch, no barrier. The
+        /// limits are the storage's `max_rows_in_join` / `max_bytes_in_join`, checked as `HashJoin` does.
+        storeBlockInRowStore(fill);
+        clause.insertJoinTableBlock(fill);
+
+        if (!check_limits)
+            return true;
+        return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
+
     if (single_fill_thread)
     {
         /// One fill thread and no partition plan, so no routes and no sketch. The block is stored and
@@ -417,6 +476,11 @@ void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
 
 void PartitionedHashJoin::onBuildPhaseFinish()
 {
+    /// A Join table's join is built at every point: the storage inserts under its write lock and the
+    /// per-query instances only probe. There is nothing to finish.
+    if (join_table_mode)
+        return;
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
     if (delegate_mode)
@@ -490,6 +554,8 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
 
 void PartitionedHashJoin::runPostBuildPhase()
 {
+    if (join_table_mode)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table's join has no post-build phase");
     chassert(!build_phase_finished);
 
     if (delegate_mode)
@@ -600,6 +666,11 @@ size_t PartitionedHashJoin::getTotalRowCount() const
     if (delegate_mode)
         return hash_join->getTotalRowCount();
 
+    /// The distinct keys, as `HashJoin` reports them for a Join table; shared with the per-query
+    /// instances, so read from the table rather than from this instance's fill counter.
+    if (join_table_mode)
+        return clause.tableRowCount();
+
     if (!build_phase_finished || !clause.hasTable())
         return accumulated_rows.load(std::memory_order_relaxed);
 
@@ -610,6 +681,13 @@ size_t PartitionedHashJoin::getTotalByteCount() const
 {
     if (delegate_mode)
         return hash_join->getTotalByteCount();
+
+    if (join_table_mode)
+    {
+        /// The storage's stored blocks (shared with the per-query instances), the table and its arena.
+        const auto & data = storedData();
+        return data.allocated_size + data.nullmaps_allocated_size + clause.tableAndArenaBytes();
+    }
 
     return accumulated_bytes.load(std::memory_order_relaxed) + storedData().nullmaps_allocated_size + clause.tableAndArenaBytes();
 }
@@ -683,7 +761,7 @@ StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
     StepAnalysisReport report;
 
     MetricList right_metrics;
-    right_metrics.emplace_back(MetricKey::Rows, accumulated_rows.load(std::memory_order_relaxed));
+    right_metrics.emplace_back(MetricKey::Rows, join_table_mode ? storedData().rows_to_join.load() : accumulated_rows.load(std::memory_order_relaxed));
     report.push_back({MetricGroupKey::Right, std::move(right_metrics)});
 
     MetricList hash_table_metrics;
@@ -698,7 +776,9 @@ bool PartitionedHashJoin::alwaysReturnsEmptySet() const
 {
     if (delegate_mode)
         return hash_join->alwaysReturnsEmptySet();
-    return isInnerOrRight(table_join->kind()) && accumulated_rows.load(std::memory_order_relaxed) == 0;
+    /// A Join table's rows are the storage's, shared with every per-query instance.
+    const size_t rows = join_table_mode ? storedData().rows_to_join.load() : accumulated_rows.load(std::memory_order_relaxed);
+    return isInnerOrRight(table_join->kind()) && rows == 0;
 }
 
 PartitionedHashJoin::BuildStats PartitionedHashJoin::getBuildStats() const

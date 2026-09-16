@@ -592,6 +592,51 @@ void insertSectionFixed(
     }
 }
 
+/// The Join table engine's insert of one stored block: `emplaceKey` per row, the first row of a key
+/// initializing the cell and every later one appending to its `RowRefList` (a `Batch` chain, as
+/// `HashJoin` builds it) or, under `any_take_last_row`, replacing its `RowRef`. Rows the null map
+/// skips are stored but never inserted. The table grows inside `emplace`.
+template <typename KeyGetter, typename Table>
+void insertJoinTableRows(
+    Table & table,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    size_t rows,
+    UInt32 block_no,
+    const UInt8 * skip_bytes,
+    Arena & pool,
+    bool any_take_last_row)
+{
+    using Mapped = typename Table::mapped_type;
+    if constexpr (std::is_same_v<Mapped, AsofRowRefs>)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
+    }
+    else
+    {
+        KeyGetter key_getter(key_columns, key_sizes, nullptr);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (skip_bytes && skip_bytes[i])
+                continue;
+
+            auto emplace_result = key_getter.emplaceKey(table, i, pool);
+            Mapped & mapped = emplace_result.getMapped();
+            const UInt64 ref = RowRef(block_no, i).encode();
+            if constexpr (std::is_same_v<Mapped, RowRef>)
+            {
+                if (emplace_result.isInserted() || any_take_last_row)
+                    mapped = RowRef::fromWord(ref);
+            }
+            else
+            {
+                static_assert(std::is_same_v<Mapped, RowRefList>);
+                mapped.insert(ref, pool);
+            }
+        }
+    }
+}
+
 /// Serial drain of one partition's overflow. The walk starts at the home cell and uses the global mask.
 /// A row here has no cell of its key inside its owner's range. Otherwise its owner would have appended
 /// to that cell. The row either claims the first empty cell beyond the range, or appends to a cell
@@ -919,6 +964,7 @@ void HashJoinClause::releaseTable()
     releaseBuildScratch();
     table_maps.reset();
     build_arenas.clear();
+    join_table_arena.reset();
 }
 
 size_t HashJoinClause::tableAndArenaBytes() const
@@ -928,6 +974,8 @@ size_t HashJoinClause::tableAndArenaBytes() const
         res += table_maps->getBufferSizeInBytes(hash_join.data->type);
     for (const auto & arena : build_arenas)
         res += arena.allocatedBytes();
+    if (join_table_arena)
+        res += join_table_arena->allocatedBytes();
     return res;
 }
 
@@ -1444,7 +1492,7 @@ void HashJoinClause::createHashJoinTable()
     /// reserve alone asks for. The exactness check compares against what was actually created.
     ht_total_bytes = HashJoinTableMaps::bufferBytesForDegree(maps_variant_index, type, size_degree);
 
-    table_maps = std::make_unique<HashJoinTableMaps>(maps_variant_index);
+    table_maps = std::make_shared<HashJoinTableMaps>(maps_variant_index);
     table_maps->create(type, size_degree, bits);
 
     stats.table_size_degree = size_degree;
@@ -1613,6 +1661,53 @@ void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, boo
 
     forHashJoinTable(*table_maps, hash_join.data->type, [](auto & table) { table.commitAll(); });
     ctx.range_committed[0] = 1;
+}
+
+void HashJoinClause::createJoinTable()
+{
+    /// Sized for a handful of keys and doubled by `emplace` as the rows arrive: the engine has no
+    /// estimate, and the table exists from the start so that an empty Join table can be probed.
+    size_degree = sizeDegreeFor(1);
+    bits = 0;
+    partitions = 1;
+    createHashJoinTable();
+    forHashJoinTable(*table_maps, hash_join.data->type, [](auto & table) { table.commitAll(); });
+    join_table_arena = std::make_shared<Arena>();
+}
+
+void HashJoinClause::insertJoinTableBlock(FillBlock & fill)
+{
+    const HashJoin::Type type = hash_join.data->type;
+    const Sizes & key_sizes = hash_join.key_sizes[0];
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table, /*use_offset=*/false>::Type; \
+        insertJoinTableRows<KeyGetter, Table>( \
+            *shape_maps.TYPE, fill.key_columns, key_sizes, fill.rows, fill.block_no, fill.skipData(), *join_table_arena, any_take_last_row); \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default:
+                    throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", type);
+            }
+        },
+        table_maps->maps);
+
+    ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
+    stats.inserted_rows += fill.rows;
+    /// What `HashJoin` keeps for a Join table; the per-query instances size their used flags from it.
+    hash_join.data->keys_to_join = table_maps->getTotalRowCount(type);
+    /// The table may have doubled; the probe's prefetch heuristics read the size.
+    ht_total_bytes = table_maps->getBufferSizeInBytes(type);
+    forHashJoinTable(*table_maps, type, [&](const auto & table) { size_degree = table.sizeDegree(); });
+    fill.releaseInputs();
 }
 
 void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)

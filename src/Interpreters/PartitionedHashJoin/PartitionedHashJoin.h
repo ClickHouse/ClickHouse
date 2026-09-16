@@ -61,6 +61,15 @@ class TableJoin;
   * Several ON disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, need used flags
   * per right-table row, not per cell. Those joins run a standard `HashJoin` behind this interface
   * (`delegate_mode`) instead of a partitioned build.
+  *
+  * The Join table engine (`StorageJoin`) runs this join in a third mode, `join_table_mode`: one
+  * single-partition table, created empty with the join and filled one block at a time under the
+  * storage's write lock through `HashJoinTable::emplace`, so it grows as the rows arrive and is
+  * probe-ready between inserts; the rows of a key are chained with the appendable `RowRefList`
+  * `Batch`. There is no build phase. A query gets an instance of its own whose `hash_join` reuses
+  * the storage's stored blocks and which shares the table and its arena by pointer
+  * (`shareJoinTable`), with used flags of its own sized to the table. `joinGet` is a one-block probe
+  * of the storage's instance.
   */
 class PartitionedHashJoin : public IJoin
 {
@@ -77,6 +86,13 @@ public:
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         size_t max_bytes_before_external_join_ = 0,
         std::optional<size_t> build_rows_hint_ = {});
+
+    /// The Join table engine's instance; see the class comment. Single-threaded by construction: the
+    /// storage serializes the inserts with its write lock.
+    struct JoinTableTag
+    {
+    };
+    PartitionedHashJoin(JoinTableTag, std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_);
 
     ~PartitionedHashJoin() override;
 
@@ -127,7 +143,8 @@ public:
     bool isSingleLaneBuild() const { return single_fill_thread; }
 
     void onBuildPhaseFinish() override;
-    bool hasPostBuildPhase() const override { return true; }
+    /// A Join table's join has no build phase at all.
+    bool hasPostBuildPhase() const override { return !join_table_mode; }
     void runPostBuildPhase() override;
 
     /// The planner reads the matched count of the previous run to decide on the row store. It is
@@ -216,6 +233,16 @@ public:
 private:
     friend class NotJoinedPartitioned;
 
+    PartitionedHashJoin(
+        std::shared_ptr<TableJoin> table_join_,
+        SharedHeader right_sample_block_,
+        size_t num_threads_,
+        bool any_take_last_row_,
+        const HashJoinStatsCollectingParams & stats_collecting_params_,
+        size_t max_bytes_before_external_join_,
+        std::optional<size_t> build_rows_hint_,
+        bool join_table_mode_);
+
     /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
     const HashJoin::RightTableData & storedData() const { return *hash_join->data; }
     /// The inner join is built with one worker: this join stores the blocks itself, one thread at a time.
@@ -285,6 +312,8 @@ private:
 
     /// Set for the shapes that need per-row used flags; see the class comment.
     const bool delegate_mode;
+    /// The Join table engine's mode; see the class comment.
+    const bool join_table_mode;
 
     /// `IJoin::totals` is private, so the guarded overrides keep their own copy.
     std::mutex totals_mutex;
