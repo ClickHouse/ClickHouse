@@ -47,6 +47,8 @@ struct PartLogElement
         TTL_RECOMPRESS_MERGE = 4,
         /// Merge assigned to delete parts completely
         TTL_DROP_MERGE = 5,
+        /// Merge assigned to clear secondary index files from parts
+        TTL_CLEAR_INDEX_MERGE = 6,
     };
 
     String query_id;
