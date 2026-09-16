@@ -1,5 +1,7 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-random-settings
 -- no-old-analyzer: distributed planning requires the analyzer.
+-- no-random-settings: the test pins whole EXPLAIN outputs, and the harness randomizes several
+-- settings that move the join order and with it those plans.
 
 -- The pushed side of a `cascades_aggregation_pushdown` here is a JOIN SUBTREE, not a table scan
 -- (the header, statistics and condition columns all come from a join), plus the repeated
