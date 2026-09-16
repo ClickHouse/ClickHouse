@@ -153,7 +153,7 @@ ReachableFilesRoot resolveReachableFilesRoot(
         compression_method,
         persistent_table_components.table_uuid);
 
-    return {version, metadata_path, std::move(metadata)};
+    return {version, metadata_path, metadata};
 }
 
 std::unordered_set<String> collectReachableFiles(

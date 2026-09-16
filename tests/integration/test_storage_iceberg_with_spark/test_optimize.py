@@ -186,3 +186,54 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
             data_entries_checked += 1
 
     assert data_entries_checked > 0
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejected_when_gc_disabled(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_gc_disabled_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'gc.enabled' = 'false',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(10, 100)")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    files_before = set(default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    ))
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    assert "BAD_ARGUMENTS" in error
+    assert "GC is disabled" in error
+    assert set(default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )) == files_before
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80

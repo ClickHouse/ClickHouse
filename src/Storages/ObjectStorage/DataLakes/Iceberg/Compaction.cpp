@@ -218,6 +218,8 @@ static Plan getPlan(
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
+    validateGarbageCollectionEnabled(initial_metadata_object, "compact table");
+
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
     Poco::JSON::Array::Ptr current_schema;
