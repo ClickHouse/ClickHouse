@@ -114,6 +114,8 @@ public:
     /// after the switch the request is delegated to the active GraceHashJoin.
     bool spillForMemoryReservation();
     bool hasPendingMemoryReservationSpill() const;
+    /// Arm the active GraceHashJoin to spill from ordinary processor work.
+    bool forceSpill();
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
