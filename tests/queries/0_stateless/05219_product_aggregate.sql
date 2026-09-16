@@ -113,5 +113,11 @@ SELECT if(id < 3, 0, 1), product(x), finalizeAggregation(productState(x))
 FROM product_sparse
 GROUP BY if(id < 3, 0, 1)
 ORDER BY if(id < 3, 0, 1);
+SELECT productOrNull(x), productOrDefault(x) FROM product_sparse;
+SELECT product(x) FROM product_sparse SETTINGS aggregate_functions_null_for_empty = 1;
+SELECT if(id < 3, 0, 1), productOrNull(x), productOrDefault(x)
+FROM product_sparse
+GROUP BY if(id < 3, 0, 1)
+ORDER BY if(id < 3, 0, 1);
 
 DROP TABLE product_sparse;
