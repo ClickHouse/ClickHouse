@@ -60,13 +60,12 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # references to the container's elements would be invalidated.
     no_warning(lifetime-safety-invalidation)
 endif ()
-if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 24)
+if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # Too many false positives: it flags the pervasive idiom of taking a raw pointer out
     # of a `unique_ptr`, moving the owner into a container and returning the pointer -
     # the storage is on the heap and outlives the local, and the diagnostic text itself
     # concedes it "could be a false positive as the storage may have been moved".
-    # Nothing links clang 24 today except the Emscripten build (its clang is ahead of the
-    # default toolchain); re-evaluate when the default toolchain catches up.
+    # Emitted from clang 23 on, alongside the three related diagnostics suppressed above.
     no_warning(lifetime-safety-return-stack-addr-moved)
 endif ()
 if (ARCH_E2K)
