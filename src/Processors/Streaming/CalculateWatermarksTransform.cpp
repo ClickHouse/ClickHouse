@@ -17,10 +17,16 @@
 namespace DB
 {
 
-static ColumnPtr calculateWatermarkColumn(const ExpressionActionsPtr & actions, Block data)
+static Field calculateWatermark(const ExpressionActionsPtr & actions, Block data)
 {
     actions->execute(data, data.rows());
-    return data.getByPosition(0).column->convertToFullColumnIfConst();
+    const auto watermark_column = data.getByPosition(0).column;
+
+    Field min_value;
+    Field max_value;
+    watermark_column->getExtremes(min_value, max_value, 0, data.rows());
+
+    return max_value;
 }
 
 CalculateWatermarksTransform::CalculateWatermarksTransform(
@@ -41,10 +47,8 @@ void CalculateWatermarksTransform::consume(Chunk chunk)
         return;
     }
 
-    Field min_value;
-    Field max_value;
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    calculateWatermarkColumn(watermark_expression, std::move(block))->getExtremes(min_value, max_value, 0, num_rows);
+    Field max_value = calculateWatermark(watermark_expression, std::move(block));
 
     pending_chunks.push(std::move(chunk));
     pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(max_value)));
