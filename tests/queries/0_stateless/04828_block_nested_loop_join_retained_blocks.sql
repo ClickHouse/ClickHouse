@@ -41,15 +41,18 @@ SETTINGS cross_join_min_rows_to_compress = 1, max_memory_usage = '20Mi';
 -- allow. `max_block_size = 1` on the probe source is what gives every stream chunks of its own to
 -- walk the store with; it is scoped to the subquery so the walk and the output keep their normal
 -- granularity - per-row chunks everywhere would make the query per-row-slow under the flaky check's
--- `ThreadFuzzer`, whose injections tax every extra chunk.
+-- `ThreadFuzzer`, whose injections tax every extra chunk. The join squashes its left input to
+-- `min_joined_block_size_*`, which would merge those chunks back into one, so that is turned off.
 SELECT 'spilled, 8 streams', count(), sum(cityHash64(r.t))
 FROM (SELECT number AS x FROM numbers(16) SETTINGS max_block_size = 1) l
 LEFT JOIN bnl_ret_build r ON r.y > l.x AND (r.y % 4096) < l.x + 1
-SETTINGS max_bytes_before_external_join = '1Mi', max_threads = 8, max_memory_usage = '64Mi';
+SETTINGS max_bytes_before_external_join = '1Mi', max_threads = 8, max_memory_usage = '64Mi',
+    min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 
 SELECT 'compressed, 8 streams', count(), sum(cityHash64(r.t))
 FROM (SELECT number AS x FROM numbers(16) SETTINGS max_block_size = 1) l
 LEFT JOIN bnl_ret_build r ON r.y > l.x AND (r.y % 4096) < l.x + 1
-SETTINGS cross_join_min_rows_to_compress = 1, max_threads = 8, max_memory_usage = '40Mi';
+SETTINGS cross_join_min_rows_to_compress = 1, max_threads = 8, max_memory_usage = '40Mi',
+    min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 
 DROP TABLE bnl_ret_build;

@@ -27,8 +27,8 @@ public:
         BlockNestedLoopStoreSettings store_settings_,
         size_t max_block_size_,
         size_t max_block_bytes_,
-        size_t min_build_block_size_,
-        size_t min_build_block_bytes_,
+        size_t min_input_block_size_,
+        size_t min_input_block_bytes_,
         JoinAnalyzeMode analyze_mode_);
 
     /// The two stages of execution, kept apart so that `EXPLAIN ANALYZE` attributes the time
@@ -85,10 +85,10 @@ private:
     /// `max_joined_block_size_bytes`.
     size_t max_block_size;
     size_t max_block_bytes;
-    /// What the right input is squashed to before it is stored, from `min_joined_block_size_rows`
+    /// What either input is squashed to on its way into the operator, from `min_joined_block_size_rows`
     /// and `min_joined_block_size_bytes`.
-    size_t min_build_block_size;
-    size_t min_build_block_bytes;
+    size_t min_input_block_size;
+    size_t min_input_block_bytes;
     /// Whether the operator counts what `EXPLAIN ANALYZE` reports, and how much of it: `Exact` also
     /// buys the numbers the join has no use for itself.
     JoinAnalyzeMode analyze_mode;

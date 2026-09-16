@@ -303,10 +303,10 @@ Maximum block size for JOIN result (if join algorithm supports it), and for the 
 Maximum block size in bytes for JOIN result (if join algorithm supports it), and for the result of the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which is not selected through `join_algorithm`. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
-Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it), and for the right side of the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which is not selected through `join_algorithm`. Small blocks will be squashed. 0 means unlimited.
+Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
-Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it), and for the right side of the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which is not selected through `join_algorithm`. Small blocks will be squashed. 0 means unlimited.
+Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(Bool, joined_block_split_single_row, false, R"(
 Allow to chunk hash join result by rows corresponding to single row from left table.

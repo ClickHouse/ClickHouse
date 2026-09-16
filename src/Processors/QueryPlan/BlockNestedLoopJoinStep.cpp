@@ -100,8 +100,8 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     BlockNestedLoopStoreSettings store_settings_,
     size_t max_block_size_,
     size_t max_block_bytes_,
-    size_t min_build_block_size_,
-    size_t min_build_block_bytes_,
+    size_t min_input_block_size_,
+    size_t min_input_block_bytes_,
     JoinAnalyzeMode analyze_mode_)
     : kind(kind_)
     , strictness(strictness_)
@@ -109,8 +109,8 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     , store_settings(std::move(store_settings_))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
-    , min_build_block_size(min_build_block_size_)
-    , min_build_block_bytes(min_build_block_bytes_)
+    , min_input_block_size(min_input_block_size_)
+    , min_input_block_bytes(min_input_block_bytes_)
     , analyze_mode(analyze_mode_)
 {
     if (!isSupportedJoinType(kind, strictness))
@@ -237,14 +237,14 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
         /// blocks costs one evaluation of the condition per block per probe chunk, and a stage that
         /// walks the store emits one chunk per block. Squashing the build side makes both a matter
         /// of the settings rather than of how the right input happened to be written.
-        if (min_build_block_size > 0 || min_build_block_bytes > 0)
+        if (min_input_block_size > 0 || min_input_block_bytes > 0)
         {
             build_pipeline->addSimpleTransform(
                 [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                 {
                     if (stream_type != QueryPipelineBuilder::StreamType::Main)
                         return nullptr;
-                    return std::make_shared<SimpleSquashingChunksTransform>(header, min_build_block_size, min_build_block_bytes);
+                    return std::make_shared<SimpleSquashingChunksTransform>(header, min_input_block_size, min_input_block_bytes);
                 });
         }
 
@@ -283,6 +283,17 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
         probe_pipeline->resize(max_streams);
         /// No probe stream, the totals stream included, may pull a row before the store is closed.
         probe_pipeline->addPipelineBefore(std::move(*build_pipeline));
+
+        if (min_input_block_size > 0 || min_input_block_bytes > 0)
+        {
+            probe_pipeline->addSimpleTransform(
+                [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                {
+                    if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                        return nullptr;
+                    return std::make_shared<SimpleSquashingChunksTransform>(header, min_input_block_size, min_input_block_bytes);
+                });
+        }
 
         probe_pipeline->addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
