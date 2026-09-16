@@ -25,6 +25,7 @@ namespace Setting
 extern const SettingsBool allow_experimental_analyzer;
 extern const SettingsBool log_queries;
 extern const SettingsBool log_query_plans;
+extern const SettingsBool make_distributed_plan;
 }
 
 namespace
@@ -138,6 +139,10 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
 
     if (!settings[Setting::allow_experimental_analyzer])
         return declined("setting `allow_experimental_analyzer` is false and the old analyzer cannot capture plans");
+
+    /// Distributed execution is not supported.
+    if (settings[Setting::make_distributed_plan])
+        return declined("setting `make_distributed_plan` is true and distributed execution is not supported");
 
     return true;
 }
