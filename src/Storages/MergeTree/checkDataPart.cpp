@@ -470,13 +470,31 @@ static CheckDataPartResult checkDataPart(
         }
     }
 
-    /// Left over = on disk but not declared in metadata: residue, or a projection dropped while the part was detached.
+    /// Left over = on disk but not declared in metadata: residue, or a projection dropped while the part was detached
+    /// (or an INSERT that had started before `DROP PROJECTION` committed wrote the part afterwards).
     if (!remaining_projections_on_disk.empty())
     {
         is_broken_projection = true;
-        for (const auto & projection_file : remaining_projections_on_disk)
-            if (checksums_txt.files.contains(projection_file))
-                checksums_txt.remove(projection_file);
+
+        for (auto it = remaining_projections_on_disk.begin(); it != remaining_projections_on_disk.end();)
+        {
+            /// A directory the part itself lists in its `checksums.txt` was written deliberately, with
+            /// a projection the table has since dropped; the part is intact and has to keep passing the
+            /// check. Drop it from the unexpected set as well, or the `require_checksums` branch below
+            /// reports the part as broken - which is what happens to every mutation descendant of such
+            /// a part, because a mutation hardlinks the directory and is checked with checksums
+            /// required. A directory that the part does not list is a leftover nobody wrote as part of
+            /// it, so it stays unexpected.
+            if (checksums_txt.files.contains(*it))
+            {
+                checksums_txt.remove(*it);
+                it = remaining_projections_on_disk.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
     }
 
     /// Also handle leftover checksums entries for projections that are unknown to the current metadata
