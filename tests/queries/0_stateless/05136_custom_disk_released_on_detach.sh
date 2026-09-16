@@ -105,6 +105,7 @@ SELECT 'nested disks after drop', count() FROM system.disks WHERE name IN ('$inn
 SYSTEM FLUSH LOGS text_log;
 SELECT 'shut down', replaceAll(replaceAll(message, '$inner_disk', 'inner'), '$cache_disk', 'cache')
 FROM system.text_log
-WHERE event_date >= yesterday() AND message LIKE 'Disk % shut down' AND message LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}%'
+WHERE event_date >= yesterday() AND message LIKE 'Disk % shut down'
+    AND (message LIKE '%$inner_disk%' OR message LIKE '%$cache_disk%' OR message LIKE '%$encrypted_disk%')
 ORDER BY event_time_microseconds;
 "
