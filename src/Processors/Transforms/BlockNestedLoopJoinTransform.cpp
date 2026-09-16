@@ -648,19 +648,13 @@ bool BlockNestedLoopProbeTransform::hasFullOutputChunk() const
         return true;
     if (max_block_bytes != 0 && numPendingPairs() * (walk.probe_row_bytes + walk.build_row_bytes) >= max_block_bytes)
         return true;
-    /// The pending pairs keep alive every build block they came from. A condition selective enough to
-    /// match a few rows in each of them would otherwise pin the whole build side, decompressed and
-    /// read back from disk, which is what compressing and spilling it exist to avoid. Cutting the
-    /// chunk here releases the blocks its pairs were gathered from.
+    /// The pending pairs keep alive every materialized block they came from; emitting them early
+    /// releases those blocks, so that a selective condition does not pin the whole build side.
     ///
-    /// The allowance is this stream's share of the step's, so that what the probe phase holds does not
-    /// grow with `max_threads`. Where the store hands the same materialized block to several streams,
-    /// each of them counts those bytes against its own share, which overstates what is held rather
-    /// than under it.
-    ///
-    /// The pairs of a single block are never cut short, however small the share: a block is what the
-    /// store materializes at once, so a stream that may not hold one would emit a chunk per tile
-    /// instead of per block and gain nothing for it.
+    /// The limit is the step's budget divided among its probe streams. A stream holds at most that plus
+    /// the block it is walking, which it needs whether or not any of its pairs survived yet; for the
+    /// same reason the pairs of a single block are always emitted together. A block several streams
+    /// pin is counted by each of them, which overstates what is held rather than understating it.
     return walk.build_runs.size() > 1 && walk.retained_build_bytes >= max_retained_build_bytes;
 }
 
