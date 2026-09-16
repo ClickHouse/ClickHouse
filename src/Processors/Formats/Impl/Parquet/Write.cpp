@@ -628,6 +628,13 @@ struct ConverterJSON
     {
     }
 
+    /// How many bytes of serialized values to stop after, 0 for no limit. The caller cannot
+    /// measure a JSON value without serializing it - its size is not the column's byteSizeAt,
+    /// which counts neither the keys nor the punctuation - so the batch is bounded here instead
+    /// of being materialized in full and cut afterwards.
+    size_t byte_budget = 0;
+    size_t produced = 0;
+
     const parquet::ByteArray * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
@@ -636,6 +643,8 @@ struct ConverterJSON
 
         auto serialization = data_type->getDefaultSerialization();
 
+        size_t bytes = 0;
+        produced = count;
         for (size_t i = 0; i < count; ++i)
         {
             WriteBufferFromOwnString wb;
@@ -645,9 +654,19 @@ struct ConverterJSON
             const String & s = stash.back();
 
             buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+
+            bytes += s.size();
+            if (byte_budget != 0 && bytes >= byte_budget)
+            {
+                produced = i + 1;
+                break;
+            }
         }
         return buf.data();
     }
+
+    size_t producedBatchSize() const { return produced; }
+    void setByteBudget(size_t budget) { byte_budget = budget; }
 };
 
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
@@ -1287,8 +1306,35 @@ void writeColumnImpl(
                     [&](size_t i) { return s.primitive_column->byteSizeAt(next_data_offset + i); });
             }
 
+            /// A converter that cannot be measured without doing the work bounds itself, and reports
+            /// how much of the batch it produced. Only for a column with no repetition levels: a
+            /// shorter batch has to stay a whole number of records when pages follow record
+            /// boundaries, and the values that would complete one have not been converted.
+            const bool converter_bounds_itself = s.max_rep == 0;
+            if constexpr (requires { converter.setByteBudget(size_t{}); })
+                converter.setByteBudget(converter_bounds_itself ? max_batch_bytes : 0);
+
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
+
+            if constexpr (requires { converter.producedBatchSize(); })
+            {
+                if (const size_t produced = converter.producedBatchSize(); produced < data_count)
+                {
+                    /// With no repetition levels a record is one value, so the batch can be cut at
+                    /// any of them; def_count follows the values that were produced.
+                    size_t def_count_kept = produced;
+                    if (s.max_def != 0)
+                    {
+                        size_t values = 0;
+                        for (def_count_kept = 0; values < produced; ++def_count_kept)
+                            values += s.def[next_def_offset + def_count_kept] == s.max_def;
+                    }
+
+                    def_count = def_count_kept;
+                    data_count = produced;
+                }
+            }
 
             /// May shrink the batch, so it has to run before anything else consumes `data_count`.
             size_t batch_byte_size = 0;
