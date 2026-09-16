@@ -24,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 ## Прежде чем начать {#before-you-start}
 
-Сначала выполните инструкции из README проекта [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse). Там объясняется, как настроить проект с dbt Core 1.x, dbt Core v2 или платформой dbt, как подключить его к локальному ClickHouse (docker) или ClickHouse Cloud, как загрузить демонстрационные данные командой `dbt seed` и как выполнить первый `dbt build`. После того как `dbt build` успешно завершится, возвращайтесь сюда за примерами и конфигурациями, специфичными для ClickHouse.
+Сначала выполните инструкции из README проекта [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse). Там объясняется, как настроить проект с dbt Core 1.x, dbt OSS, dbt v2 или платформой dbt, как подключить его к локальному ClickHouse (docker) или ClickHouse Cloud, как загрузить демонстрационные данные командой `dbt seed` и как выполнить первый `dbt build`. После того как `dbt build` успешно завершится, возвращайтесь сюда за примерами и конфигурациями, специфичными для ClickHouse.
 
 После выполнения шагов из README в ClickHouse у вас должно быть две базы данных:
 
@@ -34,7 +34,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 Если в вашем профиле используется другая `schema`, замените `jaffle_shop` в приведённых ниже запросах на своё значение.
 
 <Note>
-  **dbt Core 1.x, dbt Core v2 и платформа dbt.** Все команды и модели в этом руководстве одинаковы для всех трёх вариантов. Примеры проверялись на dbt Core 1.12 с `dbt-clickhouse` 1.10 и на dbt Core v2 2.0 с ClickHouse 26.8; платформа dbt работает на движке dbt Core v2. Приведённый вывод в консоли получен в dbt Core 1.x; те немногие случаи, где поведение движков различается, отмечены отдельно. Текущий статус адаптера v2 см. на [странице dbt Core v2](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform), а для начала работы с платформой dbt — раздел [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) в документации dbt.
+  **dbt Core 1.x, dbt OSS, dbt v2 и платформа dbt.** Все команды и модели в этом руководстве одинаковы для всех них. Примеры проверялись на dbt Core 1.12 с `dbt-clickhouse` 1.10 и на dbt OSS 2.0 с ClickHouse 26.8; dbt v2 использует тот же adapter, а платформа dbt работает на dbt v2. Приведённый вывод в консоли получен в dbt Core 1.x; те немногие случаи, где поведение движков различается, отмечены отдельно. Текущий статус адаптера v2 см. на [странице dbt OSS, dbt v2 и платформы dbt](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform), а для начала работы с платформой dbt — раздел [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) в документации dbt.
 </Note>
 
 Все SQL-команды, не являющиеся командами dbt, предназначены для выполнения непосредственно в ClickHouse — например, с помощью `clickhouse client`, SQL-консоли ClickHouse Cloud или любого другого SQL-клиента на ваш выбор.
@@ -114,12 +114,12 @@ Jaffle Shop использует dbt [seeds](https://docs.getdbt.com/docs/build/
 
 Тем не менее seeds — хорошая отправная точка, чтобы разобраться, как dbt создаёт таблицы ClickHouse. dbt выводит тип столбца для каждого столбца CSV, и выведенные типы различаются в зависимости от движка:
 
-| Значение CSV          | dbt Core 1.x | dbt Core v2     |
-| --------------------- | ------------ | --------------- |
-| `700`                 | `Int32`      | `Int64`         |
-| `0.06`                | `Float32`    | `Float64`       |
-| `2024-09-01T15:01:00` | `DateTime`   | `DateTime64(6)` |
-| `Philadelphia`        | `String`     | `String`        |
+| Значение CSV          | dbt v1     | движок v2       |
+| --------------------- | ---------- | --------------- |
+| `700`                 | `Int32`    | `Int64`         |
+| `0.06`                | `Float32`  | `Float64`       |
+| `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
+| `Philadelphia`        | `String`   | `String`        |
 
 Если тип важен, задайте его явно через `column_types`. В проекте это уже сделано для столбца `opened_at` seed-а `raw_stores` в файле `dbt_project.yml`:
 
@@ -145,7 +145,7 @@ seeds:
 ```
 
 <Note>
-  Для этих seed-конфигураций ClickHouse используйте файл свойств, а не ключи `+order_by` или `+engine` в разделе `seeds:` файла `dbt_project.yml`. dbt Core 1.x принимает оба варианта, однако dbt Core v2 распознаёт их только в файле свойств и отклоняет ключи из `dbt_project.yml` с ошибкой `Unrecognized key ... Custom keys must go under +meta`.
+  Для этих seed-конфигураций ClickHouse используйте файл свойств, а не ключи `+order_by` или `+engine` в разделе `seeds:` файла `dbt_project.yml`. dbt Core 1.x принимает оба варианта, однако dbt v2 распознаёт их только в файле свойств и отклоняет ключи из `dbt_project.yml` с ошибкой `Unrecognized key ... Custom keys must go under +meta`.
 </Note>
 
 Загрузите этот seed заново и проверьте созданную им таблицу:
@@ -796,4 +796,4 @@ ORDER BY order_date, store_id;
 
 ## Дополнительная информация {#further-information}
 
-Это руководство лишь поверхностно затрагивает dbt. [Документация dbt](https://docs.getdbt.com/docs/introduction) служит справочником по всему, что не относится непосредственно к ClickHouse. Что касается адаптера, см. страницу [features and configurations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) — о настройках профиля и глобальных возможностях, [страницу materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) — обо всех использованных выше конфигурациях, а также [страницу dbt Core v2](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform), если вы используете новый движок или платформу dbt. Приветствуется добавление новых примеров в [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse).
+Это руководство лишь поверхностно затрагивает dbt. [Документация dbt](https://docs.getdbt.com/docs/introduction) служит справочником по всему, что не относится непосредственно к ClickHouse. Что касается adapterа, см. страницу [features and configurations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) — о настройках профиля и глобальных возможностях, [страницу materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) — обо всех использованных выше конфигурациях, а также [страницу dbt OSS, dbt v2 и платформы dbt](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform), если вы используете dbt OSS, dbt v2 или платформу dbt. Приветствуется добавление новых примеров в [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse).

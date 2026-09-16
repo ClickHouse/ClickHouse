@@ -24,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 
 ## 시작하기 전에 {#before-you-start}
 
-먼저 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)의 README를 따르십시오. 이 문서에서는 dbt Core 1.x, dbt Core v2 또는 dbt 플랫폼으로 프로젝트를 설정하는 방법, 로컬 ClickHouse(docker) 또는 ClickHouse Cloud를 가리키도록 지정하는 방법, `dbt seed`로 샘플 데이터를 로드하는 방법, 첫 `dbt build`를 실행하는 방법을 설명합니다. `dbt build`가 성공적으로 완료되면 ClickHouse 전용 예시와 구성을 확인하기 위해 이 페이지로 돌아오십시오.
+먼저 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)의 README를 따르십시오. 이 문서에서는 dbt Core 1.x, dbt OSS, dbt v2 또는 dbt 플랫폼으로 프로젝트를 설정하는 방법, 로컬 ClickHouse(docker) 또는 ClickHouse Cloud를 가리키도록 지정하는 방법, `dbt seed`로 샘플 데이터를 로드하는 방법, 첫 `dbt build`를 실행하는 방법을 설명합니다. `dbt build`가 성공적으로 완료되면 ClickHouse 전용 예시와 구성을 확인하기 위해 이 페이지로 돌아오십시오.
 
 README의 단계를 마치면 ClickHouse에 다음 두 개의 데이터베이스가 생성되어 있어야 합니다:
 
@@ -34,7 +34,7 @@ README의 단계를 마치면 ClickHouse에 다음 두 개의 데이터베이스
 프로필에서 다른 `schema`를 사용하는 경우, 아래 쿼리의 `jaffle_shop`을 해당 값으로 바꾸십시오.
 
 <Note>
-  **dbt Core 1.x, dbt Core v2 및 dbt 플랫폼.** 이 가이드의 모든 명령어와 모델은 세 환경에서 동일합니다. 예시는 `dbt-clickhouse` 1.10을 사용한 dbt Core 1.12와 dbt Core v2 2.0으로 ClickHouse 26.8을 대상으로 테스트했으며, dbt 플랫폼은 dbt Core v2 엔진으로 동작합니다. 여기에 표시된 콘솔 출력은 dbt Core 1.x의 것이며, 엔진별로 동작이 다른 몇 가지 부분은 별도로 언급합니다. v2 어댑터의 현재 상태는 [dbt Core v2 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 참조하고, dbt 플랫폼에서 시작하려면 dbt 문서의 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)를 참조하십시오.
+  **dbt Core 1.x, dbt OSS, dbt v2 및 dbt 플랫폼.** 이 가이드의 모든 명령어와 모델은 이들 모두에서 동일합니다. 예시는 `dbt-clickhouse` 1.10을 사용한 dbt Core 1.12와 dbt OSS 2.0으로 ClickHouse 26.8을 대상으로 테스트했으며, dbt v2는 동일한 어댑터로 동작하고 dbt 플랫폼은 dbt v2로 동작합니다. 여기에 표시된 콘솔 출력은 dbt Core 1.x의 것이며, 엔진별로 동작이 다른 몇 가지 부분은 별도로 언급합니다. v2 어댑터의 현재 상태는 [dbt OSS, dbt v2 및 dbt 플랫폼 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 참조하고, dbt 플랫폼에서 시작하려면 dbt 문서의 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)를 참조하십시오.
 </Note>
 
 dbt 명령어가 아닌 모든 SQL 문은 ClickHouse에서 직접 실행하도록 작성되었습니다. 예를 들어 `clickhouse client`, ClickHouse Cloud SQL 콘솔 또는 원하는 SQL 클라이언트를 사용할 수 있습니다.
@@ -114,12 +114,12 @@ Jaffle Shop은 dbt [seeds](https://docs.getdbt.com/docs/build/seeds)를 사용�
 
 그럼에도 seed는 dbt가 ClickHouse 테이블을 어떻게 생성하는지 익히기에 좋은 출발점입니다. dbt는 각 CSV 컬럼의 컬럼 타입을 추론하며, 추론된 타입은 엔진에 따라 다릅니다:
 
-| CSV 값                 | dbt Core 1.x | dbt Core v2     |
-| --------------------- | ------------ | --------------- |
-| `700`                 | `Int32`      | `Int64`         |
-| `0.06`                | `Float32`    | `Float64`       |
-| `2024-09-01T15:01:00` | `DateTime`   | `DateTime64(6)` |
-| `Philadelphia`        | `String`     | `String`        |
+| CSV 값                 | dbt v1     | v2 엔진           |
+| --------------------- | ---------- | --------------- |
+| `700`                 | `Int32`    | `Int64`         |
+| `0.06`                | `Float32`  | `Float64`       |
+| `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
+| `Philadelphia`        | `String`   | `String`        |
 
 타입이 중요하다면 `column_types`로 명시적으로 지정하십시오. 이 프로젝트에서는 이미 `dbt_project.yml`에서 `raw_stores` seed의 `opened_at` 컬럼에 이를 적용하고 있습니다:
 
@@ -145,7 +145,7 @@ seeds:
 ```
 
 <Note>
-  이러한 ClickHouse seed 구성에는 `dbt_project.yml`의 `seeds:` 아래에 있는 `+order_by` 또는 `+engine` 키 대신 properties 파일을 사용하십시오. dbt Core 1.x는 두 형식 모두를 허용하지만, dbt Core v2는 properties 파일에서만 이를 인식하며 `dbt_project.yml`의 키는 `Unrecognized key ... Custom keys must go under +meta` 오류와 함께 거부합니다.
+  이러한 ClickHouse seed 구성에는 `dbt_project.yml`의 `seeds:` 아래에 있는 `+order_by` 또는 `+engine` 키 대신 properties 파일을 사용하십시오. dbt Core 1.x는 두 형식 모두를 허용하지만, dbt v2는 properties 파일에서만 이를 인식하며 `dbt_project.yml`의 키는 `Unrecognized key ... Custom keys must go under +meta` 오류와 함께 거부합니다.
 </Note>
 
 해당 seed를 다시 로드하고 생성된 테이블을 확인하십시오:
@@ -796,4 +796,4 @@ ORDER BY order_date, store_id;
 
 ## 추가 정보 {#further-information}
 
-이 가이드는 dbt의 기본적인 내용만 다룹니다. ClickHouse에 특화되지 않은 내용은 모두 [dbt 문서](https://docs.getdbt.com/docs/introduction)를 참고하십시오. 어댑터의 경우 profile 설정과 전역 기능은 [features and configurations](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 페이지를, 위에서 사용한 모든 구성은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)를, 새로운 engine이나 dbt 플랫폼을 사용한다면 [dbt Core v2 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 확인하십시오. [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)에 새로운 예시를 기여해 주시면 언제든 환영합니다.
+이 가이드는 dbt의 기본적인 내용만 다룹니다. ClickHouse에 특화되지 않은 내용은 모두 [dbt 문서](https://docs.getdbt.com/docs/introduction)를 참고하십시오. 어댑터의 경우 profile 설정과 전역 기능은 [features and configurations](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 페이지를, 위에서 사용한 모든 구성은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)를, dbt OSS, dbt v2 또는 dbt 플랫폼을 사용한다면 [dbt OSS, dbt v2 및 dbt 플랫폼 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 확인하십시오. [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)에 새로운 예시를 기여해 주시면 언제든 환영합니다.

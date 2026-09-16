@@ -23,7 +23,7 @@ dbt에서는 이러한 모델을 서로 참조하고 여러 계층으로 쌓아 
 dbt는 [ClickHouse에서 지원하는 어댑터](https://github.com/ClickHouse/dbt-clickhouse)를 통해 ClickHouse와 호환됩니다.
 
 <Note>
-  **dbt Core v2, dbt Fusion 및 dbt 플랫폼.** ClickHouse 어댑터는 dbt Core v2(베타), dbt Fusion(베타) 및 dbt 플랫폼(프라이빗 베타, [액세스 요청 방법](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access) 참조)에서 사용할 수 있습니다. 아직 프로덕션 환경에 사용할 준비가 되어 있지는 않습니다. 현재 상태와 알려진 제한 사항은 [dbt Core v2 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 참조하십시오. 이 문서의 나머지 내용도 해당 페이지의 지원 범위 표에 명시된 제한 사항을 전제로 dbt Core v2에 동일하게 적용됩니다.
+  **dbt OSS, dbt v2 및 dbt 플랫폼.** ClickHouse는 이제 dbt OSS(베타), dbt v2(베타) 및 dbt 플랫폼(프라이빗 베타, [액세스 요청 방법](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access) 참조)과 함께 사용할 수 있습니다. 이 통합은 아직 프로덕션 환경에 사용할 준비가 되어 있지는 않습니다. 현재 상태와 알려진 제한 사항은 [dbt OSS, dbt v2 및 dbt 플랫폼 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 참조하십시오. 이 문서의 나머지 내용도 해당 페이지의 지원 범위 표에 명시된 제한 사항을 전제로 이들 모두에 동일하게 적용됩니다.
 </Note>
 
 ## 관련 페이지 {#related-pages}
@@ -90,7 +90,7 @@ dbt는 5가지 머티리얼라이즈 타입을 제공합니다. 이들 모두 `d
 ## dbt 및 ClickHouse 어댑터 설정 {#setup-of-dbt-and-the-clickhouse-adapter}
 
 <Tip>
-  바로 동작하는 프로젝트에서 시작하고 싶다면, dbt 샘플 프로젝트를 fork한 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)를 사용하십시오. 로컬 ClickHouse 및 ClickHouse Cloud용 프로필, 샘플 데이터, 그리고 dbt Core 1.x, dbt Core v2, dbt 플랫폼을 다루는 README가 함께 제공됩니다. [가이드 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides)도 이 프로젝트를 기반으로 합니다.
+  바로 동작하는 프로젝트에서 시작하고 싶다면, dbt 샘플 프로젝트를 fork한 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)를 사용하십시오. 로컬 ClickHouse 및 ClickHouse Cloud용 프로필, 샘플 데이터, 그리고 dbt Core 1.x, dbt OSS, dbt v2, dbt 플랫폼을 다루는 README가 함께 제공됩니다. [가이드 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides)도 이 프로젝트를 기반으로 합니다.
 </Tip>
 
 ### dbt-core 및 dbt-clickhouse 설치 {#install-dbt-core-and-dbt-clickhouse}

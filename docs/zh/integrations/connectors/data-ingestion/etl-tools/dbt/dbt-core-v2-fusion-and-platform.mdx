@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'dbt Core v2、Fusion 与平台（Beta）'
+sidebarTitle: 'dbt OSS、v2 与 Platform（Beta）'
 slug: /integrations/dbt/dbt-core-v2-fusion-and-platform
-description: 'ClickHouse adapter 在 dbt Core v2、dbt Fusion 及 dbt 平台中的支持状态'
-keywords: ['dbt', 'dbt core v2', 'dbt v2', 'dbt fusion', 'dbt platform']
-title: 'dbt Core v2、Fusion 与平台'
+description: 'ClickHouse 适配器在 dbt OSS、dbt v2 与 dbt platform 中的状态'
+keywords: ['dbt', 'dbt v2', 'dbt platform', 'dbt oss', 'dbt fusion', 'dbt core v2']
+title: 'dbt OSS、v2 与 Platform（Beta）'
 doc_type: 'reference'
 ---
 
@@ -14,19 +14,23 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://github.com/ClickHouse/dbt-clickhouse/issues/660" />
 
-dbt 正在基于全新引擎重建，而 ClickHouse 从一开始就参与其中。现在你可以在新的 Rust 引擎 (dbt Core v2 与 dbt Fusion) 上针对 ClickHouse 运行 dbt，并且首次可以通过 v2 连接器从 dbt 平台连接到 ClickHouse。你的项目无需任何改动：当前在 dbt Core 1.x 上运行的模型、测试和 profile，在新引擎上同样可以运行，唯一的区别在于 binary。
+dbt 正在基于全新引擎重构，而 ClickHouse 从一开始就参与其中。ClickHouse 现已支持基于 Rust 的新版 dbt 引擎，在 dbt OSS 和 dbt v2 中均可使用；并且首次支持从 dbt 平台连接到 ClickHouse。你的项目无需任何改动：目前在 dbt Core 1.x 上运行的模型、测试和 profile，同样可以在新引擎上运行，不同的只是 binary。
 
-ClickHouse 是首个登陆 dbt v2 及 dbt 平台的社区 adapter。dbt 自家的第一方 adapter 与我们同步推出，而我们是来自 dbt Labs 之外的第一个。面向 dbt Core 1.x 的 Python adapter `dbt-clickhouse` 不会被弃用：我们会持续跟进 dbt 1.x 的 releases，并同时维护这两个 adapter。
+ClickHouse 是 dbt OSS、dbt v2 和 dbt 平台上的首个社区 adapter。dbt 官方的第一方 adapter 与我们同步发布，而我们是 dbt Labs 之外的第一个。dbt Core 1.x 的 Python adapter `dbt-clickhouse` 不会被弃用：我们会持续跟进 dbt 1.x 的 发行版，并同时维护这两个 adapter。
 
 <Warning>
-  **尚未可用于 production。** dbt Core v2 引擎、其 ClickHouse adapter 以及 dbt 平台连接均尚未正式发布 (GA) 。请仅在开发或 staging 项目中使用。
+  **尚未可用于 production。** 面向 dbt OSS 和 dbt v2 的 ClickHouse adapter，以及 dbt 平台连接，均尚未正式可用 (GA) 。请仅在开发或暂存项目中使用。
 </Warning>
 
 <Note>
-  **dbt Core 1.x 的文档同样适用于 dbt Core v2。** 该 adapter 在两种引擎上的行为完全一致：其他 dbt 页面中介绍的 profiles、模型配置、物化类型和 macros，在 dbt Core v2、dbt Fusion 和 dbt 平台上均可原样使用。例外情况见下方的 [v1 与 v2 功能对照](#parity) 表。
+  **dbt Core 1.x 的文档同样适用于 dbt OSS 和 dbt v2。** 该 adapter 在两种引擎上的行为一致：其他 dbt 页面中描述的 profiles、模型配置、物化类型和 macros，在 dbt OSS、dbt v2 和 dbt 平台上均可原样使用。例外情况记录在下方的 [v1 与 v2 parity](#parity) 表中。
 </Note>
 
-最新状态可在 [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (dbt Core v2 功能对照，每个领域一个子 issue) 和 [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt Fusion) 中查看。
+<Note>
+  **dbt OSS** 是 v2 引擎的 open-source (Apache 2.0) build。有关它与 dbt v2 和 dbt 平台的关系，请参阅[术语与 availability](#terminology)。
+</Note>
+
+实时状态可在 [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (v2 与 v1 的 parity，每个领域一个子 issue) 和 [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2) 中查看。
 
 #### 在 dbt 平台中体验 ClickHouse {#request-access}
 
@@ -36,16 +40,16 @@ ClickHouse 是首个登陆 dbt v2 及 dbt 平台的社区 adapter。dbt 自家�
 
 dbt 有多种形态，同一个 adapter 可以在其中多种形态下运行。下表说明各个名称的含义以及当前的 ClickHouse 支持级别。
 
-| 术语               | 含义                                                                                                                                                                                                       | ClickHouse 状态及获取方式                                                                                                                                                                                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **dbt Core 1.x** | 基于 Python 的 dbt engine，open source (Apache 2.0) 。我们的 adapter 是 `dbt-clickhouse`，由 [ClickHouse GitHub 组织](https://github.com/ClickHouse/dbt-clickhouse) 维护，与 `dbt-core` 一并安装。                             | **GA，持续维护。** 与 v2 并行持续发布新版本。                                                                                                                                                                                                                                                    |
-| **dbt Core v2**  | 用 Rust 对 dbt engine 进行的彻底 rewrite，open source (Apache 2.0) 。新版本包含 v1 的全部功能，并带来多项性能提升。                                                                                                                    | **Beta。** 请参阅 dbt 文档中的 [dbt v2 升级指南](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) 和 [v2 的 ClickHouse 设置页面](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2)。ClickHouse adapter 已内置于 dbt binary 中，无需单独安装 package。 |
-| **dbt Fusion**   | dbt v2 加上 dbt Labs 提供的附加功能：SQL 理解、静态分析、LSP、VS Code extension 以及列感知。特定 dialect 的 SQL 智能能力按数据库分别构建。闭源，依据 [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement) 授权。 | **Beta。** adapter 可与 Fusion binary 配合运行，但新的 SQL 功能尚不支持 ClickHouse。                                                                                                                                                                                                              |
-| **dbt platform** | 托管版 dbt，原名 dbt Cloud：Studio IDE、定时 jobs、环境、Catalog、Semantic Layer。该平台仅运行 dbt v2，因此平台中的 ClickHouse 即指 v2 adapter。                                                                                         | **Private Beta。** 参见[如何申请访问权限](#request-access)。设置方式：参阅 dbt 文档中的 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)。                                                                                                          |
+| 术语               | 含义                                                                                                                                                                           | ClickHouse 状态及获取方式                                                                                                                                                                                                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **dbt Core 1.x** | 基于 Python 的 dbt 引擎，open source (Apache 2.0) 。我们的 adapter 是 `dbt-clickhouse`，由 [ClickHouse GitHub 组织](https://github.com/ClickHouse/dbt-clickhouse) 维护，与 `dbt-core` 一并安装。 | **GA，持续维护。** 与 dbt v2 并行持续发布发行版。                                                                                                                                                                                                                                                |
+| **dbt OSS**      | 用 Rust 对 dbt 引擎进行的彻底 rewrite，open source (Apache 2.0) 。新版本包含 v1 的全部功能，并带来多项性能提升。                                                                                        | **Beta。** 请参阅 dbt 文档中的 [dbt v2 升级指南](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) 和 [v2 的 ClickHouse 设置页面](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2)。ClickHouse adapter 已内置于 dbt binary 中，无需单独安装 package。 |
+| **dbt v2**       | dbt OSS 加上 dbt Labs 提供的附加功能：SQL 理解、静态分析、LSP、VS Code extension 以及列感知。闭源，依据 [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement) 授权。  | **Beta。** adapter 可与 v2 binary 配合运行，但新的 SQL 功能尚不支持 ClickHouse。                                                                                                                                                                                                                  |
+| **dbt platform** | 托管版 dbt，原名 dbt Cloud：Studio IDE、定时 jobs、环境、Catalog、Semantic Layer。该平台仅运行 dbt v2，因此平台中的 ClickHouse 即指 v2 adapter。                                                             | **私有 Beta。** 参见[如何申请访问权限](#request-access)。设置方式：参阅 dbt 文档中的 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)。                                                                                                          |
 
 ## Beta 状态 {#beta-status}
 
-我们使用 `dbt-clickhouse` 的 dbt Core 1.x 集成测试套件来检验 dbt Core v2。Beta 意味着核心 dbt 工作流和 ClickHouse Cloud 功能集在已记录的限制范围内均可正常使用；与 v1 的完全对等以及自管理集群支持将在之后提供。
+我们使用 `dbt-clickhouse` 的 dbt Core 1.x 集成测试套件来检验 dbt v2 adapter。Beta 意味着核心 dbt 工作流和 ClickHouse Cloud 功能集在已记录的限制范围内均可正常使用；与 v1 的完全对等以及自管理集群支持将在之后提供。
 
 **目前**，该 adapter 通过了完整 v1 套件中超过 81% 的测试，以及适用于 ClickHouse Cloud 的测试中的 92%。所有物化类型均已对等 (`view`、`table`、`incremental`、`materialized_view`、`dictionary`、`snapshot`、`seed`、`ephemeral`) ，并支持完整的表配置集、模型契约、数据测试与单元测试、文档持久化、`clickhouse_s3source()` 以及 dbt Core 1.x 的连接设置。剩余的失败项与下文列出的自管理集群相关工作以及少数引擎侧差异有关。逐项功能对比请参见 [v1 与 v2 对等情况](#parity)。
 
@@ -58,18 +62,18 @@ GA 已列入 roadmap，不久即将推出。准备就绪后我们会更新文档
 除下文列出的与 v1 的功能差距之外，还有一些 v2 独有的功能目前不在范围内，但很快就会支持：
 
 * **Semantic Layer / MetricFlow。** 目前尚未添加 ClickHouse 支持。进展跟踪见 [dbt-labs/metricflow#2124](https://github.com/dbt-labs/metricflow/pull/2124)。
-* **Fusion 中的 ClickHouse SQL 智能能力** (dialect 感知的校验、静态分析、LSP、VS Code 扩展中的列感知) 。目前该 adapter 可以配合 Fusion 二进制文件运行，但尚未包含这些功能。在此之前，ClickHouse 项目的静态分析会被强制设为 `off`，引擎也不会写入列级血缘信息。进展跟踪见 [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736)。
+* **dbt v2 中的 ClickHouse SQL 智能能力** (dialect 感知的校验、静态分析、LSP、VS Code 扩展中的列感知) 。目前该 adapter 可以配合 dbt v2 二进制文件运行，但尚未包含这些功能。在此之前，ClickHouse 项目的静态分析会被强制设为 `off`，引擎也不会写入列级血缘信息。进展跟踪见 [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736)。
 * **dbt 平台中除用户名和密码之外的其他认证方式。**
 
 ## v1 与 v2 的功能对等情况 {#parity}
 
-下表将 `dbt-clickhouse` (v1) 中可用的功能与其在 dbt Core v2 adapter 中的状态进行对比。除备注另有说明外，所列的每项功能在 v1 中均受支持；状态列对应的是 dbt Core v2。每个待处理项的进展都在 [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) 中跟踪。
+下表将 `dbt-clickhouse` (v1) 中可用的功能与其在 dbt v2 adapter 中的状态进行对比。除备注另有说明外，所列的每项功能在 v1 中均受支持；状态列对应的是 dbt v2，并同样适用于 dbt OSS。每个待处理项的进展都在 [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) 中跟踪。
 
 <Badge color="green">已支持</Badge> 目前已可用 · <Badge color="yellow">部分支持</Badge> 在一定限制下可用 · <Badge color="red">尚未支持</Badge> 尚未实现。
 
 ### 物化类型 {#parity-materializations}
 
-| 特性                                            | 作用                           | dbt Core v2                      | 说明                                                                         |
+| 特性                                            | 作用                           | dbt v2                           | 说明                                                                         |
 | --------------------------------------------- | ---------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
 | `view`                                        | 标准 dbt 视图。                   | <Badge color="green">已支持</Badge> |                                                                            |
 | `table`                                       | 支持 engine 与 DDL 选项的全量重建。     | <Badge color="green">已支持</Badge> |                                                                            |
@@ -83,8 +87,8 @@ GA 已列入 roadmap，不久即将推出。准备就绪后我们会更新文档
 
 ### 模型配置 {#parity-model-configuration}
 
-| 特性                                         | 作用                                | dbt Core v2                     | 说明 |
-| ------------------------------------------ | --------------------------------- | ------------------------------- | -- |
+| 特性                                         | 作用                                | dbt v2                           | 说明 |
+| ------------------------------------------ | --------------------------------- | -------------------------------- | -- |
 | 引擎、`ORDER BY`、`PARTITION BY`、`PRIMARY KEY` | 核心 MergeTree DDL 控制项。             | <Badge color="green">已支持</Badge> |    |
 | 生存时间 (TTL)                                 | 行与列的过期。                           | <Badge color="green">已支持</Badge> |    |
 | 表设置与查询设置                                   | 按模型在 DDL 和 insert 上指定 `SETTINGS`。 | <Badge color="green">已支持</Badge> |    |
@@ -95,17 +99,17 @@ GA 已列入 roadmap，不久即将推出。准备就绪后我们会更新文档
 
 ### 测试与文档 {#parity-testing-and-docs}
 
-| 特性      | 作用                    | dbt Core v2                        | 说明                                                                                                 |
+| 特性      | 作用                    | dbt v2                             | 说明                                                                                                 |
 | ------- | --------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 数据测试    | 通用测试与单一测试。            | <Badge color="green">已支持</Badge>    |                                                                                                    |
-| 单元测试    | 基于 fixture 输入验证模型逻辑。  | <Badge color="green">已支持</Badge>    |                                                                                                    |
+| 数据测试    | 通用测试与单一测试。            | <Badge color="green">已支持</Badge>   |                                                                                                    |
+| 单元测试    | 基于 fixture 输入验证模型逻辑。  | <Badge color="green">已支持</Badge>   |                                                                                                    |
 | 文档持久化   | 将描述写入为 ClickHouse 注释。 | <Badge color="yellow">部分支持</Badge> | 包含 `;` 的描述会失败。                                                                                     |
-| 目录与文档生成 | 供文档站点使用的列元数据。         | <Badge color="green">已支持</Badge>    |                                                                                                    |
+| 目录与文档生成 | 供文档站点使用的列元数据。         | <Badge color="green">已支持</Badge>   |                                                                                                    |
 | 列级血缘    | 在 DAG 中追踪列。           | <Badge color="yellow">部分支持</Badge> | v2 中通过 SQL 编译器新增，v1 不支持。只有在 `dbt_project.yml` 中禁用标识符引号时，dbt 平台才会渲染血缘；引擎侧血缘则需要使用 ClickHouse SQL 方言。 |
 
 ### 集群与 Cloud {#parity-cluster-and-cloud}
 
-| 特性                           | 作用                                         | dbt Core v2                      | 说明                                                                                    |
+| 特性                           | 作用                                         | dbt v2                           | 说明                                                                                    |
 | ---------------------------- | ------------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------- |
 | ClickHouse Cloud             | 推荐的 Beta 配置。                               | <Badge color="green">已支持</Badge> |                                                                                       |
 | 多副本一致性                       | `select_sequential_consistency` 及相关的写后读设置。 | <Badge color="green">已支持</Badge> |                                                                                       |
@@ -116,7 +120,7 @@ GA 已列入 roadmap，不久即将推出。准备就绪后我们会更新文档
 
 ### 宏与操作 {#parity-macros-and-operations}
 
-| 功能              | 作用                                                          | dbt Core v2                      | 说明                            |
+| 功能              | 作用                                                          | dbt v2                           | 说明                            |
 | --------------- | ----------------------------------------------------------- | -------------------------------- | ----------------------------- |
 | S3 表函数宏         | `clickhouse_s3source()` 可在模型中直接读取 S3。                       | <Badge color="green">已支持</Badge> |                               |
 | 跨数据库宏           | 例如 `dbt-utils` 中提供的辅助宏。                                     | <Badge color="green">已支持</Badge> |                               |
@@ -128,7 +132,7 @@ GA 已列入 roadmap，不久即将推出。准备就绪后我们会更新文档
 
 ### 连接与认证 {#parity-connectivity-and-auth}
 
-| 特性         | 作用                                                                                                        | dbt Core v2                      | 说明                                                    |
+| 特性         | 作用                                                                                                        | dbt v2                           | 说明                                                    |
 | ---------- | --------------------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------- |
 | Protocol   | dbt 与 ClickHouse 通信的方式。                                                                                   | <Badge color="green">已支持</Badge> | v2 使用 ADBC (基于 HTTP 的 Arrow) ；v1 使用 HTTP 和 native 协议。 |
 | 用户名与密码、TLS | 标准认证方式。                                                                                                   | <Badge color="green">已支持</Badge> |                                                       |

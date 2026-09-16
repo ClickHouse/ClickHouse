@@ -16,14 +16,14 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 ## dbt-clickhouse アダプター {#dbt-clickhouse-adapter}
 
-**dbt** (data build tool) を使うと、分析エンジニアは `select` 文を記述するだけで、データウェアハウス内のデータを変換できます。dbt は、これらの `select` 文をデータベース内のテーブルやビューといったオブジェクトとしてマテリアライズし、[Extract Load and Transform (ELT)](https://en.wikipedia.org/wiki/Extract,_load,_transform) の T を担います。SELECT ステートメントで定義された モデル を作成できます。
+**dbt** (data build tool) を使うと、分析エンジニアは `select` ステートメントを記述するだけで、データウェアハウス内のデータを変換できます。dbt は、これらの `select` ステートメントをデータベース内のテーブルやビューといったオブジェクトとしてマテリアライズし、[Extract Load and Transform (ELT)](https://en.wikipedia.org/wiki/Extract,_load,_transform) の T を担います。SELECT ステートメントで定義された モデル を作成できます。
 
 dbt では、これらの モデル を相互参照したりレイヤー化したりすることで、より高水準の概念を構築できます。モデル 同士を接続するために必要な定型 SQL は自動的に生成されます。さらに、dbt は モデル 間の依存関係を特定し、有向非巡回グラフ (DAG) を使って適切な順序で作成されるようにします。
 
 dbt は、[ClickHouse がサポートするアダプター](https://github.com/ClickHouse/dbt-clickhouse) を通じて ClickHouse に対応しています。
 
 <Note>
-  **dbt Core v2、dbt Fusion、および dbt プラットフォーム。** ClickHouse アダプターは、dbt Core v2 (ベータ)、dbt Fusion (ベータ)、および dbt プラットフォーム (プライベートベータ。[アクセスをリクエストする方法](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access) を参照) で利用できます。まだ本番運用に対応した状態ではありません。現在のステータスと既知の制限事項については [dbt Core v2 のページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) を参照してください。本ドキュメントの以降の内容は、そのページの対応状況表に記載された制限事項を前提として、dbt Core v2 にも当てはまります。
+  **dbt OSS、dbt v2、および dbt プラットフォーム。** ClickHouse は現在、dbt OSS (ベータ)、dbt v2 (ベータ)、および dbt プラットフォーム (プライベートベータ。[アクセスをリクエストする方法](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access) を参照) で動作します。このインテグレーションはまだ本番運用に対応した状態ではありません。現在のステータスと既知の制限事項については [dbt OSS、dbt v2、dbt プラットフォームのページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) を参照してください。本ドキュメントの以降の内容は、そのページの対応状況表に記載された制限事項を前提として、これらすべてにも当てはまります。
 </Note>
 
 ## 関連ページ {#related-pages}
@@ -90,7 +90,7 @@ dbtは5種類のマテリアライゼーションを提供しており、これ�
 ## dbt と ClickHouse アダプターのセットアップ {#setup-of-dbt-and-the-clickhouse-adapter}
 
 <Tip>
-  すぐに動くプロジェクトから始めたい場合は、dbt のサンプルプロジェクトをフォークした [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) をご利用ください。ローカルの ClickHouse 用と ClickHouse Cloud 用のプロファイル、サンプルデータ、および dbt Core 1.x、dbt Core v2、dbt プラットフォームについて解説した README が同梱されています。[ガイドページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides) もこのプロジェクトを前提に構成されています。
+  すぐに動くプロジェクトから始めたい場合は、dbt のサンプルプロジェクトをフォークした [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) をご利用ください。ローカルの ClickHouse 用と ClickHouse Cloud 用のプロファイル、サンプルデータ、および dbt Core 1.x、dbt OSS、dbt v2、dbt プラットフォームについて解説した README が同梱されています。[ガイドページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides) もこのプロジェクトを前提に構成されています。
 </Tip>
 
 ### dbt-core と dbt-clickhouse のインストール {#install-dbt-core-and-dbt-clickhouse}

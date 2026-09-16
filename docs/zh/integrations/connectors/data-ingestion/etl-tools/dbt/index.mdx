@@ -23,7 +23,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 dbt 可通过 [ClickHouse 支持的 适配器](https://github.com/ClickHouse/dbt-clickhouse) 与 ClickHouse 兼容。
 
 <Note>
-  **dbt Core v2、dbt Fusion 与 dbt 平台。** ClickHouse 适配器已在 dbt Core v2 (Beta)、dbt Fusion (Beta) 和 dbt 平台 (Private Beta；参见[如何申请访问权限](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access)) 中提供，但尚未达到生产就绪状态。有关当前状态和已知限制，请参阅 [dbt Core v2 页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)。本文档的其余内容同样适用于 dbt Core v2，但需遵循该页面对照表中列出的限制。
+  **dbt OSS、dbt v2 与 dbt 平台。** ClickHouse 现已支持 dbt OSS (Beta)、dbt v2 (Beta) 和 dbt 平台 (Private Beta；参见[如何申请访问权限](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access))。该集成尚未达到生产就绪状态。有关当前状态和已知限制，请参阅 [dbt OSS、dbt v2 与 dbt 平台页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)。本文档的其余内容同样适用于上述所有方式，但需遵循该页面对照表中列出的限制。
 </Note>
 
 ## 相关页面 {#related-pages}
@@ -90,7 +90,7 @@ dbt 提供 5 种物化类型，`dbt-clickhouse` 全部支持：
 ## dbt 与 ClickHouse 适配器 的设置 {#setup-of-dbt-and-the-clickhouse-adapter}
 
 <Tip>
-  如果你更希望直接从一个可运行的项目入手，我们从 dbt 示例项目 fork 而来的 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 已内置面向本地 ClickHouse 和 ClickHouse Cloud 的 profile、示例数据，以及一份涵盖 dbt Core 1.x、dbt Core v2 和 dbt 平台的 README。[指南页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/guides)正是以它为基础展开的。
+  如果你更希望直接从一个可运行的项目入手，我们从 dbt 示例项目 fork 而来的 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 已内置面向本地 ClickHouse 和 ClickHouse Cloud 的 profile、示例数据，以及一份涵盖 dbt Core 1.x、dbt OSS、dbt v2 和 dbt 平台的 README。[指南页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/guides)正是以它为基础展开的。
 </Tip>
 
 ### 安装 dbt-core 和 dbt-clickhouse {#install-dbt-core-and-dbt-clickhouse}

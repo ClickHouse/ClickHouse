@@ -23,7 +23,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 dbt совместим с ClickHouse через [адаптер с поддержкой ClickHouse](https://github.com/ClickHouse/dbt-clickhouse).
 
 <Note>
-  **dbt Core v2, dbt Fusion и платформа dbt.** Адаптер ClickHouse доступен в dbt Core v2 (бета), dbt Fusion (бета) и на платформе dbt (закрытая бета; см. [как запросить доступ](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access)). Он пока не готов для использования в продакшне. Текущий статус и известные ограничения см. на [странице dbt Core v2](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform). Остальная часть этой документации также применима к dbt Core v2 с учётом ограничений, перечисленных в таблице соответствия на той странице.
+  **dbt OSS, dbt v2 и платформа dbt.** ClickHouse теперь работает с dbt OSS (бета), dbt v2 (бета) и платформой dbt (закрытая бета; см. [как запросить доступ](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform#request-access)). Интеграция пока не готова для использования в продакшне. Текущий статус и известные ограничения см. на [странице dbt OSS, dbt v2 и платформы dbt](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform). Остальная часть этой документации также применима ко всем из них с учётом ограничений, перечисленных в таблице соответствия на той странице.
 </Note>
 
 ## Связанные страницы {#related-pages}
@@ -90,7 +90,7 @@ dbt предоставляет 5 типов материализации. Все
 ## Настройка dbt и адаптера ClickHouse {#setup-of-dbt-and-the-clickhouse-adapter}
 
 <Tip>
-  Если вы предпочитаете начать с готового проекта, наш форк демонстрационного проекта dbt — [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) — включает профили для локального ClickHouse и для ClickHouse Cloud, примеры данных, а также файл README, охватывающий dbt Core 1.x, dbt Core v2 и платформу dbt. [Страница руководств](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides) построена на его основе.
+  Если вы предпочитаете начать с готового проекта, наш форк демонстрационного проекта dbt — [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) — включает профили для локального ClickHouse и для ClickHouse Cloud, примеры данных, а также файл README, охватывающий dbt Core 1.x, dbt OSS, dbt v2 и платформу dbt. [Страница руководств](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides) построена на его основе.
 </Tip>
 
 ### Установите dbt-core и dbt-clickhouse {#install-dbt-core-and-dbt-clickhouse}

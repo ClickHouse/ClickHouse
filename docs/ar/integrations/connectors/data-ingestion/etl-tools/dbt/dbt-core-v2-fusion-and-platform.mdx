@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'dbt Core v2 وFusion والمنصة (Beta)'
+sidebarTitle: 'dbt OSS وv2 والمنصة (Beta)'
 slug: /integrations/dbt/dbt-core-v2-fusion-and-platform
-description: 'حالة محوّل ClickHouse في dbt Core v2 وdbt Fusion ومنصة dbt'
-keywords: ['dbt', 'dbt core v2', 'dbt v2', 'dbt fusion', 'dbt platform']
-title: 'dbt Core v2 وFusion والمنصة'
+description: 'حالة ClickHouse adapter في dbt OSS وdbt v2 ومنصة dbt'
+keywords: ['dbt', 'dbt v2', 'dbt platform', 'dbt oss', 'dbt fusion', 'dbt core v2']
+title: 'dbt OSS وv2 والمنصة (Beta)'
 doc_type: 'reference'
 ---
 
@@ -14,19 +14,23 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://github.com/ClickHouse/dbt-clickhouse/issues/660" />
 
-يُعاد بناء dbt على محرك جديد، وClickHouse جزء من ذلك منذ البداية. يمكنك الآن تشغيل dbt على ClickHouse عبر محرك Rust الجديد (dbt Core v2 وdbt Fusion)، ويمكنك لأول مرة الاتصال بـ ClickHouse من منصة dbt باستخدام connector الإصدار v2. ولا يتطلب ذلك أي تغيير في مشروعك: فنفس models والاختبارات وprofiles التي تعمل حاليًا على dbt Core 1.x تعمل على المحرك الجديد؛ والاختلاف الوحيد هو binary.
+تجري إعادة بناء dbt على محرك جديد، وClickHouse جزء من ذلك منذ البداية. أصبح ClickHouse الآن يعمل مع محرك dbt الجديد المبني على Rust، في كل من dbt OSS وdbt v2، ولأول مرة يمكنك الاتصال بـ ClickHouse من منصة dbt. ولا يتغير مشروعك في شيء: فالنماذج والاختبارات وملفات التعريف نفسها التي تعمل اليوم على dbt Core 1.x تعمل على المحرك الجديد؛ الاختلاف الوحيد هو الملف التنفيذي.
 
-ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. وتُطلق adapters الرسمية الخاصة بـ dbt جنبًا إلى جنب معنا؛ ونحن الأوائل من خارج dbt Labs. أما adapter بايثون الخاص بـ dbt Core 1.x، أي `dbt-clickhouse`، فلن يتوقف دعمه: سنواصل تحديثه مع releases الخاصة بـ dbt 1.x ونصون كلا adapters in parallel.
+ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة dbt. وتُطلق dbt محولاتها الخاصة بالتوازي معنا، ونحن أول جهة من خارج dbt Labs. أما adapter بايثون الخاص بـ dbt Core 1.x، أي `dbt-clickhouse`، فلن يُوقَف: سنبقيه محدثًا مع إصدارات dbt 1.x ونصون كلا المحولين بالتوازي.
 
 <Warning>
-  **غير جاهز لـ production.** إن محرك dbt Core v2، وadapter الخاص بـ ClickHouse فيه، واتصال منصة dbt ليست generally available (GA) بعد. استخدمها فقط في مشاريع Development أو staging.
+  **غير جاهز للإنتاج.** إن adapter ClickHouse الخاص بـ dbt OSS وdbt v2، وكذلك الاتصال بمنصة dbt، ليست متاحة بعد بشكل عام (GA). استخدمها فقط في مشاريع التطوير أو staging.
 </Warning>
 
 <Note>
-  **تنطبق توثيقات dbt Core 1.x كذلك على dbt Core v2.** يسلك adapter السلوك نفسه على كلا المحركين: فـ profiles وإعدادات models وmaterializations وmacros الموصوفة في صفحات dbt الأخرى تعمل دون تغيير على dbt Core v2 وdbt Fusion ومنصة dbt. أما الاستثناءات فهي موثقة في جدول [تكافؤ v1 مقابل v2](#parity) أدناه.
+  **توثيق dbt Core 1.x ينطبق أيضًا على dbt OSS وdbt v2.** يعمل adapter بالطريقة نفسها على كلا المحركين: فملفات التعريف وإعدادات النماذج والتجسيدات والماكرو الموصوفة في صفحات dbt الأخرى تعمل دون تغيير على dbt OSS وdbt v2 ومنصة dbt. أما الاستثناءات فموثّقة في جدول [تكافؤ v1 مقابل v2](#parity) أدناه.
 </Note>
 
-ويمكن متابعة الوضع live في [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (تكافؤ dbt Core v2، مع issue فرعي لكل area) و[ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt Fusion).
+<Note>
+  **dbt OSS** هو البناء مفتوح المصدر (Apache 2.0) لمحرك v2. راجع [المصطلحات والتوافر](#terminology) لمعرفة علاقته بـ dbt v2 ومنصة dbt.
+</Note>
+
+تُتابع الحالة المباشرة في [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (تكافؤ v2 مع v1، بمشكلة فرعية واحدة لكل مجال) و[ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2).
 
 #### جرّب ClickHouse في منصة dbt {#request-access}
 
@@ -36,16 +40,16 @@ ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. �
 
 يتوفر dbt في عدة صور، ويمكن للـ adapter نفسه أن يعمل في أكثر من صورة منها. يوضح هذا الجدول كل تسمية والمستوى الحالي لدعم ClickHouse.
 
-| المصطلح          | ما هو                                                                                                                                                                                                                                                                                            | حالة الدعم في ClickHouse وكيفية الحصول عليه                                                                                                                                                                                                                                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **dbt Core 1.x** | محرك dbt المبني على بايثون، open source (Apache 2.0). الـ adapter الخاص بنا هو `dbt-clickhouse`، ويجري صيانته ضمن [منظمة ClickHouse على GitHub](https://github.com/ClickHouse/dbt-clickhouse) ويُثبَّت إلى جانب `dbt-core`.                                                                      | **GA، تجري صيانته.** ولا يزال يتلقى إصدارات in parallel مع الإصدار v2.                                                                                                                                                                                                                                                                                |
-| **dbt Core v2**  | إعادة كتابة كاملة لمحرك dbt بلغة Rust، open source (Apache 2.0). يتضمن هذا الإصدار الجديد جميع مزايا الإصدار v1 إضافةً إلى عدة تحسينات في الأداء.                                                                                                                                                | **Beta.** اتبع [dbt v2 upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) و[صفحة إعداد ClickHouse للإصدار v2](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2) في وثائق dbt. يأتي adapter الخاص بـ ClickHouse مدمجًا داخل binary الخاص بـ dbt، ولا حاجة لتثبيت package منفصل. |
-| **dbt Fusion**   | dbt v2 مع مزايا إضافية من dbt Labs: فهم SQL، والتحليل الساكن، وLSP، وextension لـ VS Code، والوعي بالـ column. ويُبنى ذكاء SQL الخاص بكل dialect لكل database على حدة. مغلق المصدر، ومرخَّص بموجب [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement). | **Beta.** يعمل الـ adapter مع binary الخاص بـ Fusion، لكن مزايا SQL الجديدة غير متوفرة لـ ClickHouse بعد.                                                                                                                                                                                                                                             |
-| **dbt platform** | dbt المُستضاف، وكان يُعرف سابقًا بـ dbt Cloud: Studio IDE، والـ jobs المجدولة، والبيئات، وCatalog، وSemantic Layer. تعمل المنصة بالإصدار v2 فقط، لذا فإن استخدام ClickHouse فيها يعني adapter الإصدار v2.                                                                                        | **Private Beta.** راجع [كيفية طلب access](#request-access). الإعداد: [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) في وثائق dbt.                                                                                                                                                               |
+| المصطلح          | ما هو                                                                                                                                                                                                                                     | حالة الدعم في ClickHouse وكيفية الحصول عليه                                                                                                                                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **dbt Core 1.x** | محرك dbt المبني على بايثون، open source (Apache 2.0). الـ adapter الخاص بنا هو `dbt-clickhouse`، ويجري صيانته ضمن [منظمة ClickHouse على GitHub](https://github.com/ClickHouse/dbt-clickhouse) ويُثبَّت إلى جانب `dbt-core`.               | **GA، تجري صيانته.** ولا يزال يتلقى إصدارات in parallel مع dbt v2.                                                                                                                                                                                                                                                                                    |
+| **dbt OSS**      | إعادة كتابة كاملة لمحرك dbt بلغة Rust، open source (Apache 2.0). يتضمن هذا الإصدار الجديد جميع مزايا الإصدار v1 إضافةً إلى عدة تحسينات في الأداء.                                                                                         | **Beta.** اتبع [dbt v2 upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) و[صفحة إعداد ClickHouse للإصدار v2](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2) في وثائق dbt. يأتي adapter الخاص بـ ClickHouse مدمجًا داخل binary الخاص بـ dbt، ولا حاجة لتثبيت package منفصل. |
+| **dbt v2**       | dbt OSS مع مزايا إضافية من dbt Labs: فهم SQL، والتحليل الساكن، وLSP، وextension لـ VS Code، والوعي بالـ column. مغلق المصدر، ومرخَّص بموجب [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement). | **Beta.** يعمل الـ adapter مع binary الخاص بالإصدار v2، لكن مزايا SQL الجديدة غير متوفرة لـ ClickHouse بعد.                                                                                                                                                                                                                                           |
+| **dbt platform** | dbt المُستضاف، وكان يُعرف سابقًا بـ dbt Cloud: Studio IDE، والـ jobs المجدولة، والبيئات، وCatalog، وSemantic Layer. تعمل المنصة بالإصدار v2 فقط، لذا فإن استخدام ClickHouse فيها يعني adapter الإصدار v2.                                 | **Private Beta.** راجع [كيفية طلب access](#request-access). الإعداد: [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) في وثائق dbt.                                                                                                                                                               |
 
 ## حالة Beta {#beta-status}
 
-نقيس أداء dbt Core v2 مقابل مجموعة اختبارات التكامل الخاصة بـ dbt Core 1.x في `dbt-clickhouse`. تعني Beta أن سير عمل dbt الأساسي ومجموعة ميزات ClickHouse Cloud تعمل ضمن حدود موثّقة؛ أما التكافؤ الكامل مع v1 ودعم العناقيد المُدارة ذاتيًا فسيأتيان لاحقًا.
+نقيس أداء adapter الخاص بـ dbt v2 مقابل مجموعة اختبارات التكامل الخاصة بـ dbt Core 1.x في `dbt-clickhouse`. تعني Beta أن سير عمل dbt الأساسي ومجموعة ميزات ClickHouse Cloud تعمل ضمن حدود موثّقة؛ أما التكافؤ الكامل مع v1 ودعم العناقيد المُدارة ذاتيًا فسيأتيان لاحقًا.
 
 **حتى اليوم،** يجتاز الـ adapter أكثر من 81% من مجموعة اختبارات v1 الكاملة و92% من الاختبارات التي تنطبق على ClickHouse Cloud. وجميع أنواع materialization في حالة تكافؤ (`view`، `table`، `incremental`، `materialized_view`، `dictionary`، `snapshot`، `seed`، `ephemeral`)، مع المجموعة الكاملة من إعدادات الجداول، وعقود الـ model، واختبارات البيانات واختبارات الوحدة، والتخزين الدائم للوثائق، و`clickhouse_s3source()` وإعدادات الاتصال في dbt Core 1.x. وتتعلق حالات الفشل المتبقية بأعمال العناقيد المُدارة ذاتيًا المذكورة أدناه وبعدد قليل من الاختلافات على جانب الـ engine. راجع [التكافؤ بين v1 وv2](#parity) للحصول على صورة تفصيلية ميزة بميزة.
 
@@ -58,18 +62,18 @@ ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. �
 بالإضافة إلى فجوات التكافؤ مع الإصدار v1 المذكورة أدناه، توجد بعض الميزات الحصرية للإصدار v2 تقع خارج النطاق الحالي، لكنها ستتوفر قريبًا:
 
 * **Semantic Layer / MetricFlow.** لم يُضَف دعم ClickHouse بعد. يمكن متابعة ذلك في [dbt-labs/metricflow#2124](https://github.com/dbt-labs/metricflow/pull/2124).
-* **ذكاء ClickHouse SQL في Fusion** (validation مُدرك للـ dialect، والتحليل الثابت، وLSP، وإدراك الـ column في امتداد VS Code). يعمل الـ adapter حاليًا مع الـ binary الخاص بـ Fusion، لكنه لا يتضمّن هذه الميزات بعد. وحتى ذلك الحين، يُفرَض ضبط التحليل الثابت على `off` لمشاريع ClickHouse، ولا يكتب الـ engine أي تتبّع للأصول (lineage) على مستوى الـ column. يمكن متابعة ذلك في [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736).
+* **ذكاء ClickHouse SQL في dbt v2** (validation مُدرك للـ dialect، والتحليل الثابت، وLSP، وإدراك الـ column في امتداد VS Code). يعمل الـ adapter حاليًا مع الـ binary الخاص بـ dbt v2، لكنه لا يتضمّن هذه الميزات بعد. وحتى ذلك الحين، يُفرَض ضبط التحليل الثابت على `off` لمشاريع ClickHouse، ولا يكتب الـ engine أي تتبّع للأصول (lineage) على مستوى الـ column. يمكن متابعة ذلك في [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736).
 * **طرق مصادقة إضافية** بخلاف username وpassword في منصة dbt.
 
 ## التكافؤ بين v1 وv2 {#parity}
 
-تقارن الجداول أدناه الميزات المتاحة في `dbt-clickhouse` (v1) بحالتها في محوّل dbt Core v2. جميع الميزات المدرجة مدعومة في v1 ما لم تُشر الملاحظات إلى خلاف ذلك، أما عمود الحالة فيخص dbt Core v2. ويمكن متابعة تطوّر كل عنصر قيد الانتظار في [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660).
+تقارن الجداول أدناه الميزات المتاحة في `dbt-clickhouse` (v1) بحالتها في محوّل dbt v2. جميع الميزات المدرجة مدعومة في v1 ما لم تُشر الملاحظات إلى خلاف ذلك، أما عمود الحالة فيخص dbt v2 وينطبق كذلك على dbt OSS. ويمكن متابعة تطوّر كل عنصر قيد الانتظار في [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660).
 
 <Badge color="green">مدعوم</Badge> يعمل حاليًا · <Badge color="yellow">جزئي</Badge> يعمل ضمن قيود · <Badge color="red">ليس بعد</Badge> قيد التنفيذ.
 
 ### التجسيدات {#parity-materializations}
 
-| الميزة                                         | وظيفتها                                                 | dbt Core v2                        | ملاحظات                                                                                                                     |
+| الميزة                                         | وظيفتها                                                 | dbt v2                             | ملاحظات                                                                                                                     |
 | ---------------------------------------------- | ------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `view`                                         | عرض dbt قياسي.                                          | <Badge color="green">مدعوم</Badge> |                                                                                                                             |
 | `table`                                        | إعادة بناء كاملة مع خيارات المحرك و DDL.                | <Badge color="green">مدعوم</Badge> |                                                                                                                             |
@@ -83,7 +87,7 @@ ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. �
 
 ### تهيئة الـ model {#parity-model-configuration}
 
-| الميزة                                            | وظيفتها                                             | dbt Core v2                        | ملاحظات |
+| الميزة                                            | وظيفتها                                             | dbt v2                             | ملاحظات |
 | ------------------------------------------------- | --------------------------------------------------- | ---------------------------------- | ------- |
 | المحرك، `ORDER BY`، `PARTITION BY`، `PRIMARY KEY` | عناصر التحكم الأساسية في DDL الخاص بـ MergeTree.    | <Badge color="green">مدعوم</Badge> |         |
 | TTL                                               | انتهاء صلاحية الصفوف والأعمدة.                      | <Badge color="green">مدعوم</Badge> |         |
@@ -95,7 +99,7 @@ ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. �
 
 ### الاختبار والتوثيق {#parity-testing-and-docs}
 
-| الميزة                                  | وظيفتها                                        | dbt Core v2                         | ملاحظات                                                                                                                                                                                          |
+| الميزة                                  | وظيفتها                                        | dbt v2                              | ملاحظات                                                                                                                                                                                          |
 | --------------------------------------- | ---------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | اختبارات البيانات                       | اختبارات عامة ومفردة.                          | <Badge color="green">مدعومة</Badge> |                                                                                                                                                                                                  |
 | unit tests                              | اختبار منطق الـ model مقابل مدخلات ثابتة.      | <Badge color="green">مدعومة</Badge> |                                                                                                                                                                                                  |
@@ -105,7 +109,7 @@ ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. �
 
 ### العنقود وClickHouse Cloud {#parity-cluster-and-cloud}
 
-| الميزة                          | وظيفتها                                                                 | dbt Core v2                        | ملاحظات                                                                                                                                                                                                           |
+| الميزة                          | وظيفتها                                                                 | dbt v2                             | ملاحظات                                                                                                                                                                                                           |
 | ------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ClickHouse Cloud                | الإعداد Beta المُوصى به.                                                | <Badge color="green">مدعوم</Badge> |                                                                                                                                                                                                                   |
 | الاتساق بين النسخ المتعددة      | `select_sequential_consistency` وإعدادات القراءة بعد الكتابة ذات الصلة. | <Badge color="green">مدعوم</Badge> |                                                                                                                                                                                                                   |
@@ -116,7 +120,7 @@ ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. �
 
 ### وحدات الماكرو والعمليات {#parity-macros-and-operations}
 
-| الميزة                            | وظيفتها                                                        | dbt Core v2                        | ملاحظات                                           |
+| الميزة                            | وظيفتها                                                        | dbt v2                             | ملاحظات                                           |
 | --------------------------------- | -------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------- |
 | ماكرو S3 table function           | `clickhouse_s3source()` يقرأ من S3 مباشرةً داخل model.         | <Badge color="green">مدعوم</Badge> |                                                   |
 | وحدات ماكرو عابرة لقواعد البيانات | أدوات مساعدة مثل تلك الموجودة في `dbt-utils`.                  | <Badge color="green">مدعوم</Badge> |                                                   |
@@ -128,7 +132,7 @@ ClickHouse هو أول adapter مجتمعي على dbt v2 وفي منصة dbt. �
 
 ### الاتصال والمصادقة {#parity-connectivity-and-auth}
 
-| الميزة                         | وظيفتها                                                                                                       | dbt Core v2                        | ملاحظات                                                            |
+| الميزة                         | وظيفتها                                                                                                       | dbt v2                             | ملاحظات                                                            |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
 | Protocol                       | كيفية اتصال dbt بـ ClickHouse.                                                                                | <Badge color="green">مدعوم</Badge> | ADBC (‏Arrow عبر HTTP) في الإصدار v2؛ وHTTP وnative في الإصدار v1. |
 | اسم المستخدم وكلمة المرور، TLS | المصادقة القياسية.                                                                                            | <Badge color="green">مدعوم</Badge> |                                                                    |

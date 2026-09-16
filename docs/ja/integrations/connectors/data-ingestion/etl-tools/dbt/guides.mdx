@@ -24,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 ## 始める前に {#before-you-start}
 
-まず [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) の README に従ってください。dbt Core 1.x、dbt Core v2、または dbt プラットフォームでプロジェクトをセットアップする方法、接続先をローカルの ClickHouse (docker) または ClickHouse Cloud に設定する方法、`dbt seed` でサンプルデータを読み込む方法、最初の `dbt build` を実行する方法が説明されています。`dbt build` が正常に完了したら、このページに戻って ClickHouse 固有の例と設定を確認してください。
+まず [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) の README に従ってください。dbt Core 1.x、dbt OSS、dbt v2、または dbt プラットフォームでプロジェクトをセットアップする方法、接続先をローカルの ClickHouse (docker) または ClickHouse Cloud に設定する方法、`dbt seed` でサンプルデータを読み込む方法、最初の `dbt build` を実行する方法が説明されています。`dbt build` が正常に完了したら、このページに戻って ClickHouse 固有の例と設定を確認してください。
 
 README の手順を終えると、ClickHouse に2つのデータベースができているはずです:
 
@@ -34,10 +34,10 @@ README の手順を終えると、ClickHouse に2つのデータベースがで�
 プロファイルで別の `schema` を使用している場合は、以下のクエリ内の `jaffle_shop` をその値に読み替えてください。
 
 <Note>
-  **dbt Core 1.x、dbt Core v2、dbt プラットフォーム。** このガイドに登場するコマンドとモデルは、3つのいずれでも同じです。例は、`dbt-clickhouse` 1.10 を使用した dbt Core 1.12 および dbt Core v2 2.0 で、ClickHouse 26.8 に対してテストしています。dbt プラットフォームは dbt Core v2 エンジンで動作します。掲載しているコンソール出力は dbt Core 1.x のもので、エンジンによって挙動が異なる数か所については個別に補足しています。v2 アダプターの現在の状況については [dbt Core v2 のページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) を、dbt プラットフォームを使い始める際は dbt のドキュメントの [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) を参照してください。
+  **dbt Core 1.x、dbt OSS、dbt v2、dbt プラットフォーム。** このガイドに登場するコマンドとモデルは、これらのいずれでも同じです。例は、`dbt-clickhouse` 1.10 を使用した dbt Core 1.12 および dbt OSS 2.0 で、ClickHouse 26.8 に対してテストしています。dbt v2 は同じアダプターで動作し、dbt プラットフォームは dbt v2 で動作します。掲載しているコンソール出力は dbt Core 1.x のもので、エンジンによって挙動が異なる数か所については個別に補足しています。v2 アダプターの現在の状況については [dbt OSS、dbt v2、dbt プラットフォームのページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) を、dbt プラットフォームを使い始める際は dbt のドキュメントの [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) を参照してください。
 </Note>
 
-dbt コマンド以外の SQL ステートメントはすべて、`clickhouse client`、ClickHouse Cloud の SQL コンソール、またはお好みの SQL クライアントなどから、ClickHouse に対して直接実行することを想定しています。
+dbt コマンド以外の SQL 文はすべて、`clickhouse client`、ClickHouse Cloud の SQL コンソール、またはお好みの SQL クライアントなどから、ClickHouse に対して直接実行することを想定しています。
 
 ## プロジェクトのマテリアライズ方法 {#views-and-tables}
 
@@ -114,12 +114,12 @@ Jaffle Shop は dbt の [seeds](https://docs.getdbt.com/docs/build/seeds) を使
 
 とはいえ、dbt が ClickHouse のテーブルをどのように作成するのかを学ぶには、seed は依然として適した題材です。dbt は CSV の各カラムに対してカラムの型を推論しますが、推論される型はエンジンによって異なります。
 
-| CSV 値                 | dbt Core 1.x | dbt Core v2     |
-| --------------------- | ------------ | --------------- |
-| `700`                 | `Int32`      | `Int64`         |
-| `0.06`                | `Float32`    | `Float64`       |
-| `2024-09-01T15:01:00` | `DateTime`   | `DateTime64(6)` |
-| `Philadelphia`        | `String`     | `String`        |
+| CSV 値                 | dbt v1     | v2 エンジン         |
+| --------------------- | ---------- | --------------- |
+| `700`                 | `Int32`    | `Int64`         |
+| `0.06`                | `Float32`  | `Float64`       |
+| `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
+| `Philadelphia`        | `String`   | `String`        |
 
 型が重要となる場合は、`column_types` で明示的に固定してください。このプロジェクトでは、`dbt_project.yml` 内で `raw_stores` seed の `opened_at` カラムに対してすでにこの指定を行っています。
 
@@ -145,7 +145,7 @@ seeds:
 ```
 
 <Note>
-  これらの ClickHouse の seed 設定は、`dbt_project.yml` の `seeds:` 配下にある `+order_by` や `+engine` キーではなく、properties ファイルに記述してください。dbt Core 1.x はどちらの形式も受け付けますが、dbt Core v2 は properties ファイルでの指定しか認識せず、`dbt_project.yml` 側のキーは `Unrecognized key ... Custom keys must go under +meta` というエラーで拒否されます。
+  これらの ClickHouse の seed 設定は、`dbt_project.yml` の `seeds:` 配下にある `+order_by` や `+engine` キーではなく、プロパティファイルに記述してください。dbt Core 1.x はどちらの形式も受け付けますが、dbt v2 はプロパティファイルでの指定しか認識せず、`dbt_project.yml` 側のキーは `Unrecognized key ... Custom keys must go under +meta` というエラーで拒否されます。
 </Note>
 
 この seed を再度ロードし、生成された table を確認します。
@@ -796,4 +796,4 @@ ORDER BY order_date, store_id;
 
 ## さらに詳しい情報 {#further-information}
 
-このガイドではdbtのごく一部しか扱っていません。ClickHouse固有ではない事柄については、[dbtドキュメント](https://docs.getdbt.com/docs/introduction)を参照してください。アダプターについては、profileの設定やグローバルな機能を解説した[features and configurations](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations)ページを、上記で使用したすべての設定については[materializationsページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)を、新しいengineやdbtプラットフォームを利用している場合は[dbt Core v2ページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)をご覧ください。[Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)への新しい例の投稿も歓迎します。
+このガイドではdbtのごく一部しか扱っていません。ClickHouse固有ではない事柄については、[dbtドキュメント](https://docs.getdbt.com/docs/introduction)を参照してください。アダプターについては、profileの設定やグローバルな機能を解説した[features and configurations](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations)ページを、上記で使用したすべての設定については[materializations のページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)を、dbt OSS、dbt v2、またはdbtプラットフォームを利用している場合は[dbt OSS、dbt v2、dbtプラットフォームのページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)をご覧ください。[Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)への新しい例の投稿も歓迎します。

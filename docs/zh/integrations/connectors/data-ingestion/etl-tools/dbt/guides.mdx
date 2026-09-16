@@ -24,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 ## 开始之前 {#before-you-start}
 
-请先按照 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 的 README 操作。其中说明了如何使用 dbt Core 1.x、dbt Core v2 或 dbt 平台搭建该项目，如何将其指向本地 ClickHouse (docker) 或 ClickHouse Cloud，如何使用 `dbt seed` 加载示例数据，以及如何执行首次 `dbt build`。`dbt build` 成功完成后，再回到本页查看 ClickHouse 特有的示例和配置。
+请先按照 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 的 README 操作。其中说明了如何使用 dbt Core 1.x、dbt OSS、dbt v2 或 dbt 平台搭建该项目，如何将其指向本地 ClickHouse (docker) 或 ClickHouse Cloud，如何使用 `dbt seed` 加载示例数据，以及如何执行首次 `dbt build`。`dbt build` 成功完成后，再回到本页查看 ClickHouse 特有的示例和配置。
 
 完成 README 中的步骤后，ClickHouse 中应当有两个数据库：
 
@@ -34,7 +34,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 如果你的 profile 使用了其他 `schema`，请将下面查询中的 `jaffle_shop` 替换为你的实际取值。
 
 <Note>
-  **dbt Core 1.x、dbt Core v2 与 dbt 平台。** 本指南中的所有命令和模型在这三者上都完全一致。这些示例已在 dbt Core 1.12 (搭配 `dbt-clickhouse` 1.10) 和 dbt Core v2 2.0 上针对 ClickHouse 26.8 进行过测试；dbt 平台运行的是 dbt Core v2 引擎。文中展示的控制台输出来自 dbt Core 1.x，对于少数引擎行为存在差异的地方，文中会特别说明。有关 v2 adapter 的最新状态，请参阅 [dbt Core v2 页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)；若要在 dbt 平台上快速上手，请参阅 dbt 文档中的 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)。
+  **dbt Core 1.x、dbt OSS、dbt v2 与 dbt 平台。** 本指南中的所有命令和模型在它们上都完全一致。这些示例已在 dbt Core 1.12 (搭配 `dbt-clickhouse` 1.10) 和 dbt OSS 2.0 上针对 ClickHouse 26.8 进行过测试；dbt v2 运行的是同一个 adapter，而 dbt 平台运行的是 dbt v2。文中展示的控制台输出来自 dbt Core 1.x，对于少数引擎行为存在差异的地方，文中会特别说明。有关 v2 adapter 的最新状态，请参阅 [dbt OSS、dbt v2 与 dbt 平台页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)；若要在 dbt 平台上快速上手，请参阅 dbt 文档中的 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)。
 </Note>
 
 所有非 dbt 命令的 SQL 语句都应直接在 ClickHouse 上执行，例如通过 `clickhouse client`、ClickHouse Cloud SQL 控制台或你习惯使用的 SQL 客户端。
@@ -114,12 +114,12 @@ Jaffle Shop 使用 dbt [seeds](https://docs.getdbt.com/docs/build/seeds) 从 `se
 
 即便如此，seeds 仍是了解 dbt 如何创建 ClickHouse 表的好切入点。dbt 会为每个 CSV 列推断列类型，而不同引擎推断出的类型有所差异：
 
-| CSV 值                 | dbt Core 1.x | dbt Core v2     |
-| --------------------- | ------------ | --------------- |
-| `700`                 | `Int32`      | `Int64`         |
-| `0.06`                | `Float32`    | `Float64`       |
-| `2024-09-01T15:01:00` | `DateTime`   | `DateTime64(6)` |
-| `Philadelphia`        | `String`     | `String`        |
+| CSV 值                 | dbt v1     | v2 引擎           |
+| --------------------- | ---------- | --------------- |
+| `700`                 | `Int32`    | `Int64`         |
+| `0.06`                | `Float32`  | `Float64`       |
+| `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
+| `Philadelphia`        | `String`   | `String`        |
 
 当类型很重要时，请用 `column_types` 显式固定类型。本项目已在 `dbt_project.yml` 中对 `raw_stores` seed 的 `opened_at` 列这样处理：
 
@@ -145,7 +145,7 @@ seeds:
 ```
 
 <Note>
-  这些 ClickHouse seed 配置应写在 properties 文件中，而不要放在 `dbt_project.yml` 的 `seeds:` 下，通过 `+order_by` 或 `+engine` 键来指定。dbt Core 1.x 两种写法都接受，但 dbt Core v2 只识别 properties 文件中的配置，并会拒绝 `dbt_project.yml` 中的这些键，报错 `Unrecognized key ... Custom keys must go under +meta`。
+  这些 ClickHouse seed 配置应写在 properties 文件中，而不要放在 `dbt_project.yml` 的 `seeds:` 下，通过 `+order_by` 或 `+engine` 键来指定。dbt Core 1.x 两种写法都接受，但 dbt v2 只识别 properties 文件中的配置，并会拒绝 `dbt_project.yml` 中的这些键，报错 `Unrecognized key ... Custom keys must go under +meta`。
 </Note>
 
 重新加载该 seed，并检查它生成的表：
@@ -796,4 +796,4 @@ ORDER BY order_date, store_id;
 
 ## 更多信息 {#further-information}
 
-本指南仅涉及 dbt 的皮毛。凡是并非 ClickHouse 特有的内容，均应以 [dbt 文档](https://docs.getdbt.com/docs/introduction) 为准。关于该 adapter，可参阅 [features and configurations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 页面了解 profile 设置与全局功能，参阅 [物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) 了解上文用到的各项配置；如果你使用新的 engine 或 dbt 平台，则可参阅 [dbt Core v2 页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)。欢迎向 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 贡献新的示例。
+本指南仅涉及 dbt 的皮毛。凡是并非 ClickHouse 特有的内容，均应以 [dbt 文档](https://docs.getdbt.com/docs/introduction) 为准。关于该 adapter，可参阅 [features and configurations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 页面了解 profile 设置与全局功能，参阅 [物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) 了解上文用到的各项配置；如果你使用 dbt OSS、dbt v2 或 dbt 平台，则可参阅 [dbt OSS、dbt v2 与 dbt 平台页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)。欢迎向 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 贡献新的示例。
