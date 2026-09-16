@@ -50,7 +50,10 @@ output="${CLICKHOUSE_TMP}/05061_pretty_squash_flush.out"
 # A single thread makes `clickhouse-local` pull the result synchronously in the client thread. With
 # more threads the sources saturate the machine, and on a loaded host the pulling thread may not get
 # the first block for many seconds - which has nothing to do with the flush under test.
-$CLICKHOUSE_LOCAL --max_threads=1 --query "SELECT DISTINCT number % 2 AS x FROM numbers(1e18) FORMAT PrettyCompact" > "$output" 2>/dev/null &
+# `output_format_pretty_squash_consecutive_ms` is pinned explicitly: the squashing (and therefore the
+# background writer under test) is only used when it is non-zero, and the test must not depend on the
+# default staying that way.
+$CLICKHOUSE_LOCAL --max_threads=1 --output_format_pretty_squash_consecutive_ms=50 --query "SELECT DISTINCT number % 2 AS x FROM numbers(1e18) FORMAT PrettyCompact" > "$output" 2>/dev/null &
 pid=$!
 
 wait_for_lines "$output" 4
