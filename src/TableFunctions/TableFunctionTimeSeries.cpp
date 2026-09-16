@@ -163,6 +163,36 @@ SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::TimeRanges>>(
+        {.description = R"DOCS_MD(
+`timeSeriesTimeRanges(db_name.time_series_table)` - Returns the [time ranges](/reference/engines/table-engines/integrations/time-series#time-ranges-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES time_ranges_table
+```
+
+The function also works if the _time ranges_ table is inner:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesTimeRanges(db_name.time_series_table);
+SELECT * FROM timeSeriesTimeRanges('db_name.time_series_table');
+SELECT * FROM timeSeriesTimeRanges('db_name', 'time_series_table');
+```
+
+<Note>
+The _time ranges_ table exists in tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 7 and later
+if the `store_time_ranges` setting is enabled. Tables of the earlier versions keep the columns `min_time` and `max_time` in the
+[tags](/reference/engines/table-engines/integrations/time-series#tags-table) table.
+</Note>
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
 `timeSeriesMetricFamilies(db_name.time_series_table)` - Returns the [metric families](/reference/engines/table-engines/integrations/time-series#metric-families-table) table

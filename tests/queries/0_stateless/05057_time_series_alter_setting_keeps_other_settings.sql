@@ -7,8 +7,10 @@ SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
 
+-- The table is pinned to version 6 because the conflicting pair of settings `store_min_time_and_max_time` and
+-- `filter_by_min_time_and_max_time` checked below applies to tables of versions before 7.
 CREATE TABLE ts ENGINE = TimeSeries
-SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0,
+SETTINGS version = 6, tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0,
          filter_by_min_time_and_max_time = 0, samples_index_granularity = 1024;
 
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);

@@ -30,13 +30,19 @@ class StorageTimeSeries;
 ///   6 - The column `metric_family_name` of the "metric families" target table was renamed to `metric_family`, the name of
 ///       the corresponding outer column. Tables of earlier versions keep the old name of the column
 ///       (see `TimeSeriesColumnNames::getInnerMetricFamily`).
+///   7 - The columns `min_time` and `max_time` were moved from the "tags" target table to the new optional
+///       "time ranges" target table (the inner table `.inner_id.timeranges.<uuid>`, the keyword `TIME RANGES`),
+///       which is enabled by the `store_time_ranges` setting. The time ranges are always aggregated and always used
+///       to filter time series by time. The settings `store_min_time_and_max_time`, `aggregate_min_time_and_max_time`
+///       and `filter_by_min_time_and_max_time` apply to the earlier versions only. The "tags" table of a new table
+///       is generated with the `ReplacingMergeTree` engine because it has no columns to aggregate anymore.
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 6;
+    constexpr UInt64 LATEST = 7;
 
     /// The first version recording the `id_type` setting (see the version history above).
     /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
@@ -70,6 +76,10 @@ namespace TimeSeriesVersion
     /// The earlier versions name it "metrics" and write it with the keyword `METRICS`, so an older server can read them.
     constexpr UInt64 MIN_WITH_METRIC_FAMILIES_TARGET_NAME = 4;
 
+    /// The first version storing the time range of a time series in the "time ranges" target table (see the version history above).
+    /// The earlier versions store it in the columns `min_time` and `max_time` of the "tags" target table.
+    constexpr UInt64 MIN_WITH_TIME_RANGES_TARGET = 7;
+
     static_assert(MIN_SUPPORTED <= MIN_WRITABLE);
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
@@ -79,6 +89,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL);
     static_assert(MIN_SUPPORTED_BY_PROMQL <= LATEST);
     static_assert(MIN_WITH_METRIC_FAMILIES_TARGET_NAME <= LATEST);
+    static_assert(MIN_WITH_TIME_RANGES_TARGET <= LATEST);
 }
 
 /// Whether a version is in the range [MIN_SUPPORTED, LATEST].

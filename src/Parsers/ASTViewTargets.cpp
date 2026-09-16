@@ -37,6 +37,7 @@ namespace
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
             case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
+            case ViewTarget::TimeRanges: return Keyword::TIME_RANGES; /// TIME RANGES mydb.mytimeranges
             case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
         }
         UNREACHABLE();

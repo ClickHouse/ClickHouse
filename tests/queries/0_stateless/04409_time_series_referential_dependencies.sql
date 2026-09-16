@@ -81,6 +81,28 @@ DROP TABLE recent_table;
 SELECT count() FROM system.tables WHERE database = currentDatabase()
     AND name IN ('ts_recent', 'recent_table', 'recent_table_renamed');
 
+-- The time ranges table is a target table too, so an external one is a referential dependency as well.
+
+DROP TABLE IF EXISTS ts_time_ranges;
+DROP TABLE IF EXISTS time_ranges_table;
+
+CREATE TABLE time_ranges_table
+(
+    id Tuple(UInt64, LowCardinality(UUID)),
+    min_time SimpleAggregateFunction(min, DateTime64(3)),
+    max_time SimpleAggregateFunction(max, DateTime64(3))
+) ENGINE = AggregatingMergeTree() ORDER BY id;
+
+CREATE TABLE ts_time_ranges ENGINE = TimeSeries TIME RANGES time_ranges_table;
+
+DROP TABLE time_ranges_table; -- { serverError HAVE_DEPENDENT_OBJECTS }
+
+DROP TABLE ts_time_ranges;
+DROP TABLE time_ranges_table;
+
+SELECT count() FROM system.tables WHERE database = currentDatabase()
+    AND name IN ('ts_time_ranges', 'time_ranges_table');
+
 -- An inner recent samples table is owned by the TimeSeries table, so it is not a dependency
 -- and the TimeSeries table still drops cleanly.
 

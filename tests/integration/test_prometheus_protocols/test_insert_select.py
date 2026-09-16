@@ -401,7 +401,7 @@ def test_select_with_row_policy():
 
 
 def test_select_final():
-    """The tags inner table is AggregatingMergeTree; until its parts merge, repeated inserts of one series
+    """The tags inner table is ReplacingMergeTree; until its parts merge, repeated inserts of one series
     leave duplicate rows. Without FINAL the read returns them as is (cheaper); with FINAL the series is
     returned exactly once. After the parts are merged both reads agree."""
     node.query("SYSTEM STOP MERGES")

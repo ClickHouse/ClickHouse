@@ -42,6 +42,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 
 
@@ -175,10 +176,8 @@ TableTimeRange makeTableTimeRange(
 namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsMap tags_to_columns;
-    extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
-    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
 }
 
 namespace Setting
@@ -342,12 +341,79 @@ namespace
         return res;
     }
 
-    /// `min_time` and `max_time` must have the scale of `table_timestamp_type`.
+    /// Makes the conditions checking that the stored time range [min_time, max_time] of a time series
+    /// intersects the requested one: `max_time >= <requested min_time> AND min_time <= <requested max_time>`.
+    /// The conditions hold for the rows of an unmerged aggregating table too: a time series has a sample in the
+    /// requested range only if the row written with that sample intersects the range.
+    ASTs makeTimeRangeConditions(
+        const StorageTimeSeriesSelector::TimeRangeFilter & time_range_filter,
+        const DataTypePtr & table_timestamp_type)
+    {
+        ASTs conditions;
+
+        if (time_range_filter.min_time)
+        {
+            conditions.push_back(makeASTFunction(
+                "greaterOrEquals",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
+                timeSeriesTimestampToAST(*time_range_filter.min_time, table_timestamp_type)));
+        }
+
+        if (time_range_filter.max_time)
+        {
+            conditions.push_back(makeASTFunction(
+                "lessOrEquals",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
+                timeSeriesTimestampToAST(*time_range_filter.max_time, table_timestamp_type)));
+        }
+
+        return conditions;
+    }
+
+    /// Makes the condition on the identifiers of the time series whose time range intersects the requested one:
+    /// `id IN (SELECT id FROM time_ranges_table WHERE max_time >= <min_time> AND min_time <= <max_time>)`.
+    ASTPtr makeIdInTimeRangesTableCondition(ASTs time_range_conditions, const StorageID & time_ranges_table_id)
+    {
+        auto select_query = make_intrusive<ASTSelectQuery>();
+
+        /// SELECT id
+        {
+            auto select_list_exp = make_intrusive<ASTExpressionList>();
+            select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
+        }
+
+        /// FROM time_ranges_table_id
+        {
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(time_ranges_table_id);
+            table_exp->children.emplace_back(table_exp->database_and_table_name);
+            table->table_expression = table_exp;
+
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
+            tables->children.push_back(table);
+            select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+        }
+
+        /// WHERE max_time >= <min_time> AND min_time <= <max_time>
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(time_range_conditions)));
+
+        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
+        auto list_of_selects = make_intrusive<ASTExpressionList>();
+        list_of_selects->children.push_back(std::move(select_query));
+        select_with_union_query->children.push_back(std::move(list_of_selects));
+        select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+        return makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTSubquery>(std::move(select_with_union_query)));
+    }
+
+    /// The bounds of `time_range_filter` must have the scale of `table_timestamp_type`.
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
-        const std::optional<DateTime64> & min_time,
-        const std::optional<DateTime64> & max_time,
+        const StorageTimeSeriesSelector::TimeRangeFilter & time_range_filter,
         const DataTypePtr & table_timestamp_type)
     {
         ASTs asts;
@@ -357,22 +423,15 @@ namespace
         if (asts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
 
-        if (min_time)
+        ASTs time_range_conditions = makeTimeRangeConditions(time_range_filter, table_timestamp_type);
+        if (!time_range_conditions.empty())
         {
-            /// tags_table.max_time >= min_time
-            asts.push_back(makeASTFunction(
-                "greaterOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
-                timeSeriesTimestampToAST(*min_time, table_timestamp_type)));
-        }
-
-        if (max_time)
-        {
-            /// tags_table.min_time <= max_time
-            asts.push_back(makeASTFunction(
-                "lessOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
-                timeSeriesTimestampToAST(*max_time, table_timestamp_type)));
+            /// The time range of a time series is stored in the time ranges table (tables of version 7 and later)
+            /// or in the tags table itself (tables of the earlier versions).
+            if (time_range_filter.time_ranges_table_id)
+                asts.push_back(makeIdInTimeRangesTableCondition(std::move(time_range_conditions), time_range_filter.time_ranges_table_id));
+            else
+                std::ranges::move(time_range_conditions, std::back_inserter(asts));
         }
 
         return makeASTForLogicalAnd(std::move(asts));
@@ -415,8 +474,7 @@ namespace
         const StorageID & tags_table_id,
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
-        const std::optional<DateTime64> & min_time,
-        const std::optional<DateTime64> & max_time,
+        const StorageTimeSeriesSelector::TimeRangeFilter & time_range_filter,
         const DataTypePtr & table_timestamp_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -459,7 +517,7 @@ namespace
 
         /// WHERE <filter>
         {
-            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, min_time, max_time, table_timestamp_type);
+            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, time_range_filter, table_timestamp_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -750,8 +808,7 @@ namespace
         const StorageID & time_series_storage_id,
         const DataTypePtr & table_id_type,
         const DataTypePtr & table_timestamp_type,
-        const std::optional<DateTime64> & min_time_to_filter_ids,
-        const std::optional<DateTime64> & max_time_to_filter_ids,
+        const StorageTimeSeriesSelector::TimeRangeFilter & time_range_filter,
         const ContextPtr & context,
         const LoggerPtr & log)
     {
@@ -840,7 +897,7 @@ namespace
 
             PrometheusQueryTree::MatcherList name_matcher_only{*name_matcher};
             ASTPtr probe_where = makeASTForLogicalAnd(
-                {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, table_timestamp_type),
+                {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, time_range_filter, table_timestamp_type),
                  std::move(counterexample)});
 
             auto probe_select = make_intrusive<ASTSelectQuery>();
@@ -922,7 +979,29 @@ namespace
 }
 
 
+StorageTimeSeriesSelector::TimeRangeFilter StorageTimeSeriesSelector::makeTimeRangeFilter(
+    const StorageTimeSeries & time_series_storage,
+    const std::optional<DateTime64> & min_time,
+    const std::optional<DateTime64> & max_time,
+    const ContextPtr & context)
+{
+    TimeRangeFilter filter;
+    if (time_series_storage.hasTarget(ViewTarget::TimeRanges))
+    {
+        filter.time_ranges_table_id = time_series_storage.getTargetTableID(ViewTarget::TimeRanges, context);
+        filter.min_time = min_time;
+        filter.max_time = max_time;
+    }
+    else if (filterTimeSeriesByMinTimeAndMaxTimeInTagsTable(*time_series_storage.getStorageSettings()))
+    {
+        filter.min_time = min_time;
+        filter.max_time = max_time;
+    }
+    return filter;
+}
+
 ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
+    const StorageTimeSeries & time_series_storage,
     const StorageID & tags_table_id,
     const TimeSeriesSettings & time_series_settings,
     const DataTypePtr & table_timestamp_type,
@@ -930,14 +1009,16 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     const PrometheusQueryTree::MatcherList & matchers,
     const std::optional<DateTime64> & min_time,
     const std::optional<DateTime64> & max_time,
-    UInt32 time_scale)
+    UInt32 time_scale,
+    const ContextPtr & context)
 {
     /// If the time range contains no timestamp of the table, no series can have samples in it: the tags table isn't read.
     const auto table_time_range = makeTableTimeRange(table_timestamp_type, min_time, max_time, time_scale);
     auto select_query = table_time_range.empty()
         ? makeSelectNoIDsQuery(table_id_type)
         : makeSelectQueryFromTagsTable(
-            tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), table_time_range.min_time, table_time_range.max_time, table_timestamp_type);
+            tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings),
+            makeTimeRangeFilter(time_series_storage, table_time_range.min_time, table_time_range.max_time, context), table_timestamp_type);
 
     /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
@@ -996,17 +1077,10 @@ void StorageTimeSeriesSelector::readImpl(
     const DateTime64 table_min_time = *table_time_range.min_time;
     const DateTime64 table_max_time = *table_time_range.max_time;
 
-    std::optional<DateTime64> min_time_to_filter_ids;
-    std::optional<DateTime64> max_time_to_filter_ids;
-    if ((*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
-        && (*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
-    {
-        min_time_to_filter_ids = table_min_time;
-        max_time_to_filter_ids = table_max_time;
-    }
+    auto time_range_filter = makeTimeRangeFilter(*time_series_storage, table_min_time, table_max_time, context);
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.table_timestamp_type);
+        tags_table_id, matchers, column_name_by_tag_name, time_range_filter, config.table_timestamp_type);
 
     auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
@@ -1022,8 +1096,7 @@ void StorageTimeSeriesSelector::readImpl(
         config.time_series_storage_id,
         config.table_id_type,
         config.table_timestamp_type,
-        min_time_to_filter_ids,
-        max_time_to_filter_ids,
+        time_range_filter,
         context,
         log);
 
