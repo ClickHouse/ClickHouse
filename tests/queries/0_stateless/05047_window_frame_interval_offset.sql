@@ -84,6 +84,18 @@ CREATE VIEW test_window_interval_offset_view AS
 SELECT * FROM test_window_interval_offset_view;
 DROP VIEW test_window_interval_offset_view;
 
+SELECT 'Mixed units, frame in the past';
+SELECT dt, val, sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 WEEK PRECEDING AND INTERVAL 1 DAY PRECEDING) AS rolling
+FROM test_window_interval_offset;
+
+SELECT 'Mixed units, frame ends before it starts, empty frames';
+SELECT dt, val, sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND INTERVAL 1 WEEK PRECEDING) AS rolling
+FROM test_window_interval_offset;
+
+SELECT 'Mixed units, month vs days, frame is empty only in short months';
+SELECT dt, val, sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND INTERVAL 30 DAY PRECEDING) AS rolling
+FROM test_window_interval_offset;
+
 SELECT 'Frame description keeps the unit';
 SELECT explain FROM (EXPLAIN SELECT sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND INTERVAL 2 DAY FOLLOWING) FROM test_window_interval_offset)
 WHERE explain LIKE '%Window%';

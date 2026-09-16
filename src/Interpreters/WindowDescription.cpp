@@ -172,6 +172,8 @@ void WindowFrame::checkValid() const
         && begin_type == BoundaryType::Offset)
     {
         // Offsets in different units cannot be compared without the ORDER BY key type.
+        // Such a frame is accepted, and if it turns out to end before it starts,
+        // WindowTransform produces an empty frame for the row, like PostgreSQL does.
         if (begin_offset_interval_kind != end_offset_interval_kind)
             return;
 
