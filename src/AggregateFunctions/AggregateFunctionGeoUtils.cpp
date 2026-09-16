@@ -535,6 +535,31 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
 {
     evaluatePolygonalOverlay(left, right, result, [](const auto & first, const auto & second, auto & output)
     {
+        if constexpr (std::is_same_v<std::decay_t<decltype(first)>, CartesianMultiPolygon>)
+        {
+            if (!first.empty() && !second.empty() && (first.size() > 1 || second.size() > 1))
+            {
+                using Box = boost::geometry::model::box<CartesianPoint>;
+                const auto first_box = boost::geometry::return_envelope<Box>(first);
+                const auto second_box = boost::geometry::return_envelope<Box>(second);
+                auto separated = [&]<size_t Dimension>()
+                {
+                    return boost::geometry::get<boost::geometry::max_corner, Dimension>(first_box)
+                            < boost::geometry::get<boost::geometry::min_corner, Dimension>(second_box)
+                        || boost::geometry::get<boost::geometry::max_corner, Dimension>(second_box)
+                            < boost::geometry::get<boost::geometry::min_corner, Dimension>(first_box);
+                };
+                /// Strict separation excludes boundary contacts as well as interior intersections.
+                /// The caller still normalizes and validates the complete result and its point budget.
+                if (separated.template operator()<0>() || separated.template operator()<1>())
+                {
+                    output.reserve(first.size() + second.size());
+                    output.insert(output.end(), first.begin(), first.end());
+                    output.insert(output.end(), second.begin(), second.end());
+                    return;
+                }
+            }
+        }
         boost::geometry::union_(first, second, output);
     });
 }

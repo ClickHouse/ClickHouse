@@ -7,6 +7,7 @@
 // https://www.boost.org/LICENSE_1_0.txt
 
 #include <boost/geometry/algorithms/detail/is_valid/multipolygon.hpp>
+#include <boost/geometry/policies/is_valid/default_policy.hpp>
 #include <boost/geometry/policies/is_valid/failing_reason_policy.hpp>
 #include <boost/geometry/strategies/relate/services.hpp>
 #include <boost/iterator/indirect_iterator.hpp>
@@ -135,15 +136,39 @@ public:
     }
 };
 
+/// Preserve Boost's accepted failures and format the same diagnostic only on rejection.
+class GeoValidityFailureVisitor
+{
+    std::string & reason;
+
+public:
+    explicit GeoValidityFailureVisitor(std::string & reason_) : reason(reason_)
+    {
+    }
+
+    template <boost::geometry::validity_failure_type Failure, typename... Data>
+    bool apply(const Data &... data)
+    {
+        if (boost::geometry::is_valid_default_policy<>::template apply<Failure>(data...))
+            return true;
+
+        /// Boost's failure visitor requires a string stream.
+        std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        boost::geometry::failing_reason_policy<> visitor(stream);
+        visitor.template apply<Failure>(data...);
+        reason = stream.str();
+        return false;
+    }
+};
+
 template <template <typename> class Allocator = std::allocator, typename MultiPolygon>
 bool isValidGeoMultiPolygon(const MultiPolygon & geometry, std::string & reason)
 {
     using Strategy = typename boost::geometry::strategies::relate::services::default_strategy<MultiPolygon, MultiPolygon>::type;
-    /// Boost's failure visitor requires a `std::ostream`.
-    std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    boost::geometry::failing_reason_policy<> visitor(stream);
+    GeoValidityFailureVisitor visitor(reason);
     const bool valid = GeoMultiPolygonValidity<MultiPolygon, Allocator>::apply(geometry, visitor, Strategy{});
-    reason = stream.str();
+    if (valid)
+        reason = boost::geometry::validity_failure_type_message(boost::geometry::no_failure);
     return valid;
 }
 
