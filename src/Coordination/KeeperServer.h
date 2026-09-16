@@ -251,6 +251,13 @@ public:
 
     void yieldLeadership();
 
+    /// Ask the leader to start, or stop, waiting for replicas that cannot keep
+    /// up. Can be sent to any node and is forwarded to the leader.
+    bool requestSlowMemberBackpressure(bool enable);
+
+    /// Whether that is on according to the local Raft parameters.
+    bool isSlowMemberBackpressure() const;
+
     void recalculateStorageStats();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
