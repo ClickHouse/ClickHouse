@@ -839,11 +839,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto all_agg_projections = agg_projections;
         filterProjectionCandidates(agg_projections, forced_name, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
-        rejectProjections(
-            candidates.reject_reasons,
-            all_agg_projections,
-            agg_projections,
-            forced_name.empty() ? "the setting preferred_optimize_projection_name names another projection" : "the PROJECTION modifier names another projection");
+        rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, forced_name.empty() ? "the setting preferred_optimize_projection_name names another projection" : "the PROJECTION modifier names another projection");
 
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
@@ -929,11 +925,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     /// Prefer the user specified projection if any.
     const auto all_agg_projections = agg_projections;
     filterProjectionCandidates(agg_projections, forced_name, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
-    rejectProjections(
-        candidates.reject_reasons,
-        all_agg_projections,
-        agg_projections,
-        forced_name.empty() ? "the setting preferred_optimize_projection_name names another projection" : "the PROJECTION modifier names another projection");
+    rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, forced_name.empty() ? "the setting preferred_optimize_projection_name names another projection" : "the PROJECTION modifier names another projection");
 
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());

@@ -400,11 +400,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     ContextPtr context = reading->getContext();
     const auto all_normal_projections = normal_projections;
     filterProjectionCandidates(normal_projections, forced_name, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
-    rejectProjections(
-        result.projection_reject_reasons,
-        all_normal_projections,
-        normal_projections,
-        forced ? "the PROJECTION modifier names another projection" : "the setting preferred_optimize_projection_name names another projection");
+    rejectProjections(result.projection_reject_reasons, all_normal_projections, normal_projections, forced ? "the PROJECTION modifier names another projection" : "the setting preferred_optimize_projection_name names another projection");
 
     if (normal_projections.empty())
         return result;

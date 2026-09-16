@@ -24,8 +24,7 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
 /// With a non-empty `forced_name` keeps only the projection with that name, leaving the list empty when it is absent.
 /// Otherwise keeps only the projection named `preferred_name` when it is in the list, and leaves the list as is if not.
-void filterProjectionCandidates(
-    std::vector<const ProjectionDescription *> & projections, const String & forced_name, const String & preferred_name);
+void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & forced_name, const String & preferred_name);
 
 /// Records `reason` in `reject_reasons` for every projection of `projections` that is not in `kept`, keeping a reason that is already there.
 void rejectProjections(

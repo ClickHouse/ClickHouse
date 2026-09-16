@@ -127,8 +127,7 @@ void rejectProjections(
             reject_reasons.try_emplace(projection->name, reason);
 }
 
-void filterProjectionCandidates(
-    std::vector<const ProjectionDescription *> & projections, const String & forced_name, const String & preferred_name)
+void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & forced_name, const String & preferred_name)
 {
     if (!forced_name.empty())
     {
