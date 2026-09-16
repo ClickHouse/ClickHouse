@@ -1520,6 +1520,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
+            {"allow_experimental_vertical_merge_tuple_subcolumns", false, false, "New setting. When enabled, flattenable named Tuple leaves may be merged one at a time in Vertical merge. Nested flattenable Tuple fields count as separate leaves toward vertical_merge_algorithm_min_columns_to_activate. Disabled by default."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
