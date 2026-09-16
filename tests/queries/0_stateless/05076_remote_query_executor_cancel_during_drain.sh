@@ -13,14 +13,16 @@
 # `ExecutingGraph::cancel` calls `cancel` on every processor in turn under `processors_mutex`, so one
 # draining remote source used to stall cancellation of the whole pipeline.
 #
-# Both scenarios build the same fixture: fp `receive_packet_pause` parks one shard's reader before it
-# consumes a packet, so that shard's query is still pending when `LIMIT 1` closes the output ports and
-# `onUpdatePorts` drives `finish` on its executor. That shard is called the parked shard below; which
-# of the two it is, is decided by whichever reader reaches the one-shot failpoint first, and every
-# other failpoint here is guarded by the same executor-local `in_receive_packet_window` predicate, so
-# the sibling shard can never consume a park this test is waiting for.
-# `async_socket_for_remote=0` picks the synchronous read path, which is where `receive_packet_pause`
-# lives; the drain is synchronous either way.
+# Both scenarios build the same fixture: `LIMIT 1` is satisfied long before either shard has sent its
+# 100000 single-row blocks, so closing the output ports drives `finish` on both executors with a real
+# drain left to do. Fp `finish_entry_hold` fires once, at the top of `finish`, and the executor that
+# fires it pins itself as the owner of the other two holds; that shard is called the parked shard
+# below. Which of the two it is, is decided by whichever executor enters `finish` first, and the drain
+# and gate holds are guarded by that executor-local pin, so the sibling shard can never consume a park
+# this test is waiting for. No failpoint here parks a reader inside `IProcessor::work`: the reader is
+# never held, only `finish` and `cancel` are, and every park is bounded by the waits below.
+# `async_socket_for_remote=0` keeps the fixture on the synchronous read path, as 04512 does; the drain
+# is synchronous either way.
 #
 # Scenario A: `finish` parks at the start of its drain, holding `was_cancelled_mutex`, and
 # `KILL QUERY` has to return anyway. That is an ordering assertion, not a duration one: while the park
@@ -37,16 +39,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-FP_RECV="remote_query_executor_receive_packet_pause"
-FP_HOLD="remote_query_executor_finish_drain_hold"
 FP_ENTRY="remote_query_executor_finish_entry_hold"
+FP_HOLD="remote_query_executor_finish_drain_hold"
 FP_GATE="remote_query_executor_cancel_gate_hold"
 
 # Every bare `wait` below must be reachable only with all parks released: a client left parked would
 # block it until the runner's timeout, with no diagnosis.
 function release_all()
 {
-    for fp in "$FP_HOLD" "$FP_ENTRY" "$FP_GATE" "$FP_RECV"; do
+    for fp in "$FP_HOLD" "$FP_ENTRY" "$FP_GATE"; do
         $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $fp" 2>/dev/null ||:
     done
 }
@@ -108,8 +109,8 @@ function wait_pause()
     return 1
 }
 
-# `LIMIT 1` without `ORDER BY`: the shard that is not parked delivers a row and closes the output
-# ports, so `onUpdatePorts` calls `finish` on the parked shard's executor and reaches the drain.
+# `LIMIT 1` without `ORDER BY`: the first row from either shard closes the output ports, so `finish`
+# runs on both executors while both remote queries are still streaming, and reaches the drain.
 # `enable_parallel_replicas=0` keeps `drain_was_skipped` false, which is what leads into the drain.
 # `--max_threads` is pinned: the interleaving needs both shards' readers runnable at once, so do not
 # let a randomized thread count decide whether the fixture is reachable.
@@ -140,22 +141,27 @@ function assert_query_gone()
 ########## Scenario A: cancel arrives while finish is already parked in its drain ##########
 
 armed=0
-arm "$FP_RECV" && arm "$FP_HOLD" && armed=1
+arm "$FP_ENTRY" && arm "$FP_HOLD" && armed=1
 
 if [ "$armed" -eq 1 ]; then
     start_query "$query_id"
 
-    # Without both parks the interleaving never happened and the assertion below would be vacuous.
+    # The entry hold only pins the parked shard's executor; it is released as soon as it is seen, so
+    # that executor's `finish` goes on to the drain hold. Without both parks the interleaving never
+    # happened and the assertion below would be vacuous.
     sync_ok=1
-    for fp in "$FP_RECV" "$FP_HOLD"; do
-        if ! wait_pause "$fp"; then
+    if wait_pause "$FP_ENTRY"; then
+        $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_ENTRY"
+        if ! wait_pause "$FP_HOLD"; then
             failed=1
             sync_ok=0
-            # The fixture is already broken and `wait_pause` has already named the failpoint; a second
-            # 30 s wait cannot add information, and the runner's budget is finite.
-            break
         fi
-    done
+    else
+        # The fixture is already broken and `wait_pause` has already named the failpoint; a second
+        # 30 s wait cannot add information, and the runner's budget is finite.
+        failed=1
+        sync_ok=0
+    fi
 fi
 
 if [ "$sync_ok" -eq 1 ]; then
@@ -205,24 +211,19 @@ kill_done="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.kill_done"
 rm -f "$kill_done" "$kill_done.part"
 
 armed=0
-arm "$FP_RECV" && arm "$FP_ENTRY" && arm "$FP_GATE" && arm "$FP_HOLD" && armed=1
+arm "$FP_ENTRY" && arm "$FP_GATE" && arm "$FP_HOLD" && armed=1
 
 # Independent of scenario A's outcome, so one failing scenario cannot hide the other.
 if [ "$armed" -eq 1 ]; then
     start_query "$query_id_b"
 
     # The parked shard's `finish` must be held at the very top of the function, before it publishes
-    # itself. Both waits must succeed or the interleaving below was never established.
+    # itself. The wait must succeed or the interleaving below was never established.
     sync_ok=1
-    for fp in "$FP_RECV" "$FP_ENTRY"; do
-        if ! wait_pause "$fp"; then
-            failed=1
-            sync_ok=0
-            # The fixture is already broken and `wait_pause` has already named the failpoint; a second
-            # 30 s wait cannot add information, and the runner's budget is finite.
-            break
-        fi
-    done
+    if ! wait_pause "$FP_ENTRY"; then
+        failed=1
+        sync_ok=0
+    fi
 fi
 
 if [ "$sync_ok" -eq 1 ]; then

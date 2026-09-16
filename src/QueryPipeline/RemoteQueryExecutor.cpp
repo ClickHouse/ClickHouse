@@ -75,10 +75,9 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
-    extern const char remote_query_executor_receive_packet_pause[];
-    extern const char remote_query_executor_finish_drain_pause[];
-    extern const char remote_query_executor_finish_drain_hold[];
+    extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
     extern const char remote_query_executor_finish_entry_hold[];
+    extern const char remote_query_executor_finish_drain_hold[];
     extern const char remote_query_executor_cancel_gate_hold[];
 }
 
@@ -655,14 +654,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
                 return ReadResult(Block());
         }
 
-        /// Parks the reader in the window this fix is about: `was_cancelled` has just been checked
-        /// and the mutex released, so a parallel `onUpdatePorts` can cancel and drain these
-        /// connections before `receivePacket` below runs.
-        fiu_do_on(FailPoints::remote_query_executor_receive_packet_pause, {
-            in_receive_packet_window = true;
-            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_receive_packet_pause);
-            in_receive_packet_window = false;
-        });
+        /// `was_cancelled` was checked and `was_cancelled_mutex` released above, so a parallel
+        /// `onUpdatePorts` -> `finish` can cancel and drain these connections before `receivePacket`
+        /// below runs. `finish()` takes that mutex itself, which is not held at this point.
+        fiu_do_on(FailPoints::remote_query_executor_cancel_and_drain_in_receive_window, { finish(); });
 
         auto packet = connections->receivePacket();
 
@@ -932,9 +927,15 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
-    /// Test-only. Guarded like the drain pause below, so a sibling shard cannot consume the one shot.
-    if (in_receive_packet_window)
-        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_entry_hold);
+    /// Test-only. The failpoint fires once, so exactly one executor per arming pins itself as the
+    /// owner of the holds in this function and in `cancel`; a sibling shard cannot consume them. Every
+    /// entry of the pinned executor parks here while the hold is armed, not only the first: `work`
+    /// and `onUpdatePorts` can enter on different threads, and a second one running ahead into the
+    /// drain would defeat the interleaving a test built around the first. The wait returns at once
+    /// after the hold is disabled.
+    fiu_do_on(FailPoints::remote_query_executor_finish_entry_hold, { owns_test_holds = true; });
+    if (owns_test_holds)
+        FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_finish_entry_hold);
 
     {
         std::lock_guard gate(finish_gate_mutex);
@@ -1020,8 +1021,8 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
-    /// Test-only. Guarded like the entry hold above, so a sibling shard cannot consume the one shot.
-    if (in_receive_packet_window)
+    /// Test-only. Only the executor pinned at the entry hold above can park here.
+    if (owns_test_holds)
         FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
@@ -1087,11 +1088,6 @@ void RemoteQueryExecutor::finish()
                 break;
         }
     }
-
-    /// Reached only with this executor's own reader parked above, i.e. with its connections
-    /// cancelled and fully drained - the state that reader will observe when it wakes.
-    if (in_receive_packet_window)
-        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
 }
 
 void RemoteQueryExecutor::cancel()
@@ -1105,7 +1101,7 @@ void RemoteQueryExecutor::cancel()
 
     /// Test-only, guarded as in `finish`: `ExecutingGraph::cancel` reaches every source, including
     /// finished siblings, and this sits before `cancelUnlocked`'s own `finished` check.
-    if (in_receive_packet_window)
+    if (owns_test_holds)
         FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_cancel_gate_hold);
 
     LockAndBlocker guard(was_cancelled_mutex);
