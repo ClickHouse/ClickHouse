@@ -347,6 +347,142 @@ def test_metadata_only_clear_preserves_unchanged_packed_index(started_cluster):
     node1.query(f"DROP TABLE {table} SYNC")
 
 
+def test_orphan_standalone_index_files_are_selected(started_cluster):
+    table = "ttl_clear_index_orphan_files"
+    node1.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            d Date,
+            k UInt64,
+            v UInt64,
+            INDEX idx v TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS
+            columns_and_secondary_indices_sizes_lazy_calculation = 0,
+            index_granularity = 100,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0,
+            packed_skip_index_max_bytes = 0
+        """
+    )
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(f"INSERT INTO {table} VALUES ('2000-01-01', 1, 1), ('2000-01-01', 2, 2)")
+
+    data_path = node1.query(
+        "SELECT data_paths[1] FROM system.tables "
+        f"WHERE database = currentDatabase() AND table = '{table}'"
+    ).strip()
+    active_part = node1.query(
+        "SELECT path FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+    ).strip()
+    saved_data = f"{data_path}saved_idx.idx2"
+    saved_marks = f"{data_path}saved_idx.cmrk2"
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f'cp "{active_part}skp_idx_idx.idx2" "{saved_data}" && '
+            f'cp "{active_part}skp_idx_idx.cmrk2" "{saved_marks}"',
+        ],
+        privileged=True,
+        user="root",
+    )
+
+    node1.query(f"ALTER TABLE {table} REMOVE TTL")
+    node1.query(f"ALTER TABLE {table} DROP INDEX idx SETTINGS mutations_sync = 2")
+    node1.query(f"ALTER TABLE {table} ADD INDEX idx v TYPE minmax GRANULARITY 1")
+    node1.query(
+        f"ALTER TABLE {table} MODIFY TTL d + INTERVAL 1 DAY CLEAR INDEX idx "
+        "SETTINGS materialize_ttl_after_modify = 0"
+    )
+
+    corrupt_part = node1.query(
+        "SELECT path FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+    ).strip()
+    corrupt_part_name = node1.query(
+        "SELECT name FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+    ).strip()
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f'cp "{saved_data}" "{corrupt_part}skp_idx_idx.idx2" && '
+            f'cp "{saved_marks}" "{corrupt_part}skp_idx_idx.cmrk2"',
+        ],
+        privileged=True,
+        user="root",
+    )
+
+    def orphan_files_exist(part_path):
+        return node1.exec_in_container(
+            ["bash", "-c", f'compgen -G "{part_path}skp_idx_idx.*" >/dev/null && echo 1 || echo 0'],
+            privileged=True,
+            user="root",
+        ).strip()
+
+    assert orphan_files_exist(corrupt_part) == "1"
+    assert (
+        node1.query(
+            "SELECT length(index_clear_ttl_info.max) "
+            f"FROM system.parts WHERE database = currentDatabase() AND table = '{table}' AND active"
+        )
+        == "1\n"
+    )
+
+    merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+    node1.query(f"SYSTEM START TTL MERGES {table}")
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(value) > {} FROM system.events "
+        "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(merges_before),
+        "1",
+        retry_count=60,
+    )
+
+    assert_eq_with_retry(
+        node1,
+        "SELECT name != '{}' FROM system.parts "
+        "WHERE database = currentDatabase() AND table = '{}' AND active".format(
+            corrupt_part_name,
+            table,
+        ),
+        "1",
+        retry_count=60,
+    )
+    replacement_part = node1.query(
+        "SELECT path FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+    ).strip()
+    assert orphan_files_exist(replacement_part) == "0"
+    replacement_name = node1.query(
+        "SELECT name FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+    )
+    node1.query(
+        f"OPTIMIZE TABLE {table} FINAL SETTINGS "
+        "enable_ttl_clear_index_merge_type_generation = 1, "
+        "optimize_skip_merged_partitions = 1, "
+        "optimize_throw_if_noop = 0"
+    )
+    assert (
+        node1.query(
+            "SELECT name FROM system.parts "
+            f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+        )
+        == replacement_name
+    )
+    assert node1.query(f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert node1.query(f"SELECT count() FROM {table}") == "2\n"
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
 def test_one_clear_index_merge_per_table(started_cluster):
     table = "ttl_clear_index_table_limit"
     node1.query(
