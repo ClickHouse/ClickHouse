@@ -126,37 +126,7 @@ private:
             return result;
 
         Float64 local_product = 1;
-        size_t i = row_begin;
-
-        /// Keep the partial products short. This breaks the dependency chain for ordinary
-        /// batches without allowing independent products to drift across the whole range.
-        constexpr size_t block_size = 16;
-        constexpr size_t unroll_count = 4;
-        for (; i + block_size <= row_end; i += block_size)
-        {
-            Float64 partial_products[unroll_count] = {1, 1, 1, 1};
-
-            for (size_t j = 0; j < block_size; j += unroll_count)
-            {
-                const UInt8 keep_0 = static_cast<UInt8>(keep(i + j) != 0);
-                const UInt8 keep_1 = static_cast<UInt8>(keep(i + j + 1) != 0);
-                const UInt8 keep_2 = static_cast<UInt8>(keep(i + j + 2) != 0);
-                const UInt8 keep_3 = static_cast<UInt8>(keep(i + j + 3) != 0);
-
-                result.has_value |= keep_0 | keep_1 | keep_2 | keep_3;
-                partial_products[0] *= selectValueOrOne(values[i + j], keep_0, scale);
-                partial_products[1] *= selectValueOrOne(values[i + j + 1], keep_1, scale);
-                partial_products[2] *= selectValueOrOne(values[i + j + 2], keep_2, scale);
-                partial_products[3] *= selectValueOrOne(values[i + j + 3], keep_3, scale);
-            }
-
-            local_product *= partial_products[0];
-            local_product *= partial_products[1];
-            local_product *= partial_products[2];
-            local_product *= partial_products[3];
-        }
-
-        for (; i < row_end; ++i)
+        for (size_t i = row_begin; i < row_end; ++i)
         {
             const UInt8 keep_value = static_cast<UInt8>(keep(i) != 0);
             result.has_value |= keep_value;
@@ -319,8 +289,10 @@ void registerAggregateFunctionProduct(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description = R"(
 Calculates the product of numeric values.
 
-The function aggregates rows directly and keeps a constant-size state. If the input is already an
-array, use [`arrayProduct`](/reference/functions/regular-functions/array-functions#arrayProduct) instead.
+The function aggregates rows directly and keeps a constant-size state. Input values are converted
+to `Float64` before multiplication. Floating-point results can depend on aggregation order when
+data is processed in parallel. If the input is already an array, use
+[`arrayProduct`](/reference/functions/regular-functions/array-functions#arrayProduct) instead.
     )";
     FunctionDocumentation::Syntax syntax = "product(x)";
     FunctionDocumentation::Arguments arguments = {
