@@ -626,6 +626,10 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
     {
         if (pattern_column_node->hasExpression())
             return;
+
+        const auto pattern_source = pattern_column_node->getColumnSource();
+        if (!pattern_source->as<TableNode>() && !pattern_source->as<TableFunctionNode>())
+            return;
     }
     else if (!pattern_node->as<ConstantNode>())
         return;

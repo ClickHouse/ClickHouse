@@ -167,6 +167,42 @@ FROM
 )
 WHERE explain LIKE '%m.values%';
 
+-- A pattern captured from an enclosing lambda is not a storage column. Keep the original
+-- Map LIKE implementation so the generated lambda cannot collide with the outer argument.
+DROP TABLE IF EXISTS t_map_contains_like_lambda_capture;
+
+CREATE TABLE t_map_contains_like_lambda_capture
+(
+    id UInt8,
+    m Map(String, String),
+    key_patterns Array(String),
+    value_patterns Array(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_map_contains_like_lambda_capture VALUES
+    (1, {'alpha': 'one'}, ['a%', 'z%'], ['o%', 'z%']),
+    (2, {}, ['a%', 'z%'], ['o%', 'z%']);
+
+SELECT
+    id,
+    arrayMap(x -> mapContainsKeyLike(m, x), key_patterns) AS key_hits,
+    arrayMap(x -> mapContainsValueLike(m, x), value_patterns) AS value_hits
+FROM t_map_contains_like_lambda_capture
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT
+    id,
+    arrayMap(x -> mapContainsKeyLike(m, x), key_patterns) AS key_hits,
+    arrayMap(x -> mapContainsValueLike(m, x), value_patterns) AS value_hits
+FROM t_map_contains_like_lambda_capture
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t_map_contains_like_lambda_capture;
+
 -- FixedString Map elements should use the matching subcolumn too.
 DROP TABLE IF EXISTS t_map_contains_like_fixed;
 
