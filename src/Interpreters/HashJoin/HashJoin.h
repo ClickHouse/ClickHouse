@@ -159,22 +159,6 @@ using TwoLevelJoinFixedHashMap = std::conditional_t<
     PartitionedFixedHashSet<Key, size_bits, BITS_FOR_BUCKET_TWO_LEVEL>,
     PartitionedFixedHashMap<Key, Mapped, size_bits, BITS_FOR_BUCKET_TWO_LEVEL>>;
 
-static_assert(BucketPartitionedMap<JoinHashMap<UInt64, RowRefList>>);
-static_assert(BucketPartitionedMap<JoinHashMapWithSavedHash<std::string_view, RowRefList>>);
-static_assert(BucketPartitionedMap<TwoLevelJoinHashMap<UInt64, RowRefList>>);
-static_assert(BucketPartitionedMap<TwoLevelJoinHashMapWithSavedHash<std::string_view, RowRefList>>);
-static_assert(BucketPartitionedMap<JoinFixedHashMap<UInt8, RowRefList>>);
-static_assert(BucketPartitionedMap<JoinFixedHashMap<UInt64, RowRefList, 18>>);
-static_assert(BucketPartitionedMap<TwoLevelJoinFixedHashMap<UInt8, RowRefList>>);
-static_assert(BucketPartitionedMap<TwoLevelJoinFixedHashMap<UInt64, RowRefList, 18>>);
-
-/// The set flavour has to stay bucket-partitioned as well, or a semi/anti join would silently fall
-/// back to a single-level table.
-static_assert(BucketPartitionedMap<JoinHashMap<UInt64, VoidMapped>>);
-static_assert(BucketPartitionedMap<TwoLevelJoinHashMap<UInt64, VoidMapped>>);
-static_assert(BucketPartitionedMap<JoinFixedHashMap<UInt8, VoidMapped>>);
-static_assert(BucketPartitionedMap<TwoLevelJoinFixedHashMap<UInt8, VoidMapped>>);
-
 static_assert(JoinHashMap<UInt64, RowRefList>::NUM_BUCKETS == 1);
 static_assert(TwoLevelJoinHashMap<UInt64, RowRefList>::NUM_BUCKETS == NUM_HASH_TABLE_BUCKETS);
 static_assert(JoinFixedHashMap<UInt8, RowRefList>::NUM_BUCKETS == 1);
@@ -284,10 +268,7 @@ public:
 
     /// Same as `clone`, but the caller has already recomputed the layout (side swap).
     std::shared_ptr<IJoin> cloneWithParallelLayout(
-        const std::shared_ptr<TableJoin> & table_join_,
-        SharedHeader,
-        SharedHeader right_sample_block_,
-        bool use_parallel_layout_) const
+        const std::shared_ptr<TableJoin> & table_join_, SharedHeader right_sample_block_, bool use_parallel_layout_) const
     {
         return cloneWith(table_join_, right_sample_block_, max_threads, use_parallel_layout_);
     }
@@ -554,14 +535,7 @@ public:
         {
             if (!max_reserve_bytes)
                 return reserve;
-            if constexpr (requires { sizeof(typename Table::cell_type); })
-            {
-                return std::min(reserve, max_reserve_bytes / (8 * sizeof(typename Table::cell_type)));
-            }
-            else
-            {
-                return reserve;
-            }
+            return std::min(reserve, max_reserve_bytes / (8 * sizeof(typename Table::cell_type)));
         }
 
         void create(Type which)
@@ -930,8 +904,6 @@ public:
 
     /// Creates a row store based on the already initialized layout and fills from block columns.
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
-
-    size_t getRightTableKeys() const;
 
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 

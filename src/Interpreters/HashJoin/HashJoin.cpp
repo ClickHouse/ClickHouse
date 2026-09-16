@@ -2607,7 +2607,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         /// Every stored block was replaced by a merged one with a fresh block_no, so the flags
         /// keyed by the old numbers are stale. Nothing has been marked yet - the probe runs later.
         if (matched_rows_stats && matched_rows_stats->hasRightFlags())
-            matched_rows_stats->prepareRightFlags(data->workers[0].columns);
+            matched_rows_stats->prepareRightFlags(data->workers);
 
         doDebugAsserts();
     }
@@ -2633,11 +2633,6 @@ bool HashJoin::rightTableCanBeReranged() const
     return isRightTableRerangeEnabled() && data->hasStoredColumns()
         && data->rows_to_join <= table_join->sortRightMaximumTableRows()
         && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
-}
-
-size_t HashJoin::getRightTableKeys() const
-{
-    return getTotalRowCount();
 }
 
 void HashJoin::tryRerangeRightTableData()

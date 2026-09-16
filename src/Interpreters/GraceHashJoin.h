@@ -83,9 +83,9 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        bool any_take_last_row_ = false,
-        size_t external_join_threshold_ = 0,
-        size_t max_threads_ = 1);
+        bool any_take_last_row_,
+        size_t external_join_threshold_,
+        size_t max_threads_);
 
     ~GraceHashJoin() override;
 

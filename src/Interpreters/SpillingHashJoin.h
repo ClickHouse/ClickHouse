@@ -46,10 +46,10 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false,
-        size_t max_threads_ = 1,
-        bool use_parallel_layout_ = true);
+        const HashJoinStatsCollectingParams & stats_collecting_params_,
+        bool any_take_last_row_,
+        size_t max_threads_,
+        bool use_parallel_layout_);
 
     ~SpillingHashJoin() override;
 
@@ -115,8 +115,6 @@ private:
 
     void switchToGraceHashJoin(size_t worker_id);
     void tryConvertChunks(size_t worker_id);
-    HashJoin & collectingJoin();
-    const HashJoin & collectingJoin() const;
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -127,7 +125,7 @@ private:
     size_t max_num_buckets;
     bool any_take_last_row;
     size_t max_bytes_before_external_join;
-    size_t max_threads = 1;
+    const size_t max_threads;
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_chunk_to_convert{0};

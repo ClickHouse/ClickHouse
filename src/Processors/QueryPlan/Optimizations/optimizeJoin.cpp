@@ -572,8 +572,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
         = preferParallelHashLayout(updated_table_join->kind(), lhs_estimation, updated_table_join->parallelHashJoinThreshold());
     JoinPtr updated_join;
     if (hash_join)
-        updated_join = hash_join->cloneWithParallelLayout(
-            updated_table_join, right_stream_input_header, left_stream_input_header, use_parallel_layout);
+        updated_join = hash_join->cloneWithParallelLayout(updated_table_join, left_stream_input_header, use_parallel_layout);
     else
         updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
 

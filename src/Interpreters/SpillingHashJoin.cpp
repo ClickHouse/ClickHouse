@@ -17,18 +17,6 @@ extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 namespace DB
 {
 
-HashJoin & SpillingHashJoin::collectingJoin()
-{
-    chassert(in_memory_hash_join);
-    return *in_memory_hash_join;
-}
-
-const HashJoin & SpillingHashJoin::collectingJoin() const
-{
-    chassert(in_memory_hash_join);
-    return *in_memory_hash_join;
-}
-
 SpillingHashJoin::SpillingHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader left_sample_block_,
@@ -119,7 +107,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
-    if (collectingJoin().getTotalByteCount() * 2 >= max_bytes_before_external_join)
+    if (in_memory_hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
         switchToGraceHashJoin(worker_id);
 
     /// Re-check: we may have just switched.
@@ -132,7 +120,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
         return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
 
-    return collectingJoin().addBlockToJoin(block, num_rows, worker_id, check_limits);
+    return in_memory_hash_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
 }
 
 void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id)
@@ -183,7 +171,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// fires only on subsequent calls. If the very last block pushed total bytes past
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
-        const size_t total_bytes = collectingJoin().getTotalByteCount();
+        const size_t total_bytes = in_memory_hash_join->getTotalByteCount();
         if (total_bytes >= max_bytes_before_external_join)
         {
             switchToGraceHashJoin(/* worker_id = */ 0);
@@ -194,8 +182,8 @@ void SpillingHashJoin::onBuildPhaseFinish()
                 log,
                 "All blocks fit in memory ({} bytes, {} rows), promoting {}",
                 total_bytes,
-                collectingJoin().getTotalRowCount(),
-                collectingJoin().getName());
+                in_memory_hash_join->getTotalRowCount(),
+                in_memory_hash_join->getName());
             chosen_join = in_memory_hash_join;
             state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
         }
@@ -235,13 +223,13 @@ void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 
 void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 {
-    collectingJoin().checkTypesOfKeys(block);
+    in_memory_hash_join->checkTypesOfKeys(block);
 }
 
 void SpillingHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-    collectingJoin().initialize(sample_block);
+    in_memory_hash_join->initialize(sample_block);
 }
 
 JoinResultPtr SpillingHashJoin::joinBlock(Block block)
@@ -249,7 +237,7 @@ JoinResultPtr SpillingHashJoin::joinBlock(Block block)
     /// During header computation (transformHeader), `joinBlock` is called with an empty block
     /// before any data is added. Delegate to the in-memory join in COLLECTING state.
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
-        return collectingJoin().joinBlock(std::move(block));
+        return in_memory_hash_join->joinBlock(std::move(block));
 
     return chosen_join->joinBlock(std::move(block));
 }
@@ -269,21 +257,21 @@ const Block & SpillingHashJoin::getTotals() const
 size_t SpillingHashJoin::getTotalRowCount() const
 {
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
-        return collectingJoin().getTotalRowCount();
+        return in_memory_hash_join->getTotalRowCount();
     return chosen_join->getTotalRowCount();
 }
 
 size_t SpillingHashJoin::getTotalByteCount() const
 {
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
-        return collectingJoin().getTotalByteCount();
+        return in_memory_hash_join->getTotalByteCount();
     return chosen_join->getTotalByteCount();
 }
 
 bool SpillingHashJoin::alwaysReturnsEmptySet() const
 {
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
-        return collectingJoin().alwaysReturnsEmptySet();
+        return in_memory_hash_join->alwaysReturnsEmptySet();
     return chosen_join->alwaysReturnsEmptySet();
 }
 
@@ -294,7 +282,7 @@ StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
     /// for canonicity with the other accessors and safety in case the call order ever changes.
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        return collectingJoin().getAnalysisReport();
+        return in_memory_hash_join->getAnalysisReport();
     }
     return chosen_join->getAnalysisReport();
 }

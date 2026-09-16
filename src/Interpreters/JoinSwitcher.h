@@ -37,9 +37,9 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
         bool any_take_last_row_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
-        size_t max_threads_ = 1,
-        bool use_parallel_layout_ = false);
+        const HashJoinStatsCollectingParams & stats_collecting_params_,
+        size_t max_threads_,
+        bool use_parallel_layout_);
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }

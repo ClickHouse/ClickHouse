@@ -42,13 +42,6 @@ static size_t rowsAddressableBySelector(const ScatteredBlock::Selector & selecto
     return rows;
 }
 
-void MatchedRowsStats::prepareRightFlags(const HashJoin::StoredBlocksList & stored_blocks)
-{
-    right_rows_flags = std::make_unique<MatchedRightFlags>();
-    for (const auto & block : stored_blocks)
-        right_rows_flags->allocate(block.block_no, rowsAddressableBySelector(block.selector));
-}
-
 void MatchedRowsStats::prepareRightFlags(const std::vector<HashJoin::WorkerStoredData> & workers)
 {
     right_rows_flags = std::make_unique<MatchedRightFlags>();

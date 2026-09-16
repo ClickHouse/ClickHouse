@@ -155,7 +155,7 @@ bool JoinSwitcher::switchJoin()
     switched.store(true, std::memory_order_release);
     join = merge_join;
 
-    BlocksList right_blocks = assert_cast<HashJoin *>(old_join.get())->releaseJoinedBlocks(true);
+    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
 
     fiu_do_on(FailPoints::join_switcher_throw_after_hash_release, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after HashJoin data was released");
