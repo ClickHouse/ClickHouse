@@ -11,7 +11,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-By default, ClickHouse applies `ZSTD(3)` compression in the self-managed version, and `zstd` in ClickHouse Cloud. For the `MergeTree` family the default is size-aware: the faster `LZ4` is used below 100 MB and `ZSTD(3)` at or above it, so freshly inserted data starts as `LZ4` and the bigger parts produced by background merges switch to `ZSTD(3)`. The threshold is applied to the part size known when the codec has to be chosen, before the data is written - `0` for a freshly inserted part, and the size of the source parts for a merge or a mutation - not to the size of the resulting part.
+By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud.
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/reference/settings/server-settings/settings/other#compression) section of a server configuration.
 
@@ -49,8 +49,7 @@ You can't decompress ClickHouse database files with external utilities like `lz4
 Compression is supported for the following table engines:
 
 - [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family. Supports column compression codecs and selecting the default compression method by [compression](/reference/settings/server-settings/settings/other#compression) settings.
-- [Log](/reference/engines/table-engines/log-family/index) family — the `Log` and `TinyLog` engines use the default `ZSTD(3)` compression method and support column compression codecs.
-- [StripeLog](/reference/engines/table-engines/log-family/index) writes all columns into a single shared data stream compressed with the default `ZSTD(3)` method, so per-column compression codecs are not applied to it.
+- [Log](/reference/engines/table-engines/log-family/index) family. Uses the `lz4` compression method by default and supports column compression codecs.
 - [Set](/reference/engines/table-engines/special/set). Only supported the default compression.
 - [Join](/reference/engines/table-engines/special/join). Only supported the default compression.
 
@@ -64,7 +63,7 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 ### LZ4 {#lz4}
 
-`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4). Applies LZ4 fast compression.
+`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
 
 ### LZ4HC {#lz4hc}
 
@@ -72,7 +71,7 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 ### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: \[1, 22\]. Default level: 1. `ZSTD(3)` is the codec applied by default to columns that do not specify a codec explicitly (for `MergeTree` parts this applies once the part size estimated at write time reaches 100 MB; below that `LZ4` is used).
+`ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: \[1, 22\]. Default level: 1.
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
@@ -245,7 +244,7 @@ ENGINE = MergeTree ORDER BY x;
 The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
 
 <Note>
-Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE`.
+Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
 </Note>
 
 A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.

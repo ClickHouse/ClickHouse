@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- The `cascades_aggregation_pushdown` transformation offers a partial aggregation pushed below
 -- a join as a cost-based alternative: a merge-only `Aggregating` above the join, a partial
 -- `Aggregating` below on the pushed input. It wins when the pushed side is huge but has few
