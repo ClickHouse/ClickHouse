@@ -4,8 +4,9 @@ import os
 import re
 import shutil
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
@@ -64,6 +65,22 @@ def _replica_logs(logs: List[Path], replica: str | None) -> List[Path]:
     if replica is None:
         return [p for p in logs if "sc1" not in p.name and "sc2" not in p.name]
     return [p for p in logs if replica in p.name]
+
+
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
+
+
+def container_memory_limit() -> int:
+    visible = Utils.physical_memory()
+    limit = visible - RUNNER_MEMORY_RESERVE
+    if limit <= 0:
+        raise RuntimeError(
+            f"Not enough RAM to run this job: {RUNNER_MEMORY_RESERVE} bytes are reserved for the "
+            f"runner agent outside the container and this host has {visible}. Docker refuses a "
+            f"negative --memory and reads 0 as no limit at all, so there is no safe cap to pass."
+        )
+    return limit
 
 
 def sanitize_test_result_line(line: str) -> str:
@@ -191,9 +208,7 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
-    result.append(
-        f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
-    )
+    result.append(f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}")
 
     return result
 
@@ -222,6 +237,7 @@ def get_run_command(
         "--privileged "
         # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
         "--ulimit nofile=1048576:1048576 "
+        f"--memory={container_memory_limit()} "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
@@ -296,6 +312,136 @@ def process_results(
         )
 
     return test_results, additional_files
+
+
+# One `(name, description, files)` finding as `FuzzerLogParser.parse_failure` returns it.
+Finding = Tuple[str, str, List[str]]
+
+
+@dataclass
+class ReplicaFailures:
+    """What `select_replica_failures` found across every replica.
+
+    `results` is the list to report: every distinct specific classification when there is
+    at least one; otherwise the one `<Fatal>` the parser could not name; otherwise the one
+    memory-limit verdict; otherwise the one expected-only / "Unknown error" fallback; empty
+    when nothing could be parsed at all. The flags say which tier `results` came from,
+    because the caller treats the tiers differently: a crash - named or not - is a bug that
+    no OOM downgrade may bury, while an expected-only line names a run that something else
+    already declared failed and is not a failure of its own.
+    """
+
+    results: List[Finding] = field(default_factory=list)
+    # `results` holds a crash: a specific classification, or a `<Fatal>` the parser
+    # could not classify. Not the memory limit - that is what an out-of-memory run
+    # reports, not a bug.
+    crash_named: bool = False
+    # `results` holds only the expected-only fallback, and that fallback has a name: an
+    # `EXPECTED_PATTERNS` line (the end-of-run SIGKILL, a sanitizer OOM report) was all
+    # the replicas had to say.
+    expected_only: bool = False
+    # `expected_only`, and the line is a sanitizer OOM report rather than the kill line.
+    expected_only_oom: bool = False
+
+
+def select_replica_failures(
+    replica_log_pairs: List[Tuple[str, List[Path], List[Path]]],
+) -> ReplicaFailures:
+    """Pick the failures to report from every replica's server and stderr log families.
+
+    Each triple is `(replica_name, server_log_files, stderr_log_files)`, both lists with
+    the rotated (`.gz`) files included and handed to a single parser call, so the parser
+    defers an expected kill line across every log of the replica at once.
+
+    A failure on one replica must not hide a (possibly higher-signal) failure on another,
+    so every replica is scanned - never breaking early - and the verdicts are ranked only
+    afterwards: a named crash anywhere beats a `<Fatal>` the parser could not classify,
+    which beats the memory limit, which beats the expected-only lines. All specific
+    classifications (sanitizer, logical error, oracle mismatch, ...) are collected and
+    every distinct one is reported, because replicated setups surface the same failure on
+    several replicas; the lower tiers each report a single finding.
+    """
+    specific_results: List[Finding] = []
+    seen_specific_names = set()
+    fatal_result: Optional[Finding] = None
+    memory_limit_result: Optional[Finding] = None
+    fallback_result: Optional[Finding] = None
+
+    for replica_name, server_log_files, stderr_log_files in replica_log_pairs:
+        log_parser = FuzzerLogParser(
+            server_logs=server_log_files or None,
+            stderr_logs=stderr_log_files or None,
+        )
+        file_names = ", ".join(p.name for p in (*server_log_files, *stderr_log_files))
+        try:
+            file_pair_info = f"Log files: {file_names}"
+            # A real failure first, so that one replica's expected kill line never names
+            # the run before another replica's crash is seen: an expected-only line may
+            # still name the run as it did before - but only as the last resort below.
+            name, description, files = log_parser.parse_failure()
+            description = f"{file_pair_info}\n{description}"
+            if name == FuzzerLogParser.MEMORY_LIMIT_ERROR:
+                # Named, but an out-of-memory run rather than a crash: another replica
+                # may still hold the crash this run would otherwise be downgraded past.
+                if memory_limit_result is None:
+                    memory_limit_result = (name, description, files)
+                continue
+            if name != FuzzerLogParser.UNKNOWN_ERROR:
+                if log_parser.is_generic_fatal:
+                    # A `<Fatal>` the parser cannot classify is crash evidence, so it
+                    # outranks any replica's benign verdict - but it is a lower-confidence
+                    # signal than a known classification, so it never joins them.
+                    if fatal_result is None:
+                        fatal_result = (name, description, files)
+                elif name not in seen_specific_names:
+                    seen_specific_names.add(name)
+                    specific_results.append((name, description, files))
+                continue
+            # `UNKNOWN_ERROR` says only that no pattern got a genuine match. A `<Fatal>`
+            # the anchored generic fallback did not see (`find_unnamed_fatals` scans
+            # unanchored) is still crash evidence and has to outrank the expected lines.
+            unnamed_fatals = log_parser.find_unnamed_fatals()
+            if unnamed_fatals and fatal_result is None:
+                fatal_result = (
+                    name,
+                    f"{description}Unclassified fatal:\n"
+                    + "\n".join(unnamed_fatals)
+                    + "\n",
+                    files,
+                )
+            name, description, files = log_parser.parse_failure(
+                allow_expected_only=True
+            )
+            # Keep the first fallback, but let a named expected-only verdict replace an
+            # earlier replica's nameless one.
+            if fallback_result is None or (
+                fallback_result[0] == FuzzerLogParser.UNKNOWN_ERROR
+                and name != FuzzerLogParser.UNKNOWN_ERROR
+            ):
+                fallback_result = (name, f"{file_pair_info}\n{description}", files)
+        except Exception as e:
+            print(
+                f"ERROR: Failed to parse failure logs for {replica_name} "
+                f"({file_names}): {e}\n"
+                f"Server logs should still be collected."
+            )
+
+    if specific_results:
+        return ReplicaFailures(results=specific_results, crash_named=True)
+    if fatal_result is not None:
+        return ReplicaFailures(results=[fatal_result], crash_named=True)
+    if memory_limit_result is not None:
+        return ReplicaFailures(results=[memory_limit_result])
+    if fallback_result is not None:
+        name, description, _ = fallback_result
+        expected_only = name != FuzzerLogParser.UNKNOWN_ERROR
+        return ReplicaFailures(
+            results=[fallback_result],
+            expected_only=expected_only,
+            expected_only_oom=expected_only
+            and bool(re.search(SANITIZER_OOM_REPORT_PATTERN, description)),
+        )
+    return ReplicaFailures()
 
 
 def run_stress_test(upgrade_check: bool = False) -> None:
@@ -424,130 +570,42 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            # Only a named crash may end the scan early. The memory limit, an unnamed
-            # `<Fatal>` and the expected-only lines are each held in their own slot and
-            # ranked after the loop, so no replica's benign verdict can stop the search
-            # before another replica's crash has been looked for.
-            definitive_result = None
-            memory_limit_result = None
-            fatal_result = None
-            fallback_result = None
-
-            for replica_name, server_log_files, stderr_log_files in replica_log_pairs:
-                log_parser = FuzzerLogParser(
-                    server_logs=server_log_files or None,
-                    stderr_logs=stderr_log_files or None,
-                )
-                file_names = ", ".join(
-                    p.name for p in (*server_log_files, *stderr_log_files)
-                )
-                try:
-                    file_pair_info = f"Log files: {file_names}"
-                    # A real failure first, so that one replica's expected kill line never
-                    # ends the search before another replica's crash is seen. Reached only
-                    # under `server_died or crash_evidence`, so an expected-only line may
-                    # still name the run as it did before - but only as a fallback.
-                    name, description, files = log_parser.parse_failure()
-                    if name == FuzzerLogParser.MEMORY_LIMIT_ERROR:
-                        # Named, but an out-of-memory run rather than a crash, so it must
-                        # not end the scan: another replica may still hold the crash this
-                        # run would otherwise be downgraded past.
-                        if memory_limit_result is None:
-                            memory_limit_result = (
-                                name,
-                                f"{file_pair_info}\n{description}",
-                                files,
-                            )
-                        continue
-                    if name != FuzzerLogParser.UNKNOWN_ERROR:
-                        definitive_result = (
-                            name,
-                            f"{file_pair_info}\n{description}",
-                            files,
-                        )
-                        break
-                    # `UNKNOWN_ERROR` covers a `<Fatal>` the parser cannot classify, which is
-                    # crash evidence and has to outrank any replica's expected-only verdict.
-                    unnamed_fatals = log_parser.find_unnamed_fatals()
-                    if unnamed_fatals and fatal_result is None:
-                        fatal_result = (
-                            name,
-                            f"{file_pair_info}\n{description}"
-                            + "Unclassified fatal:\n"
-                            + "\n".join(unnamed_fatals)
-                            + "\n",
-                            files,
-                        )
-                    name, description, files = log_parser.parse_failure(
-                        allow_expected_only=True
-                    )
-                    # Keep the first fallback, but let a named expected-only verdict replace
-                    # an earlier replica's nameless one.
-                    if fallback_result is None or (
-                        fallback_result[0] == FuzzerLogParser.UNKNOWN_ERROR
-                        and name != FuzzerLogParser.UNKNOWN_ERROR
-                    ):
-                        fallback_result = (
-                            name,
-                            f"{file_pair_info}\n{description}",
-                            files,
-                        )
-                except Exception as e:
-                    print(
-                        f"ERROR: Failed to parse failure logs for {replica_name} "
-                        f"({file_names}): {e}\n"
-                        f"Server logs should still be collected."
-                    )
-
-            # Ranked only now that every replica has been scanned: a crash anywhere beats
-            # the memory limit, which beats the expected-only lines.
-            crash_result = definitive_result or fatal_result
-            result = crash_result or memory_limit_result or fallback_result
+            failures = select_replica_failures(replica_log_pairs)
             # A crash the parser recognised, or a `<Fatal>` it could not - either is a bug.
             # The memory limit is not: it is what an out-of-memory run reports.
-            crash_named = crash_result is not None
-            # The expected-only verdicts explain the run only when nothing better was found
-            # on any replica, so they are read off the ranking above rather than off
-            # `definitive_result` alone.
-            using_fallback = fallback_result is not None and result is fallback_result
+            crash_named = failures.crash_named
             # An expected-only verdict names a run that something else already declared
             # failed. When `crash_evidence` alone brought us here it declared nothing: with
             # rotated logs in scope the `<Fatal>` it found can be the expected kill itself,
             # and reporting that would fail a run for its own restart. A `<Fatal>` the
-            # parser cannot name is not expected-only, and reports as `fatal_result` above.
-            expected_only = (
-                using_fallback
-                and not server_died
-                and fallback_result[0] != FuzzerLogParser.UNKNOWN_ERROR
-            )
+            # parser cannot name is not expected-only, and reports as a crash above.
+            expected_only = failures.expected_only and not server_died
             # OOM is allowed in stress tests outright - `is_oom` above already passes the
             # run for a report in a current log or dmesg. One found only via
             # `parse_failure(allow_expected_only=True)` can equally be a report that
             # rotated out of the current log, which `is_oom`'s own scan does not cover.
             # `server_died` says only that the process crashed, not why, so this is
             # checked independently of the `not server_died` guard above.
-            expected_only_oom = (
-                using_fallback
-                and fallback_result[0] != FuzzerLogParser.UNKNOWN_ERROR
-                and re.search(SANITIZER_OOM_REPORT_PATTERN, fallback_result[1])
-            )
-            if expected_only_oom:
+            if failures.expected_only_oom:
                 is_oom = True
-                print(f"Only a sanitizer OOM report in the server logs: {fallback_result[0]}")
+                print(
+                    "Only a sanitizer OOM report in the server logs: "
+                    f"{failures.results[0][0]}"
+                )
             elif expected_only:
                 print(
-                    f"Only expected messages in the server logs: {fallback_result[0]}"
+                    f"Only expected messages in the server logs: {failures.results[0][0]}"
                 )
-            elif result:
-                name, description, files = result
-                failed_results.append(
-                    Result.create_from(
-                        name=name,
-                        info=description,
-                        status=Result.Status.FAIL,
-                        files=files,
+            elif failures.results:
+                for name, description, files in failures.results:
+                    failed_results.append(
+                        Result.create_from(
+                            name=name,
+                            info=description,
+                            status=Result.Status.FAIL,
+                            files=files,
+                        )
                     )
-                )
             else:
                 failed_results.append(
                     Result.create_from(

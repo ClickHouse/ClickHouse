@@ -259,7 +259,7 @@ def run_and_check(
             logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
             )
     return out
 
@@ -2178,7 +2178,6 @@ class ClickHouseCluster:
         with_letsencrypt_pebble=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
-        use_old_analyzer=None,
         use_distributed_plan=None,
         hostname=None,
         env_variables=None,
@@ -2313,7 +2312,6 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
-            use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
@@ -4111,6 +4109,12 @@ class ClickHouseCluster:
                 self.nats_ssl_context.load_verify_locations(
                     p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
                 )
+                # A broker started with `--tlsverify` demands a client certificate, including from
+                # the availability probe in `wait_nats_is_available`. One started without ignores it.
+                self.nats_ssl_context.load_cert_chain(
+                    p.join(self.nats_cert_dir, "client", "client-cert.pem"),
+                    p.join(self.nats_cert_dir, "client", "client-key.pem"),
+                )
                 subprocess_check_call(self.base_nats_cmd + common_opts)
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
@@ -4488,9 +4492,9 @@ class ClickHouseCluster:
             if self.docker_logs_proc is not None:
                 self.docker_logs_proc.kill()
 
-            if not sanitizer_assert_instance:
+            if not sanitizer_assert_instance and not ignore_sanitizer:
                 # Search for sinitizer signs in docker.log if it's still empty
-                with open(self.docker_logs_path, "r") as f:
+                with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
@@ -4990,7 +4994,6 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         with_glue_catalog,
         with_hms_catalog,
-        use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
         clickhouse_path_dir,
@@ -5116,7 +5119,6 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
-        self.use_old_analyzer = use_old_analyzer
         self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
 
@@ -6300,7 +6302,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == "exited":
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             deadline = start_time + timeout
@@ -6313,7 +6315,7 @@ class ClickHouseInstance:
             if current_time >= deadline:
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
@@ -6503,21 +6505,15 @@ class ClickHouseInstance:
                     "0_common_min_cpu_busy_time.xml", self.config_d_dir
                 )
 
-        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
             os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
         )
 
-        # If specific version was used there can be no
-        # enable_analyzer setting, so do this only if it was
-        # explicitly requested.
-        if self.tag:
-            use_old_analyzer = False
+        # If specific version was used there can be no such setting,
+        # so do this only if it was explicitly requested.
         if self.tag != "latest":
             use_distributed_plan = False
         # Prefer specified in the test option:
-        if self.use_old_analyzer is not None:
-            use_old_analyzer = self.use_old_analyzer
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
@@ -6531,9 +6527,6 @@ class ClickHouseInstance:
             write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
-
-        if use_old_analyzer:
-            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
         if use_distributed_plan:
             write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)

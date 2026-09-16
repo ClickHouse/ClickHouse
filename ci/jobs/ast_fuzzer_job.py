@@ -145,9 +145,9 @@ def _fuzzer_log_terminal_block_has_server_mle(fuzzer_log: Path) -> bool:
 
 
 # BUZZHOUSE_ORACLE in Common/ErrorCodes.cpp. main() returns the error code but the OS
-# keeps only its low byte, so 1018 reaches the job as exit 249. Oracle findings use their
+# keeps only its low byte, so 1021 reaches the job as exit 253. Oracle findings use their
 # own code precisely so they are never confused with a BUZZHOUSE (739) config error.
-BUZZHOUSE_ORACLE_ERROR_CODE = 1018
+BUZZHOUSE_ORACLE_ERROR_CODE = 1021
 BUZZHOUSE_ORACLE_EXIT_CODE = BUZZHOUSE_ORACLE_ERROR_CODE & 0xFF
 
 # BUZZHOUSE (739) truncated the same way: the fuzzer found a disallowed error code, or bailed
@@ -424,7 +424,7 @@ def analyze_job_logs(
     is_failed = True
     # A wrong-result finding, not a crash: it must skip the OOM checks and the crash log
     # parser below. The exit code alone cannot prove one - it is truncated to 8 bits, so
-    # 249, 505 and 761 all look like BUZZHOUSE_ORACLE (1018) - hence the log marker too.
+    # 253, 509 and 765 all look like BUZZHOUSE_ORACLE (1021) - hence the log marker too.
     # Only the tail: BuzzHouse exits on the oracle error, so the one that ended the run is
     # at the end of the log, and an older match is from a step that already finished.
     oracle_error = (
@@ -795,11 +795,9 @@ def run_fuzz_job(check_name: str):
     compatibility_setting: str | None = None
     if not buzzhouse:
         if is_old_compatibility:
-            # The minimum version is 24.3 because that's when enable_analyzer
-            # became enabled by default, and the fuzzer profile constrains
-            # enable_analyzer to >= 1 to avoid wasting cycles on the old
-            # interpreter. An older compatibility version would revert the
-            # setting instead of tripping the constraint.
+            # 24.3 is the oldest compatibility version worth fuzzing: it is where the
+            # analyzer became the default, so an older one asks for the behavior of a
+            # release that predates the only query analysis there is now.
             compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
