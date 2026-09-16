@@ -456,10 +456,22 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
 
     /// Publish the new set: store `quotas` (always non-null, possibly empty) before updating the
     /// `empty` flag, so a concurrent reader never observes `empty == false` with a stale set.
+    ///
+    /// `has_profile_event_limits` is only a hint that lets a query skip loading `quotas` (and
+    /// taking a snapshot of its counters) when no governing quota needs it. The hint must never be
+    /// `false` while the published set has such limits, otherwise a query racing with the update
+    /// escapes the freshly installed limit. So it is raised before a set with limits is published
+    /// and lowered only after a set without them is; in between, a reader that sees `true` with
+    /// the older set just iterates over it and finds nothing to account, which is harmless.
+    if (has_profile_event_limits)
+        enabled.has_profile_event_limits = true;
+
     bool is_empty = new_quotas->empty();
     enabled.quotas.store(new_quotas);
     enabled.empty = is_empty;
-    enabled.has_profile_event_limits = has_profile_event_limits;
+
+    if (!has_profile_event_limits)
+        enabled.has_profile_event_limits = false;
 }
 
 

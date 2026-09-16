@@ -73,7 +73,9 @@ public:
     /// Returns whether any of the governing quotas defines a limit over a profile event.
     /// This is a single atomic flag maintained by `QuotaCache`, so the check is cheap; callers
     /// use it to avoid taking a snapshot of the query's profile events counters when no quota
-    /// needs it, keeping the feature close to zero-cost when unused.
+    /// needs it, keeping the feature close to zero-cost when unused. The flag is a conservative
+    /// hint: it may be `true` while the published set has no such limits (then there is nothing
+    /// to account), but it is never `false` while the published set has them.
     bool hasProfileEventLimits() const { return has_profile_event_limits.load(std::memory_order_relaxed); }
 
     /// Tracks consumption of profile events against every governing quota that defines limits
@@ -205,7 +207,7 @@ private:
     const Params params;
     boost::atomic_shared_ptr<const Quotas> quotas; /// atomically changed by QuotaCache when quotas change
     std::atomic<bool> empty = false; /// Use a separate flag to avoid loading `quotas`, which is way more expensive than an atomic bool
-    std::atomic<bool> has_profile_event_limits = false; /// Whether any governing quota defines a limit over a profile event; maintained by QuotaCache.
+    std::atomic<bool> has_profile_event_limits = false; /// Conservative hint: whether any governing quota defines a limit over a profile event; maintained by QuotaCache, see `hasProfileEventLimits`.
 };
 
 }
