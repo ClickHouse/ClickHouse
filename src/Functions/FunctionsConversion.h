@@ -3307,8 +3307,10 @@ public:
             return {};
     }
 
-    static const DataTypePtr & extractType(const DataTypePtr & type) { return type; }
-    static const DataTypePtr & extractType(const ColumnWithTypeAndName & argument) { return argument.type; }
+    /// Return the pointee rather than the `DataTypePtr` parameter itself: handing back a
+    /// `const &` to a by-reference parameter trips `bugprone-return-const-ref-from-parameter`.
+    static const IDataType & extractType(const DataTypePtr & type) { return *type; }
+    static const IDataType & extractType(const ColumnWithTypeAndName & argument) { return *argument.type; }
 
     /// `toTime` is the one conversion whose declarative signature is wider than the legacy
     /// contract. Its second arm `(Any, const scale NativeUInt)` puts *every* two-argument call in
