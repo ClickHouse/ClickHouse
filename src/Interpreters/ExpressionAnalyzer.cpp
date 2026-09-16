@@ -66,7 +66,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDictionary.h>
