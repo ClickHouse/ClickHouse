@@ -1,5 +1,3 @@
--- The `UNION ALL` branches below are numbered and the result is ordered by that number: `ORDER BY
--- tuple()` sorts by a constant, which imposes no order on the result.
 -- { echoOn }
 
 SET allow_experimental_nullable_tuple_type = 1;
@@ -104,12 +102,12 @@ SELECT
     arrayElementOrNull(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [(1, 'a'), (2, 'b')] AS arr
+    SELECT [(1, 'a'), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [(3, 'c')]           AS arr
+    SELECT [(3, 'c')]           AS arr
     UNION ALL
-    SELECT 3 AS branch, []                   AS arr
-) ORDER BY branch;
+    SELECT []                   AS arr
+) ORDER BY tuple();
 
 SELECT
     arrayElementOrNull(arr, 1),
@@ -131,31 +129,31 @@ SELECT
     arrayElementOrNull(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
+    SELECT [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
+    SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
-    SELECT 3 AS branch, [NULL]                   AS arr
-) ORDER BY branch;
+    SELECT [NULL]                   AS arr
+) ORDER BY tuple();
 
 
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-) ORDER BY branch;
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
+) ORDER BY tuple();
 
 WITH CAST([(NULL, 'a'), (1, 'b')] AS Array(Tuple(Nullable(Int64), String))) AS arr
 SELECT
@@ -179,64 +177,64 @@ SELECT
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
+    SELECT CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-) ORDER BY branch;
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+) ORDER BY tuple();
 
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-) ORDER BY branch;
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
+) ORDER BY tuple();
 
 
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-) ORDER BY branch;
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch;
+    SELECT 0  AS idx
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -245,20 +243,20 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch;
+    SELECT 0  AS idx
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT
@@ -266,18 +264,18 @@ SELECT
     arrayElementOrNull(arr, CAST(idx AS UInt8)) AS uint8_res
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), tuple()] AS Array(Tuple())) AS arr
 SELECT
@@ -286,18 +284,18 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
 SELECT
@@ -306,18 +304,18 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 SELECT arrayElementOrNull([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
@@ -459,12 +457,12 @@ SELECT
     arrayElement(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [(1, 'a'), (2, 'b')] AS arr
+    SELECT [(1, 'a'), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [(3, 'c')]           AS arr
+    SELECT [(3, 'c')]           AS arr
     UNION ALL
-    SELECT 3 AS branch, []                   AS arr
-) ORDER BY branch;
+    SELECT []                   AS arr
+) ORDER BY tuple();
 
 
 SELECT
@@ -510,31 +508,31 @@ SELECT
     arrayElement(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
+    SELECT [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
+    SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
-    SELECT 3 AS branch, [NULL]                   AS arr
-) ORDER BY branch;
+    SELECT [NULL]                   AS arr
+) ORDER BY tuple();
 
 
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-) ORDER BY branch;
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
+) ORDER BY tuple();
 
 WITH CAST([(NULL, 'a'), (1, 'b')] AS Array(Tuple(Nullable(Int64), String))) AS arr
 SELECT
@@ -558,64 +556,64 @@ SELECT
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
+    SELECT CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-) ORDER BY branch;
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+) ORDER BY tuple();
 
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-) ORDER BY branch;
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
+) ORDER BY tuple();
 
 
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-) ORDER BY branch;
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch;
+    SELECT 0  AS idx
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -624,20 +622,20 @@ SELECT
     toTypeName(arrayElement(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch;
+    SELECT 0  AS idx
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT
@@ -645,18 +643,18 @@ SELECT
     arrayElement(arr, CAST(idx AS UInt8)) AS uint8_res
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), tuple()] AS Array(Tuple())) AS arr
 SELECT
@@ -665,18 +663,18 @@ SELECT
     toTypeName(arrayElement(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
 SELECT
@@ -685,18 +683,18 @@ SELECT
     toTypeName(arrayElement(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 SELECT arrayElement([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
@@ -752,16 +750,16 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, CAST(1    AS Nullable(Int64)) AS idx
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST(2    AS Nullable(Int64)) AS idx
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST(-1    AS Nullable(Int64)) AS idx
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST(-2    AS Nullable(Int64)) AS idx
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST(NULL AS Nullable(Int64)) AS idx
-) ORDER BY branch;
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -770,16 +768,16 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, CAST(1    AS Nullable(Int64)) AS idx
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST(2    AS Nullable(Int64)) AS idx
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST(-1    AS Nullable(Int64)) AS idx
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST(-2    AS Nullable(Int64)) AS idx
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST(NULL AS Nullable(Int64)) AS idx
-) ORDER BY branch;
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple();
 
 
 
@@ -851,12 +849,12 @@ SELECT
     arrayElementOrNull(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [(1, 'a'), (2, 'b')] AS arr
+    SELECT [(1, 'a'), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [(3, 'c')]           AS arr
+    SELECT [(3, 'c')]           AS arr
     UNION ALL
-    SELECT 3 AS branch, []                   AS arr
-) ORDER BY branch;
+    SELECT []                   AS arr
+) ORDER BY tuple();
 
 SELECT
     arrayElementOrNull(arr, 1),
@@ -878,31 +876,31 @@ SELECT
     arrayElementOrNull(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
+    SELECT [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
+    SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
-    SELECT 3 AS branch, [NULL]                   AS arr
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT [NULL]                   AS arr
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 WITH CAST([(NULL, 'a'), (1, 'b')] AS Array(Tuple(Nullable(Int64), String))) AS arr
 SELECT
@@ -926,64 +924,64 @@ SELECT
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
+    SELECT CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-) ORDER BY branch;
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
+) ORDER BY tuple();
 
 
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT arrayElementOrNull(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch;
+    SELECT 0  AS idx
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -992,20 +990,20 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT 0  AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT
@@ -1013,18 +1011,18 @@ SELECT
     arrayElementOrNull(arr, CAST(idx AS UInt8)) AS uint8_res
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), tuple()] AS Array(Tuple())) AS arr
 SELECT
@@ -1033,18 +1031,18 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
 SELECT
@@ -1053,18 +1051,18 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT -3 AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 SELECT arrayElementOrNull([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
@@ -1134,12 +1132,12 @@ SELECT
     arrayElement(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [(1, 'a'), (2, 'b')] AS arr
+    SELECT [(1, 'a'), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [(3, 'c')]           AS arr
+    SELECT [(3, 'c')]           AS arr
     UNION ALL
-    SELECT 3 AS branch, []                   AS arr
-) ORDER BY branch;
+    SELECT []                   AS arr
+) ORDER BY tuple();
 
 
 SELECT
@@ -1185,31 +1183,31 @@ SELECT
     arrayElement(arr, CAST(1 AS Int64))
 FROM
 (
-    SELECT 1 AS branch, [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
+    SELECT [CAST((1, 'a') AS Nullable(Tuple(Int64, String))), (2, 'b')] AS arr
     UNION ALL
-    SELECT 2 AS branch, [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
+    SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
-    SELECT 3 AS branch, [NULL]                   AS arr
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT [NULL]                   AS arr
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 WITH CAST([(NULL, 'a'), (1, 'b')] AS Array(Tuple(Nullable(Int64), String))) AS arr
 SELECT
@@ -1233,64 +1231,64 @@ SELECT
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([NULL]           AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr,  1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
+    SELECT CAST([(2, 'b')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr,  2 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+    SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
-    SELECT 6 AS branch, CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-) ORDER BY branch;
+    SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
+) ORDER BY tuple();
 
 
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([tuple()]          AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([]                 AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
+    SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT arrayElement(arr, idx)
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch;
+    SELECT 0  AS idx
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -1299,20 +1297,20 @@ SELECT
     toTypeName(arrayElement(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
+    SELECT -3 AS idx
     UNION ALL
-    SELECT 7 AS branch, 0  AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT 0  AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT
@@ -1320,18 +1318,18 @@ SELECT
     arrayElement(arr, CAST(idx AS UInt8)) AS uint8_res
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), tuple()] AS Array(Tuple())) AS arr
 SELECT
@@ -1340,18 +1338,18 @@ SELECT
     toTypeName(arrayElement(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch;
+    SELECT -3 AS idx
+) ORDER BY tuple();
 
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
 SELECT
@@ -1360,18 +1358,18 @@ SELECT
     toTypeName(arrayElement(arr, idx))        AS type
 FROM
 (
-    SELECT 1 AS branch, 1  AS idx
+    SELECT 1  AS idx
     UNION ALL
-    SELECT 2 AS branch, 2  AS idx
+    SELECT 2  AS idx
     UNION ALL
-    SELECT 3 AS branch, 3  AS idx
+    SELECT 3  AS idx
     UNION ALL
-    SELECT 4 AS branch, -1 AS idx
+    SELECT -1 AS idx
     UNION ALL
-    SELECT 5 AS branch, -2 AS idx
+    SELECT -2 AS idx
     UNION ALL
-    SELECT 6 AS branch, -3 AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT -3 AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
 SELECT arrayElement([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
@@ -1388,16 +1386,16 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, CAST(1    AS Nullable(Int64)) AS idx
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST(2    AS Nullable(Int64)) AS idx
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST(-1    AS Nullable(Int64)) AS idx
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST(-2    AS Nullable(Int64)) AS idx
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST(NULL AS Nullable(Int64)) AS idx
-) ORDER BY branch;
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -1406,13 +1404,13 @@ SELECT
     toTypeName(arrayElementOrNull(arr, idx)) AS type
 FROM
 (
-    SELECT 1 AS branch, CAST(1    AS Nullable(Int64)) AS idx
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 2 AS branch, CAST(2    AS Nullable(Int64)) AS idx
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 3 AS branch, CAST(-1    AS Nullable(Int64)) AS idx
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 4 AS branch, CAST(-2    AS Nullable(Int64)) AS idx
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
     UNION ALL
-    SELECT 5 AS branch, CAST(NULL AS Nullable(Int64)) AS idx
-) ORDER BY branch; -- { serverError ILLEGAL_COLUMN }
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
