@@ -594,6 +594,9 @@ This setting can be modified at runtime and will take effect immediately. Querie
     DECLARE(UInt64, max_waiting_queries, 0, R"(
 Limit on total number of concurrently waiting queries, excluding internal queries.
 Execution of a waiting query is blocked while an asynchronous load or startup job it needs is still running: loading a table, starting up a table or a database, or starting up the distributed DDL worker (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases)).
+The limit covers queries waiting to execute. It does not cover the rollback of a query it already
+refused: that rollback can block until a job the query had scheduled finishes, for example the startup
+of a database a refused `CREATE DATABASE` had already attached.
 
 <Note>
 Waiting queries are not counted when limits controlled by the following settings are checked:
@@ -616,6 +619,7 @@ as waiting until it has one. If a limit is full at that moment, the query waits 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+The limit is checked when a query starts waiting, so lowering it does not refuse queries that are already waiting.
 </Note>
 )", 0) \
     \
