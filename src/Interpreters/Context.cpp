@@ -990,7 +990,7 @@ struct ContextSharedPart : boost::noncopyable
         return config ? *config : Poco::Util::Application::instance().config();
     }
 
-    const ConfigurationPtr & getConfigPtr() const
+    ConfigurationPtr getConfigPtr() const
     {
         SharedLockGuard lock(mutex);
         return config;
