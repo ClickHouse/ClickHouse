@@ -321,8 +321,12 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
-    array_column.getOffsets().push_back(paths_column.size());
-    array_column.insertManyDefaults(num_new_rows - 1);
+    /// The streams may return no rows at all, and then there is no first row to hold the paths.
+    if (num_new_rows != 0)
+    {
+        array_column.getOffsets().push_back(paths_column.size());
+        array_column.insertManyDefaults(num_new_rows - 1);
+    }
 
     settings.path.pop_back();
     settings.path.pop_back();

@@ -17,18 +17,43 @@ function create_part()
 {
     rm -rf "$DATA_DIR"
     mkdir -p "$DATA_DIR"
-    $CLICKHOUSE_LOCAL --path "$DATA_DIR" -q "
+    PART=$($CLICKHOUSE_LOCAL --path "$DATA_DIR" -q "
         CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS min_bytes_for_wide_part = 0, object_serialization_version = 'v3', object_shared_data_serialization_version = 'advanced';
         INSERT INTO t SELECT ('{\"p' || toString(number % 8) || '\":\"' || repeat('Q', 40) || '\"}')::JSON(max_dynamic_paths=0) FROM numbers(200);
         INSERT INTO t SELECT ('{\"z' || toString(number % 8) || '\":\"' || repeat('W', 40) || '\"}')::JSON(max_dynamic_paths=0) FROM numbers(200);
         OPTIMIZE TABLE t FINAL;
-    "
+        SELECT trim(TRAILING '/' FROM path) FROM system.parts WHERE table = 't' AND active
+    ")
 
-    PART=$(ls -d "$DATA_DIR"/store/*/*/all_1_2_1)
-    # The merged part is read only if the parts it was merged from are gone.
-    rm -rf "$DATA_DIR"/store/*/*/all_1_1_0 "$DATA_DIR"/store/*/*/all_2_2_0
+    if [ -z "$PART" ]
+    then
+        echo "the table has no active part"
+        return
+    fi
+
+    # The parts the merge consumed are still on disk and are read instead if the merged one is broken.
+    local part
+    for part in "$(dirname "$PART")"/all_*; do
+        [ "$part" = "$PART" ] || rm -rf "$part"
+    done
     rm -f "$PART"/checksums.txt
+}
+
+# The stream names are matched, not spelled out, so the test does not depend on the part layout.
+function truncate_streams()
+{
+    local label=$1
+    shift
+
+    if [ -s "$1" ]
+    then
+        echo "$label is there"
+        truncate -s 0 "$@"
+    else
+        echo "$label is missing, the part contains:"
+        ls "$PART" 2>&1
+    fi
 }
 
 function read_part()
@@ -38,15 +63,11 @@ function read_part()
 }
 
 create_part
-# Without this check a wrong file name would be created by the truncate and the read would fail for
-# another reason.
-test -s "$PART"/json.object_shared_data.copy.paths_indexes.bin && echo "paths indexes stream is there"
-truncate -s 0 "$PART"/json.object_shared_data.copy.paths_indexes.bin
+truncate_streams "paths indexes stream" "$PART"/*object_shared_data*paths_indexes.bin
 read_part
 
 create_part
-test -s "$PART"/json.object_shared_data.0.structure.bin && echo "structure stream is there"
-truncate -s 0 "$PART"/json.object_shared_data.*.structure.bin
+truncate_streams "structure stream" "$PART"/*object_shared_data*structure.bin
 read_part
 
 rm -rf "$DATA_DIR"
