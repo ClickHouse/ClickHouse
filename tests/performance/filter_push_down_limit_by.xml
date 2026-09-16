@@ -1,0 +1,42 @@
+<test>
+    <settings>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE limit_by_pushdown_main (k String, sel UInt8, v UInt64)
+        ENGINE = MergeTree ORDER BY (sel, k)
+    </create_query>
+    <create_query>
+        CREATE TABLE limit_by_pushdown_set (k String) ENGINE = MergeTree ORDER BY k
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_pushdown_main
+        SELECT concat('e', toString(number % 2500000)) AS k, toUInt8(cityHash64(number) % 4) AS sel, number AS v
+        FROM numbers_mt(5000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO limit_by_pushdown_set SELECT concat('e', toString(number)) AS k FROM numbers_mt(2000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE limit_by_pushdown_main FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE limit_by_pushdown_set FINAL</fill_query>
+
+    <!-- The regressed shape: an outer subquery-set IN over a filtered LIMIT BY subquery. -->
+    <query>
+        SELECT count() FROM (
+            SELECT k, v FROM limit_by_pushdown_main WHERE sel = 0 AND v % 512 = 0 LIMIT 1 BY k
+        ) WHERE k IN (SELECT k FROM limit_by_pushdown_set)
+    </query>
+
+    <!-- Control: with push-down off both sides must measure the same. -->
+    <query>
+        SELECT count() FROM (
+            SELECT k, v FROM limit_by_pushdown_main WHERE sel = 0 AND v % 512 = 0 LIMIT 1 BY k
+        ) WHERE k IN (SELECT k FROM limit_by_pushdown_set)
+        SETTINGS query_plan_filter_push_down = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS limit_by_pushdown_main</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_pushdown_set</drop_query>
+</test>

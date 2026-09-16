@@ -510,7 +510,10 @@ public:
         bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs,
-        bool allow_non_deterministic_functions);
+        bool allow_non_deterministic_functions,
+        /// A conjunct probing an `IN` set is pushed only if the set is built and holds at most this many
+        /// rows, so that its per-row and index-analysis cost is bounded. `0` means no limit.
+        size_t max_set_rows_for_push_down = 0);
 
     struct ActionsForJOINFilterPushDown;
 

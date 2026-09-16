@@ -128,6 +128,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
             {"output_format_arrow_record_batch_size", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."},
             {"output_format_arrow_record_batch_size_bytes", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."},
+            {"query_plan_max_set_size_for_filter_push_down_below_limit_by", 0, 10000, "New setting bounding the size of an `IN`-clause set whose probe may be pushed below a `LIMIT BY`, which fixes a performance regression introduced in 26.7 by that push-down. The previous value `0` (no limit) restores the 26.7 and 26.8 behaviour."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {

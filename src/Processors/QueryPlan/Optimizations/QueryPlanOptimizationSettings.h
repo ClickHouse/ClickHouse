@@ -172,6 +172,8 @@ struct QueryPlanOptimizationSettings
     /// containing such sets).
     size_t max_set_size_for_projection_match = 0;
 
+    size_t max_set_size_for_filter_push_down_below_limit_by = 0;
+
     /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
     /// This parameter is used to distinguish between the initiator and the remote replicas.
     bool is_parallel_replicas_initiator_with_projection_support = false;

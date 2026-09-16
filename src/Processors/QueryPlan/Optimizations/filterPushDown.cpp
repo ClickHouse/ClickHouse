@@ -146,7 +146,7 @@ bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & f
 }
 }
 
-static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
+static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0, size_t max_set_rows_for_push_down = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -169,7 +169,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
         original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
 
     auto result = expression.splitActionsForFilterPushDown(
-        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
+        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, max_set_rows_for_push_down);
     if (result)
     {
         if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
@@ -266,9 +266,10 @@ static size_t tryAddNewFilterStep(
     bool step_changes_the_number_of_rows,
     QueryPlan::Nodes & nodes,
     const Names & allowed_inputs,
-    size_t child_idx = 0)
+    size_t child_idx = 0,
+    size_t max_set_rows_for_push_down = 0)
 {
-    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, child_idx))
+    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, child_idx, max_set_rows_for_push_down))
         return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), child_idx);
     return 0;
 }
@@ -1279,7 +1280,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
+        /// A conjunct probing a large or not-yet-built set stays above: below the step it reaches index
+        /// analysis, which materializes the whole set in sorted order, and it is merged into the source
+        /// filter, where `in` is not evaluated lazily. LIMIT BY only trims groups.
+        if (auto updated_steps = tryAddNewFilterStep(
+                parent_node, true, nodes, keys, /*child_idx=*/0,
+                settings.max_set_size_for_filter_push_down_below_limit_by))
             return updated_steps;
     }
 

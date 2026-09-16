@@ -94,6 +94,57 @@ SELECT count(), sum(val) FROM (
     SELECT key, ts, val FROM t_04366 WHERE key = '5' ORDER BY key, ts LIMIT 1 BY key
 );
 
+-- A conjunct probing a set the plan cannot bound is NOT pushed below the LIMIT BY (issue #120341):
+-- below the step it reaches index analysis, which materializes the whole set in sorted order, and it
+-- is merged into the source filter, where `in` is not evaluated lazily and so runs on every source
+-- row. A subquery set has no size until it is built, so it counts as unbounded.
+DROP TABLE IF EXISTS t_04366_keys;
+CREATE TABLE t_04366_keys (k String) ENGINE = MergeTree ORDER BY k
+AS SELECT toString(number) AS k FROM numbers(50);
+
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN (SELECT k FROM t_04366_keys)
+);
+
+-- Live-oracle control: `0` means no limit, the behaviour of 26.7 and 26.8, so the same query pushes again.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN (SELECT k FROM t_04366_keys)
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 0
+);
+
+-- A literal list is a built set of known small size, so it still reaches the primary key.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '7')
+);
+
+-- Only the unbounded conjunct is held back: the equality beside it still reaches the primary key.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key = '5' AND key IN (SELECT k FROM t_04366_keys)
+);
+
+-- Holding the conjunct above the LIMIT BY must not change the result.
+SELECT count(), sum(val) FROM (
+    SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+) WHERE key IN (SELECT k FROM t_04366_keys WHERE k = '5');
+
+DROP TABLE t_04366_keys;
+
 DROP TABLE t_04366;
 
 -- Exception-semantics regression: a singleton group '0' dropped by OFFSET 1 must NOT be

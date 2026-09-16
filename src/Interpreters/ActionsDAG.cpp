@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -3577,12 +3578,48 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
+/// A set whose cost the plan cannot bound: not built yet, so its size is only the subquery's to know, or
+/// larger than `max_set_rows`. A set inside a lambda body lives in that body's own DAG and is not seen here.
+static bool conjunctProbesUnboundedSet(const ActionsDAG::Node * conjunct, size_t max_set_rows)
+{
+    std::vector<const ActionsDAG::Node *> to_visit{conjunct};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::COLUMN && node->column)
+        {
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(&node->column->getDataColumn()))
+            {
+                auto future_set = column_set->getData();
+                auto set = future_set ? future_set->get() : nullptr;
+                if (!set || set->getTotalRowCount() > max_set_rows)
+                    return true;
+
+                /// The sorted materialization filters the original list, whose length `getTotalRowCount`
+                /// does not report because it deduplicates.
+                if (const auto * from_tuple = typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+                    if (from_tuple->getInputRowCount() > max_set_rows)
+                        return true;
+            }
+        }
+
+        to_visit.insert(to_visit.end(), node->children.begin(), node->children.end());
+    }
+    return false;
+}
+
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
     const std::string & filter_name,
     bool removes_filter,
     const Names & available_inputs,
     const ColumnsWithTypeAndName & all_inputs,
-    bool allow_non_deterministic_functions)
+    bool allow_non_deterministic_functions,
+    size_t max_set_rows_for_push_down)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3616,6 +3653,19 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+
+    if (max_set_rows_for_push_down != 0)
+    {
+        NodeRawConstPtrs kept;
+        for (const auto * conjunct : conjunction.allowed)
+        {
+            if (conjunctProbesUnboundedSet(conjunct, max_set_rows_for_push_down))
+                conjunction.rejected.push_back(conjunct);
+            else
+                kept.push_back(conjunct);
+        }
+        conjunction.allowed = std::move(kept);
+    }
 
     if (conjunction.allowed.empty())
         return {};
