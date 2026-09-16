@@ -5,6 +5,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/readFloatText.h>
 #include <Common/StringUtils.h>
 
 #include <cmath>
@@ -166,25 +168,28 @@ namespace
                 if (pos == number_begin)
                     invalid(str, fmt::format("expected a number at position {}", number_begin));
 
-                Float64 value = 0;
-                for (size_t j = number_begin; j < pos; ++j)
-                    value = value * 10 + (str[j] - '0');
-
                 if (pos < str.length() && str[pos] == '.')
                 {
                     ++pos;
                     const size_t fraction_begin = pos;
-                    Float64 scale = 0.1;
                     while (pos < str.length() && isNumericASCII(str[pos]))
-                    {
-                        value += (str[pos] - '0') * scale;
-                        scale *= 0.1;
                         ++pos;
-                    }
 
                     if (pos == fraction_begin)
                         invalid(str, "expected digits after the decimal point");
                 }
+
+                /// Hand the whole decimal to a correctly rounded reader rather than accumulating it
+                /// digit by digit. Summing `digit * 0.1^k` rounds every term before adding it, and the
+                /// errors compound: `PT0.7S` came back as 0.7000000000000001, and 700 of the 1000
+                /// fractions `PT0.<n>S` differed from the double the same decimal parses to. The
+                /// substring holds only digits and at most one point, so there is no exponent to read.
+                const std::string_view number_text = str.substr(number_begin, pos - number_begin);
+                ReadBufferFromMemory number_buffer(number_text.data(), number_text.size());
+
+                Float64 value = 0;
+                if (!tryReadFloatTextPrecise(value, number_buffer) || !number_buffer.eof())
+                    invalid(str, fmt::format("could not read the number at position {}", number_begin));
 
                 if (!std::isfinite(value))
                     invalid(str, "the numeric value of a component is too large to represent");
