@@ -2184,6 +2184,12 @@ public:
     ThrottlerPtr getDistributedCacheReadThrottler() const;
     ThrottlerPtr getDistributedCacheWriteThrottler() const;
 
+    /// The bare server-wide distributed-cache throttlers, for reporting a server-wide limit rather than
+    /// throttling: getDistributedCacheReadThrottler() may compose a request-scoped throttler (e.g. the
+    /// per-user network limit) on top of the server-wide one; these return it unwrapped.
+    ThrottlerPtr getServerWideDistributedCacheReadThrottler() const;
+    ThrottlerPtr getServerWideDistributedCacheWriteThrottler() const;
+
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;

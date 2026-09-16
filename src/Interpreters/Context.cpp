@@ -5931,6 +5931,18 @@ ThrottlerPtr Context::getMergesThrottler() const
     return shared->merges_throttler;
 }
 
+ThrottlerPtr Context::getServerWideDistributedCacheReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_write_throttler;
+}
+
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
 {
     return shared->distributed_cache_read_throttler;
