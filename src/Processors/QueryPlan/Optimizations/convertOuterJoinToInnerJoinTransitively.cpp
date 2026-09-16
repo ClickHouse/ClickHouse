@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -357,7 +358,7 @@ void visit(QueryPlan::Node & root)
 
         if (const auto * filter = typeid_cast<const FilterStep *>(&step))
         {
-            if (filter->getExpression().hasStatefulFunctions())
+            if (filter->getExpression().hasStatefulFunctions() || dagContainsNonDeterministicFunction(filter->getExpression()))
             {
                 stack.push_back({node.children.front(), {}});
                 continue;
@@ -371,7 +372,7 @@ void visit(QueryPlan::Node & root)
 
         if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
         {
-            if (expression->getExpression().hasStatefulFunctions())
+            if (expression->getExpression().hasStatefulFunctions() || dagContainsNonDeterministicFunction(expression->getExpression()))
             {
                 stack.push_back({node.children.front(), {}});
                 continue;

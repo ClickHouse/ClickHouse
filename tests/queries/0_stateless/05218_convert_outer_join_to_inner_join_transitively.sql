@@ -93,6 +93,12 @@ SELECT trim(explain) FROM (
     SELECT count() FROM (SELECT m.id AS k, s.val AS y FROM mid_nullable AS m LEFT JOIN small AS s ON m.val = s.val ORDER BY k) WHERE y IS NOT NULL AND rowNumberInAllBlocks() < 2
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
+SELECT '-- A non-deterministic function between the filter and the join does not allow converting.';
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT g.r FROM (SELECT m.val AS k, rand64() AS r FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id) AS g INNER JOIN small AS s ON g.k = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
+
 SELECT '-- A RIGHT join below allows converting.';
 SELECT count(), sum(f.v) FROM mid AS m RIGHT JOIN fact AS f ON f.id = m.id INNER JOIN small AS s ON m.val = s.val;
 

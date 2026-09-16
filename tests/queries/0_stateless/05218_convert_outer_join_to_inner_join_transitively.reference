@@ -27,6 +27,9 @@ Type: INNER
 Type: LEFT
 -- A stateful function in the filter does not allow converting.
 Type: LEFT
+-- A non-deterministic function between the filter and the join does not allow converting.
+Type: INNER
+Type: LEFT
 -- A RIGHT join below allows converting.
 20	890
 Type: INNER
