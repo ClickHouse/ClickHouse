@@ -25,7 +25,8 @@
 #include <Common/typeid_cast.h>
 
 #include <map>
-#include <unordered_set>
+#include <optional>
+#include <tuple>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -248,16 +249,27 @@ std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
     return reading_steps;
 }
 
+/// A read's identity for pairing: which table it reads, and which of that table's occurrences it is.
+struct ReadIdentity
+{
+    const MergeTreeData * table;
+    String table_expression_name;
+
+    bool operator<(const ReadIdentity & other) const
+    {
+        return std::tie(table, table_expression_name) < std::tie(other.table, other.table_expression_name);
+    }
+};
+
 /// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
-/// the same read. The plans are built from the same query and differ only where the replicas step is
-/// substituted, so their reads pair up in traversal order. Without this only the matched read gets an
-/// analysis and the rest scan everything - on TPC-H q03, 1045 marks against 614.
+/// the same read. Without this only the matched read gets an analysis and the rest scan everything - on
+/// TPC-H q03, 1045 marks against 614.
 ///
 /// An analysis carries the mark ranges selected for one read's predicates, so a pairing that lines the
-/// two plans up wrongly does not merely misestimate - it reads the wrong rows. Pairing by position is
-/// only sound while each position can be identified, which is why a plan that reads one table more than
-/// once is left alone below: two reads of one table are indistinguishable by table, so nothing here
-/// could tell a crossed pairing from a correct one.
+/// two plans up wrongly does not merely misestimate - it reads the wrong rows. The reads are therefore
+/// paired by the name the analyzer gave the table expression each one reads, which is stable across the
+/// two plans and distinguishes two reads of one table; anything that cannot be paired that way leaves
+/// the transplant undone rather than guessed.
 void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
 {
     auto single_node_reads = collectReadingSteps(single_node_root);
@@ -273,43 +285,60 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         return;
     }
 
-    std::unordered_set<const MergeTreeData *> distinct_tables;
-    for (const auto * read : single_node_reads)
-        distinct_tables.insert(&read->getMergeTreeData());
-    if (distinct_tables.size() != single_node_reads.size())
+    /// Identify a read by the table expression it reads rather than by where it sits in the plan. The
+    /// analyzer names every table expression (`__table1`, `__table2`, ...) while resolving the query, and
+    /// both plans are built from the same query, so the names agree across them and tell two reads of one
+    /// table apart - which the table alone cannot do, and which a self-join needs. Position cannot be
+    /// trusted for this: the two plans are optimized differently and may order a join's sides differently.
+    auto identify = [](const ReadFromMergeTree * read) -> std::optional<ReadIdentity>
     {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "The plan has {} reads of {} tables, so a read cannot be identified by its table; not transplanting "
-            "index analysis",
-            single_node_reads.size(),
-            distinct_tables.size());
-        return;
-    }
+        const auto & table_expression = read->getQueryInfo().table_expression;
+        if (!table_expression || table_expression->getAlias().empty())
+            return {};
+        return ReadIdentity{&read->getMergeTreeData(), table_expression->getAlias()};
+    };
 
-    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    std::map<ReadIdentity, ReadFromMergeTree *> single_node_by_identity;
+    for (auto * read : single_node_reads)
     {
-        if (&single_node_reads[i]->getMergeTreeData() != &replicas_reads[i]->getMergeTreeData())
+        auto identity = identify(read);
+        if (!identity || !single_node_by_identity.emplace(*identity, read).second)
         {
             LOG_DEBUG(
                 getLogger("optimizeTree"),
-                "Read {} is {} in the single-node plan and {} in the replicas plan; not transplanting index analysis",
-                i,
-                single_node_reads[i]->getStorageID().getNameForLogs(),
-                replicas_reads[i]->getStorageID().getNameForLogs());
+                "Read of {} in the single-node plan has no name to pair it by, or shares one with another read; "
+                "not transplanting index analysis",
+                read->getStorageID().getNameForLogs());
             return;
         }
     }
 
-    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    std::vector<ReadFromMergeTree *> paired_single_node_reads(replicas_reads.size());
+    for (size_t i = 0; i < replicas_reads.size(); ++i)
+    {
+        auto identity = identify(replicas_reads[i]);
+        auto it = identity ? single_node_by_identity.find(*identity) : single_node_by_identity.end();
+        if (it == single_node_by_identity.end())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Read of {} in the replicas plan has no counterpart of the same name in the single-node plan; "
+                "not transplanting index analysis",
+                replicas_reads[i]->getStorageID().getNameForLogs());
+            return;
+        }
+        paired_single_node_reads[i] = it->second;
+    }
+
+    for (size_t i = 0; i < replicas_reads.size(); ++i)
     {
         /// Index analysis is lazy, so a read the single-node plan has not needed yet has no result to
         /// hand over. Produce it here, the same way the matched read step does: it is one analysis per
         /// read either way, and this way it is done once and shared instead of being repeated by the
         /// replicas plan.
-        auto analyzed = single_node_reads[i]->getAnalyzedResult();
+        auto analyzed = paired_single_node_reads[i]->getAnalyzedResult();
         if (!analyzed)
-            analyzed = single_node_reads[i]->selectRangesToRead();
+            analyzed = paired_single_node_reads[i]->selectRangesToRead();
         if (analyzed)
         {
             replicas_reads[i]->setAnalyzedResult(analyzed);
@@ -318,7 +347,7 @@ void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
             /// that already has an analysis result never will. Skip indexes applied while reading granules
             /// (`use_skip_indexes_on_data_read`) need them, and without them they are simply not applied.
             if (!replicas_reads[i]->getIndexes())
-                replicas_reads[i]->setIndexes(single_node_reads[i]->getIndexes());
+                replicas_reads[i]->setIndexes(paired_single_node_reads[i]->getIndexes());
         }
     }
 }
