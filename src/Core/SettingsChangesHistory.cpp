@@ -1463,6 +1463,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
+            {"compress_per_substream_in_compact_parts", false, true, "New setting: start a new compressed block at column substream boundaries in Compact parts for faster subcolumn reads"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
@@ -1526,7 +1527,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
-            {"compress_per_substream_in_compact_parts", false, true, "New setting: start a new compressed block per column substream in Compact parts for faster subcolumn reads"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {

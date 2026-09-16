@@ -361,11 +361,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
                 }
-                else if (prev_stream && settings.compress_per_substream_in_compact_parts && index_granularity_info.mark_type.with_substreams)
+                else if (prev_stream && settings.compress_per_substream_in_compact_parts && index_granularity_info.mark_type.with_substreams
+                    && prev_stream->hashing_buf.offset() >= settings.min_compress_block_size)
                 {
-                    /// Start a new compressed block per substream so reading a single subcolumn doesn't
-                    /// decompress blocks shared with the column's other substreams. Only useful with
-                    /// per-substream marks (otherwise a subcolumn read still seeks to the column start).
+                    /// Cut a new block at a substream boundary only once it's worth closing: a subcolumn read
+                    /// then doesn't decompress the column's other substreams, while small substreams keep
+                    /// sharing a block.
                     prev_stream->hashing_buf.next();
                 }
 
