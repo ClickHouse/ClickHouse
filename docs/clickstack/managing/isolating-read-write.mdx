@@ -212,6 +212,8 @@ The same warehouse pattern applies - give the agents their own read-only compute
 
 Create another read-only service in the warehouse, exactly as in [the setup above](#add-read-only-service). It reads the same tables as the service serving the UI, with no data to copy.
 
+Then launch ClickStack on it once from the Cloud console, as in [pointing ClickStack at a read-only service](#point-clickstack). Cloud MCP needs a service with ClickStack enabled as well as MCP itself - see the [MCP prerequisites](/clickstack/mcp#managed-prerequisites).
+
 Size it for the query load you expect from agents rather than from the sizing model's dashboard QPS, and leave auto-idling enabled: agentic use is typically intermittent, so the service can idle between investigations.
 </Step>
 <Step title="Enable MCP on that service" id="agentic-enable-mcp">
