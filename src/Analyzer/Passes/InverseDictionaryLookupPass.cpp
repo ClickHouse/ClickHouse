@@ -227,22 +227,22 @@ bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr &
     return supertype && supertype->equals(*stripped_key_col_type);
 }
 
-/// Check every normalized key component against its dictionary column type. The expression must have
-/// a valid key shape, with any single-column tuple wrapper already removed.
-bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols)
+/// Check every normalized key component against the declared type of its dictionary key column.
+/// The expression must have a valid key shape, with any single-column tuple wrapper already removed.
+bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const DataTypes & declared_key_types)
 {
-    if (key_cols.size() == 1)
-        return canCompareKeyWithoutCast(key_expr_node->getResultType(), key_cols.front().type);
+    if (declared_key_types.size() == 1)
+        return canCompareKeyWithoutCast(key_expr_node->getResultType(), declared_key_types.front());
 
     /// `keyExpressionMatchesDictionaryStructure` guarantees a tuple with one element per key column.
     const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
     const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
-    chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
+    chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == declared_key_types.size());
 
     const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
-    for (size_t i = 0; i < key_cols.size(); ++i)
+    for (size_t i = 0; i < declared_key_types.size(); ++i)
     {
-        if (!canCompareKeyWithoutCast(key_expr_elements[i], key_cols[i].type))
+        if (!canCompareKeyWithoutCast(key_expr_elements[i], declared_key_types[i]))
             return false;
     }
     return true;
@@ -446,6 +446,9 @@ public:
 
 
         NamesAndTypes key_cols;
+        /// The types the probe is compared against without a cast (`canCompareKeysWithoutCasts`). They
+        /// are the `key_cols` types for a composite key; for a simple key see below.
+        DataTypes declared_key_types;
 
         const auto & dict_structure = dict->getStructure();
 
@@ -461,13 +464,24 @@ public:
             /// different trees -> different `__set_<hash>` names -> remote header mismatch ("Cannot find column ... __set_...").
             chassert(dict_structure.getKeyTypes().size() == 1);
             key_cols.emplace_back(dict_structure.id->name, dict_structure.getKeyTypes().front());
+
+            /// The no-cast decision, however, is made against the declared type. Against the `UInt64` lookup
+            /// type a probe of the declared signed type, the common case, would never pass, and the
+            /// optimization would silently switch off for every simple-key dictionary declared with a
+            /// signed key (`03906_dict_case_distributed_predicate_pushdown` depends on it firing). The
+            /// comparison with the `UInt64` key values is exact for every probe value the lookup can
+            /// convert; a value it cannot convert compares unequal where `dictGet` throws, which is the
+            /// behavior these dictionaries had before the gate existed.
+            declared_key_types.push_back(dict_structure.id->type);
         }
         else if (dict_structure.key) /// composite key
         {
             key_cols.reserve(dict_structure.key->size());
+            declared_key_types.reserve(dict_structure.key->size());
             for (const auto & id : *dict_structure.key)
             {
                 key_cols.emplace_back(id.name, id.type);
+                declared_key_types.push_back(id.type);
             }
         }
         else
@@ -502,7 +516,7 @@ public:
         /// so it cannot preserve the lookup's behavior for empty inputs and skipped branches. Replacement
         /// expressions must also use functions understood by remote servers, which reanalyze generated SQL.
         /// Comparisons that only widen key values need no cast and keep the expression usable for indices.
-        if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, key_cols))
+        if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, declared_key_types))
             return;
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();

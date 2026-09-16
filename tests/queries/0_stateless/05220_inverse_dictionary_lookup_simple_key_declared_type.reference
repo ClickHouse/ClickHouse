@@ -1,0 +1,16 @@
+declared type, equals - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(__table1.id, _CAST(1, \'UInt64\'))
+narrower signed type, equals - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE in(__table1.narrow, _CAST([2, 3], \'Array(UInt64)\'))
+declared type, like - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE in(__table1.id, (\n    SELECT id AS id\n    FROM dictionary(\'default.simple_signed\')\n    WHERE like(attr, \'be%\')\n))
+string probe, equals - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(dictGet(\'default.simple_signed\', \'attr\', __table1.s), \'alpha\')
+results
+1	1	0	0	1
+2	0	1	1	0
+4	0	0	0	0
+results, opt off
+1	1	0	0	1
+2	0	1	1	0
+4	0	0	0	0
